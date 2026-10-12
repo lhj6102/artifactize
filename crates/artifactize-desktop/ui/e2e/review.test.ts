@@ -31,7 +31,7 @@ describe("review", () => {
   });
 
   it("lists the waiting sign-off with a read-only preview", async () => {
-    const list = await browser.$('[aria-label="Waiting Human reviews"]');
+    const list = await browser.$('[aria-label="Requests"]');
     await list.waitForExist({ timeout: 15000 });
     // WebKitWebDriver's element text skips these grid rows; read what the page renders.
     const shown = () => browser.execute((element) => (element as HTMLElement).innerText, list);

@@ -111,6 +111,7 @@ fn window(fixture: &Fixture, mode: Mode) -> WebviewWindow<MockRuntime> {
         repo: Some(fixture.repo.clone()),
         reviewer: "alice".parse().unwrap(),
         request: None,
+        search: artifactize::review::search::DEFAULT.into(),
     };
     let app = artifactize_desktop::app(mock_builder(), launch)
         .build(mock_context(noop_assets()))
@@ -253,8 +254,8 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let id = saved(&fixture, "release/signoff").request.id.to_string();
     let waiting = invoke(
         &window,
-        "human_waiting",
-        json!({"all": false, "reload": true}),
+        "review_search",
+        json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": true}),
     )
     .unwrap();
     assert_eq!(waiting["rows"][0]["id"], id);
@@ -344,8 +345,8 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     );
     let waiting = invoke(
         &window,
-        "human_waiting",
-        json!({"all": false, "reload": true}),
+        "review_search",
+        json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": true}),
     )
     .unwrap();
     assert_eq!(waiting["rows"], json!([]));
@@ -358,8 +359,8 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     let waiting = |reload: bool| {
         invoke(
             &window,
-            "human_waiting",
-            json!({"all": false, "reload": reload}),
+            "review_search",
+            json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": reload}),
         )
         .unwrap()
     };
@@ -488,8 +489,8 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
     let waiting = || {
         invoke(
             &window,
-            "human_waiting",
-            json!({"all": false, "reload": true}),
+            "review_search",
+            json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": true}),
         )
         .unwrap()
     };
@@ -697,4 +698,80 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
         json!({"handle": handle, "columns": 60, "rows": 5, "movement": null, "toggle": null, "changed": false}),
     )
     .is_err());
+}
+
+#[test]
+fn the_review_search_lists_any_request_and_opens_a_read_only_detail() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let search = |query: &str| {
+        invoke(
+            &window,
+            "review_search",
+            json!({"query": query, "start": 0, "reload": true}),
+        )
+        .unwrap()
+    };
+    // The default lists the waiting Human sign-off only.
+    let waiting = search(artifactize::review::search::DEFAULT);
+    assert_eq!(waiting["waiting"], json!(true));
+    let evals: Vec<_> = waiting["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["eval"].clone())
+        .collect();
+    assert_eq!(evals, [json!("release/signoff")]);
+    // Any kind and status: the dependency eval that waits for the sign-off.
+    let dependency = search("kind:dependency");
+    assert_eq!(dependency["waiting"], json!(false));
+    assert_eq!(dependency["rows"][0]["eval"], "ship/check");
+    assert_eq!(dependency["rows"][0]["kind"], "dependency");
+    let id = dependency["rows"][0]["id"].as_str().unwrap().to_owned();
+    let detail = invoke(&window, "review_detail", json!({"id": id})).unwrap();
+    assert_eq!(detail["profile"], "dependency");
+    assert_eq!(detail["sections"][0]["name"], "outcome");
+    // An invalid query lists nothing and says why.
+    let invalid = search("kind:robot");
+    assert_eq!(invalid["rows"], json!([]));
+    assert!(invalid["error"].as_str().unwrap().contains("Unknown kind"));
+    // Completion offers values from the requests the terms before the last one find.
+    let completion = invoke(
+        &window,
+        "review_complete",
+        json!({"query": "kind:dependency eval:"}),
+    )
+    .unwrap();
+    assert_eq!(completion["candidates"], json!(["eval:ship/check"]));
+    let completion = invoke(&window, "review_complete", json!({"query": "kind:hu"})).unwrap();
+    assert_eq!(completion["candidates"], json!(["kind:human"]));
+}
+
+#[test]
+fn an_agent_request_found_by_the_search_opens_read_only_with_its_session() {
+    let fixture = fixture();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let id = runtime.block_on(agent_request(&fixture, "fixture-session", 3));
+    let window = window(&fixture, Mode::Review);
+    let found = invoke(
+        &window,
+        "review_search",
+        json!({"query": "kind:agent", "start": 0, "reload": true}),
+    )
+    .unwrap();
+    assert_eq!(found["rows"][0]["id"], id);
+    let detail = invoke(&window, "review_detail", json!({"id": id})).unwrap();
+    assert_eq!(detail["profile"], "agent");
+    assert_eq!(detail["request"], id);
+    let opened = invoke(
+        &window,
+        "transcript_open",
+        json!({"id": id, "handle": null}),
+    )
+    .unwrap();
+    let rows = window_of(&window, &opened["handle"], Value::Null);
+    assert!(rows["rows"].to_string().contains("row 2"), "{rows}");
 }

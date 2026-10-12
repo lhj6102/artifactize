@@ -2,7 +2,7 @@
 // and opens again after every way of closing it, screen switches included.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { artifactize, create, type Fixture, requests } from "./fixture.ts";
+import { addRepository, artifactize, create, type Fixture, requests } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
@@ -32,6 +32,8 @@ describe("command palette", () => {
     fixture = create();
     // A second Run joins the waiting sign-off: its request is a follower of the first one.
     assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
+    // Another repository with the same eval IDs, which the review search reaches.
+    addRepository(fixture, "other");
     session = await start(fixture);
     browser = session.browser;
     await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
@@ -99,12 +101,50 @@ describe("command palette", () => {
       await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 10000 });
       await browser.$("button*=Commands").click();
       await opened(`button after opening ${id}`);
-      await run("Refresh waiting reviews");
+      await run("Refresh the list");
       await closed("the command ran");
       await browser.keys(["Control", "k"]);
       await opened(`Ctrl+K after opening ${id}`);
       await browser.keys(["Escape"]);
       await closed("Esc");
+    }
+  });
+
+  it("opens after a request opened by ID, Esc and a search of every repository", async () => {
+    const original = requests(fixture).find((request) => request.evalId === "release/signoff");
+    assert.ok(original);
+    const listed = () =>
+      browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
+    for (let round = 0; round < 2; round += 1) {
+      await browser.keys(["Control", "o"]);
+      const input = await browser.$('[aria-label="Request ID"]');
+      await input.waitForExist();
+      await input.setValue(original.id);
+      await browser.keys(["Enter"]);
+      await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 10000 });
+      await browser.keys(["Escape"]);
+      await browser.$('[aria-label="Human review"]').waitForExist({ reverse: true, timeout: 10000 });
+      // The launch searches its own repository; a search without the repo: term finds both.
+      await browser.keys(["/"]);
+      await eventually(
+        () => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Search requests"),
+        "focus in the search",
+      );
+      await browser.keys(["Escape"]);
+      // One key at a time: WebKitWebDriver drops some keys of a long burst while the list
+      // re-renders. A space ends the term and closes the suggestions, so Enter leaves the field.
+      for (const key of "kind:human status:waiting_human ") await browser.keys([key]);
+      await eventually(async () => (await listed()) === 2, "the sign-offs of both repositories");
+      await browser.keys(["Enter"]);
+      await browser.$("button*=Commands").click();
+      await opened(`button after the search, round ${round}`);
+      await run("Refresh the list");
+      await closed("the command ran");
+      await browser.keys(["Control", "k"]);
+      await opened(`Ctrl+K after the search, round ${round}`);
+      await run("Show waiting Human reviews");
+      await closed("the search reset");
+      await eventually(async () => (await listed()) === 1, "this repository's sign-off again");
     }
   });
 

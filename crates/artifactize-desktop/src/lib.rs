@@ -11,6 +11,7 @@ mod failure;
 mod generation;
 mod human;
 mod launch;
+mod search;
 mod status;
 mod transcript;
 mod watch;
@@ -43,7 +44,9 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             human::human_cancel,
             human::human_submit,
             human::human_release,
-            human::human_waiting,
+            search::review_search,
+            search::review_complete,
+            search::review_detail,
             human::human_taken,
             transcript::transcript_open,
             transcript::transcript_window,
@@ -68,6 +71,7 @@ pub struct App {
     browse: browse::Browse,
     human: human::Reviews,
     transcripts: transcript::Transcripts,
+    searches: search::Searches,
     generation: generation::Generation,
 }
 
@@ -78,6 +82,7 @@ impl App {
             launch,
             human: human::Reviews::default(),
             transcripts: transcript::Transcripts::default(),
+            searches: search::Searches::default(),
             generation: generation::Generation::default(),
         }
     }

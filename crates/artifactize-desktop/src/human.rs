@@ -9,7 +9,7 @@ mod form;
 pub use form::{Draft, FormView, Verdict};
 
 /// The state's origin right now, noted as the generation every Human view belongs to.
-async fn current(app: &App) -> Result<u32, Failure> {
+pub(crate) async fn current(app: &App) -> Result<u32, Failure> {
     let state = app.launch.state.clone();
     let origin = tokio::task::spawn_blocking(move || monitor::Origin::read(&state))
         .await
@@ -50,8 +50,6 @@ pub struct Reviews {
     jobs: Mutex<BTreeMap<u32, CancellationToken>>,
     /// Claims this app took and has neither submitted nor released.
     taken: Mutex<BTreeSet<RequestId>>,
-    /// The waiting list last read, and whether it covers every repository.
-    waiting: Mutex<Option<(bool, Vec<RequestView>)>>,
 }
 
 impl Reviews {
@@ -61,7 +59,6 @@ impl Reviews {
         self.views.lock().expect("views lock").clear();
         self.commands.lock().expect("commands lock").clear();
         self.taken.lock().expect("taken lock").clear();
-        *self.waiting.lock().expect("waiting lock") = None;
     }
 
     pub fn cancel_all(&self) {
@@ -81,6 +78,15 @@ impl Reviews {
 
     fn end(&self, job: u32) {
         self.jobs.lock().expect("jobs lock").remove(&job);
+    }
+
+    /// Freshen the cached views of requests a search just read, so their Preview shows the
+    /// claims and states the list shows.
+    pub(crate) fn remember(&self, views: impl IntoIterator<Item = RequestView>) {
+        let mut cached = self.views.lock().expect("views lock");
+        for view in views {
+            cached.insert(view.request.id.clone(), view);
+        }
     }
 
     fn took(&self, id: &RequestId, taken: bool) {
@@ -193,20 +199,6 @@ pub struct ToolRun {
 pub struct Acted {
     pub notice: Notice,
     pub view: Option<HumanView>,
-}
-
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct WaitingRow {
-    /// The original request every action goes to.
-    pub id: String,
-    pub eval: String,
-    pub title: String,
-    /// `-`, the claimant, or `name (you)`.
-    pub claim: String,
-    pub mine: bool,
-    pub waiting: String,
-    pub repository: String,
 }
 
 fn parse(id: &str) -> Result<RequestId, Failure> {
@@ -581,83 +573,6 @@ pub async fn human_release(
         _ => None,
     };
     Ok(Acted { notice, view })
-}
-
-/// The waiting list and the state generation it was read from.
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Waiting {
-    pub generation: u32,
-    pub rows: Vec<WaitingRow>,
-}
-
-/// The waiting Human sign-offs of the launch repository, or with `all` of every one; one
-/// entry per sign-off, followers collapsed onto their original. `reload: false` redraws
-/// the last list.
-#[tauri::command]
-#[specta::specta]
-pub async fn human_waiting(
-    app: tauri::State<'_, App>,
-    all: bool,
-    reload: bool,
-) -> Result<Waiting, Failure> {
-    let cached = app.human.waiting.lock().expect("waiting lock").clone();
-    let waiting = match cached {
-        Some((covers, waiting)) if !reload && covers == all => waiting,
-        _ => {
-            current(&app).await?;
-            let repo = if all { None } else { app.launch.initial() };
-            let waiting = store::read_waiting_originals(&app.launch.state, repo.as_deref())
-                .await
-                .map_err(Failure::Read)?;
-            *app.human.waiting.lock().expect("waiting lock") = Some((all, waiting.clone()));
-            // The same read freshens every listed request's view, so its Preview shows the
-            // claims and states the list shows.
-            let mut views = app.human.views.lock().expect("views lock");
-            for view in &waiting {
-                views.insert(view.request.id.clone(), view.clone());
-            }
-            waiting
-        }
-    };
-    let now = OffsetDateTime::now_utc();
-    let reviewer = app.launch.reviewer.as_str();
-    let rows = waiting
-        .iter()
-        .map(|view| {
-            let request = &view.request;
-            let mine = view
-                .claim
-                .as_ref()
-                .is_some_and(|claim| claim.reviewer.as_str() == reviewer);
-            WaitingRow {
-                id: request.id.to_string(),
-                eval: request.eval_id.to_string(),
-                title: request.title.clone(),
-                claim: view.claim.as_ref().map_or("-".into(), |claim| {
-                    if mine {
-                        format!("{} (you)", claim.reviewer)
-                    } else {
-                        claim.reviewer.to_string()
-                    }
-                }),
-                mine,
-                waiting: monitor::duration((now - request.created_at.time()).whole_seconds()),
-                repository: request
-                    .human_definition
-                    .as_ref()
-                    .and_then(|definition| definition.repo.value())
-                    .map_or_else(
-                        || "-".into(),
-                        |repo| artifactize_tools::files::path_text(repo),
-                    ),
-            }
-        })
-        .collect();
-    Ok(Waiting {
-        generation: app.generation.current(),
-        rows,
-    })
 }
 
 /// Claims the standalone review took and has neither submitted nor released, for the quit

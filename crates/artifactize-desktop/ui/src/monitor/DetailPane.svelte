@@ -5,6 +5,7 @@
   import type { Browse } from "./browse.svelte";
   import type { Review } from "../review/review.svelte";
   import Panel from "../shell/Panel.svelte";
+  import RecordDetail from "./RecordDetail.svelte";
   import Sections from "./Sections.svelte";
   import Transcript from "./Transcript.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
@@ -116,36 +117,7 @@
       <HumanDetail review={review(detail.request)} {active} {onback} />
     {/key}
   {:else if full}
-    <!-- Focusable so the arrows and PgUp/PgDn scroll the sections. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div class="full" tabindex="0" role="document">
-      {#if detail.summary}
-        <p class="summary {tone(detail.mark?.status)}">{detail.summary}</p>
-      {/if}
-      {#if agent && !details && detail.request}
-        {#key detail.request}
-          <Transcript id={detail.request} />
-        {/key}
-      {:else}
-        <div class="split" class:logs={detail.evidence !== null}>
-          <div>
-            <Sections
-              sections={detail.sections}
-              {technical}
-              {pending}
-              ontechnical={() => (technical = !technical)}
-              onpending={() => (pending = !pending)}
-            />
-          </div>
-          {#if detail.evidence}
-            <div class="evidence">
-              <h3>{detail.evidence.title}</h3>
-              <pre>{detail.evidence.text}</pre>
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </div>
+    <RecordDetail {detail} bind:technical bind:pending bind:details />
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="peek" role="button" tabindex="-1" onclick={onopen} title="Open">
@@ -180,37 +152,5 @@
     cursor: pointer;
     height: 100%;
     outline: none;
-  }
-  .full {
-    height: 100%;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    outline: none;
-    min-height: 0;
-  }
-  .split {
-    display: grid;
-    gap: var(--gap);
-    min-height: 0;
-  }
-  .split.logs {
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  }
-  .evidence {
-    padding: 0 var(--pad) 12px;
-    min-width: 0;
-  }
-  .evidence h3 {
-    margin: 0 0 6px;
-    font-size: 12px;
-    color: var(--accent);
-  }
-  pre {
-    margin: 0;
-    font: 12px/1.5 var(--mono);
-    white-space: pre-wrap;
-    background: var(--surface-2);
-    border-radius: var(--radius);
-    padding: 10px 12px;
   }
 </style>

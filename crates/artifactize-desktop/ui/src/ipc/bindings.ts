@@ -48,11 +48,17 @@ export const commands = {
 	/**  Release this reviewer's claims on `ids` without a verdict. */
 	humanRelease: (ids: string[], job: number) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**
-	 *  The waiting Human sign-offs of the launch repository, or with `all` of every one; one
-	 *  entry per sign-off, followers collapsed onto their original. `reload: false` redraws
-	 *  the last list.
+	 *  Requests matching `query` from position `start` (0 for the newest). `reload: false`
+	 *  redraws the last page of the same query and start without reading the state.
 	 */
-	humanWaiting: (all: boolean, reload: boolean) => typedError<Waiting, Failure>(__TAURI_INVOKE("human_waiting", { all, reload })),
+	reviewSearch: (query: string, start: number, reload: boolean) => typedError<Results, Failure>(__TAURI_INVOKE("review_search", { query, start, reload })),
+	/**
+	 *  Completion candidates for the query's last term, from the requests the terms before it
+	 *  find.
+	 */
+	reviewComplete: (query: string) => typedError<Completion, Failure>(__TAURI_INVOKE("review_complete", { query })),
+	/**  The read-only Detail of request `id` in its Run, as the monitor shows it. */
+	reviewDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("review_detail", { id })),
 	/**
 	 *  Claims the standalone review took and has neither submitted nor released, for the quit
 	 *  prompt.
@@ -122,6 +128,13 @@ export type BrowseView = {
 export type Claimant = {
 	reviewer: string,
 	mine: boolean,
+};
+
+/**  The completion of a query's last term. */
+export type Completion = {
+	/**  The query before the completed term; a candidate replaces the rest. */
+	keep: string,
+	candidates: string[],
 };
 
 /**  A badge part such as `!2`: a status and how many. */
@@ -232,9 +245,23 @@ export type LaunchView = {
 	mode: Mode,
 	state: string,
 	reviewer: string,
-	/**  Shown as the review list's scope: the repository, or every repository. */
-	repository: string | null,
+	/**  The review list's first search. */
+	search: string,
 	request: string | null,
+};
+
+/**  One request the search found. */
+export type Listed = {
+	id: string,
+	eval: string,
+	title: string,
+	kind: Profile,
+	mark: Mark,
+	/**  `-`, the claimant, or `name (you)`. */
+	claim: string,
+	mine: boolean,
+	age: string,
+	repository: string,
 };
 
 /**  A status with its glyph, as badges, headlines and counts show it. */
@@ -294,6 +321,19 @@ export type RepositoryKey =
 { kind: "git"; path: string } | 
 /**  A non-Git workspace. */
 { kind: "workspace"; path: string };
+
+/**  A page of what the query found. */
+export type Results = {
+	/**  The state generation it was read from; a newer one drops open reviews and drafts. */
+	generation: number,
+	rows: Listed[],
+	/**  Where the next (older) page starts, when there is one. */
+	next: number | null,
+	/**  Why the query is invalid; it then lists nothing. */
+	error: string | null,
+	/**  Only waiting Human reviews can match, as with the default query. */
+	waiting: boolean,
+};
 
 export type Row = {
 	text: string,
@@ -476,24 +516,6 @@ export type Verdict = "GREEN" | "RED";
 export type WaitLine = {
 	text: string,
 	pending: boolean,
-};
-
-/**  The waiting list and the state generation it was read from. */
-export type Waiting = {
-	generation: number,
-	rows: WaitingRow[],
-};
-
-export type WaitingRow = {
-	/**  The original request every action goes to. */
-	id: string,
-	eval: string,
-	title: string,
-	/**  `-`, the claimant, or `name (you)`. */
-	claim: string,
-	mine: boolean,
-	waiting: string,
-	repository: string,
 };
 
 export type Weight = "bold" | "normal" | "dim";

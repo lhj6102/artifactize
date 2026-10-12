@@ -50,12 +50,22 @@ export const HELP: Record<"monitor" | "review", Section[]> = {
   ],
   review: [
     {
-      title: "Waiting reviews",
+      title: "Requests",
       keys: [
         ["↑ / ↓ · j / k", "Select a request"],
-        ["Enter / →", "Open its review"],
-        ["Tab", "Open it with Tools focused"],
+        ["Enter / →", "Open it: a Human review, or any other request read-only"],
+        ["Tab", "Open a Human review with Tools focused"],
+        ["PgDn / PgUp", "Older / newer page"],
         ["Ctrl+O", "Open a request by ID"],
+      ],
+    },
+    {
+      title: "Search",
+      keys: [
+        ["/ · Ctrl+F", "Search requests"],
+        ["text · key:value", "Every term must match; keys repo eval request reviewer tag kind status is"],
+        ["↑ / ↓ · Tab / Enter", "Choose / take a suggestion"],
+        ["Esc", "Close suggestions, then clear, then back to the list"],
       ],
     },
     HUMAN,

@@ -21,6 +21,8 @@ pub struct Launch {
     pub reviewer: artifactize::types::ReviewerId,
     /// `review REQUEST_ID`: the request to open first.
     pub request: Option<artifactize::types::RequestId>,
+    /// The review list's first search: the waiting Human reviews, of `--repo` when given.
+    pub search: String,
 }
 
 const USAGE: &str = "usage: artifactize-desktop [monitor | review [REQUEST_ID]] [--repo PATH | --all] [--state-dir PATH] [--reviewer NAME]";
@@ -75,9 +77,14 @@ impl Launch {
             None => artifactize::human::default_reviewer()?,
         };
         let state = artifactize::store::state_dir(state.as_deref())?;
+        // Only an explicit --repo narrows the review search; the monitor still starts on cwd.
+        let search = artifactize::review::search::Query::text_for(
+            artifactize::monitor::initial(repo.clone()).as_deref(),
+        );
         Ok(Self {
             mode,
             state,
+            search,
             repo: (!all).then(|| repo.unwrap_or_else(|| PathBuf::from("."))),
             reviewer,
             request,
@@ -97,8 +104,8 @@ pub struct LaunchView {
     pub mode: Mode,
     pub state: String,
     pub reviewer: String,
-    /// Shown as the review list's scope: the repository, or every repository.
-    pub repository: Option<String>,
+    /// The review list's first search.
+    pub search: String,
     pub request: Option<String>,
 }
 
@@ -110,9 +117,7 @@ pub fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
         mode: launch.mode,
         state: artifactize_tools::files::path_text(&launch.state),
         reviewer: launch.reviewer.to_string(),
-        repository: launch
-            .initial()
-            .map(|path| artifactize_tools::files::path_text(&path)),
+        search: launch.search.clone(),
         request: launch.request.as_ref().map(ToString::to_string),
     })
 }

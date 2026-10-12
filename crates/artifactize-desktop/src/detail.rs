@@ -105,6 +105,82 @@ pub struct DetailView {
 }
 
 /// The Detail of `node` in the selected Run `run`, from the shown snapshot.
+/// The Detail of `node` in Run `run` with its `requests`: the monitor's model, laid out.
+pub fn view(
+    state: &std::path::Path,
+    run: &artifactize::store::RunView,
+    requests: &[artifactize::store::RequestView],
+    id: &NodeId,
+) -> DetailView {
+    let target = Target::from(id);
+    let detail = monitor::detail(run, requests, &target, OffsetDateTime::now_utc());
+    let request = match &target {
+        Target::Eval(eval) => requests.iter().find(|view| &view.request.eval_id == eval),
+        _ => None,
+    };
+    let sections = Section::ALL
+        .into_iter()
+        .filter_map(|section| {
+            let fields: Vec<_> = detail
+                .fields
+                .iter()
+                .filter(|(key, _)| Section::of(key) == section)
+                .collect();
+            if fields.is_empty() {
+                return None;
+            }
+            let waits = if section == Section::Waits {
+                fields
+                    .iter()
+                    .flat_map(|(_, value)| value.lines())
+                    .map(|line| WaitLine {
+                        pending: line.starts_with(' '),
+                        text: line.trim_start().to_owned(),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            Some(SectionView {
+                name: section.into(),
+                title: section.name().into(),
+                fields: fields
+                    .into_iter()
+                    .filter(|_| section != Section::Waits)
+                    .map(|(key, value)| Field {
+                        key: (*key).into(),
+                        value: value.clone(),
+                    })
+                    .collect(),
+                waits,
+            })
+        })
+        .collect();
+    let evidence = request
+        .filter(|view| view.request.profile.kind() == ProfileKind::Runtime)
+        .map(|view| monitor::evidence(state, view))
+        .filter(|evidence| !evidence.is_empty())
+        .map(|evidence| Evidence {
+            title: evidence.title,
+            text: evidence.text,
+        });
+    DetailView {
+        run: run.run.id.to_string(),
+        node: id.to_string(),
+        title: detail.title.clone(),
+        summary: detail.summary.clone(),
+        request: request.map(|view| view.request.id.to_string()),
+        profile: request.map(|view| view.request.profile.kind().into()),
+        mark: request.map(|view| monitor::Status::from(view.request.status()).into()),
+        running: request.is_some_and(|view| {
+            view.request.status() == artifactize::types::RequestStatus::Running
+        }),
+        sections,
+        evidence,
+    }
+}
+
+/// The Detail of `node` in the selected Run `run`, from the shown snapshot.
 #[tauri::command]
 #[specta::specta]
 pub fn detail(
@@ -113,74 +189,7 @@ pub fn detail(
     node: String,
 ) -> Result<DetailView, Failure> {
     let id: NodeId = node.parse().map_err(Failure::Missing)?;
-    let target = Target::from(&id);
-    app.browse.with_run(&run, |view, requests| {
-        let detail = monitor::detail(view, requests, &target, OffsetDateTime::now_utc());
-        let request = match &target {
-            Target::Eval(eval) => requests.iter().find(|view| &view.request.eval_id == eval),
-            _ => None,
-        };
-        let sections = Section::ALL
-            .into_iter()
-            .filter_map(|section| {
-                let fields: Vec<_> = detail
-                    .fields
-                    .iter()
-                    .filter(|(key, _)| Section::of(key) == section)
-                    .collect();
-                if fields.is_empty() {
-                    return None;
-                }
-                let waits = if section == Section::Waits {
-                    fields
-                        .iter()
-                        .flat_map(|(_, value)| value.lines())
-                        .map(|line| WaitLine {
-                            pending: line.starts_with(' '),
-                            text: line.trim_start().to_owned(),
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                Some(SectionView {
-                    name: section.into(),
-                    title: section.name().into(),
-                    fields: fields
-                        .into_iter()
-                        .filter(|_| section != Section::Waits)
-                        .map(|(key, value)| Field {
-                            key: (*key).into(),
-                            value: value.clone(),
-                        })
-                        .collect(),
-                    waits,
-                })
-            })
-            .collect();
-        let evidence = request
-            .map(|view| monitor::evidence(&app.launch.state, view))
-            .filter(|evidence| !evidence.is_empty())
-            .filter(|_| {
-                request.is_some_and(|view| view.request.profile.kind() == ProfileKind::Runtime)
-            })
-            .map(|evidence| Evidence {
-                title: evidence.title,
-                text: evidence.text,
-            });
-        DetailView {
-            run: view.run.id.to_string(),
-            node: id.to_string(),
-            title: detail.title.clone(),
-            summary: detail.summary.clone(),
-            request: request.map(|view| view.request.id.to_string()),
-            profile: request.map(|view| view.request.profile.kind().into()),
-            mark: request.map(|view| monitor::Status::from(view.request.status()).into()),
-            running: request.is_some_and(|view| {
-                view.request.status() == artifactize::types::RequestStatus::Running
-            }),
-            sections,
-            evidence,
-        }
+    app.browse.with_run(&run, |run, requests| {
+        view(&app.launch.state, run, requests, &id)
     })
 }

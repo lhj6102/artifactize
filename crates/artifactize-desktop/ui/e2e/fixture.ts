@@ -103,12 +103,8 @@ export function signoff(fixture: Fixture): Saved {
   return found;
 }
 
-/** A fresh repository and state with one Run waiting for the Human sign-off. */
-export function create(): Fixture {
-  mkdirSync(scratch, { recursive: true });
-  const root = mkdtempSync(join(scratch, "fixture-"));
-  const repo = join(root, "repo");
-  const state = join(root, "state");
+/** Declare the release, ship and docs Artifacts in a new Git repository at `repo`. */
+function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
   for (const [name, text] of [
     ["release", RELEASE],
     ["ship", SHIP],
@@ -117,13 +113,38 @@ export function create(): Fixture {
     mkdirSync(join(repo, name), { recursive: true });
     writeFileSync(join(repo, name, "index.artf"), text);
   }
-  writeFileSync(join(repo, "release", "notes.md"), "# Release notes\n- Ready to ship.\n");
+  writeFileSync(join(repo, "release", "notes.md"), notes);
   execFileSync("git", ["init", "-q", repo]);
-  const fixture = { root, repo, state };
-  // The Run ends INCOMPLETE (3) on its short wait; the Human request stays waiting.
+}
+
+/** Verify every eval of `fixture`'s repository; the Human request stays waiting. */
+function verify(fixture: Fixture) {
+  // The Run ends INCOMPLETE (3) on its short wait.
   const status = artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json");
   if (status !== 3) throw new Error(`verify exited ${status}, expected 3 (waiting Human)`);
+}
+
+/** A fresh repository and state with one Run waiting for the Human sign-off. */
+export function create(): Fixture {
+  mkdirSync(scratch, { recursive: true });
+  const root = mkdtempSync(join(scratch, "fixture-"));
+  const repo = join(root, "repo");
+  const state = join(root, "state");
+  declare(repo);
+  const fixture = { root, repo, state };
+  verify(fixture);
   return fixture;
+}
+
+/**
+ * Another repository `name` beside the fixture's, in the same state, with the same eval IDs
+ * and its own waiting sign-off (its notes differ, so it joins no other); returns its path.
+ */
+export function addRepository(fixture: Fixture, name: string): string {
+  const repo = join(fixture.root, name);
+  declare(repo, `# Release notes of ${name}\n- Ready to ship.\n`);
+  verify({ ...fixture, repo });
+  return repo;
 }
 
 if (import.meta.main) {
