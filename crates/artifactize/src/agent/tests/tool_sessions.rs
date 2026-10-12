@@ -47,11 +47,14 @@ async fn owned_review(fixture: &Fixture, cancellation: CancellationToken) -> Rev
         ),
         final_openai(),
     ]);
-    let client = Client::Openai(Box::new(
-        OpenAIConfig::new("fake-key")
-            .connect(http)
-            .responses("exact-model"),
-    ));
+    let client = Client::Openai(
+        Box::new(
+            OpenAIConfig::new("fake-key")
+                .connect(http)
+                .responses("exact-model"),
+        ),
+        "fake-key".into(),
+    );
     let mut recorder = session::Recorder::off(&SESSION.parse().unwrap());
     let result = review(
         &client,
