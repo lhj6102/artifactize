@@ -1,10 +1,11 @@
 // Drive the real app through tauri-driver and WebKitWebDriver.
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createConnection } from "node:net";
 import { readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { remote } from "webdriverio";
 import { app, type Fixture } from "./fixture.ts";
+import { Owned } from "./owned.ts";
 
 /** The newest modification time of any file below `directory`. */
 function newest(directory: string): number {
@@ -35,7 +36,15 @@ function checkBuild() {
 }
 let checked = false;
 
-export type Session = { browser: WebdriverIO.Browser; stop: () => Promise<void> };
+export type Session = {
+  browser: WebdriverIO.Browser;
+  /** The private X display, on Linux. */
+  display: string | null;
+  /** The process groups this session owns: tauri-driver's (with the app) and Xvfb's. */
+  groups: number[];
+  /** End the session and wait until every process it owns is gone. */
+  stop: () => Promise<void>;
+};
 
 // Ports per process, so a run never meets a leftover driver of another.
 let next = 4600 + (process.pid % 200) * 2;
@@ -70,7 +79,7 @@ export async function startEnv(fixture: Fixture, env: Record<string, string | un
   return launch(fixture, env, args);
 }
 
-type Display = { env: Record<string, string>; stop: () => void };
+type Display = { env: Record<string, string>; server: Owned | null };
 
 /**
  * A private X display for the app on Linux, so a run never opens windows on the person's
@@ -79,13 +88,13 @@ type Display = { env: Record<string, string>; stop: () => void };
  * inherits.
  */
 async function display(): Promise<Display> {
-  if (process.platform !== "linux") return { env: {}, stop: () => {} };
+  if (process.platform !== "linux") return { env: {}, server: null };
   // Display numbers far from a desktop's own (:0, :1), and apart per test process.
   const base = 100 + (process.pid % 400) * 4;
   let failure = "";
   for (let number = base; number < base + 40; number += 1) {
     const started = await xvfb(number);
-    if ("stop" in started) return started;
+    if ("server" in started) return started;
     failure = started.failure;
   }
   throw new Error(`Xvfb found no free display from :${base}: ${failure}`);
@@ -96,38 +105,35 @@ async function display(): Promise<Display> {
  * abstract socket only: no TCP, and no /tmp/.X11-unix socket, which a desktop (WSLg) may own.
  */
 function xvfb(number: number): Promise<Display | { failure: string }> {
-  const server: ChildProcess = spawn(
+  const owned = Owned.spawn(
     "Xvfb",
     [`:${number}`, "-displayfd", "3", "-screen", "0", "1600x1000x24", "-nolisten", "tcp", "-nolisten", "unix"],
     { stdio: ["ignore", "ignore", "pipe", "pipe"] },
   );
+  const server = owned.child;
   return new Promise((done, fail) => {
     let errors = "";
     server.stderr?.on("data", (chunk) => (errors += chunk));
-    server.once("error", (error: NodeJS.ErrnoException) =>
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      void owned.stop();
       fail(
         new Error(
           error.code === "ENOENT"
             ? "The e2e tests run the app on a private Xvfb display; install Xvfb (for example `apt install xvfb`)."
             : `Xvfb did not start: ${error.message}`,
         ),
-      ),
-    );
+      );
+    });
     // In use (or refused): the caller tries the next number.
-    server.once("exit", () => done({ failure: errors.trim() }));
+    server.once("exit", () => void owned.stop().then(() => done({ failure: errors.trim() })));
     const reported = server.stdio[3] as NodeJS.ReadableStream;
     let text = "";
     reported.on("data", (chunk) => {
       text += chunk;
       if (!text.includes("\n")) return;
       server.removeAllListeners("exit");
-      // Never outlive the test process, however it ends.
-      process.once("exit", () => server.kill());
-      done({
-        // The app draws on X only: no Wayland compositor of the desktop either.
-        env: { DISPLAY: `:${text.trim()}`, GDK_BACKEND: "x11" },
-        stop: () => server.kill(),
-      });
+      // The app draws on X only: no Wayland compositor of the desktop either.
+      done({ env: { DISPLAY: `:${text.trim()}`, GDK_BACKEND: "x11" }, server: owned });
     });
   });
 }
@@ -147,7 +153,8 @@ async function launch(fixture: Fixture, overrides: Record<string, string | undef
   const screen = await display();
   if (screen.env.DISPLAY) delete env.WAYLAND_DISPLAY;
   for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
-  const driver: ChildProcess = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
+  // tauri-driver starts WebKitWebDriver, which starts the app: all in the driver's group.
+  const driver = Owned.spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
     env: {
       ...env,
       ...screen.env,
@@ -160,17 +167,19 @@ async function launch(fixture: Fixture, overrides: Record<string, string | undef
     },
     stdio: ["ignore", "ignore", "inherit"],
   });
-  const browser = await connect(port, args, fixture).catch((error) => {
-    driver.kill();
-    screen.stop();
+  const owned = [driver, ...(screen.server ? [screen.server] : [])];
+  const end = () => Promise.all(owned.map((child) => child.stop()));
+  const browser = await connect(port, args, fixture).catch(async (error) => {
+    await end();
     throw error;
   });
   return {
     browser,
+    display: screen.env.DISPLAY ?? null,
+    groups: owned.map((child) => child.group),
     stop: async () => {
       await browser.deleteSession().catch(() => {});
-      driver.kill();
-      screen.stop();
+      await end();
     },
   };
 }
