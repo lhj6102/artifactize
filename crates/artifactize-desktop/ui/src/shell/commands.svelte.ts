@@ -13,7 +13,9 @@ export type Command = {
 };
 
 class Registry {
-  #sets = $state<Command[][]>([]);
+  // Raw state: removal compares each registered list by identity, which a deep $state proxy
+  // of the lists would break (every list stayed registered and ids repeated).
+  #sets = $state.raw<Command[][]>([]);
   readonly all = $derived(this.#sets.flat());
 
   /** Add `commands` until the returned function removes them. */
