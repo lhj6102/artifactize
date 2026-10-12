@@ -2,7 +2,7 @@
 // with an unsubmitted claim (stay, then release and quit).
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { create, type Fixture, signoff } from "./fixture.ts";
+import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -38,6 +38,13 @@ describe("review", () => {
     await eventually(async () => (await shown()).includes("release/signoff"), "the waiting row");
     await eventually(async () => (await text()).includes("Enter or click: open review"), "the preview");
     assert.equal(signoff(fixture).claim, null, "previewing claims nothing");
+
+    // Another process claims it: the list and the Preview both show the new claimant.
+    const id = signoff(fixture).id;
+    assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
+    await eventually(async () => (await text()).includes("claimed by bob · read-only"), "the Preview's claim");
+    assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
+    await eventually(async () => (await text()).includes("WAITING_HUMAN · unclaimed"), "the Preview's release");
   });
 
   it("opens a request by ID and claims it", async () => {
@@ -76,6 +83,24 @@ describe("review", () => {
       () => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]')),
       "focus back in the review",
     );
+
+    // The window's own close requests, twice in a row: both wait for the prompt's answer.
+    await browser.execute(() => {
+      const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: object) => Promise<unknown> } })
+        .__TAURI_INTERNALS__;
+      void internals.invoke("plugin:window|close", { label: "main" });
+      void internals.invoke("plugin:window|close", { label: "main" });
+    });
+    await dialog.waitForExist({ timeout: 10000 });
+    await browser.pause(500);
+    assert.equal(await browser.execute(() => document.title), "Artifactize", "the window stays");
+    assert.equal(signoff(fixture).claim?.reviewer, "alice");
+    await eventually(
+      () => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')),
+      "focus in the prompt",
+    );
+    await browser.keys(["Escape"]);
+    await dialog.waitForExist({ reverse: true, timeout: 10000 });
 
     await prompted();
     // Releasing quits: the window, and with it the WebDriver session, may end mid-keystroke.

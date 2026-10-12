@@ -116,6 +116,13 @@ describe("monitor", () => {
     await browser.keys(["Control", "g"]);
     const comment = await browser.$("#field-comment");
     await comment.waitForExist();
+    // An input method's Escape (composing, keyCode 229) belongs to the composition.
+    await browser.execute(() => {
+      const field = document.querySelector("#field-comment");
+      field?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true }));
+      field?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 229, bubbles: true }));
+    });
+    assert.ok(await comment.isExisting(), "the form stays open");
     const korean = "릴리스 노트를 확인했습니다";
     await comment.setValue(korean);
     assert.equal(await comment.getValue(), korean);
