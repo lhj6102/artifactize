@@ -112,7 +112,7 @@ describe("monitor", () => {
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");
   });
 
-  it("submits GREEN with Korean text and keeps the completed result open", async () => {
+  it("submits GREEN with Korean text edited as JSON and keeps the completed result open", async () => {
     await browser.keys(["Control", "g"]);
     const comment = await browser.$("#field-comment");
     await comment.waitForExist();
@@ -126,9 +126,22 @@ describe("monitor", () => {
     const korean = "릴리스 노트를 확인했습니다";
     await comment.setValue(korean);
     assert.equal(await comment.getValue(), korean);
+    // Keyboard only: Ctrl+E turns the typed form into JSON with focus in it, the JSON is
+    // edited in place, and Ctrl+S submits it; no click in between.
+    await browser.keys(["Control", "e"]);
+    await eventually(
+      () => browser.execute(() => document.activeElement?.matches("textarea.json") ?? false),
+      "focus in the JSON text",
+    );
+    const json = await browser.$("textarea.json");
+    assert.deepEqual(JSON.parse(await json.getValue()), { approved: true, comment: korean });
+    // To the end of the comment line, before its closing quote, and append.
+    await browser.keys(["Control", "End"]);
+    await browser.keys(["ArrowUp", "End", "ArrowLeft"]);
+    await browser.keys([..." (JSON)"]);
     await browser.keys(["Control", "s"]);
     await eventually(async () => signoff(fixture).status === "GREEN", "GREEN saved");
-    assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: korean });
+    assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: `${korean} (JSON)` });
     await eventually(async () => /completed result/i.test(await text()), "completed Detail");
     assert.match(await text(), /Submitted GREEN for release\/signoff/);
   });
