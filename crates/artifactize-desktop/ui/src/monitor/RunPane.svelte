@@ -14,6 +14,7 @@
     focused,
     view = $bindable("tree"),
     zoomed = $bindable(null),
+    active = true,
     element = $bindable(),
     onfocus,
     onopen,
@@ -27,6 +28,8 @@
     view?: "tree" | "graph";
     /** The Artifact the graph is zoomed into. */
     zoomed?: string | null;
+    /** The Monitor is the shown screen. */
+    active?: boolean;
     element?: HTMLElement;
     onfocus: () => void;
     onopen: () => void;
@@ -120,6 +123,7 @@
           tree={nodes}
           selected={tree.selected}
           bind:zoomed
+          {active}
           onselect={(path) => tree.select(path)}
           {onopen}
         />

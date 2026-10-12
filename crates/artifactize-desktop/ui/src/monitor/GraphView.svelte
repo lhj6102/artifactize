@@ -17,6 +17,7 @@
     tree,
     selected,
     zoomed = $bindable(null),
+    active = true,
     onselect,
     onopen,
   }: {
@@ -26,6 +27,8 @@
     tree: TreeNode[];
     selected: string[];
     zoomed?: string | null;
+    /** The graph's screen is shown: only then may it hold keyboard focus. */
+    active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
   } = $props();
@@ -113,7 +116,9 @@
   // above 80 Artifacts) can remove the focused node and drop focus to the page; a watch puts it
   // back every frame, or on the canvas itself while the node is not drawn, so keys keep
   // reaching the graph. Each handoff is numbered; a newer one voids older ones. Focus that
-  // moves anywhere else (the eval list, another pane, a press outside) ends the hold.
+  // moves anywhere else (the eval list, another pane, a press outside) ends the hold, and so
+  // does hiding the graph's screen: a hidden graph never takes focus, and only fresh graph
+  // focus holds again.
   let held: string | null = null;
   let handoff = 0;
   let watching = false;
@@ -124,6 +129,7 @@
     if (watching) return;
     watching = true;
     const step = () => {
+      if (held !== null && hidden()) release();
       if (held === null || !canvas?.isConnected) {
         watching = false;
         return;
@@ -137,8 +143,12 @@
     requestAnimationFrame(step);
   }
 
+  /** The graph's screen is not shown (another screen, or a hidden ancestor). */
+  const hidden = () => !active || !canvas || canvas.closest("[hidden]") !== null;
+
   /** Give graph focus to `id` from now on; returns this handoff's number. */
   function hold(id: string): number {
+    if (hidden()) return handoff;
     held = id;
     handoff += 1;
     if (document.activeElement !== element(id)) element(id)?.focus({ preventScroll: true });
@@ -150,6 +160,11 @@
     held = null;
     handoff += 1;
   }
+
+  $effect(() => {
+    // Leaving the screen ends the hold at once; the watch stops on its next frame.
+    if (!active) release();
+  });
 
   $effect(() => {
     // Focus or a press anywhere outside the graph's nodes and canvas ends the hold.

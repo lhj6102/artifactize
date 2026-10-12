@@ -15,6 +15,7 @@
     tree,
     selected,
     zoomed = $bindable(null),
+    active = true,
     onselect,
     onopen,
   }: {
@@ -24,6 +25,8 @@
     tree: TreeNode[];
     selected: string[];
     zoomed?: string | null;
+    /** The graph's screen is shown; a hidden graph holds no keyboard focus. */
+    active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
   } = $props();
@@ -116,7 +119,7 @@
 {:else}
   {#key shown.graph.run}
     <SvelteFlowProvider>
-      <GraphView graph={shown.graph} positions={shown.positions} {tree} {selected} bind:zoomed {onselect} {onopen} />
+      <GraphView graph={shown.graph} positions={shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} />
     </SvelteFlowProvider>
   {/key}
 {/if}

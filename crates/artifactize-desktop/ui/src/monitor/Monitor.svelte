@@ -208,6 +208,7 @@
         {tree}
         bind:view={runView}
         bind:zoomed
+        {active}
         focused={focus === "tree"}
         bind:element={panes.tree}
         onfocus={() => (focus = "tree")}
