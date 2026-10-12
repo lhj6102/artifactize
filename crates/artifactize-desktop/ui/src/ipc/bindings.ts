@@ -90,11 +90,14 @@ export const commands = {
 	 *  `browser`), and whether the browser can return here. Finish with [`codex_login_wait`].
 	 */
 	codexLoginStart: (browser: boolean) => typedError<CodexPrompt, Failure>(__TAURI_INVOKE("codex_login_start", { browser })),
-	/**  Wait for the sign-in started by [`codex_login_start`] to finish; returns the new state. */
+	/**
+	 *  Wait for the sign-in started by [`codex_login_start`] to finish; returns the new state.
+	 *  The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it.
+	 */
 	codexLoginWait: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait")),
 	/**  Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin. */
 	codexLoginPaste: (redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { redirect })),
-	/**  Stop the sign-in in progress; nothing is saved. */
+	/**  Stop the sign-in in progress; nothing is saved, even if the browser returns later. */
 	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
 	/**  `logout codex`: revoke and remove artifactize's own tokens. */
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),

@@ -16,14 +16,21 @@ use tokio::sync::oneshot;
 /// The Codex sign-in in progress, if any.
 #[derive(Default)]
 pub struct Settings {
+    /// The sign-in in progress. It stays here, reachable for a paste or a cancel, until it
+    /// ends; only its own waiter clears it.
     sign_in: Mutex<Option<SignIn>>,
+    started: std::sync::atomic::AtomicU64,
 }
 
 struct SignIn {
+    /// Which sign-in this is: a waiter of an older one never clears a newer one.
+    id: u64,
     /// Delivers a pasted redirect URL to the sign-in.
     paste: Option<oneshot::Sender<String>>,
-    /// The running sign-in; aborting it stops the listener and frees the port.
-    task: tokio::task::JoinHandle<Result<(), String>>,
+    /// Stops the sign-in: its listener closes, the port is freed and nothing is saved.
+    abort: tokio::task::AbortHandle,
+    /// The running sign-in, taken by the one waiter.
+    task: Option<tokio::task::JoinHandle<Result<(), String>>>,
 }
 
 /// A backend, as the CLI names it.
@@ -158,13 +165,13 @@ pub async fn codex_login_start(
     browser: bool,
 ) -> Result<CodexPrompt, Failure> {
     if let Some(previous) = app.settings.sign_in.lock().expect("sign-in lock").take() {
-        previous.task.abort();
+        previous.abort.abort();
     }
     let (paste, pasted) = oneshot::channel();
     let (shown, prompt) = oneshot::channel();
     let state = app.launch.state.clone();
     let repo = app.launch.repo.clone();
-    let task = tokio::spawn(async move {
+    let mut task = tokio::spawn(async move {
         codex::login_with(
             Some(&state),
             repo.as_deref(),
@@ -176,38 +183,66 @@ pub async fn codex_login_start(
         )
         .await
     });
-    let mut sign_in = SignIn {
-        paste: Some(paste),
-        task,
-    };
-    match prompt.await {
-        Ok(prompt) => {
-            *app.settings.sign_in.lock().expect("sign-in lock") = Some(sign_in);
-            Ok(CodexPrompt {
-                url: prompt.url,
-                callback: prompt.callback,
-            })
-        }
+    let prompt = match prompt.await {
+        Ok(prompt) => prompt,
         // It ended before showing anything: why.
         Err(_) => {
-            let ended = (&mut sign_in.task)
+            let ended = (&mut task)
                 .await
                 .map_err(|error| Failure::Account(error.to_string()))?;
-            Err(Failure::Account(ended.err().unwrap_or_else(|| {
+            return Err(Failure::Account(ended.err().unwrap_or_else(|| {
                 "Codex sign-in ended before it started.".into()
-            })))
+            })));
         }
+    };
+    let id = app
+        .settings
+        .started
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut current = app.settings.sign_in.lock().expect("sign-in lock");
+    // Another start meanwhile: the newer one wins.
+    if let Some(previous) = current.take() {
+        previous.abort.abort();
     }
+    *current = Some(SignIn {
+        id,
+        paste: Some(paste),
+        abort: task.abort_handle(),
+        task: Some(task),
+    });
+    Ok(CodexPrompt {
+        url: prompt.url,
+        callback: prompt.callback,
+    })
 }
 
 /// Wait for the sign-in started by [`codex_login_start`] to finish; returns the new state.
+/// The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it.
 #[tauri::command]
 #[specta::specta]
 pub async fn codex_login_wait(app: tauri::State<'_, App>) -> Result<CodexStatus, Failure> {
-    let Some(sign_in) = app.settings.sign_in.lock().expect("sign-in lock").take() else {
-        return Err(Failure::Missing("No Codex sign-in is in progress.".into()));
+    let (id, task) = {
+        let mut current = app.settings.sign_in.lock().expect("sign-in lock");
+        match current.as_mut() {
+            Some(sign_in) => match sign_in.task.take() {
+                Some(task) => (sign_in.id, task),
+                None => {
+                    return Err(Failure::Missing(
+                        "The Codex sign-in is already being waited for.".into(),
+                    ));
+                }
+            },
+            None => return Err(Failure::Missing("No Codex sign-in is in progress.".into())),
+        }
     };
-    match sign_in.task.await {
+    let ended = task.await;
+    {
+        let mut current = app.settings.sign_in.lock().expect("sign-in lock");
+        if current.as_ref().is_some_and(|sign_in| sign_in.id == id) {
+            *current = None;
+        }
+    }
+    match ended {
         Ok(Ok(())) => read_codex(&app),
         Ok(Err(error)) => Err(Failure::Account(error)),
         Err(error) if error.is_cancelled() => {
@@ -231,12 +266,19 @@ pub fn codex_login_paste(app: tauri::State<'_, App>, redirect: String) -> Result
         .map_err(|_| Failure::Missing("The Codex sign-in already ended.".into()))
 }
 
-/// Stop the sign-in in progress; nothing is saved.
+/// Stop the sign-in in progress; nothing is saved, even if the browser returns later.
 #[tauri::command]
 #[specta::specta]
 pub fn codex_login_cancel(app: tauri::State<'_, App>) {
-    if let Some(sign_in) = app.settings.sign_in.lock().expect("sign-in lock").as_ref() {
-        sign_in.task.abort();
+    let mut current = app.settings.sign_in.lock().expect("sign-in lock");
+    if let Some(sign_in) = current.as_mut() {
+        sign_in.abort.abort();
+        // No paste can reach a cancelled sign-in.
+        sign_in.paste = None;
+        // Nobody waits for it: forget it now.
+        if sign_in.task.is_some() {
+            *current = None;
+        }
     }
 }
 

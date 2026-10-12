@@ -144,23 +144,37 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         "{signed_out}"
     );
 
-    // Codex: sign in by pasting the redirect URL, as the CLI accepts it on stdin.
+    // Codex, in the frontend's order: start, then wait, and while the wait is pending a paste
+    // of the redirect URL (as the CLI accepts it on stdin) or a cancel must still reach the
+    // sign-in.
     assert_eq!(
         call("codex_status", json!({})).unwrap(),
         json!({"state": "absent"})
     );
+    let exchanges = || {
+        provider
+            .requests()
+            .iter()
+            .filter(|request| request.path == "/oauth/token")
+            .count()
+    };
     let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
-    let url = prompt["url"].as_str().unwrap();
+    let url = prompt["url"].as_str().unwrap().to_owned();
     assert!(
         url.starts_with(&format!("{}/oauth/authorize?", provider.url)),
         "{url}"
     );
     let redirect = format!(
         "http://localhost:1455/auth/callback?code=fake-code&state={}",
-        oauth_state(url)
+        oauth_state(&url)
     );
-    call("codex_login_paste", json!({"redirect": redirect})).unwrap();
-    let status = call("codex_login_wait", json!({})).unwrap();
+    let status = std::thread::scope(|scope| {
+        let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        call("codex_login_paste", json!({"redirect": redirect})).unwrap();
+        waiting.join().unwrap()
+    })
+    .unwrap();
     assert_eq!(status["state"], "stored");
     assert_eq!(status["expired"], json!(false));
     secret_free(&status);
@@ -176,21 +190,28 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         models,
         json!([{"slug": "gpt-6-luna", "displayName": "GPT-6 Luna"}])
     );
-
-    // Signing in again while signed in is the CLI's re-login; a cancel saves nothing.
-    call("codex_login_start", json!({"browser": false})).unwrap();
-    call("codex_login_cancel", json!({})).unwrap();
-    let cancelled = call("codex_login_wait", json!({})).unwrap_err();
-    assert_eq!(
-        cancelled,
-        json!({"kind": "account", "message": "Codex sign-in was cancelled."})
-    );
-    assert_eq!(call("codex_status", json!({})).unwrap()["state"], "stored");
-    let late = call(
-        "codex_login_paste",
-        json!({"redirect": "http://localhost:1455/"}),
-    );
+    // A finished sign-in takes no more pastes.
+    let late = call("codex_login_paste", json!({"redirect": redirect}));
     assert_eq!(late.unwrap_err()["kind"], "missing");
+
+    // Signing in again while signed in is the CLI's re-login; cancelling it keeps the old one.
+    let cancel_while_waiting = |then: &dyn Fn(&str)| {
+        let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
+        let url = prompt["url"].as_str().unwrap().to_owned();
+        let cancelled = std::thread::scope(|scope| {
+            let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            call("codex_login_cancel", json!({})).unwrap();
+            waiting.join().unwrap()
+        });
+        assert_eq!(
+            cancelled.unwrap_err(),
+            json!({"kind": "account", "message": "Codex sign-in was cancelled."})
+        );
+        then(&url);
+    };
+    cancel_while_waiting(&|_| {});
+    assert_eq!(call("codex_status", json!({})).unwrap()["state"], "stored");
 
     // Sign out: revoked at the fake, removed locally.
     let out = call("codex_logout", json!({})).unwrap();
@@ -200,6 +221,35 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
             .requests()
             .iter()
             .any(|request| request.path == "/oauth/revoke")
+    );
+
+    // A cancelled sign-in stores nothing, even when the browser returns afterwards: the
+    // callback finds no listener and a paste no sign-in.
+    let before = exchanges();
+    cancel_while_waiting(&|url| {
+        let callback = format!("/auth/callback?code=late-code&state={}", oauth_state(url));
+        if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", 1455)) {
+            use std::io::Write;
+            let _ = write!(
+                stream,
+                "GET {callback} HTTP/1.1\r\nHost: localhost:1455\r\nConnection: close\r\n\r\n"
+            );
+        }
+        let late = call(
+            "codex_login_paste",
+            json!({"redirect": format!("http://localhost:1455{callback}")}),
+        );
+        assert_eq!(late.unwrap_err()["kind"], "missing");
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(
+        exchanges(),
+        before,
+        "no code was exchanged after the cancel"
+    );
+    assert_eq!(
+        call("codex_status", json!({})).unwrap(),
+        json!({"state": "absent"})
     );
 
     // Remote: not configured, a refused token saves nothing, then login, status, logout.
