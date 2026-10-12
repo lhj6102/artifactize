@@ -47,6 +47,13 @@ by ID, not by their position in the TOML source.
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals |
 | `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind; not allowed for dependency evals |
 
+[Tool sessions](agent-tools.md#tool-sessions) own start, stop and bound-call
+processes for one review. Stop runs on normal release, panic and caller-runtime
+shutdown; abrupt owner death instead uses identity-checked crash recovery before
+the next session starts. There are no declaration options for these lifetimes or
+cleanup bounds. Job descendants finish terminating before their session files are
+removed.
+
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
 `profile_variants`, `review_policy`, `dependency_gates` and `depends_on`.

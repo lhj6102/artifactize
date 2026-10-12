@@ -22,7 +22,7 @@ impl Fixture {
         let log = root.path().join("log");
         fs::create_dir_all(&repo).unwrap();
         fs::create_dir(&log).unwrap();
-        fs::write(repo.join("harness.py"), harness::HARNESS).unwrap();
+        fs::write(repo.join("harness.py"), harness::script()).unwrap();
         let mut views = harness::views(&log, start, stop, action);
         views["agent_sessions"]["app"]["start"]["execution_paths"] = json!(["harness.py"]);
         views["agent_sessions"]["app"]["stop"]["execution_paths"] = json!(["harness.py"]);
@@ -352,4 +352,176 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
             !support::os::running(descendant)
         });
     }
+}
+
+// Unix groups survive abrupt owner death; Windows Job handles kill them instead.
+#[cfg(unix)]
+#[test]
+fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants() {
+    for stop in [false, true] {
+        let fixture = Fixture::new(
+            "start",
+            if stop { "hang-stop" } else { "stop" },
+            if stop { "act" } else { "hold-tree" },
+            0,
+        );
+        let mut owner = fixture
+            .command(&[
+                "tools",
+                "check",
+                "--execute",
+                "--artifact",
+                "app",
+                "--audience",
+                "agent",
+                "--tool",
+                "act",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let kind = if stop { "stop" } else { "call" };
+        support::os::wait_until(Duration::from_secs(10), || {
+            !harness::records(&fixture.log(), kind).is_empty()
+        });
+        let start = harness::records(&fixture.log(), "start").pop().unwrap();
+        let invocation = harness::records(&fixture.log(), kind).pop().unwrap();
+        let directory = PathBuf::from(start["directory"].as_str().unwrap());
+        let pids = [
+            &start["pid"],
+            &start["child"],
+            &invocation["pid"],
+            &invocation["child"],
+        ]
+        .map(|pid| pid.as_u64().unwrap() as u32);
+        support::os::kill(owner.id());
+        owner.wait().unwrap();
+        assert!(pids.iter().all(|pid| support::os::running(*pid)));
+        fixture.rewrite(|definition| {
+            definition["views"]["agent_tools"]["act"]["args"][1] = json!("act");
+            definition["views"]["agent_sessions"]["app"]["stop"]["args"][1] = json!("stop");
+        });
+        fixture.json(
+            &[
+                "tools",
+                "check",
+                "--execute",
+                "--artifact",
+                "app",
+                "--audience",
+                "agent",
+                "--tool",
+                "act",
+            ],
+            0,
+        );
+        assert!(!directory.exists());
+        assert!(harness::directories(&fixture.state()).is_empty());
+        support::os::wait_until(Duration::from_secs(10), || {
+            pids.iter().all(|pid| !support::os::running(*pid))
+        });
+    }
+}
+
+#[test]
+fn red_reviews_stop_and_cleanup_before_the_result_is_published() {
+    let mut fixture = Fixture::new("start", "stop", "act", 0);
+    fixture.provider = FakeProvider::start(|request| {
+        openai::completed(
+            request,
+            vec![openai::message(&json!({"verdict":"RED"}).to_string())],
+            openai::usage(10, 5),
+        )
+    });
+    let run = fixture.json(&["verify", "--all"], 1);
+    assert_eq!(run["requests"][0]["status"], "RED", "{run}");
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
+}
+
+// Only Windows prevents directory deletion while a descendant denies delete sharing.
+#[cfg(windows)]
+#[test]
+fn descendant_held_session_files_are_closed_before_green_cleanup() {
+    let mut fixture = Fixture::new("start", "stop", "act", 0);
+    let log = fixture.log();
+    fixture.provider = FakeProvider::start(move |request| {
+        support::os::wait_until(Duration::from_secs(10), || log.join("verdict").exists());
+        openai::completed(
+            request,
+            vec![openai::message(&json!({"verdict":"GREEN"}).to_string())],
+            openai::usage(10, 5),
+        )
+    });
+    let owner = fixture
+        .command(&["verify", "--all"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        !fixture.provider.requests().is_empty()
+    });
+    let start = harness::records(&fixture.log(), "start").pop().unwrap();
+    let directory = PathBuf::from(start["directory"].as_str().unwrap());
+    let name = directory.file_name().unwrap().to_str().unwrap();
+    support::os::assert_delete_blocked(&directory.join(format!("held-{name}")));
+    fs::write(fixture.log().join("verdict"), "").unwrap();
+    let output = owner.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
+}
+
+#[test]
+fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
+    let mut fixture = Fixture::new("start", "stop", "act", 0);
+    let log = fixture.log();
+    let requests = AtomicUsize::new(0);
+    fixture.provider = FakeProvider::start(move |request| {
+        let content = if requests.fetch_add(1, Ordering::SeqCst) == 0 {
+            openai::function_call("call", "act_app", &json!({}))
+        } else {
+            fs::write(log.join("awaiting-verdict"), "").unwrap();
+            support::os::wait_until(Duration::from_secs(15), || log.join("verdict").exists());
+            openai::message(&json!({"verdict":"GREEN"}).to_string())
+        };
+        openai::completed(request, vec![content], openai::usage(10, 5))
+    });
+    let owner = fixture
+        .command(&["verify", "--all"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        fixture.log().join("awaiting-verdict").exists()
+    });
+    let start = harness::records(&fixture.log(), "start").pop().unwrap();
+    let directory = PathBuf::from(start["directory"].as_str().unwrap());
+    fs::write(directory.join("exit"), "").unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        let record: Value =
+            serde_json::from_slice(&fs::read(directory.join("owner.json")).unwrap()).unwrap();
+        record["leader"].is_null()
+    });
+    support::os::wait_until(Duration::from_secs(10), || {
+        !support::os::running(start["pid"].as_u64().unwrap() as u32)
+            && !support::os::running(start["child"].as_u64().unwrap() as u32)
+    });
+    // The verdict is still pending: retirement is not deferred to review cleanup.
+    assert!(harness::records(&fixture.log(), "stop").is_empty());
+    fs::write(fixture.log().join("verdict"), "").unwrap();
+    let output = owner.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
 }

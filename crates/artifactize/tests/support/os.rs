@@ -2351,3 +2351,33 @@ pub fn control_c_exit() -> (String, Vec<String>, i32) {
 pub fn stand_in_shell() -> std::path::PathBuf {
     stand_in_bin("sh")
 }
+
+/// Session descendants keep this file open until killed. Windows deliberately
+/// omits FILE_SHARE_DELETE; Unix unlink semantics permit an ordinary open handle.
+pub fn session_file_holder() -> &'static str {
+    #[cfg(unix)]
+    {
+        "def hold_session_file(path):\n    return open(path, 'w')\n"
+    }
+    #[cfg(windows)]
+    {
+        r#"def hold_session_file(path):
+    import ctypes
+    from ctypes import wintypes
+    create = ctypes.windll.kernel32.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    handle = create(str(path), 0x40000000, 0, None, 2, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value: raise ctypes.WinError()
+    return handle
+"#
+    }
+}
+
+#[cfg(windows)]
+pub fn assert_delete_blocked(path: &Path) {
+    assert!(
+        fs::remove_file(path).is_err(),
+        "descendant must deny delete sharing"
+    );
+}

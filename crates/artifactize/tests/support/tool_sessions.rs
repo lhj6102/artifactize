@@ -16,6 +16,7 @@ def record(kind, data):
     pending.write_text(json.dumps(data))
     pending.replace(log / (kind + '-' + session.name))
 if mode == 'child':
+    held = hold_session_file(pathlib.Path(os.environ['ARTIFACTIZE_SESSION_DIR']) / ('held-' + sys.argv[3]))
     (log / ('child-' + sys.argv[3])).write_text(str(os.getpid()))
     wait(log / 'release')
     sys.exit(0)
@@ -33,12 +34,20 @@ if mode in ['start', 'unready', 'exit']:
     if mode == 'start': print('ready', flush=True)
     wait(session / 'exit')
 elif mode in ['stop', 'hang-stop', 'fail-stop']:
-    record('stop', {'directory':str(session), 'home':str(pathlib.Path.home())})
+    child = None
+    if mode == 'hang-stop':
+        child = subprocess.Popen([sys.executable, __file__, 'child', str(log), 'stop-' + session.name])
+        wait(log / ('child-stop-' + session.name))
+    record('stop', {'directory':str(session), 'home':str(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
     if mode == 'hang-stop': wait(log / 'release')
     if mode == 'fail-stop': sys.exit(1)
-elif mode in ['act', 'plain', 'hold', 'crash']:
-    record('call', {'directory':str(session)})
-    if mode == 'hold': wait(log / 'release')
+elif mode in ['act', 'plain', 'hold', 'hold-tree', 'crash']:
+    child = None
+    if mode == 'hold-tree':
+        child = subprocess.Popen([sys.executable, __file__, 'child', str(log), 'call-' + session.name])
+        wait(log / ('child-call-' + session.name))
+    record('call', {'directory':str(session), 'pid':os.getpid(), 'child':child.pid if child else None})
+    if mode in ['hold', 'hold-tree']: wait(log / 'release')
     if mode == 'crash':
         (session / 'exit').write_text('')
         while (log / ('start-' + session.name)).exists() and not (session / 'leader-gone').exists():
@@ -49,6 +58,15 @@ elif mode in ['act', 'plain', 'hold', 'crash']:
     if mode == 'plain': print(text)
     else: print(json.dumps({'content':[{'type':'text','text':text}]}))
 "#;
+
+pub fn script() -> String {
+    format!(
+        "{}
+{}",
+        super::os::session_file_holder(),
+        HARNESS
+    )
+}
 
 pub fn views(log: &Path, start: &str, stop: &str, action: &str) -> Value {
     let command = super::os::python_program();

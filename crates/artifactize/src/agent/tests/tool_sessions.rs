@@ -3,6 +3,20 @@ use crate::test_os as os;
 #[path = "../../../tests/support/tool_sessions.rs"]
 mod harness;
 
+static CLOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn advance_lifecycle_clock() {
+    crate::tools::sessions::executor()
+        .unwrap()
+        .spawn(async {
+            tokio::time::pause();
+            tokio::time::advance(std::time::Duration::from_secs(60)).await;
+            tokio::time::resume();
+        })
+        .await
+        .unwrap();
+}
+
 fn fixture(stop: &str) -> Fixture {
     let mut fixture = Fixture::new("openai");
     let log = fixture.directory.path().join("log");
@@ -13,7 +27,7 @@ fn fixture(stop: &str) -> Fixture {
     views["agent_tools"]["act"]["input_schema"] = json!({"type":"object"});
     definition["views"] = views;
     crate::test_declaration::write(&path, definition.to_string()).unwrap();
-    fs::write(fixture.config.root.join("harness.py"), harness::HARNESS).unwrap();
+    fs::write(fixture.config.root.join("harness.py"), harness::script()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     fixture
 }
@@ -65,6 +79,7 @@ async fn reached(condition: impl Fn() -> bool) {
 
 #[tokio::test]
 async fn cancellation_and_dropped_review_run_stop_with_an_independent_token() {
+    let _clock = CLOCK.lock().await;
     for cancel in [true, false] {
         let fixture = fixture("stop");
         let log = fixture.directory.path().join("log");
@@ -91,6 +106,7 @@ async fn cancellation_and_dropped_review_run_stop_with_an_independent_token() {
 
 #[tokio::test]
 async fn hanging_stop_cannot_retain_the_group_or_session_directory() {
+    let _clock = CLOCK.lock().await;
     let fixture = fixture("hang-stop");
     let log = fixture.directory.path().join("log");
     let cancellation = CancellationToken::new();
@@ -106,15 +122,14 @@ async fn hanging_stop_cannot_retain_the_group_or_session_directory() {
     }
     // Advance only after stop has actually entered. This checks bounded cleanup
     // without assuming how fast a process starts on any operating system.
-    tokio::time::pause();
-    tokio::time::advance(std::time::Duration::from_secs(60)).await;
-    tokio::time::resume();
+    advance_lifecycle_clock().await;
     assert_eq!(future.await.result.unwrap_err().code, Code::Cancelled);
     harness::assert_cleaned(&fixture.state(), &log, 1);
 }
 
 #[tokio::test]
 async fn readiness_timeout_cleans_a_started_but_unready_harness() {
+    let _clock = CLOCK.lock().await;
     let mut fixture = fixture("stop");
     let log = fixture.directory.path().join("log");
     let path = fixture.config.root.join("index.artf");
@@ -129,9 +144,52 @@ async fn readiness_timeout_cleans_a_started_but_unready_harness() {
         _ = reached(|| !harness::records(&log, "start").is_empty()) => {},
         _ = &mut start => panic!("unready session was admitted"),
     }
-    tokio::time::pause();
-    tokio::time::advance(std::time::Duration::from_secs(60)).await;
-    tokio::time::resume();
+    advance_lifecycle_clock().await;
     assert!(start.await.err().unwrap().contains("start timed out"));
     harness::assert_cleaned(&state, &log, 1);
+}
+
+#[test]
+fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
+    let _clock = CLOCK.blocking_lock();
+    for panic in [true, false] {
+        let fixture = fixture("stop");
+        let log = fixture.directory.path().join("log");
+        let config = read_workspace_config(&fixture.config.root).unwrap();
+        let state = fixture.state();
+        let output = fixture.output.clone();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let review = runtime.spawn(async move {
+            let registry = Registry::new(&config, &config.evals[0].id).unwrap();
+            let sessions = registry
+                .start_sessions(&state, None, CancellationToken::new())
+                .await
+                .unwrap();
+            if panic {
+                panic!("review panic after owning a session");
+            }
+            registry
+                .with_sessions(&sessions)
+                .call("act_a", json!({}), &output, CancellationToken::new())
+                .await;
+            sessions.close().await.unwrap();
+        });
+        if panic {
+            assert!(runtime.block_on(review).unwrap_err().is_panic());
+        } else {
+            runtime.block_on(reached(|| !harness::records(&log, "call").is_empty()));
+        }
+        drop(runtime);
+        os::wait_until(std::time::Duration::from_secs(15), || {
+            !harness::records(&log, "stop").is_empty()
+                && harness::directories(&fixture.state()).is_empty()
+        });
+        harness::assert_cleaned(&fixture.state(), &log, 1);
+        for call in harness::records(&log, "call") {
+            assert!(!os::running(call["pid"].as_u64().unwrap() as u32));
+        }
+    }
 }

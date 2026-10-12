@@ -35,8 +35,16 @@ standard library quotes each argument for `cmd.exe` and refuses an argument it c
 pass safely. The error reads `Process arguments could not be passed safely`, and
 nothing runs.
 
-Tool sessions on Windows die with artifactize's kill-on-close Job; abandoned Unix
-session groups are cleaned before the next tool session starts.
+Tool-session start, stop and bound invocations each own a process group (Unix) or
+kill-on-close Job (Windows). Unix crash recovery checks each group's saved PID and
+start time before signalling, and an ended session releases its cleaned group so
+later cleanup cannot signal a stale group ID. Windows normal cleanup waits for
+all Job descendants to terminate before deleting their files, with an internal
+30-second bound. After owner death, Jobs terminate asynchronously; the next session
+start waits up to 30 seconds for abandoned-directory file sharing to clear. Unix
+abandoned groups and directories are likewise swept before that next start. The
+cleanup executor outlives a caller-runtime shutdown, but process death itself
+cannot run stop. Commands remain trusted and can deliberately detach descendants.
 
 ## Paths
 

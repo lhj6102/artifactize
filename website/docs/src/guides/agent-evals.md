@@ -119,7 +119,14 @@ protocol = "json"
 
 The start command receives the usual JSON envelope and `ARTIFACTIZE_SESSION_DIR`,
 prints one line when ready, and stays running. Bound tools and stop use the same
-private directory. These are tool sessions, not the saved conversations below.
+private directory. Cleanup cancels in-flight calls, runs stop and reaps owned
+process groups/Jobs before the result is published, for GREEN and RED alike.
+Dropped reviews, panics and caller-runtime shutdown also release the session.
+Abrupt process death cannot run stop: the next session start recovers abandoned
+state and, on Unix, identity-checks every recorded start, stop and bound-call group.
+Windows Jobs terminate with their owner, and normal cleanup waits for descendants
+before removing their files. These are tool sessions, not the saved conversations
+below; commands remain trusted and can deliberately detach from cleanup.
 
 ## Agent backends
 

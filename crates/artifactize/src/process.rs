@@ -307,7 +307,7 @@ where
             terminate(&mut child).await
         } else {
             // An ordinary main-process exit must not leave its descendants running.
-            child.kill()
+            child.cleanup().await.map(|_| ())
         };
         reaped.cancel();
         cleanup?;
@@ -464,8 +464,7 @@ async fn terminate(child: &mut Child) -> io::Result<()> {
         _ = sleep(CLEANUP_GRACE) => {},
         _ = child.wait() => {},
     }
-    child.kill()?;
-    child.wait().await?;
+    child.cleanup().await?;
     Ok(())
 }
 

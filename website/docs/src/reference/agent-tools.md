@@ -209,18 +209,29 @@ started sessions are stopped and cleaned up. Readiness has an internal 30-second
 bound. After readiness, stdout and stderr are drained and discarded.
 
 If the start process exits during the review, artifactize immediately kills its
-remaining process group/Job. Later bound calls return
+remaining process group/Job and cancels in-flight bound calls. The cleaned group
+is released immediately, so later review cleanup does not signal its old numeric
+process-group ID. Later bound calls return
 ``The tool session `app` ended.``; there is no restart. This is an ordinary tool
 error in the saved conversation, not a new event kind.
 
 Stop runs after the Agent loop and before input revalidation, fingerprint recheck
 and result commit, on every ending: verdict, error, timeout, cancellation or dropped
-review future. It uses its own cancellation token and an internal 30-second bound,
-then artifactize kills the session group/Job and removes its directory, even if
-stop fails or hangs. Runtime shutdown also drops the owned group/Job. Abandoned
-Unix sessions are recovered before the next session start, with saved process
-identities checked to avoid killing a reused leader PID; Windows Jobs die with
-their owner. A reused or waited-on result starts nothing.
+review future, including a review panic. Cleanup cancels and awaits in-flight bound
+calls before running stop. Stop uses its own cancellation token and an internal
+30-second bound, then artifactize kills and reaps the session group/Job before
+removing its directory, even if stop fails or hangs. Windows cleanup waits for all
+Job descendants, with a separate internal 30-second termination bound.
+
+A lazy cleanup executor owns session lifetimes independently of the caller's
+runtime: dropping that runtime still runs stop and cleanup. Process termination
+cannot run stop. Before the next tool session starts, artifactize sweeps directories
+whose saved owner identity is dead. On Unix, start, stop and bound invocation groups
+are recorded before admission and each saved PID/start-time identity is checked
+before signalling, including when the group leader is already gone. Windows Jobs
+terminate when their owner dies; recovery waits up to 30 seconds for pending file
+sharing dispositions to clear. Cleanup failures are reported instead of publishing
+a successful result. A reused or waited-on result starts nothing.
 
 Start/stop execution-path pins use `<session>_<artifact>.start` and `.stop` keys
 in the result's existing `executionPaths` provenance, including remote records.

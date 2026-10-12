@@ -5,7 +5,7 @@ use std::{
     net::Shutdown,
     os::{fd::AsRawFd, unix::net::UnixStream},
     process::ExitStatus,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use process_wrap::tokio::{ChildWrapper, CommandWrap, ProcessGroup};
@@ -16,57 +16,60 @@ use tokio::{
 };
 
 /// The child's process group, killed when dropped.
-pub(crate) struct Child(Box<dyn ChildWrapper>, #[cfg(target_os = "macos")] u32);
+pub(crate) struct Child {
+    child: Box<dyn ChildWrapper>,
+    group: Option<crate::process::ChildIdentity>,
+}
 
 impl Child {
     pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
-        self.0.stdin()
+        self.child.stdin()
     }
 
     pub fn stdout(&mut self) -> &mut Option<ChildStdout> {
-        self.0.stdout()
+        self.child.stdout()
     }
 
     pub fn stderr(&mut self) -> &mut Option<ChildStderr> {
-        self.0.stderr()
+        self.child.stderr()
     }
 
     /// Wait for the leader, then reap the rest of its group.
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.0.wait().await
+        self.child.wait().await
     }
 
     /// Session liveness is the leader's, not its descendants'.
     pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
-        self.0.inner_mut().wait().await
+        self.child.inner_mut().wait().await
     }
 
     pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.0.inner_mut().try_wait()
+        self.child.inner_mut().try_wait()
     }
 
     /// Ask the group to stop with SIGTERM.
     pub fn interrupt(&self) -> io::Result<()> {
-        self.0.signal(libc::SIGTERM)
+        if let Some(group) = self.group {
+            signal_saved_group(group, libc::SIGTERM)
+        } else {
+            Ok(())
+        }
     }
 
     /// SIGKILL the group; a group that is already gone is not an error.
     pub fn kill(&mut self) -> io::Result<()> {
-        match self.0.start_kill() {
-            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
-            #[cfg(target_os = "macos")]
-            Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
-                // Darwin can report EPERM while the last members are exiting or
-                // zombies, before the group disappears. Suppress it only when the
-                // kernel confirms no member can still execute user code.
-                if process_group_exited(self.1)? {
-                    Ok(())
-                } else {
-                    Err(error)
-                }
-            }
-            result => result,
+        if let Some(group) = self.group {
+            kill_saved_group(group)?;
+            // No later wait, cleanup or Drop may signal this numeric PGID again.
+            self.group = None;
         }
+        Ok(())
+    }
+
+    pub async fn cleanup(&mut self) -> io::Result<ExitStatus> {
+        self.kill()?;
+        self.wait().await
     }
 }
 
@@ -130,7 +133,7 @@ fn process_group_exited(pgid: u32) -> io::Result<bool> {
 
 impl Drop for Child {
     fn drop(&mut self) {
-        let _ = self.0.start_kill();
+        let _ = self.kill();
     }
 }
 
@@ -228,7 +231,10 @@ fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo
 /// that this exact byte, not some other write, arrived.
 const GATE_ADMIT: u8 = 1;
 
-pub(crate) struct Gate(Arc<AsyncFd<UnixStream>>);
+pub(crate) struct Gate(
+    Arc<AsyncFd<UnixStream>>,
+    Arc<OnceLock<crate::process::ChildIdentity>>,
+);
 
 impl Gate {
     pub async fn pid(&self) -> io::Result<u32> {
@@ -243,7 +249,10 @@ impl Gate {
                 Err(_) => continue,
             }
         }
-        Ok(u32::from_ne_bytes(bytes))
+        let pid = u32::from_ne_bytes(bytes);
+        let identity = crate::process::child_identity(pid)?;
+        let _ = self.1.set(identity);
+        Ok(pid)
     }
 
     pub fn admit(&self) -> io::Result<()> {
@@ -261,7 +270,8 @@ impl Drop for Gate {
 fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
     let (parent, child) = UnixStream::pair()?;
     parent.set_nonblocking(true)?;
-    let gate = Gate(Arc::new(AsyncFd::new(parent)?));
+    let identity = Arc::new(OnceLock::new());
+    let gate = Gate(Arc::new(AsyncFd::new(parent)?), identity.clone());
     let parent = gate.0.clone();
     // SAFETY: the forked child uses only async-signal-safe syscalls and stack data.
     // Both descriptors stay alive until spawn completes; CLOEXEC closes the child
@@ -304,14 +314,13 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
     // std spawn waits for exec's error pipe, so it cannot run on the task that
     // opens the gate. Returning a guarded child also covers a dropped join handle.
     let spawning = tokio::task::spawn_blocking(move || {
-        command.spawn().map(|child| {
-            #[cfg(target_os = "macos")]
-            let pid = child.id().expect("new child has a PID");
-            Child(
-                child,
-                #[cfg(target_os = "macos")]
-                pid,
-            )
+        let child = command.spawn()?;
+        // Captured while inert: even an immediately exiting command retains its
+        // original identity, rather than reading a potentially reused PID here.
+        let group = *identity.get().expect("admitted child identity");
+        Ok(Child {
+            child,
+            group: Some(group),
         })
     });
     Ok((gate, spawning))
@@ -320,6 +329,10 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
 /// Recover only the saved group, never a reused leader PID. An absent leader can
 /// still have live descendants; Darwin's zombie-only EPERM follows ordinary cleanup.
 pub(crate) fn kill_saved_group(leader: crate::process::ChildIdentity) -> io::Result<()> {
+    signal_saved_group(leader, libc::SIGKILL)
+}
+
+fn signal_saved_group(leader: crate::process::ChildIdentity, signal: i32) -> io::Result<()> {
     match process_start_time(leader.pid.get()) {
         Ok(start) if start != leader.start_time => return Ok(()),
         Ok(_) => {}
@@ -329,7 +342,7 @@ pub(crate) fn kill_saved_group(leader: crate::process::ChildIdentity) -> io::Res
     let pgid = i32::try_from(leader.pid.get()).map_err(|_| io::ErrorKind::InvalidInput)?;
     // SAFETY: the nonzero saved PID names a group owned by the dead artifactize owner;
     // the preceding identity check excludes a known reused leader.
-    if unsafe { libc::killpg(pgid, libc::SIGKILL) } == 0 {
+    if unsafe { libc::killpg(pgid, signal) } == 0 {
         return Ok(());
     }
     let error = io::Error::last_os_error();
@@ -370,13 +383,30 @@ mod tests {
         assert!(process_group_exited(pid).unwrap());
         // Exercise the real EPERM path, not an injected error or a delay.
         assert_eq!(
-            child.0.start_kill().unwrap_err().raw_os_error(),
+            child.child.start_kill().unwrap_err().raw_os_error(),
             Some(libc::EPERM)
         );
         child.kill().unwrap();
         assert!(child.wait().await.unwrap().success());
         assert!(process_group_exited(pid).unwrap());
         child.kill().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_cleaned_group_no_longer_owns_a_signal_target() {
+        let mut command = Command::new(crate::test_os::true_program());
+        command.env_clear().stdin(Stdio::null());
+        let (gate, spawning) = spawn_gated(command).unwrap();
+        gate.pid().await.unwrap();
+        gate.admit().unwrap();
+        drop(gate);
+        let mut child = spawning.await.unwrap().unwrap();
+        assert!(child.wait_leader().await.unwrap().success());
+        child.cleanup().await.unwrap();
+        // A signal to the old (now absent) numeric group would report ESRCH.
+        // Disarmed cleanup must instead be a no-op, including on later Drop.
+        child.interrupt().unwrap();
+        child.cleanup().await.unwrap();
     }
 
     #[tokio::test]

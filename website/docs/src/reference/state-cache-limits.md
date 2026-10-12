@@ -181,7 +181,12 @@ occupies a job slot like any running eval, so a process runs at most
 its waiting requests as CANCELLED, and its held slots are released.
 
 Tool-session directories live under `$STATE/tool-sessions/`, separately from saved
-conversations, and are cleaned after a crash before the next tool session starts.
+conversations. They retain admission records for start, stop and bound invocation
+processes until those groups have been cleaned. Before the next tool session starts,
+dead-owner state is swept using saved process identities on Unix; Windows Jobs
+terminate with their owner and pending file sharing dispositions are given a bounded
+wait. Normal release, panic and caller-runtime shutdown run stop and await process
+cleanup before removing the directory. Abrupt process death cannot run stop.
 
 ## Agent sessions
 

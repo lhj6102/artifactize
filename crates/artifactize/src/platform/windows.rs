@@ -12,7 +12,7 @@ use std::{
 
 use tokio::signal::windows::{ctrl_break, ctrl_c, ctrl_close};
 use windows_sys::Win32::{
-    Foundation::{ERROR_ACCESS_DENIED, HANDLE, INVALID_HANDLE_VALUE},
+    Foundation::{ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, HANDLE, INVALID_HANDLE_VALUE},
     Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
     System::{
         Console::{
@@ -30,6 +30,27 @@ pub(crate) use security::{
     PrivateTempDir, create_private_dir, create_private_dir_all, is_private_dir, is_private_file,
     private_options, private_pipe, private_tempdir_in, restrict_file, user_identity,
 };
+
+/// Owner death closes every Job handle, but descendant termination and handle
+/// release are asynchronous. Recovery cannot query those now-closed Jobs, so it
+/// waits briefly for their file sharing dispositions to clear, with a fixed bound.
+pub(crate) fn remove_abandoned_directory(path: &Path) -> io::Result<()> {
+    const RECOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    const SHARING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+    let deadline = std::time::Instant::now() + RECOVERY_TIMEOUT;
+    loop {
+        match std::fs::remove_dir_all(path) {
+            Err(error)
+                if error.raw_os_error().is_some_and(|code| {
+                    code == ERROR_ACCESS_DENIED as i32 || code == ERROR_SHARING_VIOLATION as i32
+                }) && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(SHARING_INTERVAL)
+            }
+            result => return result,
+        }
+    }
+}
 
 /// Whether `error` is Windows transiently refusing a metadata or open probe on a file that
 /// another handle is still finalizing: emptying or deleting a WAL `-wal`/`-shm` sidecar, for

@@ -3,9 +3,12 @@
 
 use std::{collections::BTreeMap, ffi::OsString, io, path::Path, time::Duration};
 
-use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncReadExt, sync::oneshot, task::JoinHandle, time::Instant};
 use tokio_util::sync::{CancellationToken, DropGuard};
+
+pub(super) mod ownership;
+pub(crate) use ownership::executor;
+use ownership::{Ownership, Record, allocate, save_owner};
 
 use super::{Invocation, Registry};
 use crate::{
@@ -24,18 +27,15 @@ pub struct Sessions(BTreeMap<(ArtifactName, ToolOperationName), Session>);
 
 struct Session {
     environment: BTreeMap<OsString, OsString>,
-    ended: CancellationToken,
+    owner: std::sync::Arc<Ownership>,
     stop: DropGuard,
     finished: JoinHandle<Result<(), String>>,
 }
 
 impl Sessions {
-    pub(crate) fn environment(
-        &self,
-        name: &(ArtifactName, ToolOperationName),
-    ) -> Option<&BTreeMap<OsString, OsString>> {
+    pub(crate) fn call(&self, name: &(ArtifactName, ToolOperationName)) -> Option<ownership::Call> {
         let session = self.0.get(name)?;
-        (!session.ended.is_cancelled()).then_some(&session.environment)
+        session.owner.call(&session.environment)
     }
 
     pub async fn close(self) -> Result<(), String> {
@@ -106,25 +106,27 @@ impl Registry<'_> {
                         .map_err(|error| error.to_string())?;
                 let stop_token = CancellationToken::new();
                 let guard = stop_token.clone().drop_guard();
-                let ended = CancellationToken::new();
+                let owner = Ownership::new(directory.path());
                 let (send, receive) = oneshot::channel();
-                let finished = tokio::spawn(supervise(
-                    start,
-                    stop,
-                    workspace,
-                    directory,
-                    cancellation.clone(),
-                    stop_token,
-                    ended.clone(),
-                    send,
-                ));
+                let finished = executor()
+                    .map_err(|error| error.to_string())?
+                    .spawn(supervise(
+                        start,
+                        stop,
+                        workspace,
+                        directory,
+                        cancellation.clone(),
+                        stop_token,
+                        owner.clone(),
+                        send,
+                    ));
                 match receive.await.map_err(|error| error.to_string())? {
                     Ok(environment) => {
                         sessions.0.insert(
                             key,
                             Session {
                                 environment,
-                                ended,
+                                owner,
                                 stop: guard,
                                 finished,
                             },
@@ -157,69 +159,6 @@ pub(super) fn session_key(
     (owner.clone(), name.clone())
 }
 
-#[derive(Serialize, Deserialize)]
-struct Owner {
-    owner: process::ChildIdentity,
-    leader: Option<process::ChildIdentity>,
-}
-
-fn allocate(root: &Path) -> io::Result<platform::PrivateTempDir> {
-    platform::create_private_dir_all(root)?;
-    let lock = platform::private_options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(root.join("lock"))?;
-    lock.lock()?;
-    // The allocation lock makes an owner-less directory unambiguously abandoned.
-    for entry in std::fs::read_dir(root)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let path = entry.path();
-        let record = match std::fs::read(path.join("owner.json")) {
-            Ok(bytes) => Some(serde_json::from_slice::<Owner>(&bytes).map_err(io::Error::other)?),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => return Err(error),
-        };
-        if let Some(record) = record {
-            if process::is_alive(Some(record.owner))? {
-                continue;
-            }
-            if let Some(leader) = record.leader {
-                platform::kill_saved_group(leader)?;
-            }
-        }
-        match std::fs::remove_dir_all(path) {
-            Ok(()) => {}
-            // Another live session may finish between listing and reading its record.
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-    }
-    let directory = platform::private_tempdir_in("session-", root)?;
-    save_owner(directory.path(), None)?;
-    Ok(directory)
-}
-
-fn save_owner(directory: &Path, leader: Option<process::ChildIdentity>) -> io::Result<()> {
-    let owner = process::child_identity(std::process::id())?;
-    let bytes = serde_json::to_vec(&Owner { owner, leader }).map_err(io::Error::other)?;
-    // Registration happens before admission: after a crash every admitted process has
-    // a durable identity, and an incomplete record never admits owner code.
-    let path = directory.join("owner.next");
-    let mut file = platform::private_options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&path)?;
-    std::io::Write::write_all(&mut file, &bytes)?;
-    file.sync_all()?;
-    std::fs::rename(path, directory.join("owner.json"))?;
-    platform::sync_dir(directory)
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "a supervisor owns its two commands, directory, independent stop and readiness channels"
@@ -231,7 +170,7 @@ async fn supervise(
     directory: platform::PrivateTempDir,
     cancellation: CancellationToken,
     stop_token: CancellationToken,
-    ended: CancellationToken,
+    owner: std::sync::Arc<Ownership>,
     send: oneshot::Sender<Result<BTreeMap<OsString, OsString>, String>>,
 ) -> Result<(), String> {
     let result = supervise_inner(
@@ -241,7 +180,7 @@ async fn supervise(
         directory.path(),
         cancellation,
         stop_token,
-        ended,
+        owner,
         send,
     )
     .await;
@@ -261,7 +200,7 @@ async fn supervise_inner(
     directory: &Path,
     cancellation: CancellationToken,
     stop_token: CancellationToken,
-    ended: CancellationToken,
+    owner: std::sync::Arc<Ownership>,
     send: oneshot::Sender<Result<BTreeMap<OsString, OsString>, String>>,
 ) -> Result<(), String> {
     let prepared = prepare(start, workspace, directory, None);
@@ -280,7 +219,12 @@ async fn supervise_inner(
         true,
         cancellation.clone(),
         deadline,
-        move |leader| async move { save_owner(&owner_path, Some(leader)) },
+        move |leader| async move {
+            crate::task::joined(
+                tokio::task::spawn_blocking(move || save_owner(&owner_path, Some(leader))).await,
+            )
+            .map_err(io::Error::other)?
+        },
     )
     .await;
     let mut child = match child {
@@ -334,42 +278,58 @@ async fn supervise_inner(
             Err(_) => Err("start timed out".into()),
         }
     };
+    let mut child = Some(child);
     let started = ready.is_ok();
     let _ = send.send(ready.map(|()| environment.clone()));
     if started {
         tokio::select! {
             biased;
-            status = child.wait_leader() => {
-                ended.cancel();
-                let _ = child.kill();
+            status = child.as_mut().expect("owned start").wait_leader() => {
+                owner.ended.cancel();
+                let mut exited = child.take().expect("owned start");
+                let cleanup = exited.cleanup().await;
+                drop(exited);
+                cleanup.map_err(|error| error.to_string())?;
+                save_owner(directory, None).map_err(|error| error.to_string())?;
                 let _ = status;
                 stop_token.cancelled().await;
             },
             _ = stop_token.cancelled() => {},
         }
     }
-    ended.cancel();
+    owner.finish_calls().await;
     // Stop ignores the review's cancelled token. Its own one-shot supervisor bounds
     // the command, then the session group is killed regardless of its outcome.
     if let Ok((command, input)) = prepare(stop, workspace, directory, Some(&environment)) {
+        let record = Record::new(directory);
+        let admitted = record.clone();
         let _ = process::run_with_input_limit(
             command,
             Some(input),
             0,
             CancellationToken::new(),
-            |_| async { Ok(()) },
+            move |child| async move { admitted.register(child).await },
         )
         .await;
     }
-    let killed = child.kill().map_err(|error| error.to_string());
-    let reaped = child.wait().await.map_err(|error| error.to_string());
+    let cleaned = match child {
+        Some(mut child) => child
+            .cleanup()
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        None => Ok(()),
+    };
+    if cleaned.is_ok() {
+        save_owner(directory, None).map_err(|error| error.to_string())?;
+    }
     feed.abort();
     drain_stdout.abort();
     drain_stderr.abort();
     let _ = feed.await;
     let _ = drain_stdout.await;
     let _ = drain_stderr.await;
-    killed.and(reaped.map(|_| ()))
+    cleaned
 }
 
 fn prepare(

@@ -23,6 +23,11 @@ pub(crate) use process::{
     Child, kill_saved_group, process_start_time, spawn_detached, spawn_gated,
 };
 
+/// No Windows-style pending sharing disposition survives group cleanup.
+pub(crate) fn remove_abandoned_directory(path: &Path) -> io::Result<()> {
+    std::fs::remove_dir_all(path)
+}
+
 /// POSIX file locks are advisory, and unlinking a name never invalidates another handle's
 /// access to it, so a plain metadata or open race like Windows's never happens here.
 pub(crate) fn transient_file_access(_error: &io::Error) -> bool {

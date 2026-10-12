@@ -714,3 +714,102 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     assert!(again["requests"][0]["origin"].is_null());
     assert_eq!(history().as_array().unwrap().len(), 3);
 }
+
+#[test]
+fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
+    let root = support::os::tempdir();
+    let repo = root.path().join("repo");
+    let log = root.path().join("log");
+    fs::create_dir(&log).unwrap();
+    let mut views = support::tool_sessions::views(&log, "start", "stop", "act");
+    for command in ["start", "stop"] {
+        views["agent_sessions"]["app"][command]["execution_paths"] = json!(["harness.py"]);
+    }
+    write(
+        &repo,
+        json!({"name":"app", "fingerprint":{}, "views":views,
+        "evals":[{"id":"check","title":"Review","profile":{"kind":"agent","backend":"openai","model":"fake-model"},"payload":{"instruction":"Review."}}]}),
+    );
+    fs::write(repo.join("harness.py"), support::tool_sessions::script()).unwrap();
+    let server = Server::start(root.path());
+    let token = server.token("alice", "read,publish");
+    let consumer = Machine::new(root.path(), "bob", &server.url, &token);
+    let state = root.path().join("fixture-state");
+    let config = artifactize::config::read_workspace_config(&repo).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    // A synthetic remote protocol fixture, not a fake-provider verdict: provider
+    // test endpoint isolation remains intact, and no Agent is asked to publish it.
+    let pins = runtime.block_on(async {
+        let fingerprints = artifactize::cache::prepare(
+            &config,
+            [&config.artifacts["app"].name],
+            &state,
+            &artifactize::cache::Parallelism::new(2),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let keys = artifactize::cache::eval_keys(&config, &fingerprints);
+        let eval = &config.evals[0];
+        let key = &keys[&eval.id];
+        let pins = artifactize::tools::pins::execution_paths(&config, &eval.id)
+            .await
+            .unwrap();
+        let record = artifactize::remote::Record {
+            schema: artifactize::remote::SCHEMA,
+            key: key.value.clone(),
+            eval_def_hash: key.eval_def_hash.clone(),
+            fingerprints: key.fingerprints.clone(),
+            artifact_kinds: key.artifact_kinds.clone(),
+            verdict: artifactize::types::ExecutionStatus::Green,
+            eval_id: eval.id.clone(),
+            run_id: "run-lifecycle-fixture".parse().unwrap(),
+            request_id: "run-lifecycle-fixture-1".parse().unwrap(),
+            execution_id: "execution-run-lifecycle-fixture-1".parse().unwrap(),
+            profile: artifactize::config::StoredProfile::from(eval.declaration.profile()),
+            options: artifactize::store::ExecutionOptions::new(eval.declaration.profile(), None),
+            execution_paths: pins.clone(),
+            result: json!({"verdict":"GREEN"}).try_into().unwrap(),
+            usage: None,
+            reviewer: None,
+            producer: None,
+            started_at: "2026-10-04T00:00:00Z".parse().unwrap(),
+            completed_at: "2026-10-04T00:00:01Z".parse().unwrap(),
+            execution: None,
+            publisher: None,
+            published_at: None,
+        };
+        record.validate().unwrap();
+        let (remote, _) = artifactize::auth::remote::login(
+            Some(&state),
+            Some(&repo),
+            &server.url,
+            artifactize::auth::remote::Share::Summary,
+            token.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(remote.publish(&record).await.unwrap());
+        let fetched = remote
+            .lookup(std::slice::from_ref(&record.key))
+            .await
+            .unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].as_ref().unwrap().execution_paths, pins);
+        serde_json::to_value(pins).unwrap()
+    });
+    for key in ["app_app.start", "app_app.stop"] {
+        assert_eq!(pins[key]["harness.py"].as_str().unwrap().len(), 64);
+    }
+    let entries = server.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].1["executionPaths"], pins);
+    let reused = consumer.json(&repo, &["verify", "--all"], 0);
+    assert_eq!(reused["executionsStarted"], 0);
+    assert_eq!(reused["requests"][0]["provenance"]["executionPaths"], pins);
+    assert!(support::tool_sessions::directories(&consumer.state).is_empty());
+    assert!(support::tool_sessions::records(&log, "start").is_empty());
+}

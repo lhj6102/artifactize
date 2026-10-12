@@ -315,11 +315,8 @@ impl<'a> Registry<'a> {
         };
         let environment = if let Some(name) = &command.session {
             let key = sessions::session_key(name, &tool.definition.artifact_id);
-            match self
-                .sessions
-                .and_then(|sessions| sessions.environment(&key))
-            {
-                Some(environment) => Some(environment.clone()),
+            match self.sessions.and_then(|sessions| sessions.call(&key)) {
+                Some(call) => Some(call),
                 None => return ToolResult::error(format!("The tool session `{name}` ended.")),
             }
         } else {
@@ -334,19 +331,28 @@ impl<'a> Registry<'a> {
         let cancellation = cancellation.child_token();
         let _cancel_on_drop = cancellation.clone().drop_guard();
         // Keep cleanup alive if the caller drops its future while a command is running.
+        let executor = if environment.is_some() {
+            match sessions::executor() {
+                Ok(executor) => executor.clone(),
+                Err(_) => return ToolResult::error("Agent tool execution failed."),
+            }
+        } else {
+            tokio::runtime::Handle::current()
+        };
         crate::task::joined(
-            tokio::spawn(async move {
-                invoke(
-                    invocation,
-                    args,
-                    &workspace,
-                    &output_root,
-                    cancellation,
-                    environment,
-                )
-                .await
-            })
-            .await,
+            executor
+                .spawn(async move {
+                    invoke(
+                        invocation,
+                        args,
+                        &workspace,
+                        &output_root,
+                        cancellation,
+                        environment,
+                    )
+                    .await
+                })
+                .await,
         )
         .unwrap_or_else(|_| ToolResult::error("Agent tool execution failed."))
     }
@@ -482,7 +488,7 @@ async fn invoke(
     workspace: &Path,
     output_root: &Path,
     cancellation: CancellationToken,
-    environment: Option<BTreeMap<OsString, OsString>>,
+    environment: Option<sessions::ownership::Call>,
 ) -> ToolResult {
     let run = || {
         let root = workspace::prepare_directory(output_root, workspace).map_err(|_| ())?;
@@ -508,7 +514,7 @@ async fn invoke(
                 .map_err(|_| "Agent tool preparation failed.")?;
         command.cwd = cwd;
         if let Some(environment) = &environment {
-            command.inherit_session(environment);
+            command.inherit_session(&environment.environment);
         }
         let output_dir = command.directory().join("output");
         context.output_dir = Some(output_dir.clone());
@@ -521,16 +527,29 @@ async fn invoke(
             }
             ToolProtocol::Plain => Vec::new(),
         };
-        let output = command
-            .tool_output(input, OUTPUT_LIMIT, cancellation.clone())
-            .await
-            .map_err(|error| {
-                error.argument_refusal().unwrap_or_else(|| match error {
-                    crate::process::Error::Timeout => "Agent tool timed out.".into(),
-                    crate::process::Error::Cancelled => "Agent tool call was cancelled.".into(),
-                    _ => "Agent tool execution failed.".into(),
-                })
-            })?;
+        let output = match environment {
+            Some(call) => {
+                call.run(
+                    command.into_process(),
+                    input,
+                    OUTPUT_LIMIT,
+                    cancellation.clone(),
+                )
+                .await
+            }
+            None => {
+                command
+                    .tool_output(input, OUTPUT_LIMIT, cancellation.clone())
+                    .await
+            }
+        }
+        .map_err(|error| {
+            error.argument_refusal().unwrap_or_else(|| match error {
+                crate::process::Error::Timeout => "Agent tool timed out.".into(),
+                crate::process::Error::Cancelled => "Agent tool call was cancelled.".into(),
+                _ => "Agent tool execution failed.".into(),
+            })
+        })?;
         match protocol {
             ToolProtocol::Json => {
                 if !output.status.success() {
