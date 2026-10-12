@@ -2,7 +2,8 @@
   // Quitting with claims this window took and did not submit: keep or release them.
   import { LeaveDialogState, setLeaveDialogState } from "./leaveDialog.svelte";
   import { AlertDialog } from "bits-ui";
-  import { commands, call, message, nextJob } from "../ipc/client";
+  import { commands, call, message } from "../ipc/client";
+  import { getAppState } from "../shell/app.svelte";
   import { composing } from "../shell/keys";
 
   let {
@@ -12,14 +13,12 @@
   }: { taken: string[] | null; onstay: () => void; onleave: () => void } = $props();
   const l = new LeaveDialogState();
   setLeaveDialogState(l);
-
-  
-  
+  const app = getAppState();
 
   async function release() {
     l.working = true;
     try {
-      const acted = await call(commands.humanRelease(taken ?? [], nextJob()));
+      const acted = await call(commands.humanRelease(taken ?? [], app.jobs.next()));
       if (acted.notice.error) l.error = acted.notice.text;
       else onleave();
     } catch (failure) {

@@ -29,13 +29,6 @@ export function message(error: unknown): string {
   return String(error);
 }
 
-let jobs = 0;
-/** A fresh number for a cancellable Human job. */
-export function nextJob(): number {
-  jobs += 1;
-  return jobs;
-}
-
 type Listen<T> = (callback: (event: { payload: T }) => void) => Promise<() => void>;
 
 /**

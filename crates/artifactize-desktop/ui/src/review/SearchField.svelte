@@ -22,10 +22,7 @@
   const q = new SearchFieldState();
   setSearchFieldState(q);
 
-  
-  
   /** Each request supersedes the ones before it, so a slow answer never reopens the dropdown. */
-  let asked = 0;
 
   const open = $derived(q.completion !== null && q.completion.candidates.length > 0);
 
@@ -34,15 +31,15 @@
    * only when `always` (↓, or a key just taken).
    */
   async function suggest(always = false) {
-    const ask = ++asked;
+    const ask = ++q.asked;
     const answer = await complete(value);
-    if (ask !== asked || document.activeElement !== input) return;
+    if (ask !== q.asked || document.activeElement !== input) return;
     q.completion = always || answer.keep !== value ? answer : null;
     q.active = -1;
   }
 
   function close() {
-    asked++;
+    q.asked++;
     q.completion = null;
     q.active = -1;
   }

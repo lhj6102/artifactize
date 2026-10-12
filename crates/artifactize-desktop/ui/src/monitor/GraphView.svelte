@@ -39,8 +39,6 @@
 
   const flow = useSvelteFlow();
   const nodeTypes = { artifact: ArtifactNode };
-  
-  
   // Lights change in place; positions only come with a new layout. The selection is not part
   // of a node: a node whose selection flips is drawn again and loses focus, so focus (which
   // follows the selection) marks the selected Artifact instead.
@@ -123,18 +121,16 @@
   // moves anywhere else (the eval list, another pane, a press outside) ends the hold, and so
   // does hiding the graph's screen: a hidden graph never takes focus, and only fresh graph
   // focus holds again.
-  let handoff = 0;
-  let watching = false;
 
   const lost = () => document.activeElement === null || document.activeElement === document.body;
 
   function watch() {
-    if (watching) return;
-    watching = true;
+    if (v.watching) return;
+    v.watching = true;
     const step = () => {
       if (v.held !== null && hidden()) release();
       if (v.held === null || !v.canvas?.isConnected) {
-        watching = false;
+        v.watching = false;
         return;
       }
       restore();
@@ -155,19 +151,19 @@
   /** The graph's screen is not shown (another screen, or a hidden ancestor). */
   const hidden = () => !active || !v.canvas || v.canvas.closest("[hidden]") !== null;
 
-  /** Give graph focus to `id` from now on; returns this handoff's number. */
+  /** Give graph focus to `id` from now on; returns this v.handoff's number. */
   function hold(id: string): number {
-    if (hidden()) return handoff;
+    if (hidden()) return v.handoff;
     v.held = id;
-    handoff += 1;
+    v.handoff += 1;
     if (document.activeElement !== element(id)) element(id)?.focus({ preventScroll: true });
     watch();
-    return handoff;
+    return v.handoff;
   }
 
   function release() {
     v.held = null;
-    handoff += 1;
+    v.handoff += 1;
   }
 
   /** Focus or a press anywhere outside the graph's nodes and canvas ends the hold; so does
@@ -230,7 +226,7 @@
     const mine = hold(id);
     await flow.fitView({ duration: 250 });
     // Too many Artifacts to fit: bring this one into view, unless keys moved on meanwhile.
-    if (mine === handoff) await centre(id);
+    if (mine === v.handoff) await centre(id);
   }
 
   /** The Artifact node `event` happened on. */

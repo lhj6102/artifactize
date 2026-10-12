@@ -3,6 +3,8 @@ import type { CodexPrompt, CodexStatus, KeyStatus, Model, Provider, RemoteStatus
 
 /** What the Settings screen holds: the snapshots it read, what is typed and what is under way. */
 export class SettingsState {
+  /** Numbers the remote-store calls: only the newest answer is shown. */
+  remoteCalls = $state(0);
   keys = $state.raw<KeyStatus[]>([]);
   codex = $state.raw<CodexStatus | null>(null);
   codexError = $state<string | null>(null);

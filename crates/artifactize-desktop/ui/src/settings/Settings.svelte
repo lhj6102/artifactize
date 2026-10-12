@@ -20,28 +20,9 @@
   const s = new SettingsState();
   setSettingsState(s);
 
-  
-  
-  
-  
   /** A sign-in in progress: what it asked the person to open. */
-  
-  
-  
 
-  
-  
-  
-  
-
-  
-  
-  
-  
-  
   /** The store token while typed; cleared the moment it is submitted. */
-  
-  
 
   const NAMES: Record<Provider, string> = { openai: "OpenAI", anthropic: "Anthropic", codex: "Codex (ChatGPT)" };
 
@@ -56,18 +37,17 @@
 
   /** Each remote call is numbered; only the newest one may show what it found, so a slow
    * status check never shows a store signed in after a sign-out. */
-  let remoteCalls = 0;
 
   async function remoteCall(run: () => Promise<RemoteStatus>, notice?: (status: RemoteStatus) => string) {
-    const mine = ++remoteCalls;
+    const mine = ++s.remoteCalls;
     s.remoteError = null;
     try {
       const status = await run();
-      if (mine !== remoteCalls) return;
+      if (mine !== s.remoteCalls) return;
       s.remote = status;
       s.remoteNotice = notice ? notice(status) : s.remoteNotice;
     } catch (failure) {
-      if (mine === remoteCalls) s.remoteError = message(failure);
+      if (mine === s.remoteCalls) s.remoteError = message(failure);
     }
   }
 

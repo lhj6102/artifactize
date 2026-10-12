@@ -2,7 +2,8 @@
 // RED drafts and the running job. Every write goes through a backend job; the request's state
 // is whatever the backend last read.
 import { SvelteMap } from "svelte/reactivity";
-import { CommandError, call, commands, message, nextJob } from "../ipc/client";
+import type { Jobs } from "../ipc/jobs.svelte";
+import { CommandError, call, commands, message } from "../ipc/client";
 import type {
   Acted,
   Draft,
@@ -112,8 +113,11 @@ export class Review {
   /** A form takes the keys only while the request can still be reviewed. */
   readonly editing = $derived(this.form !== null && !this.settled);
 
-  constructor(id: string) {
+  readonly #jobs: Jobs;
+
+  constructor(id: string, jobs: Jobs) {
     this.id = id;
+    this.#jobs = jobs;
   }
 
   /** Read the request (or, without `reload`, redraw its waiting time from the last read). */
@@ -140,7 +144,7 @@ export class Review {
 
   async #job<T>(label: string, work: (job: number) => Promise<T>): Promise<T | undefined> {
     if (this.busy) return undefined;
-    const job = nextJob();
+    const job = this.#jobs.next();
     this.busy = { label, job, since: Date.now() };
     try {
       return await work(job);

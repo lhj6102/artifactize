@@ -4,6 +4,7 @@
   import { ContextMenu, Dialog } from "bits-ui";
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
+  import { getAppState } from "../shell/app.svelte";
   import type { Attachment } from "svelte/attachments";
   import {
     call,
@@ -30,6 +31,7 @@
   // svelte-ignore state_referenced_locally
   const r = new ReviewScreenState(launch.search);
   setReviewScreenState(r);
+  const { jobs } = getAppState();
 
   /** The search every launch starts from: waiting Human reviews, of `--repo` when given. */
   const WAITING = "kind:human status:waiting_human";
@@ -137,7 +139,7 @@
 
   /** Open a Human request; another request than the open one starts from a clean review. */
   function open(id: string, tools = false) {
-    if (r.review?.id !== id) r.review = new Review(id);
+    if (r.review?.id !== id) r.review = new Review(id, jobs);
     if (tools) r.review.area = "tools";
     r.record = null;
     r.focus = "detail";

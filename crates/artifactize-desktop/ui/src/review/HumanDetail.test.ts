@@ -6,6 +6,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import HumanDetail from "./HumanDetail.svelte";
+import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
 import { greenForm, humanView, redForm } from "./fixtures";
 
@@ -55,7 +56,7 @@ afterEach(() => {
 describe("HumanDetail", () => {
   it("claims only on an explicit c, never on a key that is part of a composition", async () => {
     const calls = backend("claim");
-    renderHosted(HumanDetail, { review: new Review("run-a-2"), onback: () => {} });
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
     await screen.findByText(/Unclaimed\. c claims it for alice/);
 
@@ -73,7 +74,7 @@ describe("HumanDetail", () => {
       throw { kind: "invalid", message: "Result does not match the fail schema: /reason: \"no\" is shorter than 3 characters" };
     });
     const user = userEvent.setup();
-    renderHosted(HumanDetail, { review: new Review("run-a-2"), onback: () => {} });
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
     await screen.findByText("REVIEW (yours)");
 
@@ -100,7 +101,7 @@ describe("HumanDetail", () => {
   it("leaves an input method its Escape: a composing Escape neither stops editing nor leaves", async () => {
     backend("review");
     let left = 0;
-    renderHosted(HumanDetail, { review: new Review("run-a-2"), onback: () => (left += 1) });
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
     const region = await screen.findByLabelText("Human review");
     await screen.findByText("REVIEW (yours)");
     await fireEvent.keyDown(region, { key: "g" });
@@ -114,7 +115,7 @@ describe("HumanDetail", () => {
 
   it("moves focus into the JSON text when Ctrl+E turns the typed form into JSON", async () => {
     backend("review");
-    renderHosted(HumanDetail, { review: new Review("run-a-2"), onback: () => {} });
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
     await screen.findByText("REVIEW (yours)");
     await fireEvent.keyDown(region, { key: "g" });
@@ -128,7 +129,7 @@ describe("HumanDetail", () => {
   it("Esc stops editing first, then leaves", async () => {
     backend("review");
     let left = 0;
-    renderHosted(HumanDetail, { review: new Review("run-a-2"), onback: () => (left += 1) });
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
     const region = await screen.findByLabelText("Human review");
     await screen.findByText("REVIEW (yours)");
     await fireEvent.keyDown(region, { key: "g" });
