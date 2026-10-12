@@ -47,9 +47,11 @@ const MAX_DIAGNOSTIC_CHARS: usize = 4096;
 /// while bounding one response; this is independent of the review-wide maxTokens budget.
 const ANTHROPIC_OUTPUT_TOKENS: u64 = 16_384;
 
+/// A backend's client for one review. The API-key backends keep the key they send: a
+/// provider error may echo it, and every error leaves through the shared rule for server text.
 pub enum Client {
-    Openai(Box<Model<openai::responses_api::wire::Responses>>),
-    Anthropic(Box<Model<anthropic::wire::Messages>>),
+    Openai(Box<Model<openai::responses_api::wire::Responses>>, String),
+    Anthropic(Box<Model<anthropic::wire::Messages>>, String),
     Codex(codex::Codex),
 }
 
@@ -140,18 +142,24 @@ impl Client {
             .map_err(|message| Failure::new(Code::Authentication, message))?;
         let http = delivery::Tap::new(http_client()?);
         Ok(match backend {
-            Backend::Openai => Self::Openai(Box::new(
-                openai::OpenAIConfig::new(key)
-                    .with_base_url(base)
-                    .connect(http)
-                    .responses(model.as_str()),
-            )),
-            Backend::Anthropic => Self::Anthropic(Box::new(
-                anthropic::AnthropicConfig::new(key)
-                    .with_base_url(base)
-                    .connect(http)
-                    .completion(model.as_str()),
-            )),
+            Backend::Openai => Self::Openai(
+                Box::new(
+                    openai::OpenAIConfig::new(key.clone())
+                        .with_base_url(base)
+                        .connect(http)
+                        .responses(model.as_str()),
+                ),
+                key,
+            ),
+            Backend::Anthropic => Self::Anthropic(
+                Box::new(
+                    anthropic::AnthropicConfig::new(key.clone())
+                        .with_base_url(base)
+                        .connect(http)
+                        .completion(model.as_str()),
+                ),
+                key,
+            ),
             Backend::Codex => unreachable!("built above"),
         })
     }
@@ -201,8 +209,8 @@ impl Client {
         observed: AdapterContext,
     ) -> Result<CompletionStream, Classified> {
         match self {
-            Self::Openai(model) => model.stream_observed(request, observed),
-            Self::Anthropic(model) => {
+            Self::Openai(model, _) => model.stream_observed(request, observed),
+            Self::Anthropic(model, _) => {
                 request.max_tokens = Some(ANTHROPIC_OUTPUT_TOKENS);
                 model.stream_observed(request, observed)
             }
@@ -223,16 +231,29 @@ impl Client {
         .map_err(|error| self.classify(&error))
     }
 
-    /// The error code of a provider failure, from its status, codes and message.
+    /// The credentials this client sent: its key, or the Codex access tokens of its turns.
+    fn sent(&self) -> Vec<String> {
+        match self {
+            Self::Openai(_, key) | Self::Anthropic(_, key) => vec![key.clone()],
+            Self::Codex(client) => client.sent(),
+        }
+    }
+
+    /// The error code of a provider failure, from its status, codes and message. Its message
+    /// is the shared rule's: text holding part of a credential this client sent is withheld
+    /// before it reaches output, delivery events, attempts or saved sessions.
     fn classify(&self, error: &ProviderError) -> Classified {
-        let message = match self {
-            Self::Codex(_) => codex::diagnostic(error),
-            _ => diagnostic(error),
+        let text = match self {
+            Self::Codex(_) => codex::diagnostic_text(error),
+            _ => diagnostic_text(error),
         };
+        let sent = self.sent();
+        let sent: Vec<&str> = sent.iter().map(String::as_str).collect();
+        let message = crate::secret::server_text(&text, &sent, MAX_DIAGNOSTIC_CHARS);
         let report = error.report();
         let status = report.http_status;
-        let text =
-            format!("{} {message}", report.code.as_deref().unwrap_or_default()).to_lowercase();
+        // Classified by the whole text (codes and words), never shown.
+        let text = format!("{} {text}", report.code.as_deref().unwrap_or_default()).to_lowercase();
         let any = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
         let code = if matches!(self, Self::Codex(_)) && codex::usage_limited(error)
             || any(&["quota", "billing", "credit balance", "usage limit"])
@@ -507,16 +528,16 @@ fn wait_header(
     })
 }
 
-fn diagnostic(error: &ProviderError) -> String {
-    clean_diagnostic(&message(error))
+/// A provider error as text, cleaned for a terminal but not clipped: callers decide what of
+/// it may be shown ([`crate::secret::server_text`]) before cutting it.
+fn diagnostic_text(error: &ProviderError) -> String {
+    clean_text(&message(error))
 }
 
 /// A provider's error for a request that carried `secrets` (an API key): the shared rule for
 /// server text, so an echoed key is withheld rather than shown.
 fn diagnostic_hiding(error: &ProviderError, secrets: &[&str]) -> String {
-    let cleaned = String::from_utf8(crate::runtime::clean_output(message(error).as_bytes()))
-        .expect("clean output is UTF-8");
-    crate::secret::server_text(&cleaned, secrets, MAX_DIAGNOSTIC_CHARS)
+    crate::secret::server_text(&diagnostic_text(error), secrets, MAX_DIAGNOSTIC_CHARS)
 }
 
 fn message(error: &ProviderError) -> String {
@@ -644,10 +665,8 @@ fn http_client() -> Result<reqwest::Client, String> {
         .map_err(|error| error.to_string())
 }
 
-fn clean_diagnostic(message: &str) -> String {
+/// `message` cleaned for a terminal (escape sequences and control characters), unclipped.
+fn clean_text(message: &str) -> String {
     String::from_utf8(crate::runtime::clean_output(message.as_bytes()))
         .expect("clean output is UTF-8")
-        .chars()
-        .take(MAX_DIAGNOSTIC_CHARS)
-        .collect()
 }

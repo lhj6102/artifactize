@@ -604,11 +604,14 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
         ),
     ]);
     let captured = transport.clone();
-    let client = Client::Openai(Box::new(
-        OpenAIConfig::new("fixture")
-            .connect(transport)
-            .responses("fixture-model"),
-    ));
+    let client = Client::Openai(
+        Box::new(
+            OpenAIConfig::new("fixture")
+                .connect(transport)
+                .responses("fixture-model"),
+        ),
+        "fixture".into(),
+    );
     let running = tokio::spawn(async move {
         let cancellation = tokio_util::sync::CancellationToken::new();
         let mut attempts = Vec::new();
@@ -660,11 +663,14 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
         headers,
     )]);
     let captured = transport.clone();
-    let client = Client::Openai(Box::new(
-        OpenAIConfig::new("fixture")
-            .connect(transport)
-            .responses("fixture-model"),
-    ));
+    let client = Client::Openai(
+        Box::new(
+            OpenAIConfig::new("fixture")
+                .connect(transport)
+                .responses("fixture-model"),
+        ),
+        "fixture".into(),
+    );
     let running = tokio::spawn(async move {
         let cancellation = tokio_util::sync::CancellationToken::new();
         client
@@ -690,4 +696,125 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
         "{error:?}"
     );
     assert_eq!(captured.requests().len(), 1);
+}
+
+/// Every piece of `secret` worth checking for: the whole and its eight-character windows.
+fn pieces(secret: &str) -> Vec<&str> {
+    (0..=secret.len().saturating_sub(8))
+        .step_by(4)
+        .map(|start| &secret[start..(start + 8).min(secret.len())])
+        .collect()
+}
+
+/// Files below `directory`, recursively.
+fn files(directory: &std::path::Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .flat_map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                files(&path)
+            } else {
+                vec![path]
+            }
+        })
+        .collect()
+}
+
+/// A provider that echoes the credential it was sent (the Authorization header, or
+/// Anthropic's x-api-key) in its error: at the request's open (HTTP 400) or inside the
+/// stream. The error leaves a review through the shared rule for server text: withheld from
+/// verify's output, its attempt records and the saved Agent sessions.
+#[test]
+fn an_agent_error_echoing_the_credential_withholds_it_everywhere() {
+    let access = codex::jwt("account-1", codex::VALID_EXPIRY);
+    let credentials = [
+        ("openai", "fake-openai-key".to_owned()),
+        ("anthropic", "fake-anthropic-key".to_owned()),
+        ("codex", access.clone()),
+    ];
+    for in_stream in [false, true] {
+        let project = Project::new(&[
+            ("open", agent("openai")),
+            ("claude", agent("anthropic")),
+            ("luna", agent("codex")),
+        ]);
+        let provider = FakeProvider::start(move |request| {
+            let sent = request
+                .headers
+                .get("x-api-key")
+                .or_else(|| request.headers.get("authorization"))
+                .cloned()
+                .unwrap_or_default();
+            // Split by a newline, which dropping control characters would rejoin.
+            let (head, tail) = sent.split_at(sent.len() / 2);
+            let message = format!("Bad credential {head}\n{tail}");
+            let anthropic = request.path == "/v1/messages";
+            if !in_stream {
+                let body = if anthropic {
+                    json!({"type":"error","error":{"type":"invalid_request_error","message":message}})
+                } else {
+                    json!({"error":{"message":message,"code":"bad_request"}})
+                };
+                return error(400, vec![], body);
+            }
+            if anthropic {
+                Reply::Events(vec![json!({
+                    "type":"error",
+                    "error":{"type":"invalid_request_error","message":message},
+                })])
+            } else {
+                let failed = json!({"type":"error","code":"bad_request","message":message,"param":null,"sequence_number":0});
+                if request.path.starts_with("/backend-api/codex") {
+                    codex::stream(vec![failed])
+                } else {
+                    Reply::Events(vec![failed])
+                }
+            }
+        });
+        let output = project.verify(&provider, &["--all", "--jobs", "1"], true);
+        let shown = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let saved: String = files(&project.state.join("agent-sessions"))
+            .iter()
+            .map(|path| String::from_utf8_lossy(&fs::read(path).unwrap()).into_owned())
+            .collect();
+        assert!(!saved.is_empty(), "the Agent sessions were saved");
+        for (backend, credential) in &credentials {
+            for piece in pieces(credential) {
+                assert!(
+                    !shown.contains(piece),
+                    "{backend} credential in output (in stream: {in_stream}): {shown}"
+                );
+                assert!(
+                    !saved.contains(piece),
+                    "{backend} credential in a saved session (in stream: {in_stream})"
+                );
+            }
+        }
+        let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+        for eval in ["open/review", "claude/review", "luna/review"] {
+            let review = request(&run, eval);
+            assert!(
+                review["error"]
+                    .as_str()
+                    .is_some_and(|error| error.contains("[withheld")),
+                "{eval} (in stream: {in_stream}): {review}"
+            );
+            for attempt in review["usage"].as_array().unwrap() {
+                assert!(
+                    attempt["error"]
+                        .as_str()
+                        .is_some_and(|error| error.contains("[withheld")),
+                    "{eval}: {attempt}"
+                );
+            }
+        }
+    }
 }

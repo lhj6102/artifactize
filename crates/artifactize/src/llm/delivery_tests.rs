@@ -164,12 +164,15 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
             .await
             .unwrap();
     });
-    let client = Client::Openai(Box::new(
-        OpenAIConfig::new("fixture-key")
-            .with_base_url(format!("http://{address}/v1"))
-            .connect(delivery::Tap::new(http_client().unwrap()))
-            .responses("fixture-model"),
-    ));
+    let client = Client::Openai(
+        Box::new(
+            OpenAIConfig::new("fixture-key")
+                .with_base_url(format!("http://{address}/v1"))
+                .connect(delivery::Tap::new(http_client().unwrap()))
+                .responses("fixture-model"),
+        ),
+        "fixture-key".into(),
+    );
     let root = crate::test_os::tempdir();
     let mut recorder = Recorder::test(root.path(), "stream-fixture");
     recorder.start(Header::default());
@@ -310,12 +313,15 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
             .unwrap();
         let _ = stop_rx.await;
     });
-    let client = Client::Openai(Box::new(
-        OpenAIConfig::new("fixture")
-            .with_base_url(format!("http://{address}/v1"))
-            .connect(delivery::Tap::new(http_client().unwrap()))
-            .responses("fixture-model"),
-    ));
+    let client = Client::Openai(
+        Box::new(
+            OpenAIConfig::new("fixture")
+                .with_base_url(format!("http://{address}/v1"))
+                .connect(delivery::Tap::new(http_client().unwrap()))
+                .responses("fixture-model"),
+        ),
+        "fixture".into(),
+    );
     let cancel = CancellationToken::new();
     let mut attempts = Vec::new();
     let mut deliveries = Vec::new();

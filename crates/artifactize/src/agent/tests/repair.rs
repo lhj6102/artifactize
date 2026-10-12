@@ -228,18 +228,21 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
         *max_tokens = Some(1);
         let http = SequencedHttpClient::new(vec![final_text("invalid"), final_openai()]);
         let reached = std::sync::Arc::new(tokio::sync::Notify::new());
-        let client = Client::Openai(Box::new(
-            OpenAIConfig::new("fake-key")
-                .connect(
-                    rig_core::http_client::DynHttpClient::new(http.clone()).with_middleware(
-                        HoldRepair {
-                            calls: Default::default(),
-                            reached: reached.clone(),
-                        },
-                    ),
-                )
-                .responses("exact-model"),
-        ));
+        let client = Client::Openai(
+            Box::new(
+                OpenAIConfig::new("fake-key")
+                    .connect(
+                        rig_core::http_client::DynHttpClient::new(http.clone()).with_middleware(
+                            HoldRepair {
+                                calls: Default::default(),
+                                reached: reached.clone(),
+                            },
+                        ),
+                    )
+                    .responses("exact-model"),
+            ),
+            "fake-key".into(),
+        );
         let cancellation = CancellationToken::new();
         let mut recorder = session::Recorder::off(&SESSION.parse().unwrap());
         let review = review(

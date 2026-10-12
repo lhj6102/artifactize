@@ -83,6 +83,8 @@ pub struct Codex {
     state: PathBuf,
     repo: PathBuf,
     http: reqwest::Client,
+    /// Every access token a turn of this client sent: a provider error may echo any of them.
+    sent: std::sync::Mutex<Vec<String>>,
 }
 
 impl Codex {
@@ -98,7 +100,13 @@ impl Codex {
             state: state.into(),
             repo: repo.into(),
             http: super::http_client()?,
+            sent: std::sync::Mutex::new(Vec::new()),
         })
+    }
+
+    /// The access tokens this client's turns sent.
+    pub(super) fn sent(&self) -> Vec<String> {
+        self.sent.lock().expect("sent tokens lock").clone()
     }
 
     /// The Responses model for one turn, with credentials read (and refreshed) now.
@@ -107,6 +115,12 @@ impl Codex {
         &self,
     ) -> Result<Model<openai::responses_api::wire::Responses>, auth::TokenError> {
         let token = auth::access_token(Some(&self.state), Some(&self.repo)).await?;
+        {
+            let mut sent = self.sent.lock().expect("sent tokens lock");
+            if !sent.contains(&token.access_token) {
+                sent.push(token.access_token.clone());
+            }
+        }
         let mut dialect = chatgpt::DIALECT;
         dialect.quirks.hooks = Some(&HOOKS);
         // No fresh `session_id` per request, which the backend's cache ignores; the
@@ -245,9 +259,10 @@ pub(super) async fn models(
     if !status.is_success() {
         // Provider error payloads vary by endpoint; the success catalog has a known shape.
         let body = errors::Error::parse(&data);
-        // The provider's text answers a request that carried the access token.
+        // The provider's text answers a request that carried the access token: the whole,
+        // unclipped text is checked before anything is cut.
         let text = crate::secret::server_text(
-            &describe(
+            &describe_text(
                 Some(status.as_u16()),
                 body.as_ref(),
                 "Codex model listing failed.",
@@ -278,15 +293,17 @@ fn body(error: &ProviderError) -> Option<errors::Error> {
         .and_then(|response| errors::Error::parse(response.body.as_bytes()))
 }
 
-pub(super) fn diagnostic(error: &ProviderError) -> String {
+/// A Codex provider error as text, cleaned for a terminal but not clipped: callers decide
+/// what of it may be shown ([`crate::secret::server_text`]) before cutting it.
+pub(super) fn diagnostic_text(error: &ProviderError) -> String {
     let body = body(error);
     if body.is_none() {
-        return super::diagnostic(error);
+        return super::diagnostic_text(error);
     }
-    describe(
+    describe_text(
         error.report().http_status,
         body.as_ref(),
-        &super::diagnostic(error),
+        &super::diagnostic_text(error),
         auth::now().ok(),
     )
 }
@@ -297,7 +314,21 @@ const SECONDS_PER_MINUTE: u64 = 60;
 /// A bounded message with the provider's code, an HTTP status, and what to do next:
 /// usage limits name the plan and when they reset, as Pi words them, and rejected
 /// credentials say how to sign in again.
+#[cfg(test)]
 fn describe(
+    status: Option<u16>,
+    body: Option<&errors::Error>,
+    fallback: &str,
+    now: Option<auth::Timestamp>,
+) -> String {
+    describe_text(status, body, fallback, now)
+        .chars()
+        .take(super::MAX_DIAGNOSTIC_CHARS)
+        .collect()
+}
+
+/// [`describe`] before clipping.
+fn describe_text(
     status: Option<u16>,
     body: Option<&errors::Error>,
     fallback: &str,
@@ -338,7 +369,7 @@ fn describe(
             " Sign in again with `artifactize login codex`, or with Codex when ARTIFACTIZE_CODEX_AUTH_FILE is set.",
         );
     }
-    super::clean_diagnostic(&message)
+    super::clean_text(&message)
 }
 
 #[cfg(test)]

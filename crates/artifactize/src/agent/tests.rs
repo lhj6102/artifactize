@@ -150,16 +150,22 @@ impl Fixture {
             _ => unreachable!(),
         };
         let client = match backend {
-            Backend::Openai => Client::Openai(Box::new(
-                OpenAIConfig::new("fake-openai-key")
-                    .connect(http.clone())
-                    .responses("exact-model"),
-            )),
-            Backend::Anthropic => Client::Anthropic(Box::new(
-                AnthropicConfig::new("fake-anthropic-key")
-                    .connect(http.clone())
-                    .completion("exact-model"),
-            )),
+            Backend::Openai => Client::Openai(
+                Box::new(
+                    OpenAIConfig::new("fake-openai-key")
+                        .connect(http.clone())
+                        .responses("exact-model"),
+                ),
+                "fake-openai-key".into(),
+            ),
+            Backend::Anthropic => Client::Anthropic(
+                Box::new(
+                    AnthropicConfig::new("fake-anthropic-key")
+                        .connect(http.clone())
+                        .completion("exact-model"),
+                ),
+                "fake-anthropic-key".into(),
+            ),
             Backend::Codex => unreachable!("Codex reviews are tested end to end"),
         };
         self.reviews.set(self.reviews.get() + 1);

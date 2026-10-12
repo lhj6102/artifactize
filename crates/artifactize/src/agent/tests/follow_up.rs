@@ -61,11 +61,14 @@ async fn run(
     )
 }
 fn fake(http: SequencedHttpClient) -> Client {
-    Client::Openai(Box::new(
-        OpenAIConfig::new("fake-only-key")
-            .connect(http)
-            .responses("exact-model"),
-    ))
+    Client::Openai(
+        Box::new(
+            OpenAIConfig::new("fake-only-key")
+                .connect(http)
+                .responses("exact-model"),
+        ),
+        "fake-only-key".into(),
+    )
 }
 
 #[tokio::test]

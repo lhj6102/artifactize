@@ -827,3 +827,37 @@ fn a_models_error_echoing_the_access_token_withholds_it() {
         "Codex model listing failed (HTTP 400): [withheld: it contained part of the credential sent]"
     );
 }
+
+/// The whole provider text is checked before the 4096-character clip: a token straddling the
+/// clip is withheld, not cut to a prefix.
+#[test]
+fn a_models_error_with_the_token_at_the_clip_withholds_it() {
+    let project = Project::new();
+    let access = codex::jwt("account-1", codex::VALID_EXPIRY);
+    project.sign_in(&access, codex::VALID_EXPIRY);
+    let provider = FakeProvider::start(|request| {
+        let token = request.headers["authorization"]
+            .strip_prefix("Bearer ")
+            .unwrap()
+            .to_owned();
+        Reply::Json(
+            400,
+            json!({"error":{"message":format!("{}{token}", "x".repeat(4089))}}),
+        )
+    });
+    let output = project
+        .against(&provider, &["models", "codex"])
+        .output()
+        .unwrap();
+    let failure = parsed(output.clone(), 2);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!text.contains(&access[..7]), "{text}");
+    assert_eq!(
+        failure["error"],
+        "Codex model listing failed (HTTP 400): [withheld: it contained part of the credential sent]"
+    );
+}
