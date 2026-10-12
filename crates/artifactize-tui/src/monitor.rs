@@ -311,7 +311,7 @@ impl Monitor {
         );
         self.open = self
             .selected_run()
-            .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
+            .filter(|run| run.readable())
             .map(|run| run.id.clone());
         if self.open.is_none() {
             self.run = None;
@@ -377,7 +377,7 @@ impl Monitor {
         self.navigation = true;
         self.open = self
             .selected_run()
-            .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
+            .filter(|run| run.readable())
             .map(|run| run.id.clone());
         Action::Refresh
     }

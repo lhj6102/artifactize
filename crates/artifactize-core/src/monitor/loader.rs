@@ -225,9 +225,7 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
                 }
             });
         let selected_id = selected.map(|run| run.id.clone());
-        let selected = match selected
-            .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
-        {
+        let selected = match selected.filter(|run| run.readable()) {
             Some(run) => cache.selected(
                 db,
                 state,

@@ -27,6 +27,13 @@ pub struct RunSummary {
     pub unreadable: Vec<super::Unreadable>,
 }
 
+impl RunSummary {
+    /// Whether the Run's own record reads; a Run with only unreadable requests still opens.
+    pub fn readable(&self) -> bool {
+        !self.unreadable.iter().any(|record| record.kind == "run")
+    }
+}
+
 /// Saved request-state counts in one read-only snapshot; no repository discovery.
 pub async fn read_runs(
     state: &Path,

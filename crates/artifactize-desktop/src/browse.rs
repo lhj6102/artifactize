@@ -131,7 +131,7 @@ impl Browse {
                 .runs
                 .iter()
                 .find(|run| run.id == id)
-                .is_some_and(|run| !run.unreadable.iter().any(|record| record.kind == "run"));
+                .is_some_and(|run| run.readable());
             shown.page.open = readable.then_some(id);
         }
         let limit = shown.page.limit;
@@ -219,11 +219,9 @@ impl Browse {
         shown.initialized = true;
         shown.page.tail = false;
         shown.runs = snapshot.runs;
-        shown.page.open = snapshot.selected_id.filter(|id| {
-            shown.runs.iter().any(|run| {
-                &run.id == id && !run.unreadable.iter().any(|record| record.kind == "run")
-            })
-        });
+        shown.page.open = snapshot
+            .selected_id
+            .filter(|id| shown.runs.iter().any(|run| &run.id == id && run.readable()));
         match (snapshot.selected, &shown.page.open) {
             (Some(selected), _) => shown.run = Some(selected),
             (None, None) => shown.run = None,

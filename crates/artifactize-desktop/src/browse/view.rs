@@ -329,7 +329,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
             counts: row.counts,
             age: row.age,
             took: row.took,
-            readable: !summary.unreadable.iter().any(|record| record.kind == "run"),
+            readable: summary.readable(),
             unreadable: summary.unreadable.iter().map(ToString::to_string).collect(),
         })
         .collect();
