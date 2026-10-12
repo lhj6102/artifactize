@@ -57,20 +57,9 @@ async function until(check: () => Promise<boolean>, what: string, ms = 20000): P
   throw new Error(`timed out waiting for ${what}`);
 }
 
-/**
- * Typed keys reach the app through GTK's input method. The tests type literal text with GTK's
- * built-in method; `desktop` keeps the desktop's own (for example fcitx5 Hangul) for the IME
- * test, which then composes what WebDriver types.
- */
-export type Ime = "literal" | "desktop";
-
 /** Start the app on `fixture` with `args` (such as `review`) and connect to its webview. */
 export async function start(fixture: Fixture, ...args: string[]): Promise<Session> {
-  return startWith("literal", fixture, ...args);
-}
-
-export async function startWith(ime: Ime, fixture: Fixture, ...args: string[]): Promise<Session> {
-  return launch(ime, fixture, {}, args);
+  return launch(fixture, {}, args);
 }
 
 /**
@@ -78,10 +67,72 @@ export async function startWith(ime: Ime, fixture: Fixture, ...args: string[]): 
  * (for example `ARTIFACTIZE_REMOTE`, which the other tests turn off).
  */
 export async function startEnv(fixture: Fixture, env: Record<string, string | undefined>, ...args: string[]): Promise<Session> {
-  return launch("literal", fixture, env, args);
+  return launch(fixture, env, args);
 }
 
-async function launch(ime: Ime, fixture: Fixture, overrides: Record<string, string | undefined>, args: string[]): Promise<Session> {
+type Display = { env: Record<string, string>; stop: () => void };
+
+/**
+ * A private X display for the app on Linux, so a run never opens windows on the person's
+ * desktop or takes its focus, locally as in CI: Xvfb picks a free display number and
+ * reports it (-displayfd), and the session stops it. Elsewhere the app uses the display it
+ * inherits.
+ */
+async function display(): Promise<Display> {
+  if (process.platform !== "linux") return { env: {}, stop: () => {} };
+  // Display numbers far from a desktop's own (:0, :1), and apart per test process.
+  const base = 100 + (process.pid % 400) * 4;
+  let failure = "";
+  for (let number = base; number < base + 40; number += 1) {
+    const started = await xvfb(number);
+    if ("stop" in started) return started;
+    failure = started.failure;
+  }
+  throw new Error(`Xvfb found no free display from :${base}: ${failure}`);
+}
+
+/**
+ * Xvfb on display `number`, ready once it reports the number (-displayfd). It listens on the
+ * abstract socket only: no TCP, and no /tmp/.X11-unix socket, which a desktop (WSLg) may own.
+ */
+function xvfb(number: number): Promise<Display | { failure: string }> {
+  const server: ChildProcess = spawn(
+    "Xvfb",
+    [`:${number}`, "-displayfd", "3", "-screen", "0", "1600x1000x24", "-nolisten", "tcp", "-nolisten", "unix"],
+    { stdio: ["ignore", "ignore", "pipe", "pipe"] },
+  );
+  return new Promise((done, fail) => {
+    let errors = "";
+    server.stderr?.on("data", (chunk) => (errors += chunk));
+    server.once("error", (error: NodeJS.ErrnoException) =>
+      fail(
+        new Error(
+          error.code === "ENOENT"
+            ? "The e2e tests run the app on a private Xvfb display; install Xvfb (for example `apt install xvfb`)."
+            : `Xvfb did not start: ${error.message}`,
+        ),
+      ),
+    );
+    // In use (or refused): the caller tries the next number.
+    server.once("exit", () => done({ failure: errors.trim() }));
+    const reported = server.stdio[3] as NodeJS.ReadableStream;
+    let text = "";
+    reported.on("data", (chunk) => {
+      text += chunk;
+      if (!text.includes("\n")) return;
+      server.removeAllListeners("exit");
+      // Never outlive the test process, however it ends.
+      process.once("exit", () => server.kill());
+      done({
+        // The app draws on X only: no Wayland compositor of the desktop either.
+        env: { DISPLAY: `:${text.trim()}`, GDK_BACKEND: "x11" },
+        stop: () => server.kill(),
+      });
+    });
+  });
+}
+
+async function launch(fixture: Fixture, overrides: Record<string, string | undefined>, args: string[]): Promise<Session> {
   if (!checked) {
     checkBuild();
     checked = true;
@@ -93,18 +144,40 @@ async function launch(ime: Ime, fixture: Fixture, overrides: Record<string, stri
     ARTIFACTIZE_REMOTE: "off",
     ...overrides,
   };
+  const screen = await display();
+  if (screen.env.DISPLAY) delete env.WAYLAND_DISPLAY;
   for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
   const driver: ChildProcess = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
     env: {
       ...env,
+      ...screen.env,
       // A fresh WebView profile per run: no pane sizes or other storage from earlier runs.
       XDG_DATA_HOME: join(fixture.root, "data"),
-      ...(ime === "literal" ? { GTK_IM_MODULE: "gtk-im-context-simple", XMODIFIERS: "" } : {}),
+      // Typed keys reach the app through GTK's built-in input method: literal text, never a
+      // desktop input method's composition (Korean input is a manual test, see the README).
+      GTK_IM_MODULE: "gtk-im-context-simple",
+      XMODIFIERS: "",
     },
     stdio: ["ignore", "ignore", "inherit"],
   });
+  const browser = await connect(port, args, fixture).catch((error) => {
+    driver.kill();
+    screen.stop();
+    throw error;
+  });
+  return {
+    browser,
+    stop: async () => {
+      await browser.deleteSession().catch(() => {});
+      driver.kill();
+      screen.stop();
+    },
+  };
+}
+
+async function connect(port: number, args: string[], fixture: Fixture): Promise<WebdriverIO.Browser> {
   await until(() => listening(port), "tauri-driver");
-  const browser = await remote({
+  return remote({
     hostname: "127.0.0.1",
     port,
     logLevel: "error",
@@ -116,11 +189,4 @@ async function launch(ime: Ime, fixture: Fixture, overrides: Record<string, stri
       },
     } as WebdriverIO.Capabilities,
   });
-  return {
-    browser,
-    stop: async () => {
-      await browser.deleteSession().catch(() => {});
-      driver.kill();
-    },
-  };
 }

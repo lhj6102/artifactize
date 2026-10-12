@@ -2,7 +2,7 @@
 // a release Artifact with a waiting Human sign-off, its tools and owner schemas, and a
 // dependent Artifact that waits for it.
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -185,11 +185,18 @@ Check ${reference}."""
  * or TMPDIR): token storage refuses a state inside a repository, as the CLI does. `remove`
  * deletes it.
  */
-export function createOutside(): Fixture & { remove: () => void } {
+export function createOutside(): Fixture & { remove: () => Promise<void> } {
   const root = mkdtempSync(join(tmpdir(), "artifactize-e2e-"));
   const repo = join(root, "repo");
   mkdirSync(repo, { recursive: true });
-  return { root, repo, state: join(root, "state"), remove: () => rmSync(root, { recursive: true, force: true }) };
+  // The closing WebView may still write its profile (below `data`) as the session ends.
+  const remove = async () => {
+    for (let attempt = 0; attempt < 20 && existsSync(root); attempt += 1) {
+      rmSync(root, { recursive: true, force: true });
+      await new Promise((done) => setTimeout(done, 100));
+    }
+  };
+  return { root, repo, state: join(root, "state"), remove };
 }
 
 if (import.meta.main) {

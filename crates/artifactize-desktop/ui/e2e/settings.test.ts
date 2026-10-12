@@ -68,7 +68,7 @@ describe("settings", () => {
   after(async () => {
     await session?.stop();
     store?.close();
-    fixture.remove();
+    await fixture.remove();
   });
 
   it("shows which API keys the environment sets, never their values", async () => {
