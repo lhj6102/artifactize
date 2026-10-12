@@ -8,7 +8,7 @@ grep = { builtin = "grep" }
 read = { builtin = "read" }
 
 [evals.follows-style]
-title = "The CLI code follows the code checklist"
+title = "The core library code follows the code checklist"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 8000000 }
 
 [evals.follows-style.profile_variants]
@@ -49,7 +49,7 @@ required = ["item", "where", "change"]
 additionalProperties = false
 
 [evals.follows-platform]
-title = "The CLI code follows the platform checklist"
+title = "The core library code follows the platform checklist"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 8000000 }
 
 [evals.follows-platform.profile_variants]

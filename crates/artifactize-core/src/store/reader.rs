@@ -23,6 +23,28 @@ use rusqlite::{Connection, OptionalExtension};
 #[cfg(test)]
 mod tests;
 
+/// The SELECT statements this thread's readers ran, for tests that count what a read costs.
+#[cfg(any(test, feature = "test-support"))]
+mod statements {
+    use std::cell::RefCell;
+
+    thread_local! { static STATEMENTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) }; }
+
+    pub(super) fn trace(event: rusqlite::trace::TraceEvent<'_>) {
+        let rusqlite::trace::TraceEvent::Stmt(statement, _) = event else {
+            return;
+        };
+        let sql = statement.expanded_sql().unwrap();
+        if sql.starts_with("SELECT") || sql.starts_with("WITH") {
+            STATEMENTS.with(|statements| statements.borrow_mut().push(sql.to_owned()));
+        }
+    }
+
+    pub(super) fn take() -> Vec<String> {
+        STATEMENTS.with(|statements| std::mem::take(&mut *statements.borrow_mut()))
+    }
+}
+
 struct Open {
     file: File,
     identity: platform::FileIdentity,
@@ -115,10 +137,10 @@ impl Reader {
             });
         }
         let open = self.open.as_mut().expect("opened above");
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         open.connection.trace_v2(
             rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
-            Some(tests::trace),
+            Some(statements::trace),
         );
         let transaction = open
             .connection
@@ -166,9 +188,9 @@ impl Reader {
         self.reset();
         Err("State database changed while loading the snapshot; retry it.".into())
     }
-    #[cfg(test)]
-    pub(crate) fn traced_statements(&self) -> Vec<String> {
-        tests::statements()
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn traced_statements(&self) -> Vec<String> {
+        statements::take()
     }
     pub fn reset(&mut self) {
         self.cache = Cache::default();

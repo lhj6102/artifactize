@@ -5,7 +5,7 @@ use crate::{
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
-use std::fs;
+use std::{fs, sync::Arc};
 
 async fn fixture(count: usize) -> (tempfile::TempDir, Receipts, Monitor) {
     let root = crate::test_os::tempdir();

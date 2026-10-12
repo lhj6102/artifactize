@@ -17,9 +17,9 @@ use crate::{
 
 /// Bound owner fields and serialized Human results consistently across CLI, editor
 /// and submission so untrusted JSON cannot grow the review audit without limit.
-pub(crate) const MAX_RESULT_BYTES: usize = 256_000;
+pub const MAX_RESULT_BYTES: usize = 256_000;
 /// Read one sentinel byte beyond the bound to detect oversized files without loading them.
-pub(crate) const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
+pub const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
 
 pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
     crate::platform::USER_VARIABLES

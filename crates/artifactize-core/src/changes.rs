@@ -228,7 +228,7 @@ impl Publisher {
 }
 
 /// Drain short-lived commands centrally. Only bounded hints are sent; a failed delivery is safe.
-pub(crate) async fn drain() {
+pub async fn drain() {
     let publishers: Vec<_> = PUBLISHERS
         .get()
         .map(|publishers| {

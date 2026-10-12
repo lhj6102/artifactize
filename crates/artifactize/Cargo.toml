@@ -24,3 +24,4 @@ pkg-fmt = "zip"
 
 [dependencies]
 artifactize-core.workspace = true
+artifactize-tui.workspace = true

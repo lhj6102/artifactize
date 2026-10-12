@@ -5,9 +5,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use artifactize_core::{
-    monitor::{self, Completion, EvalView, Kind, Monitor, Node, NotRun, Target, Upstream},
-    store::{self, RequestView, RunView},
+use artifactize_core::store::{self, RequestView, RunView};
+use artifactize_tui::monitor::{
+    self, Completion, EvalView, Kind, Monitor, Node, NotRun, Target, Upstream,
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{Terminal, backend::TestBackend};
@@ -15,6 +15,7 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {

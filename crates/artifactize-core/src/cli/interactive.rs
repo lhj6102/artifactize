@@ -1,9 +1,9 @@
 //! Terminal UI setup and cancellation workflows.
 
-use super::{Context, cancellation_listener};
+use super::{Context, Screens, cancellation_listener};
 use std::path::PathBuf;
 
-pub(super) async fn monitor(context: Context, all: bool) -> Result<u8, String> {
+pub(super) async fn monitor(context: Context, all: bool, screens: Screens) -> Result<u8, String> {
     if context.json {
         return Err("monitor is an interactive terminal UI; --json is not supported.".into());
     }
@@ -13,7 +13,7 @@ pub(super) async fn monitor(context: Context, all: bool) -> Result<u8, String> {
     let state = crate::store::state_dir(context.state_dir.as_deref())?;
     let repo = (!all).then(|| context.repo.unwrap_or_else(|| PathBuf::from(".")));
     let (cancellation, listener) = cancellation_listener()?;
-    let result = crate::monitor::run(state, repo, cancellation).await;
+    let result = (screens.monitor)(state, repo, cancellation).await;
     listener.abort();
     result?;
     Ok(0)
@@ -24,6 +24,7 @@ pub(super) async fn review(
     request: Option<crate::types::RequestId>,
     all: bool,
     reviewer: Option<crate::types::ReviewerId>,
+    screens: Screens,
 ) -> Result<u8, String> {
     if context.json {
         return Err("review is an interactive terminal UI; --json is not supported.".into());
@@ -43,7 +44,7 @@ pub(super) async fn review(
     // --all (the default) stays accepted.
     let repo = context.repo;
     let (cancellation, listener) = cancellation_listener()?;
-    let result = crate::review::run(state, repo, reviewer, request, cancellation).await;
+    let result = (screens.review)(state, repo, reviewer, request, cancellation).await;
     listener.abort();
     result?;
     Ok(0)

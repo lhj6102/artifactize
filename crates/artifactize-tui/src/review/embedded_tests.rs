@@ -98,9 +98,7 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
     let follower = waiting(&repo, &state).await;
     assert_ne!(first.request.id, follower.request.id);
     assert_eq!(first.request.execution_id, follower.request.execution_id);
-    let resolved = crate::monitor::test_original(&state, &follower)
-        .await
-        .unwrap();
+    let resolved = crate::monitor::original(&state, &follower).await.unwrap();
     assert_eq!(resolved.request.id, first.request.id);
     let mut alice = opened(&state, resolved.clone(), "alice");
     let mut bob = opened(&state, resolved, "bob");
@@ -131,9 +129,7 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
     assert_eq!(signoffs.len(), 1);
     let mut reviewer = opened(
         &state,
-        crate::monitor::test_original(&state, &follower)
-            .await
-            .unwrap(),
+        crate::monitor::original(&state, &follower).await.unwrap(),
         "final",
     );
     let outcome = perform(&mut reviewer, Control::Claim).await;
@@ -181,16 +177,16 @@ fn nested_json_is_utf8_editable_and_enter_is_not_submit() {
     let valid = form.result().unwrap();
     assert_eq!(valid["nested"]["name"], "한글");
     assert_eq!(valid["list"][0], "é");
-    form.inline_key(KeyEvent::from(KeyCode::Enter));
+    form.inline_key(Key::Enter, false);
     assert!(form.json.as_ref().unwrap().ends_with('\n'));
-    form.inline_key(KeyEvent::from(KeyCode::Backspace));
+    form.inline_key(Key::Backspace, false);
     form.json = Some("a한é".into());
     form.cursor = "a한é".len();
-    form.inline_key(KeyEvent::from(KeyCode::Left));
-    form.inline_key(KeyEvent::from(KeyCode::Backspace));
+    form.inline_key(Key::Left, false);
+    form.inline_key(Key::Backspace, false);
     assert_eq!(form.json.as_deref(), Some("aé"));
     assert_eq!(form.cursor, 1);
-    form.inline_key(KeyEvent::from(KeyCode::Delete));
+    form.inline_key(Key::Delete, false);
     assert_eq!(form.json.as_deref(), Some("a"));
     let before = form.json.clone();
     form.paste(&"x".repeat(crate::human::MAX_RESULT_BYTES));
@@ -759,7 +755,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     )];
 
     // Monitor's Detail resolves a follower to the original before loading the review.
-    let monitor = crate::monitor::test_original(&state, &followers[2])
+    let monitor = crate::monitor::original(&state, &followers[2])
         .await
         .unwrap();
     assert_eq!(monitor.request.id, original.request.id);

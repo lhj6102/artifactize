@@ -16,7 +16,7 @@
 //! Program lookup and desktop-opener crate choices are documented in artifactize-tools'
 //! platform module, where those implementations live.
 
-pub(crate) mod environment;
+pub mod environment;
 mod hidden_input;
 pub(crate) mod path_serde;
 pub(crate) mod paths;
@@ -78,14 +78,15 @@ pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {
 pub(crate) const FILE_LOCK_RETRY_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(25);
 
+pub use artifactize_tools::files::path_text;
 pub(crate) use artifactize_tools::files::{
     EntryName, FileKind, canonicalize, entry_kind, link_target, open_directory, open_entry,
-    open_no_follow, open_nonblocking, path_text, read_dir,
+    open_no_follow, open_nonblocking, read_dir,
 };
 
 /// Open an existing regular file for reading without following a link in its last
 /// component (on Windows, any reparse point), and check what was opened.
-pub(crate) fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     let file = open_no_follow(std::fs::OpenOptions::new().read(true), path)?;
     if file.metadata()?.is_file() {
         Ok(file)
@@ -213,10 +214,8 @@ mod console;
 pub(crate) use console::pause_after_help;
 
 mod interaction;
-pub(crate) use interaction::{
-    is_within, label, paths_equal, private_anonymous_file, private_temp_file, run_editor,
-    selected_editor,
-};
+pub use interaction::{PrivateTempFile, private_temp_file, run_editor, selected_editor};
+pub(crate) use interaction::{is_within, label, paths_equal, private_anonymous_file};
 
 /// Whether an entry exists without following links (including dangling links).
 pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {

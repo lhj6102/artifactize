@@ -1,7 +1,20 @@
 //! Pure session layout and scrolling, shared by terminal and future graphical viewers.
 //! Rows are indexed by logical UTF-8 offsets, not terminal-sized global scroll coordinates.
-use ratatui::buffer::CellWidth;
 use std::ops::Range;
+use unicode_width::UnicodeWidthStr;
+
+/// Terminal cells of one grapheme, as ratatui's renderer counts them: `unicode-width`, plus
+/// the halfwidth dakuten marks (U+FF9E, U+FF9F), which terminals draw in a cell of their own.
+pub(crate) fn cell_width(grapheme: &str) -> u16 {
+    if grapheme.len() == 1 {
+        return 1;
+    }
+    let marks = grapheme
+        .chars()
+        .filter(|c| matches!(c, '\u{FF9E}' | '\u{FF9F}'))
+        .count() as u16;
+    (grapheme.width() as u16).saturating_add(marks)
+}
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -110,7 +123,7 @@ pub fn rows(text: &str, width: usize) -> Vec<Range<usize>> {
             start = byte + grapheme.len();
             columns = 0;
         } else if !grapheme.contains(char::is_control) {
-            let size = usize::from(grapheme.cell_width());
+            let size = usize::from(cell_width(grapheme));
             if size <= width {
                 if columns + size > width {
                     rows.push(start..byte);
@@ -131,7 +144,7 @@ pub fn row(text: &str, range: &Range<usize>, width: usize) -> String {
     text[range.clone()]
         .graphemes(true)
         .filter(|grapheme| {
-            !grapheme.contains(char::is_control) && usize::from(grapheme.cell_width()) <= width
+            !grapheme.contains(char::is_control) && usize::from(cell_width(grapheme)) <= width
         })
         .collect()
 }

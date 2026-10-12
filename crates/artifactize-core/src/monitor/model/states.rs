@@ -330,7 +330,7 @@ impl<'a> Index<'a> {
 /// Lazily derived views over one Run; dependency evals may read peers in any order.
 pub(super) struct States<'a> {
     run: &'a crate::store::Run,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub derivations: std::cell::Cell<usize>,
     pub index: Index<'a>,
     pub running: bool,
@@ -348,7 +348,7 @@ impl<'a> States<'a> {
         let run = &saved.run.run;
         let states = Self {
             run,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             derivations: std::cell::Cell::new(0),
             index: Index::new(saved),
             running: run.status() == RunStatus::Running,
@@ -462,7 +462,7 @@ impl<'a> States<'a> {
             return view.clone().unwrap_or(EvalView::NotRun(NotRun::Unreviewed));
         }
         self.views.borrow_mut().insert(eval, None);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.derivations.set(self.derivations.get() + 1);
         let view = self.derive(eval);
         self.views.borrow_mut().insert(eval, Some(view.clone()));
@@ -477,7 +477,7 @@ impl<'a> States<'a> {
             return status.unwrap_or(EvalStatus::Wait);
         }
         self.effective.borrow_mut().insert(eval, None);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.derivations.set(self.derivations.get() + 1);
         let status = self.evaluate(eval);
         self.effective.borrow_mut().insert(eval, Some(status));

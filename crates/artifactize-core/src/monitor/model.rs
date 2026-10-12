@@ -1076,8 +1076,8 @@ fn counter_pairs(counters: &std::collections::BTreeMap<String, u64>) -> String {
     )
 }
 
-#[cfg(test)]
-pub(super) fn derivation_count(run: &RunView, requests: &[RequestView]) -> usize {
+#[cfg(any(test, feature = "test-support"))]
+pub fn derivation_count(run: &RunView, requests: &[RequestView]) -> usize {
     states::States::new(&Saved { run, requests })
         .derivations
         .get()

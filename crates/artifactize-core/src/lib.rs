@@ -14,7 +14,7 @@ mod json;
 pub mod limits;
 pub mod llm;
 pub mod monitor;
-mod platform;
+pub mod platform;
 pub mod process;
 pub mod project;
 pub mod query;
@@ -26,7 +26,7 @@ pub mod scope;
 mod secret;
 pub mod server;
 pub mod store;
-mod task;
+pub mod task;
 pub mod tools;
 pub mod types;
 pub mod workspace;
@@ -39,3 +39,13 @@ mod test_os;
 
 #[cfg(test)]
 mod test_declaration;
+
+/// A saved request, shared with the unit tests of `artifactize-tui`.
+#[cfg(test)]
+#[path = "../tests/support/request.rs"]
+mod test_request;
+
+/// Saved Agent conversation files, shared with the unit tests of `artifactize-tui`.
+#[cfg(test)]
+#[path = "../tests/support/session_files.rs"]
+mod test_session_files;

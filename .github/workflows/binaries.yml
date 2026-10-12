@@ -37,6 +37,7 @@ on:
       - "crates/artifactize/Cargo.toml"
       - "crates/artifactize-core/Cargo.toml"
       - "crates/artifactize-tools/Cargo.toml"
+      - "crates/artifactize-tui/Cargo.toml"
       - "website/landing/install.sh"
       - "website/landing/install.ps1"
 

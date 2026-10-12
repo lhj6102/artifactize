@@ -1,6 +1,5 @@
 //! Owner fields for one verdict: a form for flat schemas, JSON from `$EDITOR` otherwise.
 
-use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Map, Value, json};
 
 /// Annotations allowed on any schema the form accepts.
@@ -13,6 +12,25 @@ const NUMERIC: [&str; 6] = [
     "exclusiveMaximum",
     "multipleOf",
 ];
+
+/// A key as the form edits with it; each interface maps its own key events onto these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Char(char),
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+    Enter,
+    Tab,
+    BackTab,
+    /// A key the form does not use.
+    Other,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Input {
@@ -73,21 +91,18 @@ impl Field {
         }
     }
 
-    fn key(&mut self, key: KeyEvent) {
+    fn key(&mut self, key: Key) {
         let required = self.required;
-        match (&mut self.input, key.code) {
-            (Input::Text(text) | Input::Integer(text) | Input::Number(text), KeyCode::Char(c)) => {
+        match (&mut self.input, key) {
+            (Input::Text(text) | Input::Integer(text) | Input::Number(text), Key::Char(c)) => {
                 text.push(c)
             }
-            (
-                Input::Text(text) | Input::Integer(text) | Input::Number(text),
-                KeyCode::Backspace,
-            ) => {
+            (Input::Text(text) | Input::Integer(text) | Input::Number(text), Key::Backspace) => {
                 text.pop();
             }
-            (Input::Bool(value), KeyCode::Char('t' | 'y')) => *value = Some(true),
-            (Input::Bool(value), KeyCode::Char('f' | 'n')) => *value = Some(false),
-            (Input::Bool(value), KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right) => {
+            (Input::Bool(value), Key::Char('t' | 'y')) => *value = Some(true),
+            (Input::Bool(value), Key::Char('f' | 'n')) => *value = Some(false),
+            (Input::Bool(value), Key::Char(' ') | Key::Left | Key::Right) => {
                 *value = match value {
                     None => Some(true),
                     Some(true) => Some(false),
@@ -95,7 +110,7 @@ impl Field {
                     Some(false) => None,
                 }
             }
-            (Input::Choice(options, index), KeyCode::Char(' ') | KeyCode::Right) => {
+            (Input::Choice(options, index), Key::Char(' ') | Key::Right) => {
                 *index = match *index {
                     None => Some(0),
                     Some(i) if i + 1 < options.len() => Some(i + 1),
@@ -103,7 +118,7 @@ impl Field {
                     Some(_) => None,
                 }
             }
-            (Input::Choice(options, index), KeyCode::Left) => {
+            (Input::Choice(options, index), Key::Left) => {
                 *index = match *index {
                     Some(0) if !required => None,
                     Some(0) | None => Some(options.len() - 1),
@@ -217,7 +232,7 @@ impl Form {
     }
 
     /// Multiline editing stays inside monitor. Enter inserts a newline, never submits.
-    pub fn inline_key(&mut self, key: KeyEvent) {
+    pub fn inline_key(&mut self, key: Key, modified: bool) {
         if self.json.is_none() {
             let text_field = self.fields.get(self.selected).is_some_and(|field| {
                 matches!(
@@ -225,44 +240,27 @@ impl Form {
                     Input::Text(_) | Input::Integer(_) | Input::Number(_)
                 )
             });
-            match key.code {
-                KeyCode::Char(character)
-                    if text_field
-                        && !key.modifiers.intersects(
-                            crossterm::event::KeyModifiers::CONTROL
-                                | crossterm::event::KeyModifiers::ALT,
-                        ) =>
-                {
+            match key {
+                Key::Char(character) if text_field && !modified => {
                     self.paste(&character.to_string())
                 }
-                _ if !key.modifiers.intersects(
-                    crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::ALT,
-                ) =>
-                {
-                    self.key(key)
-                }
+                _ if !modified => self.key(key),
                 _ => {}
             }
             return;
         }
         let text = self.json.as_ref().expect("JSON mode");
         self.cursor = boundary(text, self.cursor);
-        match key.code {
-            KeyCode::Char(character)
-                if !key.modifiers.intersects(
-                    crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::ALT,
-                ) =>
-            {
-                self.paste(&character.to_string())
-            }
-            KeyCode::Enter => self.paste("\n"),
-            KeyCode::Tab => self.paste("  "),
-            KeyCode::Left | KeyCode::Backspace if self.cursor > 0 => {
+        match key {
+            Key::Char(character) if !modified => self.paste(&character.to_string()),
+            Key::Enter => self.paste("\n"),
+            Key::Tab => self.paste("  "),
+            Key::Left | Key::Backspace if self.cursor > 0 => {
                 let previous = text[..self.cursor]
                     .char_indices()
                     .last()
                     .map_or(0, |(index, _)| index);
-                if key.code == KeyCode::Backspace {
+                if key == Key::Backspace {
                     self.json
                         .as_mut()
                         .expect("JSON mode")
@@ -270,14 +268,14 @@ impl Form {
                 }
                 self.cursor = previous;
             }
-            KeyCode::Right | KeyCode::Delete if self.cursor < text.len() => {
+            Key::Right | Key::Delete if self.cursor < text.len() => {
                 let next = self.cursor
                     + text[self.cursor..]
                         .chars()
                         .next()
                         .expect("not at end")
                         .len_utf8();
-                if key.code == KeyCode::Delete {
+                if key == Key::Delete {
                     self.json
                         .as_mut()
                         .expect("JSON mode")
@@ -286,18 +284,16 @@ impl Form {
                     self.cursor = next;
                 }
             }
-            KeyCode::Home => {
-                self.cursor = text[..self.cursor].rfind('\n').map_or(0, |index| index + 1)
-            }
-            KeyCode::End => {
+            Key::Home => self.cursor = text[..self.cursor].rfind('\n').map_or(0, |index| index + 1),
+            Key::End => {
                 self.cursor += text[self.cursor..]
                     .find('\n')
                     .unwrap_or(text.len() - self.cursor)
             }
-            KeyCode::Up | KeyCode::Down => {
+            Key::Up | Key::Down => {
                 let start = text[..self.cursor].rfind('\n').map_or(0, |index| index + 1);
                 let column = text[start..self.cursor].chars().count();
-                let destination = if key.code == KeyCode::Up {
+                let destination = if key == Key::Up {
                     start
                         .checked_sub(1)
                         .map(|end| (text[..end].rfind('\n').map_or(0, |index| index + 1), end))
@@ -320,15 +316,13 @@ impl Form {
         }
     }
 
-    pub fn key(&mut self, key: KeyEvent) {
+    pub fn key(&mut self, key: Key) {
         let count = self.fields.len();
-        match key.code {
-            KeyCode::Up | KeyCode::BackTab if count > 0 => {
+        match key {
+            Key::Up | Key::BackTab if count > 0 => {
                 self.selected = (self.selected + count - 1) % count
             }
-            KeyCode::Down | KeyCode::Tab if count > 0 => {
-                self.selected = (self.selected + 1) % count
-            }
+            Key::Down | Key::Tab if count > 0 => self.selected = (self.selected + 1) % count,
             _ if self.json.is_none() => {
                 if let Some(field) = self.fields.get_mut(self.selected) {
                     field.key(key);
@@ -423,7 +417,7 @@ fn input(property: &Value) -> Option<(Input, String)> {
 
 /// A JSON skeleton of a schema for `$EDITOR`: constants and first choices filled, the rest empty.
 /// `cursor` moved back onto a UTF-8 character boundary of `text`, at most its end.
-pub(crate) fn boundary(text: &str, cursor: usize) -> usize {
+pub fn boundary(text: &str, cursor: usize) -> usize {
     let mut cursor = cursor.min(text.len());
     while !text.is_char_boundary(cursor) {
         cursor -= 1;

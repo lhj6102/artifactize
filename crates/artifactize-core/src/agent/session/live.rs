@@ -40,7 +40,7 @@ pub async fn resolve(state: &Path, view: &RequestView) -> Result<Resolution, Str
     resolve_cached(state, view, None).await
 }
 
-pub(crate) async fn resolve_cached(
+pub async fn resolve_cached(
     state: &Path,
     view: &RequestView,
     identity: Option<&crate::types::StateId>,

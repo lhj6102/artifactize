@@ -266,7 +266,7 @@ fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
 }
 
 #[tokio::test]
-async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or_prune() {
+async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -275,7 +275,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
     }).to_string()).unwrap();
     let healthy = verify(&repo, &state).await;
-    // Corrupt the newest Run: monitor initially selects it and must still refresh.
+    // Corrupt the newest Run: the listings must still work.
     let bad = verify(&repo, &state).await;
     let db = Connection::open(state.join(DATABASE)).unwrap();
     db.execute(
@@ -363,18 +363,5 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or
             .len(),
         0
     );
-    let mut monitor = artifactize_core::monitor::Monitor::new(state.clone(), Some(repo.clone()));
-    monitor.refresh().await;
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40)).unwrap();
-    let frame = terminal.draw(|frame| monitor.draw(frame)).unwrap();
-    let text: String = frame
-        .buffer
-        .content
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect();
-    assert!(text.contains(bad.run.id.as_str()), "{text}");
-    assert!(text.contains("A running Run cannot be completed"), "{text}");
-    assert!(!text.contains("read failed"), "{text}");
     assert_eq!(verify(&repo, &state).await.run.status().as_str(), "GREEN");
 }

@@ -1,8 +1,8 @@
 //! Route parsed commands to focused workflows; no business logic or rendering here.
 
 use super::{
-    AuthProvider, Cli, Command, ConfigCommand, RunCommand, ToolsCommand, cache, interactive,
-    maintenance, remote, request, run, server, session, workflow,
+    AuthProvider, Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, cache,
+    interactive, maintenance, remote, request, run, server, session, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -13,7 +13,7 @@ pub(super) struct Context {
     pub json: bool,
 }
 
-pub(super) async fn execute(cli: Cli) -> Result<u8, String> {
+pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
     let context = Context {
         repo: cli.repo,
         state_dir: cli.state_dir,
@@ -88,12 +88,12 @@ pub(super) async fn execute(cli: Cli) -> Result<u8, String> {
                     timeout_ms,
                 },
         }) => run::show(context, run_id, wait, timeout_ms).await,
-        Some(Command::Monitor { all }) => interactive::monitor(context, all).await,
+        Some(Command::Monitor { all }) => interactive::monitor(context, all, screens).await,
         Some(Command::Review {
             request,
             all,
             reviewer,
-        }) => interactive::review(context, request, all, reviewer).await,
+        }) => interactive::review(context, request, all, reviewer, screens).await,
         Some(Command::Cache { command }) => cache::execute(context, command).await,
         Some(Command::Remote { command }) => {
             remote::execute(

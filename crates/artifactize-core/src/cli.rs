@@ -424,7 +424,27 @@ fn repeated_global(options: &[&str]) -> Option<&'static str> {
         })
 }
 
-pub fn run() -> ExitCode {
+/// What a screen runs until the reviewer quits; screens need no `Send`, the command runs on a
+/// single thread.
+pub type Screen = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>;
+
+/// The terminal screens `artifactize monitor` and `artifactize review` open. They live in
+/// `artifactize-tui`, which the binary hands to [`run`], so this library draws nothing.
+#[derive(Clone, Copy)]
+pub struct Screens {
+    /// The Monitor over the state directory, on one repository or on every one.
+    pub monitor: fn(PathBuf, Option<PathBuf>, tokio_util::sync::CancellationToken) -> Screen,
+    /// The Human review list, or one request when given.
+    pub review: fn(
+        PathBuf,
+        Option<PathBuf>,
+        crate::types::ReviewerId,
+        Option<crate::types::RequestId>,
+        tokio_util::sync::CancellationToken,
+    ) -> Screen,
+}
+
+pub fn run(screens: Screens) -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
     let has_args = args.len() > 1;
     let parsed = Cli::try_parse_from(&args);
@@ -483,7 +503,7 @@ pub fn run() -> ExitCode {
                 .build()
                 .map_err(|error| error.to_string())?;
             runtime.block_on(Box::pin(async {
-                let result = dispatch::execute(cli).await;
+                let result = dispatch::execute(cli, screens).await;
                 crate::changes::drain().await;
                 result
             }))

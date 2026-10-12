@@ -13,37 +13,7 @@ fn now() -> OffsetDateTime {
     OffsetDateTime::parse("2026-01-01T00:01:05Z", &Rfc3339).unwrap()
 }
 
-pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
-    let mut value = json!({
-        "id":format!("run-1-{}", eval.replace('/', "-")),
-        "runId":"run-1",
-        "evalId":eval,
-        "target":eval.split('/').next(),
-        "title":"Title",
-        "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
-        "requestedProfile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
-        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "payload":{"instruction":"Check."},
-        "references":{},
-        "deps":[],
-        "status":status,
-        "result": if matches!(status, "GREEN" | "RED") { json!({"verdict":status}) } else { Value::Null },
-        "error": if status == "ERROR" { json!("fixture error") } else { Value::Null },
-        "completedAt": if matches!(status, "GREEN" | "RED" | "ERROR") { json!("2026-01-01T00:00:01Z") } else { Value::Null },
-        "createdAt":"2026-01-01T00:00:00Z",
-        "cwd":"/repo",
-    });
-    value
-        .as_object_mut()
-        .unwrap()
-        .extend(extra.as_object().unwrap().clone());
-    RequestView {
-        request: serde_json::from_value(value).unwrap(),
-        claim: None,
-        execution: None,
-        definition: None,
-    }
-}
+pub(crate) use crate::test_request::request;
 
 fn eval(id: &str, deps: &[&str]) -> Value {
     json!({
@@ -788,7 +758,7 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
             view.request.state = crate::store::RequestState::failed(
                 long.clone(),
                 view.request.error_code(),
-                crate::broker::now(),
+                crate::types::Timestamp::now(),
             );
         }
         if view.request.eval_id == "app/check" {
@@ -850,7 +820,7 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
             view.request.state = crate::store::RequestState::failed(
                 messy.into(),
                 view.request.error_code(),
-                crate::broker::now(),
+                crate::types::Timestamp::now(),
             );
         }
         if view.request.eval_id == "app/check" {

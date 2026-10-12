@@ -1,9 +1,6 @@
 //! Initial selection never changes how legacy workspaces are grouped.
 use super::*;
-use crate::{
-    store::{self, CatalogRun},
-    types::RunStatus,
-};
+use crate::{store::CatalogRun, types::RunStatus};
 
 fn run(path: &Path) -> CatalogRun {
     CatalogRun {
@@ -64,29 +61,4 @@ fn non_git_initial_selection_uses_nearest_component_ancestor_without_grouping_le
             .iter()
             .any(|row| row.scope == Scope::Repository(Repository::Workspace(nested.clone())))
     );
-}
-
-#[tokio::test]
-async fn starting_inside_saved_non_git_workspace_selects_its_runs() {
-    let root = crate::test_os::tempdir();
-    let repo = crate::test_os::canonical(root.path()).join("repo");
-    let state = root.path().join("state");
-    std::fs::create_dir_all(repo.join("sub")).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    let run: store::Run = serde_json::from_value(serde_json::json!({
-        "id":"run-non-git",
-        "repoPath":repo,
-        "stateDir":state,
-        "status":"GREEN",
-        "createdAt":"2026-01-01T00:00:00Z",
-        "completedAt":"2026-01-01T00:00:01Z",
-        "selection":{"kind":"all"},
-        "validation":null,
-    }))
-    .unwrap();
-    receipts.create_run(&run, &[]).await.unwrap();
-    let mut monitor = super::super::Monitor::new(state, Some(repo.join("sub")));
-    monitor.refresh().await;
-    assert_eq!(monitor.scope, workspace(&repo));
-    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-non-git");
 }

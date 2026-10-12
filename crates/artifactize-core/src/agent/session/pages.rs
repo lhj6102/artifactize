@@ -1,7 +1,6 @@
 //! Ephemeral formatted text and row offsets. Large events are decoded once, never retained.
 //! Layout scans bounded UTF-8 chunks; rows/page-in use this same explicit grapheme model.
-use super::document::{Anchor, Position};
-use ratatui::buffer::CellWidth;
+use super::document::{Anchor, Position, cell_width};
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
@@ -442,7 +441,7 @@ impl Pages {
                         self.current.start = absolute + grapheme.len();
                         self.current.columns = 0;
                     } else if !grapheme.contains(char::is_control) {
-                        let size = usize::from(grapheme.cell_width());
+                        let size = usize::from(cell_width(grapheme));
                         if size <= self.current.width {
                             if self.current.columns + size > self.current.width {
                                 self.current.append(self.current.start..absolute)?;
@@ -469,9 +468,9 @@ impl Pages {
                         self.current.start = cursor + grapheme.len();
                         self.current.columns = 0;
                     } else if !grapheme.contains(char::is_control)
-                        && usize::from(grapheme.cell_width()) <= self.current.width
+                        && usize::from(cell_width(grapheme)) <= self.current.width
                     {
-                        let size = usize::from(grapheme.cell_width());
+                        let size = usize::from(cell_width(grapheme));
                         if self.current.columns + size > self.current.width {
                             self.current.append(self.current.start..cursor)?;
                             self.current.start = cursor;

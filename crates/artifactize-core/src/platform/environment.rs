@@ -7,12 +7,12 @@ use std::{
 };
 
 /// One variable of this process's environment; `None` when it is unset.
-pub(crate) fn var(name: &str) -> Option<OsString> {
+pub fn var(name: &str) -> Option<OsString> {
     std::env::var_os(name)
 }
 
 /// One variable as text; `None` when it is unset or not Unicode.
-pub(crate) fn var_text(name: &str) -> Option<String> {
+pub fn var_text(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 

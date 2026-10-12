@@ -3,7 +3,7 @@
 //!
 //! [`Loader`] is the UI-agnostic seam: the terminal monitor and the desktop app both read
 //! their catalog, Runs page and selected Run through it.
-use super::{Monitor, Node, Scope, catalog, model};
+use super::{Node, Scope, catalog, model};
 use crate::{
     store::{self, RequestView, RunSummary, RunView, reader::Reader},
     types::RunId,
@@ -34,10 +34,10 @@ pub fn newer_offset(offset: u32, limit: u32) -> Option<u32> {
 
 /// The monitor's page plus what tells an obsolete job from a current one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Selection {
-    state: PathBuf,
-    page: Page,
-    revision: u64,
+pub struct Selection {
+    pub state: PathBuf,
+    pub page: Page,
+    pub revision: u64,
 }
 
 /// Everything one snapshot read needs; the caller keeps the catalog between reads.
@@ -109,6 +109,12 @@ pub struct Loader {
     reader: Reader,
 }
 impl Loader {
+    /// The SELECT statements read since the last call, for tests that count what a read costs.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn traced_statements(&self) -> Vec<String> {
+        self.reader.traced_statements()
+    }
+
     pub fn load(&mut self, input: Input) -> Result<Snapshot, String> {
         load(&mut self.reader, input)
     }
@@ -118,13 +124,32 @@ impl Loader {
     }
 }
 
-pub(super) struct Completed {
-    selection: Selection,
-    loader: Loader,
-    result: Result<Snapshot, String>,
-    #[cfg(test)]
-    queries: Vec<String>,
+pub struct Completed {
+    pub selection: Selection,
+    pub loader: Loader,
+    pub result: Result<Snapshot, String>,
+    /// The SELECT statements the read ran.
+    #[cfg(any(test, feature = "test-support"))]
+    pub queries: Vec<String>,
 }
+impl Completed {
+    /// Read the snapshot of `input` with `loader`, keeping what the caller needs to apply it.
+    pub fn run(selection: Selection, mut loader: Loader, input: Input) -> Self {
+        #[cfg(any(test, feature = "test-support"))]
+        loader.traced_statements();
+        let result = loader.load(input);
+        #[cfg(any(test, feature = "test-support"))]
+        let queries = loader.traced_statements();
+        Self {
+            selection,
+            loader,
+            result,
+            #[cfg(any(test, feature = "test-support"))]
+            queries,
+        }
+    }
+}
+
 fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
     let mut catalog = input.catalog;
     let mut scope = input.page.scope.clone();
@@ -249,144 +274,3 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
         selected,
     })
 }
-impl Monitor {
-    fn selection(&self) -> Selection {
-        Selection {
-            state: self.state.clone(),
-            page: Page {
-                scope: self.scope.clone(),
-                open: self.selected_run().map(|run| run.id.clone()),
-                offset: self.offset,
-                tail: self.page_tail,
-                limit: self.limit,
-            },
-            revision: self.load_revision,
-        }
-    }
-    pub(super) fn start_refresh(
-        &mut self,
-        full: bool,
-        resync: bool,
-    ) -> Option<tokio::task::JoinHandle<Completed>> {
-        self.start_refresh_after(full, resync, || {})
-    }
-    fn start_refresh_after(
-        &mut self,
-        full: bool,
-        resync: bool,
-        before: impl FnOnce() + Send + 'static,
-    ) -> Option<tokio::task::JoinHandle<Completed>> {
-        let mut loader = self.loader.take()?;
-        if resync {
-            loader.reset();
-        }
-        let selection = self.selection();
-        let input = Input {
-            state: self.state.clone(),
-            initial: self.initial.clone(),
-            catalog: self.catalog.clone(),
-            initialized: self.initialized,
-            page: selection.page.clone(),
-            full,
-            displayed: self.run.as_ref().map(|(run, _)| run.run.id.clone()),
-            runs: (!full && !self.runs.is_empty()).then(|| self.runs.clone()),
-        };
-        Some(tokio::task::spawn_blocking(move || {
-            before();
-            #[cfg(test)]
-            loader.reader.traced_statements();
-            let result = loader.load(input);
-            #[cfg(test)]
-            let queries = loader.reader.traced_statements();
-            Completed {
-                selection,
-                loader,
-                result,
-                #[cfg(test)]
-                queries,
-            }
-        }))
-    }
-    /// Returns false for obsolete navigation; the driver queues a fresh job in that case.
-    pub(super) async fn finish_refresh(&mut self, mut completed: Completed) -> bool {
-        if completed.selection != self.selection() {
-            completed.loader.reset();
-            self.loader = Some(completed.loader);
-            return false;
-        }
-        self.loader = Some(completed.loader);
-        let now = OffsetDateTime::now_utc();
-        match completed.result {
-            Err(error) => {
-                self.error = Some(format!("read failed at {}: {error}", super::clock(now)))
-            }
-            Ok(snapshot) => {
-                let fold = self
-                    .repositories
-                    .selected()
-                    .and_then(|index| self.catalog.rows.get(index))
-                    .and_then(|row| row.fold.clone());
-                if snapshot.origin.replaces(&self.origin) {
-                    if let Some(review) = self.detail.as_ref().and_then(|pane| pane.review.as_ref())
-                    {
-                        review.cancel_single();
-                    }
-                    self.detail = None;
-                    self.peek = None;
-                    self.reviews.clear();
-                    self.run = None;
-                    self.tree = Default::default();
-                    self.folds = Default::default();
-                    self.framed = None;
-                    self.serial += 1;
-                }
-                self.origin = snapshot.origin;
-                self.catalog = snapshot.catalog;
-                self.scope = snapshot.scope;
-                self.initialized = true;
-                self.repositories.select(
-                    fold.and_then(|fold| {
-                        self.catalog
-                            .rows
-                            .iter()
-                            .position(|row| row.fold.as_ref() == Some(&fold))
-                    })
-                    .or_else(|| {
-                        self.catalog
-                            .rows
-                            .iter()
-                            .position(|row| row.fold.is_none() && row.scope == self.scope)
-                    }),
-                );
-                self.open = snapshot.selected_id;
-                self.set_runs(snapshot.runs);
-                self.page_tail = false;
-                let changed = snapshot.selected.is_some();
-                if let Some((run, requests, nodes)) = snapshot.selected {
-                    let first = self
-                        .run
-                        .as_ref()
-                        .is_none_or(|(old, _)| old.run.id != run.run.id);
-                    if first {
-                        self.tree = Default::default();
-                    }
-                    self.run = Some((run, requests));
-                    self.sync_projected_tree(first, nodes);
-                }
-                self.refreshed = Some(now);
-                let unreadable = self
-                    .runs
-                    .iter()
-                    .flat_map(|run| &run.unreadable)
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>();
-                self.error = (!unreadable.is_empty()).then(|| unreadable.join("; "));
-                self.refresh_detail(changed).await;
-            }
-        }
-        true
-    }
-}
-
-#[cfg(test)]
-mod tests;

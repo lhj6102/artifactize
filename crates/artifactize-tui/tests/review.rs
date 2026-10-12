@@ -5,16 +5,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use artifactize_core::{
-    human,
-    review::{Action, Mode, Review},
-    store,
-};
+use artifactize_core::{human, store};
+use artifactize_tui::review::{Action, Mode, Review};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
 use support::os::bin;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {

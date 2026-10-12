@@ -3,6 +3,10 @@ use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
 
 use super::*;
+use crate::{
+    config::HumanToolKind,
+    tools::human::{Content, ToolResult},
+};
 
 const ID: &str = "run-1-3";
 
@@ -834,7 +838,7 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
     let ok = &form.fields[3];
     assert_eq!(ok.hint, "boolean — Did it work?");
     assert!(ok.required);
-    let key = |form: &mut Form, code| form.key(KeyEvent::from(code));
+    let key = |form: &mut Form, code| form.key(form_key(KeyEvent::from(code)).0);
     for c in "3x".chars() {
         key(&mut form, KeyCode::Char(c));
     }

@@ -76,7 +76,7 @@ impl Live {
         self.invalidate();
         true
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn expanded(&self, id: crate::agent::session::transcript::BlockId) -> bool {
         self.expanded.contains(&id)
     }

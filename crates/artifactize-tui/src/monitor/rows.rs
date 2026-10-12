@@ -9,7 +9,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
-use std::borrow::Cow;
 use time::OffsetDateTime;
 use tui_tree_widget::{Tree, TreeItem, TreeState};
 use unicode_segmentation::UnicodeSegmentation;
@@ -44,22 +43,7 @@ pub(super) fn color(tone: Tone) -> Color {
     }
 }
 
-/// Text for one row: line breaks and tabs become spaces and other control characters go,
-/// so widths are measured on what the terminal shows (and `cell_width` never sees a control).
-pub(crate) fn plain(text: &str) -> Cow<'_, str> {
-    if !text.contains(char::is_control) {
-        return Cow::Borrowed(text);
-    }
-    Cow::Owned(
-        text.chars()
-            .filter_map(|character| match character {
-                '\n' | '\t' => Some(' '),
-                character if character.is_control() => None,
-                character => Some(character),
-            })
-            .collect(),
-    )
-}
+pub(crate) use artifactize_core::monitor::plain;
 
 /// Terminal columns of [`plain`] text.
 pub(crate) fn width(text: &str) -> usize {

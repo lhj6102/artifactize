@@ -460,16 +460,16 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
             .contains("removed by session GC")
     );
     crate::test_os::create_private_dir_all(&crate::agent::session::directory(&state));
-    crate::agent::session::live_tests::write(
+    crate::test_session_files::write(
         &source,
         "{\"kind\":\"review\",\"sessionId\":\"session-1\"}\n",
     );
-    crate::agent::session::live_tests::append(
+    crate::test_session_files::append(
         &source,
-        &crate::agent::session::live_tests::answer("saved 한글 conversation"),
+        &crate::test_session_files::answer("saved 한글 conversation"),
     );
     assert!(
-        crate::agent::session::live_tests::finish(&mut reader, 80, 20, Position::Bottom)
+        crate::test_session_files::finish(&mut reader, 80, 20, Position::Bottom)
             .rows
             .join("\n")
             .contains("saved 한글 conversation")

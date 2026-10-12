@@ -1,5 +1,5 @@
 use super::{
-    document::{self, Mode, Move, Position, Scroll},
+    document::{Mode, Move, Position, Scroll},
     live::{self, Reader, Resolution, Source},
     *,
 };
@@ -7,68 +7,7 @@ use crate::store;
 use serde_json::json;
 use std::{fs, io::Write};
 
-pub(crate) fn fixture() -> (tempfile::TempDir, Source) {
-    let root = crate::test_os::tempdir();
-    crate::test_os::create_private_dir_all(&directory(root.path()));
-    let source = Source {
-        state: root.path().into(),
-        reference: SessionRef {
-            producer: store::Producer::current().name,
-            state: "state".parse().unwrap(),
-            run_id: "run".parse().unwrap(),
-            request_id: "request".parse().unwrap(),
-            session_id: "session".parse().unwrap(),
-        },
-        saved: true,
-    };
-    write(&source, &header(&source));
-    (root, source)
-}
-fn header(source: &Source) -> String {
-    format!(
-        "{}\n",
-        json!({
-            "kind":"review",
-            "version":1,
-            "sessionId":source.reference.session_id,
-            "runId":source.reference.run_id,
-            "requestId":source.reference.request_id,
-            "producer":source.reference.producer,
-            "state":source.reference.state,
-            "futureMetadata":7,
-        })
-    )
-}
-pub(crate) fn write(source: &Source, text: &str) {
-    let path = path(&source.state, &source.reference.session_id).unwrap();
-    crate::test_os::rewrite_private_file(&path, text);
-}
-pub(crate) fn append(source: &Source, text: &str) {
-    fs::OpenOptions::new()
-        .append(true)
-        .open(path(&source.state, &source.reference.session_id).unwrap())
-        .unwrap()
-        .write_all(text.as_bytes())
-        .unwrap();
-}
-pub(crate) fn answer(text: &str) -> String {
-    format!("{}\n", json!({"kind":"answer","text":text}))
-}
-pub(crate) fn finish(
-    reader: &mut Reader,
-    width: usize,
-    height: usize,
-    mut position: Position,
-) -> live::Window {
-    for _ in 0..10000 {
-        let window = reader.step(width, height, position);
-        if !window.loading {
-            return window;
-        }
-        position = window.position;
-    }
-    panic!("bounded indexing did not finish");
-}
+pub(crate) use crate::test_session_files::{answer, append, finish, fixture, header, write};
 
 #[test]
 fn split_json_newline_and_utf8_tail_wait_for_complete_records_and_end_is_not_terminal() {
@@ -365,45 +304,6 @@ fn shared_sessions_and_directory_junctions_are_refused() {
             .status
             .is_some()
     );
-}
-
-#[test]
-fn layout_matches_actual_renderer_for_cjk_combining_halfwidth_and_long_json() {
-    use ratatui::{
-        buffer::Buffer,
-        layout::Rect,
-        text::Line,
-        widgets::{Paragraph, Widget},
-    };
-    let text = "한글e\u{301}ｶﾞｶﾞAB\n{\"long\":\"xxxxxxxxxxxxxxxxx\"}\n";
-    for width in [1, 2, 3, 7, 20] {
-        let ranges = document::rows(text, width);
-        let rows = ranges
-            .iter()
-            .map(|range| document::row(text, range, width))
-            .collect::<Vec<_>>();
-        let mut buffer = Buffer::empty(Rect::new(0, 0, width as u16, rows.len() as u16));
-        Paragraph::new(
-            rows.iter()
-                .map(|row| Line::from(row.as_str()))
-                .collect::<Vec<_>>(),
-        )
-        .render(buffer.area, &mut buffer);
-        for (y, row) in rows.iter().enumerate() {
-            use ratatui::buffer::CellWidth;
-            let mut x = 0;
-            let mut rendered = String::new();
-            while x < width {
-                let symbol = buffer[(x as u16, y as u16)].symbol();
-                rendered.push_str(symbol);
-                x += usize::from(symbol.cell_width().max(1));
-            }
-            assert_eq!(rendered.trim_end(), row.trim_end());
-        }
-    }
-    let rows = document::rows("ｶﾞｶﾞ", 2);
-    assert_eq!(rows.len(), 2);
-    assert_eq!(document::row("ｶﾞｶﾞ", &rows[0], 2), "ｶﾞ");
 }
 
 #[test]

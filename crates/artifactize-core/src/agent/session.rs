@@ -272,7 +272,7 @@ impl Recorder {
     }
 
     /// Create the session file with its `review` event: the identity, then `details`.
-    pub(crate) fn start(&mut self, mut details: Header) {
+    pub fn start(&mut self, mut details: Header) {
         let state = std::mem::replace(&mut self.state, Recording::Off);
         let pending = match state {
             Recording::Pending(pending) => pending,
@@ -344,7 +344,7 @@ impl Recorder {
 
     /// Append an event, stamped with its time and the follow-up it belongs to. End events do
     /// not close the writer; the caller owns its lifetime and session GC scheduling.
-    pub(crate) fn event(&mut self, kind: Kind) {
+    pub fn event(&mut self, kind: Kind) {
         let result = match &mut self.state {
             Recording::Review { file, .. } => write_event(file, None, kind),
             Recording::FollowUp { file, send } => write_event(file, Some(*send), kind),

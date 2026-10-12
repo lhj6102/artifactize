@@ -1,8 +1,6 @@
 use super::*;
-use crate::agent::session::{
-    document::{Mode, Move},
-    live_tests::{answer, append, fixture},
-};
+use crate::agent::session::document::{Mode, Move};
+use crate::test_session_files::{answer, append, fixture};
 
 fn complete(live: &mut session::Live) {
     for _ in 0..10000 {
@@ -224,7 +222,7 @@ fn reset_and_saved_promotion_are_not_lost_when_job_is_stale() {
     let (_root, mut live) = history();
     live.movement(Move::Up(10));
     complete(&mut live);
-    crate::agent::session::live_tests::write(
+    crate::test_session_files::write(
         &live.source,
         "{\"kind\":\"review\"}\n{\"kind\":\"answer\",\"text\":\"replacement\"}\n",
     );

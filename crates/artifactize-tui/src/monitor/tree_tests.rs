@@ -947,7 +947,7 @@ fn refreshes_fold_done_artifacts_unless_the_user_toggled_them() {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m2/x") {
             view.request.state = crate::store::RequestState::completed(
                 serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
-                crate::broker::now(),
+                crate::types::Timestamp::now(),
             );
         }
     }
@@ -1166,7 +1166,7 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m6/x") {
             view.request.state = crate::store::RequestState::completed(
                 serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
-                crate::broker::now(),
+                crate::types::Timestamp::now(),
             );
         }
     }

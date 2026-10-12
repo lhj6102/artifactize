@@ -2,9 +2,7 @@
 //! that joins it instead of becoming an ordinary failure; a cancelled task stays an error.
 
 /// `result` of joining a task, with a panic resumed here.
-pub(crate) fn joined<T>(
-    result: Result<T, tokio::task::JoinError>,
-) -> Result<T, tokio::task::JoinError> {
+pub fn joined<T>(result: Result<T, tokio::task::JoinError>) -> Result<T, tokio::task::JoinError> {
     match result {
         Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
         other => other,

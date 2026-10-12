@@ -1,21 +1,9 @@
 use super::*;
 use crate::store::{self, Receipts};
 use serde_json::{Value, json};
-use std::{cell::RefCell, fs};
+use std::fs;
 
-thread_local! { static STATEMENTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) }; }
-pub(super) fn trace(event: rusqlite::trace::TraceEvent<'_>) {
-    let rusqlite::trace::TraceEvent::Stmt(statement, _) = event else {
-        return;
-    };
-    let sql = statement.expanded_sql().unwrap();
-    if sql.starts_with("SELECT") || sql.starts_with("WITH") {
-        STATEMENTS.with(|statements| statements.borrow_mut().push(sql.to_owned()));
-    }
-}
-pub(super) fn statements() -> Vec<String> {
-    STATEMENTS.with(|statements| std::mem::take(&mut *statements.borrow_mut()))
-}
+use super::statements::take as statements;
 fn run(id: &str, repo: &Path, state: &Path, definitions: Value) -> Run {
     serde_json::from_value(json!({
         "id":id,"repoPath":repo,"stateDir":state,"status":"GREEN",

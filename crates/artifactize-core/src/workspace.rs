@@ -60,7 +60,7 @@ pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
     Ok(false)
 }
 
-pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
+pub fn canonical_target(path: &Path) -> io::Result<PathBuf> {
     crate::platform::paths::canonical_target(path)
 }
 
