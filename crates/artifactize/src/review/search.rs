@@ -169,39 +169,48 @@ fn status_name(status: RequestStatus) -> String {
     status.as_str().to_ascii_lowercase()
 }
 
-/// Words of `text`, a double-quoted run counting as one word; whether each began quoted.
-fn words(text: &str) -> Vec<(String, bool)> {
+/// One word of a query: where it starts in the text, its text without quotes, and whether it
+/// began quoted.
+struct Word {
+    start: usize,
+    text: String,
+    quoted: bool,
+}
+
+/// Words of `text`, a double-quoted run counting as one word, and whether the text ends inside
+/// a word (no whitespace after it outside quotes): the term still being typed.
+fn scan(text: &str) -> (Vec<Word>, bool) {
     let mut words = Vec::new();
-    let mut word = String::new();
+    let mut word: Option<Word> = None;
     let mut quoted = false;
-    let mut started = false;
-    let mut opened_quoted = false;
-    for character in text.chars() {
-        match character {
-            '"' => {
-                if !started {
-                    opened_quoted = true;
-                }
-                started = true;
-                quoted = !quoted;
-            }
-            character if character.is_whitespace() && !quoted => {
-                if started {
-                    words.push((std::mem::take(&mut word), opened_quoted));
-                }
-                started = false;
-                opened_quoted = false;
-            }
-            character => {
-                started = true;
-                word.push(character);
-            }
+    for (index, character) in text.char_indices() {
+        if character.is_whitespace() && !quoted {
+            words.extend(word.take());
+            continue;
+        }
+        let current = word.get_or_insert_with(|| Word {
+            start: index,
+            text: String::new(),
+            quoted: character == '"',
+        });
+        if character == '"' {
+            quoted = !quoted;
+        } else {
+            current.text.push(character);
         }
     }
-    if started {
-        words.push((word, opened_quoted));
-    }
-    words
+    let open = word.is_some();
+    words.extend(word);
+    (words, open)
+}
+
+/// Words of `text` and whether each began quoted.
+fn words(text: &str) -> Vec<(String, bool)> {
+    scan(text)
+        .0
+        .into_iter()
+        .map(|word| (word.text, word.quoted))
+        .collect()
 }
 
 impl std::str::FromStr for Query {
@@ -378,22 +387,22 @@ pub struct Completion {
     pub candidates: Vec<String>,
 }
 
-/// `text` split before its last term.
+/// `text` split before the term still being typed, as the parser reads words: a space inside
+/// quotes (`repo:"my r`) stays in the term; after a finished word the term is empty.
 fn last_term(text: &str) -> (&str, &str) {
-    let start = text
-        .char_indices()
-        .rev()
-        .find(|(_, character)| character.is_whitespace())
-        .map_or(0, |(index, character)| index + character.len_utf8());
-    text.split_at(start)
+    match scan(text) {
+        (words, true) => text.split_at(words.last().map_or(0, |word| word.start)),
+        (_, false) => (text, ""),
+    }
 }
 
 /// The candidates for the query's last term: keys whose names start with it, or after a key
 /// the values of that field among `entries` (fixed vocabularies for `kind:`, `status:`, `is:`).
 pub fn complete(text: &str, entries: &[Entry]) -> Completion {
     let (keep, term) = last_term(text);
-    let term = term.trim_start_matches('"');
-    let candidates = match term.split_once(':') {
+    // A quoted word is searched for literally: nothing to complete.
+    let candidates = match term.split_once(':').filter(|_| !term.starts_with('"')) {
+        None if term.starts_with('"') => Vec::new(),
         None => {
             let lower = term.to_lowercase();
             Key::ALL
@@ -454,8 +463,8 @@ pub async fn suggest(
 ) -> Result<Completion, String> {
     let (keep, term) = last_term(text);
     let from_requests = term
-        .trim_start_matches('"')
         .split_once(':')
+        .filter(|_| !term.starts_with('"'))
         .and_then(|(name, _)| Key::parse(name))
         .is_some_and(|key| {
             matches!(

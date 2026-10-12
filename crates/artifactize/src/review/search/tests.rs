@@ -213,8 +213,12 @@ fn completion_offers_keys_then_values_of_the_listed_requests() {
 
 /// A Run with `count` GREEN runtime requests and one waiting Human request at its end.
 async fn state(count: usize) -> (tempfile::TempDir, std::path::PathBuf) {
+    state_in("repo", count).await
+}
+
+async fn state_in(folder: &str, count: usize) -> (tempfile::TempDir, std::path::PathBuf) {
     let root = crate::test_os::tempdir();
-    let repo = root.path().join("repo");
+    let repo = root.path().join(folder);
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
@@ -293,4 +297,122 @@ async fn suggestions_take_values_from_what_the_terms_before_the_last_find() {
         values("rep:x eval:").await.is_empty(),
         "an invalid rest offers no values"
     );
+}
+
+#[test]
+fn a_quoted_value_with_spaces_completes_as_one_term() {
+    let entries = [Entry {
+        repository: "/work/my repo".into(),
+        reviewer: Some("ann lee".into()),
+        tags: vec!["needs review".into()],
+        ..entry()
+    }];
+    for (text, keep, candidate) in [
+        // Partly quoted: the space inside the quotes stays in the term.
+        (
+            r#"kind:runtime repo:"my r"#,
+            "kind:runtime ",
+            r#"repo:"my repo""#,
+        ),
+        (r#"repo:"my"#, "", r#"repo:"my repo""#),
+        // Fully quoted, still being typed: the closing quote ends nothing yet.
+        (
+            r#"kind:human repo:"my repo""#,
+            "kind:human ",
+            r#"repo:"my repo""#,
+        ),
+        (r#"reviewer:"ann l"#, "", r#"reviewer:"ann lee""#),
+        (
+            r#"eval:sign tag:"needs r"#,
+            "eval:sign ",
+            r#"tag:"needs review""#,
+        ),
+    ] {
+        let completion = complete(text, &entries);
+        assert_eq!(completion.keep, keep, "{text}");
+        assert_eq!(completion.candidates, [candidate], "{text}");
+    }
+    // After a finished quoted value, the next term starts: every key.
+    let next = complete(r#"repo:"my repo" "#, &entries);
+    assert_eq!(next.keep, r#"repo:"my repo" "#);
+    assert!(next.candidates.contains(&"kind:".to_owned()));
+    // A quoted word is searched for literally and completes to nothing.
+    assert!(complete(r#""type:sty"#, &entries).candidates.is_empty());
+    assert!(
+        complete(r#"kind:human "my r"#, &entries)
+            .candidates
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn suggestions_complete_a_quoted_repository_with_spaces() {
+    let (_root, state) = state_in("my repo", 1).await;
+    let reviewer: ReviewerId = "alice".parse().unwrap();
+    let completion = suggest(&state, r#"kind:human repo:"my r"#, &reviewer)
+        .await
+        .unwrap();
+    assert_eq!(completion.keep, "kind:human ");
+    assert_eq!(completion.candidates, [r#"repo:"my repo""#]);
+}
+
+/// Every page of `query`, followed to its end: the found evals in order.
+async fn every_page(state: &Path, query: &str) -> Vec<String> {
+    let query: Query = query.parse().unwrap();
+    let reviewer: ReviewerId = "alice".parse().unwrap();
+    let mut evals = Vec::new();
+    let mut start = Some(0);
+    while let Some(at) = start {
+        let found = search(state, &query, &reviewer, at).await.unwrap();
+        assert!(found.requests.len() <= PAGE);
+        evals.extend(found.requests.into_iter().map(|(_, entry)| entry.eval));
+        start = found.next;
+    }
+    evals
+}
+
+#[tokio::test]
+async fn pages_cross_batch_boundaries_with_mixed_statuses() {
+    const STATUSES: [&str; 4] = ["GREEN", "RED", "ERROR", "STALE"];
+    let count = 2 * BATCH as usize + 105;
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir_all(&repo).unwrap();
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
+        "stateDir":state,"status":"RED","createdAt":"2026-01-01T00:00:00Z",
+        "completedAt":"2026-01-01T00:01:00Z","selection":{"kind":"all"},"validation":null}))
+    .unwrap();
+    let requests: Vec<_> = (0..count)
+        .map(|index| {
+            crate::monitor::tests::request(
+                &format!("app/check{index:04}"),
+                STATUSES[index % STATUSES.len()],
+                json!({}),
+            )
+            .request
+        })
+        .collect();
+    receipts.create_run(&run, &requests).await.unwrap();
+
+    // Everything, page after page: each request once, in one order.
+    let all = every_page(&state, "").await;
+    assert_eq!(all.len(), count);
+    let unique: std::collections::BTreeSet<_> = all.iter().collect();
+    assert_eq!(unique.len(), count);
+    // A status read in the database, and a status with a text term matched after reading.
+    let red: Vec<_> = (0..count).filter(|index| index % 4 == 1).collect();
+    assert_eq!(every_page(&state, "status:red").await.len(), red.len());
+    let late_errors = every_page(&state, "status:error eval:check08").await;
+    let expected: Vec<_> = (800..900)
+        .filter(|index| index % 4 == 2)
+        .map(|index| format!("app/check{index:04}"))
+        .collect();
+    let mut sorted = late_errors.clone();
+    sorted.sort();
+    assert_eq!(sorted, expected);
+    // Two statuses: the database reads both, the matcher keeps one term's requests.
+    let mixed = every_page(&state, "status:green status:stale").await;
+    assert!(mixed.is_empty(), "every term must match: {mixed:?}");
 }
