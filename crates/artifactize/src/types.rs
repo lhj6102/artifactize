@@ -13,6 +13,8 @@ pub(crate) const MAX_ID_BYTES: usize = 200;
 /// Bound provider-controlled SSE item identifiers retained by the delivery tap;
 /// 1 KiB accommodates opaque IDs without allowing unbounded per-block memory.
 pub(crate) const ITEM_ID_BYTES: usize = 1024;
+/// The longest Artifact name or tool name (`config::identifier`).
+const MAX_NAME_BYTES: usize = 64;
 /// 128 bits of randomness, lowercase hex-encoded: the length of a Codex OAuth `state`.
 const OAUTH_STATE_HEX_BYTES: usize = 32;
 /// Mirrors retain the remote wire identity verbatim under this local-only namespace.
@@ -177,6 +179,17 @@ impl ExecutionId {
     }
 }
 identity!(SessionId, segment);
+// A tool as the model sees it: the tool's name and its Artifact's, joined by `_`, each
+// `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (two names, so at most 129 bytes).
+identity!(ToolName, |value: &str| value.len()
+    <= 2 * MAX_NAME_BYTES + 1
+    && value
+        .bytes()
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphanumeric())
+    && value.bytes().all(
+        |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+    ));
 identity!(Fingerprint, |value: &str| (1..=MAX_FINGERPRINT_BYTES)
     .contains(&value.len())
     && value.bytes().all(

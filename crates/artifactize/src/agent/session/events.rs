@@ -132,6 +132,6 @@ pub struct Send {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files_changed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<String>>,
+    pub tools: Option<Vec<crate::types::ToolName>>,
 }
 pub use super::outcome::{Answer, End};

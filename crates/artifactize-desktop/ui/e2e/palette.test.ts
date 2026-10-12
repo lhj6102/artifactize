@@ -72,6 +72,18 @@ describe("command palette", () => {
     }
   });
 
+  // UX edges: E-PALETTE-FILTER
+  it("filters the commands by what is typed", async () => {
+    const listed = () => browser.execute(() => document.querySelectorAll("[data-command-item]").length);
+    await ctrlK("filter");
+    const all = await listed();
+    assert.ok(all > 1, "several commands are listed");
+    await typeText(browser, "Show Review");
+    await eventually(async () => (await listed()) === 1, "one command left");
+    assert.ok(await browser.$("[data-command-item]").getText().then((label) => label.includes("Show Review")));
+    await escape("Esc");
+  });
+
   // UX edges: E-PALETTE-RUN E-SCREEN-MONITOR E-SCREEN-REVIEW E-SCREEN-SETTINGS
   it("runs commands that switch screens and opens again after each", async () => {
     for (const label of ["Show Review", "Show Monitor", "Show Review", "Show Monitor"]) {

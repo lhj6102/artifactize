@@ -103,6 +103,40 @@ describe("monitor", () => {
     assert.match(await text(), /notes_release finished\./);
   });
 
+  // UX edges: E-HUMAN-TOOL-LAUNCH
+  it("runs a launch tool and says the application was opened", async () => {
+    const open = await browser.$('//li[@role="option"][.//span[text()="open_release"]]');
+    await open.click();
+    await eventually(async () => (await open.getAttribute("aria-selected")) === "true", "open selected");
+    await browser.keys(["Enter"]);
+    await eventually(async () => /open_release (launched|started|opened)/i.test(await text()), "the launch notice");
+  });
+
+  // UX edges: E-HUMAN-TOOL-FAIL
+  it("shows the error of a tool that fails", async () => {
+    const fail = await browser.$('//li[@role="option"][.//span[text()="fail_release"]]');
+    await fail.click();
+    await eventually(async () => (await fail.getAttribute("aria-selected")) === "true", "fail selected");
+    await browser.keys(["Enter"]);
+    await eventually(
+      () => browser.execute(() => !!document.querySelector(".notice.error, [aria-label='Tool output'] .error")),
+      "the tool's error",
+    );
+    assert.match(await text(), /fail_release/);
+  });
+
+  // UX edges: E-HUMAN-ESC-CANCEL
+  it("cancels a running tool with Esc", async () => {
+    const slow = await browser.$('//li[@role="option"][.//span[text()="slow_release"]]');
+    await slow.click();
+    await eventually(async () => (await slow.getAttribute("aria-selected")) === "true", "slow selected");
+    await browser.keys(["Enter"]);
+    await eventually(async () => /Running slow_release/.test(await text()), "the tool running");
+    await browser.keys(["Escape"]);
+    await eventually(async () => !/Running slow_release/.test(await text()), "the tool cancelled");
+    assert.ok(await human().isExisting(), "Esc cancelled the job and left the Detail open");
+  });
+
   // UX edges: E-HUMAN-RED E-HUMAN-INVALID
   it("keeps a RED result that fails its schema correctable and shows the failing path", async () => {
     await browser.$('[aria-label="Human review"]').click();

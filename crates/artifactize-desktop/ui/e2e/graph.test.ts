@@ -4,7 +4,7 @@
 // highlighted eval's Detail afterwards, and moves between connected Artifacts by keyboard.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { artifactize, create, createChain, type Fixture, signoff } from "./fixture.ts";
+import { artifactize, create, createChain, createEvals, type Fixture, signoff } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
@@ -46,7 +46,7 @@ describe("run graph", () => {
     await session?.stop();
   });
 
-  // UX edges: E-GRAPH-OPEN E-GRAPH-RECOLOUR E-GRAPH-ZOOM-IN E-GRAPH-EVAL
+  // UX edges: E-GRAPH-OPEN E-GRAPH-RECOLOUR E-GRAPH-ZOOM-IN E-GRAPH-EVAL-OPEN
   it("lights Artifacts and edges, recolours them in place and opens a zoomed eval after a submission", async () => {
     await browser.$("button*=Graph").click();
     await eventually(async () => Object.keys((await graph()).nodes).length === 3, "three Artifact nodes");
@@ -168,5 +168,47 @@ describe("run graph of many Artifacts", () => {
     const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
     assert.match(crumbs, /n084/);
     assert.ok((await mounted()) < 85, "still drawing only part of the chain");
+  });
+});
+
+describe("run graph of an Artifact with several evals", () => {
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const options = () =>
+    browser.execute(() =>
+      [...document.querySelectorAll('[role="listbox"][aria-label="Evals"] [role="option"]')].map(
+        (option) => `${option.getAttribute("aria-selected")}:${(option as HTMLElement).innerText.split("\n")[1] ?? ""}`,
+      ),
+    );
+  const selected = async () => (await options()).findIndex((option) => option.startsWith("true"));
+  const evals = () => browser.$('[role="listbox"][aria-label="Evals"]');
+  const detailClosed = async () => !(await browser.$("button*=Close").isExisting());
+
+  before(async () => {
+    session = await start(createEvals(["alpha", "beta", "gamma"]));
+    browser = session.browser;
+    await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("alpha"), "the Run tree");
+    await browser.$("button*=Graph").click();
+    await browser.$('.svelte-flow__node[data-id="a:app"]').waitForExist({ timeout: 15000 });
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-GRAPH-ZOOM-IN E-GRAPH-EVAL-SELECT E-GRAPH-EVAL-OPEN E-GRAPH-ZOOM-OUT
+  it("selects an eval with the arrows, opens its Detail with Enter and zooms out with Esc", async () => {
+    await browser.$('.svelte-flow__node[data-id="a:app"]').click();
+    await evals().waitForExist({ timeout: 10000 });
+    await eventually(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"), "focus in the evals");
+    const first = await selected();
+    await press(browser, ["ArrowDown"], async () => (await selected()) === first + 1, "the next eval selected");
+    // The Detail follows the selection without being opened.
+    const chosen = (await options())[first + 1].split(":")[1].trim();
+    await eventually(async () => (await browser.execute(() => document.body.innerText)).includes(`Check ${chosen}`), "the Detail follows");
+    await press(browser, ["Enter"], async () => !(await detailClosed()), "the Detail opened");
+    await press(browser, ["Escape"], detailClosed, "the Detail left");
+    await evals().click();
+    await press(browser, ["Escape"], async () => !(await evals().isExisting()), "zoomed out");
   });
 });

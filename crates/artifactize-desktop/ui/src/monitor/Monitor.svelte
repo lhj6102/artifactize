@@ -19,7 +19,8 @@
 
   type Focus = "scope" | "runs" | "tree" | "detail";
   let focus = $state<Focus>("runs");
-  let opened = $state<{ run: string; node: string } | null>(null);
+  /** The Run whose Detail is open. The Detail shows the tree's selection, whatever it is. */
+  let opened = $state<string | null>(null);
   let notice = $state<string | null>(null);
   /** The Run as a tree, or as a graph of Artifacts. */
   let runView = $state<"tree" | "graph">("tree");
@@ -46,7 +47,7 @@
       if (focus === "detail") focus = "tree";
     }
     // Leaving the selected Run (or losing it) closes its Detail.
-    if (opened && opened.run !== at?.id) opened = null;
+    if (opened !== null && opened !== at?.id) opened = null;
     // Another Run's graph starts zoomed out.
     const id = at?.id ?? null;
     if (id !== graphRun) {
@@ -74,7 +75,7 @@
 
   function openDetail() {
     if (!run || !selectedNode) return;
-    opened = { run: run.id, node: selectedNode };
+    opened = run.id;
     void move("detail");
   }
 
@@ -216,8 +217,8 @@
     <Pane defaultSize={40} minSize={20}>
       <DetailPane
         {browse}
-        run={opened?.run ?? run?.id ?? null}
-        node={opened?.node ?? selectedNode}
+        run={run?.id ?? null}
+        node={selectedNode}
         full={opened !== null}
         focused={focus === "detail"}
         {active}

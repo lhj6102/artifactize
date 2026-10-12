@@ -53,7 +53,7 @@ describe("review search", () => {
     assert.match(await query(), /^kind:human status:waiting_human repo:/);
   });
 
-  // UX edges: E-REVIEW-SEARCH E-REVIEW-SUGGEST E-REVIEW-SEARCH-ESC
+  // UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR
   it("filters every repository's requests and takes suggestions for a partial key and value", async () => {
     await press(browser, ["/"], focused("Search requests"), "focus in the search");
     // Esc clears the query: every request of every repository.
@@ -62,6 +62,12 @@ describe("review search", () => {
 
     await type("kind:hu");
     await eventually(async () => (await suggestions()).includes("kind:human"), "the kind suggestion");
+    // Esc closes the suggestions and keeps the query; the next Esc clears it.
+    await press(browser, ["Escape"], async () => (await suggestions()).length === 0, "the suggestions closed");
+    assert.equal(await query(), "kind:hu", "the query is kept");
+    await press(browser, ["Escape"], holds(""), "the query cleared");
+    await type("kind:hu");
+    await eventually(async () => (await suggestions()).includes("kind:human"), "the kind suggestion again");
     await press(browser, ["Tab"], holds("kind:human "), "the kind taken");
     await eventually(async () => (await rows()).length === 3, "the three sign-offs");
 
@@ -76,19 +82,26 @@ describe("review search", () => {
     await type("oth");
     await eventually(async () => (await suggestions()).includes("repo:other"), "the other repository");
     await press(browser, ["Tab"], holds("kind:human repo:other "), "the repository taken");
-    await eventually(async () => (await rows()).length === 1, "the other repository's sign-off");
-    const [row] = await rows();
-    assert.match(row, /release\/signoff/);
-    assert.match(row, /other/);
+    await eventually(async () => {
+      const shown = await rows();
+      return shown.length === 1 && /release\/signoff/.test(shown[0]) && /other/.test(shown[0]);
+    }, "the other repository's sign-off");
   });
 
-  // UX edges: E-REVIEW-READONLY
+  // UX edges: E-REVIEW-READONLY E-REVIEW-SEARCH-LEAVE
   it("opens a request that is not a Human review read-only", async () => {
     // Esc clears the query; a new search, then Enter leaves for the list.
     await press(browser, ["Escape"], holds(""), "the query cleared");
     // A space ends the term and closes the suggestions, so Enter leaves the field.
     await type("kind:runtime eval:docs repo:third ");
     await press(browser, ["Enter"], focused("Requests"), "focus on the list");
+    // An empty query's Esc leaves the field for the list as well.
+    await press(browser, ["/"], focused("Search requests"), "focus in the search again");
+    await press(browser, ["Escape"], holds(""), "the query cleared again");
+    await press(browser, ["Escape"], focused("Requests"), "Esc left for the list");
+    await press(browser, ["/"], focused("Search requests"), "focus in the search a third time");
+    await type("kind:runtime eval:docs repo:third ");
+    await press(browser, ["Enter"], focused("Requests"), "focus on the list again");
     await eventually(async () => {
       const shown = await rows();
       return shown.length === 1 && shown[0].includes("docs/lint") && shown[0].includes("third");

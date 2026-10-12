@@ -33,7 +33,8 @@ export class Tree {
 
   /**
    * Fold Artifacts whose evals are all done and unfold the rest, except those the user
-   * toggled. A new Run starts on its first in-progress or failed eval, else its first row.
+   * toggled or whose eval is selected. A new Run starts on its first in-progress or failed
+   * eval, else its first row.
    */
   sync(run: string, tree: TreeNode[]): void {
     const first = run !== this.#run;
@@ -46,10 +47,10 @@ export class Tree {
     for (const node of tree) {
       if (node.children.length === 0 || this.#touched.has(node.id)) continue;
       if (!node.done) this.opened.add(node.id);
-      else if (this.opened.delete(node.id) && this.selected[0] === node.id) {
-        // Never leave the selection on a row that just folded away.
-        this.selected = [node.id];
-      }
+      // An Artifact stays open while one of its evals is selected: the selection (and the
+      // Detail that follows it) never jumps because a result arrived. It folds once the
+      // selection leaves.
+      else if (!(this.selected[0] === node.id && this.selected.length > 1)) this.opened.delete(node.id);
     }
     const artifacts = tree.filter((node) => node.kind === "artifact");
     if (first || !find(tree, this.selected)) {

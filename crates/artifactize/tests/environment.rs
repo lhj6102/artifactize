@@ -10,7 +10,7 @@ use std::{fs, path::Path, process::Command};
 /// What a runtime eval or a command Agent tool is expected to see. The "toolchain" is a
 /// proxy that resolves through the home directory, as rustup's `cargo` does.
 const PROBE: &str = r#"import json, os, pathlib, sys
-home = pathlib.Path(os.environ['HOME'])
+home = pathlib.Path(os.environ['HOME_NAME'])
 assert str(home) == sys.argv[1], home
 assert os.environ['AUTHOR_VARIABLE'] == 'from-the-terminal'
 assert (home / '.toolchains' / 'stable' / 'version').read_text().strip() == 'cargo 9.9'
@@ -36,7 +36,10 @@ impl Project {
         fs::write(home.join(".toolchains/stable/version"), "cargo 9.9\n").unwrap();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
-        support::os::write_python_script(&repo.join("probe.py"), PROBE);
+        support::os::write_python_script(
+            &repo.join("probe.py"),
+            &PROBE.replace("HOME_NAME", support::os::home_env()),
+        );
         let home = home.to_str().unwrap().to_owned();
         support::declaration::write(
             repo.join("index.artf"),

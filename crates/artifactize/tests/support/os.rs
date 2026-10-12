@@ -2213,13 +2213,16 @@ pub fn write_python_script(path: &Path, code: &str) {
 
 /// A command runs in the author's environment: the real home, the per-run private temporary
 /// and output directories, and none of artifactize's own variables.
-pub const PYTHON_AUTHORS_ENVIRONMENT: &str = r#"
-assert os.environ['HOME'] != os.environ['TMPDIR']
+pub fn python_authors_environment() -> String {
+    r#"
+assert os.environ['HOME_NAME'] != os.environ['TMPDIR']
 assert context['tmpDir'] == os.environ['TMPDIR'].replace('\\', '/')
 assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR'].replace('\\', '/')
 own = ('ARTIFACTIZE_WORKSPACE_DIR', 'ARTIFACTIZE_OUTPUT_DIR', 'ARTIFACTIZE_TMP_DIR', 'ARTIFACTIZE_SESSION_DIR')
 assert not [name for name in os.environ if name.upper().startswith('ARTIFACTIZE_') and name not in own]
-"#;
+"#
+    .replace("HOME_NAME", home_env())
+}
 
 /// A file/directory redirection in an output fixture: Windows junctions need no privilege.
 pub fn python_output_links() -> (&'static str, &'static str) {

@@ -285,7 +285,10 @@ async fn supervise_inner(
         biased;
         _ = cancellation.cancelled() => Err("start was cancelled".to_owned()),
         _ = stop_token.cancelled() => Err("start was dropped".to_owned()),
-        status = child.wait_leader() => Err(format!("exited before readiness: {status:?}")),
+        status = child.wait_leader() => Err(match status {
+            Ok(status) => format!("exited before readiness: {}", platform::exit_description(&status)),
+            Err(error) => format!("could not wait for the start command: {error}"),
+        }),
         result = tokio::time::timeout_at(deadline, ready_receive) => match result {
             Ok(Ok(Ok(()))) => match child.try_wait_leader() {
                 Ok(None) => Ok(()),

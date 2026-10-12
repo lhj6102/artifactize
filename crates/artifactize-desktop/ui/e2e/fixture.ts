@@ -44,6 +44,7 @@ fingerprint = { files = ["."] }
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
 open = { description = "Open {artifactName}.", kind = "launch", command = "true", args = ["{artifactPath}"] }
 fail = { description = "Fail on purpose.", kind = "output", command = "false", args = [] }
+slow = { description = "Wait a long time.", kind = "output", command = "sleep", args = ["600"] }
 
 [evals.signoff]
 title = "A person approves the release"
@@ -192,6 +193,36 @@ Check ${reference}."""
     mkdirSync(join(repo, name(index)), { recursive: true });
     writeFileSync(join(repo, name(index), "index.artf"), text);
   }
+  execFileSync("git", ["init", "-q", repo]);
+  const fixture = { root, repo, state };
+  const status = artifactize(fixture, "verify", "--all", "--json");
+  if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+  return fixture;
+}
+
+/**
+ * A fresh repository whose one Artifact `app` has an eval for each of `names`, all verified
+ * GREEN: a zoomed Artifact with several evals to move through.
+ */
+export function createEvals(names: string[]): Fixture {
+  const root = newRoot();
+  const repo = join(root, "repo");
+  const state = join(root, "state");
+  const evals = names
+    .map(
+      (name) => `
+[evals.${name}]
+title = "Check ${name}"
+profile = { kind = "runtime", command = "true", args = [] }
+
+[evals.${name}.payload]
+instruction = """
+Check ${name}."""
+`,
+    )
+    .join("");
+  mkdirSync(join(repo, "app"), { recursive: true });
+  writeFileSync(join(repo, "app", "index.artf"), `name = "app"\n${evals}`);
   execFileSync("git", ["init", "-q", repo]);
   const fixture = { root, repo, state };
   const status = artifactize(fixture, "verify", "--all", "--json");

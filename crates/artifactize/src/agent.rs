@@ -586,7 +586,13 @@ async fn continue_conversation(
         text: Some(message.into()),
         framing: Some(framing),
         files_changed: continuation.files_changed,
-        tools: Some(request.tools.iter().map(|tool| tool.name.clone()).collect()),
+        tools: Some(
+            request
+                .tools
+                .iter()
+                .map(|tool| tool.name.parse())
+                .collect::<Result<_, String>>()?,
+        ),
     }));
     recorder.event(session::Kind::Message(session::MessageEvent {
         turn: 1,

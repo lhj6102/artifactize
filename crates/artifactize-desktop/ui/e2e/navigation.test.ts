@@ -86,13 +86,106 @@ describe("monitor navigation", () => {
     );
   });
 
-  // UX edges: E-MON-DETAIL-BACK
-  it("steps back from an opened Detail to the tree", async () => {
+  // UX edges: E-MON-DETAIL-TECHNICAL E-MON-DETAIL-BACK
+  it("shows the technical record of an opened Detail with t and steps back to the tree", async () => {
     await (await row(2, "check")).click();
     const close = () => browser.$("button*=Close");
     await press(browser, ["Enter"], () => close().isExisting(), "the Detail opened");
+    const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
+    assert.equal(await technical(), "false");
+    await press(browser, ["t"], async () => (await technical()) === "true", "the technical record shown");
+    await press(browser, ["t"], async () => (await technical()) === "false", "the technical record hidden");
     await press(browser, ["Escape"], async () => !(await close().isExisting()), "the Detail closed");
     await eventually(() => browser.$('[role="tree"]').isFocused(), "focus back on the tree");
+  });
+});
+
+describe("the Detail follows the tree's selection", () => {
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  /** The Detail pane's title: the Monitor's fourth pane (Scope, Runs, Run, Detail). */
+  const detail = () =>
+    browser.execute(() => document.querySelectorAll("section.panel h2")[3]?.textContent?.trim() ?? "");
+  const row = (level: 1 | 2, name: string) =>
+    browser.$(`//li[@role="treeitem"][@aria-level="${level}"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "${name}")]]`);
+
+  before(async () => {
+    session = await start(create());
+    browser = session.browser;
+    await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), "the Run tree");
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-MON-TREE-MOVE E-MON-TREE-DETAIL
+  it("shows the newly selected row after the Detail was opened with Enter", async () => {
+    await (await row(2, "check")).click();
+    await eventually(async () => /check/.test(await detail()), "the peek of ship/check");
+    const close = () => browser.$("button*=Close");
+    await press(browser, ["Enter"], () => close().isExisting(), "the Detail opened");
+    // The tree takes focus again, by a click on another row...
+    await (await row(1, "docs")).click();
+    await eventually(async () => /docs/.test(await detail()), "the Detail shows docs after a click");
+    // ... and the selection moves by key.
+    await press(browser, ["k"], async () => !/docs/.test(await detail()), "the Detail leaves docs after k");
+    await press(browser, ["j"], async () => /docs/.test(await detail()), "the Detail returns to docs after j");
+  });
+
+  // UX edges: E-MON-TREE-MOVE E-MON-TREE-DETAIL
+  it("shows the newly selected row after a click into the Detail", async () => {
+    await (await row(2, "check")).click();
+    await eventually(async () => /check/.test(await detail()), "the Detail shows ship/check");
+    await browser.execute(() => (document.querySelectorAll("section.panel")[3] as HTMLElement).click());
+    await (await row(1, "docs")).click();
+    await eventually(async () => /docs/.test(await detail()), "the Detail shows docs after a click");
+    await (await row(2, "check")).click();
+    await eventually(async () => /check/.test(await detail()), "the Detail follows back to ship/check");
+  });
+});
+
+describe("moving between the panes", () => {
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const listbox = (name: string) => browser.$(`[role="listbox"][aria-label="${name}"]`);
+  /** The index of the selected option of a list. */
+  const chosen = (name: string) =>
+    browser.execute(
+      (label) => [...document.querySelectorAll(`[role="listbox"][aria-label="${label}"] [role="option"]`)].findIndex((option) => option.getAttribute("aria-selected") === "true"),
+      name,
+    );
+  const crumbs = () => browser.$('nav[aria-label="Breadcrumb"]').getText();
+
+  before(async () => {
+    const fixture = create();
+    // A second Run, so the Runs pane has two rows to move between.
+    assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
+    session = await start(fixture);
+    browser = session.browser;
+    await eventually(async () => /Runs \(2\)/i.test(await browser.execute(() => document.body.innerText)), "two Runs");
+    await browser.$('[role="tree"]').click();
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TO-SCOPE E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-TREE
+  it("steps out from the tree to the Runs and Scope and back in, moving the selection on the way", async () => {
+    await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
+    const run = (await chosen("Runs")) as number;
+    const before = await crumbs();
+    await press(browser, ["ArrowDown"], async () => (await chosen("Runs")) !== run, "another Run selected");
+    await eventually(async () => (await crumbs()) !== before, "the tree shows the other Run");
+    await press(browser, ["ArrowUp"], async () => (await chosen("Runs")) === run, "the first Run selected again");
+    await press(browser, ["ArrowLeft"], () => listbox("Scope").isFocused(), "the Scope focused");
+    const scope = (await chosen("Scope")) as number;
+    await press(browser, ["ArrowUp"], async () => (await chosen("Scope")) === scope - 1, "the row above highlighted");
+    await press(browser, ["ArrowUp"], async () => (await chosen("Scope")) === 0, "the ALL scope selected");
+    await eventually(async () => (await crumbs()).includes("all repositories"), "the Runs of all repositories");
+    await press(browser, ["Enter"], () => listbox("Runs").isFocused(), "the Runs focused again");
+    await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the tree focused again");
   });
 });
 
@@ -115,6 +208,33 @@ describe("quitting without a claim", () => {
     // The window closes while the key is still being delivered.
     await browser.keys(["q"]).catch(() => {});
     // The window is gone: the driver's session can no longer answer.
+    await eventually(async () => {
+      try {
+        await browser.getTitle();
+        return false;
+      } catch {
+        return true;
+      }
+    }, "the window closed");
+  });
+});
+
+describe("closing the window without a claim", () => {
+  let session: Session;
+
+  before(async () => {
+    session = await start(create());
+    await session.browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-QUIT-CLEAN
+  it("closes at once, asking nothing", async () => {
+    const browser = session.browser;
+    await browser.closeWindow().catch(() => {});
     await eventually(async () => {
       try {
         await browser.getTitle();
