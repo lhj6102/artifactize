@@ -73,6 +73,48 @@ impl SignIns {
         id
     }
 
+    /// Start a sign-in with `launch` (given where pastes arrive and where it shows its
+    /// prompt) and return its id and prompt. It is the sign-in in progress from the moment it
+    /// is launched, before its prompt: a cancel or a newer start meanwhile stops it, and it
+    /// then reads as cancelled and is never registered afterwards.
+    async fn start(
+        &self,
+        launch: impl FnOnce(oneshot::Receiver<String>, oneshot::Sender<codex::Prompt>) -> SignInTask,
+    ) -> Result<(u32, codex::Prompt), Failure> {
+        // The previous sign-in frees its port before this one listens.
+        self.stop();
+        let (paste, pasted) = oneshot::channel();
+        let (shown, prompt) = oneshot::channel();
+        let id = self.register(launch(pasted, shown), paste);
+        match prompt.await {
+            Ok(prompt) if self.is_current(id) => Ok((id, prompt)),
+            // Cancelled or replaced while it started: stopped already.
+            Ok(_) => Err(Failure::Account(CANCELLED.into())),
+            // It ended before showing anything: cancelled, or why it failed.
+            Err(_) => {
+                let task = self.take(id)?;
+                let ended = task.await;
+                self.finish(id);
+                match ended {
+                    Ok(result) => {
+                        Err(Failure::Account(result.err().unwrap_or_else(|| {
+                            "Codex sign-in ended before it started.".into()
+                        })))
+                    }
+                    Err(error) if error.is_cancelled() => Err(Failure::Account(CANCELLED.into())),
+                    Err(error) => Err(Failure::Account(error.to_string())),
+                }
+            }
+        }
+    }
+
+    /// Sign-in `id` is still the one in progress.
+    fn is_current(&self, id: u32) -> bool {
+        self.current()
+            .as_ref()
+            .is_some_and(|sign_in| sign_in.id == id)
+    }
+
     /// The task of sign-in `id` for its waiter. A sign-in another one replaced, or that was
     /// cancelled, reads as cancelled.
     fn take(&self, id: u32) -> Result<SignInTask, Failure> {
@@ -252,36 +294,26 @@ pub async fn codex_login_start(
     app: tauri::State<'_, App>,
     browser: bool,
 ) -> Result<CodexPrompt, Failure> {
-    app.settings.sign_ins.stop();
-    let (paste, pasted) = oneshot::channel();
-    let (shown, prompt) = oneshot::channel();
     let state = app.launch.state.clone();
     let repo = app.launch.repo.clone();
-    let mut task = tokio::spawn(async move {
-        codex::login_with(
-            Some(&state),
-            repo.as_deref(),
-            Some(pasted),
-            browser,
-            |prompt| {
-                let _ = shown.send(prompt.clone());
-            },
-        )
-        .await
-    });
-    let prompt = match prompt.await {
-        Ok(prompt) => prompt,
-        // It ended before showing anything: why.
-        Err(_) => {
-            let ended = (&mut task)
+    let (sign_in, prompt) = app
+        .settings
+        .sign_ins
+        .start(|pasted, shown| {
+            tokio::spawn(async move {
+                codex::login_with(
+                    Some(&state),
+                    repo.as_deref(),
+                    Some(pasted),
+                    browser,
+                    |prompt| {
+                        let _ = shown.send(prompt.clone());
+                    },
+                )
                 .await
-                .map_err(|error| Failure::Account(error.to_string()))?;
-            return Err(Failure::Account(ended.err().unwrap_or_else(|| {
-                "Codex sign-in ended before it started.".into()
-            })));
-        }
-    };
-    let sign_in = app.settings.sign_ins.register(task, paste);
+            })
+        })
+        .await?;
     Ok(CodexPrompt {
         url: prompt.url,
         callback: prompt.callback,
@@ -538,6 +570,85 @@ pub async fn remote_push(app: tauri::State<'_, App>, dry_run: bool) -> Result<Pu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A sign-in whose prompt the test releases: `go` shows it.
+    fn held() -> (
+        oneshot::Sender<()>,
+        impl FnOnce(oneshot::Receiver<String>, oneshot::Sender<codex::Prompt>) -> SignInTask,
+    ) {
+        let (go, gate) = oneshot::channel::<()>();
+        let launch = move |pasted: oneshot::Receiver<String>,
+                           shown: oneshot::Sender<codex::Prompt>| {
+            tokio::spawn(async move {
+                if gate.await.is_ok() {
+                    let _ = shown.send(codex::Prompt {
+                        url: "http://127.0.0.1:9/oauth/authorize".into(),
+                        callback: true,
+                    });
+                }
+                let _ = pasted.await;
+                std::future::pending::<()>().await;
+                Ok(())
+            })
+        };
+        (go, launch)
+    }
+
+    /// Poll `future` once: a start runs up to its first wait, its prompt.
+    async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> Option<F::Output> {
+        std::future::poll_fn(|context| {
+            std::task::Poll::Ready(match std::pin::Pin::new(&mut *future).poll(context) {
+                std::task::Poll::Ready(output) => Some(output),
+                std::task::Poll::Pending => None,
+            })
+        })
+        .await
+    }
+
+    /// A cancel while a start waits for its prompt stops it: the start reads as cancelled,
+    /// nothing is registered, and a paste finds no sign-in.
+    #[tokio::test]
+    async fn a_cancel_during_a_start_leaves_no_sign_in() {
+        let sign_ins = SignIns::default();
+        let (go, launch) = held();
+        let mut start = Box::pin(sign_ins.start(launch));
+        assert!(
+            poll_once(&mut start).await.is_none(),
+            "waiting for its prompt"
+        );
+        assert!(
+            sign_ins.current().is_some(),
+            "in progress before its prompt"
+        );
+        sign_ins.cancel();
+        // The prompt would come now; the stopped sign-in never shows it.
+        let _ = go.send(());
+        assert_eq!(start.await.unwrap_err(), Failure::Account(CANCELLED.into()));
+        assert!(sign_ins.current().is_none());
+        assert!(sign_ins.paste("http://localhost:1455/".into()).is_err());
+    }
+
+    /// A newer start while an older one waits for its prompt stops the older: it reads as
+    /// cancelled and never replaces the newer one.
+    #[tokio::test]
+    async fn a_newer_start_during_a_start_supersedes_it() {
+        let sign_ins = SignIns::default();
+        let (older_go, older) = held();
+        let mut first = Box::pin(sign_ins.start(older));
+        assert!(poll_once(&mut first).await.is_none());
+        let (newer_go, newer) = held();
+        let mut second = Box::pin(sign_ins.start(newer));
+        assert!(poll_once(&mut second).await.is_none());
+        let _ = older_go.send(());
+        assert_eq!(first.await.unwrap_err(), Failure::Account(CANCELLED.into()));
+        let _ = newer_go.send(());
+        let (id, prompt) = second.await.unwrap();
+        assert!(prompt.callback);
+        assert!(sign_ins.is_current(id));
+        sign_ins
+            .paste("http://localhost:1455/auth/callback?code=c&state=s".into())
+            .unwrap();
+    }
 
     /// A sign-in that never ends by itself.
     fn pending() -> (SignInTask, oneshot::Sender<String>) {
