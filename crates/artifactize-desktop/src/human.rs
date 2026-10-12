@@ -20,7 +20,7 @@ pub(crate) async fn current(app: &App) -> Result<u32, Failure> {
 
 use crate::ids::JobId;
 use crate::{App, Failure, detail::Field, status::Mark};
-use artifactize::{
+use artifactize_core::{
     config::{HumanToolKind, ToolName},
     monitor,
     review::{self, Job, Outcome},
@@ -300,8 +300,8 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
             .contains_key(&view.request.id);
     if resolve {
         let commands = async {
-            let (receipts, _) = artifactize::human::open(state, &view.request.id).await?;
-            artifactize::human::tool_commands(&receipts, &view.request.id).await
+            let (receipts, _) = artifactize_core::human::open(state, &view.request.id).await?;
+            artifactize_core::human::tool_commands(&receipts, &view.request.id).await
         }
         .await;
         app.human

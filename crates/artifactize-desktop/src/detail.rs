@@ -2,8 +2,8 @@
 //! Human requests open the shared Human Detail ([`crate::human`]); Agent requests read their
 //! session ([`crate::transcript`]).
 use crate::{App, Failure, status::Mark};
-use artifactize::types::RunId;
-use artifactize::{
+use artifactize_core::types::RunId;
+use artifactize_core::{
     config::ProfileKind,
     monitor::{self, NodeId, Section, Target},
 };
@@ -109,8 +109,8 @@ pub struct DetailView {
 /// The Detail of `node` in Run `run` with its `requests`: the monitor's model, laid out.
 pub fn view(
     state: &std::path::Path,
-    run: &artifactize::store::RunView,
-    requests: &[artifactize::store::RequestView],
+    run: &artifactize_core::store::RunView,
+    requests: &[artifactize_core::store::RequestView],
     id: &NodeId,
     now: OffsetDateTime,
 ) -> DetailView {
@@ -175,7 +175,7 @@ pub fn view(
         profile: request.map(|view| view.request.profile.kind().into()),
         mark: request.map(|view| monitor::Status::from(view.request.status()).into()),
         running: request.is_some_and(|view| {
-            view.request.status() == artifactize::types::RequestStatus::Running
+            view.request.status() == artifactize_core::types::RequestStatus::Running
         }),
         sections,
         evidence,

@@ -1,8 +1,8 @@
 //! GREEN/RED owner fields between the frontend's drafts and the review's [`Form`]: typed
 //! fields for a flat schema, JSON text otherwise. Which schema gets which inputs, how values
-//! become the result and the local errors all stay in [`artifactize::review::Form`].
+//! become the result and the local errors all stay in [`artifactize_core::review::Form`].
 use crate::Failure;
-use artifactize::{
+use artifactize_core::{
     review::{self, Form, Input},
     runtime,
     store::Request,

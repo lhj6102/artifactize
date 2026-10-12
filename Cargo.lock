@@ -136,6 +136,13 @@ dependencies = [
 name = "artifactize"
 version = "0.0.0-dev"
 dependencies = [
+ "artifactize-core",
+]
+
+[[package]]
+name = "artifactize-core"
+version = "0.0.0-dev"
+dependencies = [
  "artifactize-tools",
  "axum",
  "base64 0.22.1",
@@ -176,7 +183,7 @@ dependencies = [
 name = "artifactize-desktop"
 version = "0.0.0-dev"
 dependencies = [
- "artifactize",
+ "artifactize-core",
  "artifactize-tools",
  "base64 0.22.1",
  "libc",

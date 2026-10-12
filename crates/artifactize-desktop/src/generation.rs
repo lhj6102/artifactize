@@ -2,7 +2,7 @@
 //! the state, restoring a backup over its database or pointing at another state replaces it:
 //! everything read from the old one stops applying, while ordinary refreshes keep drafts and
 //! caches. Replacement is the monitor's own rule, [`Origin::replaces`].
-use artifactize::monitor::Origin;
+use artifactize_core::monitor::Origin;
 use std::sync::Mutex;
 
 #[derive(Default)]

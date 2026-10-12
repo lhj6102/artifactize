@@ -1,0 +1,74 @@
+[package]
+name = "artifactize-core"
+description = "The library behind artifactize: Artifacts, evals, reviews, the monitor and review models, and the shared operations every interface calls."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/artifactize-core"
+keywords = ["collaboration", "ai", "agent", "review", "llm"]
+categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
+# The Windows test stand-in for /bin/sh, which tests build from source on demand.
+exclude = ["tests/support/fixture.rs", "index.artf"]
+
+[dependencies]
+artifactize-tools.workspace = true
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+base64 = "0.22"
+# The existing rig transport byte type is needed by the transparent stream observer.
+bytes = "1"
+clap = { version = "4.5", features = ["derive"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures-util = "0.3"
+getrandom = "0.4"
+globset = "0.4"
+ignore = "0.4"
+jsonschema = { version = "0.58.4", default-features = false }
+petgraph = { version = "0.8", default-features = false, features = ["std"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm", "unstable-rendered-line-info"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form"] }
+rig-core = { version = "=0.43.0", default-features = false, features = ["reqwest", "rustls"] }
+rig-reqwest = { version = "=0.43.0", default-features = false, features = ["rustls"] }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3.27"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
+tokio-rusqlite = "0.8.0"
+toml = "1.1.8"
+tokio-util = { version = "0.7", features = ["rt"] }
+tui-tree-widget = "0.24"
+url = { version = "2", features = ["serde"] }
+# Already used by ratatui; session layout uses the same grapheme boundaries.
+unicode-segmentation = "1.13"
+
+[target.'cfg(unix)'.dependencies]
+hostname = "0.4.2"
+libc = "0.2"
+process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "process-group"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+# Count executed snapshot statements at the SQLite boundary, without timing assertions.
+rusqlite = { version = "0.40.1", features = ["trace"] }
+rig-core = { version = "=0.43.0", default-features = false, features = ["test-utils"] }
+tokio = { version = "1", features = ["test-util"] }

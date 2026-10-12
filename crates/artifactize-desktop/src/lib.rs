@@ -1,8 +1,8 @@
 //! The artifactize desktop app: `monitor` and `review` as one Tauri window.
 //!
 //! The Rust side owns no state of its own beyond UI snapshots: it reads through the same
-//! [`artifactize::monitor::Loader`] as the terminal monitor and acts through the same
-//! [`artifactize::review::Job`]s as the terminal review. Commands and events are typed with
+//! [`artifactize_core::monitor::Loader`] as the terminal monitor and acts through the same
+//! [`artifactize_core::review::Job`]s as the terminal review. Commands and events are typed with
 //! tauri-specta; [`bindings`] is the single list of what the frontend may call.
 
 mod browse;
@@ -110,8 +110,8 @@ impl App {
     /// (the monitor's [`Origin::replaces`]) drops the Human caches, claims taken here and running
     /// jobs of the old one.
     ///
-    /// [`Origin::replaces`]: artifactize::monitor::Origin::replaces
-    fn observe(&self, origin: artifactize::monitor::Origin) -> u32 {
+    /// [`Origin::replaces`]: artifactize_core::monitor::Origin::replaces
+    fn observe(&self, origin: artifactize_core::monitor::Origin) -> u32 {
         let (generation, replaced) = self.generation.observe(origin);
         if replaced {
             self.human.reset();

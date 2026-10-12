@@ -6,8 +6,8 @@ command = "node"
 args = [
   "fingerprint.mjs",
   ".",
-  "{cli}/src",
-  "{cli}/Cargo.toml",
+  "{core}/src",
+  "{core}/Cargo.toml",
   "{tools}/src",
   "{tools}/Cargo.toml",
 ]

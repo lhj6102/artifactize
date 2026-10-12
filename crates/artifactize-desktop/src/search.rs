@@ -1,4 +1,4 @@
-//! The review screen's request search: [`artifactize::review::search`] runs the query, pages
+//! The review screen's request search: [`artifactize_core::review::search`] runs the query, pages
 //! and completion; this keeps the last page for clock redraws, and opens the read-only Detail
 //! of a request that is not a Human review.
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     human,
     status::Mark,
 };
-use artifactize::{
+use artifactize_core::{
     monitor::{self, NodeId},
     review::search::{self, Entry, Query},
     store::{self, RequestView},

@@ -35,6 +35,7 @@ on:
       - ".github/packaging/**"
       - "assets/brand/apple-touch-icon.png"
       - "crates/artifactize/Cargo.toml"
+      - "crates/artifactize-core/Cargo.toml"
       - "crates/artifactize-tools/Cargo.toml"
       - "website/landing/install.sh"
       - "website/landing/install.ps1"

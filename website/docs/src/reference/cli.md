@@ -100,7 +100,7 @@ normal text or JSON report and exits 1.
 ## Runtime CLI
 
 ```sh
-cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/runtime verify --all
+cargo run -q -p artifactize -- --repo crates/artifactize-core/tests/fixtures/runtime verify --all
 cargo run -q -p artifactize -- run show RUN_ID
 ```
 

@@ -1,7 +1,7 @@
 //! The selected Run as a graph of Artifacts for the monitor's Graph view: nodes, dependency
 //! edges and their lights come from the library's [`monitor::graph`] over the shown tree.
 use crate::{App, Failure};
-use artifactize::monitor;
+use artifactize_core::monitor;
 use serde::Serialize;
 use specta::Type;
 
@@ -69,9 +69,9 @@ pub struct RunGraph {
 #[tauri::command]
 #[specta::specta]
 pub fn run_graph(app: tauri::State<'_, App>, run: String) -> Result<RunGraph, Failure> {
-    let run: artifactize::types::RunId = run.parse().map_err(Failure::Missing)?;
+    let run: artifactize_core::types::RunId = run.parse().map_err(Failure::Missing)?;
     let graph = app.browse.with_tree(&run, monitor::graph)?;
-    let id = |name: &artifactize::types::ArtifactName| {
+    let id = |name: &artifactize_core::types::ArtifactName| {
         monitor::NodeId::artifact(name.clone()).to_string()
     };
     Ok(RunGraph {

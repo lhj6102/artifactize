@@ -2,7 +2,7 @@
 //! sizes the window in text columns and rows of its monospace pane, like a terminal would.
 use crate::ids::TranscriptHandle;
 use crate::{App, Failure};
-use artifactize::{
+use artifactize_core::{
     agent::session::{document::Move, live, transcript::BlockId},
     monitor::{EvidenceStamp, session::Live},
     store,
@@ -215,7 +215,7 @@ pub async fn transcript_window(
             .collect(),
         indicator: live.indicator(),
         status: window.status.clone(),
-        following: live.scroll.mode == artifactize::agent::session::document::Mode::Following,
+        following: live.scroll.mode == artifactize_core::agent::session::document::Mode::Following,
         loading: window.loading,
     })
 }

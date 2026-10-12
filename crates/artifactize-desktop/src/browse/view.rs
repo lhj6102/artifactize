@@ -2,7 +2,7 @@
 //! monitor's model.
 use super::Shown;
 use crate::status::{Count, Mark, Tone, Weight};
-use artifactize::monitor::{self, Completion, Kind, Node, NodeId, Repository, Scope};
+use artifactize_core::monitor::{self, Completion, Kind, Node, NodeId, Repository, Scope};
 use artifactize_tools::files::path_text;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -270,7 +270,11 @@ fn marks(nodes: &[Node], path: &[NodeId]) -> Vec<UpstreamMark> {
 }
 
 /// The Run row, then each Artifact with its eval rows.
-fn tree(run: &artifactize::store::RunView, nodes: &[Node], now: OffsetDateTime) -> Vec<TreeNode> {
+fn tree(
+    run: &artifactize_core::store::RunView,
+    nodes: &[Node],
+    now: OffsetDateTime,
+) -> Vec<TreeNode> {
     let run_row = node(&monitor::run_node(run), NodeKind::Run, now, Vec::new());
     std::iter::once(run_row)
         .chain(nodes.iter().map(|artifact| {

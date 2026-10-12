@@ -1,6 +1,6 @@
 //! The monitor's typed statuses and row styles as the frontend receives them. Glyphs and
 //! words stay in Rust; the frontend only maps tones and weights to its theme.
-use artifactize::monitor;
+use artifactize_core::monitor;
 use serde::Serialize;
 use specta::Type;
 

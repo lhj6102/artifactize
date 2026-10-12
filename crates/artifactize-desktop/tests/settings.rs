@@ -13,7 +13,7 @@ use tauri::{
 };
 
 /// The CLI tests' fake provider and operating-system helpers.
-#[path = "../../artifactize/tests/support/mod.rs"]
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use support::{FakeProvider, Reply, codex, openai};
@@ -111,7 +111,7 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         repo: Some(repo),
         reviewer: "alice".parse().unwrap(),
         request: None,
-        search: artifactize::review::search::DEFAULT.into(),
+        search: artifactize_core::review::search::DEFAULT.into(),
     };
     let app = artifactize_desktop::app(mock_builder(), launch)
         .build(mock_context(noop_assets()))

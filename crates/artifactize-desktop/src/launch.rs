@@ -18,9 +18,9 @@ pub struct Launch {
     pub state: PathBuf,
     /// `--repo` or the current directory; `None` with `--all`.
     pub repo: Option<PathBuf>,
-    pub reviewer: artifactize::types::ReviewerId,
+    pub reviewer: artifactize_core::types::ReviewerId,
     /// `review REQUEST_ID`: the request to open first.
-    pub request: Option<artifactize::types::RequestId>,
+    pub request: Option<artifactize_core::types::RequestId>,
     /// The review list's first search: the waiting Human reviews, of `--repo` when given.
     pub search: String,
 }
@@ -74,12 +74,12 @@ impl Launch {
         }
         let reviewer = match reviewer {
             Some(reviewer) => reviewer,
-            None => artifactize::human::default_reviewer()?,
+            None => artifactize_core::human::default_reviewer()?,
         };
-        let state = artifactize::store::state_dir(state.as_deref())?;
+        let state = artifactize_core::store::state_dir(state.as_deref())?;
         // Only an explicit --repo narrows the review search; the monitor still starts on cwd.
-        let search = artifactize::review::search::Query::text_for(
-            artifactize::monitor::initial(repo.clone()).as_deref(),
+        let search = artifactize_core::review::search::Query::text_for(
+            artifactize_core::monitor::initial(repo.clone()).as_deref(),
         );
         Ok(Self {
             mode,
@@ -93,7 +93,7 @@ impl Launch {
 
     /// The path that picks the first scope, canonical like the terminal monitor's.
     pub fn initial(&self) -> Option<PathBuf> {
-        artifactize::monitor::initial(self.repo.clone())
+        artifactize_core::monitor::initial(self.repo.clone())
     }
 }
 

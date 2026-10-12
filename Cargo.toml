@@ -4,7 +4,7 @@ members = ["crates/*"]
 # Plain `cargo build/clippy/test` at the root cover the CLI and its tools. The desktop app
 # needs WebKitGTK and a built frontend, so it builds only when named (`-p artifactize-desktop`)
 # and has its own CI job; the CLI's builds, releases and lockfile versions stay as they were.
-default-members = ["crates/artifactize", "crates/artifactize-tools"]
+default-members = ["crates/artifactize", "crates/artifactize-core", "crates/artifactize-tools"]
 
 [workspace.package]
 version = "0.0.0-dev"
@@ -16,6 +16,10 @@ repository = "https://github.com/lhj6102/artifactize"
 homepage = "https://artifactize.dev"
 
 # The release version script updates both this publish dependency and the workspace version.
+[workspace.dependencies.artifactize-core]
+version = "0.0.0-dev"
+path = "crates/artifactize-core"
+
 [workspace.dependencies.artifactize-tools]
 version = "0.0.0-dev"
 path = "crates/artifactize-tools"

@@ -1,7 +1,7 @@
 //! The command boundary: JSON in and out of the IPC handler, on state a real `verify` made.
 //! A Human sign-off with a built-in tool and owner schemas waits; a dependency eval waits for
 //! it. Built-in tools and dependency evals run alike on every OS.
-use artifactize::project::{VerifyOptions, selection::Selection};
+use artifactize_core::project::{VerifyOptions, selection::Selection};
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
 use std::{fs, path::Path, time::Duration};
@@ -13,7 +13,7 @@ use tauri::{
 };
 
 /// The CLI tests' operating-system helpers: private directories and files.
-#[path = "../../artifactize/tests/support/os.rs"]
+#[path = "../../artifactize-core/tests/support/os.rs"]
 mod os;
 
 const RELEASE: &str = r#"name = "release"
@@ -100,7 +100,7 @@ fn verify(repo: &Path, state: &Path) {
             ..VerifyOptions::default()
         };
         // The wait ends at once; the Human request stays waiting.
-        artifactize::project::verify(
+        artifactize_core::project::verify(
             repo,
             Some(state),
             &Selection::All,
@@ -119,7 +119,7 @@ fn window(fixture: &Fixture, mode: Mode) -> WebviewWindow<MockRuntime> {
         repo: Some(fixture.repo.clone()),
         reviewer: "alice".parse().unwrap(),
         request: None,
-        search: artifactize::review::search::DEFAULT.into(),
+        search: artifactize_core::review::search::DEFAULT.into(),
     };
     let app = artifactize_desktop::app(mock_builder(), launch)
         .build(mock_context(noop_assets()))
@@ -152,16 +152,16 @@ fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Re
 const STILL: fn() -> Value =
     || json!({"scope": null, "run": null, "paging": null, "full": true, "resync": false});
 
-fn saved(fixture: &Fixture, eval: &str) -> artifactize::store::RequestView {
+fn saved(fixture: &Fixture, eval: &str) -> artifactize_core::store::RequestView {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     runtime.block_on(async {
-        let runs = artifactize::store::read_runs(&fixture.state, None, 1, 0)
+        let runs = artifactize_core::store::read_runs(&fixture.state, None, 1, 0)
             .await
             .unwrap();
-        artifactize::store::read_run_requests(&fixture.state, &runs[0].id)
+        artifactize_core::store::read_run_requests(&fixture.state, &runs[0].id)
             .await
             .unwrap()
             .1
@@ -263,7 +263,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let waiting = invoke(
         &window,
         "review_search",
-        json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": true}),
+        json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": true}),
     )
     .unwrap();
     assert_eq!(waiting["rows"][0]["id"], id);
@@ -319,7 +319,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     );
     assert_eq!(
         saved(&fixture, "release/signoff").request.status(),
-        artifactize::types::RequestStatus::WaitingHuman
+        artifactize_core::types::RequestStatus::WaitingHuman
     );
 
     let green = invoke(&window, "human_form", json!({"id": id, "verdict": "GREEN"})).unwrap();
@@ -354,7 +354,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let waiting = invoke(
         &window,
         "review_search",
-        json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": true}),
+        json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": true}),
     )
     .unwrap();
     assert_eq!(waiting["rows"], json!([]));
@@ -368,7 +368,7 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
         invoke(
             &window,
             "review_search",
-            json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": reload}),
+            json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": reload}),
         )
         .unwrap()
     };
@@ -457,7 +457,7 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
     assert_eq!(submitted["view"]["stage"], "completed");
     assert_eq!(
         saved(&fixture, "release/signoff").request.status(),
-        artifactize::types::RequestStatus::Green
+        artifactize_core::types::RequestStatus::Green
     );
 }
 
@@ -465,7 +465,7 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
 fn back_up(state: &Path, backup: &Path) {
     fs::create_dir_all(backup).unwrap();
     for suffix in ["", "-wal"] {
-        let name = format!("{}{suffix}", artifactize::store::DATABASE);
+        let name = format!("{}{suffix}", artifactize_core::store::DATABASE);
         if state.join(&name).exists() {
             fs::copy(state.join(&name), backup.join(&name)).unwrap();
         }
@@ -475,7 +475,7 @@ fn back_up(state: &Path, backup: &Path) {
 /// Restore `backup` over the state's database files the way a backup tool does: a new file
 /// renamed into place, so the database keeps its state identity but is another file.
 fn restore(backup: &Path, state: &Path) {
-    let database = artifactize::store::DATABASE;
+    let database = artifactize_core::store::DATABASE;
     for suffix in ["-shm", "-wal"] {
         let _ = fs::remove_file(state.join(format!("{database}{suffix}")));
     }
@@ -498,7 +498,7 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
         invoke(
             &window,
             "review_search",
-            json!({"query": artifactize::review::search::DEFAULT, "start": 0, "reload": true}),
+            json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": true}),
         )
         .unwrap()
     };
@@ -517,10 +517,10 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
         json!([id])
     );
 
-    let identity = artifactize::store::read_state_id(&fixture.state).unwrap();
+    let identity = artifactize_core::store::read_state_id(&fixture.state).unwrap();
     restore(&backup, &fixture.state);
     assert_eq!(
-        artifactize::store::read_state_id(&fixture.state).unwrap(),
+        artifactize_core::store::read_state_id(&fixture.state).unwrap(),
         identity,
         "the restored database keeps the state's identity"
     );
@@ -539,10 +539,10 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
 
 /// An Agent request of its own Run with a saved conversation of `rows` answers.
 async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String {
-    let receipts = artifactize::store::Receipts::open(&fixture.state, &fixture.repo)
+    let receipts = artifactize_core::store::Receipts::open(&fixture.state, &fixture.repo)
         .await
         .unwrap();
-    let run: artifactize::store::Run = serde_json::from_value(json!({
+    let run: artifactize_core::store::Run = serde_json::from_value(json!({
         "id": "run-agent",
         "repoPath": fixture.repo,
         "stateDir": fixture.state,
@@ -553,7 +553,7 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
         "definitions": {"artifacts": {"release": {"path": "release"}}},
     }))
     .unwrap();
-    let request: artifactize::store::Request = serde_json::from_value(json!({
+    let request: artifactize_core::store::Request = serde_json::from_value(json!({
         "id": "run-agent-1",
         "runId": "run-agent",
         "evalId": "release/review",
@@ -577,14 +577,14 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
     .unwrap();
     receipts.create_run(&run, &[request]).await.unwrap();
     // The recorded conversation: a review header, then one answer per row.
-    let path = artifactize::agent::session::path(&fixture.state, session).unwrap();
+    let path = artifactize_core::agent::session::path(&fixture.state, session).unwrap();
     os::create_private_dir_all(path.parent().unwrap());
     let answer = |text: String| {
-        serde_json::to_string(&artifactize::agent::session::Event {
+        serde_json::to_string(&artifactize_core::agent::session::Event {
             at: None,
             send: None,
-            kind: artifactize::agent::session::Kind::Answer(
-                artifactize::agent::session::Answer::Completed(text),
+            kind: artifactize_core::agent::session::Kind::Answer(
+                artifactize_core::agent::session::Answer::Completed(text),
             ),
         })
         .unwrap()
@@ -639,15 +639,15 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
 
     // The request completes with the same session: its evidence stamp changes, the reader stays.
     runtime.block_on(async {
-        let receipts = artifactize::store::Receipts::open(&fixture.state, &fixture.repo)
+        let receipts = artifactize_core::store::Receipts::open(&fixture.state, &fixture.repo)
             .await
             .unwrap();
-        let mut view = artifactize::store::read_request(&fixture.state, &id)
+        let mut view = artifactize_core::store::read_request(&fixture.state, &id)
             .await
             .unwrap();
-        view.request.state = artifactize::store::RequestState::completed(
+        view.request.state = artifactize_core::store::RequestState::completed(
             serde_json::from_value(json!({"verdict": "GREEN"})).unwrap(),
-            artifactize::types::Timestamp::now(),
+            artifactize_core::types::Timestamp::now(),
         );
         receipts.save_request(&view.request).await.unwrap();
     });
@@ -683,10 +683,10 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
 
     // Another session replaces the reader.
     runtime.block_on(async {
-        let receipts = artifactize::store::Receipts::open(&fixture.state, &fixture.repo)
+        let receipts = artifactize_core::store::Receipts::open(&fixture.state, &fixture.repo)
             .await
             .unwrap();
-        let mut view = artifactize::store::read_request(&fixture.state, &id)
+        let mut view = artifactize_core::store::read_request(&fixture.state, &id)
             .await
             .unwrap();
         view.request.session_id = Some("other-session".parse().unwrap());
@@ -721,7 +721,7 @@ fn the_review_search_lists_any_request_and_opens_a_read_only_detail() {
         .unwrap()
     };
     // The default lists the waiting Human sign-off only.
-    let waiting = search(artifactize::review::search::DEFAULT);
+    let waiting = search(artifactize_core::review::search::DEFAULT);
     assert_eq!(waiting["waiting"], json!(true));
     let evals: Vec<_> = waiting["rows"]
         .as_array()

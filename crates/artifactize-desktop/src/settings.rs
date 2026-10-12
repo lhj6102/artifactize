@@ -3,7 +3,7 @@
 //! validates or reaches a service on its own; secrets never come back to the frontend.
 use crate::ids::SignInId;
 use crate::{App, Failure};
-use artifactize::{
+use artifactize_core::{
     auth::{codex, remote},
     config::Backend,
     llm,
@@ -580,10 +580,13 @@ pub struct Pushed {
 #[tauri::command]
 #[specta::specta]
 pub async fn remote_push(app: tauri::State<'_, App>, dry_run: bool) -> Result<Pushed, Failure> {
-    let report =
-        artifactize::remote::push(Some(&app.launch.state), app.launch.repo.as_deref(), dry_run)
-            .await
-            .map_err(Failure::Account)?;
+    let report = artifactize_core::remote::push(
+        Some(&app.launch.state),
+        app.launch.repo.as_deref(),
+        dry_run,
+    )
+    .await
+    .map_err(Failure::Account)?;
     let count = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
     Ok(Pushed {
         dry_run: report.dry_run,

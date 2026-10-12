@@ -1,6 +1,6 @@
 //! Live updates: the state's invalidation hub, as the terminal monitor subscribes to it.
 //! Hints only say what to read again; the frontend reads through the commands.
-use artifactize::changes::{Change, Subscription};
+use artifactize_core::changes::{Change, Subscription};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;

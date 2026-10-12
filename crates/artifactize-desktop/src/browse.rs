@@ -5,7 +5,7 @@ mod view;
 pub use view::{BrowseView, RepositoryKey, ScopeKey};
 
 use crate::{App, Failure};
-use artifactize::{
+use artifactize_core::{
     monitor::{self, Catalog, Input, Loader, Node, Origin, Page, Scope},
     store::{RequestView, RunSummary, RunView},
     types::RunId,
@@ -243,7 +243,7 @@ impl Browse {
     /// The selected Run's tree, as the shown snapshot projected it.
     pub fn with_tree<T>(
         &self,
-        run: &artifactize::types::RunId,
+        run: &artifactize_core::types::RunId,
         read: impl FnOnce(&[Node]) -> T,
     ) -> Result<T, Failure> {
         let shown = self.shown();
@@ -258,7 +258,7 @@ impl Browse {
     /// The selected Run's requests and target, for a Detail of it.
     pub fn with_run<T>(
         &self,
-        run: &artifactize::types::RunId,
+        run: &artifactize_core::types::RunId,
         read: impl FnOnce(&RunView, &[RequestView]) -> T,
     ) -> Result<T, Failure> {
         let shown = self.shown();
