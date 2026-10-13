@@ -28,9 +28,11 @@ export class AppState {
   palette = $state(false);
   help = $state(false);
 
-  /** The Review of request `id`, started on first use. */
+  /** The Review of request `id`, started on first use. A follower's ID and its original's name
+   * one Review: it takes the original's ID once it has read the request. */
   review(id: string): Review {
-    return (this.reviews[id] ??= new Review(id, this.jobs));
+    const known = this.reviews[id] ?? Object.values(this.reviews).find((review) => review.id === id);
+    return (known ?? (this.reviews[id] = new Review(id, this.jobs)));
   }
 
   /** A replaced state: the reviews and drafts of the old one no longer apply. */
