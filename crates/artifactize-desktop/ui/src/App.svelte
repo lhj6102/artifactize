@@ -4,6 +4,7 @@
   import { Tabs } from "bits-ui";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
   import { call, commands, message, onStateChanged } from "./ipc/client";
   import CurrentGraph from "./monitor/CurrentGraph.svelte";
   import Monitor from "./monitor/Monitor.svelte";
@@ -90,7 +91,7 @@
 
 <div class="app">
   <header class="bar">
-    <div class="brand">artifactize</div>
+    <div class="brand"><img src={brandMark} alt="" width="24" height="24" />Artifactize</div>
     <Tabs.Root bind:value={app.screen}>
       <Tabs.List class="tabs" aria-label="Screens">
         {#if app.launch?.mode === "graph"}<Tabs.Trigger class="tab" value="graph">Graph</Tabs.Trigger>{/if}
@@ -153,6 +154,10 @@
     background: var(--surface);
   }
   .brand {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 8px;
     font-weight: 600;
     letter-spacing: 0.01em;
   }

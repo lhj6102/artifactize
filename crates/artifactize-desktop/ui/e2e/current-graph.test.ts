@@ -59,7 +59,14 @@ describe("current declaration graph", () => {
         await browser.$("button=Refresh").click();
         await browser.waitUntil(async () => (await structure()).includes(title), { timeout: 15000 });
       }
-      await browser.$('.svelte-flow__node[data-id="a:docs"]').click();
+      await browser.$("button=Refresh").waitForEnabled({ timeout: 15000 });
+      // Refresh replaces the graph while its previous zoom camera can still be moving.
+      // Focus the current node and use the confirmed keyboard action, not coordinates
+      // computed before that camera move; await the new eval list before reading it.
+      await browser.$('.svelte-flow__node[data-id="a:docs"]').execute((node) => (node as HTMLElement).focus());
+      await press(browser, ["Enter"], () => browser.execute((expected) =>
+        document.querySelector('[role="listbox"][aria-label="Evals"]')?.textContent?.includes(expected) ?? false,
+      title), "the refreshed docs node exposes its current eval title");
       assert.match(await browser.$('[role="listbox"][aria-label="Evals"]').getText(), new RegExp(title));
       assert.match(await browser.execute(() => document.body.innerText), /Declarations only · no Run verdicts/);
     }

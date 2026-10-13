@@ -39,6 +39,11 @@ describe("monitor", () => {
   // UX edges: E-LAUNCH-MONITOR
   it("catalogs the repository and its Run, and peeks at the selected eval", async () => {
     const shown = await text();
+    assert.equal(await browser.$(".brand").getText(), "Artifactize");
+    assert.equal(await browser.$(".brand img").execute((image) => {
+      const mark = image as HTMLImageElement;
+      return mark.complete && mark.naturalWidth > 0;
+    }), true, "the approved brand mark actually loaded");
     assert.match(shown, /ALL/);
     assert.match(shown, /master · repo/);
     assert.match(shown, /Runs \(1\)/i);
