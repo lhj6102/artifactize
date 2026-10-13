@@ -5,10 +5,11 @@
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
   import GraphView from "./GraphView.svelte";
-  import { CurrentGraphState } from "./currentGraph.svelte";
+  import { CurrentGraphState, setCurrentGraphState } from "./currentGraph.svelte";
   import { chord } from "../shell/keys";
 
   const graph = new CurrentGraphState();
+  setCurrentGraphState(graph);
   onMount(() => void graph.refresh());
 
   function keydown(event: KeyboardEvent) {
