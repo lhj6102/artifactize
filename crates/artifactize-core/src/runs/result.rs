@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 const SUMMARY_CHARS: usize = 512;
 /// Shared page size; interfaces cannot accidentally emit an unbounded findings list.
 const PAGE_SIZE: usize = 20;
-/// Leave room for the Run envelope/cursor within the interface's 64 KiB response bound.
-const FINDING_BYTES: usize = 62 * 1024;
+/// Leave room for the envelope and MCP's structured-plus-text mirror under 64 KiB.
+const FINDING_BYTES: usize = 24 * 1024;
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RunVerdict {

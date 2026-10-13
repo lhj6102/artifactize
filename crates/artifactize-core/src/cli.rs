@@ -27,7 +27,10 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand, error::ErrorKind};
+use clap::{
+    Args, Parser, Subcommand,
+    error::{ContextKind, ErrorKind},
+};
 use serde_json::json;
 
 use crate::{
@@ -66,6 +69,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Serve bounded verification and inspection tools over MCP stdio.
+    Mcp,
     #[command(name = "__verify", hide = true)]
     VerifyWorker { run_id: RunId },
     #[command(name = "__execute", hide = true)]
@@ -478,7 +483,18 @@ pub fn run(screens: Screens) -> ExitCode {
         .take_while(|arg| *arg != "--")
         .filter_map(|arg| arg.to_str())
         .collect();
-    let json = options.contains(&"--json");
+    let mcp = matches!(
+        &parsed,
+        Ok(Cli {
+            command: Some(Command::Mcp),
+            ..
+        })
+    ) || parsed
+        .as_ref()
+        .err()
+        .and_then(|error| error.get(ContextKind::Usage))
+        .is_some_and(|usage| usage.to_string().starts_with("Usage: artifactize mcp"));
+    let json = options.contains(&"--json") && !mcp;
     if let Some(name) = repeated_global(&options) {
         return failure(&format!("{name} cannot be used multiple times."), json);
     }

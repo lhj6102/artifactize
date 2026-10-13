@@ -101,7 +101,8 @@ class HarnessTests(unittest.TestCase):
     def session(self):
         directory = self.root / "session"
         driver.private_directory(directory)
-        environment = dict(os.environ, ARTIFACTIZE_SESSION_DIR=str(directory))
+        environment = dict(os.environ, ARTIFACTIZE_SESSION_DIR=str(directory),
+                           HEY_ARTI_EVIDENCE_INDEX=str(self.root / "no-live-index.json"))
         process = subprocess.Popen([sys.executable, "-I", str(ROOT / "driver.py"), "start"],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    text=True, env=environment)

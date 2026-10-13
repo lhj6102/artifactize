@@ -27,6 +27,7 @@
 
 - [Overview](reference/overview.md)
 - [CLI](reference/cli.md)
+- [MCP](reference/mcp.md)
 - [Declarations (.artf)](reference/declarations.md)
 - [Agent tools](reference/agent-tools.md)
 - [Human tools](reference/human-tools.md)

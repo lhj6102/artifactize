@@ -1,7 +1,7 @@
 //! Repository discovery and verification workflows, without text rendering.
 
 use super::{Context, cancellation_listener, print_json};
-use serde_json::json;
+
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -136,17 +136,12 @@ pub(super) async fn graph(
 
 pub(super) async fn check(context: Context) -> Result<u8, String> {
     let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-    let config = read_workspace_config(&repo).map_err(|error| error.to_string())?;
-    let mut stdout = io::stdout().lock();
+    let report = crate::inspect::config_check(&repo)?;
     if context.json {
-        writeln!(
-            stdout,
-            "{}",
-            json!({ "ok": true, "artifacts": config.artifacts.len(), "evals": config.evals.len() })
-        )
+        print_json(&report)?;
     } else {
-        writeln!(stdout, "Folder configuration is valid.")
+        writeln!(io::stdout().lock(), "Folder configuration is valid.")
+            .map_err(|error| error.to_string())?;
     }
-    .map_err(|error| error.to_string())?;
     Ok(0)
 }

@@ -1,7 +1,7 @@
 """Stdlib-only hey-arti fixture and review-tool driver.
 
-Source fixtures never contain declarations. Live builder execution is wired in a
-later step; missing live evidence is deliberately not a passing result.
+Source fixtures never contain declarations. Live builders run manually outside CI;
+review sessions import their actual outputs, never substitute deterministic evidence.
 """
 
 import argparse
@@ -141,7 +141,7 @@ def case_result(directory, case_id):
         evidence = {"available": True, "record": record}
     return {"case": case_id, "goal": case["goal"], "consent": case["consent"],
             "obligations": case["obligations"], "evolve": case["evolve"],
-            "repository": str(root / "repo"), "source_files": files, "live_evidence": evidence}
+            "repository": str(root / "repo"), "source_files": files, "builder_files": sorted(path.relative_to(root / "repo").as_posix() for path in (root / "repo").rglob("*") if path.is_file() and not any(part.startswith(".") for part in path.relative_to(root / "repo").parts)), "live_evidence": evidence}
 
 
 def read_result(directory, case_id, relative, offset=0, limit=PAGE_BYTES):
@@ -185,12 +185,65 @@ def read_result(directory, case_id, relative, offset=0, limit=PAGE_BYTES):
             "next_offset": next_offset if next_offset < size else None}
 
 
+def import_evidence(destination):
+    """Import manual-host output before readiness; reviewers cannot choose a host path."""
+    index = Path(os.environ.get("HEY_ARTI_EVIDENCE_INDEX", ROOT / "live-evidence.json"))
+    if not index.exists():
+        return
+    if index.is_symlink() or index.stat().st_size > PAGE_BYTES:
+        raise ValueError("invalid live evidence index")
+    manifest = json.loads(index.read_text(encoding="utf-8"))
+    if manifest.get("version") != 1 or not isinstance(manifest.get("cases"), dict):
+        raise ValueError("invalid live evidence manifest")
+    for case_id, location in manifest["cases"].items():
+        if case_id not in cases():
+            raise ValueError("unknown live evidence case")
+        source = Path(location).resolve(strict=True)
+        record_path = source / "evidence/live.json"
+        if record_path.is_symlink() or record_path.stat().st_size > PAGE_BYTES:
+            raise ValueError("invalid live evidence record")
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        if record.get("mode") != "live" or record.get("case") != case_id:
+            raise ValueError("deterministic evidence cannot stand in for a live builder pass")
+        target = destination / case_id
+        shutil.rmtree(target / "repo")
+        private_directory(target / "repo")
+        for path in (source / "repo").rglob("*"):
+            relative = path.relative_to(source / "repo").as_posix()
+            parts = PurePosixPath(relative).parts
+            if any(part.startswith(".") or part == "__pycache__" for part in parts):
+                if not (relative.startswith(".github/workflows/") and relative.endswith((".yml", ".yaml"))):
+                    continue
+            if path.is_symlink():
+                raise ValueError("live builder inputs must not contain symlinks")
+            if path.is_file():
+                output = inside(target / "repo", relative)
+                output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                shutil.copyfile(path, output)
+        # Expose only known evidence products, not host configuration/state/credentials.
+        private_directory(target / "repo/evidence")
+        for name in ("transcript.jsonl", "registration.txt", "live.json", "cleanup.json"):
+            input_path = source / "evidence" / name
+            if input_path.is_symlink() or not input_path.is_file():
+                raise ValueError("missing regular live evidence product")
+            shutil.copyfile(input_path, target / "repo/evidence" / name)
+        for name in ("transcript.jsonl", "live.json", "cleanup.json", "runs-before-cleanup.json"):
+            followup = source / "evidence/inspection-recheck" / name
+            if followup.exists():
+                if followup.is_symlink() or not followup.is_file():
+                    raise ValueError("invalid inspection follow-up product")
+                private_directory(target / "repo/evidence/inspection-recheck")
+                shutil.copyfile(followup, target / "repo/evidence/inspection-recheck" / name)
+        shutil.copyfile(record_path, target / "evidence/live.json")
+
+
 def start(directory):
     # Allocate below the artifactize-owned private session directory, never /tmp's root.
     parent = Path(tempfile.mkdtemp(prefix="cases-", dir=directory))
     parent.rmdir()
     case_area = materialize(parent)
     try:
+        import_evidence(case_area)
         with socket.socket() as server:
             server.bind(("127.0.0.1", 0))
             server.listen()
