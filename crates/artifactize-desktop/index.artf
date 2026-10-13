@@ -59,6 +59,22 @@ properties.args = { type = "array", items = { type = "string" }, minItems = 1 }
 required = ["args"]
 additionalProperties = false
 
+[views.agent_tools.launch]
+session = "app"
+description = "Restart the real headless desktop app with its actual monitor, review or graph launch mode. Graph uses current declarations and fresh state with no saved Run. Answers with the new window snapshot; builds nothing."
+command = "node"
+args = ["harness/harness.mts", "launch"]
+protocol = "json"
+input_schema = { type = "object", properties = { screen = { enum = ["monitor", "review", "graph"] } }, required = ["screen"], additionalProperties = false }
+
+[views.agent_tools.change_declaration]
+session = "app"
+description = "Change docs/lint's title in the private fixture's actual declaration, without re-verifying. Refresh the current graph to observe the change rather than a saved Run."
+command = "node"
+args = ["harness/harness.mts", "change-declaration"]
+protocol = "json"
+input_schema = { type = "object", properties = {}, additionalProperties = false }
+
 [evals.ready]
 title = "The backend, the UI and the journeys are ready"
 profile = { kind = "dependency", depends_on = ["desktop-backend", "desktop-ui", "ux-features"] }
@@ -77,7 +93,9 @@ instruction = """
 Read the journeys {ux-features} with read_features_ux-features. The app of {desktop} is running \
 headless; use snapshot_desktop to see its window, act_desktop to click, type and press keys, and \
 cli_desktop to change its repository state from another process (the repository holds the Artifacts \
-release, ship and docs, with a waiting Human sign-off on release). Complete every journey (J- id) \
+release, ship and docs, with a waiting Human sign-off on release). Use launch_desktop for the real \
+monitor/review/graph launch routes or to restart after quitting, and change_declaration_desktop to \
+change the private fixture's docs/lint title before testing a current-graph reload. Complete every journey (J- id) \
 in the running app and check that it ends in what the journey says. Journeys that need a network, \
 a Codex account or a remote store (J-SET-CODEX, J-SET-MODELS, J-SET-REMOTE) are checked up to the \
 point where the app asks for what it needs. Submit GREEN when every journey can be completed. \

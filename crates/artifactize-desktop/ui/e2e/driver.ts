@@ -22,7 +22,7 @@ function newest(directory: string): number {
  * puts the normal app back; an app still older than ui/dist means `pnpm build` ran after
  * the build, so say so at once instead of letting tests time out.
  */
-function checkBuild() {
+export function checkBuild() {
   const root = resolve(import.meta.dirname, "../../../..");
   const built = spawnSync("cargo", ["build", "-p", "artifactize", "-p", "artifactize-desktop"], {
     cwd: root,

@@ -291,7 +291,7 @@ async fn page_keys_move_through_more_matches_than_one_page() {
                 "run-p",
                 &format!("app/check{index:03}"),
                 "GREEN",
-                json!({"kind":"runtime","command":"true","args":[]}),
+                json!({"kind":"runtime","command":crate::test_os::true_program(),"args":[]}),
             )
         })
         .collect();
@@ -322,7 +322,7 @@ async fn a_paste_into_the_search_requeries_from_the_first_page() {
                 "run-p",
                 &format!("app/check{index:03}"),
                 "GREEN",
-                json!({"kind":"runtime","command":"true","args":[]}),
+                json!({"kind":"runtime","command":crate::test_os::true_program(),"args":[]}),
             )
         })
         .collect();

@@ -104,7 +104,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-TOOL-FAIL | any | Enter on a tool that fails | same state, the tool's error shown |
 | E-HUMAN-GREEN | Claimed | `g` | Editing GREEN, the form built from the pass schema |
 | E-HUMAN-RED | Claimed | `r` | Editing RED, the form built from the fail schema |
-| E-HUMAN-SWITCH | Editing | Ctrl+G or Ctrl+R | Editing the other verdict |
+| E-HUMAN-SWITCH | Editing | Ctrl+G or Ctrl+R | Editing GREEN for Ctrl+G, Editing RED for Ctrl+R (the current verdict stays selected when its own shortcut is used) |
 | E-HUMAN-SUBMIT | Editing GREEN | Ctrl+S | Submitted |
 | E-HUMAN-INVALID | Editing RED | Ctrl+S with a result failing its schema | Editing RED, failing path shown |
 | E-HUMAN-TEXT | Editing | type text, including composed Korean | Editing, no shortcut fires |

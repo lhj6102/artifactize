@@ -13,7 +13,8 @@
 // pnpm build in ui/): a review drives the prepared candidate and never rebuilds it.
 import { createConnection, createServer, type Socket } from "node:net";
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { cancelRuns, cli, create, type Fixture } from "../ui/e2e/fixture.ts";
 import { startBuilt, type Session } from "../ui/e2e/driver.ts";
@@ -28,6 +29,8 @@ type Request =
   | { op: "type"; element?: number; text: string }
   | { op: "key"; key: string }
   | { op: "cli"; args: string[] }
+  | { op: "launch"; screen: "monitor" | "review" | "graph" }
+  | { op: "change-declaration" }
   | { op: "stop" };
 
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -140,30 +143,48 @@ async function start(): Promise<void> {
     rmSync(fixture.root, { recursive: true, force: true });
     throw error;
   }
-  const live = session;
+  let shown = { session, fixture };
+  let edits = 0;
   let ending = false;
   const end = async () => {
     if (ending) return;
     ending = true;
-    await live.stop();
+    await shown.session.stop();
     cancelRuns(fixture);
     rmSync(fixture.root, { recursive: true, force: true });
   };
+  // A window has one command stream: a concurrent snapshot cannot race a relaunch.
+  let pending = Promise.resolve();
   const server = createServer((socket: Socket) => {
-    createInterface({ input: socket }).once("line", async (line) => {
-      let reply: unknown;
-      try {
-        const request = JSON.parse(line) as Request;
-        if (request.op === "stop") {
-          await end();
-          socket.end(JSON.stringify({ stopped: true }) + "\n", () => process.exit(0));
-          return;
+    createInterface({ input: socket }).once("line", (line) => {
+      pending = pending.then(async () => {
+        let reply: unknown;
+        try {
+          const request = JSON.parse(line) as Request;
+          if (request.op === "stop") {
+            await end();
+            socket.end(JSON.stringify({ stopped: true }) + "\n", () => process.exit(0));
+            return;
+          }
+          if (request.op === "launch") {
+            await shown.session.stop();
+            const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, "graph-state") } : fixture;
+            const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
+            shown = { session: await startBuilt(target, ...args), fixture: target };
+            reply = { text: await settled(shown.session.browser) };
+          } else if (request.op === "change-declaration") {
+            const path = join(fixture.repo, "docs", "index.artf");
+            const title = `Docs criterion revision ${++edits}`;
+            writeFileSync(path, readFileSync(path, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
+            reply = { text: `Changed docs/lint title to ${title}. The app has not been refreshed.` };
+          } else {
+            reply = await handle(shown.session, shown.fixture, request);
+          }
+        } catch (error) {
+          reply = { error: error instanceof Error ? error.message : String(error) };
         }
-        reply = await handle(live, fixture, request);
-      } catch (error) {
-        reply = { error: error instanceof Error ? error.message : String(error) };
-      }
-      socket.end(JSON.stringify(reply) + "\n");
+        socket.end(JSON.stringify(reply) + "\n");
+      }).catch((error: Error) => { socket.destroy(error); });
     });
   });
   for (const name of ["SIGTERM", "SIGINT"] as const) process.on(name, () => void end().finally(() => process.exit(0)));
@@ -215,11 +236,15 @@ if (mode === "start") {
       ? { op: "snapshot" }
       : mode === "cli"
         ? { op: "cli", args: args.args as string[] }
-        : args.action === "click"
-          ? { op: "click", element: args.element as number }
-          : args.action === "type"
-            ? { op: "type", element: args.element as number | undefined, text: args.text as string }
-            : { op: "key", key: args.key as string };
+        : mode === "launch"
+          ? { op: "launch", screen: args.screen as "monitor" | "review" | "graph" }
+          : mode === "change-declaration"
+            ? { op: "change-declaration" }
+            : args.action === "click"
+              ? { op: "click", element: args.element as number }
+              : args.action === "type"
+                ? { op: "type", element: args.element as number | undefined, text: args.text as string }
+                : { op: "key", key: args.key as string };
   const reply = await ask(request);
   if (typeof reply.error === "string") content(reply.error, true);
   else if (mode === "cli") content(`exit ${reply.exitCode}\n--- stdout\n${reply.stdout}\n--- stderr\n${reply.stderr}`, reply.exitCode !== 0);
