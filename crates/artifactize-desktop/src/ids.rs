@@ -64,7 +64,7 @@ macro_rules! key {
 
         impl From<$name> for String {
             fn from(key: $name) -> Self {
-                key.0.to_string()
+                key.into_inner().to_string()
             }
         }
 
@@ -106,7 +106,27 @@ key!(
     artifactize_core::monitor::NodeId
 );
 key!(
+    /// A fingerprint kept validated until it crosses the IPC serialization boundary.
+    FingerprintKey,
+    artifactize_core::types::Fingerprint
+);
+key!(
     /// A saved session id in IPC, which change hints name.
     SessionKey,
     artifactize_core::types::SessionId
 );
+
+#[cfg(test)]
+mod tests {
+    use super::FingerprintKey;
+    use serde_json::json;
+
+    #[test]
+    fn ipc_fingerprints_preserve_the_core_guard_and_string_wire_value() {
+        for invalid in [String::new(), "with spaces".into(), "x".repeat(129)] {
+            assert!(serde_json::from_value::<FingerprintKey>(json!(invalid)).is_err());
+        }
+        let key = serde_json::from_value::<FingerprintKey>(json!("graph:abcd")).unwrap();
+        assert_eq!(serde_json::to_value(key).unwrap(), json!("graph:abcd"));
+    }
+}

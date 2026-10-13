@@ -21,7 +21,7 @@ pub struct Shape {
 
 #[derive(Debug, Serialize, Type)]
 pub struct CurrentGraph {
-    pub fingerprint: String,
+    pub fingerprint: crate::ids::FingerprintKey,
     pub graph: Shape,
     pub tree: Vec<TreeNode>,
     /// Complete, canonical structural data rendered as text: criteria and relation labels
@@ -114,7 +114,7 @@ pub(super) fn project(structure: &Structure) -> CurrentGraph {
         })
         .collect();
     CurrentGraph {
-        fingerprint: structure.fingerprint().to_string(),
+        fingerprint: structure.fingerprint().into(),
         graph: Shape { nodes, edges },
         tree,
         structure: structure.tree(),
