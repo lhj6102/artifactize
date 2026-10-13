@@ -923,19 +923,20 @@ pub fn kill(pid: u32) {
 #[cfg(windows)]
 pub fn running(pid: u32) -> bool {
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, STILL_ACTIVE},
-        System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+        Foundation::{CloseHandle, WAIT_TIMEOUT},
+        System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject},
     };
-    // SAFETY: the handle is checked, queried once, and closed.
+    // SAFETY: the handle is checked, queried once without waiting, and closed.
     unsafe {
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        let process = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
         if process.is_null() {
             return false;
         }
-        let mut code = 0;
-        let queried = GetExitCodeProcess(process, &mut code);
+        // A signalled process has exited even if its actual exit code is 259
+        // (STILL_ACTIVE); the exit-code value alone cannot establish liveness.
+        let active = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
         CloseHandle(process);
-        queried != 0 && code == STILL_ACTIVE as u32
+        active
     }
 }
 

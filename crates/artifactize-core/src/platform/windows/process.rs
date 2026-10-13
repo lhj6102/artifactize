@@ -499,6 +499,10 @@ mod exit_tests {
         let mut child = crate::test_os::windows_exit(259).spawn().unwrap();
         let pid = child.id().unwrap();
         assert_eq!(child.wait().await.unwrap().code(), Some(259));
+        assert!(
+            !crate::test_os::running(pid),
+            "the fixture sees a terminated process"
+        );
         assert_eq!(
             process_start_time(pid).unwrap_err().kind(),
             io::ErrorKind::NotFound
