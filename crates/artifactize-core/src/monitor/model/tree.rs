@@ -100,7 +100,7 @@ pub struct Clock {
 
 impl Clock {
     pub fn elapsed(self, now: OffsetDateTime) -> String {
-        super::duration((self.end.unwrap_or(now) - self.start).whole_seconds())
+        super::duration(self.end.unwrap_or(now) - self.start)
     }
 }
 

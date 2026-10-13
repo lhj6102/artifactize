@@ -48,7 +48,7 @@ pub fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
     if waiting {
         parts.push(format!(
             "waiting {}",
-            duration((now - request.created_at.time()).whole_seconds())
+            duration(now - request.created_at.time())
         ));
     }
     plain(&parts.join(" · ")).into_owned()

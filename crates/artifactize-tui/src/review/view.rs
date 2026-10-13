@@ -200,7 +200,11 @@ impl Review {
                 Line::from(format!(
                     "{frame} {}… {}",
                     busy.label,
-                    duration(elapsed.as_secs() as i64)
+                    duration(
+                        elapsed
+                            .try_into()
+                            .expect("elapsed tool time fits time::Duration")
+                    )
                 ))
                 .yellow(),
             ];
@@ -258,7 +262,7 @@ impl Review {
                     }
                 });
                 let status = crate::monitor::Status::from(request.status());
-                let age = duration((now - request.created_at.time()).whole_seconds());
+                let age = duration(now - request.created_at.time());
                 [
                     request.eval_id.to_string(),
                     request.id.to_string(),

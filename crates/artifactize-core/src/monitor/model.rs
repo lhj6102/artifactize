@@ -201,13 +201,31 @@ const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
 
-pub fn duration(seconds: i64) -> String {
-    let seconds = seconds.max(0);
+pub fn duration(elapsed: time::Duration) -> String {
+    let seconds = elapsed.whole_seconds().max(0);
     match seconds {
         0..MINUTE => format!("{seconds}s"),
         MINUTE..HOUR => format!("{}m {:02}s", seconds / MINUTE, seconds % MINUTE),
         HOUR..DAY => format!("{}h {:02}m", seconds / HOUR, seconds % HOUR / MINUTE),
         _ => format!("{}d {}h", seconds / DAY, seconds % DAY / HOUR),
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn typed_durations_keep_the_display_units_and_clamp_clock_skew() {
+    for (elapsed, expected) in [
+        (time::Duration::seconds(-1), "0s"),
+        (time::Duration::ZERO, "0s"),
+        (time::Duration::milliseconds(59_999), "59s"),
+        (time::Duration::minutes(1), "1m 00s"),
+        (time::Duration::seconds(125), "2m 05s"),
+        (time::Duration::hours(1), "1h 00m"),
+        (time::Duration::minutes(61), "1h 01m"),
+        (time::Duration::days(1), "1d 0h"),
+        (time::Duration::hours(25), "1d 1h"),
+    ] {
+        assert_eq!(duration(elapsed), expected);
     }
 }
 
@@ -218,7 +236,7 @@ fn span(
     now: OffsetDateTime,
 ) -> Option<String> {
     let end = end.map_or(now, crate::types::Timestamp::time);
-    Some(duration((end - start.time()).whole_seconds()))
+    Some(duration(end - start.time()))
 }
 
 /// Status counts as glyphs, most urgent first and zero counts left out: `!2 ✓1`.

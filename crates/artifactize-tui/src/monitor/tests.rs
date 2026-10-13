@@ -263,7 +263,9 @@ fn live_progress_tree_and_details_are_pure_projections() {
 #[test]
 fn run_rows_and_durations() {
     assert_eq!(
-        [5, 65, 3_700, 90_000, -3].map(duration),
+        [5, 65, 3_700, 90_000, -3]
+            .map(time::Duration::seconds)
+            .map(duration),
         ["5s", "1m 05s", "1h 01m", "1d 1h", "0s"]
     );
     let mut finished = summary("run-b", 0);
