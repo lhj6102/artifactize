@@ -5,6 +5,7 @@ import type { LaunchView } from "../ipc/client";
 import { Browse } from "../monitor/browse.svelte";
 import { Registry } from "./commands.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
+import { Review } from "../review/review.svelte";
 import { Leaving } from "./leaving.svelte";
 
 export type Screen = "monitor" | "review" | "settings";
@@ -21,8 +22,21 @@ export class AppState {
   readonly jobs = new Jobs();
   /** What the command palette lists: each screen registers its commands here. */
   readonly commands = new Registry();
+  /** Human reviews by request, for every screen: leaving and reopening a request, or opening it
+   * on the other screen, keeps its drafts. */
+  readonly reviews = $state<Record<string, Review>>({});
   palette = $state(false);
   help = $state(false);
+
+  /** The Review of request `id`, started on first use. */
+  review(id: string): Review {
+    return (this.reviews[id] ??= new Review(id, this.jobs));
+  }
+
+  /** A replaced state: the reviews and drafts of the old one no longer apply. */
+  forgetReviews(): void {
+    for (const id of Object.keys(this.reviews)) delete this.reviews[id];
+  }
 
   /** Show `screen`. */
   show(screen: Screen): void {

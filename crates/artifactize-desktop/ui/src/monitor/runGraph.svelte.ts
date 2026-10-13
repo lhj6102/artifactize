@@ -2,13 +2,16 @@ import { createContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import type { RunGraph } from "../ipc/client";
 import type { Point } from "./graph";
+import { shape } from "./graph";
 import { layout } from "./layout";
 
 /** How many Runs' layouts are kept. */
 const KEPT = 8;
 
 export class RunGraphState {
-  shown = $state.raw<{ graph: RunGraph; positions: Map<string, Point>; shape: string } | null>(null);
+  shown = $state.raw<{ graph: RunGraph; positions: Map<string, Point> } | null>(null);
+  /** The shape of the graph shown: only a change of Artifacts or edges lays it out again. */
+  readonly shownShape = $derived(this.shown ? shape(this.shown.graph) : null);
   pending = $state.raw<RunGraph | null>(null);
   error = $state<string | null>(null);
   /** Lay out a graph above the limit anyway, for this Run. */

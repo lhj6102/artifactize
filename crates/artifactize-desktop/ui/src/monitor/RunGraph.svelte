@@ -38,7 +38,7 @@
    * its layout finishes, unless a newer read came meanwhile. */
   async function place(graph: RunGraph, read: number) {
     const key = shape(graph);
-    if (g.shown && g.shown.shape === key && g.shown.graph.run === graph.run) {
+    if (g.shown && g.shownShape === key && g.shown.graph.run === graph.run) {
       g.shown = { ...g.shown, graph };
       g.pending = null;
       return;
@@ -50,7 +50,7 @@
     g.pending = null;
     const laid = await g.positions(graph, key);
     if (read !== g.reads) return;
-    g.shown = { graph, positions: laid, shape: key };
+    g.shown = { graph, positions: laid };
   }
 
   /** Read the graph again for every accepted snapshot and for another Run. */

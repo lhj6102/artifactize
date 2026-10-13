@@ -14,7 +14,6 @@
     type LaunchView,
     type Listed,
   } from "../ipc/client";
-  import { Review } from "./review.svelte";
   import HumanDetail from "./HumanDetail.svelte";
   import SearchField from "./SearchField.svelte";
   import RecordDetail from "../monitor/RecordDetail.svelte";
@@ -31,7 +30,7 @@
   // svelte-ignore state_referenced_locally
   const r = new ReviewScreenState(launch.search);
   setReviewScreenState(r);
-  const { jobs } = getAppState();
+  const app = getAppState();
 
   /** The search every launch starts from: waiting Human reviews, of `--repo` when given. */
   const WAITING = "kind:human status:waiting_human";
@@ -57,6 +56,7 @@
       if (generation !== null && found.generation !== generation) {
         // The state was replaced: the open review, its drafts and the Preview are of the old one.
         r.review = null;
+        app.forgetReviews();
         r.record = null;
         r.preview = null;
         r.focus = "list";
@@ -139,7 +139,7 @@
 
   /** Open a Human request; another request than the open one starts from a clean review. */
   function open(id: string, tools = false) {
-    if (r.review?.id !== id) r.review = new Review(id, jobs);
+    r.review = app.review(id);
     if (tools) r.review.area = "tools";
     r.record = null;
     r.focus = "detail";

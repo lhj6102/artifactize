@@ -17,11 +17,12 @@
   import { plain } from "../shell/keys";
 
   let { active }: { active: boolean } = $props();
-  const { browse, jobs } = getAppState();
+  const app = getAppState();
+  const { browse } = app;
 
   const m = new MonitorState();
   setMonitorState(m);
-  const { tree, reviews, panes } = m;
+  const { tree, panes } = m;
 
   const view = $derived(browse.view);
   const run = $derived(view?.run ?? null);
@@ -34,7 +35,7 @@
     // A replaced state: Details, drafts and sessions of the old one no longer apply.
     if (shown.replaced) {
       m.opened = null;
-      for (const id of Object.keys(reviews)) delete reviews[id];
+      app.forgetReviews();
       if (m.focus === "detail") m.focus = "tree";
     }
     // Leaving the selected Run (or losing it) closes its Detail.
@@ -53,10 +54,10 @@
   });
 
   /** The Review of a request, if one was opened: rendering only looks. */
-  const review = (id: string): Review | undefined => reviews[id];
+  const review = (id: string): Review | undefined => app.reviews[id];
   /** Open the Review of a request when its Detail arrives, never while rendering. */
   function openReview(id: string): void {
-    reviews[id] ??= new Review(id, jobs);
+    app.review(id);
   }
 
   /** Move focus to a pane's list, tree or review, or else to the pane itself. */
