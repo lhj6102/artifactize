@@ -11,11 +11,11 @@ const target = process.env.CARGO_TARGET_DIR ?? resolve(crate, "../../target");
 /** The CLI and the app the tests run; `cargo build -p artifactize -p artifactize-desktop`. */
 export const cli = join(target, "debug", "artifactize");
 export const app = join(target, "debug", "artifactize-desktop");
-/** Scratch space inside the build directory, never the system temporary root. */
-const scratch = join(target, "e2e");
+/** State must be outside the project, including a checkout with a root graph declaration.
+ * One child directory keeps fixture markers out of the system temporary root. */
+const scratch = join(tmpdir(), "artifactize-desktop-e2e");
 
-/** Every fixture root made by this process: all of them go when it ends, however its tests
- * ended, so a run leaves nothing in the build directory. */
+/** Every fixture root made by this process goes when it ends, however its tests ended. */
 const made: string[] = [];
 const waiting = new Map<string, Fixture>();
 process.on("exit", () => {
@@ -163,7 +163,7 @@ export async function verifyWaiting(fixture: Fixture): Promise<void> {
   const submitted = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
     encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
   });
-  if (submitted.status !== 0) throw new Error(submitted.stderr || "verify submission failed");
+  if (submitted.status !== 0) throw new Error(submitted.stderr || submitted.stdout || "verify submission failed");
   const { run } = JSON.parse(submitted.stdout) as { run: string };
   waiting.set(run, fixture);
   await new Promise<void>((done, fail) => {

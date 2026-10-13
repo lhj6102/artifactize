@@ -3,9 +3,9 @@ name = "ux-graph"
 [views.agent_tools]
 
 [views.agent_tools.read_graph]
-description = "Print the screens, states and transitions GRAPH.md of {artifactName}."
+description = "Print the screens, states and transitions UX-GRAPH.md of {artifactName}."
 builtin = "read"
-args = ["GRAPH.md"]
+args = ["UX-GRAPH.md"]
 
 [evals.covers-features]
 title = "Every journey of the UX features is a path in the graph"

@@ -23,11 +23,10 @@ Start with [Install](getting-started/install.md): prerequisites, backend setup, 
 
 ## Get started
 
-Install artifactize and review the runtime-only example. No model or API key is
-needed. On Linux or macOS:
+Follow [Install](getting-started/install.md), then review the runtime-only example.
+No model or API key is needed. In a POSIX shell:
 
 ```sh
-curl -fsSL https://artifactize.dev/install.sh | sh   # or: brew install lhj6102/tap/artifactize
 git clone https://github.com/lhj6102/artifactize   # the example projects
 cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
@@ -35,8 +34,7 @@ artifactize verify --all --wait    # three GREEN results, exit 0
 artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
 ```
 
-On Windows, `winget install lhj6102.Artifactize` installs it; [Install](getting-started/install.md)
-has every channel, the prerequisites and backend setup, and the
+[Install](getting-started/install.md) has every channel, the prerequisites and backend setup, and the
 [quick start](getting-started/quick-start.md) continues the tour.
 
 ## Where to go next

@@ -127,7 +127,7 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
 
     // A developer whose review of top reads base says so in top's fingerprint.
     let covered = json!({"script":{"command":shell(),"args":[
-        "-c", "cat file.txt \"$1\" | cksum | tr ' ' -", "sh", "{base}/file.txt"
+        "-c", "cat file.txt \"$1\" | cksum | tr ' ' -", "fixture", "{base}/file.txt"
     ]}});
     fixture.artifact("top", artifact("top", covered, json!({"mid":"mid"}), PASS));
     assert_eq!(fixture.executed(0), ["top/check"]);
@@ -235,7 +235,7 @@ fn a_merge_rereviews_only_the_new_pairing_by_default() {
         &[
             "-c",
             "cat \"$1\" \"$2\"",
-            "sh",
+            "fixture",
             "{left}/part.txt",
             "{right}/part.txt",
         ],

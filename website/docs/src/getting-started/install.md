@@ -171,6 +171,24 @@ The install scripts and cargo get a release as soon as it is published. Homebrew
 winget and the Store follow stable releases only; winget and the Store can lag
 behind while the update is reviewed. Updating keeps your state.
 
+### Upgrading from 0.11
+
+State schema 6 is upgraded additively to 7 on first use. Existing Runs, cache records
+and Human approvals are preserved. An older 0.11 binary cannot open the upgraded
+state; keep a backup before switching versions.
+
+`artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
+Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal
+or interrupting a watcher leaves the Run running; `artifactize run cancel RUN_ID`
+is the explicit cancellation action. The foreground Human deadline and
+`verify --timeout-ms` are removed. `--request-key` makes retries return the same Run.
+
+Gate bypass (`--ignore-gates` and `review_policy`) is removed. Per-request
+`--speculate` and `--defer-human` replace it, both off by default; deferred sign-offs
+end with `SIGNOFFS_PENDING` and `--wait` exit 5. See [Runs and status](../concepts/runs-and-status.md).
+Plain `artifactize monitor` starts on ALL; `monitor .`, a positional path or `--repo`
+selects that repository initially.
+
 ### Upgrading to 0.9
 
 Rewrite declarations as TOML `index.artf` for folders and `<file>.artf` for files. Keys

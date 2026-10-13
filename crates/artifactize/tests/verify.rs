@@ -359,7 +359,7 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     let marker = fixture._root.path().join("executed");
     let fingerprint = json!({"script":{"command":support::os::cat_program(),"args":["version"]}});
     let check = json!({"kind":"runtime","command":support::os::shell(),
-        "args":["-c","echo run >> \"$1\"","sh",marker.to_str().unwrap()]});
+        "args":["-c","echo run >> \"$1\"","fixture",marker.to_str().unwrap()]});
     let report = json!({"kind":"runtime","command":support::os::true_program(),"args":[]});
     support::declaration::write(
         fixture.repo.join("index.artf"),
@@ -425,7 +425,7 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
     let script = format!("{} & echo $! > \"$1\"; wait", support::os::LINGERING);
     fixture.runtime(
         &support::os::shell(),
-        &["-c", &script, "sh", marker.to_str().unwrap()],
+        &["-c", &script, "fixture", marker.to_str().unwrap()],
     );
     let child = fixture
         .command()
@@ -963,7 +963,7 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         &[
             "-c",
             "while [ ! -e \"$1\" ]; do sleep 0.05; done",
-            "sh",
+            "fixture",
             release.to_str().unwrap(),
         ],
     );

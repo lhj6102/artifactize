@@ -1149,6 +1149,21 @@ pub fn assert_restored(output: &str, frame: &str) {
     }
 }
 
+/// Unix terminals pass bracketed-paste modes through; ConPTY keeps input modes inside
+/// its console, so their ordering is observable only through the Unix terminal pipe.
+pub fn assert_bracketed_paste(output: &str) {
+    #[cfg(unix)]
+    {
+        let on = output.find("\x1b[?2004h").expect("bracketed paste enabled");
+        let off = output
+            .rfind("\x1b[?2004l")
+            .expect("bracketed paste disabled");
+        assert!(on < off, "{output:?}");
+    }
+    #[cfg(windows)]
+    let _ = output;
+}
+
 /// A ConPTY driven through its pipes, the Windows pseudo-terminal.
 #[cfg(windows)]
 mod conpty {
@@ -2158,6 +2173,19 @@ pub fn human_environment<'a>(command: &'a mut Command, root: &Path) -> &'a mut C
         .env("DISPLAY", ":77")
         .env("WAYLAND_DISPLAY", "wayland-test")
         .env("XDG_CONFIG_HOME", root.join("real-config"))
+}
+
+/// Launch the isolated Human-environment probe with the platform's home and desktop
+/// variables and its command fixtures prepared before the child needs them.
+pub fn run_human_test(
+    test: &str,
+    root: &Path,
+    environment: &[(&str, std::ffi::OsString)],
+) -> std::process::Output {
+    shell();
+    let mut command = test_command(test, environment);
+    human_environment(&mut command, root);
+    command.output().unwrap()
 }
 
 pub fn human_environment_probe() -> String {

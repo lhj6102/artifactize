@@ -1,4 +1,4 @@
-// The frontend checklist's mechanical rules (FRONTEND-STYLE.md), run by `pnpm lint` with
+// The frontend checklist's mechanical rules (DEV-FRONTEND.md), run by `pnpm lint` with
 // --no-inline-config: no comment can switch a rule off. Generated IPC bindings are excluded.
 import svelte from "eslint-plugin-svelte";
 import tseslint from "typescript-eslint";

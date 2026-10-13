@@ -51,8 +51,7 @@ What it demonstrates:
 
 ## Check the tools (no model needed)
 
-You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/getting-started/install.html):
-`cargo install artifactize --locked`), plus `python3`.
+You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/getting-started/install.html)), plus `python3`.
 
 ```sh
 cd examples/agent-tools

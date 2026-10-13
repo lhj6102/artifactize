@@ -1,6 +1,6 @@
-# <img src="assets/brand/artifactize-icon-h56.png" width="31" height="28" align="middle" alt=""> Artifactize
+# Build together on an Artifact Graph.
 
-**Build together on an Artifact Graph.**
+<img src="assets/brand/artifactize-icon-h56.png" width="31" height="28" align="middle" alt=""> Artifactize
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
@@ -74,43 +74,12 @@ re-reviews only that Artifact.
   to Runs, the Run tree and Detail: explicitly claim a sign-off, run tools and
   submit without leaving the terminal.
 
-## Install
+## Get started
 
-Every install provides `artifactize`, including its current-directory tools as
-`artifactize tools`. Non-Store channels also put `artifactize-tools`, the same
-built-in tools as a standalone CLI, on your `PATH`. No Rust toolchain is needed.
-
-**Linux** (x86_64 or aarch64): the script installs the static binaries from the latest
-GitHub release into `~/.local/bin`. It checks their SHA-256 and needs no `sudo`:
-
-```sh
-curl -fsSL https://artifactize.dev/install.sh | sh
-artifactize --version
-```
-
-With a Rust toolchain, use `cargo binstall artifactize artifactize-tools` for the
-prebuilt binaries, or build from [crates.io](https://crates.io/crates/artifactize)
-with `cargo install artifactize artifactize-tools --locked`.
-
-**macOS** (Apple silicon or Intel): use Homebrew, or the same install script.
-
-```sh
-brew install lhj6102/tap/artifactize
-```
-
-**Windows** (x64): use winget, the
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D) or
-`irm https://artifactize.dev/install.ps1 | iex` in PowerShell. With Smart App Control
-on, use the Store version. In WSL 2, follow the Linux steps.
-
-```powershell
-winget install lhj6102.Artifactize
-```
-
-To update, use the same channel again (`brew upgrade`, `winget upgrade`, or run the
-script again); the Store updates by itself. Your state is kept.
-[Install](https://artifactize.dev/docs/getting-started/install.html) covers every
-channel, updating and uninstalling, the prerequisites and the Agent backends.
+[Install Artifactize](https://artifactize.dev/docs/getting-started/install.html),
+then follow the [Quick start](https://artifactize.dev/docs/getting-started/quick-start.html).
+The installation guide is the single place for platform prerequisites, channels,
+updates and uninstalling.
 
 ## A tiny example
 
@@ -128,11 +97,10 @@ profile = { kind = "runtime", command = "grep", args = ["-m", "1", "^# ", "page.
 payload.instruction = "Check that {usage} starts with a top-level heading."
 ```
 
-No model or API key is needed to try it:
+No model or API key is needed. From a checkout, in a POSIX shell:
 
 ```sh
-git clone https://github.com/lhj6102/artifactize   # the example projects
-cd artifactize/examples/runtime-relations
+cd examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
 artifactize verify --all --wait    # three GREEN results, exit 0
 artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
@@ -153,28 +121,14 @@ title = "Movement and art are ready"
 profile = { kind = "dependency", depends_on = ["player-movement", "hero-art"] }
 ```
 
-`artifactize verify player/ready` includes the required dependency evals without `--recursive`. The result is
+`artifactize verify --eval player/ready --wait` includes the required dependency evals without `--recursive`. The result is
 derived from current evidence, not cached or published to the team store. Tags
 appear in status, graph and monitor output; they do not change reuse keys. See
 [Declarations (.artf)](https://artifactize.dev/docs/reference/declarations.html).
 
-## Upgrading to 0.9
+## Upgrading
 
-Declarations move to TOML `index.artf` and `<file>.artf`, with snake_case keys; the
-ignore file becomes `.artfignore`. There is no converter: have an agent rewrite the
-declarations and commit them. Families are removed; projects that want templates
-generate and commit their own `.artf` files.
-
-State schema 6 requires a new state directory; there is no migration. Reuse-key v2
-matches no earlier result, including in a team review store or with a script
-fingerprint. The first full `verify` reviews every executable eval once, Human
-sign-offs included; dependency evals derive their current verdicts.
-
-The terminal UIs share Human Detail and require an explicit `c` claim. In standalone
-`review`, `s` no longer opens a verdict popup and Enter no longer submits: use
-`g`/`r`, then Ctrl-S. Esc stops editing before leaving Detail and never quits.
-See [Upgrading to 0.9](https://artifactize.dev/docs/getting-started/install.html#upgrading-to-09)
-for the removed keys and state/declaration changes.
+See the [installation guide's update and upgrade instructions](https://artifactize.dev/docs/getting-started/install.html#update).
 
 ## Reuse
 

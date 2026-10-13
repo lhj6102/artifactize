@@ -3,12 +3,12 @@ name = "frontend-style"
 [views.agent_tools]
 
 [views.agent_tools.read_frontend]
-description = "Print the frontend checklist FRONTEND-STYLE.md of {artifactName}."
+description = "Print the frontend checklist DEV-FRONTEND.md of {artifactName}."
 builtin = "read"
-args = ["FRONTEND-STYLE.md"]
+args = ["DEV-FRONTEND.md"]
 
 [views.human_tools]
-open = { description = "Open FRONTEND-STYLE.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+open = { description = "Open DEV-FRONTEND.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
 
 [evals.approved]
 title = "The owner approves the checklist as the frontend standard"
@@ -16,7 +16,7 @@ profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open FRONTEND-STYLE.md of {frontend-style} with the open tool. Submit GREEN with approved: true when every item \
+Open DEV-FRONTEND.md of {frontend-style} with the open tool. Submit GREEN with approved: true when every item \
 is one the desktop UI should follow; otherwise submit RED and list the items to change."""
 
 [evals.approved.pass_schema]

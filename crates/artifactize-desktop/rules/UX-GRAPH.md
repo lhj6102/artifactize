@@ -1,7 +1,7 @@
 # Desktop app: screens, states and transitions
 
 Every screen and state of the app, and every transition between them with a stable edge id
-(`E-...`). A journey in FEATURES.md is a path through these edges; the last section lists
+(`E-...`). A journey in UX-FEATURES.md is a path through these edges; the last section lists
 each journey's path. Edge ids never change; the end-to-end tests cite them, each by a test
 that makes the transition happen and checks where it leads.
 
@@ -147,7 +147,7 @@ that makes the transition happen and checks where it leads.
 
 ## Journeys as paths
 
-Each journey of FEATURES.md as walks through the edges above: `→` joins edges one after the
+Each journey of UX-FEATURES.md as walks through the edges above: `→` joins edges one after the
 other (each starts where the one before ended), `|` separates alternatives, and a journey with
 several walks lists them one per line. Selecting a row first is the movement edge of its pane.
 

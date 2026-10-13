@@ -612,7 +612,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
             &[
                 "-c",
                 "test -f input.txt && test \"$1\" -ef input.txt",
-                "sh",
+                "fixture",
                 "{file}",
             ],
         ),

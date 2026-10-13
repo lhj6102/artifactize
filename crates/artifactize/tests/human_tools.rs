@@ -396,20 +396,17 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
     let repo = support::os::tempdir();
     // The parent owns the release: exiting the launcher probe must not end its child.
     let _release = support::os::Release(repo.path().to_path_buf());
-    // Build the Windows stand-ins before the probe needs them.
-    support::os::shell();
-    let mut command = Command::new(std::env::current_exe().unwrap());
-    support::os::human_environment(&mut command, repo.path());
-    let result = command
-        .args([
-            "--exact",
-            "human_environment_and_launch_probe",
-            "--nocapture",
-        ])
-        .env("ARTIFACTIZE_HUMAN_PROBE", repo.path())
-        .env("ARTIFACTIZE_HUMAN_MARKER", "reviewer-marker")
-        .record_output()
-        .unwrap();
+    let result = support::os::run_human_test(
+        "human_environment_and_launch_probe",
+        repo.path(),
+        &[
+            (
+                "ARTIFACTIZE_HUMAN_PROBE",
+                repo.path().as_os_str().to_owned(),
+            ),
+            ("ARTIFACTIZE_HUMAN_MARKER", "reviewer-marker".into()),
+        ],
+    );
     let pid = fs::read_to_string(repo.path().join("pid"))
         .ok()
         .and_then(|value| value.parse::<u32>().ok());

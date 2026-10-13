@@ -79,7 +79,7 @@ fn eval(id: &str, script: &str) -> Value {
         "profile":{
             "kind":"runtime",
             "command":shell(),
-            "args":["-c",script,"sh",id],
+            "args":["-c",script,"fixture",id],
             "timeout_ms":10000,
         },
         "payload":{"instruction":"Check."},

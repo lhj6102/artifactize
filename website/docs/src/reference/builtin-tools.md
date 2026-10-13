@@ -12,7 +12,7 @@ review tool in artifactize, not in the standalone tools CLI.
 [views.agent_tools]
 read = { builtin = "read" }                                       # the model picks the path
 grep = { builtin = "grep" }
-style = { builtin = "read", args = ["STYLE.md"] }                 # one fixed file
+style = { builtin = "read", args = ["DEV-CODING.md"] }                 # one fixed file
 spec = { builtin = "section", args = ["spec.md"] }                # the model passes only the heading
 install = { builtin = "section", args = ["spec.md", "Install"] }  # one fixed section
 reqs = { builtin = "read", args = ["reqs/requirements.md"] }      # through the mount alias
@@ -142,7 +142,7 @@ rather than running a current-directory tool.
 For runtime evals, fingerprint scripts and your own scripts:
 
 ```sh
-artifactize tools read STYLE.md             # also: artifactize-tools read STYLE.md
+artifactize tools read DEV-CODING.md             # also: artifactize-tools read DEV-CODING.md
 artifactize-tools list [PATH]
 artifactize-tools glob PATTERN [PATH]
 artifactize-tools grep [--glob GLOB] [--case-insensitive] PATTERN [PATH]

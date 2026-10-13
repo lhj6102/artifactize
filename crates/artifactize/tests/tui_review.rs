@@ -10,7 +10,6 @@ use artifactize_tui::review::{Action, Mode, Review};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
-use support::os::bin;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -39,19 +38,19 @@ impl Fixture {
                         "notes":{
                             "description":"Print the release notes.",
                             "kind":"output",
-                            "command":bin("cat"),
+                            "command":support::os::cat_program(),
                             "args":["{artifactPath}/notes.md"],
                         },
                         "fail":{
                             "description":"Fail.",
                             "kind":"output",
-                            "command":bin("false"),
+                            "command":support::os::false_program(),
                             "args":[],
                         },
                         "open":{
                             "description":"Open.",
                             "kind":"launch",
-                            "command":bin("true"),
+                            "command":support::os::true_program(),
                             "args":["{artifactPath}"],
                         },
                         "summary":{
@@ -93,7 +92,7 @@ impl Fixture {
                     {
                         "id":"check",
                         "title":"Ship",
-                        "profile":{"kind":"runtime","command":bin("true"),"args":[]},
+                        "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
                         "payload":{"instruction":"Ship {release}."},
                     },
                 ],
@@ -239,7 +238,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
             .collect()
     };
     let notes = support::os::path_text(&release.join("notes.md"));
-    let cat = support::os::path_text(std::path::Path::new(&bin("cat")));
+    let cat = support::os::path_text(std::path::Path::new(&support::os::cat_program()));
     let command = artifactize_core::review::shell([cat.as_str(), notes.as_str()]);
     let shown = format!("$ {command}");
     let prefix: String = unwrapped(&shown).chars().take(20).collect();
@@ -431,14 +430,5 @@ fn pty_review_restores_the_terminal_on_quit() {
     }
     let output = String::from_utf8_lossy(&output);
     support::os::assert_restored(&output, frame);
-    // Bracketed paste is on while the review runs and off again before the screen is restored.
-    // A ConPTY keeps the console's input modes to itself rather than passing them on.
-    #[cfg(unix)]
-    {
-        let on = output.find("\x1b[?2004h").expect("bracketed paste enabled");
-        let off = output
-            .rfind("\x1b[?2004l")
-            .expect("bracketed paste disabled");
-        assert!(on < off, "{output:?}");
-    }
+    support::os::assert_bracketed_paste(&output);
 }

@@ -1,23 +1,22 @@
-name = "platform"
-fingerprint = { files = ["PLATFORM.md"] }
+name = "code-style"
 
 [views.agent_tools]
 
-[views.agent_tools.read_platform]
-description = "Print the platform checklist PLATFORM.md of {artifactName}."
+[views.agent_tools.read_style]
+description = "Print the code checklist DEV-CODING.md of {artifactName}."
 builtin = "read"
-args = ["PLATFORM.md"]
+args = ["DEV-CODING.md"]
 
 [views.human_tools]
-open = { description = "Open PLATFORM.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}/PLATFORM.md"] }
+open = { description = "Open DEV-CODING.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
 
 [evals.approved]
-title = "The owner approves the checklist as the platform standard"
+title = "The owner approves the checklist as the code standard"
 profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open PLATFORM.md of {platform} with the open tool. Submit GREEN with approved: true when every item \
+Open DEV-CODING.md of {code-style} with the open tool. Submit GREEN with approved: true when every item \
 is one the codebase should follow; otherwise submit RED and list the items to change."""
 
 [evals.approved.pass_schema]

@@ -1,0 +1,33 @@
+name = "writer-docs"
+
+[views.agent_tools]
+
+[views.agent_tools.read_rules]
+description = "Print the writing rules WRITER-DOCS.md of {artifactName}."
+builtin = "read"
+args = ["WRITER-DOCS.md"]
+
+[views.human_tools]
+open = { description = "Open WRITER-DOCS.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+
+[evals.approved]
+title = "The owner approves the rules as the documentation standard"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open WRITER-DOCS.md of {writer-docs} with the open tool. Submit GREEN with approved: true when every rule \
+is one this project should follow; otherwise submit RED and list the items to change."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false

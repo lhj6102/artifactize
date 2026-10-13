@@ -55,8 +55,8 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     support::declaration::write(repo.join("index.artf"), json!({
         "name":"app",
         "evals":[
-            {"id":"bad","title":"Bad","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["bad"]}},
-            {"id":"healthy","title":"Healthy","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["healthy"]}}
+            {"id":"bad","title":"Bad","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["bad"]}},
+            {"id":"healthy","title":"Healthy","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["healthy"]}}
         ]
     }).to_string()).unwrap();
     let first = verify(&repo, &state).await;
@@ -159,7 +159,7 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), json!({
-        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
+        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let run = verify(&repo, &state).await;
     let db = Connection::open(state.join(DATABASE)).unwrap();
@@ -286,7 +286,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), json!({
-        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
+        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let healthy = verify(&repo, &state).await;
     // Corrupt the newest Run: the listings must still work.

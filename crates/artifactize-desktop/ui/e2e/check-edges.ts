@@ -1,11 +1,11 @@
 // Every edge id of the UX graph appears in the end-to-end tests, so a transition the graph
-// promises cannot go untested unnoticed. Usage: node check-edges.ts GRAPH.md [tests-directory]
+// promises cannot go untested unnoticed. Usage: node check-edges.ts UX-GRAPH.md [tests-directory]
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const [graph, directory = "."] = process.argv.slice(2);
 if (graph === undefined) {
-  console.error("usage: check-edges.ts GRAPH.md [tests-directory]");
+  console.error("usage: check-edges.ts UX-GRAPH.md [tests-directory]");
   process.exit(2);
 }
 const ids = [...readFileSync(graph, "utf8").matchAll(/^\|\s*(E-[A-Z0-9-]+)\s*\|/gm)].map((match) => match[1]);

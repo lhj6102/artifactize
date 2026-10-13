@@ -230,6 +230,42 @@ fn a_later_turn_retries_transient_failures_and_replays_the_same_conversation() {
 }
 
 #[test]
+fn responses_stream_overload_retries_without_output_and_keeps_the_same_request() {
+    for backend in ["codex", "openai"] {
+        let project = Project::new(&[("notes", agent(backend))]);
+        // The real error arrives in SSE under HTTP 200, not an HTTP 5xx response.
+        let events = vec![json!({
+            "type":"error",
+            "code":"server_is_overloaded",
+            "message":"Our servers are currently overloaded. Please try again later.",
+            "param":null,
+            "sequence_number":0,
+        })];
+        let failure = if backend == "codex" {
+            codex::stream(events)
+        } else {
+            Reply::Events(events)
+        };
+        let provider = flaky(|_| true, vec![failure]);
+        let run = project.run(&provider, &["--all"], 0);
+        let review = request(&run, "notes/review");
+        assert_eq!(review["status"], "GREEN");
+        assert_eq!(
+            attempts(review),
+            [
+                (1, 1, json!("TRANSIENT")),
+                (1, 2, Value::Null),
+                (2, 1, Value::Null)
+            ]
+        );
+        let calls = provider.requests();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0].body, calls[1].body);
+        assert!(replayed(&calls[2]));
+    }
+}
+
+#[test]
 fn every_backend_retries_and_reports_exhausted_failures_by_code() {
     // Anthropic overloads, then passes; codex fails at its second turn, then passes.
     let project = Project::new(&[("claude", agent("anthropic")), ("luna", agent("codex"))]);

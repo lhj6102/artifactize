@@ -3,12 +3,12 @@ name = "ux-features"
 [views.agent_tools]
 
 [views.agent_tools.read_features]
-description = "Print the user journeys FEATURES.md of {artifactName}."
+description = "Print the user journeys UX-FEATURES.md of {artifactName}."
 builtin = "read"
-args = ["FEATURES.md"]
+args = ["UX-FEATURES.md"]
 
 [views.human_tools]
-open = { description = "Open FEATURES.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+open = { description = "Open UX-FEATURES.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
 
 [evals.approved]
 title = "The owner approves the journeys as what the desktop app does"
@@ -16,7 +16,7 @@ profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open FEATURES.md of {ux-features} with the open tool. Submit GREEN with approved: true when every journey \
+Open UX-FEATURES.md of {ux-features} with the open tool. Submit GREEN with approved: true when every journey \
 is one the desktop app should offer and none is missing; otherwise submit RED and list the changes."""
 
 [evals.approved.pass_schema]
