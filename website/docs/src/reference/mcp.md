@@ -100,7 +100,9 @@ joined text as JSON. Reinvoke the **same tool with the same arguments**, adding
 selects the next group of Run records; it is distinct from the cursor continuing
 one group's JSON. `verify_result` instead pages its structured `findings` array.
 
-Cursors identify the tool, arguments and current saved projection. A foreign or
+Cursors identify the tool, arguments and current saved projection. Elapsed fields
+use the first page's observation clock, so clock movement alone cannot expire a
+continuation while a Run waits for a person. A foreign or
 stale cursor is rejected; restart that inspection if the evidence changed. No
 transport-owned snapshots or background subscriptions are stored. Tool failures
 use MCP `isError:true` with a readable explanation; details are not truncated to

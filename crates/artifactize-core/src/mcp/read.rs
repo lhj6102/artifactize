@@ -17,10 +17,13 @@ pub(super) async fn inspect(
         .map(|value| {
             value
                 .as_str()
-                .map(str::to_owned)
-                .ok_or("cursor must be a string")
+                .ok_or("cursor must be a string".to_owned())?
+                .parse::<page::Cursor>()
         })
         .transpose()?;
+    let as_of = cursor
+        .as_ref()
+        .map_or_else(time::OffsetDateTime::now_utc, |cursor| cursor.as_of);
     let mut query = arguments.clone();
     if let Some(object) = query.as_object_mut() {
         object.remove("cursor");
@@ -62,10 +65,7 @@ pub(super) async fn inspect(
         }
         "run_show" => {
             let args: RunDetails = parse(arguments)?;
-            crate::query::run_output(
-                &runs::view(context, &args.run).await?,
-                time::OffsetDateTime::now_utc(),
-            )
+            crate::query::run_output(&runs::view(context, &args.run).await?, as_of)
         }
         "request_list" => {
             let args: Requests = parse(arguments)?;
@@ -73,7 +73,8 @@ pub(super) async fn inspect(
                 runs::view(context, run).await?;
             }
             encode(
-                crate::inspect::request_list(&context.state, args.run.as_ref(), Some(repo)).await?,
+                crate::inspect::request_list(&context.state, args.run.as_ref(), Some(repo), as_of)
+                    .await?,
             )?
         }
         "request_show" => {
@@ -86,7 +87,7 @@ pub(super) async fn inspect(
             {
                 return Err("Request not found in this repository.".into());
             }
-            crate::inspect::request_show(&context.state, &args.id).await?
+            crate::inspect::request_show(&context.state, &args.id, as_of).await?
         }
         "session_show" => {
             let args: Session = parse(arguments)?;
@@ -131,5 +132,5 @@ pub(super) async fn inspect(
         }
         _ => return Err(format!("Unknown tool: {name}")),
     };
-    page::project(name, &query, output, cursor.as_deref())
+    page::project(name, &query, output, cursor, as_of)
 }

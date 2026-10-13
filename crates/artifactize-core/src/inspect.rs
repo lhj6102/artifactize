@@ -21,10 +21,14 @@ pub fn config_check(repo: &Path) -> Result<ConfigCheck, String> {
     })
 }
 
-pub async fn request_show(state: &Path, id: &RequestId) -> Result<Value, String> {
+pub async fn request_show(
+    state: &Path,
+    id: &RequestId,
+    now: time::OffsetDateTime,
+) -> Result<Value, String> {
     Ok(crate::query::request_output(
         &crate::store::read_request(state, id).await?,
-        time::OffsetDateTime::now_utc(),
+        now,
     ))
 }
 
@@ -32,10 +36,10 @@ pub async fn request_list(
     state: &Path,
     run: Option<&crate::types::RunId>,
     repo: Option<&Path>,
+    now: time::OffsetDateTime,
 ) -> Result<Vec<Value>, String> {
     let views =
         crate::store::read_requests_in(state, run.map(crate::types::RunId::as_str), repo).await?;
-    let now = time::OffsetDateTime::now_utc();
     Ok(views
         .iter()
         .map(|view| crate::query::request_output(view, now))

@@ -1,16 +1,71 @@
 //! Lossless bounded pages of CLI JSON, without transport-owned result snapshots.
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::{fmt, str::FromStr};
+use time::OffsetDateTime;
 
 // Structured MCP content is also mirrored in text for legacy clients. 8 KiB leaves
 // room for both representations, escaped quotes and protocol framing under 64 KiB.
 const PAGE_BYTES: usize = 8 * 1024;
 
+/// Keep elapsed fields stable between pages without storing a result snapshot.
+/// Every continuation still hashes freshly read authoritative records.
+pub(super) struct Cursor {
+    revision: String,
+    offset: usize,
+    pub as_of: OffsetDateTime,
+}
+impl FromStr for Cursor {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, String> {
+        let mut fields = value.splitn(3, ':');
+        let revision = fields
+            .next()
+            .filter(|hash| {
+                hash.len() == 64
+                    && hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
+            .ok_or("Invalid detail cursor revision.")?
+            .to_owned();
+        let offset = fields
+            .next()
+            .ok_or("Invalid detail cursor.")?
+            .parse()
+            .map_err(|_| "Invalid detail cursor offset.")?;
+        let nanos = fields
+            .next()
+            .ok_or("Invalid detail cursor.")?
+            .parse()
+            .map_err(|_| "Invalid detail cursor clock.")?;
+        let as_of = OffsetDateTime::from_unix_timestamp_nanos(nanos)
+            .map_err(|_| "Invalid detail cursor clock.")?;
+        Ok(Self {
+            revision,
+            offset,
+            as_of,
+        })
+    }
+}
+impl fmt::Display for Cursor {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            out,
+            "{}:{}:{}",
+            self.revision,
+            self.offset,
+            self.as_of.unix_timestamp_nanos()
+        )
+    }
+}
+
 pub(super) fn project(
     name: &str,
     arguments: &Value,
     value: Value,
-    cursor: Option<&str>,
+    cursor: Option<Cursor>,
+    as_of: OffsetDateTime,
 ) -> Result<Value, String> {
     let text = serde_json::to_string(&value).map_err(|e| e.to_string())?;
     let revision =
@@ -21,13 +76,10 @@ pub(super) fn project(
     let offset = match cursor {
         None => 0,
         Some(cursor) => {
-            let (hash, offset) = cursor.split_once(':').ok_or("Invalid detail cursor.")?;
-            if hash != revision {
+            if cursor.revision != revision {
                 return Err("Expired or foreign detail cursor; restart this inspection.".into());
             }
-            offset
-                .parse::<usize>()
-                .map_err(|_| "Invalid detail cursor offset.")?
+            cursor.offset
         }
     };
     if offset > text.len() || !text.is_char_boundary(offset) {
@@ -39,6 +91,6 @@ pub(super) fn project(
     }
     Ok(json!({
         "encoding": "json", "entries": [{"offset": offset, "text": &text[offset..end]}],
-        "next_cursor": (end < text.len()).then(|| format!("{revision}:{end}")),
+        "next_cursor": (end < text.len()).then(|| Cursor { revision, offset: end, as_of }.to_string()),
     }))
 }

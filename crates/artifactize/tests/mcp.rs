@@ -327,7 +327,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
             json!({"kind":"human"})
         };
         let project = Project::new(
-            json!([{ "id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review."} }]),
+            json!([{ "id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review this long active audit.\n".repeat(1000)} }]),
         );
         let mut command = project.command();
         command
@@ -355,6 +355,12 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
                 "running"
             }],
             1
+        );
+        let requests = client.inspect("request_list", json!({"run": run})).await;
+        assert_eq!(requests.as_array().unwrap().len(), 1);
+        assert_eq!(
+            requests[0]["id"],
+            json!(runs::view(&project.context(), &run).await.unwrap().requests[0].id)
         );
         if kind == "agent" {
             gate.open();

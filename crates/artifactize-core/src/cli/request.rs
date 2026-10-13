@@ -70,7 +70,15 @@ pub(super) async fn execute(
     match command {
         RequestCommand::List { run } => {
             if json {
-                print_json(&crate::inspect::request_list(state, run.as_ref(), None).await?)?;
+                print_json(
+                    &crate::inspect::request_list(
+                        state,
+                        run.as_ref(),
+                        None,
+                        time::OffsetDateTime::now_utc(),
+                    )
+                    .await?,
+                )?;
             } else {
                 let views = store::read_requests(state, run.as_deref()).await?;
                 let mut out = io::stdout().lock();
@@ -92,7 +100,9 @@ pub(super) async fn execute(
             }
         }
         RequestCommand::Show { id } => {
-            print_json(&crate::inspect::request_show(state, &id).await?)?;
+            print_json(
+                &crate::inspect::request_show(state, &id, time::OffsetDateTime::now_utc()).await?,
+            )?;
         }
         RequestCommand::Claim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
@@ -148,7 +158,9 @@ pub(super) async fn execute(
                 human::submit_and_publish(state, &id, &reviewer, &result, cancellation).await;
             listener.abort();
             result?;
-            print_json(&crate::inspect::request_show(state, &id).await?)?;
+            print_json(
+                &crate::inspect::request_show(state, &id, time::OffsetDateTime::now_utc()).await?,
+            )?;
         }
     }
     Ok(0)
