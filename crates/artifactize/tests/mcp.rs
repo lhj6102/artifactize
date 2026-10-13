@@ -134,13 +134,16 @@ impl Client {
             .unwrap();
         self.input.flush().await.unwrap();
     }
-    async fn rpc(&mut self, method: &str, mut params: Value) -> Value {
+    async fn request(&mut self, method: &str, mut params: Value) -> u64 {
         self.id += 1;
         if self.modern {
             params["_meta"] = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28", "io.modelcontextprotocol/clientInfo":{"name":"seam","version":"1"}, "io.modelcontextprotocol/clientCapabilities":{}});
         }
         self.send(json!({"jsonrpc":"2.0","id":self.id,"method":method,"params":params}))
             .await;
+        self.id
+    }
+    async fn response(&mut self, id: u64) -> Value {
         let mut line = String::new();
         tokio::time::timeout(
             support::os::patience(Duration::from_secs(45)),
@@ -155,16 +158,54 @@ impl Client {
             line.len()
         );
         let response: Value = serde_json::from_str(&line).expect("stdout carries protocol only");
-        assert_eq!(response["id"], self.id);
+        assert_eq!(
+            response["id"], id,
+            "unexpected response order (verify_wait must remain pending before fixture settlement): {response}"
+        );
         response
+    }
+    async fn rpc(&mut self, method: &str, params: Value) -> Value {
+        let id = self.request(method, params).await;
+        self.response(id).await
+    }
+    fn tool_result(name: &str, response: Value) -> Value {
+        assert!(response.get("error").is_none(), "{name}: {response}");
+        assert_ne!(response["result"]["isError"], true, "{name}: {response}");
+        response["result"]["structuredContent"].clone()
     }
     async fn call(&mut self, name: &str, arguments: Value) -> Value {
         let response = self
             .rpc("tools/call", json!({"name":name,"arguments":arguments}))
             .await;
-        assert!(response.get("error").is_none(), "{name}: {response}");
-        assert_ne!(response["result"]["isError"], true, "{name}: {response}");
-        response["result"]["structuredContent"].clone()
+        Self::tool_result(name, response)
+    }
+    async fn wait_for_settlement(
+        &mut self,
+        run: &RunId,
+        settle: impl std::future::Future<Output = ()>,
+    ) -> Value {
+        let wait = self
+            .request(
+                "tools/call",
+                json!({"name":"verify_wait","arguments":{"run":run,"seconds":40}}),
+            )
+            .await;
+        // A same-connection status reply is the barrier, not a sleep: the wait was
+        // submitted first and the fixture must still be active. An early wait reply
+        // fails the response-order assertion. A delayed stale reply fails the terminal
+        // result assertion after the controlled release/cancellation below.
+        let active = self.call("verify_status", json!({"run":run})).await;
+        assert!(
+            ["preparing", "running", "waiting"].contains(&active["state"].as_str().unwrap()),
+            "fixture settled before the wait barrier: {active}"
+        );
+        settle.await;
+        let result = Self::tool_result("verify_wait", self.response(wait).await);
+        assert!(
+            ["green", "cancelled"].contains(&result["state"].as_str().unwrap()),
+            "verify_wait returned an active snapshot instead of controlled settlement: {result}"
+        );
+        result
     }
     async fn inspect(&mut self, name: &str, mut arguments: Value) -> Value {
         let mut text = String::new();
@@ -268,13 +309,16 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
             .state
             .is_terminal()
     );
-    fs::write(project.repo.join("release"), "release").unwrap();
-    assert_eq!(project.settled(&run).await.state, runs::State::Green);
     let mut legacy = Client::new(project.command(), "2024-11-05").await;
     assert_eq!(
-        legacy.call("verify_wait", json!({"run":run})).await["state"],
+        legacy
+            .wait_for_settlement(&run, async {
+                fs::write(project.repo.join("release"), "release").unwrap();
+            })
+            .await["state"],
         "green"
     );
+    assert_eq!(project.settled(&run).await.state, runs::State::Green);
     let first = legacy.call("verify_result", json!({"run":run})).await;
     assert_eq!(first["findings"].as_array().unwrap().len(), 20);
     let second = legacy
@@ -377,18 +421,25 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
             requests[0]["id"],
             json!(runs::view(&project.context(), &run).await.unwrap().requests[0].id)
         );
-        if kind == "agent" {
-            gate.open();
-            assert_eq!(
-                client
-                    .call("verify_wait", json!({"run":run,"seconds":40}))
-                    .await["state"],
+        let ended = client
+            .wait_for_settlement(&run, async {
+                if kind == "agent" {
+                    gate.open();
+                } else {
+                    // Fixture cleanup, not a Human claim or judgment. The pending
+                    // MCP observer must follow this explicit core cancellation to end.
+                    runs::cancel(&project.context(), &run).await.unwrap();
+                }
+            })
+            .await;
+        assert_eq!(
+            ended["state"],
+            if kind == "agent" {
                 "green"
-            );
-        } else {
-            client.call("verify_cancel", json!({"run":run})).await;
-            project.settled(&run).await;
-        }
+            } else {
+                "cancelled"
+            }
+        );
         client.close().await;
     }
     let project = Project::new(
