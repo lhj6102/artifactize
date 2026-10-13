@@ -973,10 +973,9 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     )
     .unwrap();
     let options = crate::project::VerifyOptions {
-        wait_timeout: std::time::Duration::from_millis(1),
         ..Default::default()
     };
-    let run = crate::project::verify(
+    let run = crate::test_runs::record(
         &repo,
         Some(&state),
         &crate::project::selection::Selection::All,

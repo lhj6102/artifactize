@@ -8,6 +8,8 @@ mod dispatch;
 mod identity_tests;
 mod interactive;
 mod maintenance;
+#[cfg(test)]
+mod monitor_tests;
 mod remote;
 mod render;
 mod run;
@@ -64,6 +66,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(name = "__verify", hide = true)]
+    VerifyWorker { run_id: RunId },
+    #[command(name = "__execute", hide = true)]
+    VerifyExecution { run_id: RunId },
     /// Run scoped tools or check declared review tools.
     #[command(disable_help_subcommand = true, version)]
     Tools {
@@ -101,7 +107,7 @@ pub enum Command {
         #[command(subcommand)]
         provider: ModelProvider,
     },
-    /// Execute selected evals in the foreground.
+    /// Submit selected evals; use --wait to observe the validation outcome.
     #[command(group(clap::ArgGroup::new("required_selection")
         .args(["artifact", "eval", "evals", "artifacts", "evals_file", "artifacts_file", "all"])
         .required(true)))]
@@ -121,13 +127,12 @@ pub enum Command {
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,
-        /// How long to wait for Human results; does not cancel pending requests (default 600000).
-        #[arg(
-            long,
-            value_name = "MS",
-            value_parser = timeout_duration
-        )]
-        timeout_ms: Option<std::time::Duration>,
+        /// Observe until the Run ends; interrupting stops watching, not execution.
+        #[arg(long)]
+        wait: bool,
+        /// Retry-safe caller attempt key (1–128 ASCII letters/digits/._:-).
+        #[arg(long, value_name = "KEY")]
+        request_key: Option<crate::types::RequestKey>,
         /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is
         /// not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
@@ -172,11 +177,13 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Browse repositories/worktrees, Runs and eval details; initial selection is the current
-    /// worktree.
+    /// Browse Runs; starts on ALL regardless of cwd. Paths select only the initial repository.
     Monitor {
-        /// Initially select ALL repositories; every scope remains accessible in the UI.
-        #[arg(long)]
+        /// Initial repository/worktree; all scopes remain accessible in the UI.
+        #[arg(value_name = "PATH", conflicts_with = "repo")]
+        path: Option<PathBuf>,
+        /// Initially select ALL repositories (the default).
+        #[arg(long, conflicts_with_all = ["path", "repo"])]
         all: bool,
     },
     /// Search saved requests and claim, run tools for and submit Human reviews in a terminal
@@ -323,6 +330,8 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
+    /// Request cancellation; committed results are kept and cleanup settles asynchronously.
+    Cancel { run_id: RunId },
     /// List saved Runs, newest first; defaults to the current repository.
     List {
         /// Explicitly restrict results to --repo (the default).

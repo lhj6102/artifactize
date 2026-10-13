@@ -5,7 +5,6 @@ use serde_json::json;
 use std::{
     io::{self, Write},
     path::PathBuf,
-    time::Duration,
 };
 
 use super::{PolicyArgs, SelectionArgs, outcome_code};
@@ -15,7 +14,8 @@ use crate::{config::read_workspace_config, project::selection::Selection};
 pub(super) struct VerifyLimits {
     pub jobs: u32,
     pub max_executions: Option<u64>,
-    pub timeout_ms: Option<Duration>,
+    pub wait: bool,
+    pub request_key: Option<crate::types::RequestKey>,
     pub reuse_only: Vec<crate::config::ProfileKind>,
 }
 
@@ -28,29 +28,62 @@ pub(super) async fn verify(
     let VerifyLimits {
         jobs,
         max_executions,
-        timeout_ms,
+        wait,
+        request_key,
         reuse_only,
     } = limits;
     let selection = selection.resolve()?;
     let options = crate::project::VerifyOptions {
         jobs: jobs as usize,
         max_executions,
-        wait_timeout: timeout_ms.unwrap_or(crate::project::DEFAULT_HUMAN_WAIT),
         reuse_only: reuse_only.into_iter().collect(),
-        announce_run: true,
         ..policy.options()
     };
-    let (cancellation, listener) = cancellation_listener()?;
-    let result = crate::project::verify(
-        &context.repo.unwrap_or_else(|| PathBuf::from(".")),
+    let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
+    let runs = crate::runs::Context::new(
+        &repo,
         context.state_dir.as_deref(),
-        &selection,
-        &options,
-        cancellation,
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+    )?;
+    let observation = crate::runs::start(&runs, &selection, &options, request_key).await?;
+    if !wait {
+        if context.json {
+            print_json(&serde_json::json!({"run": observation.run, "state": observation.state}))?;
+        } else {
+            writeln!(io::stdout().lock(), "{}", observation.run).map_err(|e| e.to_string())?;
+        }
+        return Ok(0);
+    }
+    let (cancellation, listener) = cancellation_listener()?;
+    writeln!(
+        io::stderr().lock(),
+        "Started {} (follow: artifactize monitor)",
+        observation.run
     )
-    .await;
+    .map_err(|e| e.to_string())?;
+    let result = crate::runs::wait(&runs, &observation.run, None, cancellation.clone()).await;
     listener.abort();
-    let view = result?;
+    if cancellation.is_cancelled() {
+        return Ok(130);
+    }
+    result?;
+    let view = crate::runs::view(&runs, &observation.run).await?;
+    if let Ok(log) = std::fs::File::open(
+        runs.state
+            .join("runs")
+            .join(view.run.id.as_str())
+            .join("worker.stderr"),
+    ) {
+        use std::io::Read;
+        // Operational diagnostics stay bounded independently of owner command output.
+        const DIAGNOSTIC_BYTES: u64 = 64 * 1024;
+        let mut bytes = Vec::new();
+        let _ = log.take(DIAGNOSTIC_BYTES).read_to_end(&mut bytes);
+        let _ = io::stderr().lock().write_all(&bytes);
+    }
+    if let Some(error) = view.run.error() {
+        let _ = writeln!(io::stderr().lock(), "{error}");
+    }
     super::render::verify(&view, context.json)?;
     Ok(outcome_code(&view.run))
 }

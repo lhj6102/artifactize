@@ -15,6 +15,7 @@ use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn example(name: &str) -> PathBuf {
     support::os::canonical(
@@ -45,7 +46,11 @@ impl Session {
     }
 
     fn output(&self, repo: &Path, args: &[&str], code: i32) -> Output {
-        expect(self.command(repo, args).output().unwrap(), args, code)
+        expect(
+            self.command(repo, args).record_output().unwrap(),
+            args,
+            code,
+        )
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
@@ -187,9 +192,9 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
     let session = Session::new();
     let repo = example("runtime-relations");
     let before = files(&repo);
-    let first = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let first = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(first["executionsStarted"], 3);
-    let second = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let second = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(second["executionsStarted"], 0);
     assert_eq!(executions(&second), executions(&first));
     let status = session.json(&repo, &["status", "--json"], 0);
@@ -223,7 +228,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
             ("usage/heading", "changed: page.md"),
         ])
     );
-    let red = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let red = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(
         statuses(&red),
         map(&[
@@ -245,7 +250,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
     // README: a page without its heading is RED and blocks its parent.
     let contents = fs::read_to_string(&page).unwrap();
     fs::write(&page, contents.split_once('\n').unwrap().1).unwrap();
-    let blocked = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let blocked = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(
         statuses(&blocked),
         map(&[
@@ -283,7 +288,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
             .all(|relation| relation["kind"] != "child")
     );
 
-    let first = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let first = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(statuses(&first), green);
     assert_eq!(first["executionsStarted"], 3);
     let first_requests = requests(&first);
@@ -313,17 +318,23 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         first_requests["tip/style"]["title"],
         "The brief post fits in 40 words and follows the house style"
     );
-    let second = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let second = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(second["executionsStarted"], 0);
     assert_eq!(executions(&second), executions(&first));
-    let selected = session.json(&repo, &["verify", "tip/style", "--json"], 0);
+    let selected = session.json(&repo, &["verify", "--wait", "tip/style", "--json"], 0);
     assert_eq!(statuses(&selected), map(&[("tip/style", "GREEN")]));
     assert_eq!(selected["executionsStarted"], 0);
-    let selected = session.json(&repo, &["verify", "tip", "--json"], 0);
+    let selected = session.json(&repo, &["verify", "--wait", "tip", "--json"], 0);
     assert_eq!(statuses(&selected), map(&[("tip/style", "GREEN")]));
     let selected = session.json(
         &repo,
-        &["verify", "--evals", "welcome/style,tip/style", "--json"],
+        &[
+            "verify",
+            "--wait",
+            "--evals",
+            "welcome/style,tip/style",
+            "--json",
+        ],
         0,
     );
     assert_eq!(
@@ -337,11 +348,11 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
 
     let copy = session.copy("posts");
     append(&copy.join("README.md"), "Unrelated notes.\n");
-    let unrelated = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let unrelated = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(unrelated["executionsStarted"], 0);
     assert_eq!(executions(&unrelated), executions(&first));
     append(&copy.join("tip.md.artf"), "\n# Declaration-only comment.\n");
-    let comment = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let comment = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(comment["executionsStarted"], 0);
 
     // README: a banned word re-runs only the edited post, and restoring it reuses GREEN.
@@ -358,7 +369,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         .find(|eval| eval["id"] == "tip/style")
         .unwrap();
     assert_eq!(changed["changes"]["summary"], "changed: tip.md");
-    let red = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let red = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(
         statuses(&red),
         map(&[
@@ -383,11 +394,11 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         assert_eq!(executions(&red)[id], executions(&first)[id]);
     }
     fs::write(&tip, &original).unwrap();
-    let restored = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let restored = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(executions(&restored), executions(&first));
 
     fs::write(&tip, original.split_once('\n').unwrap().1).unwrap();
-    let heading = session.json(&copy, &["verify", "tip", "--json"], 1);
+    let heading = session.json(&copy, &["verify", "--wait", "tip", "--json"], 1);
     assert!(
         requests(&heading)["tip/style"]["result"]["stdout"]
             .as_str()
@@ -395,7 +406,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
             .contains("the first line is not a '# ' title")
     );
     fs::write(&tip, format!("{original}{}\n", "word ".repeat(41))).unwrap();
-    let long = session.json(&copy, &["verify", "tip", "--json"], 1);
+    let long = session.json(&copy, &["verify", "--wait", "tip", "--json"], 1);
     assert!(
         requests(&long)["tip/style"]["result"]["stdout"]
             .as_str()
@@ -409,14 +420,14 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         &copy.join("house-style/check.py"),
         "\n# Shared checker change.\n",
     );
-    let checker = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let checker = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(statuses(&checker), green);
     assert_eq!(checker["executionsStarted"], 3);
     for id in green.keys() {
         assert_ne!(executions(&checker)[id], executions(&first)[id]);
     }
     append(&copy.join("house-style/banned.txt"), "tools\n");
-    let rules = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let rules = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(rules["executionsStarted"], 3);
     assert_eq!(
         statuses(&rules),
@@ -505,7 +516,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     assert_eq!(image["mimeType"], "image/png");
 
     // README: the Human sign-off through request claim, tool and submit, while verify waits.
-    let signoff = ["verify", "--eval", "spec/signoff", "--json"];
+    let signoff = ["verify", "--wait", "--eval", "spec/signoff", "--json"];
     let verify = session
         .command(&repo, &signoff)
         .stdout(Stdio::piped())

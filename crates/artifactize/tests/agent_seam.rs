@@ -2,6 +2,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
@@ -117,9 +118,9 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
     });
     let run = parsed(
         project
-            .command(&["verify", "--all"])
+            .command(&["verify", "--wait", "--all"])
             .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -181,9 +182,9 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
         );
     let run = parsed(
         project
-            .command(&["verify", "--all"])
+            .command(&["verify", "--wait", "--all"])
             .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base())
-            .output()
+            .record_output()
             .unwrap(),
         1,
     );
@@ -218,7 +219,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
             project
                 .command(&["models", backend])
                 .env(variable, base)
-                .output()
+                .record_output()
                 .unwrap(),
             0,
         );
@@ -247,7 +248,7 @@ fn test_endpoints_must_stay_on_loopback() {
             project
                 .command(&["models", "openai"])
                 .env("ARTIFACTIZE_OPENAI_BASE_URL", remote)
-                .output()
+                .record_output()
                 .unwrap(),
             2,
         );
@@ -260,9 +261,9 @@ fn test_endpoints_must_stay_on_loopback() {
 
         let run = parsed(
             project
-                .command(&["verify", "--all"])
+                .command(&["verify", "--wait", "--all"])
                 .env("ARTIFACTIZE_OPENAI_BASE_URL", remote)
-                .output()
+                .record_output()
                 .unwrap(),
             2,
         );
@@ -279,7 +280,7 @@ fn test_endpoints_must_stay_on_loopback() {
             project
                 .command(&["doctor"])
                 .env("ARTIFACTIZE_OPENAI_BASE_URL", remote)
-                .output()
+                .record_output()
                 .unwrap(),
             1,
         );
@@ -290,14 +291,14 @@ fn test_endpoints_must_stay_on_loopback() {
 #[test]
 fn doctor_warns_about_an_active_test_endpoint() {
     let project = Project::new(json!({"kind":"agent","backend":"openai","model":"fake-model"}));
-    let report = parsed(project.command(&["doctor"]).output().unwrap(), 0);
+    let report = parsed(project.command(&["doctor"]).record_output().unwrap(), 0);
     assert_eq!(check(&report, "openai")["status"], "PASS");
     assert_eq!(check(&report, "openai")["details"], json!({"present":true}));
     let report = parsed(
         project
             .command(&["doctor"])
             .env("ARTIFACTIZE_OPENAI_BASE_URL", "http://127.0.0.1:9/v1/")
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -322,19 +323,19 @@ fn fake_results_never_reach_a_review_store() {
     let project = Project::new(json!({"kind":"agent","backend":"openai","model":"fake-model"}));
     let provider = FakeProvider::script(Vec::new());
     let output = project
-        .command(&["verify", "--all"])
+        .command(&["verify", "--wait", "--all"])
         .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
         // Resolving the store is offline; the guard refuses before any lookup.
         .env("ARTIFACTIZE_REMOTE", "http://127.0.0.1:9/")
         .env("ARTIFACTIZE_REMOTE_TOKEN", "team-token")
-        .output()
+        .record_output()
         .unwrap();
     let failure = parsed(output, 2);
     let error = failure["error"].as_str().unwrap();
     assert!(error.contains("ARTIFACTIZE_OPENAI_BASE_URL"), "{error}");
     assert!(error.contains("ARTIFACTIZE_REMOTE=off"), "{error}");
     assert!(provider.requests().is_empty());
-    assert!(!state_has_runs(&project.state));
+    assert!(state_has_runs(&project.state));
 }
 
 fn state_has_runs(state: &Path) -> bool {
@@ -369,9 +370,9 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     });
     let run = parsed(
         project
-            .command(&["verify", "--all"])
+            .command(&["verify", "--wait", "--all"])
             .env("ARTIFACTIZE_OPENAI_BASE_URL", repaired.openai_base())
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -392,9 +393,9 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     });
     let run = parsed(
         project
-            .command(&["verify", "--all", "--force"])
+            .command(&["verify", "--wait", "--all", "--force"])
             .env("ARTIFACTIZE_OPENAI_BASE_URL", stubborn.openai_base())
-            .output()
+            .record_output()
             .unwrap(),
         2,
     );
@@ -459,9 +460,9 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
     });
     let run = parsed(
         project
-            .command(&["verify", "--all"])
+            .command(&["verify", "--wait", "--all"])
             .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );

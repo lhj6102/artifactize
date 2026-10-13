@@ -2,6 +2,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{fs, path::PathBuf, process::Command, time::Duration};
 
@@ -57,7 +58,7 @@ impl Project {
             .env("PATH", &self.path)
             .env(support::os::PATHEXT.0, support::os::PATHEXT.1)
             .env("ARTIFACTIZE_REMOTE", "off")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -77,7 +78,7 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
     project.declaration(args.clone());
     let checked = project.run(&["tools", "check"], 0);
     assert_eq!(checked["ok"], true);
-    let run = project.run(&["verify", "--all"], 0);
+    let run = project.run(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["status"], "GREEN");
     let stdout = run["requests"][0]["result"]["stdout"].as_str().unwrap();
     assert_eq!(serde_json::from_str::<Value>(stdout).unwrap(), args);
@@ -130,7 +131,7 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
 fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
     let project = Project::new();
     project.declaration(json!(["unsafe\nargument"]));
-    let run = project.run(&["verify", "--all"], 2);
+    let run = project.run(&["verify", "--wait", "--all"], 2);
     assert_eq!(run["status"], "ERROR");
     assert!(
         run.to_string().contains("batch file arguments are invalid"),
@@ -197,7 +198,7 @@ fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments()
             "a&b",
             "",
         ])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(output.stdout, b"<a b>\n<say \"hello\">\n<a&b>\n<>\n");
@@ -207,7 +208,7 @@ fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments()
             "python3 -c 'import sys; print(len(sys.argv)-1)' \"$@\"",
             "fixture",
         ])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "0");

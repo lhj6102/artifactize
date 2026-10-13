@@ -186,7 +186,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             Details::State { writable: false },
         ),
     }
-    // Read-only: a state of another schema is refused, never migrated.
+    // Existing-state preflight upgrades supported schemas without creating an absent database.
     let current = store::STATE_SCHEMA_VERSION;
     match store::state_schema(&state) {
         Ok(None) => report.add(

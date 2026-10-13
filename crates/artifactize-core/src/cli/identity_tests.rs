@@ -117,21 +117,6 @@ fn selection_duration_and_verdict_are_parsed_at_the_command_boundary() {
     }
     let cli = Cli::try_parse_from([
         "artifactize",
-        "verify",
-        "--all",
-        "--timeout-ms",
-        "2147483647",
-    ])
-    .unwrap();
-    let Some(Command::Verify { timeout_ms, .. }) = cli.command else {
-        panic!("verify")
-    };
-    assert_eq!(
-        timeout_ms,
-        Some(std::time::Duration::from_millis(2_147_483_647))
-    );
-    let cli = Cli::try_parse_from([
-        "artifactize",
         "request",
         "submit",
         "r1",

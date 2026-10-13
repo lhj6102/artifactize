@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -64,7 +65,7 @@ impl Fixture {
             .arg("--state-dir")
             .arg(&self.state)
             .args(args)
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -616,20 +617,20 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
             ],
         ),
     );
-    let first = fixture.json(&["verify", "--all"], 0);
+    let first = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(first["requests"][0]["result"]["verdict"], "GREEN");
     assert_eq!(
         first["requests"][0]["cwd"],
         support::os::path_text(&fixture.config().root.join("files"))
     );
     fixture.write("files/sibling", "unrelated");
-    let second = fixture.json(&["verify", "--all"], 0);
+    let second = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(
         first["requests"][0]["executionId"],
         second["requests"][0]["executionId"]
     );
     fixture.write("files/input.txt", "changed");
-    let third = fixture.json(&["verify", "--all"], 0);
+    let third = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_ne!(
         second["requests"][0]["executionId"],
         third["requests"][0]["executionId"]
@@ -691,7 +692,7 @@ async fn dependency_evals_can_live_on_files_and_target_files() {
             {"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["ready"]}},
         ],
     }));
-    let run = fixture.json(&["verify", "--all"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
     for id in ["ready/ready", "folder/ready"] {
         let request = run["requests"]
             .as_array()
@@ -703,7 +704,7 @@ async fn dependency_evals_can_live_on_files_and_target_files() {
         assert!(request["executionId"].is_null());
     }
     fixture.declare("input.txt.artf", runtime("input", &["-c", "exit 1"]));
-    let run = fixture.json(&["verify", "--all"], 1);
+    let run = fixture.json(&["verify", "--wait", "--all"], 1);
     let blocked = run["requests"]
         .as_array()
         .unwrap()
@@ -980,10 +981,10 @@ fn changing_folder_to_file_does_not_reuse_equal_artifactsum_evidence() {
     fixture.write("input.txt", "same");
     let declaration = runtime("file", &["-c", "exit 0"]);
     fixture.declare("index.artf", declaration.clone());
-    let folder = fixture.json(&["verify", "--all"], 0);
+    let folder = fixture.json(&["verify", "--wait", "--all"], 0);
     fs::remove_file(fixture.repo.join("index.artf")).unwrap();
     fixture.declare("input.txt.artf", declaration);
-    let file = fixture.json(&["verify", "--all"], 0);
+    let file = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(
         folder["requests"][0]["fingerprint"],
         file["requests"][0]["fingerprint"]
@@ -1076,7 +1077,7 @@ fn runtime_target_replacements_fail_even_with_constant_or_disabled_fingerprints(
             let mut declaration = runtime("file", &["-c", script]);
             declaration["fingerprint"] = fingerprint;
             fixture.declare("input.txt.artf", declaration);
-            let run = fixture.json(&["verify", "--all"], 2);
+            let run = fixture.json(&["verify", "--wait", "--all"], 2);
             assert_eq!(run["requests"][0]["status"], "ERROR");
             assert_eq!(run["requests"][0]["errorCode"], "INPUT_CHANGED");
         }
@@ -1156,7 +1157,7 @@ fn disabled_fingerprint_target_deleted_by_dependency_script_is_not_executed() {
             },
         }),
     );
-    let run = fixture.json(&["verify", "--all"], 2);
+    let run = fixture.json(&["verify", "--wait", "--all"], 2);
     assert_eq!(run["requests"][0]["errorCode"], "PREPARATION_FAILED");
     assert!(!fixture.repo.join("files/started").exists());
 }
@@ -1299,8 +1300,8 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
         .arg(&fixture.repo)
         .arg("--state-dir")
         .arg(&state)
-        .args(["verify", "--all", "--json"])
-        .output()
+        .args(["verify", "--wait", "--all", "--json"])
+        .record_output()
         .unwrap();
     support::os::set_mode(&ancestor, 0o700);
     assert!(output.status.success(), "{output:?}");
@@ -1311,8 +1312,8 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
         .arg(&fixture.repo)
         .arg("--state-dir")
         .arg(parent.join("blocked-state"))
-        .args(["verify", "--all", "--json"])
-        .output()
+        .args(["verify", "--wait", "--all", "--json"])
+        .record_output()
         .unwrap();
     support::os::set_mode(&ancestor, 0o700);
     assert!(!output.status.success());
@@ -1324,7 +1325,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
     let fixture = Fixture::new();
     fixture.write("input.txt", "input");
     fixture.declare("input.txt.artf", runtime("file", &["-c", "exit 0"]));
-    let run = fixture.json(&["verify", "--all"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
     let key = run["requests"][0]["key"].as_str().unwrap();
     let execution = cache::show(&fixture.state, key, false)
         .await
@@ -1369,7 +1370,7 @@ fn a_derived_file_eval_never_turns_green_after_its_target_was_deleted() {
         "trigger/index.artf",
         runtime("trigger", &["-c", "rm ../ready.txt"]),
     );
-    let run = fixture.json(&["verify", "--all"], 2);
+    let run = fixture.json(&["verify", "--wait", "--all"], 2);
     let request = run["requests"]
         .as_array()
         .unwrap()
@@ -1398,7 +1399,7 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
             },
         }),
     );
-    let first = fixture.json(&["verify", "--all"], 0);
+    let first = fixture.json(&["verify", "--wait", "--all"], 0);
     fixture.declare(
         "dep/index.artf",
         json!({
@@ -1412,7 +1413,7 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
             },
         }),
     );
-    let run = fixture.json(&["verify", "--all"], 2);
+    let run = fixture.json(&["verify", "--wait", "--all"], 2);
     assert_eq!(first["requests"][0]["key"], run["requests"][0]["key"]);
     assert_eq!(run["requests"][0]["errorCode"], "PREPARATION_FAILED");
     assert!(run["requests"][0]["executionId"].is_null());

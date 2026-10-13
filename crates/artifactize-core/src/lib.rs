@@ -21,6 +21,7 @@ pub mod query;
 pub mod remote;
 pub mod repository;
 pub mod review;
+pub mod runs;
 pub mod runtime;
 pub mod scope;
 mod secret;

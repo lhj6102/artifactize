@@ -62,11 +62,12 @@ jobs:
           pnpm check
           pnpm test
           pnpm build
+      # Shared-core Run fixtures launch the same CLI worker as production.
+      - run: cargo build --locked -p artifactize -p artifactize-desktop
       # The bindings test fails when ui/src/ipc/bindings.ts no longer matches the commands.
       - run: cargo clippy --locked -p artifactize-desktop --all-targets -- -D warnings
       - run: cargo test --locked -p artifactize-desktop
       - run: cargo install --locked tauri-driver --version 2.1.0
-      - run: cargo build --locked -p artifactize -p artifactize-desktop
       # The e2e driver runs the app on its own Xvfb display.
       - working-directory: crates/artifactize-desktop/ui
         run: pnpm e2e

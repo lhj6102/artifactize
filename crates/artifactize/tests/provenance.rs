@@ -2,6 +2,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{fs, path::Path, process::Command};
 
@@ -84,7 +85,7 @@ impl Fixture {
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -108,7 +109,7 @@ fn sha256(path: &Path) -> String {
 fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
     let fixture = Fixture::new();
     let repo = fixture.repo();
-    let first = fixture.json(&["verify", "--all"], 0);
+    let first = fixture.json(&["verify", "--wait", "--all"], 0);
     let request = &first["requests"][0];
     assert_eq!(request["status"], "GREEN", "{request}");
     let pins = &request["provenance"]["executionPaths"]["sim_app"];
@@ -125,7 +126,7 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
 
     // The pins are provenance, not part of the key: a reuse keeps the original pins.
     fs::write(repo.join("bin/sim"), "simulator v2").unwrap();
-    let reused = fixture.json(&["verify", "--all"], 0);
+    let reused = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(
         reused["requests"][0]["provenance"], request["provenance"],
@@ -135,14 +136,14 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
 
     // A new review pins the current files; any change in a pinned folder changes its pin.
     fs::write(repo.join("rules/nested/b.json"), "[1]").unwrap();
-    let forced = fixture.json(&["verify", "--all", "--force"], 0);
+    let forced = fixture.json(&["verify", "--wait", "--all", "--force"], 0);
     let pins = &forced["requests"][0]["provenance"]["executionPaths"]["sim_app"];
     assert_eq!(pins["bin/sim"], sha256(&repo.join("bin/sim")));
     assert_ne!(pins["rules"], rules.as_str());
 
     // A pinned path that cannot be hashed fails the review before the Agent is called.
     fs::remove_file(repo.join("bin/sim")).unwrap();
-    let failed = fixture.json(&["verify", "--all", "--force"], 2);
+    let failed = fixture.json(&["verify", "--wait", "--all", "--force"], 2);
     let request = &failed["requests"][0];
     assert_eq!(request["errorCode"], "PREPARATION_FAILED");
     assert!(

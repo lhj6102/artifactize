@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture(
     PathBuf,
@@ -74,7 +75,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     assert_eq!(
@@ -86,7 +87,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
@@ -101,7 +102,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(
@@ -115,7 +116,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
     let output = fixture
         .command()
         .args(["config", "check"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
@@ -141,7 +142,7 @@ fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
         let output = fixture
             .command()
             .args(["config", "check", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
@@ -150,7 +151,7 @@ fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
         let output = fixture
             .command()
             .args(["config", "check"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         assert!(String::from_utf8_lossy(&output.stderr).contains(&format!("{key} {shape}")));
@@ -174,7 +175,7 @@ fn config_check_rejects_removed_family_declarations_without_opening_instance_lis
         let output = fixture
             .command()
             .args(["config", "check", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
@@ -183,7 +184,7 @@ fn config_check_rejects_removed_family_declarations_without_opening_instance_lis
         let output = fixture
             .command()
             .args(["config", "check"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
@@ -221,7 +222,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let output = fixture
         .command()
         .args(["config", "check"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -238,7 +239,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         .arg("--repo")
         .arg(&fixture.0)
         .args(["config", "check", "--json", "--state-dir", "receipts"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     assert_eq!(
@@ -293,7 +294,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let output = fixture
         .command()
         .args(["--json", "config", "check"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(
@@ -305,7 +306,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let output = fixture
         .command()
         .args(["config", "check"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
@@ -345,7 +346,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let output = empty
         .command()
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(
@@ -357,7 +358,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let output = empty
         .command()
         .args(["config", "check", "--unknown", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(
@@ -386,7 +387,7 @@ fn config_check_names_the_replacements_for_removed_backends() {
             let output = fixture
                 .command()
                 .args(["config", "check", "--json"])
-                .output()
+                .record_output()
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
             let error = json_output(&output)["error"].as_str().unwrap().to_owned();
@@ -417,7 +418,7 @@ fn config_check_names_the_removal_of_result_check() {
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();

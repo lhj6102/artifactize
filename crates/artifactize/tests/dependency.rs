@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -90,7 +91,7 @@ impl Fixture {
     }
 
     async fn verify(&self, options: &VerifyOptions) -> store::RunView {
-        project::verify(
+        support::runs::record(
             &self.repo,
             Some(&self.state),
             &Self::selection(),
@@ -285,7 +286,7 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let output: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -429,8 +430,8 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     );
     let text = fixture
         .command()
-        .args(["verify", "player/ready"])
-        .output()
+        .args(["verify", "--wait", "player/ready"])
+        .record_output()
         .unwrap();
     assert!(text.status.success());
     assert!(String::from_utf8_lossy(&text.stdout).contains("(derived)"));
@@ -474,7 +475,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         let text = fixture
             .command()
             .args(["status", "player/ready", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         let status: Value = serde_json::from_slice(&text.stdout).unwrap();
         let derived = status["evals"]
@@ -522,11 +523,10 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     );
     fixture.declare("player", vec![dependency(&["art"])]);
     let options = VerifyOptions {
-        wait_timeout: Duration::from_millis(10),
         ..Default::default()
     };
     let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status().as_str(), "INCOMPLETE");
+    assert_eq!(run.run.status().as_str(), "RUNNING");
     assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     assert_eq!(
         run.requests[0]
@@ -543,7 +543,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     let review = fixture
         .command()
         .args(["review", run.requests[0].id.as_str(), "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(!review.status.success());
     let receipts = store::Receipts::open(&fixture.state, &fixture.repo)
@@ -586,7 +586,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     );
     let next = fixture.verify(&VerifyOptions::default()).await;
     assert_eq!(next.requests[0].status().as_str(), "GREEN");
-    // The original Run is historical; it is not rewritten by the later derivation.
+    // The original owned Run continues and derives the newly submitted evidence.
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
@@ -594,7 +594,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
             .requests[0]
             .status()
             .as_str(),
-        "WAIT_DEPENDENCY"
+        "GREEN"
     );
 }
 
@@ -648,13 +648,14 @@ async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
         .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_offline-fixture")
         .args([
             "verify",
+            "--wait",
             "player/ready",
             "--reuse-only",
             "dependency",
             "--force",
             "--json",
         ])
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -670,7 +671,7 @@ async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
         .env("ARTIFACTIZE_REMOTE", &remote.url)
         .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_offline-fixture")
         .args(["status", "player/ready", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(status.status.success());
     assert!(remote.requests().is_empty());
@@ -717,9 +718,8 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         json!({"name":"art","fingerprint":false,"evals":[slow]}),
     );
     let token = CancellationToken::new();
-    let cancel = token.clone();
     let started = fixture.repo.join("art/started");
-    let cancellation = async move {
+    let cancellation = async {
         tokio::time::timeout(support::os::patience(Duration::from_secs(10)), async {
             while !started.exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -727,12 +727,12 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         })
         .await
         .expect("runtime started");
-        cancel.cancel();
+        support::runs::cancel_active(&fixture.state, &fixture.repo);
     };
     let selection = Fixture::selection();
     let options = VerifyOptions::default();
     let (run, ()) = tokio::join!(
-        project::verify(
+        support::runs::record(
             &fixture.repo,
             Some(&fixture.state),
             &selection,
@@ -782,7 +782,7 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
     let text = fixture
         .command()
         .args(["status", "player/ready"])
-        .output()
+        .record_output()
         .unwrap();
     let text = String::from_utf8_lossy(&text.stdout);
     assert!(text.contains("player/ready: BLOCKED — derive"));
@@ -829,7 +829,7 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
         let output = fixture
             .command()
             .args([command, "player/ready", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert!(
             output.status.success(),
@@ -848,8 +848,8 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
     );
     let output = fixture
         .command()
-        .args(["verify", "player", "--json"])
-        .output()
+        .args(["verify", "--wait", "player", "--json"])
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -880,8 +880,8 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
         }
         let output = fixture
             .command()
-            .args(["verify", "--all", "--profile", "fast", "--json"])
-            .output()
+            .args(["verify", "--wait", "--all", "--profile", "fast", "--json"])
+            .record_output()
             .unwrap();
         assert!(
             output.status.success(),
@@ -900,7 +900,7 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
             let output = fixture
                 .command()
                 .args([command, "--all", "--profile", "missing", "--json"])
-                .output()
+                .record_output()
                 .unwrap();
             assert!(!output.status.success());
             let error: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -914,7 +914,7 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
         let status = fixture
             .command()
             .args(["status", "--all", "--profile", "fast", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert!(
             status.status.success(),
@@ -924,8 +924,15 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
         if derived {
             let output = fixture
                 .command()
-                .args(["verify", "player/ready", "--profile", "fast", "--json"])
-                .output()
+                .args([
+                    "verify",
+                    "--wait",
+                    "player/ready",
+                    "--profile",
+                    "fast",
+                    "--json",
+                ])
+                .record_output()
                 .unwrap();
             assert!(
                 output.status.success(),
@@ -935,7 +942,7 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
             let output = fixture
                 .command()
                 .args(["status", "player/ready", "--profile", "fast", "--json"])
-                .output()
+                .record_output()
                 .unwrap();
             assert!(
                 output.status.success(),

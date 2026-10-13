@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -40,7 +41,7 @@ impl Fixture {
     async fn verify(&self, options: VerifyOptions) -> RunView {
         tokio::time::timeout(
             Duration::from_secs(10),
-            project::verify(
+            support::runs::record(
                 &self.repo,
                 Some(&self.state),
                 &Selection::All,
@@ -58,7 +59,10 @@ impl Fixture {
     }
 
     fn database(&self) -> Connection {
-        Connection::open(self.state.join(store::DATABASE)).unwrap()
+        let db = Connection::open(self.state.join(store::DATABASE)).unwrap();
+        db.busy_timeout(support::os::patience(Duration::from_secs(5)))
+            .unwrap();
+        db
     }
 
     fn cli_verify(&self) -> Value {
@@ -67,13 +71,13 @@ impl Fixture {
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
-            .args(["verify", "--all", "--timeout-ms", "1", "--json"])
-            .output()
+            .args(["verify", "--all", "--json"])
+            .record_output()
             .unwrap();
-        // The Human wait times out at once; the request stays open for submission.
+        // Submission returns at once; the request stays open for the person.
         assert_eq!(
             output.status.code(),
-            Some(3),
+            Some(0),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -131,7 +135,6 @@ fn write_human(path: &Path, fingerprint: bool) {
 /// Options that record Human requests and return at once instead of waiting for them.
 fn returning() -> VerifyOptions {
     VerifyOptions {
-        wait_timeout: Duration::from_millis(1),
         ..Default::default()
     }
 }
@@ -150,7 +153,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
     let fixture = Fixture::new(true);
     let run = fixture.cli_verify();
     let id = run["requests"][0]["id"].as_str().unwrap();
-    assert_eq!(run["status"], "INCOMPLETE");
+    assert_eq!(run["status"], "RUNNING");
     assert_eq!(run["requests"][0]["status"], "WAITING_HUMAN");
     assert_eq!(run["executionsStarted"], 0);
     let receipts = fixture.receipts().await;
@@ -468,7 +471,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
 }
 
 #[tokio::test]
-async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
+async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);
     support::declaration::write(
@@ -488,7 +491,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     )
     .unwrap();
     let run = fixture.verify(returning()).await;
-    assert_eq!(run.run.status().as_str(), "INCOMPLETE");
+    assert_eq!(run.run.status().as_str(), "RUNNING");
     let waiting = run
         .requests
         .iter()
@@ -516,9 +519,28 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     )
     .await
     .unwrap();
+    let context =
+        artifactize_core::runs::Context::discover(&fixture.repo, Some(&fixture.state)).unwrap();
+    let observed = artifactize_core::runs::wait(
+        &context,
+        &run.run.id,
+        Some(Duration::from_secs(30)),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(observed.state, artifactize_core::runs::State::Green);
+    assert_eq!(
+        store::read_run(&fixture.state, &run.run.id)
+            .await
+            .unwrap()
+            .run
+            .executions_started,
+        1
+    );
     let complete = fixture.verify(returning()).await;
     assert_eq!(complete.run.status().as_str(), "GREEN");
-    assert_eq!(complete.run.executions_started, 1);
+    assert_eq!(complete.run.executions_started, 0);
     assert!(
         complete
             .requests
@@ -532,7 +554,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     let fixture = Fixture::new(true);
     let original = fixture.cli_verify();
     let other = Fixture::new(true);
-    let run = project::verify(
+    let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
@@ -605,7 +627,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         "RED"
     );
     fs::write(other.repo.join("fingerprint"), "human-v1\n").unwrap();
-    let completed = project::verify(
+    let completed = support::runs::record(
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
@@ -643,7 +665,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let original = fixture.cli_verify();
     let owner = original["requests"][0]["id"].as_str().unwrap();
     let other = Fixture::new(true);
-    let run = project::verify(
+    let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),
         &Selection::All,

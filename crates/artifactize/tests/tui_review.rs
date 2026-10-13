@@ -189,13 +189,11 @@ fn finish(child: Child) -> (Option<i32>, Value) {
 #[tokio::test]
 async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     let fixture = Fixture::new();
-    let child = support::os::start(fixture.command().args([
-        "verify",
-        "--all",
-        "--timeout-ms",
-        "30000",
-        "--json",
-    ]));
+    let child = support::os::start(
+        fixture
+            .command()
+            .args(["verify", "--wait", "--all", "--json"]),
+    );
     let id = fixture.waiting().await;
     let mut review = Review::new(
         fixture.state.clone(),
@@ -326,13 +324,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
 #[tokio::test]
 async fn review_respects_other_claims_and_releases_its_own() {
     let fixture = Fixture::new();
-    let output = support::os::run(
-        fixture
-            .command()
-            .args(["verify", "--all", "--timeout-ms", "1"]),
-    );
-    // The Human wait times out at once; the request stays open.
-    assert_eq!(output.status.code(), Some(3));
+    let output = support::os::run(fixture.command().args(["verify", "--all"]));
+    // Submission returns at once; the Human request and owned Run stay open.
+    assert_eq!(output.status.code(), Some(0));
     let id = fixture.waiting().await;
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &id, &"bob".parse().unwrap())

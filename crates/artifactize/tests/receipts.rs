@@ -8,6 +8,7 @@ use rusqlite::Connection;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use support::os::link_dir;
 
@@ -86,7 +87,7 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
             .arg(state)
             .args(args)
             .arg("--json")
-            .output()
+            .record_output()
             .unwrap();
         assert!(
             output.status.success(),
@@ -187,8 +188,8 @@ async fn repositories_share_one_state_database() {
                     .arg(&state);
             }
             let output = command
-                .args(["verify", "--all", "--json"])
-                .output()
+                .args(["verify", "--wait", "--all", "--json"])
+                .record_output()
                 .unwrap();
             assert!(
                 output.status.success(),
@@ -279,8 +280,8 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
                 command.arg("--state-dir").arg(&state);
             }
             let output = command
-                .args(["verify", "--all", "--json"])
-                .output()
+                .args(["verify", "--wait", "--all", "--json"])
+                .record_output()
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
             assert!(
@@ -298,8 +299,8 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .arg(&repo)
         .arg("--state-dir")
         .arg(&state)
-        .args(["verify", "--all"])
-        .output()
+        .args(["verify", "--wait", "--all"])
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the reviewed repository"));
@@ -310,8 +311,8 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .arg(&repo)
         .arg("--state-dir")
         .arg(&state)
-        .args(["verify", "--all"])
-        .output()
+        .args(["verify", "--wait", "--all"])
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),

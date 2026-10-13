@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn tool(kind: &str, command: &str, args: &[&str]) -> Value {
     json!({"description":"Inspect {artifactName}","kind":kind,"command":command,"args":args})
@@ -117,7 +118,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
             "check",
             "--json",
         ])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
 }
@@ -407,7 +408,7 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
         ])
         .env("ARTIFACTIZE_HUMAN_PROBE", repo.path())
         .env("ARTIFACTIZE_HUMAN_MARKER", "reviewer-marker")
-        .output()
+        .record_output()
         .unwrap();
     let pid = fs::read_to_string(repo.path().join("pid"))
         .ok()

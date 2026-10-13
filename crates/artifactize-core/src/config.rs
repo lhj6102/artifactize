@@ -17,6 +17,7 @@ use thiserror::Error;
 mod discovery;
 mod location;
 pub use discovery::read_workspace_config;
+pub(crate) use discovery::read_workspace_declarations;
 use discovery::{logical_join, read_regular_text};
 mod plain;
 mod stored;

@@ -3,6 +3,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
@@ -95,7 +96,7 @@ impl Project {
     }
 
     fn run_in(&self, provider: &FakeProvider, state: &Path, args: &[&str], code: i32) -> Output {
-        let output = self.command(provider, state, args).output().unwrap();
+        let output = self.command(provider, state, args).record_output().unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -242,7 +243,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
     for backend in ["openai", "codex"] {
         let project = Project::new(backend);
         let provider = FakeProvider::start(reply);
-        let run = project.json(&provider, &["verify", "--all"], 0);
+        let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
         let review = &run["requests"][0];
         assert_eq!(review["status"], "GREEN", "{run}");
         let session = review["sessionId"].as_str().unwrap().to_owned();
@@ -511,7 +512,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             assert_eq!(after[field], before[field], "{field}");
         }
         let calls = provider.requests().len();
-        let rerun = project.json(&provider, &["verify", "--all"], 0);
+        let rerun = project.json(&provider, &["verify", "--wait", "--all"], 0);
         assert_eq!(rerun["requests"][0]["source"]["requestId"], id.as_str());
         assert_eq!(provider.requests().len(), calls);
         // The reusing request names the same conversation.
@@ -545,7 +546,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
 fn anthropic_reviews_are_saved_and_continued_without_a_cache_key() {
     let project = Project::new("anthropic");
     let provider = FakeProvider::start(reply);
-    let run = project.json(&provider, &["verify", "--all"], 0);
+    let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
     let id = run["requests"][0]["id"].as_str().unwrap();
     let session = run["requests"][0]["sessionId"].as_str().unwrap();
     assert_eq!(
@@ -595,7 +596,7 @@ fn concurrent_sends_take_turns_in_one_thread() {
             responses(request, vec![openai::message(&format!("answer to {last}"))])
         }
     });
-    let run = project.json(&provider, &["verify", "--all"], 0);
+    let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
     let id = run["requests"][0]["id"].as_str().unwrap().to_owned();
     let session = run["requests"][0]["sessionId"].as_str().unwrap().to_owned();
     let spawned: Vec<_> = ["first", "second"]
@@ -653,9 +654,9 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     let mut reviews = Vec::new();
     for force in [false, true, true] {
         let args: &[&str] = if force {
-            &["verify", "--all", "--force"]
+            &["verify", "--wait", "--all", "--force"]
         } else {
-            &["verify", "--all"]
+            &["verify", "--wait", "--all"]
         };
         let run = project.json(&provider, args, 0);
         reviews.push((
@@ -730,7 +731,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
         .command(
             &provider,
             &project.state,
-            &["verify", "--all", "--force", "--json"],
+            &["verify", "--wait", "--all", "--force", "--json"],
         )
         .stdout(Stdio::piped())
         .spawn()
@@ -762,7 +763,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
 
     // Saving off: the review keeps its session id, and nothing is saved.
     project.limits(json!({"agentSessions":{"enabled":false}}));
-    let run = project.json(&provider, &["verify", "--all", "--force"], 0);
+    let run = project.json(&provider, &["verify", "--wait", "--all", "--force"], 0);
     let request = &run["requests"][0];
     assert!(request["sessionId"].is_string());
     assert!(request.get("session").is_none(), "{request}");
@@ -781,7 +782,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
 
     // limits.json bounds are validated before a Run starts, and doctor reports them.
     project.limits(json!({"agentSessions":{"maxBytes":10,"targetBytes":10}}));
-    let error = project.json(&provider, &["verify", "--all"], 2);
+    let error = project.json(&provider, &["verify", "--wait", "--all"], 2);
     assert!(
         error["error"]
             .as_str()
@@ -805,7 +806,7 @@ async fn a_reference_elsewhere_names_where_its_session_lives() {
 
     let project = Project::new("openai");
     let provider = FakeProvider::start(reply);
-    let run = project.json(&provider, &["verify", "--all"], 0);
+    let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
     let review = &run["requests"][0];
     let reference = review["session"]["ref"].as_str().unwrap().to_owned();
     let state_id = review["session"]["state"].as_str().unwrap().to_owned();
@@ -865,7 +866,12 @@ async fn a_reference_elsewhere_names_where_its_session_lives() {
         .await
         .unwrap()
         .unwrap();
-    let output = project.run_in(&provider, &other, &["verify", "--all", "--json"], 0);
+    let output = project.run_in(
+        &provider,
+        &other,
+        &["verify", "--wait", "--all", "--json"],
+        0,
+    );
     let consumer: Value = serde_json::from_slice(&output.stdout).unwrap();
     let reused = &consumer["requests"][0];
     assert_eq!(reused["source"]["kind"], "remote");

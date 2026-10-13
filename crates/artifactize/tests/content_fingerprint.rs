@@ -10,6 +10,7 @@ use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     _root: TempDir,
@@ -46,7 +47,7 @@ impl Fixture {
             .arg("--state-dir")
             .arg(&self.state)
             .args(args)
-            .output()
+            .record_output()
             .unwrap()
     }
 
@@ -64,7 +65,7 @@ impl Fixture {
 
     /// Evals that started an execution in this Run, rather than reusing one.
     fn executed(&self, code: i32) -> Vec<String> {
-        let run = self.json(&["verify", "--all"], code);
+        let run = self.json(&["verify", "--wait", "--all"], code);
         let prefix = format!("execution-{}-", run["id"].as_str().unwrap());
         run["requests"]
             .as_array()
@@ -150,7 +151,7 @@ fn a_dependency_disabling_fingerprints_leaves_its_dependents_unkeyed() {
         artifact("api", json!({}), json!({"core":"core"}), PASS),
     );
     for _ in 0..2 {
-        let run = fixture.json(&["verify", "--all"], 0);
+        let run = fixture.json(&["verify", "--wait", "--all"], 0);
         assert!(run["requests"][0]["key"].is_null(), "{run}");
         assert!(run["requests"][0]["fingerprint"].is_string());
         assert_eq!(run["executionsStarted"], 1);
@@ -166,7 +167,7 @@ fn a_dependency_disabling_fingerprints_leaves_its_dependents_unkeyed() {
     );
     // Declaring one restores reuse.
     fixture.artifact("core", json!({"name":"core","basis":true,"fingerprint":{}}));
-    fixture.json(&["verify", "--all"], 0);
+    fixture.json(&["verify", "--wait", "--all"], 0);
     assert!(fixture.executed(0).is_empty());
 }
 
@@ -177,7 +178,7 @@ fn equal_fingerprints_of_different_artifacts_never_share_a_result() {
     for name in ["first", "second"] {
         fixture.artifact(name, artifact(name, same.clone(), json!({}), PASS));
     }
-    let run = fixture.json(&["verify", "--all"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["executionsStarted"], 2);
     let requests = run["requests"].as_array().unwrap();
     assert_eq!(requests[0]["fingerprint"], requests[1]["fingerprint"]);
@@ -269,7 +270,7 @@ fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
     fixture.file("py/check.py", "import helper\nassert helper.VALUE == 1\n");
     // A repository-root .gitignore applies to every Artifact below it.
     fixture.file(".gitignore", "out/\n");
-    let run = fixture.json(&["verify", "--all"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
     assert!(fixture.repo.join("py/__pycache__").is_dir());
     assert!(fixture.repo.join("py/out/report.txt").is_file());
@@ -288,7 +289,7 @@ fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
             &["-c", "echo stray > stray.txt"],
         ),
     );
-    let run = fixture.json(&["verify", "--all"], 2);
+    let run = fixture.json(&["verify", "--wait", "--all"], 2);
     assert_eq!(run["requests"][0]["errorCode"], "INPUT_CHANGED");
 }
 
@@ -325,7 +326,7 @@ fn status_explains_which_inputs_and_dependencies_changed() {
         ),
     );
     fixture.file("legacy/key", "v1");
-    let first = fixture.json(&["verify", "--all"], 0);
+    let first = fixture.json(&["verify", "--wait", "--all"], 0);
     let run = first["id"].as_str().unwrap();
     let status = fixture.json(&["status"], 0);
     assert!(status["evals"][0].get("changes").is_none());
@@ -415,7 +416,7 @@ fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
     );
 
     // They are the values verify keys the Run with.
-    let run = fixture.json(&["verify", "--all"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
     let request = run["requests"]
         .as_array()
         .unwrap()
@@ -465,7 +466,7 @@ fn default_artifactsum_reuses_and_tags_appear_in_graph_status_and_saved_monitor_
         text.contains("Artifact app [type:image, scope:combat]: UNREVIEWED"),
         "{text}"
     );
-    let first = fixture.json(&["verify", "--all"], 0);
+    let first = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(
         first["definitions"]["artifacts"]["app"]["tags"],
         declaration["tags"]
@@ -477,7 +478,7 @@ fn default_artifactsum_reuses_and_tags_appear_in_graph_status_and_saved_monitor_
     assert_eq!(first["requests"][0]["key"], fresh["evals"][0]["key"]);
     declaration["tags"] = json!(["scope:changed"]);
     fixture.artifact("app", declaration);
-    let reused = fixture.json(&["verify", "--all"], 0);
+    let reused = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(first["requests"][0]["key"], reused["requests"][0]["key"]);
     fixture.file("basis/rules.txt", "changed");
@@ -497,7 +498,7 @@ fn fingerprint_false_disables_end_of_review_checks_and_reports_the_explicit_choi
         ),
     );
     for _ in 0..2 {
-        let run = fixture.json(&["verify", "--all"], 0);
+        let run = fixture.json(&["verify", "--wait", "--all"], 0);
         assert_eq!(run["executionsStarted"], 1);
         assert!(run["requests"][0]["key"].is_null());
         assert!(run["requests"][0]["fingerprint"].is_null());

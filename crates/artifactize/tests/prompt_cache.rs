@@ -2,6 +2,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
@@ -66,7 +67,7 @@ impl Project {
             .env("ARTIFACTIZE_CODEX_BASE_URL", provider.codex_base())
             .env("ARTIFACTIZE_CODEX_AUTH_URL", &provider.url)
             .env_remove("ARTIFACTIZE_CODEX_AUTH_FILE")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -151,7 +152,7 @@ fn every_request_of_a_review_shares_the_saved_session_id() {
             }
             reply(request)
         });
-        let run = project.json(&provider, &["verify", "--all"], 0);
+        let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
         let review = &run["requests"][0];
         assert_eq!(review["status"], "GREEN", "{run}");
         assert_eq!(
@@ -203,7 +204,7 @@ fn each_review_has_its_own_session_id() {
         ("d", "anthropic"),
     ]);
     let provider = FakeProvider::start(reply);
-    let run = project.json(&provider, &["verify", "--all"], 0);
+    let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
     let sessions: Vec<_> = run["requests"]
         .as_array()
         .unwrap()
@@ -253,7 +254,7 @@ fn each_review_has_its_own_session_id() {
     }
 
     // A forced re-review starts a new session.
-    let rerun = project.json(&provider, &["verify", "--all", "--force"], 0);
+    let rerun = project.json(&provider, &["verify", "--wait", "--all", "--force"], 0);
     let rerun = rerun["requests"].as_array().unwrap();
     for review in rerun {
         assert!(!sessions.contains(&review["sessionId"].as_str().unwrap().to_owned()));

@@ -12,6 +12,7 @@ use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     _root: TempDir,
@@ -58,13 +59,16 @@ impl Fixture {
     }
 
     fn verify(&self, args: &[&str], code: i32) -> Value {
-        let output = self
-            .command()
-            .arg("verify")
-            .args(args)
-            .arg("--json")
-            .output()
-            .unwrap();
+        self.observed(args, code, true)
+    }
+
+    fn observed(&self, args: &[&str], code: i32, wait: bool) -> Value {
+        let mut command = self.command();
+        command.arg("verify");
+        if wait {
+            command.arg("--wait");
+        }
+        let output = command.args(args).arg("--json").record_output().unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -111,8 +115,8 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     support::copy_fixture("runtime", &fixture.repo);
     let output = fixture
         .command()
-        .args(["verify", "--all", "--json"])
-        .output()
+        .args(["verify", "--wait", "--all", "--json"])
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let verified = json_output(&output);
@@ -126,7 +130,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
         .arg("--state-dir")
         .arg(&fixture.state)
         .args(["run", "show", verified["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -214,8 +218,8 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     ] {
         let output = fixture
             .command()
-            .args(["verify", selection, "--json"])
-            .output()
+            .args(["verify", "--wait", selection, "--json"])
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(code));
         let run = json_output(&output);
@@ -225,8 +229,8 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     assert_eq!(
         fixture
             .command()
-            .args(["verify", "red"])
-            .output()
+            .args(["verify", "--wait", "red"])
+            .record_output()
             .unwrap()
             .status
             .code(),
@@ -234,7 +238,13 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     );
     for args in [vec!["verify", "unknown"], vec!["verify", "green", "--all"]] {
         assert_eq!(
-            fixture.command().args(args).output().unwrap().status.code(),
+            fixture
+                .command()
+                .args(args)
+                .record_output()
+                .unwrap()
+                .status
+                .code(),
             Some(2)
         );
     }
@@ -244,8 +254,8 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     assert_eq!(
         empty
             .command()
-            .args(["verify", "--all"])
-            .output()
+            .args(["verify", "--wait", "--all"])
+            .record_output()
             .unwrap()
             .status
             .code(),
@@ -266,8 +276,8 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--repo")
         .arg(&alias)
-        .args(["verify", "--all", "--json"])
-        .output()
+        .args(["verify", "--wait", "--all", "--json"])
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     let first = json_output(&output);
@@ -283,7 +293,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .current_dir(fixture._root.path())
         .args(["run", "show", first["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     assert_eq!(json_output(&output), first);
@@ -291,8 +301,8 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
         fixture.runtime(&program, &args);
         let output = fixture
             .command()
-            .args(["verify", "--all", "--json"])
-            .output()
+            .args(["verify", "--wait", "--all", "--json"])
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let run = json_output(&output);
@@ -303,15 +313,15 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     let second = json_output(
         &fixture
             .command()
-            .args(["verify", "--all", "--json"])
-            .output()
+            .args(["verify", "--wait", "--all", "--json"])
+            .record_output()
             .unwrap(),
     );
     let third = json_output(
         &fixture
             .command()
-            .args(["verify", "--all", "--json"])
-            .output()
+            .args(["verify", "--wait", "--all", "--json"])
+            .record_output()
             .unwrap(),
     );
     assert_ne!(second["id"], third["id"]);
@@ -334,8 +344,8 @@ fn human_waiting_does_not_prevent_runtime_execution() {
         "payload":{"instruction":"Review."},
     }));
     support::declaration::write(path, declaration.to_string()).unwrap();
-    // The Human wait times out at once, after the runtime eval executed.
-    let run = fixture.verify(&["--all", "--timeout-ms", "1"], 3);
+    // Observe the Human admission barrier after the runtime eval executed.
+    let run = fixture.observed(&["--all"], 0, false);
     assert_eq!(run["requests"][0]["status"], "GREEN");
     assert_eq!(run["requests"][1]["status"], "WAITING_HUMAN");
     assert_eq!(run["executionsStarted"], 1);
@@ -409,7 +419,7 @@ fn wait_for(mut child: Child) -> Output {
 }
 
 #[test]
-fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() {
+fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() {
     let fixture = Fixture::new();
     let marker = fixture._root.path().join("started");
     let script = format!("{} & echo $! > \"$1\"; wait", support::os::LINGERING);
@@ -419,7 +429,7 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
     );
     let child = fixture
         .command()
-        .args(["verify", "--all", "--json"])
+        .args(["verify", "--wait", "--all", "--json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -439,7 +449,7 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
         .unwrap();
     let saved: Value = serde_json::from_str(&saved).unwrap();
     assert!(saved["child"]["pid"].as_u64().unwrap() > 0);
-    support::os::interrupt(child.id());
+    support::runs::cancel_active(&fixture.state, &fixture.repo);
     let output = wait_for(child);
     assert_eq!(output.status.code(), Some(2));
     let run = json_output(&output);
@@ -448,7 +458,7 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
     let show = fixture
         .command()
         .args(["run", "show", run["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     assert!(show.status.success());
     assert!(json_output(&show)["requests"][0]["result"].is_null());
@@ -481,7 +491,7 @@ fn selection_errors_fail_before_discovery_or_receipts() {
             .command()
             .args(&args)
             .arg("--json")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
@@ -515,13 +525,14 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
         .command()
         .args([
             "verify",
+            "--wait",
             "--eval",
             "green/check",
             "--profile",
             "brief",
             "--json",
         ])
-        .output()
+        .record_output()
         .unwrap();
     assert!(selected.status.success());
     let run = json_output(&selected);
@@ -559,10 +570,10 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
             support::declaration::write(&path, content).unwrap();
             let output = fixture
                 .command()
-                .args(["verify", flag])
+                .args(["verify", "--wait", flag])
                 .arg(&path)
                 .arg("--json")
-                .output()
+                .record_output()
                 .unwrap();
             assert!(
                 output.status.success(),
@@ -583,8 +594,14 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     }
     let output = fixture
         .command()
-        .args(["verify", "--artifacts", "cycle-b,cycle-a,cycle-b", "--json"])
-        .output()
+        .args([
+            "verify",
+            "--wait",
+            "--artifacts",
+            "cycle-b,cycle-a,cycle-b",
+            "--json",
+        ])
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     assert_eq!(
@@ -593,8 +610,14 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     );
     let output = fixture
         .command()
-        .args(["verify", "--evals", "cycle-a/check,cycle-a/check", "--json"])
-        .output()
+        .args([
+            "verify",
+            "--wait",
+            "--evals",
+            "cycle-a/check,cycle-a/check",
+            "--json",
+        ])
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(4));
     let run = json_output(&output);
@@ -619,7 +642,7 @@ fn invalid_selections_and_profiles_never_create_a_run() {
             .command()
             .args(&args)
             .arg("--json")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(json_output(&output)["error"].is_string());
@@ -653,7 +676,7 @@ fn individual_saves_success_while_recursive_completes_cycle_obligations() {
     let saved = fixture
         .command()
         .args(["run", "show", individual["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     assert!(saved.status.success());
     assert_eq!(json_output(&saved), individual);
@@ -800,8 +823,8 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     assert_eq!(recursive["validation"]["obligations"], json!(["input"]));
     let text = fixture
         .command()
-        .args(["verify", "--all"])
-        .output()
+        .args(["verify", "--wait", "--all"])
+        .record_output()
         .unwrap();
     assert_eq!(text.status.code(), Some(4));
     assert!(String::from_utf8_lossy(&text.stdout).contains("Unmet obligation: input"));
@@ -896,8 +919,8 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         support::declaration::write(path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
-            .args(["verify", "--all", "--json"])
-            .output()
+            .args(["verify", "--wait", "--all", "--json"])
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let run = json_output(&output);
@@ -922,7 +945,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         let shown = fixture
             .command()
             .args(["run", "show", run["id"].as_str().unwrap(), "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(json_output(&shown)["requests"], run["requests"]);
     }
@@ -973,7 +996,7 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
     );
     for json in [true, false] {
         let mut command = fixture.command();
-        command.args(["verify", "--all"]);
+        command.args(["verify", "--wait", "--all"]);
         if json {
             command.arg("--json");
         }
@@ -996,7 +1019,7 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         let running = fixture
             .command()
             .args(["run", "show", &id])
-            .output()
+            .record_output()
             .unwrap();
         assert!(running.status.success());
         assert_eq!(json_output(&running)["status"], "RUNNING");

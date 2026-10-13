@@ -162,7 +162,7 @@ is paid for twice. Each attempt is saved in `usage` with its counters, `error` a
 ### Prompt caching
 
 Each Agent review gets a random session id, saved on its request as `sessionId`
-(`verify --json`, `run show`, `request show`). Every request of the review, its turns,
+(`verify --wait --json`, `run show`, `request show`). Every request of the review, its turns,
 retries and repair turn, sends it as `prompt_cache_key` on `openai` and `codex`, and
 `codex` also as the `session-id` header. The provider can then serve the conversation
 prefix that each turn replays from its prompt cache. Every review, including a forced
@@ -196,7 +196,7 @@ names the failure. A review waiting for a free slot of that backend
 ([backend capacity](../reference/state-cache-limits.md#backend-capacity)) stops waiting
 the same way, and a stopped backend takes no slot. Reviews that were already running
 finish, results that can be reused are still reused, and other backends carry on. The Run lists the stop under
-`stoppedBackends` (in `verify --json` and `run show`), and `verify` prints it:
+`stoppedBackends` (in `verify --wait --json` and `run show`), and `verify` prints it:
 
 ```text
 Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not started.
@@ -246,7 +246,7 @@ Saving never fails a review: a write error is reported on stderr and the review 
 on without it.
 
 **The reference.** A request whose conversation was saved carries `session` in
-`verify --json`, `run show` and `request show`:
+`verify --wait --json`, `run show` and `request show`:
 
 ```json
 "session": {
@@ -412,7 +412,7 @@ does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
 artifactize login codex     # sign in to ChatGPT in the browser
 artifactize models codex    # the account's Codex models
 # Declare backend = "codex", model = "gpt-6-luna", reasoning = "max", then:
-artifactize verify --all
+artifactize verify --all --wait
 artifactize logout codex    # revoke and delete artifactize's tokens
 ```
 
@@ -518,7 +518,7 @@ HTTPServer(("127.0.0.1", 8080), Fake).serve_forever()
 ```sh
 python3 fake_openai.py &
 export ARTIFACTIZE_OPENAI_BASE_URL=http://127.0.0.1:8080/v1 OPENAI_API_KEY=dummy
-ARTIFACTIZE_REMOTE=off artifactize --state-dir "$(mktemp -d)" verify --all
+ARTIFACTIZE_REMOTE=off artifactize --state-dir "$(mktemp -d)" verify --all --wait
 ```
 
 To exercise a tool, answer the first request with a `function_call` output item

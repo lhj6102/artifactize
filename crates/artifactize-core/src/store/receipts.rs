@@ -36,7 +36,8 @@ const INITIALIZATION_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 /// - `state_meta`: named values of the state itself: `id`, a random UUID made when the
 ///   database is created, which identifies the state in Agent session references.
 const SCHEMA: &str =
-    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, request_key TEXT);
+    CREATE UNIQUE INDEX run_request_key ON runs(repo,request_key) WHERE request_key IS NOT NULL;
     CREATE TABLE requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT, data TEXT NOT NULL, UNIQUE(run_id, eval_id), UNIQUE(run_id, ordinal));
     CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL);
     CREATE TABLE state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -46,8 +47,8 @@ const SCHEMA: &str =
     CREATE INDEX definition_history ON executions(eval_def_hash, completed_at);
     CREATE INDEX running_backend ON executions(backend) WHERE status='RUNNING';";
 
-/// Why a state written by an earlier artifactize is refused: no version migrates.
-pub const EARLIER_STATE: &str = "This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.";
+/// Versions before the supported additive upgrade boundary are refused.
+pub const EARLIER_STATE: &str = "This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). Only schema 6 and later supported versions can be upgraded.";
 
 /// Why a state database of schema `version`, neither this one nor uninitialized, is refused.
 pub fn schema_error(version: u32) -> String {
@@ -79,6 +80,9 @@ pub struct Run {
     pub repository: crate::repository::Identity,
     pub state_dir: PathBuf,
     pub state: super::RunState,
+    pub modes: crate::runs::RunModes,
+    pub control: Option<crate::runs::Control>,
+    pub request_key: Option<crate::types::RequestKey>,
     pub created_at: Timestamp,
     pub selection: crate::project::selection::Selection,
     pub profile: Option<crate::project::selection::ProfileSelection>,
@@ -114,6 +118,12 @@ pub(crate) struct RunWire {
     pub repository: crate::repository::Identity,
     #[serde(with = "crate::platform::path_serde")]
     pub state_dir: PathBuf,
+    #[serde(default, skip_serializing_if = "crate::runs::RunModes::is_default")]
+    pub modes: crate::runs::RunModes,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<crate::runs::Control>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_key: Option<crate::types::RequestKey>,
     pub status: RunStatus,
     pub created_at: Timestamp,
     pub completed_at: Option<Timestamp>,
@@ -161,6 +171,9 @@ impl TryFrom<RunWire> for Run {
         let state = super::RunState::from_parts(wire.status, wire.completed_at, wire.error)?;
         Ok(Self {
             state,
+            modes: wire.modes,
+            control: wire.control,
+            request_key: wire.request_key,
             id: wire.id,
             repo_path: wire.repo_path,
             repository: wire.repository,
@@ -188,6 +201,9 @@ impl TryFrom<RunWire> for Run {
 impl From<Run> for RunWire {
     fn from(record: Run) -> Self {
         Self {
+            modes: record.modes.clone(),
+            control: record.control.clone(),
+            request_key: record.request_key.clone(),
             status: record.status(),
             completed_at: record.completed_at(),
             error: record.error().map(str::to_owned),
@@ -576,7 +592,10 @@ impl Receipts {
                     db.pragma_update(None, "foreign_keys", true)?;
                     let version: u32 =
                         db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-                    if version != 0 && version != STATE_SCHEMA_VERSION {
+                    if version != 0
+                        && !(super::migrations::FIRST_VERSION..=STATE_SCHEMA_VERSION)
+                            .contains(&version)
+                    {
                         return Err(Error::Invalid(schema_error(version)));
                     }
                     db.pragma_update(None, "journal_mode", "WAL")?;
@@ -584,6 +603,7 @@ impl Receipts {
                         db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                     // Publish the schema, the state's id and the version together; readers see
                     // an empty snapshot until commit.
+                    super::migrations::apply(&transaction)?;
                     if !schema_initialized(&transaction)? {
                         transaction.execute_batch(SCHEMA)?;
                         transaction.execute(
@@ -639,12 +659,13 @@ impl Receipts {
             .call(move |db| -> Result<(), Error> {
                 let transaction = db.transaction()?;
                 transaction.execute(
-                    "INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)",
+                    "INSERT INTO runs(id,repo,status,data,request_key) VALUES (?,?,?,?,?)",
                     params![
                         run.id,
                         crate::platform::path_text(&run.repo_path),
                         run.status(),
-                        serde_json::to_string(&run)?
+                        serde_json::to_string(&run)?,
+                        run.request_key
                     ],
                 )?;
                 for (ordinal, request) in requests.iter().enumerate() {
@@ -679,10 +700,10 @@ impl Receipts {
         let run = run.clone();
         self.connection
             .call(move |db| -> Result<(), Error> {
-                db.execute(
-                    "UPDATE runs SET status=?,data=? WHERE id=?",
-                    params![run.status(), serde_json::to_string(&run)?, run.id],
-                )?;
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                super::run_control::save(&transaction, run)?;
+                transaction.commit()?;
                 Ok(())
             })
             .await
@@ -694,18 +715,16 @@ impl Receipts {
         let requests = requests.to_vec();
         self.connection
             .call(move |db| -> Result<(), Error> {
-                let transaction = db.transaction()?;
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 for request in requests {
                     // A concurrent submission may already have settled this saved request.
                     if request.status() == crate::types::RequestStatus::WaitingHuman {
                         continue;
                     }
-                    update_request(&transaction, &request)?;
+                    transaction.execute("UPDATE requests SET status=?,data=?,execution_id=? WHERE id=? AND status NOT IN ('GREEN','RED','ERROR')", params![request.status(),serde_json::to_string(&request)?,request.execution_id,request.id])?;
                 }
-                transaction.execute(
-                    "UPDATE runs SET status=?,data=? WHERE id=?",
-                    params![run.status(), serde_json::to_string(&run)?, run.id],
-                )?;
+                super::run_control::save(&transaction, run)?;
                 transaction.commit()?;
                 Ok(())
             })
@@ -749,6 +768,7 @@ pub(super) fn schema_initialized(transaction: &rusqlite::Transaction<'_>) -> Res
 /// Reject non-regular state files and a database of another schema before any read or write.
 pub(super) fn check_files(state: &Path) -> Result<(), String> {
     match state_schema(state)? {
+        Some(6) => super::migrations::open_existing(state),
         Some(version) if version != 0 && version != STATE_SCHEMA_VERSION => {
             Err(schema_error(version))
         }
@@ -773,7 +793,12 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
         db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
-    read().map(Some).map_err(|e| e.to_string())
+    let version = read().map_err(|e| e.to_string())?;
+    if version == super::migrations::FIRST_VERSION {
+        super::migrations::open_existing(&state)?;
+        return read().map(Some).map_err(|e| e.to_string());
+    }
+    Ok(Some(version))
 }
 
 /// The state's stable id, read without creating anything; `None` until a command that writes

@@ -317,7 +317,13 @@ fn resume(pid: u32) -> io::Result<()> {
 /// outlives it: a terminal, IDE or CI runner may hold artifactize in a kill-on-close job. A
 /// job that forbids breakaway refuses that spawn with access denied; the handoff then starts
 /// inside the job, as it did before.
-pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process::Child> {
+pub(crate) fn spawn_detached(command: Command) -> io::Result<tokio::process::Child> {
+    detached(command, true)
+}
+pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
+    detached(command, false)
+}
+fn detached(mut command: Command, fallback: bool) -> io::Result<tokio::process::Child> {
     // A new process inherits every inheritable handle, not only the standard handles it is
     // given. artifactize's own stdout, when a caller reads it through a pipe, would then stay
     // open until the handoff exits and keep that caller waiting. std gives each child its own
@@ -335,7 +341,7 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
     let detached = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     command.creation_flags(detached | CREATE_BREAKAWAY_FROM_JOB);
     match command.spawn() {
-        Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+        Err(error) if fallback && error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
             command.creation_flags(detached);
             command.spawn()
         }
@@ -392,6 +398,11 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
 /// Windows identity lookup already excludes a signalled (terminated) process.
 pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
     process_start_time(pid)
+}
+
+/// Every owned preparation/execution child has a kill-on-close Job held by its Run worker.
+pub(crate) fn kill_saved_session(_leader: crate::process::ChildIdentity) -> io::Result<()> {
+    Ok(())
 }
 
 /// A dead owner has already closed its kill-on-close Job handle.

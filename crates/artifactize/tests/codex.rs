@@ -2,6 +2,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
@@ -173,8 +174,8 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
-            .against(&provider, &["verify", "--all"])
-            .output()
+            .against(&provider, &["verify", "--wait", "--all"])
+            .record_output()
             .unwrap(),
         0,
     );
@@ -241,8 +242,8 @@ fn an_expired_sign_in_is_refreshed_and_rotated_before_the_review() {
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
-            .against(&provider, &["verify", "--all"])
-            .output()
+            .against(&provider, &["verify", "--wait", "--all"])
+            .record_output()
             .unwrap(),
         0,
     );
@@ -280,8 +281,8 @@ fn an_expired_sign_in_is_refreshed_and_rotated_before_the_review() {
 fn failed(project: &Project, provider: &FakeProvider) -> Value {
     let run = parsed(
         project
-            .against(provider, &["verify", "--all"])
-            .output()
+            .against(provider, &["verify", "--wait", "--all"])
+            .record_output()
             .unwrap(),
         2,
     );
@@ -405,9 +406,9 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
-            .against(&provider, &["verify", "--all"])
+            .against(&provider, &["verify", "--wait", "--all"])
             .env("ARTIFACTIZE_CODEX_AUTH_FILE", &file)
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -427,9 +428,9 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
-            .against(&provider, &["verify", "--all", "--force"])
+            .against(&provider, &["verify", "--wait", "--all", "--force"])
             .env("ARTIFACTIZE_CODEX_AUTH_FILE", &expired)
-            .output()
+            .record_output()
             .unwrap(),
         2,
     );
@@ -469,7 +470,7 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
     let listing = parsed(
         project
             .against(&provider, &["models", "codex"])
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -493,7 +494,7 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
     let failure = parsed(
         project
             .against(&provider, &["models", "codex"])
-            .output()
+            .record_output()
             .unwrap(),
         2,
     );
@@ -522,7 +523,7 @@ fn logout_revokes_and_removes_only_artifactizes_tokens() {
         project
             .against(&provider, &["logout", "codex"])
             .env("ARTIFACTIZE_CODEX_AUTH_FILE", &file)
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -555,7 +556,7 @@ fn check(report: &Value) -> &Value {
 #[test]
 fn doctor_reports_the_sign_in_offline() {
     let project = Project::new();
-    let doctor = |command: &mut Command, code| parsed(command.output().unwrap(), code);
+    let doctor = |command: &mut Command, code| parsed(command.record_output().unwrap(), code);
     let report = doctor(&mut project.command(&["doctor"]), 0);
     assert_eq!(check(&report)["status"], "WARN");
     assert_eq!(check(&report)["details"]["source"], "none");
@@ -614,7 +615,7 @@ fn doctor_reports_the_sign_in_offline() {
 fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
     let project = Project::new();
     fs::create_dir(project.root.path().join(".git")).unwrap();
-    let doctor = |command: &mut Command, code| parsed(command.output().unwrap(), code);
+    let doctor = |command: &mut Command, code| parsed(command.record_output().unwrap(), code);
 
     // Nothing is stored there to protect: a warning, and doctor exits 0.
     let report = doctor(&mut project.command(&["doctor"]), 0);
@@ -637,7 +638,13 @@ fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
     assert_eq!(entry["details"]["refused"], message.as_str());
 
     // `login codex` refuses before any sign-in, with the same message.
-    let failure = parsed(project.command(&["login", "codex"]).output().unwrap(), 2);
+    let failure = parsed(
+        project
+            .command(&["login", "codex"])
+            .record_output()
+            .unwrap(),
+        2,
+    );
     assert_eq!(failure["error"], message.as_str());
     assert!(!project.state.join("auth").exists());
 
@@ -669,7 +676,7 @@ fn sign_in_endpoints_are_loopback_only_and_guard_the_review_store() {
         project
             .command(&["login", "codex"])
             .env("ARTIFACTIZE_CODEX_AUTH_URL", "https://auth.example")
-            .output()
+            .record_output()
             .unwrap(),
         2,
     );
@@ -682,11 +689,11 @@ fn sign_in_endpoints_are_loopback_only_and_guard_the_review_store() {
 
     let failure = parsed(
         project
-            .command(&["verify", "--all"])
+            .command(&["verify", "--wait", "--all"])
             .env("ARTIFACTIZE_CODEX_AUTH_URL", "http://127.0.0.1:9")
             .env("ARTIFACTIZE_REMOTE", "http://127.0.0.1:9/")
             .env("ARTIFACTIZE_REMOTE_TOKEN", "team-token")
-            .output()
+            .record_output()
             .unwrap(),
         2,
     );
@@ -706,7 +713,13 @@ fn removed_backend_messages_name_codex_without_a_version() {
         .unwrap()
         .replace("\"codex\"", "\"chatgpt\"");
     support::declaration::write(&path, declaration).unwrap();
-    let failure = parsed(project.command(&["config", "check"]).output().unwrap(), 2);
+    let failure = parsed(
+        project
+            .command(&["config", "check"])
+            .record_output()
+            .unwrap(),
+        2,
+    );
     let error = failure["error"].as_str().unwrap();
     assert!(
         error.trim_end().ends_with(
@@ -740,7 +753,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         command
             .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key");
-        parsed(command.output().unwrap(), 0)
+        parsed(command.record_output().unwrap(), 0)
     };
     let codex_options =
         json!({"backend":"codex","model":"gpt-6-luna","reasoning":"max","maxToolCalls":2});
@@ -748,7 +761,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         json!({"kind":"agent","backend":"openai","model":"fake-openai-model","reasoning":"high"});
 
     // The codex review records its execution options beside the result.
-    let first = verify(&["verify", "--all"]);
+    let first = verify(&["verify", "--wait", "--all"]);
     let produced = &first["requests"][0];
     assert_eq!(produced["status"], "GREEN", "{first}");
     assert_eq!(produced["options"], codex_options);
@@ -758,7 +771,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
 
     // An openai profile has the same key and reuses the codex result.
     project.profile(openai_profile.clone());
-    let second = verify(&["verify", "--all"]);
+    let second = verify(&["verify", "--wait", "--all"]);
     let reused = &second["requests"][0];
     assert_eq!(second["executionsStarted"], 0);
     assert_eq!(reused["key"], key);
@@ -768,7 +781,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
     assert_eq!(provider.requests().len(), 1);
 
     // A forced openai review adds a newer record, which codex then reuses.
-    let forced = verify(&["verify", "--all", "--force"]);
+    let forced = verify(&["verify", "--wait", "--all", "--force"]);
     let newer = &forced["requests"][0];
     assert_eq!(forced["executionsStarted"], 1);
     assert_eq!(
@@ -783,7 +796,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         "reasoning":"max",
         "max_tool_calls":2,
     }));
-    let back = verify(&["verify", "--all"]);
+    let back = verify(&["verify", "--wait", "--all"]);
     assert_eq!(back["executionsStarted"], 0);
     assert_eq!(back["requests"][0]["executionId"], newer["executionId"]);
     assert_eq!(back["requests"][0]["options"]["backend"], "openai");
@@ -810,7 +823,7 @@ fn a_models_error_echoing_the_access_token_withholds_it() {
     });
     let output = project
         .against(&provider, &["models", "codex"])
-        .output()
+        .record_output()
         .unwrap();
     let failure = parsed(output.clone(), 2);
     let text = format!(
@@ -848,7 +861,7 @@ fn a_models_error_with_the_token_at_the_clip_withholds_it() {
     });
     let output = project
         .against(&provider, &["models", "codex"])
-        .output()
+        .record_output()
         .unwrap();
     let failure = parsed(output.clone(), 2);
     let text = format!(

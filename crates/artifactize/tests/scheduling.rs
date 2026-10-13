@@ -13,6 +13,7 @@ use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     _root: TempDir,
@@ -45,7 +46,7 @@ impl Fixture {
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
-            .args(["verify", "--all", "--json"])
+            .args(["verify", "--wait", "--all", "--json"])
             .args(args);
         command
     }
@@ -106,16 +107,6 @@ fn finish(mut child: Child, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// Interrupt or terminate a child, named as the Unix signals that do it; Windows has
-/// Ctrl-Break for both.
-fn signal(child: &Child, signal: &str) {
-    match signal {
-        "-INT" => support::os::interrupt(child.id()),
-        "-TERM" => support::os::terminate(child.id()),
-        _ => unreachable!("{signal}"),
-    }
-}
-
 #[test]
 fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
     let fixture = Fixture::new(vec![eval("slow", SLOW), eval("zz-over-budget", "true")]);
@@ -144,26 +135,6 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
     );
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
-}
-
-#[test]
-fn expired_human_deadline_still_drains_parallel_runtime_without_rewriting_waiter() {
-    let fixture = Fixture::new(vec![
-        json!({
-            "id":"human",
-            "title":"Human",
-            "profile":{"kind":"human"},
-            "payload":{"instruction":"Review."},
-        }),
-        eval("slow", SLOW),
-    ]);
-    let child = fixture.spawn(&["--jobs", "2", "--timeout-ms", "10"]);
-    wait_until(|| fixture.starts().len() == 1);
-    fs::write(fixture.repo.join("release"), "finish").unwrap();
-    let run = finish(child, 3);
-    assert_eq!(run["waitTimedOut"], true);
-    assert_eq!(run["requests"][0]["status"], "WAITING_HUMAN");
-    assert_eq!(run["requests"][1]["status"], "GREEN");
 }
 
 const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; printf 'end %s\n' \"$1\" >> events";
@@ -291,7 +262,7 @@ fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
         .arg("--state-dir")
         .arg(&fixture.state)
         .args(["run", "show", run["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     assert_eq!(
@@ -325,7 +296,7 @@ fn preparation_failures_do_not_consume_a_start_and_finished_runs_at_the_cap_succ
 
 #[test]
 fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
-    for interrupt in ["-INT", "-TERM"] {
+    {
         let fixture = Fixture::new(
             (0..5)
                 .map(|id| {
@@ -341,7 +312,7 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
         );
         let child = fixture.spawn(&["--jobs", "3"]);
         wait_until(|| (0..3).all(|id| fixture.repo.join(format!("e{id}.pids")).exists()));
-        signal(&child, interrupt);
+        support::runs::cancel_active(&fixture.state, &fixture.repo);
         let run = finish(child, 2);
         assert_eq!(run["status"], "ERROR");
         assert_eq!(run["executionsStarted"], 3);
@@ -419,7 +390,7 @@ fn cancellation_keeps_already_committed_evidence() {
     ]);
     let child = fixture.spawn(&["--jobs", "1"]);
     wait_until(|| fixture.repo.join("started").exists());
-    signal(&child, "-INT");
+    support::runs::cancel_active(&fixture.state, &fixture.repo);
     let run = finish(child, 2);
     assert_eq!(run["requests"][0]["status"], "GREEN");
     assert_eq!(run["requests"][0]["result"]["verdict"], "GREEN");

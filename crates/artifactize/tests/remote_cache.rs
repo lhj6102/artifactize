@@ -17,6 +17,7 @@ use support::os::{cat_program, shell, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Server {
     state: PathBuf,
@@ -57,7 +58,7 @@ impl Server {
             .arg("--state-dir")
             .arg(&self.state)
             .args(["server", "token", "add", name, "--scopes", scopes, "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert!(output.status.success());
         let added: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -165,7 +166,7 @@ impl Machine {
     /// Text stdout and stderr; neither ever contains the token.
     fn run(&self, repo: &Path, args: &[&str], code: i32) -> (String, String) {
         checked(
-            self.command(repo, args).output().unwrap(),
+            self.command(repo, args).record_output().unwrap(),
             code,
             &self.token,
         )
@@ -328,7 +329,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     let repo_a = runtime_repo(root.path(), "a", "v1");
     let repo_b = runtime_repo(root.path(), "b", "v1");
 
-    let (text, stderr) = alice.run(&repo_a, &["verify", "--all"], 0);
+    let (text, stderr) = alice.run(&repo_a, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 2 (runtime 2, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)"
@@ -361,7 +362,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     );
     assert!(bob.json(&repo_b, &["cache", "list"], 0) == json!([]));
 
-    let (text, _) = bob.run(&repo_b, &["verify", "--all"], 0);
+    let (text, _) = bob.run(&repo_b, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 0 (runtime 0, agent 0, human 0), reused 2 (runtime 2, agent 0, human 0)"
@@ -397,7 +398,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
 
     // Bob changes docs: it executes locally, and his read-only token publishes nothing.
     fs::write(repo_b.join("docs/version"), "docs-v2\n").unwrap();
-    let (text, stderr) = bob.run(&repo_b, &["verify", "--all"], 0);
+    let (text, stderr) = bob.run(&repo_b, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 1 (runtime 1, agent 0, human 0), reused 1 (runtime 1, agent 0, human 0)"
@@ -419,7 +420,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
     server.stop();
     let repo = runtime_repo(root.path(), "repo", "v1");
 
-    let (text, stderr) = bob.run(&repo, &["verify", "--all"], 0);
+    let (text, stderr) = bob.run(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 2 (runtime 2, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)"
@@ -427,7 +428,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
     assert_eq!(stderr.matches(OFFLINE).count(), 1, "{stderr}");
     assert!(stderr.contains("unreachable"), "{stderr}");
     // The store is asked again next time; while it is down, the local latest is reused.
-    let (text, stderr) = bob.run(&repo, &["verify", "--all"], 0);
+    let (text, stderr) = bob.run(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 0 (runtime 0, agent 0, human 0), reused 2 (runtime 2, agent 0, human 0)"
@@ -455,9 +456,12 @@ fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
     let server = Server::start(root.path());
     server.token("bob", "read,publish");
     let rejected = Machine::new(root.path(), "mallory", &server.url, "azt_unknown");
-    let (_, stderr) = rejected.run(&repo, &["verify", "--all"], 2);
+    let (_, stderr) = rejected.run(&repo, &["verify", "--wait", "--all"], 2);
     assert!(stderr.contains("rejected the token (HTTP 401)"), "{stderr}");
-    assert_eq!(rejected.json(&repo, &["run", "list"], 0), json!([]));
+    assert_eq!(
+        rejected.json(&repo, &["run", "list"], 0)[0]["status"],
+        "ERROR"
+    );
 }
 #[test]
 fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify() {
@@ -485,7 +489,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
 
     // Bob waits for a sign-off that does not exist anywhere yet.
     let waiting = bob
-        .command(&repo, &["verify", "--all", "--timeout-ms", "30000"])
+        .command(&repo, &["verify", "--wait", "--all"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -493,8 +497,8 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
 
     // A token without the human scope keeps the sign-off local. Each signer's own verify
     // records the request and stops waiting at once.
-    let record = ["verify", "--all", "--timeout-ms", "1"];
-    let run = laptop.json(&repo, &record, 3);
+    let record = ["verify", "--all"];
+    let run = laptop.json(&repo, &record, 0);
     let stderr = laptop.sign(&repo, &run);
     assert!(
         stderr.contains("stays local: remote token alice-laptop lacks the human scope"),
@@ -502,7 +506,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     );
     assert_eq!(server.entries(), []);
 
-    let run = signer.json(&repo, &record, 3);
+    let run = signer.json(&repo, &record, 0);
     assert!(signer.sign(&repo, &run).is_empty());
     let entries = server.entries();
     assert_eq!(entries.len(), 1);
@@ -534,7 +538,11 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
 
     // A fresh machine, such as CI, reuses the sign-off from the store under --reuse-only.
     let carol = Machine::new(root.path(), "carol", &server.url, &bob.token);
-    let (text, _) = carol.run(&repo, &["verify", "--all", "--reuse-only", "human"], 0);
+    let (text, _) = carol.run(
+        &repo,
+        &["verify", "--wait", "--all", "--reuse-only", "human"],
+        0,
+    );
     assert!(line(&text, "brand/signoff").contains("Human sign-off by alice"));
 }
 
@@ -547,8 +555,8 @@ fn remote_push_publishes_results_produced_offline_once() {
     let alice = Machine::new(root.path(), "alice", &server.url, &token);
     let runtime = runtime_repo(root.path(), "runtime", "v1");
     let human = human_repo(root.path(), "human");
-    offline.run(&runtime, &["verify", "--all"], 0);
-    let run = offline.json(&human, &["verify", "--all", "--timeout-ms", "1"], 3);
+    offline.run(&runtime, &["verify", "--wait", "--all"], 0);
+    let run = offline.json(&human, &["verify", "--all"], 0);
     offline.sign(&human, &run);
     assert_eq!(server.entries(), []);
 
@@ -580,7 +588,7 @@ fn remote_push_publishes_results_produced_offline_once() {
         &server.token("bob-laptop", "read,publish"),
     );
     assert_eq!(
-        bob.json(&runtime, &["verify", "--all"], 0)["executionsStarted"],
+        bob.json(&runtime, &["verify", "--wait", "--all"], 0)["executionsStarted"],
         0
     );
     assert_eq!(
@@ -645,7 +653,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
         repo
     };
     let (repo_a, repo_b, repo_c) = (repo("a"), repo("b"), repo("c"));
-    let first = alice.json(&repo_a, &["verify", "--all"], 0);
+    let first = alice.json(&repo_a, &["verify", "--wait", "--all"], 0);
     let alice_record = first["requests"][0]["executionId"].as_str().unwrap();
     alice.completed_at(alice_record, FIRST);
     server.completed_at(alice_record, FIRST);
@@ -656,7 +664,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     // Bob reviews again by force: it reads nothing from the store, so no record's last use
     // changes, and its RED is published as a newer record without `remote push`.
     fs::write(repo_b.join("broken"), "").unwrap();
-    let forced = bob.json(&repo_b, &["verify", "--all", "--force"], 1);
+    let forced = bob.json(&repo_b, &["verify", "--wait", "--all", "--force"], 1);
     let bob_record = forced["requests"][0]["executionId"].as_str().unwrap();
     bob.completed_at(bob_record, SECOND);
     server.completed_at(bob_record, SECOND);
@@ -679,7 +687,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     );
 
     // A machine without a local record reuses the store's latest: bob's RED.
-    let reused = carol.json(&repo_c, &["verify", "--all"], 1);
+    let reused = carol.json(&repo_c, &["verify", "--wait", "--all"], 1);
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(reused["requests"][0]["provenance"]["runId"], forced["id"]);
 
@@ -696,18 +704,18 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     );
     let history = || alice.json(&repo_a, &["cache", "show", &key, "--history"], 0);
     assert_eq!(history().as_array().unwrap().len(), 1);
-    let newer = alice.json(&repo_a, &["verify", "--all"], 1);
+    let newer = alice.json(&repo_a, &["verify", "--wait", "--all"], 1);
     assert_eq!(newer["requests"][0]["provenance"]["runId"], forced["id"]);
     assert_eq!(newer["requests"][0]["origin"]["publisher"], "bob-laptop");
     assert_eq!(history().as_array().unwrap().len(), 2);
 
     // A newer local record beats an older store one: alice reviews again offline.
-    let local = offline.json(&repo_a, &["verify", "--all", "--force"], 0);
+    let local = offline.json(&repo_a, &["verify", "--wait", "--all", "--force"], 0);
     offline.completed_at(local["requests"][0]["executionId"].as_str().unwrap(), THIRD);
     assert_eq!(server.entries().len(), 2);
     let status = alice.json(&repo_a, &["status"], 0);
     assert_eq!(status["evals"][0]["state"], "PASS");
-    let again = alice.json(&repo_a, &["verify", "--all"], 0);
+    let again = alice.json(&repo_a, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         again["requests"][0]["executionId"],
         local["requests"][0]["executionId"]
@@ -736,7 +744,7 @@ fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
     });
     let bob = Machine::new(root.path(), "bob", &format!("{}/", store.url), &token);
     let repo = runtime_repo(root.path(), "repo", "v1");
-    let (stdout, stderr) = bob.run(&repo, &["verify", "--all", "--json"], 0);
+    let (stdout, stderr) = bob.run(&repo, &["verify", "--wait", "--all", "--json"], 0);
     for piece in [&token[10..22], &token[token.len() - 12..]] {
         assert!(
             !stdout.contains(piece) && !stderr.contains(piece),
@@ -850,7 +858,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
     let entries = server.entries();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].1["executionPaths"], pins);
-    let reused = consumer.json(&repo, &["verify", "--all"], 0);
+    let reused = consumer.json(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(reused["requests"][0]["provenance"]["executionPaths"], pins);
     assert!(support::tool_sessions::directories(&consumer.state).is_empty());

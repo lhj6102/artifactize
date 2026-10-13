@@ -48,7 +48,7 @@ additionalProperties = false
 
 [views.agent_tools.cli]
 session = "app"
-description = "Run the artifactize CLI against the app's repository and state from another process (for example `request list --json`, `verify --all --timeout-ms 1`, `request claim ID`), to change state the window must then show. Answers with exit code, stdout and stderr."
+description = "Run the artifactize CLI against the app's repository and state from another process (for example `request list --json`, `verify --all`, `request claim ID`), to change state the window must then show. Answers with exit code, stdout and stderr."
 command = "node"
 args = ["harness/harness.mts", "cli"]
 protocol = "json"

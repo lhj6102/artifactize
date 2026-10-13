@@ -10,6 +10,7 @@ use support::os::{echo_program, false_program, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn command(repo: &Path, state: &Path) -> Command {
     let mut command = Command::new(support::os::cli());
@@ -22,7 +23,7 @@ fn command(repo: &Path, state: &Path) -> Command {
 }
 
 fn output(repo: &Path, state: &Path, args: &[&str], code: i32) -> Output {
-    let output = command(repo, state).args(args).output().unwrap();
+    let output = command(repo, state).args(args).record_output().unwrap();
     assert_eq!(
         output.status.code(),
         Some(code),
@@ -130,6 +131,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         &state,
         &[
             "verify",
+            "--wait",
             "--artifacts",
             "checkout,search",
             "--profile",
@@ -143,17 +145,19 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ],
         0,
     );
-    // The Human wait times out at once, so the Run ends INCOMPLETE with its request open.
-    let other = query(
-        &second,
-        &state,
-        &["verify", "--all", "--timeout-ms", "1"],
-        3,
-    );
+    // Submission returns while the owned Run remains RUNNING with its Human request open.
+    let other = query(&second, &state, &["verify", "--all"], 0);
     let last = query(
         &first,
         &state,
-        &["verify", "--eval", "checkout/review", "--profile", "brief"],
+        &[
+            "verify",
+            "--wait",
+            "--eval",
+            "checkout/review",
+            "--profile",
+            "brief",
+        ],
         0,
     );
     assert_eq!(selected["profile"], "brief");
@@ -224,7 +228,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
             &["run", "show", saved["id"].as_str().unwrap()],
             0,
         );
-        assert_eq!(shown, *saved);
+        if saved["status"] == "RUNNING" {
+            assert_eq!(shown["id"], saved["id"]);
+            assert_eq!(shown["requests"], saved["requests"]);
+            assert_eq!(shown["definitions"], saved["definitions"]);
+        } else {
+            assert_eq!(shown, *saved);
+        }
         for request in saved["requests"].as_array().unwrap() {
             let shown = query(
                 &first,
@@ -263,7 +273,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         .arg("--state-dir")
         .arg(&state)
         .args(["run", "list", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(current.status.success());
     assert_eq!(

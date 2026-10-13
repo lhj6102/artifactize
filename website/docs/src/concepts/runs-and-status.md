@@ -19,11 +19,12 @@ re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
 fingerprint claim occupy job slots while polling, but cache hits occupy none. An
 Agent review of a backend with a machine-wide limit also needs one of its
-[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one occupies no job slot. `verify` prints
-`Started RUN_ID (follow: artifactize monitor)` to stderr as soon as the Run is saved, before any eval runs, so a long
-Run can be followed (`artifactize monitor`, `artifactize run show RUN_ID --wait`) or cancelled from the start; nothing
-else is printed there unless something goes wrong. With `--json`, stdout still
-carries only the final JSON. An Artifact selector starts with that Artifact's evals;
+[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one occupies no job slot. artifactize owns each Run independently of its requester. Plain `verify` prints the Run ID
+and exits 0 when submission is accepted; `--json` prints `{"run","state"}`.
+Acceptance is not a validation verdict. Use `verify --wait` to announce the ID on stderr,
+observe settlement and render the final saved result. Interrupting or closing the watcher
+stops observation only; the Run continues. `run cancel RUN_ID` explicitly requests cancellation.
+An Artifact selector starts with that Artifact's evals;
 an individual eval selector starts with that eval. Both retain the full dependency
 closure as a final obligation. `--recursive` includes every eval in that closure,
 including other evals on the selected Artifact and cycle peers, in configuration
@@ -39,17 +40,24 @@ scope. A basis never waives its dependencies. Selected GREEN results with missin
 obligations remain recorded in an INCOMPLETE Run; both text and JSON output identify
 unmet obligations. Human evals record WAITING_HUMAN requests, and `verify` waits
 for their results as it waits for runtime and Agent evals: when a submission
-arrives, evals that depend on it run in the same Run. `--timeout-ms MS` (default 600000)
-bounds the wait; when it expires the Run ends INCOMPLETE with exit 3, and the
-waiting requests stay open for submission. `--reuse-only KINDS` (for example `agent,human` in CI)
+arrives, evals that depend on it run in the same Run. There is no Human wait deadline
+or `verify --timeout-ms`; all eval kinds share the same settlement wait rule.
+`--reuse-only KINDS` (for example `agent,human` in CI)
 lets evals of the listed kinds only reuse a result; one with nothing to reuse is not
 executed and leaves the Run INCOMPLETE ([CLI](../reference/cli.md#reuse-only)).
 
-Verification runs in the foreground: GREEN exits 0,
-RED 1, ERROR 2, Human wait timeout 3, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
-group, waits for cleanup, and records ERROR/CANCELLED for running and queued
-requests, never RED. Previously committed results remain unchanged. There is no
-detached worker.
+`verify --wait` exits 0 for GREEN/SATISFIED, 1 for RED, 2 for ERROR/cancelled and 4 for
+INCOMPLETE. Ctrl-C/SIGTERM exits 130 and stops watching, not verification. Explicit
+cancellation stops admission and active owned work, waits for cleanup and records
+ERROR/CANCELLED without erasing committed evidence. It never kills another Run's
+execution that this Run joined. A dead execution worker is reconciled as
+ERROR/OWNER_DIED; interrupted work is not replayed automatically.
+
+`--request-key K` supplies a caller attempt identity (1–128 ASCII letters/digits/`._:-`).
+The same canonical repository and key return the same Run, even after completion or
+checkout changes; the first selection and options remain authoritative. Different keys,
+or omitting the key, create new Runs. Eval/cache reuse remains independent of submission
+identity. Keep the key when retrying a lost response; use a new key for a new attempt.
 
 Text output prints one line per request and marks a result taken from another
 request's execution (a fingerprint hit, or a joined execution) with its source Run
@@ -89,7 +97,7 @@ Dependency requests instead have `kind: "derived"` and their own Run/request IDs
 no execution and are not counted as reused. `run show`, `request show` and `request list --json`
 carry `source` too.
 
-`--json` prints full saved results, including payloads, argv, stdout/stderr and
+`verify --wait --json` prints full saved results, including payloads, argv, stdout/stderr and
 runtime details; there is no compact projection or `--full` flag. `run show RUN_ID`
 always prints full saved JSON and exits 0 on a successful read, regardless of the
 saved verdict; `--wait` instead exits with the Run outcome code once it finishes.
@@ -107,7 +115,7 @@ those verdicts in `evidence`, a map from qualified eval IDs to saved states:
 {"evidence": {"code-style/approved": "GREEN"}}
 ```
 
-`run show RUN_ID --json` and `verify --json` flatten the saved Run's fields into
+`run show RUN_ID --json` and `verify --wait --json` flatten the saved Run's fields into
 the output object: `evidence` is a top-level field, not nested under `run`, and
 is omitted when empty. It is the evidence this Run used, not a lookup of the
 latest result. Saved definitions, `evidence` and the Run's request states let the

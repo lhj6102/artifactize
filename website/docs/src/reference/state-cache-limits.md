@@ -6,7 +6,7 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 6),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 7),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
@@ -32,7 +32,7 @@ four tables:
 
 | Table | One row per | Columns besides the saved JSON in `data` |
 |---|---|---|
-| `runs` | Run | `id`, `repo`, `status` |
+| `runs` | Run | `id`, `repo`, `status`, nullable `request_key` |
 | `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, and `claimed_by` and `claimed_at`, the Human claim of a waiting request |
 | `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
 | `state_meta` | named value of the state | `name`, `value` |
@@ -49,13 +49,29 @@ id, a random UUID made when the database is created (row `id`), which
 conversation and its tool calls, is not in the state: it is in the review's
 [saved session](#agent-sessions).
 
-There is no migration. Commands that read or write a state written by an earlier
-artifactize (schemas 1–5, through artifactize 0.8) refuse it with exit code 2 and
-this message, leaving it as it is. `doctor` instead includes the same message in
-its hard-error report and exits 1:
+Supported upgrades are ordered additive steps applied together with `user_version` in one
+opening write transaction; the version is read again under that lock. Schema 6 upgrades
+to 7 by adding nullable `runs.request_key` and a partial unique index on `(repo, request_key)`
+where the key is not NULL. Existing Runs keep NULL keys. Run/request/execution IDs, cache,
+state identity and Human approvals survive; repeated opens do not remigrate. Existing-state
+readers and `doctor` use the same preflight without creating an absent database. Migration
+requires write access; a failed transaction rolls back rather than bypassing version checks.
+
+Same repository/key returns the same accepted Run; NULL keys never coalesce submissions.
+Worker PID/start identity and admission, cancellation intent, activity and failure code live
+in optional/defaulted Run JSON control fields. Old Runs without them are readable and are
+not treated as dead workers. Saved Run-end validation remains historical; detailed results
+are derived from saved Runs, requests and executions, not stored as another result snapshot.
+Dead-worker recovery keeps committed evidence, cleans only identity-checked owned children
+and releases dead slots. It records OWNER_DIED instead of replaying work; unconfirmed
+cleanup retains its journal records.
+
+**Downgrade boundary:** artifactize 0.11 cannot open a schema-7 state after upgrade. Its
+version guard refuses it. Unknown/newer versions and schemas 1–5 remain unsupported;
+commands exit 2 and `doctor` reports a hard error (exit 1). The older-schema message is:
 
 ```text
-This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.
+This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). Only schema 6 and later supported versions can be upgraded.
 ```
 
 A new 0.9 state reviews every executable eval once, Human sign-offs included,
@@ -115,7 +131,7 @@ records are its completed GREEN/RED executions whose history columns
 then the most recently stored. `rm` takes every record of the key out of its history
 and prints `{"removed":true}` (false if absent), preserving saved Runs and the
 executions themselves. `rm` refuses a key with an active execution or waiter. Keys
-come from `cache list` or from a request's `key` in `verify --json` and `run show`.
+come from `cache list` or from a request's `key` in `verify --wait --json` and `run show`.
 
 How reuse keys are built and what a hit returns is in
 [Completed result reuse](../concepts/fingerprints-and-reuse.md#completed-result-reuse); entry and byte
@@ -281,7 +297,7 @@ directory, removed immediately (in the nearest existing ancestor when state does
 not yet exist). Before the writable probe it enforces the same current/legacy
 workspace-marker safety boundary, even without `--repo`; unsafe state fails
 without writing a probe inside that workspace. It reads the state database's
-schema without changing the file: a
+schema, applying a supported additive upgrade if needed: a
 database [written by an earlier artifactize](#state) (schemas 1–5) or by a newer
 one is a hard error (exit 1), with the message other commands refuse it with and
 its `schema` and the `supported` one in the details. `--repo`

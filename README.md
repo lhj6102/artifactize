@@ -130,8 +130,8 @@ No model or API key is needed to try it:
 git clone https://github.com/lhj6102/artifactize   # the example projects
 cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
-artifactize verify --all    # three GREEN results, exit 0
-artifactize verify --all    # exit 0 and nothing executes: all three results are reused
+artifactize verify --all --wait    # three GREEN results, exit 0
+artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
 ```
 
 The [Quick start](https://artifactize.dev/docs/getting-started/quick-start.html) continues with `status`, file Artifacts, dependency evals and a

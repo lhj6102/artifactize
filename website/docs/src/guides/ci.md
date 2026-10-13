@@ -1,6 +1,6 @@
 # CI
 
-Run `artifactize verify --all --reuse-only agent,human` as a CI step: tests run, while reviews must come from the cache or
+Run `artifactize verify --all --wait --reuse-only agent,human` as a CI step: tests run, while reviews must come from the cache or
 the team store, so CI never calls a model or waits for a person. It exits 0 only
 when every selected eval is GREEN, so RED (1), ERROR (2) and INCOMPLETE (4) fail the
 job; the [command reference](../reference/cli.md#command-reference) lists every exit code. An Agent review or Human sign-off with
@@ -18,7 +18,7 @@ required review leaves them WAIT_DEPENDENCY; a required RED makes them BLOCKED.
 **CI.** Configure CI through the environment only:
 
 ```yaml
-- run: artifactize verify --all --reuse-only agent,human
+- run: artifactize verify --all --wait --reuse-only agent,human
   env:
     ARTIFACTIZE_REMOTE: https://reviews.example/
     ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}

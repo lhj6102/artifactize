@@ -5,12 +5,13 @@ waiting request, runs the Human tools you declared and submits a verdict, either
 with `artifactize request` commands or in the `artifactize review` terminal UI.
 
 READY Human evals persist WAITING_HUMAN and release their job slot. They consume
-no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
-waits for Human results as it waits for runtime and Agent evals, and never
-fabricates a verdict. When its wait times out it exits and lists the waiting
-requests, and no worker stays alive. A waiting execution with a reuse key retains its
-exclusive claim on the key after the verifier exits, unless it is forced (`--force`): a
-forced wait holds no claim on its key. Cross-repository followers refer to the claiming
+no `maxExecutions` budget, so even a zero budget admits a Human review. Artifactize's
+Run waits for Human results exactly as for runtime and Agent evals; there is no Human wait
+timeout and no fabricated verdict. Plain `verify` submits and returns its ID; `--wait`
+observes settlement. Closing or interrupting that watcher leaves the Run and waiting
+requests alive. A waiting keyed execution retains its exclusive claim; forced waits
+(`--force`) hold no claim on their key. Only `run cancel RUN_ID` cancels a Run.
+Cross-repository followers refer to the claiming
 execution and forward Human actions to its original request and repository.
 
 A submission that arrives while `verify` waits runs the Human eval's dependents in
@@ -24,7 +25,7 @@ derive GREEN or BLOCKED from the submission. Later submissions never rewrite a
 historical derived request; a new `status` or `verify` derives current evidence.
 
 ```sh
-artifactize verify --all --timeout-ms 600000
+artifactize verify --all --wait
 # In another terminal, using the same state directory:
 artifactize request list [--run RUN_ID] [--json]
 artifactize request show REQUEST_ID
@@ -56,15 +57,12 @@ it does not start a separate verifier.
 While Human requests wait, local state-change notifications wake `verify`, which
 reconciles saved states and resumes newly READY dependents in the **same Run**,
 retaining its execution budget and earlier results. While waiting the Run remains
-RUNNING. `--timeout-ms` defaults to 600000, and accepts 1–2147483647. The deadline
-begins when scheduling starts and is checked when foreground execution is idle with
-pending Human work; it never interrupts running evals or cancels Human requests. On
-timeout the Run ends INCOMPLETE with `waitTimedOut: true` and exit 3. Claims and submissions
-remain available, but no background worker continues dependents. With reuse
-disabled, use a new verify and submit its new request to complete those dependents.
-Ctrl-C/SIGTERM exits 2, cleans owned processes, and ends the Run as cancelled;
-previously created Human requests remain available. Missing non-Human obligations
-without any pending Human request return INCOMPLETE (4) immediately. `verify --reuse-only human`
+RUNNING. There is no Human timeout. The artifactize-owned worker continues dependents
+after submission, even if the submitting terminal or observer has exited. Ctrl-C/SIGTERM
+exits the watcher with 130 and leaves execution alone; explicit `run cancel RUN_ID`
+stops owned work and withdraws pending requests while preserving committed evidence.
+Missing non-Human obligations without a pending Human request end INCOMPLETE (4).
+`verify --reuse-only human`
 never records a Human request or waits: a Human eval reuses a sign-off or is
 [not executed](../reference/cli.md#reuse-only), as CI wants.
 
@@ -264,11 +262,14 @@ same in-process lifecycle jobs; monitor does not launch the standalone command.
 ## Monitor
 
 ```sh
-artifactize monitor [--repo PATH | --all] [--state-dir PATH]
+artifactize monitor [PATH | --repo PATH | --all] [--state-dir PATH]
 ```
 
-The monitor catalogs every repository in this state. The current directory
-(including a Git subdirectory), `--repo`, or `--all` only sets the first selection.
+The monitor catalogs every repository in this state. Plain `monitor` starts on **ALL**,
+independent of cwd. `monitor .`, `monitor PATH` or `--repo PATH` selects that repository or
+worktree initially; `--all` remains accepted. A positional path conflicts with `--repo`,
+and `--all` conflicts with either. This sets only the initial selection: navigation still
+reaches ALL and every repository/worktree.
 Navigation drills down through **Scope → Runs → Run tree → Detail**.
 
 ### Reactive panes
