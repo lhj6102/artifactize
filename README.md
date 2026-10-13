@@ -26,6 +26,9 @@ that work reuses each review while its eval definition, covered Artifact kinds
 and fingerprints match. Earlier GREEN or RED results are reused. Artifactize is open source under the
 Apache License 2.0 and runs on Linux, macOS and Windows.
 
+[Hey Arti](https://artifactize.dev/docs/guides/hey-arti.html) teaches a coding agent
+to structure those review boundaries and follow durable Runs through artifactize's MCP server.
+
 ## Why I built it
 
 Building games with AI, working alone got fast, but working with others still felt

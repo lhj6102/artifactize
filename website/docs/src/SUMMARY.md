@@ -16,6 +16,7 @@
 
 # Guides
 
+- [Hey Arti: structure a project's reviews](guides/hey-arti.md)
 - [Agent evals and backends](guides/agent-evals.md)
 - [Human reviews](guides/human-reviews.md)
 - [Team review store](guides/team-review-store.md)
