@@ -29,6 +29,7 @@ use serde_json::{Value, json};
 
 pub mod declaration;
 pub mod os;
+pub mod runs;
 pub mod tool_sessions;
 
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the

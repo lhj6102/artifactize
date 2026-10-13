@@ -2,7 +2,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
     sync::Arc,
-    time::Duration,
 };
 
 use serde_json::json;
@@ -19,24 +18,18 @@ use crate::{
     workspace,
 };
 
-/// Give Human sign-off ten minutes by default, then return without cancelling
-/// pending requests; later verify/run queries can still observe their settlement.
-pub const DEFAULT_HUMAN_WAIT: Duration = Duration::from_secs(600);
 /// Four concurrent evals keep ordinary machines responsive while overlapping review I/O;
 /// shared by API/CLI defaults and legacy Run decoding, and overridable with --jobs.
 pub const DEFAULT_JOBS: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct VerifyOptions {
+    pub modes: crate::runs::RunModes,
     pub jobs: usize,
     /// Fingerprints computed at once, in preparation and end-of-review rechecks; `None` uses
     /// the available CPUs.
     pub fingerprint_jobs: Option<usize>,
-    /// Print `Run: RUN_ID` to stderr as soon as the Run is saved, before any eval runs.
-    pub announce_run: bool,
     pub max_executions: Option<u64>,
-    /// How long this Run waits for Human submissions; the timeout never cancels a review.
-    pub wait_timeout: Duration,
     /// Kinds whose evals only reuse a result, from the cache or the review store; one with
     /// nothing to reuse is not executed, and the Run ends INCOMPLETE.
     pub reuse_only: BTreeSet<ProfileKind>,
@@ -51,11 +44,10 @@ pub struct VerifyOptions {
 impl Default for VerifyOptions {
     fn default() -> Self {
         Self {
+            modes: Default::default(),
             jobs: DEFAULT_JOBS,
             fingerprint_jobs: None,
-            announce_run: false,
             max_executions: None,
-            wait_timeout: DEFAULT_HUMAN_WAIT,
             reuse_only: BTreeSet::new(),
             profile: None,
             recursive: false,
@@ -65,7 +57,7 @@ impl Default for VerifyOptions {
     }
 }
 
-/// Executes READY evals in the foreground, reusing completed results by fingerprint.
+/// Submit to artifactize and observe settlement. Cancelling this future/token only stops watching.
 pub async fn verify(
     repo: &Path,
     state_dir: Option<&Path>,
@@ -73,14 +65,24 @@ pub async fn verify(
     options: &VerifyOptions,
     cancellation: CancellationToken,
 ) -> Result<RunView, String> {
+    super::fingerprint_parallelism(options)?;
+    let context = crate::runs::Context::discover(repo, state_dir)?;
+    let observation = crate::runs::start(&context, selection, options, None).await?;
+    crate::runs::wait(&context, &observation.run, None, cancellation).await?;
+    crate::runs::view(&context, &observation.run).await
+}
+/// Validate declarations and reserve initial requests; fingerprints and remote I/O follow admission.
+pub(crate) async fn reserve(
+    repo: &Path,
+    state_dir: Option<&Path>,
+    selection: &Selection,
+    options: &VerifyOptions,
+    request_key: Option<&crate::types::RequestKey>,
+) -> Result<(crate::types::RunId, bool), String> {
     if options.jobs == 0 {
         return Err("jobs must be at least 1.".into());
     }
     let parallelism = super::fingerprint_parallelism(options)?;
-    let wait_timeout_ms = u32::try_from(options.wait_timeout.as_millis())
-        .ok()
-        .filter(|ms| (1..=crate::config::validation::MAX_TIMEOUT_MS).contains(&u64::from(*ms)))
-        .ok_or("wait timeout must be between 1 and 2147483647 ms.")?;
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
     let config = Arc::new(select_profiles(
         config,
@@ -96,57 +98,18 @@ pub async fn verify(
             .and_then(|artifact| artifact.review_policy.as_ref())
             .is_some_and(|policy| matches!(policy.dependency_gates, Some(DependencyGates::Ignore)))
     });
-    let graph = Graph::new(&config).map_err(|e| e.to_string())?;
+    Graph::new(&config).map_err(|e| e.to_string())?;
     let selected = selection.resolve(&config)?;
     let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| &eval.id).collect();
-    let required: BTreeSet<_> = graph
-        .dependency_closure(&selected.roots)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .collect();
     let evals = selection.included_evals(&config, options.recursive)?;
     let definitions =
         store::definitions::Definitions::from_view(&crate::query::graph(&config, selection)?)
             .map_err(|error| error.to_string())?;
     let state = store::state_dir(state_dir)?;
-    let limits = crate::limits::Limits::read(&state)?;
+    let _limits = crate::limits::Limits::read(&state)?;
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
-    let fingerprints = cache::prepare(
-        &config,
-        cache::fingerprint_targets(&config, &required),
-        &runs,
-        &parallelism,
-        cancellation.clone(),
-    )
-    .await?;
-    if cancellation.is_cancelled() {
-        return Err("Project preparation was cancelled.".into());
-    }
-    let keys = cache::eval_keys(&config, &fingerprints);
-    // The store is asked once for every key, and a record that completed after the local
-    // latest is mirrored into the local history before the Run claims anything. A forced Run
-    // reads nothing from the store, but publishes its results like any other.
-    let remote = Session::open(Some(&state), Some(&config.root))?;
-    // Results from a fake provider must never reach the shared review store.
-    if remote.is_some()
-        && let Some(variable) = crate::llm::active_test_endpoint()
-    {
-        return Err(format!(
-            "{variable} points Agent reviews at a local test endpoint; set ARTIFACTIZE_REMOTE=off so their results stay out of the review store."
-        ));
-    }
-    if let Some(remote) = &remote
-        && !options.force
-    {
-        remote
-            .refresh(
-                &receipts,
-                keys.values().map(|key| key.value.clone()).collect(),
-            )
-            .await?;
-    }
     let directory = tempfile::Builder::new()
         .prefix("run-")
         .tempdir_in(runs)
@@ -159,7 +122,10 @@ pub async fn verify(
         .expect("generated run directory names are ASCII")
         .to_owned();
     let _ = directory.keep();
-    let mut run = Run {
+    let run = Run {
+        modes: options.modes.clone(),
+        control: Some(crate::runs::Control::starting()?),
+        request_key: request_key.cloned(),
         id: id.parse()?,
         repo_path: config.root.clone(),
         repository: crate::repository::identify(&config.root),
@@ -173,7 +139,7 @@ pub async fn verify(
         fingerprint_jobs: Some(parallelism.limit()),
         max_executions: options.max_executions,
         executions_started: 0,
-        wait_timeout_ms: Some(Duration::from_millis(u64::from(wait_timeout_ms))),
+        wait_timeout_ms: None,
         wait_timed_out: false,
         reuse_only: options.reuse_only.clone(),
         recursive: options.recursive,
@@ -183,7 +149,7 @@ pub async fn verify(
         stopped_backends: Vec::new(),
         evidence: BTreeMap::new(),
     };
-    let mut requests: Vec<_> = evals
+    let requests: Vec<_> = evals
         .iter()
         .enumerate()
         .map(|(ordinal, eval)| Request {
@@ -220,14 +186,9 @@ pub async fn verify(
                     eval.declaration.profile(),
                     crate::config::Profile::Dependency { .. }
                 ),
-            fingerprint: fingerprints
-                .get(&eval.target)
-                .map(|fingerprint| fingerprint.value.clone()),
-            key: keys.get(&eval.id).map(|key| key.value.clone()),
-            fingerprints: keys
-                .get(&eval.id)
-                .map(|key| key.fingerprints.clone())
-                .unwrap_or_default(),
+            fingerprint: None,
+            key: None,
+            fingerprints: Default::default(),
             created_at: run.created_at,
             started_at: None,
             cwd: config.root.join(config.artifacts[&eval.target].folder()),
@@ -239,15 +200,127 @@ pub async fn verify(
             blocked_by: Vec::new(),
         })
         .collect();
-    receipts.create_run(&run, &requests).await?;
-    if options.announce_run {
-        use std::io::Write;
-        let _ = writeln!(
-            std::io::stderr().lock(),
-            "Started {} (follow: artifactize monitor)",
-            run.id
-        );
+    let id = receipts.reserve(&run, &requests).await?;
+    let accepted = id == run.id;
+    if !accepted {
+        let _ = std::fs::remove_dir(run.state_dir.join("runs").join(run.id.as_str()));
     }
+    Ok((id, accepted))
+}
+/// Execute exactly the admitted Run. Never reserve a second Run or substitute changed declarations.
+pub(crate) async fn execute(
+    mut run: Run,
+    cancellation: CancellationToken,
+) -> Result<RunView, String> {
+    let selection = &run.selection.clone();
+    let options = &VerifyOptions {
+        modes: run.modes.clone(),
+        jobs: run.jobs,
+        fingerprint_jobs: run.fingerprint_jobs,
+        max_executions: run.max_executions,
+        reuse_only: run.reuse_only.clone(),
+        profile: run.profile.clone(),
+        recursive: run.recursive,
+        force: run.force,
+        ignore_gates: Some(run.ignore_gates),
+    };
+    let repo = &run.repo_path;
+    let state_dir = Some(run.state_dir.as_path());
+    if options.jobs == 0 {
+        return Err("jobs must be at least 1.".into());
+    }
+    let parallelism = super::fingerprint_parallelism(options)?;
+    let config = crate::config::read_workspace_declarations(repo)
+        .map_err(|e| format!("INPUT_CHANGED: {e}"))?;
+    let config = Arc::new(
+        select_profiles(
+            config,
+            selection,
+            options.profile.as_ref(),
+            options.recursive,
+        )
+        .map_err(|error| format!("INPUT_CHANGED: {error}"))?,
+    );
+    let ignore_gates = options.ignore_gates.unwrap_or_else(|| {
+        config
+            .artifacts
+            .values()
+            .find(|artifact| artifact.path.as_os_str().is_empty())
+            .and_then(|artifact| artifact.review_policy.as_ref())
+            .is_some_and(|policy| matches!(policy.dependency_gates, Some(DependencyGates::Ignore)))
+    });
+    let graph = Graph::new(&config).map_err(|e| format!("INPUT_CHANGED: {e}"))?;
+    let selected = selection
+        .resolve(&config)
+        .map_err(|e| format!("INPUT_CHANGED: {e}"))?;
+    let required: BTreeSet<_> = graph
+        .dependency_closure(&selected.roots)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .collect();
+    let evals = selection.included_evals(&config, options.recursive)?;
+    let definitions =
+        store::definitions::Definitions::from_view(&crate::query::graph(&config, selection)?)
+            .map_err(|error| error.to_string())?;
+    let state = store::state_dir(state_dir)?;
+    let limits = crate::limits::Limits::read(&state)?;
+    let receipts = Receipts::open(&state, &config.root).await?;
+    let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
+        .map_err(|e| e.to_string())?;
+    if serde_json::to_string(&definitions).map_err(|e| e.to_string())?
+        != serde_json::to_string(&run.definitions).map_err(|e| e.to_string())?
+    {
+        return Err("INPUT_CHANGED: declarations changed after acceptance.".into());
+    }
+    let fingerprints = cache::prepare(
+        &config,
+        cache::fingerprint_targets(&config, &required),
+        &runs,
+        &parallelism,
+        cancellation.clone(),
+    )
+    .await?;
+    if cancellation.is_cancelled() {
+        return Err("Project preparation was cancelled.".into());
+    }
+    let keys = cache::eval_keys(&config, &fingerprints);
+    // The store is asked once for every key, and a record that completed after the local
+    // latest is mirrored into the local history before the Run claims anything. A forced Run
+    // reads nothing from the store, but publishes its results like any other.
+    let remote = Session::open(Some(&state), Some(&config.root))?;
+    // Results from a fake provider must never reach the shared review store.
+    if remote.is_some()
+        && let Some(variable) = crate::llm::active_test_endpoint()
+    {
+        return Err(format!(
+            "{variable} points Agent reviews at a local test endpoint; set ARTIFACTIZE_REMOTE=off so their results stay out of the review store."
+        ));
+    }
+    if let Some(remote) = &remote
+        && !options.force
+    {
+        remote
+            .refresh(
+                &receipts,
+                keys.values().map(|key| key.value.clone()).collect(),
+            )
+            .await?;
+    }
+    unchanged_declarations(repo, selection, options, &run.definitions)?;
+    let mut requests: Vec<_> = store::read_run(&state, &run.id).await?.requests;
+    for request in &mut requests {
+        request.fingerprint = fingerprints
+            .get(&request.target)
+            .map(|fingerprint| fingerprint.value.clone());
+        request.key = keys.get(&request.eval_id).map(|key| key.value.clone());
+        request.fingerprints = keys
+            .get(&request.eval_id)
+            .map(|key| key.fingerprints.clone())
+            .unwrap_or_default();
+        receipts.save_request(request).await?;
+    }
+    run.control.as_mut().expect("owned Run").activity = crate::runs::Activity::Executing;
+    receipts.save_run(&run).await?;
     let mut evidence = match broker::schedule(
         config.clone(),
         &graph,
@@ -265,12 +338,6 @@ pub async fn verify(
     {
         Ok(evidence) => evidence,
         Err(error) => {
-            // A failing Run, for example on a rejected remote token, does not stay RUNNING.
-            run.state = crate::store::RunState::Error {
-                at: now(),
-                error: Some(error.clone()),
-            };
-            let _ = receipts.save_run(&run).await;
             return Err(error);
         }
     };
@@ -284,7 +351,8 @@ pub async fn verify(
             continue;
         }
         if evidence.contains_key(request.eval_id.as_str())
-            || request.status() == crate::types::RequestStatus::WaitingHuman
+            || (request.status() == crate::types::RequestStatus::WaitingHuman
+                && !cancellation.is_cancelled())
         {
             continue;
         }
@@ -305,19 +373,7 @@ pub async fn verify(
                 crate::store::RequestState::pending(status(eval.status), request.completed_at())
                     .expect("non-executed request state");
             request.queue = None;
-            request.blocked_reason = Some(format!(
-                "{}: {}",
-                if eval.status == EvalStatus::Blocked {
-                    "Dependency verdict RED"
-                } else {
-                    "Waiting for current GREEN dependency evidence"
-                },
-                eval.unmet_gates
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            request.blocked_reason = Some(gate_reason(eval));
         }
     }
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
@@ -342,13 +398,6 @@ pub async fn verify(
         crate::store::RunState::Error {
             at,
             error: Some("Run was cancelled.".into()),
-        }
-    } else if run.wait_timed_out {
-        crate::store::RunState::Incomplete {
-            at,
-            error: Some(
-                "Human wait timed out; pending requests remain available for submission.".into(),
-            ),
         }
     } else if budget_exhausted {
         crate::store::RunState::Incomplete {
@@ -379,6 +428,10 @@ pub async fn verify(
     } else {
         crate::store::RunState::Incomplete { at, error: None }
     };
+    if cancellation.is_cancelled() {
+        run.control.as_mut().expect("owned Run").failure_code =
+            Some(crate::types::FailureCode::Cancelled);
+    }
     run.validation = serde_json::from_value(json!({
         "selection":run.selection,
         "recursive":run.recursive,
@@ -426,6 +479,11 @@ pub async fn verify(
             .collect::<Vec<_>>(),
     }))
     .expect("generated validation snapshot");
+    if cancellation.is_cancelled() {
+        receipts
+            .retire_worker(&run.id, crate::types::FailureCode::Cancelled)
+            .await?;
+    }
     receipts.finish(&run, &requests).await?;
     // Saved Agent conversations past their size bound are collected; a failure only warns.
     let state = run.state_dir.clone();
@@ -456,4 +514,50 @@ pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {
         EvalStatus::Wait => crate::types::RequestStatus::WaitDependency,
         EvalStatus::Blocked => crate::types::RequestStatus::Blocked,
     }
+}
+
+/// The same gate explanation is saved during scheduling and at Run settlement.
+pub(crate) fn gate_reason(eval: &crate::graph::EvalEvaluation<'_>) -> String {
+    format!(
+        "{}: {}",
+        if eval.status == EvalStatus::Blocked {
+            "Dependency verdict RED"
+        } else {
+            "Waiting for current GREEN dependency evidence"
+        },
+        eval.unmet_gates
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// Fingerprints and remote I/O can take time; check the accepted declarations again at the
+/// execution boundary instead of silently applying a different live selection or profile.
+fn unchanged_declarations(
+    repo: &Path,
+    selection: &Selection,
+    options: &VerifyOptions,
+    saved: &store::definitions::Definitions,
+) -> Result<(), String> {
+    let check = || -> Result<(), String> {
+        let config = crate::config::read_workspace_declarations(repo).map_err(|e| e.to_string())?;
+        let config = select_profiles(
+            config,
+            selection,
+            options.profile.as_ref(),
+            options.recursive,
+        )?;
+        let current =
+            store::definitions::Definitions::from_view(&crate::query::graph(&config, selection)?)
+                .map_err(|e| e.to_string())?;
+        if serde_json::to_string(&current).map_err(|e| e.to_string())?
+            != serde_json::to_string(saved).map_err(|e| e.to_string())?
+        {
+            return Err("declarations changed after acceptance.".into());
+        }
+        Ok(())
+    };
+    check().map_err(|error| format!("INPUT_CHANGED: {error}"))
 }

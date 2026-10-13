@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
     let mut command = Command::new(support::os::cli());
@@ -24,7 +25,7 @@ fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
     if json_output {
         command.arg("--json");
     }
-    let output = command.output().unwrap();
+    let output = command.record_output().unwrap();
     assert!(
         matches!(output.status.code(), Some(0..=2)),
         "{}",
@@ -322,7 +323,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         .arg("--state-dir")
         .arg(&state)
         .args(["run", "show", bad.run.id.as_str(), "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(!shown.status.success());
     let error = format!(
@@ -341,7 +342,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         .arg("--state-dir")
         .arg(&state)
         .args(["prune", "--dry-run", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         pruned.status.success(),

@@ -2,6 +2,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
@@ -70,6 +71,7 @@ impl Project {
             .arg("--state-dir")
             .arg(&self.state)
             .arg("verify")
+            .arg("--wait")
             .args(args)
             .env("ARTIFACTIZE_REMOTE", "off")
             .env("OPENAI_API_KEY", "fake-openai-key")
@@ -82,7 +84,7 @@ impl Project {
         if json {
             command.arg("--json");
         }
-        command.output().unwrap()
+        command.record_output().unwrap()
     }
 
     fn run(&self, provider: &FakeProvider, args: &[&str], code: i32) -> Value {
@@ -368,11 +370,11 @@ fn failures_carry_specific_error_codes() {
         .arg(&project.repo)
         .arg("--state-dir")
         .arg(&project.state)
-        .args(["verify", "--all", "--force", "--json"])
+        .args(["verify", "--wait", "--all", "--force", "--json"])
         .env("ARTIFACTIZE_REMOTE", "off")
         .env("ARTIFACTIZE_OPENAI_BASE_URL", invalid.openai_base())
         .env_remove("OPENAI_API_KEY")
-        .output()
+        .record_output()
         .unwrap();
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(request(&run, "notes/review")["errorCode"], "AUTHENTICATION");
@@ -435,7 +437,7 @@ fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
         .arg("--state-dir")
         .arg(&project.state)
         .args(["run", "show", run["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     let shown: Value = serde_json::from_slice(&shown.stdout).unwrap();
     assert_eq!(shown["stoppedBackends"], run["stoppedBackends"]);
@@ -518,7 +520,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         .arg(&project.repo)
         .arg("--state-dir")
         .arg(&project.state)
-        .args(["verify", "--all", "--jobs", "3", "--json"])
+        .args(["verify", "--wait", "--all", "--jobs", "3", "--json"])
         .env("ARTIFACTIZE_REMOTE", "off")
         .env("OPENAI_API_KEY", "fake-openai-key")
         .env("ANTHROPIC_API_KEY", "fake-anthropic-key")

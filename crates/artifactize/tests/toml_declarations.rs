@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 const FEATURES: &str = r#"
 name = "app"
@@ -289,7 +290,7 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
         .arg("--repo")
         .arg(root.path())
         .args(["config", "graph", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
@@ -420,7 +421,7 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
         .arg("--repo")
         .arg(root.path())
         .args(["config", "graph", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
@@ -444,7 +445,7 @@ fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
             .arg("--repo")
             .arg(root.path())
             .args(["config", "graph", "--json"])
-            .output()
+            .record_output()
             .unwrap()
     };
     let ignored = run_graph();

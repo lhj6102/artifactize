@@ -151,6 +151,13 @@ impl Subscription {
         let _ = registered.await;
         subscription
     }
+    /// Process-owner death has no database writer; reuse the subscription's reconciliation
+    /// cadence when an observer also owns liveness reconciliation.
+    pub async fn next_reconciled(&mut self) -> Change {
+        tokio::time::timeout(RECONCILE, self.next_state())
+            .await
+            .unwrap_or(Change::Resync)
+    }
     pub async fn next(&mut self) -> Change {
         self.inbox.next().await
     }

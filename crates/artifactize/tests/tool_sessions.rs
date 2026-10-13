@@ -1,6 +1,7 @@
 //! Tool-session seams through real CLI reviews and the offline provider.
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use serde_json::{Value, json};
 use std::{
@@ -68,7 +69,7 @@ impl Fixture {
         command
     }
     fn json(&self, args: &[&str], code: i32) -> Value {
-        let output = self.command(args).output().unwrap();
+        let output = self.command(args).record_output().unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -136,7 +137,7 @@ fn start_failure_never_calls_provider_and_stops_sessions_already_started() {
                 definition["views"]["agent_tools"]["z_second"] = tool;
             });
         }
-        let run = fixture.json(&["verify", "--all"], 2);
+        let run = fixture.json(&["verify", "--wait", "--all"], 2);
         assert_eq!(
             run["requests"][0]["errorCode"], "PREPARATION_FAILED",
             "{run}"
@@ -150,7 +151,7 @@ fn start_failure_never_calls_provider_and_stops_sessions_already_started() {
 fn two_calls_share_one_started_session_and_cleanup_precedes_green_publication() {
     for action in ["act", "plain"] {
         let fixture = Fixture::new("start", "fail-stop", action, 2);
-        let run = fixture.json(&["verify", "--all"], 0);
+        let run = fixture.json(&["verify", "--wait", "--all"], 0);
         assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
         harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
         let requests = fixture.provider.requests();
@@ -171,7 +172,7 @@ fn two_calls_share_one_started_session_and_cleanup_precedes_green_publication() 
         for key in ["app_app.start", "app_app.stop"] {
             assert_eq!(pins[key]["harness.py"].as_str().unwrap().len(), 64);
         }
-        let reused = fixture.json(&["verify", "--all"], 0);
+        let reused = fixture.json(&["verify", "--wait", "--all"], 0);
         assert_eq!(reused["executionsStarted"], 0);
         assert_eq!(
             reused["requests"][0]["provenance"],
@@ -184,7 +185,7 @@ fn two_calls_share_one_started_session_and_cleanup_precedes_green_publication() 
 #[test]
 fn session_commands_share_the_session_directory_and_run_in_the_authors_home() {
     let fixture = Fixture::new("start", "stop", "act", 1);
-    let run = fixture.json(&["verify", "--all"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
     let home = fixture.root.path().join("home");
     let start = harness::records(&fixture.log(), "start").pop().unwrap();
@@ -215,7 +216,7 @@ fn execute_diagnostic_and_follow_up_get_their_own_sessions() {
     );
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
     assert!(fixture.provider.requests().is_empty());
-    let run = fixture.json(&["verify", "--all"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 2);
     let id = run["requests"][0]["id"].as_str().unwrap();
     let calls = AtomicUsize::new(0);
@@ -258,7 +259,7 @@ fn concurrent_reviews_have_distinct_sessions_and_both_cleanup() {
             openai::usage(10, 5),
         )
     });
-    let run = fixture.json(&["verify", "--all", "--jobs", "2"], 0);
+    let run = fixture.json(&["verify", "--wait", "--all", "--jobs", "2"], 0);
     assert_eq!(run["executionsStarted"], 2, "{run}");
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 2);
     let starts = harness::records(&fixture.log(), "start");
@@ -269,7 +270,7 @@ fn concurrent_reviews_have_distinct_sessions_and_both_cleanup() {
 fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
     let fixture = Fixture::new("start", "stop", "crash", 2);
     let mut child = fixture
-        .command(&["verify", "--all"])
+        .command(&["verify", "--wait", "--all"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -467,7 +468,7 @@ fn red_reviews_stop_and_cleanup_before_the_result_is_published() {
             openai::usage(10, 5),
         )
     });
-    let run = fixture.json(&["verify", "--all"], 1);
+    let run = fixture.json(&["verify", "--wait", "--all"], 1);
     assert_eq!(run["requests"][0]["status"], "RED", "{run}");
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
 }
@@ -487,7 +488,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
         )
     });
     let owner = fixture
-        .command(&["verify", "--all"])
+        .command(&["verify", "--wait", "--all"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -527,7 +528,7 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
         openai::completed(request, vec![content], openai::usage(10, 5))
     });
     let owner = fixture
-        .command(&["verify", "--all"])
+        .command(&["verify", "--wait", "--all"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -696,7 +697,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
         openai::completed(request, vec![content], openai::usage(10, 5))
     });
     let owner = fixture
-        .command(&["verify", "--all"])
+        .command(&["verify", "--wait", "--all"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

@@ -1,5 +1,6 @@
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use artifactize_core::{cache, config::read_workspace_config, tools};
 use serde_json::{Value, json};
@@ -63,7 +64,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
     );
     let output = command(&repo, &state)
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     for (audience, invalid) in [
@@ -110,7 +111,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
         support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
         let output = command(&repo, &state)
             .args(["config", "check", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         let report = parsed(output, 2);
         let error = report["error"].as_str().unwrap();
@@ -229,7 +230,7 @@ fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
         let report = parsed(
             command(&repo, &state)
                 .args(["config", "check", "--json"])
-                .output()
+                .record_output()
                 .unwrap(),
             2,
         );
@@ -340,16 +341,16 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     support::os::make_executable(&stub);
     let run = parsed(
         command(&repo, &state)
-            .args(["verify", "--all", "--timeout-ms", "1", "--json"])
-            .output()
+            .args(["verify", "--all", "--json"])
+            .record_output()
             .unwrap(),
-        3,
+        0,
     );
     let id = run["requests"][0]["id"].as_str().unwrap();
     parsed(
         command(&repo, &state)
             .args(["request", "claim", id, "--json"])
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -362,7 +363,7 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     ] {
         let output = command(&repo, &state)
             .args(["request", "tool", id, name])
-            .output()
+            .record_output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
         let text = String::from_utf8(output.stdout).unwrap();
@@ -391,16 +392,16 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     support::os::recording_program(&bin, support::os::OPENER);
     let run = parsed(
         command(&repo, &state)
-            .args(["verify", "--all", "--timeout-ms", "1", "--json"])
-            .output()
+            .args(["verify", "--all", "--json"])
+            .record_output()
             .unwrap(),
-        3,
+        0,
     );
     let id = run["requests"][0]["id"].as_str().unwrap();
     parsed(
         command(&repo, &state)
             .args(["request", "claim", id, "--json"])
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -409,7 +410,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
         .env("PATH", bin)
         .env(support::os::RECORD, &record)
         .args(["request", "tool", id, "open_a", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     let result = parsed(output, 0);
     assert_eq!(result["content"][0]["launched"], true);

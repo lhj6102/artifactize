@@ -11,6 +11,7 @@ use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     root: TempDir,
@@ -41,7 +42,7 @@ impl Fixture {
     }
 
     fn output(&self, args: &[&str], code: i32) -> Output {
-        let output = self.command().args(args).output().unwrap();
+        let output = self.command().args(args).record_output().unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -119,7 +120,7 @@ fn runtime_status_separates_current_validation_from_saved_attempts() {
     assert_eq!(basis["satisfied"], true);
     assert_eq!(basis["obligations"], json!([]));
 
-    let run = fixture.json(&["verify", "--all"], 2);
+    let run = fixture.json(&["verify", "--wait", "--all"], 2);
     let view = fixture.json(&["status"], 1);
     assert_eq!(view["satisfied"], false);
     assert_eq!(view["counts"]["reuse"], 0);
@@ -141,7 +142,7 @@ fn runtime_status_separates_current_validation_from_saved_attempts() {
         assert_eq!(eval["state"], state);
         assert_eq!(eval["action"], action);
     }
-    let rerun = fixture.json(&["verify", "green"], 0);
+    let rerun = fixture.json(&["verify", "--wait", "green"], 0);
     assert_eq!(rerun["validation"]["satisfied"], true);
     let later = fixture.json(&["status"], 1);
     assert_eq!(
@@ -353,15 +354,15 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
 #[test]
 fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
     let fixture = Fixture::new("runtime");
-    let first = fixture.json(&["verify", "green"], 0);
+    let first = fixture.json(&["verify", "--wait", "green"], 0);
     let other = fixture.root.path().join("other");
     copy_directory(&fixture.repo, &other);
     let output = fixture
         .command()
         .arg("--json")
-        .args(["verify", "red"])
+        .args(["verify", "--wait", "red"])
         .current_dir(&other)
-        .output()
+        .record_output()
         .unwrap();
     // --repo, not cwd, owns the stored audit.
     assert_eq!(output.status.code(), Some(1));
@@ -371,7 +372,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
         .arg("--state-dir")
         .arg(&fixture.state)
         .args(["status", "green", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(other_status.status.code(), Some(1));
     let other_status: Value = serde_json::from_slice(&other_status.stdout).unwrap();
@@ -416,7 +417,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
         .arg("--state-dir")
         .arg(link)
         .args(["status", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stdout).contains("outside the reviewed repository"));

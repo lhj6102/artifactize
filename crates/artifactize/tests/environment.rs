@@ -4,6 +4,7 @@
 //! directory that goes with it.
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use serde_json::{Value, json};
 use std::{fs, path::Path, process::Command};
@@ -65,7 +66,7 @@ impl Project {
             .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-commands")
             .env("AUTHOR_VARIABLE", "from-the-terminal")
             .envs(support::os::home_variables(self.home()))
-            .output()
+            .record_output()
             .unwrap()
     }
 
@@ -99,7 +100,7 @@ fn a_runtime_eval_runs_in_the_authors_environment_and_its_tmp_goes_with_the_run(
             }],
         })
     });
-    check_succeeded(&project.run(&["verify", "--all", "--json"]));
+    check_succeeded(&project.run(&["verify", "--wait", "--all", "--json"]));
     // The private temporary directory was removed when the run ended.
     assert!(!project.seen_tmp("eval").exists());
 }

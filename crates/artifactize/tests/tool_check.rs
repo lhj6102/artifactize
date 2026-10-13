@@ -10,6 +10,7 @@ use support::os::echo_program;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use support::os::TOOL;
 
@@ -100,7 +101,7 @@ fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
         .args(args)
         .env("TOOL_CHECK_SECRET", "real-environment")
         .envs(support::os::home_variables(support::os::human_tool_home()))
-        .output()
+        .record_output()
         .unwrap()
 }
 

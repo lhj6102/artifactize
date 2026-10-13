@@ -1,0 +1,191 @@
+//! Internal admission gate, execution and identity-checked dead-worker settlement.
+use super::{Context, Worker};
+use crate::{
+    process,
+    store::{self, Receipts, RunView},
+    types::{FailureCode, RequestStatus, RunId, RunStatus},
+};
+use tokio_util::sync::CancellationToken;
+/// Bound only the internal handoff, not a verification's lifetime.
+const ADMISSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> {
+    let mut changes = crate::changes::Subscription::new(&context.state).await;
+    let identity = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
+    let admitted = async {
+        loop {
+            let run = store::read_run(&context.state, id).await?.run;
+            if run.status() != RunStatus::Running {
+                return Err("Run already settled before admission.".into());
+            }
+            match run.control.as_ref().map(|control| control.worker) {
+                Some(Worker::Admitted { owner }) if owner == identity => {
+                    return Ok::<_, String>(run);
+                }
+                Some(Worker::Starting { launcher })
+                | Some(Worker::Admitted { owner: launcher })
+                    if process::is_alive(Some(launcher)).map_err(|e| e.to_string())? =>
+                {
+                    changes.next_reconciled().await;
+                }
+                _ => return Err("Run worker identity was not admitted.".into()),
+            }
+        }
+    };
+    tokio::time::timeout(ADMISSION_TIMEOUT, admitted)
+        .await
+        .map_err(|_| "Run admission expired.".to_owned())?
+}
+
+/// A separate artifactize supervisor settles an executor crash even with no observers.
+pub(crate) async fn supervise(context: &Context, id: &RunId) -> Result<(), String> {
+    let run = admission(context, id).await?;
+    let receipts = Receipts::open(&context.state, &context.repo).await?;
+    let supervisor = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
+    let (owner, mut child) = match process::spawn_run(
+        &context.executable,
+        id,
+        &context.repo,
+        &context.state,
+        process::RunEntry::Executor,
+    ) {
+        Ok(child) => child,
+        Err(error) => {
+            return fail(&receipts, id, FailureCode::SpawnFailed, error.to_string()).await;
+        }
+    };
+    let handed = receipts
+        .control(id, move |run| {
+            let control = run.control.as_mut().ok_or("Run has no worker control.")?;
+            if !matches!(control.worker, Worker::Admitted { owner } if owner == supervisor) {
+                return Err("Run supervision identity changed.".into());
+            }
+            control.worker = Worker::Admitted { owner };
+            Ok(())
+        })
+        .await;
+    if let Err(error) = handed {
+        fail(&receipts, id, FailureCode::SpawnFailed, error).await?;
+    }
+    child.wait().await.map_err(|e| e.to_string())?;
+    let view = store::read_run(&context.state, &run.id).await?;
+    if view.run.status() == RunStatus::Running {
+        recover(&context.state, &view).await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn execute(context: &Context, id: &RunId) -> Result<(), String> {
+    let run = admission(context, id).await?;
+    let mut changes = crate::changes::Subscription::new(&context.state).await;
+    let receipts = Receipts::open(&context.state, &context.repo).await?;
+    let cancellation = CancellationToken::new();
+    if run
+        .control
+        .as_ref()
+        .is_some_and(|control| control.cancellation_requested)
+    {
+        cancellation.cancel();
+    }
+    let observing = async {
+        loop {
+            let view = store::read_run(&context.state, id).await?;
+            if view
+                .run
+                .control
+                .as_ref()
+                .is_some_and(|control| control.cancellation_requested)
+            {
+                cancellation.cancel();
+                return Ok::<(), String>(());
+            }
+            changes.next_reconciled().await;
+        }
+    };
+    tokio::pin!(observing);
+    let execution = crate::project::verify::execute(run, cancellation.clone());
+    tokio::pin!(execution);
+    let result = tokio::select! {
+        result = &mut execution => result,
+        result = &mut observing => {
+            if let Err(error) = result { cancellation.cancel(); let _ = execution.await; return fail(&receipts, id, FailureCode::PreparationFailed, error).await; }
+            execution.await
+        }
+    };
+    match result {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            let code = if cancellation.is_cancelled() {
+                FailureCode::Cancelled
+            } else if error.starts_with("INPUT_CHANGED:") {
+                FailureCode::InputChanged
+            } else {
+                FailureCode::PreparationFailed
+            };
+            fail(&receipts, id, code, error).await
+        }
+    }
+}
+
+pub(super) async fn fail(
+    receipts: &Receipts,
+    id: &RunId,
+    code: FailureCode,
+    error: String,
+) -> Result<(), String> {
+    receipts.fail_run(id, code, error).await
+}
+
+pub(super) async fn recover(state: &std::path::Path, view: &RunView) -> Result<(), String> {
+    if let Some(super::Control {
+        worker: Worker::Admitted { owner },
+        ..
+    }) = &view.run.control
+    {
+        crate::platform::kill_saved_session(*owner).map_err(|e| e.to_string())?;
+    }
+    // Joined requests never confer ownership of another Run's child.
+    for request in &view.requests {
+        if !request.joined
+            && let Some(child) = &request.child
+        {
+            crate::platform::kill_saved_group(process::ChildIdentity {
+                pid: child.pid,
+                start_time: child.start_time,
+            })
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    crate::tools::sessions::recover(state).map_err(|e| e.to_string())?;
+    let receipts = Receipts::open(state, &view.run.repo_path).await?;
+    receipts
+        .retire_worker(&view.run.id, FailureCode::OwnerDied)
+        .await?;
+    let mut run = view.run.clone();
+    run.state = store::RunState::Error {
+        at: crate::broker::now(),
+        error: Some("Run worker died; interrupted work is not replayed.".into()),
+    };
+    if let Some(control) = &mut run.control {
+        control.failure_code = Some(FailureCode::OwnerDied);
+    }
+    let requests: Vec<_> = view
+        .requests
+        .iter()
+        .map(|view| {
+            let mut request = view.clone();
+            if !matches!(
+                request.status(),
+                RequestStatus::Green | RequestStatus::Red | RequestStatus::Error
+            ) {
+                request.state = store::RequestState::failed(
+                    "Run worker died.".into(),
+                    Some(FailureCode::OwnerDied),
+                    crate::broker::now(),
+                );
+            }
+            request
+        })
+        .collect();
+    receipts.finish(&run, &requests).await
+}

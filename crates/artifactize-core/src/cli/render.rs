@@ -358,9 +358,6 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
 
 /// Run outcome exit codes shared by `verify` and `run show --wait`.
 pub(super) fn outcome_code(run: &crate::store::Run) -> u8 {
-    if run.wait_timed_out {
-        return WAIT_TIMEOUT_EXIT;
-    }
     match run.status() {
         crate::types::RunStatus::Green => 0,
         crate::types::RunStatus::Red => 1,

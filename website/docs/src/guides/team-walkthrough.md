@@ -33,7 +33,7 @@ tunnel in front, because clients accept plain HTTP only on loopback.
 cd "$WALK/alice"
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
 artifactize remote login http://127.0.0.1:8417/   # paste alice-laptop's token; input is hidden when supported
-artifactize verify --all
+artifactize verify --all --wait
 ```
 
 ```text
@@ -57,7 +57,7 @@ cd "$WALK/bob"
 export ARTIFACTIZE_STATE_HOME="$WALK/state-bob"
 artifactize remote login http://127.0.0.1:8417/   # bob-laptop's token
 artifactize status | tail -1
-artifactize verify --all
+artifactize verify --all --wait
 ```
 
 ```text
@@ -78,7 +78,7 @@ changing anything. `verify` mirrored the three records into Bob's local cache:
 
 ```sh
 printf 'Nothing unchanged is reviewed twice.\n' >> guide/usage/page.md
-ARTIFACTIZE_REMOTE=off artifactize verify --all
+ARTIFACTIZE_REMOTE=off artifactize verify --all --wait
 artifactize remote push --dry-run
 artifactize remote push
 ```
@@ -109,7 +109,7 @@ cp -r "$WALK/bob" "$WALK/ci" && cd "$WALK/ci"
 ARTIFACTIZE_STATE_HOME="$WALK/state-ci" \
 ARTIFACTIZE_REMOTE=http://127.0.0.1:8417/ \
 ARTIFACTIZE_REMOTE_TOKEN="$CI_TOKEN" \
-artifactize verify --all --reuse-only agent,human
+artifactize verify --all --wait --reuse-only agent,human
 ```
 
 ```text
@@ -149,21 +149,22 @@ TOML
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 
-Alice's `verify` records the request and waits for it. In a second terminal, in
-the same directory and with the same `ARTIFACTIZE_STATE_HOME`, she claims it and
+Alice's `verify --wait` submits a Run, which records the request, and follows it in
+the foreground. In a second terminal, in the same directory and with the same
+`ARTIFACTIZE_STATE_HOME`, she claims it and
 signs off. Her token has the `human` scope, so `request submit` publishes the
-sign-off, and her `verify` finishes GREEN:
+sign-off, and her `verify --wait` finishes GREEN:
 
 ```sh
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
-artifactize verify --all                    # WAITING_HUMAN; waits for the sign-off
+artifactize verify --all --wait                    # WAITING_HUMAN; waits for the sign-off
 # In the second terminal:
 artifactize request list                    # shows REQUEST_ID
 artifactize request claim REQUEST_ID
 artifactize request submit REQUEST_ID --verdict GREEN
 ```
 
-In `$WALK/brand-bob`, with Bob's state, `verify --all` now reuses the sign-off
+In `$WALK/brand-bob`, with Bob's state, `verify --all --wait` now reuses the sign-off
 (so would CI with `--reuse-only agent,human`), and the output names both the
 reviewer and the authenticated publisher:
 
@@ -172,8 +173,9 @@ reviewer and the authenticated publisher:
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 1 (runtime 0, agent 0, human 1)
 ```
 
-Had Bob run `verify --all` first, his `verify` would have waited, and his request
-would settle as soon as Alice's sign-off reached the store. Bob's own token lacks `human`, so a
-sign-off he submits stays local, with a warning.
+Had Bob run `verify --all --wait` first, his `verify --wait` would have followed the
+waiting Run, and his request would settle as soon as Alice's sign-off reached the
+store. Bob's own token lacks `human`, so a sign-off he submits stays local, with a
+warning.
 
 To clean up, stop the server and `rm -rf "$WALK"`.

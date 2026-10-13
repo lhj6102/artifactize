@@ -136,8 +136,8 @@ impl Fixture {
 
     /// Two finished alpha Runs; the second reuses the fingerprint-cached results of the first.
     fn seed(&self) -> (String, String) {
-        let first = self.json(&self.alpha, &["verify", "--all"], 1);
-        let second = self.json(&self.alpha, &["verify", "--all"], 1);
+        let first = self.json(&self.alpha, &["verify", "--wait", "--all"], 1);
+        let second = self.json(&self.alpha, &["verify", "--wait", "--all"], 1);
         (
             first["id"].as_str().unwrap().into(),
             second["id"].as_str().unwrap().into(),
@@ -176,12 +176,11 @@ fn finish(child: Child) -> std::process::Output {
 async fn live_verify_progress_and_runs_across_repositories() {
     let fixture = Fixture::new();
     let (_, second) = fixture.seed();
-    let child = support::os::start(fixture.command(&fixture.beta).args([
-        "verify",
-        "--all",
-        "--timeout-ms",
-        "30000",
-    ]));
+    let child = support::os::start(
+        fixture
+            .command(&fixture.beta)
+            .args(["verify", "--wait", "--all"]),
+    );
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     let (live, human) = loop {
         let runs = store::read_runs(&fixture.state, Some(&fixture.beta), 10, 0)
@@ -597,6 +596,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
                 .arg("--state-dir")
                 .arg(&state)
                 .arg("verify")
+                .arg("--wait")
                 .args(args)
                 .arg("--json"),
         );

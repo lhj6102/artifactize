@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use support::os::{link_dir, remove_link_dir as remove_link, true_program};
 
@@ -15,7 +16,7 @@ fn command(state: &Path) -> Command {
 }
 
 fn result(command: &mut Command, code: i32) -> Value {
-    let output = command.output().unwrap();
+    let output = command.record_output().unwrap();
     assert_eq!(
         output.status.code(),
         Some(code),
@@ -54,12 +55,12 @@ fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
         .to_string(),
     )
     .unwrap();
-    // A Human request is recorded and left waiting: the wait times out at once.
+    // A Human request is recorded and observed while the owned Run remains waiting.
     result(
         command(state)
             .arg("--repo")
             .arg(repo)
-            .args(["verify", "--all", "--timeout-ms", "1"]),
+            .args(["verify", "--all"]),
         code,
     )
 }
@@ -261,7 +262,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     let finished = runtime_run(&state, &repo);
-    let waiting = verify(&state, &repo, json!({"kind":"human"}), 3);
+    let waiting = verify(&state, &repo, json!({"kind":"human"}), 0);
     let active = runtime_run(&state, &repo);
     let owned = runtime_run(&state, &repo);
     let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();
@@ -488,7 +489,7 @@ fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces()
             .arg("--state-dir")
             .arg(&state)
             .args(["remote", "logout", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2), "{marker}: {output:?}");
         let error: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -560,7 +561,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
             .args(args);
         result(&mut command, code)
     };
-    let run = invoke(&["verify", "--all"], 0);
+    let run = invoke(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["status"], "GREEN");
     assert_eq!(
         run["stateDir"],

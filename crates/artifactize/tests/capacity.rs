@@ -3,6 +3,7 @@
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
@@ -105,11 +106,14 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        self.command(repo, &[&["verify", "--all", "--json"][..], args].concat())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
+        self.command(
+            repo,
+            &[&["verify", "--wait", "--all", "--json"][..], args].concat(),
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
     }
 
     fn database(&self) -> Connection {
@@ -285,8 +289,8 @@ fn invalid_limits_fail_verify_and_doctor_before_any_run() {
     ] {
         fixture.limits(limits);
         let output = fixture
-            .command(&repo, &["verify", "--all"])
-            .output()
+            .command(&repo, &["verify", "--wait", "--all"])
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -296,7 +300,7 @@ fn invalid_limits_fail_verify_and_doctor_before_any_run() {
         );
         let doctor = fixture
             .command(&repo, &["doctor", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(doctor.status.code(), Some(1));
         let report: Value = serde_json::from_slice(&doctor.stdout).unwrap();
@@ -312,7 +316,7 @@ fn invalid_limits_fail_verify_and_doctor_before_any_run() {
     fixture.limits(json!({"backends":{"codex":4,"openai":8}}));
     let doctor = fixture
         .command(&repo, &["doctor", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     let report: Value = serde_json::from_slice(&doctor.stdout).unwrap();
     let check = report["checks"]

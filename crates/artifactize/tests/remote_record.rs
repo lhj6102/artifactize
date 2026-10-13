@@ -1,8 +1,8 @@
-use std::{fs, path::Path, process::Command, time::Duration};
+use std::{fs, path::Path, process::Command};
 
 use artifactize_core::{
     cache, human,
-    project::{self, VerifyOptions, selection::Selection},
+    project::{VerifyOptions, selection::Selection},
     remote::Record,
     store::Receipts,
 };
@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn cli(state: &Path, args: &[&str]) -> Value {
     let output = Command::new(support::os::cli())
@@ -20,7 +21,7 @@ fn cli(state: &Path, args: &[&str]) -> Value {
         .arg(state)
         .args(args)
         .arg("--json")
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -64,13 +65,12 @@ fn write_repo(repo: &Path, profile: Value) {
 }
 
 async fn verify(repo: &Path, state: &Path) -> artifactize_core::store::RunView {
-    project::verify(
+    support::runs::record(
         repo,
         Some(state),
         &Selection::All,
         // A Human request is recorded, and the wait for it times out at once.
         &VerifyOptions {
-            wait_timeout: Duration::from_millis(1),
             ..Default::default()
         },
         CancellationToken::new(),

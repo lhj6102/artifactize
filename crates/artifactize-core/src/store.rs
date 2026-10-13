@@ -19,6 +19,8 @@ mod unreadable;
 mod validation;
 pub use unreadable::{Unreadable, read_unreadable};
 mod lifecycle;
+pub(crate) mod migrations;
+pub(crate) mod run_control;
 pub use lifecycle::{ExecutionState, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
 pub use snapshots::{ArtifactValidation, Blocker, ChildIdentity, HumanDefinition, Validation};
@@ -146,9 +148,9 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     canonical_target(&path).map_err(|e| e.to_string())
 }
 
-/// SQLite `user_version`; dependency requests and derived verdicts require schema 6.
+/// SQLite `user_version`; caller attempt keys extend Runs additively in schema 7.
 /// Earlier state is not migrated.
-pub const STATE_SCHEMA_VERSION: u32 = 6;
+pub const STATE_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set {}", state_home_variables())]

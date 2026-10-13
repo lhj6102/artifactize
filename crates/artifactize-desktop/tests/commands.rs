@@ -4,7 +4,7 @@
 use artifactize_core::project::{VerifyOptions, selection::Selection};
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
-use std::{fs, path::Path, time::Duration};
+use std::{fs, path::Path};
 use tauri::{
     WebviewWindow,
     ipc::{CallbackFn, InvokeBody},
@@ -15,6 +15,9 @@ use tauri::{
 /// The CLI tests' operating-system helpers: private directories and files.
 #[path = "../../artifactize-core/tests/support/os.rs"]
 mod os;
+#[path = "../../artifactize-core/tests/support/runs.rs"]
+#[expect(dead_code, reason = "desktop fixtures only record Human requests")]
+mod run_fixture;
 
 const RELEASE: &str = r#"name = "release"
 fingerprint = { files = ["."] }
@@ -96,11 +99,10 @@ fn verify(repo: &Path, state: &Path) {
         .unwrap();
     runtime.block_on(async {
         let options = VerifyOptions {
-            wait_timeout: Duration::from_millis(1),
             ..VerifyOptions::default()
         };
-        // The wait ends at once; the Human request stays waiting.
-        artifactize_core::project::verify(
+        // Observe the saved waiting request; no verification timeout settles it.
+        run_fixture::record(
             repo,
             Some(state),
             &Selection::All,

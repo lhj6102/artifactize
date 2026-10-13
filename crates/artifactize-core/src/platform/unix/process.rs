@@ -158,6 +158,10 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
     command.spawn()
 }
 
+pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
+    spawn_detached(command)
+}
+
 /// The index of `starttime` (field 22 of /proc/PID/stat, see proc(5)) among the fields after
 /// the command name. The name, field 2, is cut off at its closing parenthesis because it may
 /// contain spaces, so the remaining fields start at field 3: 22 - 3 = 19.
@@ -365,6 +369,87 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
         })
     });
     Ok((gate, spawning))
+}
+
+/// Detached Run workers own a session, including preparation commands that have no request
+/// row yet. Recover all its groups, not just the worker's group. The saved start identity
+/// excludes a reused session leader; group IDs remain reserved while members refer to them.
+pub(crate) fn kill_saved_session(leader: crate::process::ChildIdentity) -> io::Result<()> {
+    match process_start_time(leader.pid.get()) {
+        Ok(start) if start != leader.start_time => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let session = i32::try_from(leader.pid.get()).map_err(|_| io::ErrorKind::InvalidInput)?;
+    let mut groups = std::collections::BTreeMap::new();
+    for pid in process_ids()? {
+        if pid <= 0 {
+            continue;
+        }
+        let Ok(member_start) = process_start_time(pid as u32) else {
+            continue;
+        };
+        // SAFETY: these read-only queries take a PID; vanished members return -1.
+        let (sid, group) = unsafe { (libc::getsid(pid), libc::getpgid(pid)) };
+        if sid != session || group <= 0 {
+            continue;
+        }
+        let start = match process_start_time(group as u32) {
+            Ok(start) => start,
+            // An orphaned group has no leader, but its members still reserve its ID.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
+            Err(error) => return Err(error),
+        };
+        if process_start_time(pid as u32).ok() == Some(member_start) {
+            groups.insert(group, start);
+        }
+    }
+    for (group, start_time) in groups {
+        if process_start_time(leader.pid.get()).is_ok_and(|start| start != leader.start_time) {
+            return Ok(());
+        }
+        // Reuse identity checks and Darwin's zombie-only group handling too.
+        kill_saved_group(crate::process::ChildIdentity {
+            pid: crate::process::ProcessId::new(group as u32),
+            start_time,
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn process_ids() -> io::Result<Vec<i32>> {
+    Ok(std::fs::read_dir("/proc")?
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+        .collect())
+}
+#[cfg(target_os = "macos")]
+fn process_ids() -> io::Result<Vec<i32>> {
+    // Bound the same kernel enumeration cost as the existing group-cleanup query.
+    const MAX_PID_BYTES: i32 = 16 * 1024 * 1024;
+    // SAFETY: a null buffer asks libproc for the PID count without writing records.
+    let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    if count <= 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let bytes = count
+        .checked_mul(std::mem::size_of::<i32>() as i32)
+        .ok_or_else(|| io::Error::other("process enumeration size overflow"))?;
+    if bytes > MAX_PID_BYTES {
+        return Err(io::Error::other("process enumeration exceeds 16 MiB"));
+    }
+    let mut pids = vec![0; count as usize];
+    // SAFETY: the aligned PID buffer has the queried byte capacity; truncation is rejected.
+    let read = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
+    if read < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if read >= count {
+        return Err(io::Error::other("incomplete process enumeration"));
+    }
+    pids.truncate(read as usize);
+    Ok(pids)
 }
 
 /// Recover only the saved group, never a reused leader PID. An absent leader can

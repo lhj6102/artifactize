@@ -16,9 +16,9 @@ cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize config graph    # Artifacts, evals and child/mount/reference relations
-artifactize verify --all    # three GREEN results, exit 0; prints "Run: RUN_ID"
+artifactize verify --all --wait    # three GREEN results, exit 0; prints "Run: RUN_ID"
 artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, fingerprint
-artifactize verify --all    # exit 0 and nothing executes: all three results are reused
+artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
 artifactize status          # exit 0: every eval shows "PASS — reuse"
 ```
 
@@ -43,8 +43,8 @@ example's directory:
 ```sh
 cd ../posts
 artifactize config check   # four Artifacts, three evals
-artifactize verify --all   # three GREEN results
-artifactize verify tip/style # qualified file eval; reused
+artifactize verify --all --wait   # three GREEN results
+artifactize verify tip/style --wait # qualified file eval; reused
 artifactize status         # all three post reviews are reused
 cd ../runtime-relations    # continue the tour below
 ```
@@ -74,7 +74,7 @@ monitor show unfulfilled requirements. See [Artifacts and evals](../concepts/art
 cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{}'
-artifactize verify --eval spec/signoff   # records a WAITING_HUMAN request and waits
+artifactize verify --eval spec/signoff --wait   # records a WAITING_HUMAN request and waits
 # In a second terminal, in the same directory:
 artifactize request list --run RUN_ID    # shows REQUEST_ID
 artifactize request claim REQUEST_ID
@@ -89,9 +89,10 @@ review` does the same in a terminal UI: it lists waiting requests and previews t
 instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
 Enter (or a click) runs one at once. `g`/`r` opens the GREEN/RED fields; Ctrl-S
 submits. Esc stops editing before returning to the list, keeping the draft.
-`verify` waits for Human results like any other, so dependents continue in the
-same Run; once the sign-off arrives it exits 4 here, because
-`spec/review` has no result yet.
+The artifactize-owned Run waits for Human results like any other, so dependents
+continue in the same Run. Plain `verify` submits and returns; `verify --wait`
+follows the Run in the foreground and exits 4 here once the sign-off arrives,
+because `spec/review` has no result yet.
 
 For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
 then run `artifactize verify --eval spec/review`, adding `--profile anthropic` or `--profile codex` for the other backends. Without

@@ -1,5 +1,6 @@
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
@@ -22,7 +23,7 @@ fn admin(state: &Path, args: &[&str]) -> Value {
         .arg("server")
         .args(args)
         .arg("--json")
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -498,7 +499,7 @@ fn token_names_are_rejected_at_the_cli_edge_before_opening_state() {
             if command == "add" {
                 invocation.args(["--scopes", "read"]);
             }
-            let output = invocation.output().unwrap();
+            let output = invocation.record_output().unwrap();
             assert_eq!(output.status.code(), Some(2), "{output:?}");
             assert!(
                 !state.exists(),

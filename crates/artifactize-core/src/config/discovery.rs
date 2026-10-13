@@ -19,6 +19,18 @@ impl DiscoveryEntry {
 
 /// Discover regular markers in deterministic path order, without following directory links.
 pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
+    read(repo, FileTargets::Required)
+}
+/// A declaration guard must not mistake a changed data file for a changed declaration.
+/// Preparation and per-Eval rechecks validate actual file targets separately.
+pub(crate) fn read_workspace_declarations(repo: &Path) -> Result<RepoConfig, ConfigError> {
+    read(repo, FileTargets::DeclarationsOnly)
+}
+enum FileTargets {
+    Required,
+    DeclarationsOnly,
+}
+fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
     let mut config = RepoConfig {
@@ -162,25 +174,26 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     "File Artifact target name must not contain ':'; scoped tool paths do not support colons.",
                 ));
             }
-            let kind = crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target)).map_err(
-                |error| {
-                    ConfigError::new(
+            if matches!(targets, FileTargets::Required) {
+                let kind = crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target))
+                    .map_err(|error| {
+                        ConfigError::new(
+                            &file,
+                            if error.kind() == std::io::ErrorKind::NotFound {
+                                format!("File Artifact target {target} is missing.")
+                            } else {
+                                format!("Cannot inspect File Artifact target {target}: {error}.")
+                            },
+                        )
+                    })?;
+                if kind != crate::platform::FileKind::File {
+                    return Err(ConfigError::new(
                         &file,
-                        if error.kind() == std::io::ErrorKind::NotFound {
-                            format!("File Artifact target {target} is missing.")
-                        } else {
-                            format!("Cannot inspect File Artifact target {target}: {error}.")
-                        },
-                    )
-                },
-            )?;
-            if kind != crate::platform::FileKind::File {
-                return Err(ConfigError::new(
-                    &file,
-                    format!(
-                        "File Artifact target {target} must be a regular file, not a symlink, directory or special file."
-                    ),
-                ));
+                        format!(
+                            "File Artifact target {target} must be a regular file, not a symlink, directory or special file."
+                        ),
+                    ));
+                }
             }
             let source =
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;

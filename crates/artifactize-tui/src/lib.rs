@@ -46,3 +46,8 @@ mod test_session_files;
 )]
 #[path = "../../artifactize-core/tests/support/declaration.rs"]
 mod test_declaration;
+
+#[cfg(test)]
+#[path = "../../artifactize-core/tests/support/runs.rs"]
+#[expect(dead_code, reason = "unit fixtures only record Human requests")]
+mod test_runs;

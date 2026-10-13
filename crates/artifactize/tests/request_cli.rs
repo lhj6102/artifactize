@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -98,7 +99,12 @@ impl Fixture {
     }
 
     fn json(&self, args: &[&str], code: i32) -> Value {
-        let output = self.command().args(args).arg("--json").output().unwrap();
+        let output = self
+            .command()
+            .args(args)
+            .arg("--json")
+            .record_output()
+            .unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -111,13 +117,7 @@ impl Fixture {
 
     fn start(&self) -> Child {
         self.command()
-            .args([
-                "verify",
-                "--all",
-                "--timeout-ms",
-                &support::os::slow(10000).to_string(),
-                "--json",
-            ])
+            .args(["verify", "--wait", "--all", "--json"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -178,8 +178,8 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     let fixture = Fixture::new(true);
     assert_eq!(fixture.json(&["request", "list"], 0), json!([]));
     assert!(!fixture.state.exists());
-    // The Human wait times out at once; the next verify reuses the submitted result.
-    let run = fixture.json(&["verify", "--all", "--timeout-ms", "1"], 3);
+    // The Run remains waiting; the next verify reuses the submitted result.
+    let run = fixture.json(&["verify", "--all"], 0);
     let list = fixture.json(
         &["request", "list", "--run", run["id"].as_str().unwrap()],
         0,
@@ -230,14 +230,14 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     let tool = fixture
         .command()
         .args(["request", "tool", id, "inspect_child"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(tool.status.success());
     assert!(String::from_utf8_lossy(&tool.stdout).contains("review-v1"));
     let launch = fixture
         .command()
         .args(["request", "tool", id, "open_child"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(launch.status.success());
     assert!(String::from_utf8_lossy(&launch.stdout).contains("launched"));
@@ -308,7 +308,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         ],
         2,
     );
-    let completed = fixture.json(&["verify", "--all"], 0);
+    let completed = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_ne!(completed["id"], run["id"]);
     assert_eq!(completed["summary"]["executorStarts"], 1);
     assert_eq!(completed["summary"]["counts"]["GREEN"], 2);
@@ -317,14 +317,14 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     let shown = fixture
         .command()
         .args(["request", "show", id])
-        .output()
+        .record_output()
         .unwrap();
     assert!(shown.status.success());
     assert_eq!(parse(&shown), submitted);
     let text = fixture
         .command()
         .args(["request", "list"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(text.status.success());
     assert!(String::from_utf8_lossy(&text.stdout).contains(id));
@@ -337,7 +337,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
 #[test]
 fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
     let fixture = Fixture::new(true);
-    let run = fixture.json(&["verify", "--all", "--timeout-ms", "1"], 3);
+    let run = fixture.json(&["verify", "--all"], 0);
     let id = run["requests"]
         .as_array()
         .unwrap()
@@ -377,7 +377,7 @@ fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
     let text = fixture
         .command()
         .args(["request", "unclaim", "missing"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(text.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&text.stderr).contains("not found"));
@@ -402,11 +402,10 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
         .command()
         .args([
             "verify",
+            "--wait",
             "--all",
             "--max-executions",
             "2",
-            "--timeout-ms",
-            &support::os::slow(10000).to_string(),
             "--json",
         ])
         .stdout(Stdio::piped())
@@ -463,11 +462,11 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
 }
 
 #[test]
-fn wait_timeout_leaves_human_claim_and_submission_available() {
+fn submission_leaves_human_claim_and_submission_available() {
     let fixture = Fixture::new(false);
-    let run = fixture.json(&["verify", "--all", "--timeout-ms", "40"], 3);
-    assert_eq!(run["status"], "INCOMPLETE");
-    assert_eq!(run["waitTimedOut"], true);
+    let run = fixture.json(&["verify", "--all"], 0);
+    assert_eq!(run["status"], "RUNNING");
+    assert_eq!(run["waitTimedOut"], false);
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
     fixture.json(&["request", "claim", id], 0);
@@ -485,7 +484,6 @@ fn wait_timeout_leaves_human_claim_and_submission_available() {
     );
     assert_eq!(fixture.json(&["request", "show", id], 0)["status"], "GREEN");
     for args in [
-        vec!["verify", "--all", "--wait"],
         vec!["verify", "--all", "--timeout-ms", "0"],
         vec!["verify", "--all", "--timeout-ms", "2147483648"],
     ] {
@@ -547,7 +545,7 @@ fn wait_observes_red_and_fingerprint_errors_and_ctrl_c_stops_cleanly() {
     let fixture = Fixture::new(false);
     let child = fixture.start();
     fixture.waiting();
-    support::os::interrupt(child.id());
+    support::runs::cancel_active(&fixture.state, &fixture.repo);
     let run = finish(child, 2);
     assert_eq!(run["status"], "ERROR");
     assert_eq!(run["waitTimedOut"], false);

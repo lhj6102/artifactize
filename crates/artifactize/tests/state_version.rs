@@ -1,7 +1,8 @@
-//! A state of another schema version is refused, never migrated: 0.6.0 starts a new state.
+//! Unsupported schemas are refused; supported additive upgrades have their own Run seam.
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{fs, path::Path, process::Command};
 
@@ -24,7 +25,7 @@ fn artifactize(root: &Path, args: &[&str]) -> std::process::Output {
         .arg("--state-dir")
         .arg(root.join("state"))
         .args(args)
-        .output()
+        .record_output()
         .unwrap()
 }
 
@@ -62,7 +63,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
     .unwrap();
     let state = root.join("state");
     let database = state.join("state.sqlite");
-    for version in 1..STATE_SCHEMA_VERSION {
+    for version in 1..6 {
         fs::create_dir_all(&state).unwrap();
         Connection::open(&database)
             .unwrap()
@@ -70,7 +71,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             .unwrap();
         let before = fs::read(&database).unwrap();
         for args in [
-            &["verify", "--all"][..],
+            &["verify", "--wait", "--all"][..],
             &["status", "--all"],
             &["run", "list"],
             &["request", "list"],
@@ -83,7 +84,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert_eq!(stderr.trim_end(), EARLIER_STATE, "{args:?}");
         }
-        let output = artifactize(root, &["verify", "--all", "--json"]);
+        let output = artifactize(root, &["verify", "--wait", "--all", "--json"]);
         assert_eq!(output.status.code(), Some(2));
         let error: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(error, json!({"error":EARLIER_STATE}));
@@ -118,7 +119,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
     }
 
     // A new state has the four tables, and works.
-    let output = artifactize(root, &["verify", "--all", "--json"]);
+    let output = artifactize(root, &["verify", "--wait", "--all", "--json"]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let db = Connection::open(&database).unwrap();
     assert_eq!(

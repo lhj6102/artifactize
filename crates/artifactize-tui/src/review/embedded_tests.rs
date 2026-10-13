@@ -1,6 +1,6 @@
 //! Embedded review exercises the same lifecycle jobs without invoking an editor or provider.
 use super::*;
-use crate::project::{self, VerifyOptions, selection::Selection};
+use crate::project::{VerifyOptions, selection::Selection};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::json;
 
@@ -51,12 +51,11 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     (root, repo, state)
 }
 async fn waiting(repo: &std::path::Path, state: &std::path::Path) -> RequestView {
-    let run = project::verify(
+    let run = crate::test_runs::record(
         repo,
         Some(state),
         &Selection::All,
         &VerifyOptions {
-            wait_timeout: Duration::from_millis(1),
             ..Default::default()
         },
         CancellationToken::new(),

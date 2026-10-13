@@ -13,6 +13,7 @@ use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     root: TempDir,
@@ -55,9 +56,10 @@ impl Fixture {
         let output = self
             .command()
             .arg("verify")
+            .arg("--wait")
             .args(selection)
             .arg("--json")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -72,15 +74,17 @@ impl Fixture {
     fn no_execution(&self) {
         assert!(!self.repo.join("executed").exists());
         let db = Connection::open(self.state.join("state.sqlite")).unwrap();
-        for table in ["runs", "requests"] {
-            let count: u32 = db
-                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
-                    row.get(0)
-                })
-                .unwrap();
-            assert_eq!(count, 0);
-        }
-        assert_eq!(fs::read_dir(self.state.join("runs")).unwrap().count(), 0);
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM executions", [], |row| row
+                .get::<_, u32>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            db.query_row("SELECT status FROM runs", [], |row| row.get::<_, String>(0))
+                .unwrap(),
+            "ERROR"
+        );
     }
 }
 
@@ -251,7 +255,7 @@ print('protocol:v1')
     let output = fixture
         .command()
         .args(["run", "show", run["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     assert_eq!(
@@ -372,7 +376,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         );
         let child = fixture
             .command()
-            .args(["verify", "--all", "--json"])
+            .args(["verify", "--wait", "--all", "--json"])
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
@@ -386,7 +390,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let mut lines = marker.lines();
         let pid: u32 = lines.next().unwrap().parse().unwrap();
         let output = lines.next().unwrap();
-        support::os::terminate(child.id());
+        support::runs::cancel_active(&fixture.state, &fixture.repo);
         let result = child.wait_with_output().unwrap();
         assert_eq!(result.status.code(), Some(2));
         assert!(!Path::new(output).exists());
@@ -456,7 +460,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     )
     .unwrap();
     let run = |args: &[&str]| {
-        let output = fixture.command().args(args).output().unwrap();
+        let output = fixture.command().args(args).record_output().unwrap();
         (
             output.status.code(),
             String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -608,7 +612,7 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
     let output = fixture
         .command()
         .args(["status", "--fingerprint-jobs", "0"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
 }
@@ -648,7 +652,7 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
     let output = fixture
         .command()
         .args(["status", "--fingerprint-jobs", "4"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -674,8 +678,8 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
     fs::remove_file(fixture.repo.join("gamma/finished")).unwrap();
     let run = fixture
         .command()
-        .args(["verify", "--all"])
-        .output()
+        .args(["verify", "--wait", "--all"])
+        .record_output()
         .unwrap();
     assert_eq!(run.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&run.stderr).contains("Artifact alpha"));

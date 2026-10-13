@@ -133,8 +133,8 @@ No model or API key is needed to try it:
 git clone https://github.com/lhj6102/artifactize   # the example projects
 cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
-artifactize verify --all    # three GREEN results, exit 0
-artifactize verify --all    # exit 0 and nothing executes: all three results are reused
+artifactize verify --all --wait    # three GREEN results, exit 0
+artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
 ```
 
 The [Quick start](https://artifactize.dev/docs/getting-started/quick-start.html) continues with `status`, file Artifacts, dependency evals and a
@@ -188,9 +188,10 @@ Artifact kinds and fingerprints are unchanged and says where each came from.
 
 ## Human review in the terminal
 
-`verify` waits by default while a Human eval needs a sign-off. The monitor drills
-down through Scope → Runs → Run tree → Detail. Its immediate context and preview
-panes remain at every width, except at the ends of the drill-down. Side panes take
+`verify` submits an artifactize-owned Run and returns its ID. The Run keeps waiting
+while a Human eval needs a sign-off; `verify --wait` follows it in the foreground.
+The monitor drills down through Scope → Runs → Run tree → Detail. Its immediate
+context and preview panes remain at every width, except at the ends of the drill-down. Side panes take
 16, 28 or 36 columns at widths below 100, 100–139 or 140 and above; the focused pane
 fills the rest, with sides clipped on extremely small terminals. `j`/`k` selects an
 eval and reveals its outcome in the peek; Enter or `o` opens Detail. Press `c` to
@@ -217,7 +218,7 @@ groups;
 reused results keep their original evidence when it is available.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
-     alt="A Human sign-off in the terminal: verify waits; in the monitor, Enter opens the waiting eval's Detail pane beside the Run tree, c claims the request, the notes tool prints the design notes, g opens the GREEN form, Ctrl-S submits and the waiting Run completes.">
+     alt="A Human sign-off in the terminal: the artifactize-owned Run waits; in the monitor, Enter opens the waiting eval's Detail pane beside the Run tree, c claims the request, the notes tool prints the design notes, g opens the GREEN form, Ctrl-S submits and the waiting Run completes.">
 
 [Human reviews](https://artifactize.dev/docs/guides/human-reviews.html)
 
