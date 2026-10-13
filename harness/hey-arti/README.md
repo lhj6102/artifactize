@@ -110,7 +110,10 @@ choose host paths, launch builders or control session lifetime:
   imported builder file names and actual live-evidence availability/identity.
 - `read`: `{"case":"monorepo","path":"builder-evidence.json","offset":0,"limit":16384}`
   reads UTF-8 bytes with `next_offset`. Also inspect `evidence/transcript.jsonl`,
-  `evidence/live.json` and `evidence/cleanup.json`; reads are bounded.
+  `evidence/live.json` and `evidence/cleanup.json`; reads are bounded. When the
+  record names a post-fix inspection follow-up, read its actual products under
+  `evidence/inspection-recheck/` as well; missing fields in an earlier candidate
+  are not promoted to success without that live follow-up.
 - `start`/`stop`: internal empty-argument operations, called only by artifactize.
 
 Before its readiness newline, start materializes private cases and imports the

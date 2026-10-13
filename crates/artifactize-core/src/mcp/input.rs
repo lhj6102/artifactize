@@ -2,10 +2,30 @@
 use crate::{project::selection::Selection, runs::ResultCursor, types::*};
 use serde::Deserialize;
 
+/// Bound model-driven array envelopes, without changing core selection expansion.
+pub(super) const SCOPE_IDS: usize = 64;
+pub(super) struct Scope(pub Selection);
+impl<'de> Deserialize<'de> for Scope {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let selection = Selection::deserialize(deserializer)?;
+        let count = match &selection {
+            Selection::Artifacts { artifact_ids } => Some(artifact_ids.len()),
+            Selection::Evals { eval_ids } => Some(eval_ids.len()),
+            _ => None,
+        };
+        if count.is_some_and(|count| count == 0 || count > SCOPE_IDS) {
+            return Err(serde::de::Error::custom(
+                "scope arrays must contain 1–64 IDs",
+            ));
+        }
+        Ok(Self(selection))
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Start {
-    pub scope: Selection,
+    pub scope: Scope,
     pub request_key: Option<RequestKey>,
     #[serde(default)]
     pub speculate: bool,
@@ -37,10 +57,10 @@ pub(super) struct Empty {}
 #[serde(deny_unknown_fields)]
 pub(super) struct Status {
     #[serde(default = "all")]
-    pub scope: Selection,
+    pub scope: Scope,
 }
-fn all() -> Selection {
-    Selection::All
+fn all() -> Scope {
+    Scope(Selection::All)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

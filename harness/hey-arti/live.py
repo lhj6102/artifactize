@@ -62,7 +62,7 @@ def run(candidate, output, model, evidence_root):
 Use the canonical skill below. The agreed proposal/consent is already supplied,
 so apply it without requesting a new Human authorization. Repository: {repo}.
 Candidate: {candidate}; model available for Agent evals: anthropic/{model}.
-No plugin packaging. Do not use speculate/defer_human (this candidate rejects true).
+No plugin packaging. Leave speculate/defer_human off for these fixture checks; preserve the agreed Human boundary.
 MCP registration must supply all 17 tools; demonstrate config_check and status.
 Read tools return the CLI JSON in entries.text; append pages then parse JSON.
 Do not inspect any credentials or change anything outside this private case.

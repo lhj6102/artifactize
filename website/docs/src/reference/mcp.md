@@ -32,7 +32,7 @@ Other forms are `{"kind":"artifact","artifactId":"library"}`,
 `{"kind":"eval","evalId":"library/tests"}`,
 `{"kind":"artifacts","artifactIds":["library","consumer"]}` and
 `{"kind":"evals","evalIds":["library/tests","consumer/review"]}`.
-Array selections must not be empty. Normal CLI dependency/reuse defaults apply;
+Array selections contain 1–64 IDs, preserving first-occurrence order. Normal CLI dependency/reuse defaults apply;
 there are no transport-specific scheduling or lifecycle settings.
 
 A `request_key` is 1–128 ASCII letters/digits/`._:-`. Same repository + same key
@@ -40,10 +40,14 @@ returns the same attempt, even after edits or completion. A new attempt needs a
 new key or no key. Omitting the key always creates a new Run while retaining
 normal eval-result reuse.
 
-Both mode arguments default false. This intermediate server build accepts their
-names but reports a clear **not supported yet** tool error for true. The verify
-modes integration supplies their core implementation; do not silently treat true
-as false.
+Both mode arguments default false and pass directly to shared `RunModes`.
+`speculate` starts requested downstream work within core scheduling limits before
+upstream judgment; an upstream RED/ERROR cancels blocked work. `defer_human`
+permits provisional progress and returns terminal `signoffs_pending` when only
+deferred sign-offs remain. `verify_result` reports verdict `SIGNOFFS_PENDING`;
+this is not full approval (the CLI watcher exits 5). Explicit `gate = "blocking"`
+still blocks. `DEFERRED` and `PROVISIONAL` request states are forwarded from core,
+not reinterpreted by MCP. Later sign-offs do not re-run the machine work.
 
 A running answer is smaller than 2 KiB. Waiting is ordinary state, not an error.
 `verify_wait` treats runtime, Agent and Human evals equally: it does **not** return
@@ -105,8 +109,9 @@ Cursors identify the tool, arguments and current saved projection. Elapsed field
 use the first page's observation clock, so clock movement alone cannot expire a
 continuation while a Run waits for a person. A foreign or
 stale cursor is rejected; restart that inspection if the evidence changed. No
-transport-owned snapshots or background subscriptions are stored. Tool failures
-use MCP `isError:true` with a readable explanation; details are not truncated to
+transport-owned snapshots or background subscriptions are stored. Tool operation failures
+use MCP `isError:true` with bounded `{code,message}` content (the existing core
+operation errors retain their message under `operation_failed`); details are not truncated to
 pretend that an incomplete page is the whole result.
 
 ## Deliberately absent

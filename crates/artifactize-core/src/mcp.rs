@@ -8,7 +8,7 @@ use crate::{project::VerifyOptions, runs};
 use input::*;
 use rmcp::{ErrorData, ServerHandler, ServiceExt, model::*, service::RequestContext};
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -19,8 +19,8 @@ const DEFAULT_WAIT_SECONDS: u64 = 30;
 const RUN_LIST_LIMIT: u32 = 20;
 /// Includes a zero-bound initial read and failure recovery; no call reaches 45 s.
 const WAIT_CALL_LIMIT: Duration = Duration::from_secs(44);
-/// Both the structured answer and legacy mirror count toward the public response cap.
-const RESPONSE_BYTES: usize = 64 * 1024;
+/// Both mirrors count; reserve 1 KiB for JSON-RPC framing under the 64 KiB public cap.
+const RESPONSE_BYTES: usize = 63 * 1024;
 /// Operational errors are readable diagnostics, not unbounded owner output.
 const ERROR_CHARS: usize = 2048;
 
@@ -38,20 +38,14 @@ impl Server {
         match name {
             "verify_start" => {
                 let args: Start = parse(arguments)?;
-                if args.speculate || args.defer_human {
-                    return Err(
-                        "speculate/defer_human=true is not supported yet by this build.".into(),
-                    );
-                }
-                encode(
-                    runs::start(
-                        context,
-                        &args.scope,
-                        &VerifyOptions::default(),
-                        args.request_key,
-                    )
-                    .await?,
-                )
+                let options = VerifyOptions {
+                    modes: runs::RunModes {
+                        speculate: args.speculate,
+                        defer_human: args.defer_human,
+                    },
+                    ..Default::default()
+                };
+                encode(runs::start(context, &args.scope.0, &options, args.request_key).await?)
             }
             "verify_status" => {
                 let args: Run = parse(arguments)?;
@@ -122,19 +116,18 @@ impl ServerHandler for Server {
         let arguments = Value::Object(request.arguments.unwrap_or_default());
         let result = match self.invoke(&request.name, arguments).await {
             Ok(value) => CallToolResult::structured(value),
-            Err(error) => CallToolResult::error(vec![ContentBlock::text(
-                error.chars().take(ERROR_CHARS).collect::<String>(),
-            )]),
+            Err(error) => CallToolResult::structured_error(
+                json!({"code":"operation_failed", "message":error.chars().take(ERROR_CHARS).collect::<String>()}),
+            ),
         };
         if serde_json::to_vec(&result)
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?
             .len()
             > RESPONSE_BYTES
         {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(
-                "Response exceeds the detail bound; narrow the inspection.",
-            )])
-            .into());
+            return Ok(CallToolResult::structured_error(json!({
+                "code":"response_too_large", "message":"Response exceeds the detail bound; narrow the inspection."
+            })).into());
         }
         Ok(result.into())
     }
@@ -142,10 +135,13 @@ impl ServerHandler for Server {
 
 /// Only rmcp writes stdout; detached Run workers own their own diagnostics.
 pub async fn serve(context: runs::Context) -> Result<(), String> {
-    let service = Server::new(context)
-        .serve(rmcp::transport::stdio())
-        .await
-        .map_err(|e| e.to_string())?;
-    service.waiting().await.map_err(|e| e.to_string())?;
-    Ok(())
+    match Server::new(context).serve(rmcp::transport::stdio()).await {
+        Ok(service) => {
+            service.waiting().await.map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        // A modern discovery probe can finish without opening an inline session.
+        Err(rmcp::service::ServerInitializeError::ConnectionClosed(_)) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }

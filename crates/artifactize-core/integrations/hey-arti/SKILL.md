@@ -12,8 +12,6 @@ or package. Respect the repository's and user's instructions and permissions.
 MCP inspection tools return the same CLI JSON as bounded UTF-8 fragments in
 `entries[].text`. Follow `next_cursor` with identical arguments and concatenate
 fragments before parsing JSON. `verify_result` pages structured findings instead.
-This intermediate build accepts `speculate`/`defer_human` but rejects `true` with
-"not supported yet" until verify modes are integrated; never silently assume them.
 
 ## 1. Find boundaries before writing declarations
 

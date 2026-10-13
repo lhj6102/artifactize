@@ -194,6 +194,10 @@ fn runtime(id: &str, command: impl AsRef<str>, args: Value) -> Value {
 #[tokio::test]
 async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     let project = Project::new(json!([]));
+    Client::new(project.command(), "2026-07-28")
+        .await
+        .close()
+        .await;
     let malformed = project
         .command()
         .args(["--json", "mcp", "--unknown"])
@@ -387,6 +391,40 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         }
         client.close().await;
     }
+    let project = Project::new(
+        json!([{ "id":"review", "title":"Person", "profile":{"kind":"human"}, "payload":{"instruction":"The person decides."} }]),
+    );
+    let mut client = Client::new(project.command(), "2026-07-28").await;
+    let started = client
+        .call(
+            "verify_start",
+            json!({"scope":{"kind":"all"},"defer_human":true}),
+        )
+        .await;
+    let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        client
+            .call("verify_wait", json!({"run":run,"seconds":40}))
+            .await["state"],
+        "signoffs_pending"
+    );
+    assert_eq!(
+        client.call("verify_status", json!({"run":run})).await["state"],
+        "signoffs_pending"
+    );
+    assert_eq!(
+        client.call("verify_result", json!({"run":run})).await["verdict"],
+        "SIGNOFFS_PENDING"
+    );
+    assert!(
+        runs::view(&project.context(), &run)
+            .await
+            .unwrap()
+            .run
+            .modes
+            .defer_human
+    );
+    client.close().await;
 }
 
 #[tokio::test]

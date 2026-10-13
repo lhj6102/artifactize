@@ -36,7 +36,7 @@ pub(super) async fn inspect(
                 crate::project::status(
                     repo,
                     state,
-                    &args.scope,
+                    &args.scope.0,
                     &VerifyOptions::default(),
                     CancellationToken::new(),
                 )
@@ -132,5 +132,5 @@ pub(super) async fn inspect(
         }
         _ => return Err(format!("Unknown tool: {name}")),
     };
-    page::project(name, &query, output, cursor, as_of)
+    page::project(context, name, &query, output, cursor, as_of)
 }

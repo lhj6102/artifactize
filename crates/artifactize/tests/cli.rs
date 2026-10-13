@@ -214,7 +214,6 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         vec!["run", "show", "missing"],
         vec!["monitor"],
         // Removed in 0.5.0 with the chatgpt and claude backends.
-        vec!["mcp", "--manifest", "manifest.json"],
         vec!["login", "chatgpt"],
         vec!["logout", "chatgpt"],
         vec!["models", "chatgpt"],

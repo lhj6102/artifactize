@@ -61,6 +61,7 @@ impl fmt::Display for Cursor {
 }
 
 pub(super) fn project(
+    context: &crate::runs::Context,
     name: &str,
     arguments: &Value,
     value: Value,
@@ -68,11 +69,13 @@ pub(super) fn project(
     as_of: OffsetDateTime,
 ) -> Result<Value, String> {
     let text = serde_json::to_string(&value).map_err(|e| e.to_string())?;
-    let revision =
-        Sha256::digest(serde_json::to_vec(&(name, arguments, &text)).map_err(|e| e.to_string())?)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+    let revision = Sha256::digest(
+        serde_json::to_vec(&(&context.repo, &context.state, name, arguments, &text))
+            .map_err(|e| e.to_string())?,
+    )
+    .iter()
+    .map(|byte| format!("{byte:02x}"))
+    .collect::<String>();
     let offset = match cursor {
         None => 0,
         Some(cursor) => {

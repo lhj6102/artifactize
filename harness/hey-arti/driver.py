@@ -227,6 +227,13 @@ def import_evidence(destination):
             if input_path.is_symlink() or not input_path.is_file():
                 raise ValueError("missing regular live evidence product")
             shutil.copyfile(input_path, target / "repo/evidence" / name)
+        for name in ("transcript.jsonl", "live.json", "cleanup.json", "runs-before-cleanup.json"):
+            followup = source / "evidence/inspection-recheck" / name
+            if followup.exists():
+                if followup.is_symlink() or not followup.is_file():
+                    raise ValueError("invalid inspection follow-up product")
+                private_directory(target / "repo/evidence/inspection-recheck")
+                shutil.copyfile(followup, target / "repo/evidence/inspection-recheck" / name)
         shutil.copyfile(record_path, target / "evidence/live.json")
 
 

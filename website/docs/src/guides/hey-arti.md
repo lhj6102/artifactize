@@ -163,9 +163,6 @@ terminal findings with an optional continuation cursor, or `ready:false` while
 active. Follow continuation pages for complete evidence. RED is a verdict, not a
 tool invocation error.
 
-This intermediate MCP build accepts both mode names but rejects `true` with a
-clear "not supported yet" error until the verify-modes integration lands.
-
 Two per-request choices default off: `speculate` can speed integration by starting
 downstream evals before upstream judgment, at the cost of work cancelled after
 upstream RED/ERROR; `defer_human` allows provisional progress when immediate

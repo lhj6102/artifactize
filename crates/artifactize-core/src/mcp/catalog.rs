@@ -1,6 +1,7 @@
 //! The complete public tool surface; deliberately no credential or Human actions.
+use super::input::SCOPE_IDS;
 use super::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, RUN_LIST_LIMIT};
-use rmcp::model::Tool;
+use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Value, json};
 
 pub(super) fn tools() -> Vec<Tool> {
@@ -8,14 +9,14 @@ pub(super) fn tools() -> Vec<Tool> {
         {"type":"object","properties":{"kind":{"const":"all"}},"required":["kind"],"additionalProperties":false},
         {"type":"object","properties":{"kind":{"const":"artifact"},"artifactId":{"type":"string"}},"required":["kind","artifactId"],"additionalProperties":false},
         {"type":"object","properties":{"kind":{"const":"eval"},"evalId":{"type":"string"}},"required":["kind","evalId"],"additionalProperties":false},
-        {"type":"object","properties":{"kind":{"const":"artifacts"},"artifactIds":{"type":"array","items":{"type":"string"},"minItems":1}},"required":["kind","artifactIds"],"additionalProperties":false},
-        {"type":"object","properties":{"kind":{"const":"evals"},"evalIds":{"type":"array","items":{"type":"string"},"minItems":1}},"required":["kind","evalIds"],"additionalProperties":false}
+        {"type":"object","properties":{"kind":{"const":"artifacts"},"artifactIds":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":SCOPE_IDS}},"required":["kind","artifactIds"],"additionalProperties":false},
+        {"type":"object","properties":{"kind":{"const":"evals"},"evalIds":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":SCOPE_IDS}},"required":["kind","evalIds"],"additionalProperties":false}
     ]});
     let string = json!({"type":"string"});
     vec![
         tool(
             "verify_start",
-            "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. Modes default off; true is not supported yet in this build.",
+            "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. Modes default off; provisional sign-offs are not full approval.",
             json!({"scope":scope,"request_key":{"type":"string","pattern":"^[A-Za-z0-9._:-]{1,128}$"},"speculate":{"type":"boolean","default":false},"defer_human":{"type":"boolean","default":false}}),
             &["scope"],
             false,
@@ -154,5 +155,15 @@ fn tool(
         name,
         description,
         schema.as_object().expect("schema is an object").clone(),
+    )
+    .with_annotations(
+        ToolAnnotations::new()
+            .read_only(!matches!(name, "verify_start" | "verify_cancel" | "status"))
+            .destructive(name == "verify_cancel")
+            .idempotent(!matches!(name, "verify_start" | "status"))
+            .open_world(matches!(
+                name,
+                "verify_start" | "status" | "models" | "remote_status"
+            )),
     )
 }
