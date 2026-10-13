@@ -34,9 +34,9 @@ describe("review search", () => {
     browser.execute(() => [...document.querySelectorAll('[aria-label="Suggestions"] [role="option"]')].map((option) => option.textContent?.trim()));
 
   before(async () => {
-    fixture = create();
-    addRepository(fixture, "other");
-    addRepository(fixture, "third");
+    fixture = await create();
+    await addRepository(fixture, "other");
+    await addRepository(fixture, "third");
     session = await start(fixture, "review", "--repo", fixture.repo);
     browser = session.browser;
     await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });

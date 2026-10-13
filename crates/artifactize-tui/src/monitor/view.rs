@@ -377,7 +377,7 @@ impl Monitor {
             right.push(" mouse off · F2".yellow());
         }
         let right = Line::from(right);
-        let room = usize::from(area.width).saturating_sub(right.width() + 2);
+        let room = usize::from(area.width).saturating_sub(right.width() + crate::HEADER_GAP);
         let segments: Vec<String> = segments
             .iter()
             .map(|segment| plain(segment).into_owned())

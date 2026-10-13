@@ -2,7 +2,7 @@
 // and opens again after every way of closing it, screen switches included.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { addRepository, artifactize, create, type Fixture, requests } from "./fixture.ts";
+import { verifyWaiting, addRepository, create, type Fixture, requests } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
 
@@ -41,11 +41,11 @@ describe("command palette", () => {
   };
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     // A second Run joins the waiting sign-off: its request is a follower of the first one.
-    assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
+    await verifyWaiting(fixture);
     // Another repository with the same eval IDs, which the review search reaches.
-    addRepository(fixture, "other");
+    await addRepository(fixture, "other");
     session = await start(fixture, "--repo", fixture.repo);
     browser = session.browser;
     await browser.$("button*=Commands").waitForExist({ timeout: 15000 });

@@ -1,0 +1,67 @@
+// J-GRAPH-CURRENT: the graph launch reads current declarations, not saved Run state.
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { after, before, describe, it } from "node:test";
+import { createGraph, type Fixture } from "./fixture.ts";
+import { start, type Session } from "./driver.ts";
+import { press } from "./keys.ts";
+
+describe("current declaration graph", () => {
+  let fixture: Fixture;
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const structure = () => browser.$(".current pre").getText();
+  const expanded = () => browser.execute(() => document.querySelector(".current details")?.hasAttribute("open") ?? false);
+
+  before(async () => {
+    fixture = createGraph();
+    session = await start(fixture, "graph", "--repo", fixture.repo);
+    browser = session.browser;
+    await browser.$('.svelte-flow__node[data-id="a:release"]').waitForExist({ timeout: 15000 });
+  });
+  after(async () => { await session?.stop(); });
+
+  // UX edges: E-CURRENT-LAUNCH E-CURRENT-ZOOM E-CURRENT-STRUCTURE
+  it("opens without a saved Run, zooms into evals and exposes complete criteria and labeled relations", async () => {
+    const text = await browser.execute(() => document.body.innerText);
+    assert.match(text, /Current Artifact graph/);
+    assert.match(text, /Declarations only · no Run verdicts/);
+    assert.equal(await browser.$(".legend").getText(), "Current structure · arrows: input → consumer");
+    assert.equal(existsSync(join(fixture.state, "state.sqlite")), false, "no saved Run database was created");
+    await browser.$('.svelte-flow__node[data-id="a:release"]').click();
+    const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
+    await evals.waitForExist({ timeout: 10000 });
+    assert.match(await evals.getText(), /A person approves the release/);
+    // Opening the selected eval exposes criteria, not a historical request Detail.
+    await evals.click();
+    await press(browser, ["Enter"], expanded, "structure text expanded from the selected eval");
+    const shown = await structure();
+    assert.match(shown, /release\/signoff/);
+    assert.match(shown, /approved/);
+    assert.match(shown, /comment/);
+    assert.match(shown, /instruction/);
+    assert.match(shown, /ship\/check/);
+    assert.match(shown, /true/);
+    assert.match(shown, /release.*ship/);
+    assert.match(shown, /instruction/);
+    assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false);
+  });
+
+  // UX edge: E-CURRENT-REFRESH
+  it("reloads changed declarations through Refresh, Ctrl+R and F5", async () => {
+    const declaration = join(fixture.repo, "docs", "index.artf");
+    for (const [index, keys] of [null, ["Control", "r"], ["F5"]].entries()) {
+      const title = `Current docs criterion ${index}`;
+      writeFileSync(declaration, readFileSync(declaration, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
+      if (keys) await press(browser, keys, async () => (await structure()).includes(title), `declarations refreshed with ${keys.join("+")}`);
+      else {
+        await browser.$("button=Refresh").click();
+        await browser.waitUntil(async () => (await structure()).includes(title), { timeout: 15000 });
+      }
+      await browser.$('.svelte-flow__node[data-id="a:docs"]').click();
+      assert.match(await browser.$('[role="listbox"][aria-label="Evals"]').getText(), new RegExp(title));
+      assert.match(await browser.execute(() => document.body.innerText), /Declarations only · no Run verdicts/);
+    }
+  });
+});

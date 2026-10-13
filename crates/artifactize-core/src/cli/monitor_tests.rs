@@ -85,11 +85,21 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
         .into_iter()
         .chain(tail)
         .collect::<Vec<_>>();
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "cli::monitor_tests::a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope", "--nocapture"])
-            .current_dir(cwd).env(PROBE, serde_json::to_string(&args).unwrap())
-            .env("ARTIFACTIZE_MONITOR_EXPECT", expected.as_deref().map(crate::platform::path_text).unwrap_or_default())
-            .output().unwrap();
+        let output = crate::test_os::run_test_in(
+            "cli::monitor_tests::a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope",
+            cwd,
+            &[
+                (PROBE, serde_json::to_string(&args).unwrap().into()),
+                (
+                    "ARTIFACTIZE_MONITOR_EXPECT",
+                    expected
+                        .as_deref()
+                        .map(crate::platform::path_text)
+                        .unwrap_or_default()
+                        .into(),
+                ),
+            ],
+        );
         assert!(
             output.status.success(),
             "{}{}",

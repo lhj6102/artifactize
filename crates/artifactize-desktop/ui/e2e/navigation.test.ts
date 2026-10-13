@@ -3,7 +3,7 @@
 // Detail; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { artifactize, create, type Fixture } from "./fixture.ts";
+import { verifyWaiting, create, type Fixture } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
@@ -28,7 +28,7 @@ describe("monitor navigation", () => {
   const helpOpen = () => browser.execute(() => !!document.querySelector('[role="dialog"]'));
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture);
     browser = session.browser;
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
@@ -64,7 +64,7 @@ describe("monitor navigation", () => {
     const reads = () => browser.execute(() => (window as unknown as { reads: number }).reads) as Promise<number>;
     await browser.pause(1500);
     // A change on disk: another Run. F5 right away asks for a full read that shows it.
-    assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
+    await verifyWaiting(fixture);
     const before = await reads();
     await press(browser, ["F5"], async () => (await reads()) > before, "a full read after F5");
     await eventually(async () => /Runs \(2\)/i.test(await text()), "the second Run listed");
@@ -126,7 +126,7 @@ describe("the Detail follows the tree's selection", () => {
     browser.$(`//li[@role="treeitem"][@aria-level="${level}"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "${name}")]]`);
 
   before(async () => {
-    session = await start(create());
+    session = await start(await create());
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), "the Run tree");
   });
@@ -174,9 +174,9 @@ describe("moving between the panes", () => {
   const crumbs = () => browser.$('nav[aria-label="Breadcrumb"]').getText();
 
   before(async () => {
-    const fixture = create();
+    const fixture = await create();
     // A second Run, so the Runs pane has two rows to move between.
-    assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
+    await verifyWaiting(fixture);
     session = await start(fixture, "--repo", fixture.repo);
     browser = session.browser;
     await eventually(async () => /Runs \(2\)/i.test(await browser.execute(() => document.body.innerText)), "two Runs");
@@ -209,7 +209,7 @@ describe("quitting without a claim", () => {
   let session: Session;
 
   before(async () => {
-    session = await start(create());
+    session = await start(await create());
     await session.browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
   });
 
@@ -239,7 +239,7 @@ describe("closing the window without a claim", () => {
   let session: Session;
 
   before(async () => {
-    session = await start(create());
+    session = await start(await create());
     await session.browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
   });
 

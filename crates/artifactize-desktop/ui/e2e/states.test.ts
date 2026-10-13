@@ -31,7 +31,7 @@ describe("a Run with every verdict", () => {
   const tree = () => browser.$('[role="tree"]');
 
   before(async () => {
-    fixture = createStates();
+    fixture = await createStates();
     session = await start(fixture);
     browser = session.browser;
     await eventually(async () => (await text()).includes("crash"), "the Run tree");
@@ -113,7 +113,7 @@ describe("the Detail of a finished eval", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
-    session = await start(createStates());
+    session = await start(await createStates());
     browser = session.browser;
     await eventually(async () => (await text()).includes("fine"), "the Run tree");
   });
@@ -151,7 +151,7 @@ describe("a blocked eval", () => {
   let browser: WebdriverIO.Browser;
 
   before(async () => {
-    session = await start(createStates());
+    session = await start(await createStates());
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("down"), "the Run tree");
   });

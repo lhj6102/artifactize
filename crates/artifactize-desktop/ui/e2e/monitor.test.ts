@@ -26,7 +26,7 @@ describe("monitor", () => {
   const human = () => browser.$('[aria-label="Human review"]');
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture);
     browser = session.browser;
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
@@ -42,7 +42,8 @@ describe("monitor", () => {
     assert.match(shown, /ALL/);
     assert.match(shown, /master · repo/);
     assert.match(shown, /Runs \(1\)/i);
-    assert.match(shown, /NOT SATISFIED at Run end/);
+    assert.match(shown, /RUNNING/);
+    assert.match(shown, /validation pending/);
     // A new Run starts on its first in-progress eval; the peek follows it.
     const selected = await browser.$('[role="treeitem"][aria-selected="true"]').getText();
     assert.match(selected, /signoff/);
@@ -221,7 +222,7 @@ describe("quitting the Monitor with a claim", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture);
     browser = session.browser;
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");

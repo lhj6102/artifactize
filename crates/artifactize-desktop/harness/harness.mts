@@ -10,12 +10,12 @@
 //   cli       run the artifactize CLI against the app's repository and state, from another process
 //
 // Needs the normal app and CLI builds (cargo build -p artifactize -p artifactize-desktop, after
-// pnpm build in ui/): the runtime environment has no toolchain home to build with.
+// pnpm build in ui/): a review drives the prepared candidate and never rebuilds it.
 import { createConnection, createServer, type Socket } from "node:net";
 import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { cli, create, type Fixture } from "../ui/e2e/fixture.ts";
+import { cancelRuns, cli, create, type Fixture } from "../ui/e2e/fixture.ts";
 import { startBuilt, type Session } from "../ui/e2e/driver.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 
@@ -129,13 +129,14 @@ async function handle(session: Session, fixture: Fixture, request: Request): Pro
 async function start(): Promise<void> {
   if (!sessionDir) throw new Error("ARTIFACTIZE_SESSION_DIR is not set; run this as a tool session.");
   process.chdir(sessionDir);
-  const fixture = create();
+  const fixture = await create();
   let session: Session | undefined;
   try {
     session = await startBuilt(fixture);
     await settled(session.browser);
   } catch (error) {
     await session?.stop();
+    cancelRuns(fixture);
     rmSync(fixture.root, { recursive: true, force: true });
     throw error;
   }
@@ -145,6 +146,7 @@ async function start(): Promise<void> {
     if (ending) return;
     ending = true;
     await live.stop();
+    cancelRuns(fixture);
     rmSync(fixture.root, { recursive: true, force: true });
   };
   const server = createServer((socket: Socket) => {

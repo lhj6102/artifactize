@@ -36,7 +36,7 @@ describe("run graph", () => {
     }));
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture);
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), "the Run tree");

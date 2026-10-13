@@ -26,7 +26,7 @@ describe("opening a request", () => {
   const exists = () => human().isExisting();
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
     await eventually(async () => (await listed()) === 1, "the waiting sign-off");
@@ -104,7 +104,7 @@ describe("a claim another reviewer holds", () => {
   const human = () => browser.$('[aria-label="Human review"]');
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length)) === 1, "the sign-off");
@@ -146,7 +146,7 @@ describe("a GREEN submission from the start", () => {
     }, key);
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     // In the Monitor, where a completed result stays open in the Detail.
     session = await start(fixture);
     browser = session.browser;

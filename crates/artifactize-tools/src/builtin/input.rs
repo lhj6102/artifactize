@@ -131,11 +131,12 @@ mod tests {
         ] {
             assert!(Input::parse(builtin, value).is_err());
         }
-        let Input::Read(input) = Input::parse(
+        let parsed = Input::parse(
             Builtin::Read,
             json!({"path":"notes", "offset":1.0, "limit":2.0}),
         )
-        .unwrap() else {
+        .unwrap();
+        let Input::Read(input) = parsed else {
             panic!("expected a read input")
         };
         assert_eq!((input.offset, input.limit), (1, 2));

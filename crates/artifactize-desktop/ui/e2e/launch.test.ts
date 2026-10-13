@@ -27,9 +27,9 @@ describe("launching the Monitor", () => {
   const settingsShown = () => browser.execute(() => !!document.querySelector(".settings h1") && (document.querySelector(".settings") as HTMLElement).offsetParent !== null);
 
   before(async () => {
-    fixture = create();
-    addRepository(fixture, "other");
-    addRepository(fixture, "third");
+    fixture = await create();
+    await addRepository(fixture, "other");
+    await addRepository(fixture, "third");
     session = await start(fixture, "--repo", fixture.repo);
     browser = session.browser;
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
@@ -84,9 +84,9 @@ describe("launching the Monitor for every repository", () => {
     browser.execute(() => (document.querySelector('[aria-label="Scope"] [aria-selected="true"]') as HTMLElement | null)?.innerText ?? "");
 
   before(async () => {
-    fixture = create();
-    addRepository(fixture, "other");
-    addRepository(fixture, "third");
+    fixture = await create();
+    await addRepository(fixture, "other");
+    await addRepository(fixture, "third");
     // A plain launch, no --repo and no --all: the Monitor starts on everything in the state.
     session = await start(fixture);
     browser = session.browser;
@@ -127,9 +127,9 @@ describe("launching the Review screen for every repository", () => {
   const preview = () => browser.execute(() => [...document.querySelectorAll("section.panel h3")].at(-1)?.textContent?.trim() ?? "");
 
   before(async () => {
-    fixture = create();
-    addRepository(fixture, "other");
-    addRepository(fixture, "third");
+    fixture = await create();
+    await addRepository(fixture, "other");
+    await addRepository(fixture, "third");
     // A plain launch, no --repo and no --all: the search is not narrowed to one repository.
     session = await start(fixture, "review");
     browser = session.browser;

@@ -3,7 +3,7 @@
 import { create } from "./fixture.ts";
 import { start } from "./driver.ts";
 
-const fixture = create();
+const fixture = await create();
 const session = await start(fixture);
 console.log(JSON.stringify({ display: session.display, groups: session.groups, root: fixture.root }));
 setInterval(() => {}, 1 << 30);

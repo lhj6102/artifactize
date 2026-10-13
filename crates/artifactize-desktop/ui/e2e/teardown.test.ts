@@ -6,6 +6,8 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { describe, it } from "node:test";
+import { join } from "node:path";
+import { cancelRuns } from "./fixture.ts";
 
 type Held = { display: string | null; groups: number[]; root: string };
 
@@ -58,7 +60,8 @@ describe("an interrupted test process", { skip: process.platform !== "linux" && 
         await eventually(() => !listening(held.display!), `display ${held.display} closed`);
         await eventually(() => !existsSync(`/tmp/.X${held.display!.slice(1)}-lock`), `display ${held.display} unlocked`);
       } finally {
-        // A killed process runs no exit hook: the test removes the fixture it left.
+        // A killed owner runs no exit hook; durable Runs need explicit cancellation.
+        cancelRuns({ root: held.root, repo: join(held.root, "repo"), state: join(held.root, "state") });
         rmSync(held.root, { recursive: true, force: true });
       }
     });

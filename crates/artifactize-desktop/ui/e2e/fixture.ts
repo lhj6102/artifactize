@@ -2,7 +2,7 @@
 // a release Artifact with a waiting Human sign-off, its tools and owner schemas, and a
 // dependent Artifact that waits for it.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -17,7 +17,13 @@ const scratch = join(target, "e2e");
 /** Every fixture root made by this process: all of them go when it ends, however its tests
  * ended, so a run leaves nothing in the build directory. */
 const made: string[] = [];
+const waiting = new Map<string, Fixture>();
 process.on("exit", () => {
+  // Fixture Runs now outlive their callers. Explicitly cancel before removing their state.
+  for (const [run, fixture] of waiting) {
+    artifactize(fixture, "run", "cancel", run);
+    artifactize(fixture, "run", "show", run, "--wait");
+  }
   for (const root of made) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   // The scratch directory itself goes too, when nothing else is left in it.
   try {
@@ -103,6 +109,7 @@ export function artifactize(fixture: Fixture, ...args: string[]): number {
 
 export type Saved = {
   id: string;
+  runId: string;
   evalId: string;
   status: string;
   claim: { reviewer: string } | null;
@@ -118,6 +125,15 @@ export function requests(fixture: Fixture): Saved[] {
   );
   if (result.status !== 0) throw new Error(result.stderr);
   return JSON.parse(result.stdout) as Saved[];
+}
+
+/** A killed fixture owner cannot run its exit hook; its teardown explicitly settles Runs. */
+export function cancelRuns(fixture: Fixture): void {
+  for (const run of new Set(requests(fixture).map((request) => request.runId))) {
+    artifactize(fixture, "run", "cancel", run);
+    artifactize(fixture, "run", "show", run, "--wait");
+    waiting.delete(run);
+  }
 }
 
 /** The saved Human sign-off request. */
@@ -141,21 +157,60 @@ function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
   execFileSync("git", ["init", "-q", repo]);
 }
 
-/** Verify every eval of `fixture`'s repository; the Human request stays waiting. */
-function verify(fixture: Fixture) {
-  // The Run ends INCOMPLETE (3) on its short wait.
-  const status = artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json");
-  if (status !== 3) throw new Error(`verify exited ${status}, expected 3 (waiting Human)`);
+/** Submit every eval and observe the scheduler's waiting phase, not an elapsed sleep.
+ * Registration precedes the baseline read, so a change during setup cannot be missed. */
+export async function verifyWaiting(fixture: Fixture): Promise<void> {
+  const submitted = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
+    encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+  });
+  if (submitted.status !== 0) throw new Error(submitted.stderr || "verify submission failed");
+  const { run } = JSON.parse(submitted.stdout) as { run: string };
+  waiting.set(run, fixture);
+  await new Promise<void>((done, fail) => {
+    let finished = false;
+    const observed = watch(fixture.state, () => inspect());
+    const deadline = setTimeout(() => finish(new Error(`Run ${run} did not reach its Human boundary`)), 30000);
+    function finish(error?: Error) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(deadline);
+      observed.close();
+      if (error) fail(error);
+      else done();
+    }
+    function inspect() {
+      if (finished) return;
+      try {
+        const output = execFileSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", run, "--json"], {
+          encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+        });
+        const saved = JSON.parse(output) as { status: string; control: { activity: string }; requests: Saved[] };
+        if (saved.status !== "RUNNING") return finish(new Error(`Run ${run} ended ${saved.status} before its Human boundary`));
+        if (saved.control.activity === "waiting" && saved.requests.some((request) => request.status === "WAITING_HUMAN")) finish();
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+    inspect();
+  });
+}
+
+/** Current declarations only: no verify and no saved Run. */
+export function createGraph(): Fixture {
+  const root = newRoot();
+  const repo = join(root, "repo");
+  declare(repo);
+  return { root, repo, state: join(root, "state") };
 }
 
 /** A fresh repository and state with one Run waiting for the Human sign-off. */
-export function create(): Fixture {
+export async function create(): Promise<Fixture> {
   const root = newRoot();
   const repo = join(root, "repo");
   const state = join(root, "state");
   declare(repo);
   const fixture = { root, repo, state };
-  verify(fixture);
+  await verifyWaiting(fixture);
   return fixture;
 }
 
@@ -163,10 +218,10 @@ export function create(): Fixture {
  * Another repository `name` beside the fixture's, in the same state, with the same eval IDs
  * and its own waiting sign-off (its notes differ, so it joins no other); returns its path.
  */
-export function addRepository(fixture: Fixture, name: string): string {
+export async function addRepository(fixture: Fixture, name: string): Promise<string> {
   const repo = join(fixture.root, name);
   declare(repo, `# Release notes of ${name}\n- Ready to ship.\n`);
-  verify({ ...fixture, repo });
+  await verifyWaiting({ ...fixture, repo });
   return repo;
 }
 
@@ -196,7 +251,7 @@ Check ${reference}."""
   }
   execFileSync("git", ["init", "-q", repo]);
   const fixture = { root, repo, state };
-  const status = artifactize(fixture, "verify", "--all", "--json");
+  const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
   return fixture;
 }
@@ -206,7 +261,7 @@ Check ${reference}."""
  * `red` fails, `crash` dies by a signal (ERROR), `down` is blocked by `red`, `after` by
  * `crash`, `fine` is GREEN, and `later` waits for the Human sign-off of `gate`. Three of them have no dependency, so they share the graph's first column.
  */
-export function createStates(): Fixture {
+export async function createStates(): Promise<Fixture> {
   const root = newRoot();
   const repo = join(root, "repo");
   const state = join(root, "state");
@@ -249,10 +304,8 @@ Approve."""
   artifact("later", "true", "[]", "Run after {gate}.");
   execFileSync("git", ["init", "-q", repo]);
   const fixture = { root, repo, state };
-  // RED and ERROR end the Run unsatisfied, and the sign-off keeps it waiting: any exit status
-  // but a crash of the CLI itself.
-  const status = artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json");
-  if (status === -1) throw new Error("verify did not run");
+  // RED/ERROR are committed while the independent Human sign-off keeps the Run waiting.
+  await verifyWaiting(fixture);
   return fixture;
 }
 
@@ -281,7 +334,7 @@ Check ${name}."""
   writeFileSync(join(repo, "app", "index.artf"), `name = "app"\n${evals}`);
   execFileSync("git", ["init", "-q", repo]);
   const fixture = { root, repo, state };
-  const status = artifactize(fixture, "verify", "--all", "--json");
+  const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
   return fixture;
 }
@@ -306,6 +359,6 @@ export function createOutside(): Fixture & { remove: () => Promise<void> } {
 }
 
 if (import.meta.main) {
-  const fixture = create();
+  const fixture = await create();
   console.log(JSON.stringify(fixture));
 }

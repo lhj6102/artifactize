@@ -767,16 +767,51 @@ fn region(text: &str, from: usize) -> Vec<String> {
             let row: String = row.chars().skip(from).collect();
             match row.split_once("waiting ") {
                 Some((before, after)) => {
-                    let age = after
-                        .chars()
-                        .take_while(|c| c.is_ascii_alphanumeric())
-                        .count();
-                    format!("{before}waiting {}", after[age..].trim_end())
+                    // Duration can have two units ("3d 4h"). Ignore both and the
+                    // padding they displace, keeping the border and any later field.
+                    let suffix = after.trim_start_matches(|c: char| {
+                        c.is_ascii_alphanumeric() || c.is_whitespace()
+                    });
+                    format!("{before}waiting {}", suffix.trim_end())
                 }
                 None => row.trim_end().to_owned(),
             }
         })
         .collect()
+}
+
+#[test]
+fn parity_region_ignores_both_age_units_and_displaced_padding_only() {
+    assert_eq!(
+        region(
+            "header\n│WAITING_HUMAN · unclaimed · waiting 59s       │\nfooter",
+            0
+        ),
+        region(
+            "header\n│WAITING_HUMAN · unclaimed · waiting 1m 00s    │\nfooter",
+            0
+        ),
+    );
+    assert_eq!(
+        region(
+            "header\n│WAITING_HUMAN · unclaimed · waiting 1d 23h    │\nfooter",
+            0
+        ),
+        region(
+            "header\n│WAITING_HUMAN · unclaimed · waiting 2d 0h     │\nfooter",
+            0
+        ),
+    );
+    assert_ne!(
+        region(
+            "header\n│WAITING_HUMAN · unclaimed · waiting 1m 00s    │\nfooter",
+            0
+        ),
+        region(
+            "header\n│WAITING_HUMAN · claimed by bob · waiting 1m 00s│\nfooter",
+            0
+        ),
+    );
 }
 
 #[tokio::test]

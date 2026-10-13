@@ -21,7 +21,7 @@ describe("review", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
   });
@@ -147,7 +147,7 @@ describe("a GREEN submission on the Review screen", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
-    fixture = create();
+    fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
     await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });

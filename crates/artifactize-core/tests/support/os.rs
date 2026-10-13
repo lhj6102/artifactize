@@ -1700,12 +1700,28 @@ mod acl {
 /// Run one test in a fresh process with a literal environment, without mutating the
 /// parallel test runner's environment.
 pub fn run_test(test: &str, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
+    test_command(test, environment).output().unwrap()
+}
+
+/// The same isolated probe, started in the directory whose CLI behavior it checks.
+pub fn run_test_in(
+    test: &str,
+    directory: &Path,
+    environment: &[(&str, std::ffi::OsString)],
+) -> std::process::Output {
+    test_command(test, environment)
+        .current_dir(directory)
+        .output()
+        .unwrap()
+}
+
+fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command.args(["--exact", test, "--nocapture"]);
     for (name, value) in environment {
         command.env(name, value);
     }
-    command.output().unwrap()
+    command
 }
 
 /// An external editor fixture, compiled rather than relying on a Python installation or

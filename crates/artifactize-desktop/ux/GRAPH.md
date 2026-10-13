@@ -16,6 +16,10 @@ that makes the transition happen and checks where it leads.
   States: Scope, Runs, Tree or Graph focused, Graph zoomed into an Artifact, Detail open.
 - **Run graph**: the selected Run's Artifacts as nodes and their dependencies as edges,
   coloured by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
+- **Current graph**: current declarations opened with `artifactize-desktop graph --repo PATH`
+  or the Human `graph` tool, without a saved Run or Run verdicts. States: whole graph,
+  zoomed into an Artifact's evals, structure text expanded (all evaluation criteria and labeled
+  relations). Refresh, Ctrl+R or F5 reloads declarations.
 - **Review**: the saved-request list (at first the waiting Human reviews of every repository)
   with a read-only preview of the selected request, and the search field above it. States:
   Requests focused, Search focused (with or without suggestions), a request open (a Human
@@ -77,6 +81,15 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-EVAL-OPEN | Graph zoomed | Enter on an eval | Detail opened |
 | E-GRAPH-ZOOM-OUT | Graph zoomed | Esc | Graph |
 | E-GRAPH-BEYOND | Graph of a large Run | move past the drawn nodes | Graph, next nodes drawn, focus follows |
+
+## Current graph
+
+| Edge | From | Action | To |
+| --- | --- | --- | --- |
+| E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | Current graph, current declarations drawn without Run verdicts |
+| E-CURRENT-ZOOM | Current graph | click or Enter on an Artifact | Current graph zoomed into its evals |
+| E-CURRENT-STRUCTURE | Current graph | expand Structure and evaluation criteria, or open a zoomed eval | Current graph, complete criteria and labeled relations shown as text |
+| E-CURRENT-REFRESH | Current graph | Refresh, Ctrl+R or F5 | Current graph, declarations reloaded and the graph and structure text updated |
 
 ## Human review
 
@@ -151,6 +164,7 @@ several walks lists them one per line. Selecting a row first is the movement edg
   E-MON-TREE-MOVE (onto a blocked eval) → E-MON-BLOCKER
 - J-MON-LIVE: E-MON-LIVE
 - J-MON-RESIZE: E-MON-RESIZE
+- J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-ZOOM → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
 - J-GRAPH-SWITCH: E-GRAPH-OPEN → E-GRAPH-CLOSE
 - J-GRAPH-COLOURS: E-GRAPH-OPEN → E-GRAPH-RECOLOUR
 - J-GRAPH-MOVE: E-GRAPH-OPEN → E-GRAPH-MOVE

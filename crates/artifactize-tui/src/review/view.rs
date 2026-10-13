@@ -179,7 +179,7 @@ impl Review {
             right = format!("{right} · mouse off · F2");
         }
         let right = Line::from(right).dark_gray();
-        let room = usize::from(area.width).saturating_sub(right.width() + 2);
+        let room = usize::from(area.width).saturating_sub(right.width() + crate::HEADER_GAP);
         let [left, end] = Layout::horizontal([
             Constraint::Fill(1),
             Constraint::Length(u16::try_from(right.width()).unwrap_or(u16::MAX)),
