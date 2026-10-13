@@ -2480,6 +2480,47 @@ pub fn windows_exit(code: u32) -> tokio::process::Command {
     command
 }
 
+/// Put this disposable probe process in a Windows kill-on-close Job without breakaway.
+/// Windows Jobs cannot be left; the caller must retain the handle until process exit.
+#[cfg(windows)]
+pub fn windows_job_without_breakaway() -> std::os::windows::io::OwnedHandle {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::System::{
+        JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectExtendedLimitInformation, SetInformationJobObject,
+        },
+        Threading::GetCurrentProcess,
+    };
+    // SAFETY: no attributes or name create a private, non-inheritable Job.
+    let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    assert!(!handle.is_null(), "{}", std::io::Error::last_os_error());
+    // SAFETY: this successful creation returned a new handle, owned only here.
+    let job = unsafe { OwnedHandle::from_raw_handle(handle) };
+    let limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
+            LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    // SAFETY: the information class matches the initialized structure and size.
+    let configured = unsafe {
+        SetInformationJobObject(
+            job.as_raw_handle(),
+            JobObjectExtendedLimitInformation,
+            (&raw const limits).cast(),
+            std::mem::size_of_val(&limits) as u32,
+        )
+    };
+    assert_ne!(configured, 0, "{}", std::io::Error::last_os_error());
+    // SAFETY: the Job handle is open; GetCurrentProcess is a valid pseudo-handle.
+    let assigned = unsafe { AssignProcessToJobObject(job.as_raw_handle(), GetCurrentProcess()) };
+    assert_ne!(assigned, 0, "{}", std::io::Error::last_os_error());
+    job
+}
+
 /// An inert child controlled by the parent's stdin; no scheduler/timing assumption.
 pub fn stdin_waiter() -> tokio::process::Command {
     let mut command = tokio::process::Command::new(python_program());

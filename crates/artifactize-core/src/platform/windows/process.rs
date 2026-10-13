@@ -466,20 +466,12 @@ mod tests {
 
     #[tokio::test]
     async fn detached_launch_probe() {
-        use windows_sys::Win32::System::{
-            JobObjects::IsProcessInJob, Threading::GetCurrentProcess,
-        };
+        use windows_sys::Win32::System::JobObjects::IsProcessInJob;
 
         if std::env::var_os("ARTIFACTIZE_DETACHED_PROBE").is_none() {
             return;
         }
-        // A job without JOB_OBJECT_LIMIT_BREAKAWAY_OK; it also ends this probe's children.
-        let job = Job::new().unwrap();
-        // SAFETY: the job handle is open; GetCurrentProcess is a pseudo-handle.
-        assert_ne!(
-            unsafe { AssignProcessToJobObject(job.0.as_raw_handle(), GetCurrentProcess()) },
-            0
-        );
+        let job = crate::test_os::windows_job_without_breakaway();
         let command = crate::test_os::stdin_waiter();
         let mut child = spawn_detached(command).unwrap();
         let mut in_job = 0;
@@ -487,7 +479,7 @@ mod tests {
         let queried = unsafe {
             IsProcessInJob(
                 child.raw_handle().unwrap(),
-                job.0.as_raw_handle(),
+                job.as_raw_handle(),
                 &mut in_job,
             )
         };
