@@ -350,11 +350,20 @@ impl std::fmt::Display for LocalEvalId {
     }
 }
 
+/// A Human eval may explicitly retain its strict gate even in deferred Runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Gate {
+    Blocking,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvalDeclaration {
     pub id: LocalEvalId,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gate: Option<Gate>,
     #[serde(flatten)]
     body: EvalBody,
 }
@@ -451,6 +460,8 @@ impl EvalDeclaration {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct EvalFields {
     title: String,
+    #[serde(default)]
+    gate: Option<Gate>,
     profile: Profile,
     #[serde(default, deserialize_with = "present")]
     profile_variants: Option<BTreeMap<ProfileVariantName, Profile>>,
@@ -495,6 +506,7 @@ impl EvalDeclaration {
         Ok(Self {
             id,
             title: fields.title,
+            gate: fields.gate,
             body,
         })
     }
@@ -607,6 +619,8 @@ impl Views {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Map<String, Value>", into = "Value")]
 pub enum Fingerprint {
+    /// Assigned by discovery only; it cannot be declared.
+    Graph,
     Script {
         command: String,
         args: Vec<crate::scope::Argument>,
@@ -717,6 +731,7 @@ impl TryFrom<Map<String, Value>> for Fingerprint {
 impl From<Fingerprint> for Value {
     fn from(fingerprint: Fingerprint) -> Self {
         match fingerprint {
+            Fingerprint::Graph => serde_json::json!({"graph": true}),
             Fingerprint::Script {
                 command,
                 args,
@@ -738,8 +753,17 @@ impl From<Fingerprint> for Value {
 }
 
 impl Fingerprint {
+    pub fn kind(&self) -> crate::types::FingerprintKind {
+        match self {
+            Self::Graph => crate::types::FingerprintKind::Graph,
+            Self::Artifactsum { .. } => crate::types::FingerprintKind::Artifactsum,
+            Self::Script { .. } => crate::types::FingerprintKind::Script,
+        }
+    }
+
     fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
         match self {
+            Self::Graph => Ok(()),
             Self::Script {
                 command,
                 args,
@@ -774,23 +798,6 @@ impl Fingerprint {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DependencyGates {
-    Green,
-    Ignore,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(
-    rename_all(serialize = "camelCase", deserialize = "snake_case"),
-    deny_unknown_fields
-)]
-pub struct ReviewPolicy {
-    #[serde(default, deserialize_with = "present")]
-    pub dependency_gates: Option<DependencyGates>,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct ArtifactDeclaration {
@@ -810,8 +817,6 @@ pub struct ArtifactDeclaration {
         deserialize_with = "declared_fingerprint"
     )]
     pub fingerprint: Option<Fingerprint>,
-    #[serde(default, deserialize_with = "present")]
-    pub review_policy: Option<ReviewPolicy>,
 }
 
 impl ArtifactDeclaration {
@@ -1110,7 +1115,6 @@ pub struct Artifact {
     pub mounts: BTreeMap<MountAlias, ArtifactName>,
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
-    pub review_policy: Option<ReviewPolicy>,
 }
 
 impl Artifact {
@@ -1131,7 +1135,7 @@ impl Artifact {
     /// Runtime commands and relative declarations use the containing folder.
     pub fn folder(&self) -> &Path {
         match self.kind {
-            ArtifactKind::Folder => &self.path,
+            ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
             ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
         }
     }
@@ -1144,6 +1148,7 @@ impl Artifact {
 
     pub fn declaration_path(&self) -> PathBuf {
         match self.kind {
+            ArtifactKind::Graph => PathBuf::from(".artf"),
             ArtifactKind::Folder => logical_join(&self.path, std::ffi::OsStr::new(CONFIG_FILE)),
             ArtifactKind::File => {
                 let mut path = self.path.as_os_str().to_owned();

@@ -137,7 +137,6 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
             "--profile",
             "brief",
             "--force",
-            "--ignore-gates",
             "--jobs",
             "2",
             "--max-executions",
@@ -168,7 +167,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     assert_eq!(selected["jobs"], 2);
     assert_eq!(selected["maxExecutions"], 3);
     assert_eq!(selected["force"], true);
-    assert_eq!(selected["ignoreGates"], true);
+    assert!(selected.get("ignoreGates").is_none());
     let definitions = &selected["definitions"];
     assert_eq!(definitions["artifacts"].as_object().unwrap().len(), 3);
     assert_eq!(definitions["artifacts"]["input"]["basis"], true);

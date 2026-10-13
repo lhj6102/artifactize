@@ -142,6 +142,12 @@ pub enum Command {
         /// not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
         reuse_only: Vec<ProfileKind>,
+        /// Start reviews before unresolved dependency gates; cancel blocked work.
+        #[arg(long)]
+        speculate: bool,
+        /// Run past pending sign-offs and finish with SIGNOFFS_PENDING (exit 5).
+        #[arg(long)]
+        defer_human: bool,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.
     Status {
@@ -275,9 +281,6 @@ pub struct PolicyArgs {
     /// Force explicitly selected Evals only; dependency gates still apply.
     #[arg(long)]
     force: bool,
-    /// Bypass execution gates, never final validation obligations.
-    #[arg(long)]
-    ignore_gates: bool,
     /// Fingerprints to compute at once (default: the available CPUs).
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     fingerprint_jobs: Option<u32>,
@@ -289,7 +292,6 @@ impl PolicyArgs {
             profile: self.profile.map(ProfileSelection::Named),
             recursive: self.recursive,
             force: self.force,
-            ignore_gates: self.ignore_gates.then_some(true),
             fingerprint_jobs: self.fingerprint_jobs.map(|jobs| jobs as usize),
             ..Default::default()
         }

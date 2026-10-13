@@ -338,6 +338,12 @@ impl<'a> Registry<'a> {
                 return ToolResult::error(error.to_string());
             }
         }
+        if declaration.builtin == crate::config::Builtin::Graph {
+            return match crate::graph_structure::launch(&self.config.root) {
+                Ok(()) => ToolResult::success(Content::Launch { launched: true }),
+                Err(error) => ToolResult::error(error),
+            };
+        }
         let (owner, args) = match scope::builtin_args(self.config, &self.scope, owner, declaration)
         {
             Ok(args) => args,

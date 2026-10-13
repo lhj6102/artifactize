@@ -189,7 +189,6 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
             "mounts",
             "name",
             "path",
-            "reviewPolicy",
             "tags",
             "views"
         ]

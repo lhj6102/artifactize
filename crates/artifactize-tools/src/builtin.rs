@@ -56,6 +56,9 @@ const MAX_READ_LINES: usize = 500;
 
 pub fn description(builtin: Builtin) -> &'static str {
     match builtin {
+        Builtin::Graph => {
+            "Show the current project Artifact graph, including evals and input-to-consumer relations."
+        }
         Builtin::Section => "Read a Markdown section in {artifactName} by its exact heading.",
         Builtin::Help => "Read a program's --help output.",
         Builtin::Open => "Open a scoped file or URL in its default application.",
@@ -103,6 +106,7 @@ pub fn input_schema(builtin: Builtin) -> Value {
             }),
             vec![],
         ),
+        Builtin::Graph => (json!({}), vec![]),
         Builtin::Glob => (json!({"pattern":pattern,"path":path}), vec!["pattern"]),
         Builtin::Grep => (
             json!({

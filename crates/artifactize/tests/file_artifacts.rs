@@ -179,8 +179,8 @@ fn missing_directory_declaration_and_declaration_targets_are_rejected_at_the_sid
         fixture.error(&sidecar, message);
     }
     let fixture = Fixture::new();
-    fixture.declare(".artf", json!({"name":"file"}));
-    fixture.error(".artf", "must not be a declaration");
+    fixture.declare("nested/.artf", json!({"name":"file"}));
+    fixture.error("nested/.artf", "only at the repository root");
 }
 
 #[test]
@@ -233,7 +233,7 @@ fn names_are_required_and_globally_unique_and_policy_is_root_folder_only() {
         "input.artf",
         json!({"name":"file","review_policy":{"dependency_gates":"ignore"}}),
     );
-    fixture.error("input.artf", "root index.artf");
+    fixture.error("input.artf", "unknown field `review_policy`");
     fixture.declare("input.artf", json!({"name":"file"}));
     fixture.write("nested/input", "input");
     fixture.declare("nested/input.artf", json!({"name":"file"}));

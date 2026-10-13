@@ -10,6 +10,7 @@ use std::{ffi::OsString, path::PathBuf};
 pub enum Mode {
     Monitor,
     Review,
+    Graph,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,8 @@ struct Args {
 enum Screen {
     /// Open on the Monitor.
     Monitor,
+    /// Open the current repository Artifact graph (not a saved Run).
+    Graph,
     /// Open on Review.
     Review {
         /// Open this request instead of the list.
@@ -72,6 +75,8 @@ impl Launch {
         let (mode, request) = match screen {
             None | Some(Screen::Monitor) => (Mode::Monitor, None),
             Some(Screen::Review { request }) => (Mode::Review, request),
+            Some(Screen::Graph) if repo.is_some() => (Mode::Graph, None),
+            Some(Screen::Graph) => return Err("graph requires --repo PATH.".into()),
         };
         let reviewer = match reviewer {
             Some(reviewer) => reviewer,

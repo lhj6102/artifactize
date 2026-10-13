@@ -34,7 +34,7 @@ pub fn actionable(
     reviewer: &crate::types::ReviewerId,
 ) -> Result<(RequestId, bool), String> {
     let view = view.ok_or("The request is still loading.")?;
-    if view.request.status() != crate::types::RequestStatus::WaitingHuman {
+    if !view.request.status().is_human_wait() {
         return Err(format!(
             "The request is {}; there is nothing to review.",
             view.request.status()

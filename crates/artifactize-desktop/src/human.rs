@@ -26,7 +26,7 @@ use artifactize_core::{
     review::{self, Job, Outcome},
     store::{self, RequestView},
     tools::human::CommandLine,
-    types::{RequestId, RequestStatus},
+    types::RequestId,
 };
 use serde::Serialize;
 use specta::Type;
@@ -219,7 +219,7 @@ fn view(
     now: OffsetDateTime,
 ) -> HumanView {
     let request = &view.request;
-    let settled = request.status() != RequestStatus::WaitingHuman;
+    let settled = !request.status().is_human_wait();
     let claim = view.claim.as_ref().map(|claim| Claimant {
         reviewer: claim.reviewer.to_string(),
         mine: claim.reviewer.as_str() == reviewer,
@@ -278,7 +278,7 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
     let view = store::read_request(state, id)
         .await
         .map_err(Failure::Read)?;
-    let view = if view.request.status() == RequestStatus::WaitingHuman {
+    let view = if view.request.status().is_human_wait() {
         store::read_original(state, &view)
             .await
             .map_err(Failure::Read)?
@@ -286,7 +286,7 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
         view
     };
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
-    let resolve = view.request.status() == RequestStatus::WaitingHuman
+    let resolve = view.request.status().is_human_wait()
         && view.request.human_definition.is_some()
         && !app
             .human

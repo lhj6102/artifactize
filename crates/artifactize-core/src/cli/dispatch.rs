@@ -79,12 +79,18 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             wait,
             request_key,
             reuse_only,
+            speculate,
+            defer_human,
         }) => {
             workflow::verify(
                 context,
                 selection,
                 policy,
                 workflow::VerifyLimits {
+                    modes: crate::runs::RunModes {
+                        speculate,
+                        defer_human,
+                    },
                     jobs,
                     max_executions,
                     wait,

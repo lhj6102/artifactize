@@ -12,6 +12,7 @@ use crate::{config::read_workspace_config, project::selection::Selection};
 
 /// Execution-only arguments, separate from selection and dependency policy.
 pub(super) struct VerifyLimits {
+    pub modes: crate::runs::RunModes,
     pub jobs: u32,
     pub max_executions: Option<u64>,
     pub wait: bool,
@@ -26,6 +27,7 @@ pub(super) async fn verify(
     limits: VerifyLimits,
 ) -> Result<u8, String> {
     let VerifyLimits {
+        modes,
         jobs,
         max_executions,
         wait,
@@ -34,6 +36,7 @@ pub(super) async fn verify(
     } = limits;
     let selection = selection.resolve()?;
     let options = crate::project::VerifyOptions {
+        modes,
         jobs: jobs as usize,
         max_executions,
         reuse_only: reuse_only.into_iter().collect(),

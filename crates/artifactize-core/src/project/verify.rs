@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     broker::{self, now},
     cache,
-    config::{DependencyGates, ProfileKind, read_workspace_config},
+    config::{ProfileKind, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
     project::selection::{ProfileSelection, Selection, select_profiles},
     remote::Session,
@@ -37,8 +37,6 @@ pub struct VerifyOptions {
     pub recursive: bool,
     /// Force only explicitly selected Evals, never recursive dependencies.
     pub force: bool,
-    /// None uses root reviewPolicy; Some(false) explicitly enforces GREEN gates.
-    pub ignore_gates: Option<bool>,
 }
 
 impl Default for VerifyOptions {
@@ -52,7 +50,6 @@ impl Default for VerifyOptions {
             profile: None,
             recursive: false,
             force: false,
-            ignore_gates: None,
         }
     }
 }
@@ -90,14 +87,6 @@ pub(crate) async fn reserve(
         options.profile.as_ref(),
         options.recursive,
     )?);
-    let ignore_gates = options.ignore_gates.unwrap_or_else(|| {
-        config
-            .artifacts
-            .values()
-            .find(|artifact| artifact.path.as_os_str().is_empty())
-            .and_then(|artifact| artifact.review_policy.as_ref())
-            .is_some_and(|policy| matches!(policy.dependency_gates, Some(DependencyGates::Ignore)))
-    });
     Graph::new(&config).map_err(|e| e.to_string())?;
     let selected = selection.resolve(&config)?;
     let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| &eval.id).collect();
@@ -144,7 +133,6 @@ pub(crate) async fn reserve(
         reuse_only: options.reuse_only.clone(),
         recursive: options.recursive,
         force: options.force,
-        ignore_gates,
         validation: Default::default(),
         stopped_backends: Vec::new(),
         evidence: BTreeMap::new(),
@@ -222,7 +210,6 @@ pub(crate) async fn execute(
         profile: run.profile.clone(),
         recursive: run.recursive,
         force: run.force,
-        ignore_gates: Some(run.ignore_gates),
     };
     let repo = &run.repo_path;
     let state_dir = Some(run.state_dir.as_path());
@@ -241,14 +228,6 @@ pub(crate) async fn execute(
         )
         .map_err(|error| format!("INPUT_CHANGED: {error}"))?,
     );
-    let ignore_gates = options.ignore_gates.unwrap_or_else(|| {
-        config
-            .artifacts
-            .values()
-            .find(|artifact| artifact.path.as_os_str().is_empty())
-            .and_then(|artifact| artifact.review_policy.as_ref())
-            .is_some_and(|policy| matches!(policy.dependency_gates, Some(DependencyGates::Ignore)))
-    });
     let graph = Graph::new(&config).map_err(|e| format!("INPUT_CHANGED: {e}"))?;
     let selected = selection
         .resolve(&config)
@@ -331,7 +310,7 @@ pub(crate) async fn execute(
         &mut run,
         &mut requests,
         &receipts,
-        remote,
+        remote.clone(),
         cancellation.clone(),
     )
     .await
@@ -341,7 +320,7 @@ pub(crate) async fn execute(
             return Err(error);
         }
     };
-    let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
+    let evaluation = graph.evaluate_for_run(&evidence, run.modes.speculate);
     for request in &mut requests {
         if request.profile.kind() == ProfileKind::Dependency {
             if request.status() == crate::types::RequestStatus::Error {
@@ -351,12 +330,15 @@ pub(crate) async fn execute(
             continue;
         }
         if evidence.contains_key(request.eval_id.as_str())
-            || (request.status() == crate::types::RequestStatus::WaitingHuman
-                && !cancellation.is_cancelled())
+            || (request.status().is_human_wait() && !cancellation.is_cancelled())
         {
             continue;
         }
         let eval = &evaluation.evals[request.eval_id.as_str()];
+        if request.status() == crate::types::RequestStatus::Blocked && !cancellation.is_cancelled()
+        {
+            continue;
+        }
         if cancellation.is_cancelled() {
             request.state = crate::store::RequestState::failed(
                 "Run was cancelled.".into(),
@@ -376,7 +358,7 @@ pub(crate) async fn execute(
             request.blocked_reason = Some(gate_reason(eval));
         }
     }
-    let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
+    let evaluation = graph.evaluate_for_run(&evidence, run.modes.speculate);
     let required_evals: Vec<_> = evaluation
         .evals
         .iter()
@@ -423,6 +405,17 @@ pub(crate) async fn execute(
         .any(|(_, c)| c.status == EvalStatus::Red)
     {
         crate::store::RunState::Red { at }
+    } else if required_evals
+        .iter()
+        .any(|(_, eval)| eval.status == EvalStatus::Deferred)
+        && required_evals
+            .iter()
+            .all(|(_, eval)| eval.status.passes_gate())
+        && required.iter().all(|id| {
+            graph.artifacts()[id.as_str()].basis || !graph.artifacts()[id.as_str()].evals.is_empty()
+        })
+    {
+        crate::store::RunState::SignoffsPending { at }
     } else if satisfied {
         crate::store::RunState::Green { at }
     } else {
@@ -436,7 +429,6 @@ pub(crate) async fn execute(
         "selection":run.selection,
         "recursive":run.recursive,
         "force":run.force,
-        "ignoreGates":run.ignore_gates,
         "selectedEvalIds":selected.evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
         "includedEvalIds":evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
         "satisfied":satisfied && !cancellation.is_cancelled(),
@@ -457,11 +449,7 @@ pub(crate) async fn execute(
                     "satisfied":a.satisfied,
                 });
                 if let Some(fingerprint) = fingerprints.get(id) {
-                    artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() {
-                        "artifactsum"
-                    } else {
-                        "script"
-                    });
+                    artifact["fingerprintKind"] = json!(config.artifacts[*id].fingerprint.as_ref().map(crate::config::Fingerprint::kind));
                     artifact["fingerprint"] = json!(fingerprint.value);
                 }
                 artifact
@@ -483,6 +471,19 @@ pub(crate) async fn execute(
         receipts
             .retire_worker(&run.id, crate::types::FailureCode::Cancelled)
             .await?;
+    }
+    if run.modes.speculate
+        && let Some(remote) = remote
+    {
+        // A blocked result cannot be retracted from a team store. Publish survivors only
+        // after scheduling/withdrawal finishes, while the owned Run still owns failures.
+        run.control.as_mut().expect("owned Run").activity = crate::runs::Activity::Publishing;
+        let mut publishing = run.clone();
+        publishing.state = crate::store::RunState::Running;
+        receipts.save_run(&publishing).await?;
+        for request in &requests {
+            remote.publish_request(&receipts, request).await?;
+        }
     }
     receipts.finish(&run, &requests).await?;
     // Saved Agent conversations past their size bound are collected; a failure only warns.
@@ -506,6 +507,8 @@ pub(crate) async fn execute(
 
 pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {
     match status {
+        EvalStatus::Deferred => crate::types::RequestStatus::Deferred,
+        EvalStatus::Provisional => crate::types::RequestStatus::Provisional,
         EvalStatus::Green => crate::types::RequestStatus::Green,
         EvalStatus::Red => crate::types::RequestStatus::Red,
         EvalStatus::Error => crate::types::RequestStatus::Error,

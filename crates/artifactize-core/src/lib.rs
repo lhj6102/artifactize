@@ -9,6 +9,7 @@ pub mod cli;
 pub mod config;
 pub mod diagnostics;
 pub mod graph;
+pub mod graph_structure;
 pub mod human;
 pub mod inspect;
 mod json;

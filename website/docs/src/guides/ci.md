@@ -13,6 +13,16 @@ and are never cached or fetched from the store themselves. A missing or waiting
 required review leaves them WAIT_DEPENDENCY; a required RED makes them BLOCKED.
 `--reuse-only dependency` does not prevent derivation.
 
+## Keep deferred work out of the merge gate
+
+Developers may use `--defer-human` to finish machine work while a person is away,
+optionally with `--speculate`. SIGNOFFS_PENDING (exit 5), DEFERRED sign-offs and
+PROVISIONAL machine results are not approval. Keep CI's
+`--reuse-only agent,human` gate: missing sign-offs are not executed, leave
+INCOMPLETE, and cannot be counted as passing even if `--defer-human` is supplied.
+Once a person submits GREEN, CI reuses unchanged machine evidence and the
+sign-off. RED blocks dependents. Do not treat plain verify acceptance as CI success.
+
 ## Reuse verdicts from the team store
 
 **CI.** Configure CI through the environment only:

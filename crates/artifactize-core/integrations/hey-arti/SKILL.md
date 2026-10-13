@@ -111,7 +111,8 @@ profile = { kind = "dependency", depends_on = ["app", "logo"] }
 
 Dependency evals accept no payload or result schemas. They require every required
 eval on each listed Artifact: GREEN fulfills; missing/stale/error/waiting evidence
-waits; RED/BLOCKED blocks. They are derived, not cached. `basis = true` waives an
+waits in default Runs; RED/BLOCKED blocks. Speculation also blocks on ERROR.
+Deferred sign-offs allow PROVISIONAL execution, not final approval. They are derived, not cached. `basis = true` waives an
 input's own review obligations, not its dependencies, and cannot own evals.
 Avoid dependency-eval wait cycles.
 
@@ -263,12 +264,16 @@ The verification tools are:
   afterwards. An acknowledgement is not proof cleanup has finished.
 
 `speculate` and `defer_human` are per-request choices, both default **off**.
-Speculation starts downstream work before upstream evidence is ready, within
+Gate bypass (`--ignore-gates`, `review_policy.dependency_gates`, and the entire
+`review_policy` table) is removed; do not declare it. Speculation starts downstream work before upstream evidence is ready, within
 scheduling limits: it may be faster but spend work that upstream RED/ERROR later
 cancels. Defer Human sign-offs only when the workflow allows work to proceed
 provisionally without immediate human-in-the-loop judgment; the Run may end with
-only sign-offs remaining, which is **not full approval**. Explicit blocking Human
-gates still block. Do not enable either switch just to evade a required person.
+only sign-offs remaining, which is **not full approval**. Explicit `gate = "blocking"` Human
+gates still block. Deferred requests are DEFERRED and dependent results PROVISIONAL;
+a Run with only sign-offs left ends SIGNOFFS_PENDING (`--wait` exit 5). A later
+Human GREEN reuses unchanged machine results; RED blocks dependents on the next
+verify. CI with `--reuse-only agent,human` stays strict, regardless of either flag. Do not enable either switch just to evade a required person.
 
 Prefer bounded wait to short-interval status loops. Read details only when useful.
 RED is a verification result, not a tool invocation failure. Fix the evaluated
