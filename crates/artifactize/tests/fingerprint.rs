@@ -46,6 +46,7 @@ impl Fixture {
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
+            .envs(support::os::home_variables(self.root.path().join("home")))
             .env("FINGERPRINT_MARKER", "from-the-terminal");
         command
     }

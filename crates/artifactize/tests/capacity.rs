@@ -97,7 +97,7 @@ impl Fixture {
             .arg("--state-dir")
             .arg(self.state())
             .args(args)
-            .env(support::os::home_env(), self.root.path().join("home"))
+            .envs(support::os::home_variables(self.root.path().join("home")))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off");

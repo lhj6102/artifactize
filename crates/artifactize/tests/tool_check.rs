@@ -99,7 +99,7 @@ fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
         .args(["tools", "check"])
         .args(args)
         .env("TOOL_CHECK_SECRET", "real-environment")
-        .env(support::os::home_env(), support::os::human_tool_home())
+        .envs(support::os::home_variables(support::os::human_tool_home()))
         .output()
         .unwrap()
 }

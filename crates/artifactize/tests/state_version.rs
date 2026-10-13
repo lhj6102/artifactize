@@ -18,7 +18,7 @@ const EARLIER: &str =
 fn artifactize(root: &Path, args: &[&str]) -> std::process::Output {
     Command::new(support::os::cli())
         .env("ARTIFACTIZE_REMOTE", "off")
-        .env(support::os::home_env(), root.join("home"))
+        .envs(support::os::home_variables(root.join("home")))
         .arg("--repo")
         .arg(root.join("repo"))
         .arg("--state-dir")

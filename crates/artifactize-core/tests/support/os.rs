@@ -1969,6 +1969,19 @@ pub fn home_env() -> &'static str {
     "HOME"
 }
 
+/// The variables that name the author's home for `home`: `HOME`, and on Windows `USERPROFILE`,
+/// which programs there (Python's `expanduser` among them) read instead.
+pub fn home_variables(
+    home: impl AsRef<std::ffi::OsStr>,
+) -> Vec<(&'static str, std::ffi::OsString)> {
+    let home = home.as_ref().to_owned();
+    let mut variables = vec![(home_env(), home.clone())];
+    if cfg!(windows) {
+        variables.push(("USERPROFILE", home));
+    }
+    variables
+}
+
 /// A shell fixture reads this variable to observe its platform home.
 pub fn home_expression() -> &'static str {
     "$HOME"
@@ -2125,7 +2138,7 @@ pub fn capped_output(bytes: usize) -> String {
 /// HOME and desktop variables inherited by a human-facing child.
 pub fn human_environment<'a>(command: &'a mut Command, root: &Path) -> &'a mut Command {
     command
-        .env(home_env(), root.join("real-home"))
+        .envs(home_variables(root.join("real-home")))
         .env("DISPLAY", ":77")
         .env("WAYLAND_DISPLAY", "wayland-test")
         .env("XDG_CONFIG_HOME", root.join("real-config"))
@@ -2280,7 +2293,7 @@ fn signal_failure() -> Option<(String, Vec<&'static str>, &'static str)> {
 
 /// Fingerprint probe's private directory and permission checks differ by OS.
 pub fn fingerprint_probe(source: &str) -> String {
-    source.replace("PRIVATE_DIRECTORY_CHECK", "for key in ['TMPDIR', 'ARTIFACTIZE_OUTPUT_DIR']:\n    path = pathlib.Path(os.environ[key])\n    assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))\n    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700\n    (path / 'discard').write_text('scratch')\nassert not pathlib.Path(os.environ['HOME']).is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_OUTPUT_DIR']).parent)")
+    source.replace("PRIVATE_DIRECTORY_CHECK", "for key in ['TMPDIR', 'ARTIFACTIZE_OUTPUT_DIR']:\n    path = pathlib.Path(os.environ[key])\n    assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))\n    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700\n    (path / 'discard').write_text('scratch')\nassert not pathlib.Path(os.path.expanduser('~')).is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_OUTPUT_DIR']).parent)")
 }
 
 // The stand-in executable also includes this dependency-free part of the OS layer.

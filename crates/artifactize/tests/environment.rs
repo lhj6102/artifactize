@@ -64,7 +64,7 @@ impl Project {
             .env("ARTIFACTIZE_REMOTE", "off")
             .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-commands")
             .env("AUTHOR_VARIABLE", "from-the-terminal")
-            .env(support::os::home_env(), self.home())
+            .envs(support::os::home_variables(self.home()))
             .output()
             .unwrap()
     }

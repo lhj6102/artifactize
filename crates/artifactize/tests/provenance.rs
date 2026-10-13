@@ -80,7 +80,7 @@ impl Fixture {
             .arg(root.join("state"))
             .args(args)
             .arg("--json")
-            .env(support::os::home_env(), root.join("home"))
+            .envs(support::os::home_variables(root.join("home")))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")

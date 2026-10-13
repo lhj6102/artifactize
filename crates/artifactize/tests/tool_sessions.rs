@@ -64,7 +64,7 @@ impl Fixture {
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-key")
             .env("ARTIFACTIZE_REMOTE", "off")
-            .env(support::os::home_env(), self.root.path().join("home"));
+            .envs(support::os::home_variables(self.root.path().join("home")));
         command
     }
     fn json(&self, args: &[&str], code: i32) -> Value {
