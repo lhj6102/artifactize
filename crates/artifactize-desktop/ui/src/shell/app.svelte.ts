@@ -8,7 +8,7 @@ import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
 import { Leaving } from "./leaving.svelte";
 
-export type Screen = "monitor" | "review" | "settings";
+export type Screen = "monitor" | "review" | "settings" | "graph";
 
 export class AppState {
   /** The backend's launch, replaced whole. */

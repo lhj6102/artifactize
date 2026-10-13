@@ -42,7 +42,7 @@ const KIND_KEY_FORMAT_PREFIX: &[u8] = b"artifactize-kind-key-v1\n";
 /// Changing these bytes invalidates existing reuse keys; this is not a config/session/DB version.
 const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v2\n";
 
-/// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
+/// Hash the evaluation criteria: what is asked and how the answer is judged, never how the eval
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
 /// the eval's id and title, and tool views stay out.
 pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionHash {
@@ -52,22 +52,22 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionH
         Profile::Dependency { .. } => "dependency",
         Profile::Runtime { .. } => "runtime",
     };
-    let mut strategy = json!({
+    let mut criteria = json!({
         "kind": kind,
         "payload": eval.payload(),
         "passSchema": eval.pass_schema(),
         "failSchema": eval.fail_schema(),
     });
     if let Profile::Runtime { command, args, .. } = &eval.profile() {
-        strategy["command"] = json!(command);
-        strategy["args"] = json!(args);
+        criteria["command"] = json!(command);
+        criteria["args"] = json!(args);
     }
     if let Profile::Dependency { depends_on } = &eval.profile() {
-        strategy["dependsOn"] = json!(depends_on);
+        criteria["dependsOn"] = json!(depends_on);
     }
-    strategy.sort_all_objects();
+    criteria.sort_all_objects();
     content::hex(&Sha256::digest(
-        serde_json::to_vec(&strategy).expect("eval strategy is JSON"),
+        serde_json::to_vec(&criteria).expect("evaluation criteria is JSON"),
     ))
     .parse()
     .expect("a SHA-256 digest in hex is a definition hash")
@@ -91,7 +91,7 @@ pub struct Manifest {
     pub files: Option<BTreeMap<String, crate::types::DigestPrefix>>,
 }
 
-/// An eval's reuse key: `hash(eval strategy, sorted (name, fingerprint) of the Artifacts it
+/// An eval's reuse key: `hash(evaluation criteria, sorted (name, fingerprint) of the Artifacts it
 /// depends on)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Key {
@@ -398,6 +398,10 @@ async fn compute(
     scope::validate_file_target(&config.root, &config.artifacts[id])
         .map_err(|error| error.to_string())?;
     let result = match &config.artifacts[id].fingerprint {
+        Some(Fingerprint::Graph) => Ok(PreparedFingerprint {
+            value: crate::graph_structure::read(&config.root)?.fingerprint(),
+            manifest: None,
+        }),
         Some(Fingerprint::Artifactsum { files, ignore }) => {
             content(config, id, files, ignore, &cancellation)
                 .await

@@ -5,6 +5,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import { call, commands, message, onStateChanged } from "./ipc/client";
+  import CurrentGraph from "./monitor/CurrentGraph.svelte";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewScreen from "./review/ReviewScreen.svelte";
   import Settings from "./settings/Settings.svelte";
@@ -25,6 +26,7 @@
     call(commands.launch()).then(
       (view) => {
         app.start(view);
+
       },
       (error) => (app.failure = message(error)),
     );
@@ -77,7 +79,7 @@
     } else if (chord(event, "r") || event.key === "F5") {
       // Never reload the page: a refresh reads the state again.
       event.preventDefault();
-      browse.refresh();
+      if (app.screen !== "graph") browse.refresh();
     }
   }
 </script>
@@ -89,6 +91,7 @@
     <div class="brand">artifactize</div>
     <Tabs.Root bind:value={app.screen}>
       <Tabs.List class="tabs" aria-label="Screens">
+        {#if app.launch?.mode === "graph"}<Tabs.Trigger class="tab" value="graph">Graph</Tabs.Trigger>{/if}
         <Tabs.Trigger class="tab" value="monitor">Monitor</Tabs.Trigger>
         <Tabs.Trigger class="tab" value="review">Review</Tabs.Trigger>
       </Tabs.List>
@@ -111,6 +114,7 @@
     <p class="failure">{app.failure}</p>
   {:else if app.launch}
     <main>
+      {#if app.screen === "graph"}<CurrentGraph />{/if}
       <div class="screen" hidden={app.screen !== "monitor"}>
         <Monitor active={app.screen === "monitor"} />
       </div>

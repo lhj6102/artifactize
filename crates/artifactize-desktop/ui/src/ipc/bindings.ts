@@ -60,6 +60,7 @@ export const commands = {
 	humanRelease: (ids: string[], job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**  The selected Run `run` as a graph of its Artifacts, from the shown snapshot. */
 	runGraph: (run: string) => typedError<RunGraph, Failure>(__TAURI_INVOKE("run_graph", { run })),
+	currentGraph: () => typedError<CurrentGraph, Failure>(__TAURI_INVOKE("current_graph")),
 	/**
 	 *  Requests matching `query` from position `start` (0 for the newest). `reload: false`
 	 *  redraws the last page of the same query and start without reading the state.
@@ -219,6 +220,17 @@ export type Connection =
 export type Count = {
 	mark: Mark,
 	count: number,
+};
+
+export type CurrentGraph = {
+	fingerprint: string,
+	graph: Shape,
+	tree: TreeNode[],
+	/**
+	 *  Complete, canonical structural data rendered as text: criteria and relation labels
+	 *  remain inspectable even when several relations share one graph edge.
+	 */
+	structure: string,
 };
 
 export type DetailView = {
@@ -407,7 +419,7 @@ export type Mark = {
 };
 
 /**  The screen the app opens on; both stay reachable. */
-export type Mode = "monitor" | "review";
+export type Mode = "monitor" | "review" | "graph";
 
 export type Model = {
 	slug: string,
@@ -587,6 +599,11 @@ export type Settled =
  *  again; the notice says what failed.
  */
 "savedLocally";
+
+export type Shape = {
+	nodes: GraphNode[],
+	edges: GraphEdge[],
+};
 
 export type Share = 
 /**  Reduced records without argv, captured output, tool calls or paths. */

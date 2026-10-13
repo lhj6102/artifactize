@@ -383,7 +383,7 @@ impl TryFrom<FailureCode> for BackendStopCode {
         code.as_str().parse()
     }
 }
-status!(FingerprintKind { Artifactsum => "artifactsum", Script => "script" });
+status!(FingerprintKind { Artifactsum => "artifactsum", Script => "script", Graph => "graph" });
 status!(ArtifactValidationStatus { Basis => "BASIS", Green => "GREEN", Incomplete => "INCOMPLETE", Error => "ERROR", Red => "RED", Blocked => "BLOCKED", Wait => "WAIT", Stale => "STALE", Unreviewed => "UNREVIEWED" });
 status!(RunStatus {
     Running => "RUNNING",

@@ -38,6 +38,7 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
         };
     };
     let valid = match builtin {
+        Builtin::Graph => args.is_empty(),
         Builtin::Read | Builtin::List => args.len() == 1,
         Builtin::Section => args.len() == 2 || !human && args.len() == 1,
         Builtin::Help => !args.is_empty(),
@@ -97,7 +98,10 @@ pub fn validate_target(
     scope: &Scope,
     owner: &ArtifactId,
 ) -> Result<(), String> {
-    if builtin == Builtin::Help || builtin == Builtin::Open && is_url(&args[0]) {
+    if builtin == Builtin::Graph
+        || builtin == Builtin::Help
+        || builtin == Builtin::Open && is_url(&args[0])
+    {
         return Ok(());
     }
     // Existing targets are validated without following any symlink.

@@ -179,8 +179,8 @@ fn missing_directory_declaration_and_declaration_targets_are_rejected_at_the_sid
         fixture.error(&sidecar, message);
     }
     let fixture = Fixture::new();
-    fixture.declare(".artf", json!({"name":"file"}));
-    fixture.error(".artf", "must not be a declaration");
+    fixture.declare("nested/.artf", json!({"name":"file"}));
+    fixture.error("nested/.artf", "only at the repository root");
 }
 
 #[test]

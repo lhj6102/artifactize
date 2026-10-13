@@ -273,7 +273,7 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
         let args: Vec<String> = declaration.args.iter().map(ToString::to_string).collect();
         artifactize_tools::builtin::validate_args(declaration.builtin, Some(&args), true)
             .map_err(D::Error::custom)?;
-        let kind = if declaration.builtin == Builtin::Open {
+        let kind = if matches!(declaration.builtin, Builtin::Open | Builtin::Graph) {
             HumanToolKind::Launch
         } else {
             HumanToolKind::Output
@@ -331,7 +331,7 @@ impl HumanTool {
                     crate::scope::validate_human_argument(argument)
                         .map_err(|error| error.to_string())?;
                 }
-                if tool.builtin != Builtin::Help
+                if !matches!(tool.builtin, Builtin::Help | Builtin::Graph)
                     && let crate::scope::Argument::Literal(target) = &tool.args[0]
                     && !(tool.builtin == Builtin::Open
                         && artifactize_tools::builtin::is_url(target))
@@ -357,6 +357,9 @@ impl HumanTool {
 }
 
 fn validate_agent_target(builtin: Builtin, args: &[String]) -> Result<(), String> {
+    if builtin == Builtin::Graph {
+        return Ok(());
+    }
     if builtin == Builtin::Help {
         if args.iter().any(|arg| arg.contains(['{', '}'])) {
             return Err("Help args are literal program/subcommand names.".into());
@@ -385,7 +388,7 @@ pub(super) fn description(value: &str) -> Result<(), String> {
 
 impl HumanBuiltinTool {
     pub fn kind(&self) -> HumanToolKind {
-        if self.builtin == Builtin::Open {
+        if matches!(self.builtin, Builtin::Open | Builtin::Graph) {
             HumanToolKind::Launch
         } else {
             HumanToolKind::Output

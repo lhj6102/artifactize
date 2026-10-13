@@ -457,11 +457,7 @@ pub(crate) async fn execute(
                     "satisfied":a.satisfied,
                 });
                 if let Some(fingerprint) = fingerprints.get(id) {
-                    artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() {
-                        "artifactsum"
-                    } else {
-                        "script"
-                    });
+                    artifact["fingerprintKind"] = json!(config.artifacts[*id].fingerprint.as_ref().map(crate::config::Fingerprint::kind));
                     artifact["fingerprint"] = json!(fingerprint.value);
                 }
                 artifact

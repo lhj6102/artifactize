@@ -509,7 +509,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     assert!(changes.files.is_none() && changes.dependencies.is_none());
 }
 
-/// The upgrade invalidates even script keys, without changing the Eval strategy hash.
+/// The upgrade invalidates even script keys, without changing the evaluation criteria hash.
 #[test]
 fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
     let agent: EvalDeclaration = crate::test_declaration::eval(json!({

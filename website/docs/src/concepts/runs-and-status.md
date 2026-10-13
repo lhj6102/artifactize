@@ -238,3 +238,14 @@ noncontiguous in a selected projection. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output
 level, with no `plan`, `--compact` or `--full`. The former top-level `graph`
 command is hidden from help; it prints `graph moved to "artifactize config graph"` and exits 2.
+
+### Current graph review tools
+
+`config graph` remains the configuration inspector. For review, declare the
+[built-in `graph` tools](../reference/builtin-tools.md#current-project-graph) on
+any Artifact: the Agent sees the extracted current graph as a tree; the Human
+opens it in the existing desktop graph viewer, without requiring a saved Run.
+The optional root [`.artf` graph Artifact](../reference/declarations.md#graph-artifact)
+has ordinary evals and appears in Runs and status like any other Artifact. Only
+its fingerprint algorithm is different; there is no graph-specific verification
+flow or automatic relation to the root folder Artifact.

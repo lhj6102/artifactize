@@ -72,7 +72,7 @@ pub struct EvalState {
     pub reason: String,
     pub blocked_by: Vec<crate::store::Blocker>,
     pub obligations: Vec<crate::config::ArtifactName>,
-    /// The Eval definition hash: the eval strategy the key covers.
+    /// The Eval definition hash: the evaluation criteria the key covers.
     pub eval_def_hash: crate::types::DefinitionHash,
     /// The target's current fingerprint; null without one.
     pub fingerprint: Option<crate::types::Fingerprint>,

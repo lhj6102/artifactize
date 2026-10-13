@@ -69,19 +69,19 @@ script can read a file of any Artifact it names in its args. The key is
 hash(Eval definition hash, sorted (Artifact name, kind, fingerprint) of each covered Artifact)
 ```
 
-Artifact names and kinds (`folder` or `file`) are part of the key, for the
+Artifact names and kinds (`folder`, `file` or `graph`) are part of the key, for the
 target and every covered dependency. A change from folder to file never reuses
 the former result, even if a script emits the same fingerprint. Physical paths
 are never key inputs, so copies with matching names, kinds and fingerprints reuse.
 Different Artifact names never share a result. The **Eval definition hash** is lowercase
-SHA-256 of canonical JSON with recursively sorted keys over the eval strategy:
+SHA-256 of canonical JSON with recursively sorted keys over the **evaluation criteria**:
 
 - the eval kind (runtime, agent or human);
 - `payload`, including the instruction;
 - `pass_schema` and `fail_schema`;
 - for runtime evals, the command and args.
 
-Execution options are not part of the key: an Agent's backend, model, reasoning,
+**Evaluation execution options** are not part of the key: an Agent's backend, model, reasoning,
 `timeout_ms`, `max_tool_calls` and `max_tokens`, a runtime `timeout_ms`, and the selected
 profile variant. Neither are the eval id and title, tags, repository paths, unused
 profile variants, or tool declarations (`views`): a tool is a way of viewing an
@@ -175,3 +175,35 @@ current verdicts. Later Runs reuse normally. See [State](../reference/state-cach
 The monitor and standalone `review` also share a redesigned Human Detail and an
 explicit `c` claim. See [Install: Upgrading to 0.9](../getting-started/install.md#upgrading-to-09)
 for the terminal layout and removed standalone keys.
+
+## Graph fingerprint
+
+The root [`.artf` graph Artifact](../reference/declarations.md#graph-artifact)
+uses `graph:<sha256>`, computed from one canonical, name-based extraction of the
+whole project's current declarations. Objects and relations are sorted; child
+folder locations and repository paths are not identities. Extraction includes:
+
+- Artifact names and kinds, `basis`, and fingerprint coverage: artifactsum `files`
+  and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
+  The graph Artifact has a graph-coverage marker, not its own recursively embedded
+  digest.
+- Input → consumer relations: child ownership (names, not child folder paths),
+  mounts (including aliases), instruction references, runtime argv references
+  (including eval ID, argv index and logical suffix), and dependency eval targets.
+- Qualified eval IDs, owning Artifact, titles and evaluation criteria: default
+  profile kind, the full `payload` including instruction and owner context,
+  `pass_schema`, `fail_schema`, runtime `command`/`args`, and dependency `depends_on`.
+
+Excluded are evaluation execution options (backend, model, reasoning, all
+`timeout_ms` values including fingerprint-script timeouts, `max_tool_calls`,
+`max_tokens`, `profile_variants`), all tool views and sessions, tags, repository
+paths and source file contents. Declared coverage paths and scoped argument
+suffixes remain meaningful; a relocation that preserves those logical declarations
+and ownership does not change the graph fingerprint. Execution options are still
+saved in ordinary state records.
+
+This is only a fingerprint algorithm. Existing reuse keys, Runs, status and review
+flows decide whether to reuse or review again. The graph is evaluated against
+current state, never a stored diff or structural history. A graph eval title
+change invalidates its graph fingerprint even though titles are excluded from the
+ordinary Eval definition hash. Both built-in `graph` tools use this same extraction.

@@ -4,10 +4,10 @@
   import type { Light } from "../ipc/client";
   import { WORDS } from "./graph";
 
-  let { data, selected }: NodeProps & { data: { name: string; light: Light; zoomed: boolean } } = $props();
+  let { data, selected }: NodeProps & { data: { name: string; light: Light; zoomed: boolean; structural?: boolean } } = $props();
 </script>
 
-<div class="artifact light-{data.light}" class:selected class:zoomed={data.zoomed} title="{data.name}: {WORDS[data.light]}">
+<div class="artifact light-{data.light}" class:selected class:zoomed={data.zoomed} title={data.structural ? `${data.name}: current structure` : `${data.name}: ${WORDS[data.light]}`}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="dot" aria-hidden="true"></span>
   <span class="name">{data.name}</span>

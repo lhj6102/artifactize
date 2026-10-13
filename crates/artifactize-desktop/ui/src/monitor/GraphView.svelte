@@ -20,10 +20,13 @@
     selected,
     zoomed = $bindable(null),
     active = true,
+    structural = false,
     onselect,
     onopen,
   }: {
-    graph: RunGraph;
+    graph: Pick<RunGraph, "nodes" | "edges">;
+    /** Static structure has no Run verdicts. */
+    structural?: boolean;
     positions: Map<string, Point>;
     /** The Run's tree rows: an Artifact's evals come from there. */
     tree: TreeNode[];
@@ -52,10 +55,10 @@
         // A fixed size: recoloured nodes keep their dimensions and never re-measure.
         width: NODE.width,
         height: NODE.height,
-        data: { name: node.name, light: node.light, zoomed: node.id === zoomed },
+        data: { name: node.name, light: node.light, zoomed: node.id === zoomed, structural },
         draggable: false,
         connectable: false,
-        ariaLabel: `${node.name}: ${WORDS[node.light]}`,
+        ariaLabel: structural ? `${node.name}: current structure` : `${node.name}: ${WORDS[node.light]}`,
         domAttributes: { "data-light": node.light },
       })),
   );
@@ -204,6 +207,24 @@
     };
   };
 
+  /** Expanding the structural text changes the canvas height. Keep the selected graph in
+   * view rather than clipping it below the new canvas; the Run view keeps its own camera. */
+  const structuralSize: Attachment<HTMLElement> = (canvas) => {
+    if (!structural) return;
+    let previous = "";
+    const resized = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width === 0 || height === 0) return;
+      const size = `${width}:${height}`;
+      if (previous && previous !== size) {
+        void flow.fitView({ nodes: zoomed ? [{ id: zoomed }] : undefined, duration: 0, maxZoom: 1.6, padding: 0.6 });
+      }
+      previous = size;
+    });
+    resized.observe(canvas);
+    return () => resized.disconnect();
+  };
+
   async function zoomIn(id: string) {
     release();
     zoomed = id;
@@ -285,7 +306,7 @@
 
 <div class="graph" class:split={zoomed !== null}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={v.canvas} {@attach holdFocus} onkeydown={keydown} tabindex="-1">
+  <div class="canvas" bind:this={v.canvas} {@attach holdFocus} {@attach structuralSize} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
       bind:nodes
       bind:edges
@@ -306,9 +327,13 @@
       {#if graph.nodes.length > 40}<MiniMap pannable zoomable />{/if}
     </SvelteFlow>
     <ul class="legend" aria-label="Legend">
+      {#if structural}
+        <li>Current structure · arrows: input → consumer</li>
+      {:else}
       {#each LEGEND as light (light)}
         <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>
       {/each}
+      {/if}
     </ul>
   </div>
   {#if artifact}
