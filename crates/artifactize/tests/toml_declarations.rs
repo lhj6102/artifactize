@@ -1,8 +1,9 @@
 use std::{fs, path::Path};
 
-use artifactize::config::{Profile, parse_declaration, read_workspace_config};
+use artifactize_core::config::{Profile, parse_declaration, read_workspace_config};
 use serde_json::{Value, json};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 const FEATURES: &str = r#"
@@ -278,10 +279,13 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
         "name = 'source'\nbasis = true",
     );
     let config = read_workspace_config(root.path()).unwrap();
-    let view = artifactize::query::graph(&config, &artifactize::project::selection::Selection::All)
-        .unwrap();
+    let view = artifactize_core::query::graph(
+        &config,
+        &artifactize_core::project::selection::Selection::All,
+    )
+    .unwrap();
     let wire = serde_json::to_value(&view).unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = std::process::Command::new(support::os::cli())
         .arg("--repo")
         .arg(root.path())
         .args(["config", "graph", "--json"])
@@ -292,7 +296,7 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
         serde_json::from_slice::<Value>(&output.stdout).unwrap(),
         wire
     );
-    let saved = artifactize::store::definitions::Definitions::from_view(&view).unwrap();
+    let saved = artifactize_core::store::definitions::Definitions::from_view(&view).unwrap();
     assert_eq!(serde_json::to_value(saved).unwrap(), wire);
     let artifact = &wire["artifacts"]["app"];
     assert!(artifact.get("reviewPolicy").is_some() && artifact.get("review_policy").is_none());
@@ -318,11 +322,11 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
     assert_eq!(eval["profile"]["timeoutMs"], 3000);
     assert_eq!(eval["profile"]["maxToolCalls"], 10);
     assert_eq!(eval["profile"]["maxTokens"], 1000);
-    let stored = artifactize::config::StoredProfile::from(declaration.evals[0].profile());
+    let stored = artifactize_core::config::StoredProfile::from(declaration.evals[0].profile());
     let value = serde_json::to_value(stored).unwrap();
     assert_eq!(value["timeoutMs"], 3000);
     assert_eq!(
-        serde_json::from_value::<artifactize::config::StoredProfile>(value.clone())
+        serde_json::from_value::<artifactize_core::config::StoredProfile>(value.clone())
             .map(|profile| serde_json::to_value(profile).unwrap())
             .unwrap(),
         value
@@ -372,12 +376,13 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
         serde_json::to_value(declaration.evals[0].profile()).unwrap(),
         expected
     );
-    let stored = artifactize::config::StoredProfile::from(declaration.evals[0].profile());
+    let stored = artifactize_core::config::StoredProfile::from(declaration.evals[0].profile());
     let stored_value = serde_json::to_value(&stored).unwrap();
     assert_eq!(stored_value, expected);
     assert_eq!(
         serde_json::to_value(
-            serde_json::from_value::<artifactize::config::StoredProfile>(stored_value).unwrap()
+            serde_json::from_value::<artifactize_core::config::StoredProfile>(stored_value)
+                .unwrap()
         )
         .unwrap(),
         expected
@@ -401,14 +406,17 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
         "name = 'input'\nbasis = true",
     );
     let config = read_workspace_config(root.path()).unwrap();
-    let view = artifactize::query::graph(&config, &artifactize::project::selection::Selection::All)
-        .unwrap();
+    let view = artifactize_core::query::graph(
+        &config,
+        &artifactize_core::project::selection::Selection::All,
+    )
+    .unwrap();
     let wire = serde_json::to_value(&view).unwrap();
     assert_eq!(wire["evals"][0]["declaration"]["profile"], expected);
     assert!(wire["evals"][0]["declaration"].get("payload").is_none());
-    let saved = artifactize::store::definitions::Definitions::from_view(&view).unwrap();
+    let saved = artifactize_core::store::definitions::Definitions::from_view(&view).unwrap();
     assert_eq!(serde_json::to_value(saved).unwrap(), wire);
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = std::process::Command::new(support::os::cli())
         .arg("--repo")
         .arg(root.path())
         .args(["config", "graph", "--json"])
@@ -432,7 +440,7 @@ fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
     );
     write(root.path(), ".artfignore", "artifactize.json/\n");
     let run_graph = || {
-        std::process::Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        std::process::Command::new(support::os::cli())
             .arg("--repo")
             .arg(root.path())
             .args(["config", "graph", "--json"])

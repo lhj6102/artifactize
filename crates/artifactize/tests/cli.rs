@@ -8,6 +8,7 @@ use std::{
 
 use serde_json::{Value, json};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -58,7 +59,7 @@ impl Fixture {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             // The declarations name `true`, `false` and `printf` for PATH to find.
             .env("PATH", support::os::path())
@@ -238,7 +239,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
 
 #[test]
 fn version_matches_package() {
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .arg("--version")
         .output()
         .unwrap();
@@ -256,7 +257,7 @@ fn version_matches_package() {
 #[test]
 fn redirected_or_no_console_help_never_waits_for_input() {
     for with_console in [true, false] {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         support::os::console_launch(&mut command, with_console);
         let mut child = command
             .stdin(Stdio::piped())
@@ -285,7 +286,7 @@ fn tools_facade_matches_the_standalone_cli() {
         "# First\nalpha\n# Next\nomega\n",
     )
     .unwrap();
-    let standalone = support::os::tools_binary(env!("CARGO_BIN_EXE_artifactize"));
+    let standalone = support::os::tools_binary(&support::os::cli());
     // Use the actual trusted program for the help tool, not clap help navigation.
     let program = standalone.to_str().unwrap();
     for (args, code) in [
@@ -313,7 +314,7 @@ fn tools_facade_matches_the_standalone_cli() {
             .args(&args)
             .output()
             .unwrap();
-        let facade = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let facade = Command::new(support::os::cli())
             .current_dir(root.path())
             .arg("tools")
             .args(&args)
@@ -330,7 +331,7 @@ fn tools_facade_matches_the_standalone_cli() {
             assert_eq!(facade.stderr, direct.stderr, "{args:?}");
         }
     }
-    let help = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let help = Command::new(support::os::cli())
         .args(["tools", "--help"])
         .output()
         .unwrap();
@@ -343,7 +344,7 @@ fn tools_facade_matches_the_standalone_cli() {
             text.lines().any(|line| line.trim_start().starts_with(name)),
             "{text}"
         );
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .args(["tools", name, "--help"])
             .output()
             .unwrap();
@@ -353,10 +354,8 @@ fn tools_facade_matches_the_standalone_cli() {
 
 #[test]
 fn help_is_displayed_without_arguments() {
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
-        .output()
-        .unwrap();
-    let help = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli()).output().unwrap();
+    let help = Command::new(support::os::cli())
         .arg("--help")
         .output()
         .unwrap();
@@ -439,7 +438,7 @@ fn dropped_commands_and_flags_are_rejected() {
         vec!["verify", "--critics", "artifact/check"],
         vec!["verify", "--critics-file", "selection.json"],
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .args(&args)
             .output()
             .unwrap();

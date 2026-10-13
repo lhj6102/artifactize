@@ -63,8 +63,8 @@ impl Launcher for Standalone {
     }
 }
 
-/// The variables a standalone program receives: `PATH`, the locale, and the home, temporary
-/// and system variables the platform's programs need to start; nothing else is inherited.
+/// The variables a standalone program receives: the whole environment of this process, as in
+/// the author's terminal, without artifactize's own `ARTIFACTIZE_*` variables.
 pub fn passed_environment() -> BTreeMap<OsString, OsString> {
     platform::process::passed_environment()
 }

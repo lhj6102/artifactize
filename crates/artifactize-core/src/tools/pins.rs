@@ -1,0 +1,191 @@
+//! SHA-256 pins of the files Agent tools execute (`executionPaths`), recorded in the
+//! provenance of every Agent result so that results show which binary produced them.
+
+use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
+
+use sha2::{Digest, Sha256};
+
+use super::Registry;
+use crate::{
+    config::{AgentTool, RepoConfig},
+    platform, scope,
+};
+
+/// Bound retained file/link digest metadata, not directory visits, for an executable pin.
+const MAX_ENTRIES: usize = 10_000;
+/// Bound file-content hashing I/O independently of retained entry count.
+const MAX_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// Pins by registered tool name, then by declared workspace-relative path.
+pub type Pins = BTreeMap<
+    crate::config::ExecutionPinName,
+    BTreeMap<crate::config::LogicalPath, crate::types::Sha256Digest>,
+>;
+
+/// Hash every `executionPaths` entry of the Agent eval's command tools, off the async runtime.
+/// A file pins to the SHA-256 of its bytes; a directory to the SHA-256 over each file/link's
+/// relative path and digest, in path order, where a symlink inside it contributes its target
+/// without being followed. Missing/unreadable paths, special files, more than 1 GiB
+/// of file bytes, or any further entry after 10,000 retained files/links are errors.
+/// Directories are traversed but do not increment the counter or contribute a digest.
+pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins, String> {
+    let registry = Registry::new(config, eval_id)?;
+    let mut resolved = Vec::new();
+    for (name, tool) in &registry.tools {
+        let AgentTool::Command(command) = tool.declaration else {
+            continue;
+        };
+        for path in &command.execution_paths {
+            let absolute = scope::scoped_path(&config.root, Path::new(path))
+                .map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
+            resolved.push((
+                name.as_str().parse::<crate::config::ExecutionPinName>()?,
+                path.clone(),
+                absolute,
+            ));
+        }
+    }
+    let mut sessions = std::collections::BTreeSet::new();
+    for tool in registry.tools.values() {
+        let AgentTool::Command(command) = tool.declaration else {
+            continue;
+        };
+        let Some(name) = &command.session else {
+            continue;
+        };
+        let owner = &tool.definition.artifact_id;
+        if !sessions.insert((owner.clone(), name.clone())) {
+            continue;
+        }
+        let session = &registry.scope.artifacts[owner].views.agent_sessions[name];
+        for (suffix, command) in [("start", &session.start), ("stop", &session.stop)] {
+            let key: crate::config::ExecutionPinName =
+                format!("{name}_{owner}.{suffix}").parse()?;
+            for path in &command.execution_paths {
+                let absolute = scope::scoped_path(&config.root, Path::new(path))
+                    .map_err(|error| format!("Tool {key} executionPaths {path}: {error}"))?;
+                resolved.push((key.clone(), path.clone(), absolute));
+            }
+        }
+    }
+    if resolved.is_empty() {
+        return Ok(Pins::new());
+    }
+    crate::task::joined(
+        tokio::task::spawn_blocking(move || {
+            let mut pins = Pins::new();
+            for (name, path, absolute) in resolved {
+                let digest = pin(&absolute)
+                    .map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
+                pins.entry(name).or_default().insert(path, digest);
+            }
+            Ok(pins)
+        })
+        .await,
+    )
+    .map_err(|e| e.to_string())?
+}
+
+fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
+    let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
+    let mut bytes = 0;
+    if kind == platform::FileKind::File {
+        let file = platform::open_regular(path).map_err(|e| e.to_string())?;
+        return Ok(hex(hash_file(file, &mut bytes)?.as_bytes()));
+    }
+    if kind != platform::FileKind::Directory {
+        return Err("execution paths must be regular files or directories.".into());
+    }
+    let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
+    let mut entries = Vec::new();
+    walk(&directory, path, "", &mut entries, &mut bytes)?;
+    entries.sort();
+    let mut digest = Sha256::new();
+    for (relative, kind, entry) in entries {
+        digest.update([kind]);
+        digest.update(relative.as_bytes());
+        digest.update([0]);
+        digest.update(entry.as_bytes());
+    }
+    Ok(hex(&digest.finalize()))
+}
+
+/// Collect `(logical path, kind, digest)` for each file (`f`) and link (`l`) below the
+/// pinned `directory`, which `path` names; entries are opened relative to their parent
+/// without following links.
+fn walk(
+    directory: &File,
+    path: &Path,
+    relative: &str,
+    entries: &mut Vec<(String, u8, crate::types::Sha256Bytes)>,
+    bytes: &mut u64,
+) -> Result<(), String> {
+    for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        let text = name.to_str().ok_or("execution paths must be UTF-8.")?;
+        let label = if relative.is_empty() {
+            text.to_owned()
+        } else {
+            format!("{relative}/{text}")
+        };
+        if entries.len() >= MAX_ENTRIES {
+            return Err(format!("more than {MAX_ENTRIES} entries to pin."));
+        }
+        let open = || {
+            let entry_name = platform::EntryName::new(&name).ok_or("invalid entry name.")?;
+            platform::open_entry(directory, &entry_name).map_err(|e| e.to_string())
+        };
+        match entry.file_type().map_err(|e| e.to_string())? {
+            platform::FileKind::Directory => {
+                walk(&open()?, &path.join(&name), &label, entries, bytes)?;
+            }
+            platform::FileKind::File => {
+                entries.push((label, b'f', hash_file(open()?, bytes)?));
+            }
+            platform::FileKind::Symlink => {
+                let target = platform::link_target(&path.join(&name)).map_err(|e| e.to_string())?;
+                target.to_str().ok_or("execution paths must be UTF-8.")?;
+                let target = platform::path_text(&target);
+                entries.push((
+                    label,
+                    b'l',
+                    crate::types::Sha256Bytes::of(target.as_bytes()),
+                ));
+            }
+            platform::FileKind::Other => {
+                return Err(format!(
+                    "{label} is not a regular file, directory or symlink."
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hash_file(mut file: File, bytes: &mut u64) -> Result<crate::types::Sha256Bytes, String> {
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0; crate::cache::HASH_BUFFER_BYTES];
+    loop {
+        let read = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if read == 0 {
+            return Ok(crate::types::Sha256Bytes::from_digest(
+                digest.finalize().into(),
+            ));
+        }
+        *bytes += read as u64;
+        if *bytes > MAX_BYTES {
+            return Err("more than 1 GiB to pin.".into());
+        }
+        digest.update(&buffer[..read]);
+    }
+}
+
+fn hex(bytes: &[u8]) -> crate::types::Sha256Digest {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+        .parse()
+        .expect("SHA-256 pin digest")
+}

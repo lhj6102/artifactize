@@ -1,5 +1,6 @@
 //! The loopback test endpoints that point Agent backends at a fake provider.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{
@@ -54,7 +55,7 @@ impl Project {
     }
 
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
             .arg(&self.repo)

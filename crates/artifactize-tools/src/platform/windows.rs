@@ -33,20 +33,6 @@ pub(crate) fn is_executable(path: &Path) -> bool {
     path.metadata().is_ok_and(|metadata| metadata.is_file())
 }
 
-/// Variables, besides `PATH` and the locale, that Windows programs need to start and to find
-/// their home, data and temporary directories.
-pub const SYSTEM_VARIABLES: &[&str] = &[
-    "HOME",
-    "SystemRoot",
-    "ComSpec",
-    "PATHEXT",
-    "USERPROFILE",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "TEMP",
-    "TMP",
-];
-
 /// A started program in a kill-on-close Job Object, so that its children die with it.
 pub(crate) struct Tree {
     pub(crate) child: tokio::process::Child,

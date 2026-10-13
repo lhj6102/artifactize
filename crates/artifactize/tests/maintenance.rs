@@ -3,12 +3,13 @@ use std::{fs, path::Path, process::Command};
 use rusqlite::params;
 use serde_json::{Value, json};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use support::os::{link_dir, remove_link_dir as remove_link, true_program};
 
 fn command(state: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+    let mut command = Command::new(support::os::cli());
     command.arg("--state-dir").arg(state).arg("--json");
     command
 }
@@ -155,7 +156,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert_eq!(present["ok"], true);
     assert_eq!(
         check(&present, "schema")["details"],
-        json!({"schema":artifactize::store::STATE_SCHEMA_VERSION})
+        json!({"schema":artifactize_core::store::STATE_SCHEMA_VERSION})
     );
     for name in ["openai", "anthropic", "config", "schema"] {
         assert_eq!(check(&present, name)["status"], "PASS");
@@ -184,7 +185,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     let before = fs::read(state.join("state.sqlite")).unwrap();
     let newer = result(&mut doctor(&state, &bin), 1);
     assert_eq!(check(&newer, "schema")["status"], "FAIL");
-    let supported = artifactize::store::STATE_SCHEMA_VERSION;
+    let supported = artifactize_core::store::STATE_SCHEMA_VERSION;
     assert_eq!(
         check(&newer, "schema")["details"],
         json!({"schema":99,"supported":supported})
@@ -209,7 +210,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     );
     assert_eq!(
         check(&report, "schema")["message"],
-        artifactize::store::EARLIER_STATE
+        artifactize_core::store::EARLIER_STATE
     );
     assert_eq!(fs::read(older.join("state.sqlite")).unwrap(), before);
     assert!(!older.join("state.sqlite-wal").exists());
@@ -291,7 +292,9 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let repo_before = fs::read(repo.join("index.artf")).unwrap();
     let dry = result(command(&state).args(["prune", "--dry-run"]), 0);
     assert_eq!(dry["removed"], json!([]));
-    assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 6);
+    // The two leftover tool folders and the finished Run's output; a command's temporary
+    // directory is already gone with its run.
+    assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 3);
     assert!(
         dry["wouldRemove"]
             .as_array()
@@ -481,7 +484,7 @@ fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces()
         fs::create_dir(&workspace).unwrap();
         fs::write(workspace.join(marker), "workspace marker").unwrap();
         let state = workspace.join("state");
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&state)
             .args(["remote", "logout", "--json"])
@@ -548,7 +551,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
     )
     .unwrap();
     let invoke = |args: &[&str], code| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
             .arg(&repo)
@@ -572,7 +575,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
     assert!(repo.join("index.artf").is_file());
     let alias = root.path().join("alias");
     link_dir(&state, &alias);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+    let mut command = Command::new(support::os::cli());
     command
         .arg("--json")
         .env("ARTIFACTIZE_STATE_HOME", alias)

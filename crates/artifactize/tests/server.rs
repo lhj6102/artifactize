@@ -1,3 +1,4 @@
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{
@@ -15,7 +16,7 @@ use sha2::{Digest, Sha256};
 const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn admin(state: &Path, args: &[&str]) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .arg("--state-dir")
         .arg(state)
         .arg("server")
@@ -50,7 +51,7 @@ impl Server {
         let root = support::os::tempdir();
         let state = root.path().join("server");
         prepare(&state);
-        let mut child = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let mut child = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&state)
             .args(["server", "run", "--listen", "127.0.0.1:0"])
@@ -489,7 +490,7 @@ fn token_names_are_rejected_at_the_cli_edge_before_opening_state() {
         "a".repeat(65),
     ] {
         for command in ["add", "revoke"] {
-            let mut invocation = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+            let mut invocation = Command::new(support::os::cli());
             invocation
                 .arg("--state-dir")
                 .arg(&state)

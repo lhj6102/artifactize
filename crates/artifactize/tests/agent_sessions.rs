@@ -1,6 +1,7 @@
 //! Saved Agent conversations, `session show` and `session send`, and their size-bound
 //! collection, against loopback fakes.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{
@@ -18,7 +19,7 @@ use std::{
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
-use artifactize::agent::FOLLOW_UP;
+use artifactize_core::agent::FOLLOW_UP;
 
 /// A workspace of one Artifact, `notes`, with one Agent eval whose result must list
 /// `covered`, and a content fingerprint.
@@ -75,7 +76,7 @@ impl Project {
     }
 
     fn command(&self, provider: &FakeProvider, state: &Path, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
             .arg(&self.repo)
@@ -800,7 +801,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
 
 #[tokio::test]
 async fn a_reference_elsewhere_names_where_its_session_lives() {
-    use artifactize::{cache, remote::Record, store::Receipts};
+    use artifactize_core::{cache, remote::Record, store::Receipts};
 
     let project = Project::new("openai");
     let provider = FakeProvider::start(reply);

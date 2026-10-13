@@ -1,0 +1,469 @@
+use super::{
+    document::{Mode, Move, Position, Scroll},
+    live::{self, Reader, Resolution, Source},
+    *,
+};
+use crate::store;
+use serde_json::json;
+use std::{fs, io::Write};
+
+pub(crate) use crate::test_session_files::{answer, append, finish, fixture, header, write};
+
+#[test]
+fn split_json_newline_and_utf8_tail_wait_for_complete_records_and_end_is_not_terminal() {
+    let (_root, source) = fixture();
+    let mut reader = Reader::new(source.clone());
+    finish(&mut reader, 80, 20, Position::Bottom);
+    let bytes = answer("late 한글 e\u{301}").into_bytes();
+    let split = bytes.iter().position(|byte| *byte >= 128).unwrap() + 1;
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(path(&source.state, "session").unwrap())
+        .unwrap();
+    file.write_all(&bytes[..split]).unwrap();
+    let before = finish(&mut reader, 80, 20, Position::Bottom);
+    assert_eq!(reader.records_len(), 1);
+    assert!(!before.rows.join("\n").contains("late"));
+    file.write_all(&bytes[split..bytes.len() - 1]).unwrap();
+    finish(&mut reader, 80, 20, Position::Bottom);
+    assert_eq!(reader.records_len(), 1);
+    file.write_all(b"\n").unwrap();
+    assert!(
+        finish(&mut reader, 80, 20, Position::Bottom)
+            .rows
+            .join("\n")
+            .contains("late 한글 e\u{301}")
+    );
+    append(
+        &source,
+        "{\"kind\":\"end\"}\n{\"kind\":\"send\",\"text\":\"later send\"}\n",
+    );
+    assert!(
+        finish(&mut reader, 80, 30, Position::Bottom)
+            .rows
+            .join("\n")
+            .contains("later send")
+    );
+}
+
+#[test]
+fn typed_policy_rejects_complete_malformed_unknown_foreign_and_accepts_legacy_metadata() {
+    for invalid in [
+        "{bad}\n",
+        "{\"kind\":\"unknown\"}\n",
+        "{\"kind\":\"message\",\"message\":17}\n",
+        "malformed\n",
+    ] {
+        let (_root, source) = fixture();
+        append(&source, invalid);
+        let mut reader = Reader::new(source);
+        let error = finish(&mut reader, 30, 10, Position::Bottom);
+        assert!(
+            error
+                .status
+                .unwrap()
+                .contains("Invalid saved session event")
+        );
+        let bytes = reader.bytes_read;
+        for _ in 0..10 {
+            assert!(!reader.step(30, 10, Position::Bottom).loading);
+        }
+        assert!(
+            reader.bytes_read - bytes <= 10 * 1024,
+            "an unchanged malformed file was reindexed"
+        );
+    }
+    let (_root, source) = fixture();
+    write(&source, "{\"kind\":\"review\",\"sessionId\":\"other\"}\n");
+    let error = finish(&mut Reader::new(source.clone()), 30, 10, Position::Bottom);
+    assert!(error.status.unwrap().contains("identity"));
+    write(&source, "{\"kind\":\"review\",\"futureMetadata\":7}\n");
+    assert!(
+        finish(&mut Reader::new(source), 30, 10, Position::Bottom)
+            .status
+            .is_none()
+    );
+}
+
+#[test]
+fn version_policy_accepts_current_and_missing_but_rejects_unknown_without_changing_identity_checks()
+{
+    let (_root, source) = fixture();
+    let current = header(&source);
+    assert!(
+        finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom)
+            .status
+            .is_none()
+    );
+    write(&source, "{\"kind\":\"review\",\"futureMetadata\":7}\n");
+    assert!(
+        finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom)
+            .status
+            .is_none()
+    );
+    for version in [0, VERSION + 1, u32::MAX] {
+        let mut event: serde_json::Value = serde_json::from_str(current.trim_end()).unwrap();
+        event["version"] = json!(version);
+        write(&source, &(event.to_string() + "\n"));
+        let window = finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom);
+        assert!(
+            window
+                .status
+                .unwrap()
+                .contains("Unsupported saved session version")
+        );
+    }
+    write(
+        &source,
+        &format!("{{\"kind\":\"review\",\"version\":{VERSION}}}\n"),
+    );
+    assert!(
+        finish(&mut Reader::new(source), 80, 10, Position::Bottom)
+            .status
+            .unwrap()
+            .contains("identity")
+    );
+}
+
+#[test]
+fn huge_small_records_bounded_batches_cache_and_append_byte_accounting() {
+    let (_root, source) = fixture();
+    let attempt = format!(
+        "{}\n",
+        json!({"kind":"attempt","turn":1,"attempt":1,"usage":{},"padding":"x".repeat(500)})
+    );
+    append(&source, &attempt.repeat(40000));
+    append(&source, &answer("history end"));
+    let size = fs::metadata(path(&source.state, "session").unwrap())
+        .unwrap()
+        .len();
+    assert!(size > 16 * 1024 * 1024);
+    let mut reader = Reader::new(source.clone());
+    let first = reader.step(80, 30, Position::Bottom);
+    assert!(first.loading);
+    assert!(reader.records_len() <= 128);
+    let window = finish(&mut reader, 80, 30, Position::Bottom);
+    assert!(window.status.is_none(), "{:?}", window.status);
+    assert!(window.rows.join("\n").contains("history end"));
+    assert!(
+        reader.bytes_read < size + 4 * 1024 * 1024,
+        "hidden records were repeatedly paged in"
+    );
+    assert_eq!(reader.decoded_events, 40002);
+    let before = reader.bytes_read;
+    for n in 0..30 {
+        append(&source, &answer(&format!("small append {n}")));
+        finish(&mut reader, 80, 10, Position::Bottom);
+    }
+    assert!(
+        reader.bytes_read - before < 100000,
+        "small append reread large history"
+    );
+    assert!(finish(&mut reader, 80, 1, Position::Row(0)).rows[0].contains("history end"));
+}
+
+#[test]
+fn normal_large_tool_result_decodes_once_but_body_is_not_presented_and_large_prose_pages_in() {
+    use rig_core::message::{Message, ToolCall, ToolFunction, ToolName, ToolResultContent};
+    let (_root, source) = fixture();
+    let results = (0..4)
+        .map(|n| {
+            ToolCall::from_wire(
+                format!("call-{n}"),
+                ToolFunction::new(ToolName::new("read").unwrap(), json!({})),
+            )
+            .result(vec![ToolResultContent::text("x".repeat(5 * 1024 * 1024))])
+        })
+        .collect();
+    let event = Event {
+        at: None,
+        send: None,
+        kind: Kind::Message(MessageEvent {
+            turn: 1,
+            message: Message::tool_results(results),
+            repair: false,
+            is_error: vec![false; 4],
+            question: None,
+        }),
+    };
+    let bytes = serde_json::to_string(&event).unwrap();
+    assert!(bytes.len() > 16 * 1024 * 1024);
+    append(&source, &(bytes + "\n"));
+    let mut reader = Reader::new(source.clone());
+    let window = finish(&mut reader, 7, 10, Position::Bottom);
+    assert!(window.status.is_none(), "{:?}", window.status);
+    assert!(!window.rows.join("\n").contains("xxxxxxxxxxxxxxxx"));
+    assert_eq!(reader.decoded_events, 2);
+    append(&source, &answer(&"visible prose ".repeat(50000)));
+    assert!(finish(&mut reader, 7, 10, Position::Bottom).total > 65535);
+    reader.commit(7);
+    for position in [Position::Row(0), Position::Bottom, Position::Row(70000)] {
+        assert!(finish(&mut reader, 7, 10, position).status.is_none());
+    }
+    append(&source, &answer("late after large record"));
+    assert!(
+        finish(&mut reader, 40, 10, Position::Bottom)
+            .rows
+            .join("\n")
+            .contains("late after large record")
+    );
+    assert_eq!(reader.decoded_events, 4);
+}
+
+#[test]
+fn truncate_replacement_same_size_and_gc_reset_even_when_paused() {
+    let (_root, source) = fixture();
+    append(&source, &answer("aaaa"));
+    let mut reader = Reader::new(source.clone());
+    finish(&mut reader, 80, 2, Position::Bottom);
+    write(&source, &(header(&source) + &answer("bbbb")));
+    let same = finish(&mut reader, 80, 10, Position::Row(0));
+    assert!(same.reset);
+    assert!(same.rows.join("\n").contains("bbbb"));
+    write(&source, &header(&source));
+    assert!(finish(&mut reader, 80, 10, Position::Row(5)).reset);
+    let path = path(&source.state, "session").unwrap();
+    let replacement = path.with_extension("new");
+    crate::test_os::write_private_file(&replacement, header(&source) + &answer("replacement"));
+    fs::rename(replacement, &path).unwrap();
+    assert!(finish(&mut reader, 80, 20, Position::Bottom).reset);
+    fs::remove_file(path).unwrap();
+    let removed = reader.step(80, 20, Position::Bottom);
+    assert!(removed.reset);
+    assert_eq!(removed.total, 0);
+    assert!(removed.status.unwrap().contains("session GC"));
+}
+
+// Unix modes, FIFOs and symlinks; the Windows counterpart below checks DACLs and junctions.
+#[cfg(unix)]
+#[test]
+fn links_fifo_permissions_and_directory_links_are_refused() {
+    let (root, source) = fixture();
+    let file = path(&source.state, "session").unwrap();
+    crate::test_os::set_mode(&file, 0o644);
+    assert!(
+        Reader::new(source.clone())
+            .step(80, 20, Position::Bottom)
+            .status
+            .unwrap()
+            .contains("private")
+    );
+    fs::remove_file(&file).unwrap();
+    let outside = root.path().join("outside");
+    fs::write(&outside, "not a session").unwrap();
+    crate::test_os::symlink_file(&outside, &file).unwrap();
+    assert!(
+        Reader::new(source.clone())
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+    fs::remove_file(&file).unwrap();
+    crate::test_os::fifo(&file);
+    assert!(
+        Reader::new(source.clone())
+            .step(80, 20, Position::Bottom)
+            .status
+            .unwrap()
+            .contains("regular")
+    );
+    fs::remove_file(file).unwrap();
+    fs::remove_dir(directory(root.path())).unwrap();
+    let elsewhere = root.path().join("elsewhere");
+    crate::test_os::create_private_dir_all(&elsewhere);
+    crate::test_os::symlink_dir(elsewhere, directory(root.path())).unwrap();
+    assert!(
+        Reader::new(source)
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+}
+
+// The Windows counterpart of the Unix check above: a shared DACL and a junction.
+#[cfg(windows)]
+#[test]
+fn shared_sessions_and_directory_junctions_are_refused() {
+    let (root, source) = fixture();
+    let file = path(&source.state, "session").unwrap();
+    crate::test_os::grant_everyone_read(&file);
+    assert!(
+        Reader::new(source.clone())
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+    fs::remove_file(file).unwrap();
+    fs::remove_dir(directory(root.path())).unwrap();
+    let elsewhere = root.path().join("elsewhere");
+    crate::test_os::create_private_dir_all(&elsewhere);
+    crate::test_os::junction(&elsewhere, &directory(root.path()));
+    assert!(
+        Reader::new(source)
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+}
+
+#[test]
+fn controller_empty_exact_viewport_and_more_than_u16_rows() {
+    let mut scroll = Scroll::default();
+    for total in [0, 10] {
+        scroll.update(total, 10, None);
+        scroll.apply(Move::Top);
+        assert!(scroll.at_bottom());
+        assert_eq!(scroll.mode, Mode::Following);
+    }
+    scroll.update(100000, 10, None);
+    assert_eq!(scroll.top, 99990);
+    scroll.apply(Move::Up(3));
+    assert_eq!(scroll.top, 99987);
+    assert_eq!(scroll.mode, Mode::Paused);
+    scroll.update(100100, 10, None);
+    assert_eq!(scroll.top, 99987);
+    scroll.apply(Move::Bottom);
+    assert_eq!(scroll.top, 100090);
+    assert_eq!(scroll.mode, Mode::Following);
+    scroll.apply(Move::Top);
+    assert_eq!(scroll.top, 0);
+    assert_eq!(scroll.mode, Mode::Paused);
+}
+
+#[tokio::test]
+async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
+    let root = crate::test_os::tempdir();
+    let state = root.path().join("state");
+    let repo = root.path().join("repo");
+    fs::create_dir(&repo).unwrap();
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let mut view = crate::monitor::tests::request(
+        "app/check",
+        "RUNNING",
+        json!({
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "sessionId":"session",
+        }),
+    );
+    let Resolution::Local(source) = live::resolve(&state, &view).await.unwrap() else {
+        panic!("running local");
+    };
+    assert_eq!(source.reference.request_id, view.request.id);
+    assert!(!source.saved);
+    view.request.session = Some(source.reference.clone());
+    assert!(matches!(
+        live::resolve(&state, &view).await.unwrap(),
+        Resolution::Local(Source { saved: true, .. })
+    ));
+    view.request.session.as_mut().unwrap().state = "foreign-state".parse().unwrap();
+    assert!(matches!(
+        live::resolve(&state, &view).await.unwrap(),
+        Resolution::Unavailable(_)
+    ));
+    view.request.session = None;
+    view.request.producer = Some(store::Producer {
+        name: "foreign@host".parse().unwrap(),
+        version: "fixture".into(),
+        session: None,
+    });
+    assert!(matches!(
+        live::resolve(&state, &view).await.unwrap(),
+        Resolution::Unavailable(_)
+    ));
+    assert!(receipts.state_id().await.unwrap().len() > 1);
+}
+
+#[tokio::test]
+async fn reused_original_and_execution_reference_resolve_the_original_identity() {
+    let root = crate::test_os::tempdir();
+    let state = root.path().join("state");
+    let repo = root.path().join("repo");
+    fs::create_dir(&repo).unwrap();
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let run: store::Run = serde_json::from_value(json!({
+        "id":"run-1",
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+    }))
+    .unwrap();
+    let mut original = crate::monitor::tests::request(
+        "app/original",
+        "RUNNING",
+        json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"}}),
+    );
+    let provenance: store::Provenance = serde_json::from_value(json!({
+        "repoPath":repo,
+        "runId":"run-1",
+        "requestId":original.request.id,
+        "evalId":"app/original",
+        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "completedAt":null,
+    }))
+    .unwrap();
+    let mut follower = crate::monitor::tests::request(
+        "app/follower",
+        "QUEUED",
+        json!({
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "provenance":provenance,
+        }),
+    );
+    receipts
+        .create_run(&run, &[original.request.clone(), follower.request.clone()])
+        .await
+        .unwrap();
+    assert!(matches!(
+        live::resolve(&state, &follower).await.unwrap(),
+        Resolution::Unavailable(_)
+    ));
+    original.request.session_id = Some("original-session".parse().unwrap());
+    receipts.save_request(&original.request).await.unwrap();
+    let Resolution::Local(source) = live::resolve(&state, &follower).await.unwrap() else {
+        panic!("running follower must resolve owner");
+    };
+    assert_eq!(source.reference.request_id, original.request.id);
+    assert_eq!(source.reference.session_id.as_str(), "original-session");
+    let mut producer = store::Producer::current();
+    producer.session = Some(source.reference.clone());
+    follower.request.provenance = None;
+    follower.execution = Some(
+        serde_json::from_value(json!({
+            "id":"execution-fixture",
+            "key":null,
+            "fingerprint":null,
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "ownerPid":0,
+            "ownerStartTime":0,
+            "status":"RUNNING",
+            "result":null,
+            "error":null,
+            "errorCode":null,
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "usage":null,
+            "provenance":provenance,
+            "startedAt":"2026-01-01T00:00:00Z",
+            "completedAt":null,
+            "producer":producer,
+        }))
+        .unwrap(),
+    );
+    let Resolution::Local(execution_source) = live::resolve(&state, &follower).await.unwrap()
+    else {
+        panic!("execution reference");
+    };
+    assert_eq!(execution_source.reference, source.reference);
+    assert!(execution_source.saved);
+    follower.request.session = Some(SessionRef {
+        state: "remote-state".parse().unwrap(),
+        producer: "remote@host".parse().unwrap(),
+        ..source.reference
+    });
+    assert!(matches!(
+        live::resolve(&state, &follower).await.unwrap(),
+        Resolution::Unavailable(_)
+    ));
+}

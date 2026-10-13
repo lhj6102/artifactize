@@ -127,8 +127,8 @@ Recording a new reusable result triggers LRU GC over every record of every key: 
 most 10,000 records and 1 GiB of retained execution JSON, with a 16 MiB per-record
 limit. Oversized results still reach their Run and existing waiters through the
 saved execution, but later calls execute again. A reuse hit updates the last use of
-the record it reused; inspection does not. A key's older records are therefore
-evicted before its latest. GC evicts the least recently used eligible records first,
+the record it reused; inspection does not. GC evicts the least recently used eligible
+records first (a reuse can refresh an older record after a newer one completed),
 using the key then the completion time to break ties, and skips keys with an active
 execution and records an in-flight waiter needs. Protected entries can temporarily exceed the caps, and
 automatic maintenance failures are reported on stderr without replacing an already
@@ -164,8 +164,8 @@ status is RUNNING. A slot is taken just before a review would start: one write
 transaction (`BEGIN IMMEDIATE`) counts the RUNNING executions of the backend and,
 under the limit, inserts this one. A request that would reuse a result or join a live
 execution of its key takes none. The slot frees when the review's execution
-completes. An execution whose owner process is gone (it crashed or was killed, by pid
-and start time) ends as ERROR (`OWNER_DIED`) the next time a process asks for a slot,
+completes. An execution whose owner process has exited (including an unreaped
+zombie, checked by process state, pid and start time) ends as ERROR (`OWNER_DIED`) the next time a process asks for a slot,
 which frees its slot with it; there is no separate cleanup. When a review's failure
 stops its backend for the Run ([`BACKEND_STOPPED`](../guides/agent-evals.md#stopping-a-backend)),
 the stop is recorded before its slot frees, so a request waiting for that slot is not
@@ -179,6 +179,22 @@ evals, Human requests and other backends keep running. Once it has its slot it
 occupies a job slot like any running eval, so a process runs at most
 `min(--jobs, free slots)` reviews of a limited backend. Cancelling a `verify` ends
 its waiting requests as CANCELLED, and its held slots are released.
+
+Tool-session directories live under `$STATE/tool-sessions/`, separately from saved
+conversations. They retain admission records for start, stop and bound invocation
+processes until those groups have been cleaned. Removal is conditional on confirmed
+process cleanup, not merely on the supervisor returning. Before the next tool session
+starts, exited-owner state (zombies included), or state whose supervisor lease has
+been released after failed cleanup, is swept using saved process identities on Unix;
+Windows Jobs
+terminate with their owner and pending file sharing dispositions are given a bounded
+wait. Normal release, panic and caller-runtime shutdown run stop and await process
+cleanup before removing the directory. Retirement errors still attempt stop and
+join bound calls; unconfirmed termination or failed removal retains recoverable
+state and reports an error. An active lease protects another concurrent session;
+a released lease permits recovery even while the owner process is alive. Sweep
+failures refuse startup without erasing the journals. Abrupt process death cannot
+run stop.
 
 ## Agent sessions
 
@@ -251,7 +267,8 @@ eligible Run is considered. `--dry-run` returns `wouldRemove` without deleting;
 normal JSON returns `removed`, and both include `skippedRuns`. `prune` also collects
 the [Agent session store](#agent-sessions) under its size bounds, whatever
 `--older-than` says: `removedSessions` lists the deleted sessions, and with `--dry-run`
-`wouldRemoveSessions` those it would delete.
+`wouldRemoveSessions` those over the size bounds. A dry run does not check for a running
+`session send`, which an actual prune leaves alone, so the two can differ.
 
 What `doctor` checks, the `models` output and exactly which directories `prune`
 removes are in the [reference](#doctor-models-and-prune).
@@ -300,7 +317,7 @@ consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"m
 Listings preserve provider order.
 
 Only known scratch directories below `state/runs/<run-id>` are removed: runtime
-`output`/`tmp`/`home`/`cache` and leftover tool output.
+`output` (and `tmp`, `home` and `cache` left by older versions) and leftover tool output.
 Run roots, unknown files/directories, database rows, results and reuse records
 remain. Symlinks (including nested links), non-directory targets and
 repository content are refused before deletion. `.git` and the current/legacy

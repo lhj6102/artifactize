@@ -1,6 +1,6 @@
 use std::{fs, path::Path, process::Command, time::Duration};
 
-use artifactize::{
+use artifactize_core::{
     config::{parse_declaration, read_workspace_config},
     tools::{
         self,
@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use support::os::canonical;
 use tokio_util::sync::CancellationToken;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 fn tool(kind: &str, command: &str, args: &[&str]) -> Value {
@@ -108,7 +109,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
             .contains("Unknown Artifact reference")
     );
     write_artifact(repo.path(), "a", json!({"inspect":valid}), "Review.");
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .args([
             "--repo",
             repo.path().to_str().unwrap(),
@@ -390,7 +391,7 @@ impl Drop for Launched {
 }
 
 #[test]
-fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
+fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize_variables() {
     let repo = support::os::tempdir();
     // The parent owns the release: exiting the launcher probe must not end its child.
     let _release = support::os::Release(repo.path().to_path_buf());
@@ -430,7 +431,7 @@ fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
 
 #[tokio::test]
 async fn human_environment_and_launch_probe() {
-    let Some(repo) = std::env::var_os("ARTIFACTIZE_HUMAN_PROBE") else {
+    let Some(repo) = support::os::environment_variable("ARTIFACTIZE_HUMAN_PROBE") else {
         return;
     };
     let repo = Path::new(&repo);
@@ -475,7 +476,7 @@ async fn human_environment_and_launch_probe() {
             "command":support::os::python_program(),
             "args":[
                 "-c",
-                support::os::isolated_home_probe(),
+                support::os::inherited_home_probe(),
             ],
         },
     });
@@ -507,7 +508,8 @@ async fn human_environment_and_launch_probe() {
         panic!()
     };
     assert!(text.replace("\r\n", "\n").starts_with("absent\n"));
-    assert!(!text.contains("real-home"));
+    // The author's own environment, home included; artifactize's variable is not in it.
+    assert!(text.contains("real-home"));
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(result.content(), [Content::Launch { launched: true }]);

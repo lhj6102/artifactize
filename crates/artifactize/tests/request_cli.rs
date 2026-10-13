@@ -8,6 +8,7 @@ use std::{
 
 use serde_json::{Value, json};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -82,7 +83,7 @@ impl Fixture {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         // Its own process group, so Ctrl-Break reaches it alone on Windows; the declarations
         // name `cat` and `true` for PATH to find.
         support::os::new_group(&mut command)

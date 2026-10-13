@@ -14,6 +14,7 @@ use std::{
 
 use serde_json::{Value, json};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 fn test_token() -> String {
@@ -24,7 +25,7 @@ fn test_token() -> String {
 }
 
 fn artifactize(state: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+    let mut command = Command::new(support::os::cli());
     command
         .arg("--state-dir")
         .arg(state)
@@ -56,6 +57,15 @@ fn run(command: &mut Command, stdin: &str, secret: &str, code: i32) -> Value {
     );
     assert_eq!(output.status.code(), Some(code), "{stdout}{stderr}");
     assert!(!stdout.contains(secret) && !stderr.contains(secret));
+    // Nor a piece of it: the random part after `azt_test`, and its end.
+    if secret.len() >= 24 {
+        for piece in [&secret[8..20], &secret[secret.len() - 12..]] {
+            assert!(
+                !stdout.contains(piece) && !stderr.contains(piece),
+                "{stdout}{stderr}"
+            );
+        }
+    }
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
@@ -341,7 +351,7 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     let server = Whoami::start(&token);
     let state = root.path().join("state");
     let (mut terminal, receiver) = support::os::PseudoTerminal::start(
-        Path::new(env!("CARGO_BIN_EXE_artifactize")),
+        support::os::cli().as_path(),
         &[
             "--state-dir",
             state.to_str().unwrap(),
@@ -411,4 +421,75 @@ fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
     assert!(stderr.contains("Paste the remote token"), "{stderr}");
     assert!(stdout.contains("as alice-laptop"), "{stdout}");
     assert!(!stdout.contains(&token) && !stderr.contains(&token));
+}
+
+/// How a store or proxy may echo the Authorization header it was sent.
+#[derive(Clone, Copy)]
+enum Echo {
+    Whole,
+    /// Split by a newline: dropping control characters would rejoin it.
+    Split,
+    /// Where the 300-character clip falls inside it.
+    AtTheClip,
+}
+
+/// A store that answers whoami with a client error echoing the Authorization header.
+fn echoing(echo: Echo) -> support::FakeProvider {
+    support::FakeProvider::start(move |request| {
+        let header = request
+            .headers
+            .get("authorization")
+            .cloned()
+            .unwrap_or_default();
+        let error = match echo {
+            Echo::Whole => format!("Bad request; Authorization: {header}"),
+            Echo::Split => {
+                let (head, tail) = header.split_at("Bearer ".len() + 12);
+                format!("Bad request; Authorization: {head}\n{tail}")
+            }
+            Echo::AtTheClip => format!("{}{header}", "x".repeat(290)),
+        };
+        support::Reply::Json(400, json!({ "error": error }))
+    })
+}
+
+#[test]
+fn a_store_that_echoes_the_token_never_gets_it_printed() {
+    let withheld =
+        "The remote store answered HTTP 400: [withheld: it contained part of the credential sent]";
+    for echo in [Echo::Whole, Echo::Split, Echo::AtTheClip] {
+        let root = support::os::tempdir();
+        let state = root.path().join("state");
+        let token = test_token();
+        let server = echoing(echo);
+        let url = format!("{}/", server.url);
+        // run() checks that no output holds the token or a piece of it.
+        let check =
+            |command: &mut Command, stdin: &str, code: i32| run(command, stdin, &token, code);
+        let refused = check(
+            artifactize(&state).args(["remote", "login", &url]),
+            &format!("{token}\n"),
+            2,
+        );
+        assert_eq!(refused["error"], withheld);
+        // A saved token the store later echoes: status and push say so without it.
+        let status = check(
+            artifactize(&state)
+                .args(["remote", "status"])
+                .env("ARTIFACTIZE_REMOTE", &url)
+                .env("ARTIFACTIZE_REMOTE_TOKEN", &token),
+            "",
+            1,
+        );
+        assert_eq!(status["error"], withheld);
+        let push = check(
+            artifactize(&state)
+                .args(["remote", "push"])
+                .env("ARTIFACTIZE_REMOTE", &url)
+                .env("ARTIFACTIZE_REMOTE_TOKEN", &token),
+            "",
+            2,
+        );
+        assert_eq!(push["error"], withheld);
+    }
 }

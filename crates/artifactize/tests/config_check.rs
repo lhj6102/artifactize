@@ -2,9 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use artifactize::config::{ReviewRequirement, read_workspace_config};
+use artifactize_core::config::{ReviewRequirement, read_workspace_config};
 use serde_json::{Value, json};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture(
@@ -32,7 +33,7 @@ impl Fixture {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .current_dir(&self.0)
             .env("ARTIFACTIZE_STATE_HOME", self.0.join("state-home"));
@@ -196,19 +197,19 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let fixture = Fixture::new();
     fixture.write(
         "input/index.artf",
-        include_str!("fixtures/declarations/input/index.artf"),
+        include_str!("../../artifactize-core/tests/fixtures/declarations/input/index.artf"),
     );
     fixture.write(
         "review/index.artf",
-        include_str!("fixtures/declarations/review/index.artf"),
+        include_str!("../../artifactize-core/tests/fixtures/declarations/review/index.artf"),
     );
     fixture.write(
         "review/hook.sh",
-        include_str!("fixtures/declarations/review/hook.sh"),
+        include_str!("../../artifactize-core/tests/fixtures/declarations/review/hook.sh"),
     );
     fixture.write(
         "unreviewed/index.artf",
-        include_str!("fixtures/declarations/unreviewed/index.artf"),
+        include_str!("../../artifactize-core/tests/fixtures/declarations/unreviewed/index.artf"),
     );
     support::os::make_executable(&fixture.0.join("review/hook.sh"));
     fixture.write(".git/ignored/index.artf", "not JSON");

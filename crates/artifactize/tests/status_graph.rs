@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use support::os::{echo_program, shell};
 use tempfile::TempDir;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -30,7 +31,7 @@ impl Fixture {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
             .arg(&self.repo)
@@ -364,7 +365,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
         .unwrap();
     // --repo, not cwd, owns the stored audit.
     assert_eq!(output.status.code(), Some(1));
-    let other_status = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let other_status = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&other)
         .arg("--state-dir")
@@ -409,7 +410,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
     );
     let link = fixture.root.path().join("redirected-state");
     support::os::link_dir(&fixture.repo, &link);
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&fixture.repo)
         .arg("--state-dir")

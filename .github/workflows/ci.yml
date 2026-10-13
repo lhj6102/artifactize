@@ -30,7 +30,46 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       # Packages the crate and builds the package as crates.io would, without uploading.
-      - run: cargo publish --dry-run --locked -p artifactize-tools -p artifactize
+      - run: cargo publish --dry-run --locked -p artifactize-core -p artifactize-tools -p artifactize-tui -p artifactize
+  # The desktop app (crates/artifactize-desktop) is outside default-members: it needs
+  # WebKitGTK and its built frontend, so it builds and tests here, on Linux only.
+  desktop:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install WebKitGTK, its WebDriver and a virtual display
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev webkit2gtk-driver xvfb
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - working-directory: crates/artifactize-desktop/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm test
+          pnpm build
+      # The bindings test fails when ui/src/ipc/bindings.ts no longer matches the commands.
+      - run: cargo clippy --locked -p artifactize-desktop --all-targets -- -D warnings
+      - run: cargo test --locked -p artifactize-desktop
+      - run: cargo install --locked tauri-driver --version 2.1.0
+      - run: cargo build --locked -p artifactize -p artifactize-desktop
+      # The e2e driver runs the app on its own Xvfb display.
+      - working-directory: crates/artifactize-desktop/ui
+        run: pnpm e2e
   windows:
     if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest

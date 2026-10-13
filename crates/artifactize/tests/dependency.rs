@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf, process::Command, time::Duration};
 
-use artifactize::{
+use artifactize_core::{
     cache,
     config::{ProfileKind, parse_declaration, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -22,7 +23,7 @@ struct Fixture {
     state: PathBuf,
 }
 
-fn parse(value: &Value) -> Result<artifactize::config::ArtifactDeclaration, String> {
+fn parse(value: &Value) -> Result<artifactize_core::config::ArtifactDeclaration, String> {
     parse_declaration(
         &support::declaration::to_toml(value.clone())
             .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
@@ -67,7 +68,7 @@ impl Fixture {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .env("ARTIFACTIZE_REMOTE", "off")
             .env("ARTIFACTIZE_STATE_HOME", self.state.with_extension("home"))
@@ -78,7 +79,7 @@ impl Fixture {
         command
     }
 
-    fn config(&self) -> artifactize::config::RepoConfig {
+    fn config(&self) -> artifactize_core::config::RepoConfig {
         read_workspace_config(&self.repo).unwrap()
     }
 
@@ -111,6 +112,11 @@ impl Fixture {
         .await
         .unwrap()
     }
+}
+
+/// A request ID parsed once, where a test names one.
+fn rid(id: &str) -> artifactize_core::types::RequestId {
+    id.parse().unwrap()
 }
 
 #[test]
@@ -175,7 +181,7 @@ fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicat
         .find(|relation| {
             matches!(
                 relation.kind,
-                artifactize::scope::RelationKind::Dependency { .. }
+                artifactize_core::scope::RelationKind::Dependency { .. }
             )
         })
         .unwrap();
@@ -325,14 +331,14 @@ fn selecting_dependency_eval_includes_required_evals_and_their_graph_closure() {
         vec!["player/ready", "movement/check", "source/check"]
     );
     let selection = Fixture::selection();
-    let view = artifactize::query::graph(&config, &selection).unwrap();
+    let view = artifactize_core::query::graph(&config, &selection).unwrap();
     assert_eq!(
         view.artifacts.keys().copied().collect::<Vec<_>>(),
         vec!["movement", "player", "source"]
     );
     assert!(view.relations.iter().any(|relation| matches!(
         relation.relation.kind,
-        artifactize::scope::RelationKind::Dependency { .. }
+        artifactize_core::scope::RelationKind::Dependency { .. }
     )));
 }
 
@@ -375,8 +381,8 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     assert!(derived.argv.is_none());
     assert!(derived.provenance.is_none());
     assert!(derived.blocked_by.is_empty());
-    assert!(!artifactize::query::reused(derived));
-    let output = artifactize::query::run_output(&first, OffsetDateTime::now_utc());
+    assert!(!artifactize_core::query::reused(derived));
+    let output = artifactize_core::query::run_output(&first, OffsetDateTime::now_utc());
     assert_eq!(output["requests"][0]["source"]["kind"], "derived");
     assert_eq!(output["summary"]["executed"]["total"], 1);
     let db = Connection::open(fixture.state.join(store::DATABASE)).unwrap();
@@ -460,7 +466,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
             vec!["art", "art/check"]
         );
         assert!(request.execution_id.is_none());
-        let output = artifactize::query::run_output(&run, OffsetDateTime::now_utc());
+        let output = artifactize_core::query::run_output(&run, OffsetDateTime::now_utc());
         assert_eq!(
             output["requests"][0]["blockedBy"],
             json!(["art", "art/check"])
@@ -544,24 +550,24 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         .await
         .unwrap();
     assert!(
-        artifactize::human::claim(
+        artifactize_core::human::claim(
             &receipts,
-            run.requests[0].id.as_str(),
+            &rid(run.requests[0].id.as_str()),
             &"tester".parse().unwrap()
         )
         .await
         .is_err()
     );
-    artifactize::human::claim(
+    artifactize_core::human::claim(
         &receipts,
-        run.requests[1].id.as_str(),
+        &rid(run.requests[1].id.as_str()),
         &"tester".parse().unwrap(),
     )
     .await
     .unwrap();
-    artifactize::human::submit(
+    artifactize_core::human::submit(
         &receipts,
-        run.requests[1].id.as_str(),
+        &rid(run.requests[1].id.as_str()),
         &"tester".parse().unwrap(),
         &json!({"verdict":"GREEN"}),
         CancellationToken::new(),

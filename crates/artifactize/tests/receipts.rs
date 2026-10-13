@@ -1,11 +1,12 @@
 use std::{fs, process::Command, sync::mpsc, thread};
 
-use artifactize::store::{
+use artifactize_core::store::{
     DATABASE, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions, read_latest_requests,
     read_request, read_requests, read_run, read_runs,
 };
 use rusqlite::Connection;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use support::os::link_dir;
@@ -80,7 +81,7 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
             .contains("Review request not found")
     );
     for args in [["request", "list"], ["run", "list"], ["cache", "list"]] {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(state)
             .args(args)
@@ -174,7 +175,7 @@ async fn repositories_share_one_state_database() {
     let mut saved = Vec::new();
     for explicit in [false, true] {
         for repo in [&first, &second] {
-            let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+            let mut command = Command::new(support::os::cli());
             command
                 .env("ARTIFACTIZE_STATE_HOME", &state)
                 .arg("--repo")
@@ -222,7 +223,7 @@ async fn repositories_share_one_state_database() {
     for run in saved {
         let read = read_run(&state, run["id"].as_str().unwrap()).await.unwrap();
         assert_eq!(
-            artifactize::query::run_output(&read, time::OffsetDateTime::now_utc()),
+            artifactize_core::query::run_output(&read, time::OffsetDateTime::now_utc()),
             run
         );
     }
@@ -269,7 +270,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     link_dir(&inner, &root.path().join("nested-alias"));
     for state in support::os::reviewed_state_paths(root.path(), &repo) {
         for explicit in [false, true] {
-            let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+            let mut command = Command::new(support::os::cli());
             command
                 .env("ARTIFACTIZE_STATE_HOME", &state)
                 .arg("--repo")
@@ -291,7 +292,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     let state = root.path().join("state");
     fs::create_dir(&state).unwrap();
     link_dir(&repo, &state.join("runs"));
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .env("ARTIFACTIZE_STATE_HOME", root.path().join("home"))
         .arg("--repo")
         .arg(&repo)
@@ -303,7 +304,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the reviewed repository"));
     support::os::remove_link_dir(&state.join("runs"));
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .env("ARTIFACTIZE_STATE_HOME", repo.join("home"))
         .arg("--repo")
         .arg(&repo)
@@ -355,7 +356,7 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
 
 #[tokio::test]
 async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_writes_are_atomic() {
-    use artifactize::store::RunView;
+    use artifactize_core::store::RunView;
     use serde_json::json;
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
@@ -450,11 +451,11 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
         bad["result"] = result;
         bad["error"] = error;
         bad["completedAt"] = json!("2026-01-01T00:00:01Z");
-        assert!(serde_json::from_value::<artifactize::store::Request>(bad).is_err());
+        assert!(serde_json::from_value::<artifactize_core::store::Request>(bad).is_err());
     }
     let mut wire = serde_json::to_value(&view.run).unwrap();
     wire["status"] = json!("GREEN");
-    assert!(serde_json::from_value::<artifactize::store::Run>(wire).is_err());
+    assert!(serde_json::from_value::<artifactize_core::store::Run>(wire).is_err());
     assert_eq!(
         serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap(),
         before

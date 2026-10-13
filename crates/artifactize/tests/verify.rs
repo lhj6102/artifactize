@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -35,7 +36,7 @@ impl Fixture {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         // Its own process group, so Ctrl-Break reaches it alone on Windows.
         support::os::new_group(&mut command)
             .env("ARTIFACTIZE_STATE_HOME", &self.home)
@@ -119,7 +120,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     assert!(output.stdout.windows(6).any(|bytes| bytes == b"stdout"));
     assert!(!fixture.home.exists(), "--state-dir moves the whole state");
     fs::remove_dir_all(&fixture.repo).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .current_dir(fixture._root.path())
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--state-dir")
@@ -179,12 +180,12 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     }
     assert_eq!(request("cycle-a/check")["status"], "GREEN");
     assert_eq!(request("cycle-b/check")["status"], "GREEN");
-    let database = Connection::open(fixture.state.join(artifactize::store::DATABASE)).unwrap();
+    let database = Connection::open(fixture.state.join(artifactize_core::store::DATABASE)).unwrap();
     assert_eq!(
         database
             .pragma_query_value::<u32, _>(None, "user_version", |r| r.get(0))
             .unwrap(),
-        artifactize::store::STATE_SCHEMA_VERSION
+        artifactize_core::store::STATE_SCHEMA_VERSION
     );
     assert_eq!(
         database
@@ -261,7 +262,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     );
     let alias = fixture._root.path().join("alias");
     support::os::link_dir(&fixture.repo, &alias);
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--repo")
         .arg(&alias)
@@ -278,7 +279,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     assert_eq!(state, fixture.home);
     assert_eq!(first["repoPath"], support::os::path_text(&fixture.repo));
     assert!(state.join("state.sqlite").is_file());
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .current_dir(fixture._root.path())
         .args(["run", "show", first["id"].as_str().unwrap()])
@@ -428,7 +429,7 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
         assert!(Instant::now() < deadline, "runtime did not start");
         thread::sleep(Duration::from_millis(10));
     }
-    let database = Connection::open(fixture.state.join(artifactize::store::DATABASE)).unwrap();
+    let database = Connection::open(fixture.state.join(artifactize_core::store::DATABASE)).unwrap();
     database
         .busy_timeout(support::os::patience(Duration::from_millis(100)))
         .unwrap();
@@ -739,7 +740,7 @@ fn ignore_gates_saves_actual_verdicts_but_never_waives_final_obligations() {
 
 #[tokio::test]
 async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
-    use artifactize::{
+    use artifactize_core::{
         project::{VerifyOptions, selection::Selection, verify},
         store::read_run,
     };

@@ -1,5 +1,6 @@
 //! The `codex` backend end to end against a fake Codex endpoint and sign-in server.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{
@@ -87,7 +88,7 @@ impl Project {
     }
 
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
             .arg(&self.repo)
@@ -787,4 +788,77 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
     assert_eq!(back["requests"][0]["executionId"], newer["executionId"]);
     assert_eq!(back["requests"][0]["options"]["backend"], "openai");
     assert_eq!(provider.requests().len(), 2);
+}
+
+#[test]
+fn a_models_error_echoing_the_access_token_withholds_it() {
+    let project = Project::new();
+    let access = codex::jwt("account-1", codex::VALID_EXPIRY);
+    project.sign_in(&access, codex::VALID_EXPIRY);
+    let provider = FakeProvider::start(|request| {
+        let header = request
+            .headers
+            .get("authorization")
+            .cloned()
+            .unwrap_or_default();
+        // Split by a newline, which dropping control characters would rejoin.
+        let (head, tail) = header.split_at(header.len() / 2);
+        Reply::Json(
+            400,
+            json!({"error":{"message":format!("Bad header {head}\n{tail}"),"code":"bad_request"}}),
+        )
+    });
+    let output = project
+        .against(&provider, &["models", "codex"])
+        .output()
+        .unwrap();
+    let failure = parsed(output.clone(), 2);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let signature = &access[access.len() - 14..];
+    let payload = &access[access.find('.').unwrap() + 1..][..12];
+    for piece in [signature, payload] {
+        assert!(!text.contains(piece), "{text}");
+    }
+    assert_eq!(
+        failure["error"],
+        "Codex model listing failed (HTTP 400): [withheld: it contained part of the credential sent]"
+    );
+}
+
+/// The whole provider text is checked before the 4096-character clip: a token straddling the
+/// clip is withheld, not cut to a prefix.
+#[test]
+fn a_models_error_with_the_token_at_the_clip_withholds_it() {
+    let project = Project::new();
+    let access = codex::jwt("account-1", codex::VALID_EXPIRY);
+    project.sign_in(&access, codex::VALID_EXPIRY);
+    let provider = FakeProvider::start(|request| {
+        let token = request.headers["authorization"]
+            .strip_prefix("Bearer ")
+            .unwrap()
+            .to_owned();
+        Reply::Json(
+            400,
+            json!({"error":{"message":format!("{}{token}", "x".repeat(4089))}}),
+        )
+    });
+    let output = project
+        .against(&provider, &["models", "codex"])
+        .output()
+        .unwrap();
+    let failure = parsed(output.clone(), 2);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!text.contains(&access[..7]), "{text}");
+    assert_eq!(
+        failure["error"],
+        "Codex model listing failed (HTTP 400): [withheld: it contained part of the credential sent]"
+    );
 }

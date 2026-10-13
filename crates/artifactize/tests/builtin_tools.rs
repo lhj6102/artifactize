@@ -1,6 +1,7 @@
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
-use artifactize::{cache, config::read_workspace_config, tools};
+use artifactize_core::{cache, config::read_workspace_config, tools};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -24,7 +25,7 @@ fn declaration(repo: &Path, agent: Value, human: Value) {
     }).to_string()).unwrap();
 }
 fn command(repo: &Path, state: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+    let mut command = Command::new(support::os::cli());
     command
         .arg("--repo")
         .arg(repo)
@@ -463,7 +464,7 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
 
 #[test]
 fn human_builtin_arguments_parse_at_the_declaration_edge_and_keep_saved_bytes() {
-    use artifactize::config::{HumanBuiltinTool, HumanCommandTool, ReferenceName};
+    use artifactize_core::config::{HumanBuiltinTool, HumanCommandTool, ReferenceName};
     use std::collections::BTreeMap;
 
     for saved in [
@@ -498,12 +499,12 @@ fn human_builtin_arguments_parse_at_the_declaration_edge_and_keep_saved_bytes() 
         );
     }
     let saved = r#"{"a-b_9":"target","artifactPath":"owner"}"#;
-    let references: BTreeMap<ReferenceName, artifactize::types::ArtifactName> =
+    let references: BTreeMap<ReferenceName, artifactize_core::types::ArtifactName> =
         serde_json::from_str(saved).unwrap();
     assert_eq!(serde_json::to_string(&references).unwrap(), saved);
     for invalid in ["", "bad/name", "bad.name", "_starts-with-underscore"] {
         assert!(
-            serde_json::from_value::<BTreeMap<ReferenceName, artifactize::types::ArtifactName>>(
+            serde_json::from_value::<BTreeMap<ReferenceName, artifactize_core::types::ArtifactName>>(
                 json!({invalid:"target"})
             )
             .is_err(),

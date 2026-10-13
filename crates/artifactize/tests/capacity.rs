@@ -1,6 +1,7 @@
 //! Machine-wide Agent backend capacity from `$STATE/limits.json`, shared by every `verify`
 //! process through the RUNNING executions of each backend in `state.sqlite`.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{
@@ -89,14 +90,14 @@ impl Fixture {
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
             .arg(self.state())
             .args(args)
-            .env(support::os::home_env(), self.root.path().join("home"))
+            .envs(support::os::home_variables(self.root.path().join("home")))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off");

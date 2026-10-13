@@ -1,0 +1,227 @@
+//! GREEN/RED owner fields between the frontend's drafts and the review's [`Form`]: typed
+//! fields for a flat schema, JSON text otherwise. Which schema gets which inputs, how values
+//! become the result and the local errors all stay in [`artifactize_core::review::Form`].
+use crate::Failure;
+use artifactize_core::{
+    review::{self, Form, Input},
+    runtime,
+    store::Request,
+};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Verdict {
+    Green,
+    Red,
+}
+
+impl From<Verdict> for runtime::Verdict {
+    fn from(verdict: Verdict) -> Self {
+        match verdict {
+            Verdict::Green => Self::Green,
+            Verdict::Red => Self::Red,
+        }
+    }
+}
+
+/// How one owner field is entered.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum FieldInput {
+    /// A `const`: prefilled and fixed; `value` is its JSON.
+    Fixed {
+        value: String,
+    },
+    Bool,
+    /// String `enum` options, as their JSON text.
+    Choice {
+        options: Vec<String>,
+    },
+    Text,
+    Integer,
+    Number,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FormField {
+    pub name: String,
+    pub required: bool,
+    /// The type and constraints, then any description.
+    pub hint: String,
+    pub input: FieldInput,
+}
+
+/// A new form: typed `fields`, or `json` text to edit when the schema is not flat, with the
+/// draft the library starts it from.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FormView {
+    pub verdict: Verdict,
+    pub fields: Vec<FormField>,
+    pub json: Option<String>,
+    pub draft: Draft,
+}
+
+/// A field's draft value, by the field's kind.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+pub enum FieldValue {
+    Fixed,
+    Bool(Option<bool>),
+    /// The chosen option's index.
+    Choice(Option<u32>),
+    Text(String),
+    Integer(String),
+    Number(String),
+}
+
+/// The frontend's draft of one verdict: field values by name, or JSON text.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Draft {
+    pub verdict: Verdict,
+    pub fields: Vec<(String, FieldValue)>,
+    pub json: Option<String>,
+}
+
+fn new(request: &Request, verdict: Verdict) -> Result<Form, Failure> {
+    let schema = review::schema(request, verdict.into()).map_err(Failure::Action)?;
+    Ok(Form::new(verdict.into(), schema.as_ref()))
+}
+
+/// The form of `verdict` for the request, with the values of `kept` (an earlier draft of this
+/// verdict) when the recorded schema still takes them.
+pub fn template(
+    request: &Request,
+    verdict: Verdict,
+    kept: Option<Draft>,
+) -> Result<FormView, Failure> {
+    let form = match kept {
+        Some(kept) if kept.verdict == verdict => filled(request, kept)?,
+        _ => new(request, verdict)?,
+    };
+    let fields = form
+        .fields
+        .iter()
+        .map(|field| FormField {
+            name: field.name.clone(),
+            required: field.required,
+            hint: field.hint.clone(),
+            input: match &field.input {
+                Input::Fixed(value) => FieldInput::Fixed {
+                    value: value.to_string(),
+                },
+                Input::Bool(_) => FieldInput::Bool,
+                Input::Choice(options, _) => FieldInput::Choice {
+                    options: options
+                        .iter()
+                        .map(|option| serde_json::Value::String(option.clone()).to_string())
+                        .collect(),
+                },
+                Input::Text(_) => FieldInput::Text,
+                Input::Integer(_) => FieldInput::Integer,
+                Input::Number(_) => FieldInput::Number,
+            },
+        })
+        .collect();
+    let draft = draft_of(verdict, &form);
+    Ok(FormView {
+        verdict,
+        fields,
+        json: form.json,
+        draft,
+    })
+}
+
+/// The review's form for `draft`: the recorded schema's fields with the draft's values, or its
+/// JSON text.
+fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
+    let mut form = new(request, draft.verdict)?;
+    match draft.json {
+        Some(json) => form.set_json(json),
+        None => {
+            for field in &mut form.fields {
+                let Some((_, value)) = draft.fields.iter().find(|(name, _)| *name == field.name)
+                else {
+                    continue;
+                };
+                field.input = match (&field.input, value) {
+                    (Input::Bool(_), FieldValue::Bool(value)) => Input::Bool(*value),
+                    (Input::Choice(options, _), FieldValue::Choice(index)) => Input::Choice(
+                        options.clone(),
+                        index
+                            .map(|index| index as usize)
+                            .filter(|index| *index < options.len()),
+                    ),
+                    (Input::Text(_), FieldValue::Text(text)) => Input::Text(text.clone()),
+                    (Input::Integer(_), FieldValue::Integer(text)) => Input::Integer(text.clone()),
+                    (Input::Number(_), FieldValue::Number(text)) => Input::Number(text.clone()),
+                    // A constant stays fixed; a value of another kind is not this field's.
+                    (input, _) => input.clone(),
+                };
+            }
+        }
+    }
+    Ok(form)
+}
+
+/// A field's draft value as the form holds it.
+fn value_of(input: &Input) -> FieldValue {
+    match input {
+        Input::Fixed(_) => FieldValue::Fixed,
+        Input::Bool(value) => FieldValue::Bool(*value),
+        Input::Choice(_, index) => FieldValue::Choice(index.map(|index| index as u32)),
+        Input::Text(text) => FieldValue::Text(text.clone()),
+        Input::Integer(text) => FieldValue::Integer(text.clone()),
+        Input::Number(text) => FieldValue::Number(text.clone()),
+    }
+}
+
+/// The draft a form holds: each field's value, or its JSON text.
+fn draft_of(verdict: Verdict, form: &Form) -> Draft {
+    Draft {
+        verdict,
+        fields: form
+            .fields
+            .iter()
+            .map(|field| (field.name.clone(), value_of(&field.input)))
+            .collect(),
+        json: form.json.clone(),
+    }
+}
+
+/// `draft` with field `name` set to `value`, as the library's form takes it.
+pub fn edit_field(
+    request: &Request,
+    mut draft: Draft,
+    name: &str,
+    value: FieldValue,
+) -> Result<Draft, Failure> {
+    draft.json = None;
+    match draft.fields.iter_mut().find(|(field, _)| field == name) {
+        Some((_, current)) => *current = value,
+        None => draft.fields.push((name.to_owned(), value)),
+    }
+    let verdict = draft.verdict;
+    Ok(draft_of(verdict, &filled(request, draft)?))
+}
+
+/// `draft` with its owner-fields JSON text replaced.
+pub fn edit_json(request: &Request, mut draft: Draft, json: String) -> Result<Draft, Failure> {
+    draft.json = Some(json);
+    let verdict = draft.verdict;
+    Ok(draft_of(verdict, &filled(request, draft)?))
+}
+
+/// The complete result of `draft`, or the form's own error for it.
+pub fn result(request: &Request, draft: Draft) -> Result<serde_json::Value, Failure> {
+    filled(request, draft)?.result().map_err(Failure::Invalid)
+}
+
+/// The owner-fields JSON of `draft`, as the terminal review opens a form in `$EDITOR`.
+pub fn json(request: &Request, draft: Draft) -> Result<String, Failure> {
+    Ok(filled(request, draft)?.draft())
+}

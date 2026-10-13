@@ -1,5 +1,6 @@
 //! Agent results pin the files their tools execute (`execution_paths`) in their provenance.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{fs, path::Path, process::Command};
@@ -72,14 +73,14 @@ impl Fixture {
 
     fn json(&self, args: &[&str], code: i32) -> Value {
         let root = self.root.path();
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(self.repo())
             .arg("--state-dir")
             .arg(root.join("state"))
             .args(args)
             .arg("--json")
-            .env(support::os::home_env(), root.join("home"))
+            .envs(support::os::home_variables(root.join("home")))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")

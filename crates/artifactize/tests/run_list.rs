@@ -8,10 +8,11 @@ use std::{
 use serde_json::{Value, json};
 use support::os::{echo_program, false_program, true_program};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 fn command(repo: &Path, state: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+    let mut command = Command::new(support::os::cli());
     command
         .arg("--repo")
         .arg(repo)
@@ -257,7 +258,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     let alias = root.path().join("alias");
     support::os::link_dir(&second, &alias);
     assert_eq!(query(&alias, &state, &["run", "list"], 0), json!([all[1]]));
-    let current = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let current = Command::new(support::os::cli())
         .current_dir(&second)
         .arg("--state-dir")
         .arg(&state)

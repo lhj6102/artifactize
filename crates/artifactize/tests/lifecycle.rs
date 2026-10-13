@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path, process::Command};
 
-use artifactize::{
+use artifactize_core::{
     project::{self, VerifyOptions, selection::Selection},
     store::{self, DATABASE, Execution, Request},
 };
@@ -10,10 +10,11 @@ use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+    let mut command = Command::new(support::os::cli());
     command
         .arg("--repo")
         .arg(repo)
@@ -111,7 +112,7 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
         serde_json::to_value(&requests).unwrap()
     );
     let monitor =
-        artifactize::monitor::progress(&saved, &requests, time::OffsetDateTime::now_utc());
+        artifactize_core::monitor::progress(&saved, &requests, time::OffsetDateTime::now_utc());
     for id in [request.id.as_str(), execution.as_str()] {
         assert!(
             monitor
@@ -120,10 +121,10 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
                 .any(|(bad_id, reason)| bad_id == id && reason.contains("Unreadable"))
         );
     }
-    let detail = artifactize::monitor::detail(
+    let detail = artifactize_core::monitor::detail(
         &saved,
         &requests,
-        &artifactize::monitor::Target::Run,
+        &artifactize_core::monitor::Target::Run,
         time::OffsetDateTime::now_utc(),
     );
     assert!(detail.field("Errors").unwrap().contains(execution.as_str()));
@@ -266,7 +267,7 @@ fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
 }
 
 #[tokio::test]
-async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or_prune() {
+async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -275,7 +276,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
     }).to_string()).unwrap();
     let healthy = verify(&repo, &state).await;
-    // Corrupt the newest Run: monitor initially selects it and must still refresh.
+    // Corrupt the newest Run: the listings must still work.
     let bad = verify(&repo, &state).await;
     let db = Connection::open(state.join(DATABASE)).unwrap();
     db.execute(
@@ -315,7 +316,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or
             .as_str(),
         "GREEN"
     );
-    let shown = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let shown = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&repo)
         .arg("--state-dir")
@@ -334,7 +335,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or
         error.contains("A running Run cannot be completed"),
         "{error}"
     );
-    let pruned = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let pruned = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&repo)
         .arg("--state-dir")
@@ -363,18 +364,5 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or
             .len(),
         0
     );
-    let mut monitor = artifactize::monitor::Monitor::new(state.clone(), Some(repo.clone()));
-    monitor.refresh().await;
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40)).unwrap();
-    let frame = terminal.draw(|frame| monitor.draw(frame)).unwrap();
-    let text: String = frame
-        .buffer
-        .content
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect();
-    assert!(text.contains(bad.run.id.as_str()), "{text}");
-    assert!(text.contains("A running Run cannot be completed"), "{text}");
-    assert!(!text.contains("read failed"), "{text}");
     assert_eq!(verify(&repo, &state).await.run.status().as_str(), "GREEN");
 }

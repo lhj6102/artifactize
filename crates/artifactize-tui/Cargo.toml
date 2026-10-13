@@ -1,0 +1,54 @@
+[package]
+name = "artifactize-tui"
+description = "The terminal screens of artifactize: the Monitor and the Human review, over the artifactize-core library."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/artifactize-tui"
+keywords = ["collaboration", "ai", "agent", "review", "llm"]
+categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
+
+[dependencies]
+artifactize-core.workspace = true
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures-util = "0.3"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm", "unstable-rendered-line-info"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+tokio = { version = "1", features = ["macros", "rt", "signal", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tui-tree-widget = "0.24"
+unicode-segmentation = "1.13"
+
+[dev-dependencies]
+base64 = "0.22"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+artifactize-core = { workspace = true, features = ["test-support"] }
+rig-core = { version = "=0.43.0", default-features = false, features = ["test-utils"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.11"
+tempfile = "3.27"
+tokio = { version = "1", features = ["test-util"] }
+toml = "1.1.8"
+
+# The OS helpers the tests share with artifactize-core (tests/support/os.rs) call these.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }

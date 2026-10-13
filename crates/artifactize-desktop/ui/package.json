@@ -1,0 +1,41 @@
+{
+  "name": "artifactize-desktop-ui",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "vitest run",
+    "e2e": "node --test --test-concurrency=1 e2e/*.test.ts",
+    "lint": "eslint --no-inline-config src && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
+  },
+  "dependencies": {
+    "@internationalized/date": "3.12.4",
+    "@tauri-apps/api": "2.12.0",
+    "@xyflow/svelte": "1.7.0",
+    "bits-ui": "2.19.3",
+    "elkjs": "0.12.0",
+    "paneforge": "1.0.2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/svelte": "5.4.2",
+    "@testing-library/user-event": "14.6.7",
+    "@tsconfig/svelte": "5.0.8",
+    "@types/node": "24.19.0",
+    "eslint": "10.12.0",
+    "eslint-plugin-svelte": "3.23.1",
+    "jsdom": "30.1.1",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "svelte-eslint-parser": "1.9.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vite": "8.3.1",
+    "vitest": "5.0.2",
+    "webdriverio": "9.32.0"
+  }
+}

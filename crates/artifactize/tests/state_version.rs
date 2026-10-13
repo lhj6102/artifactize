@@ -1,10 +1,11 @@
 //! A state of another schema version is refused, never migrated: 0.6.0 starts a new state.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{fs, path::Path, process::Command};
 
-use artifactize::store::{EARLIER_STATE, STATE_SCHEMA_VERSION};
+use artifactize_core::store::{EARLIER_STATE, STATE_SCHEMA_VERSION};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -15,9 +16,9 @@ const EARLIER: &str =
     CREATE TABLE cache_entries(execution_id TEXT PRIMARY KEY, key TEXT NOT NULL);";
 
 fn artifactize(root: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    Command::new(support::os::cli())
         .env("ARTIFACTIZE_REMOTE", "off")
-        .env(support::os::home_env(), root.join("home"))
+        .envs(support::os::home_variables(root.join("home")))
         .arg("--repo")
         .arg(root.join("repo"))
         .arg("--state-dir")

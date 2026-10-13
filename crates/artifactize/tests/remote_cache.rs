@@ -15,6 +15,7 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{cat_program, shell, true_program};
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Server {
@@ -27,7 +28,7 @@ struct Server {
 impl Server {
     fn start(root: &Path) -> Self {
         let state = root.join("server");
-        let mut child = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let mut child = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&state)
             .args(["server", "run", "--listen", "127.0.0.1:0"])
@@ -52,7 +53,7 @@ impl Server {
 
     /// A freshly generated token; only the server's SHA-256 of it is stored.
     fn token(&self, name: &str, scopes: &str) -> String {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&self.state)
             .args(["server", "token", "add", name, "--scopes", scopes, "--json"])
@@ -147,7 +148,7 @@ impl Machine {
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
             .arg(repo)
@@ -713,4 +714,145 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     );
     assert!(again["requests"][0]["origin"].is_null());
     assert_eq!(history().as_array().unwrap().len(), 3);
+}
+
+/// A store that accepts the token, then answers a lookup with a record whose only field is the
+/// token: decoding it fails, and the failure names the field. Neither verify's output nor its
+/// warnings may hold the token or a piece of it.
+#[test]
+fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
+    let root = support::os::tempdir();
+    let token = format!("azt_lookup{}", "0123456789abcdef".repeat(2));
+    let echoed = token.clone();
+    let store = support::FakeProvider::start(move |request| match request.path.as_str() {
+        "/v1/whoami" => {
+            support::Reply::Json(200, json!({"principal":"bob-laptop","scopes":["read"]}))
+        }
+        "/v1/lookup" => support::Reply::Json(
+            200,
+            json!({"entries":[{ echoed.clone(): null }, { format!("{}\n{}", &echoed[..14], &echoed[14..]): 1 }]}),
+        ),
+        _ => support::Reply::Json(404, json!({"error":"not found"})),
+    });
+    let bob = Machine::new(root.path(), "bob", &format!("{}/", store.url), &token);
+    let repo = runtime_repo(root.path(), "repo", "v1");
+    let (stdout, stderr) = bob.run(&repo, &["verify", "--all", "--json"], 0);
+    for piece in [&token[10..22], &token[token.len() - 12..]] {
+        assert!(
+            !stdout.contains(piece) && !stderr.contains(piece),
+            "{stdout}{stderr}"
+        );
+    }
+    assert!(
+        stderr.contains("Ignoring an invalid remote review record: [withheld"),
+        "{stderr}"
+    );
+    assert!(
+        store
+            .requests()
+            .iter()
+            .any(|request| request.path == "/v1/lookup")
+    );
+}
+
+#[test]
+fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
+    let root = support::os::tempdir();
+    let repo = root.path().join("repo");
+    let log = root.path().join("log");
+    fs::create_dir(&log).unwrap();
+    let mut views = support::tool_sessions::views(&log, "start", "stop", "act");
+    for command in ["start", "stop"] {
+        views["agent_sessions"]["app"][command]["execution_paths"] = json!(["harness.py"]);
+    }
+    write(
+        &repo,
+        json!({"name":"app", "fingerprint":{}, "views":views,
+        "evals":[{"id":"check","title":"Review","profile":{"kind":"agent","backend":"openai","model":"fake-model"},"payload":{"instruction":"Review."}}]}),
+    );
+    fs::write(repo.join("harness.py"), support::tool_sessions::script()).unwrap();
+    let server = Server::start(root.path());
+    let token = server.token("alice", "read,publish");
+    let consumer = Machine::new(root.path(), "bob", &server.url, &token);
+    let state = root.path().join("fixture-state");
+    let config = artifactize_core::config::read_workspace_config(&repo).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    // A synthetic remote protocol fixture, not a fake-provider verdict: provider
+    // test endpoint isolation remains intact, and no Agent is asked to publish it.
+    let pins = runtime.block_on(async {
+        let fingerprints = artifactize_core::cache::prepare(
+            &config,
+            [&config.artifacts["app"].name],
+            &state,
+            &artifactize_core::cache::Parallelism::new(2),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let keys = artifactize_core::cache::eval_keys(&config, &fingerprints);
+        let eval = &config.evals[0];
+        let key = &keys[&eval.id];
+        let pins = artifactize_core::tools::pins::execution_paths(&config, &eval.id)
+            .await
+            .unwrap();
+        let record = artifactize_core::remote::Record {
+            schema: artifactize_core::remote::SCHEMA,
+            key: key.value.clone(),
+            eval_def_hash: key.eval_def_hash.clone(),
+            fingerprints: key.fingerprints.clone(),
+            artifact_kinds: key.artifact_kinds.clone(),
+            verdict: artifactize_core::types::ExecutionStatus::Green,
+            eval_id: eval.id.clone(),
+            run_id: "run-lifecycle-fixture".parse().unwrap(),
+            request_id: "run-lifecycle-fixture-1".parse().unwrap(),
+            execution_id: "execution-run-lifecycle-fixture-1".parse().unwrap(),
+            profile: artifactize_core::config::StoredProfile::from(eval.declaration.profile()),
+            options: artifactize_core::store::ExecutionOptions::new(
+                eval.declaration.profile(),
+                None,
+            ),
+            execution_paths: pins.clone(),
+            result: json!({"verdict":"GREEN"}).try_into().unwrap(),
+            usage: None,
+            reviewer: None,
+            producer: None,
+            started_at: "2026-10-04T00:00:00Z".parse().unwrap(),
+            completed_at: "2026-10-04T00:00:01Z".parse().unwrap(),
+            execution: None,
+            publisher: None,
+            published_at: None,
+        };
+        record.validate().unwrap();
+        let (remote, _) = artifactize_core::auth::remote::login(
+            Some(&state),
+            Some(&repo),
+            artifactize_core::auth::remote::parse_url(&server.url).unwrap(),
+            artifactize_core::auth::remote::Share::Summary,
+            token.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(remote.publish(&record).await.unwrap());
+        let fetched = remote
+            .lookup(std::slice::from_ref(&record.key))
+            .await
+            .unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].as_ref().unwrap().execution_paths, pins);
+        serde_json::to_value(pins).unwrap()
+    });
+    for key in ["app_app.start", "app_app.stop"] {
+        assert_eq!(pins[key]["harness.py"].as_str().unwrap().len(), 64);
+    }
+    let entries = server.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].1["executionPaths"], pins);
+    let reused = consumer.json(&repo, &["verify", "--all"], 0);
+    assert_eq!(reused["executionsStarted"], 0);
+    assert_eq!(reused["requests"][0]["provenance"]["executionPaths"], pins);
+    assert!(support::tool_sessions::directories(&consumer.state).is_empty());
+    assert!(support::tool_sessions::records(&log, "start").is_empty());
 }

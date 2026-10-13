@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use support::os::{cat_program, echo_program, false_program, shell, true_program};
 use tempfile::TempDir;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -34,7 +35,7 @@ impl Fixture {
     }
 
     fn command(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
@@ -54,7 +55,7 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        support::os::new_group(&mut Command::new(env!("CARGO_BIN_EXE_artifactize")))
+        support::os::new_group(&mut Command::new(support::os::cli()))
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
@@ -1109,7 +1110,7 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
         assert_eq!(saved[field], run["requests"][0][field]);
     }
     for args in [vec!["cache", "list"], vec!["cache", "show", &key]] {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&fixture.state)
             .args(&args)
@@ -1394,7 +1395,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
 
 #[tokio::test]
 async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained() {
-    use artifactize::store::{Execution, Receipts, Request};
+    use artifactize_core::store::{Execution, Receipts, Request};
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
@@ -1420,7 +1421,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     // would make that snapshot legitimately exhaust its zero execution budget.
     signal(owner.id(), "-STOP");
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
-    execution.state = artifactize::store::ExecutionState::Completed {
+    execution.state = artifactize_core::store::ExecutionState::Completed {
         result: json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
             .try_into()
             .unwrap(),
@@ -1435,7 +1436,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
         .unwrap();
     assert_eq!(fixture.records(), 0);
     assert_eq!(
-        artifactize::store::read_run(&fixture.state, &request.run_id)
+        artifactize_core::store::read_run(&fixture.state, &request.run_id)
             .await
             .unwrap()
             .requests[0]
@@ -1629,7 +1630,7 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
     assert_eq!(reused["requestedProfile"]["timeoutMs"], 5000);
     let record = fixture.command(&repo, &["cache", "show", &key(&default, 0)], 0);
     assert_eq!(record["options"]["variant"], "patient");
-    let text = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let text = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&repo)
         .arg("--state-dir")
@@ -1676,7 +1677,7 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
 }
 #[test]
 fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() {
-    use artifactize::{cache::eval_definition_hash, config::parse_declaration};
+    use artifactize_core::{cache::eval_definition_hash, config::parse_declaration};
     let parse = |value| {
         parse_declaration(
             &support::declaration::to_toml(json!({"name":"app","evals":[value]})).unwrap(),

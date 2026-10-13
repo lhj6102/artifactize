@@ -128,13 +128,13 @@ fn plain_name(name: &OsStr) -> bool {
         .trim_end_matches(' ');
     let device = match stem.to_ascii_uppercase().as_str() {
         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" => true,
-        port => {
-            (port.starts_with("COM") || port.starts_with("LPT"))
-                && port[3..].chars().count() == 1
-                && port[3..]
-                    .chars()
-                    .all(|digit| "0123456789¹²³".contains(digit))
-        }
+        port => port
+            .strip_prefix("COM")
+            .or_else(|| port.strip_prefix("LPT"))
+            .is_some_and(|number| {
+                number.chars().count() == 1
+                    && number.chars().all(|digit| "0123456789¹²³".contains(digit))
+            }),
     };
     !name.is_empty()
         && name.len() <= MAX_PLAIN_NAME_BYTES

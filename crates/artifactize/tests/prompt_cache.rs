@@ -1,5 +1,6 @@
 //! One prompt-cache identity per Agent review, against loopback fakes.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
@@ -50,7 +51,7 @@ impl Project {
     }
 
     fn json(&self, provider: &FakeProvider, args: &[&str], code: i32) -> Value {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")

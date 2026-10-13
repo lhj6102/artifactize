@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use artifactize::{
+use artifactize_core::{
     human,
     project::{self, VerifyOptions, selection::Selection},
     store::{self, Receipts, RunView},
@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 use support::os::{cat_program, false_program, true_program};
 use tokio_util::sync::CancellationToken;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -61,7 +62,7 @@ impl Fixture {
     }
 
     fn cli_verify(&self) -> Value {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
@@ -139,6 +140,11 @@ fn green() -> Value {
     json!({"verdict":"GREEN","approved":true})
 }
 
+/// A request ID parsed once, where a test names one.
+fn rid(id: &str) -> artifactize_core::types::RequestId {
+    id.parse().unwrap()
+}
+
 #[tokio::test]
 async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims() {
     let fixture = Fixture::new(true);
@@ -150,14 +156,15 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
     let receipts = fixture.receipts().await;
     let alice_id = "alice".parse().unwrap();
     let bob_id = "bob".parse().unwrap();
+    let request = rid(id);
     let (alice, bob) = tokio::join!(
-        human::claim(&receipts, id, &alice_id),
-        human::claim(&receipts, id, &bob_id)
+        human::claim(&receipts, &request, &alice_id),
+        human::claim(&receipts, &request, &bob_id)
     );
     assert_ne!(alice.is_ok(), bob.is_ok());
     let claim = alice.or(bob).unwrap();
     assert_eq!(
-        human::claim(&receipts, id, &claim.reviewer)
+        human::claim(&receipts, &rid(id), &claim.reviewer)
             .await
             .unwrap()
             .claimed_at,
@@ -193,7 +200,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     assert!(
         human::submit(
             &receipts,
-            id,
+            &rid(id),
             &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
@@ -201,7 +208,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         .await
         .is_err()
     );
-    human::claim(&receipts, id, &"alice".parse().unwrap())
+    human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
         .await
         .unwrap();
     assert!(
@@ -218,7 +225,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     assert!(
         human::submit(
             &receipts,
-            id,
+            &rid(id),
             &"bob".parse().unwrap(),
             &green(),
             CancellationToken::new()
@@ -267,7 +274,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         assert!(
             human::submit(
                 &receipts,
-                id,
+                &rid(id),
                 &"alice".parse().unwrap(),
                 &result,
                 CancellationToken::new()
@@ -287,7 +294,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     }
     let result = human::submit(
         &receipts,
-        id,
+        &rid(id),
         &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
@@ -298,7 +305,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     assert!(
         human::submit(
             &receipts,
-            id,
+            &rid(id),
             &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
@@ -307,7 +314,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         .is_err()
     );
     assert!(
-        human::claim(&receipts, id, &"alice".parse().unwrap())
+        human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
             .await
             .is_err()
     );
@@ -353,7 +360,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
         let run = fixture.verify(returning()).await;
         let id = &run.requests[0].id;
         let receipts = fixture.receipts().await;
-        human::claim(&receipts, id, &"alice".parse().unwrap())
+        human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
             .await
             .unwrap();
         fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
@@ -370,7 +377,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
         } else {
             human::submit(
                 &receipts,
-                id,
+                &rid(id),
                 &"alice".parse().unwrap(),
                 &green(),
                 CancellationToken::new(),
@@ -416,7 +423,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
     let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, id, &"alice".parse().unwrap())
+    human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
         .await
         .unwrap();
     fs::create_dir(fixture.repo.join("child")).unwrap();
@@ -440,7 +447,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
     assert!(
         human::submit(
             &receipts,
-            id,
+            &rid(id),
             &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
@@ -451,7 +458,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
     fs::remove_file(fixture.repo.join("child/index.artf")).unwrap();
     human::submit(
         &receipts,
-        id,
+        &rid(id),
         &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
@@ -485,7 +492,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     let waiting = run
         .requests
         .iter()
-        .find(|r| r.status() == artifactize::types::RequestStatus::WaitingHuman)
+        .find(|r| r.status() == artifactize_core::types::RequestStatus::WaitingHuman)
         .unwrap();
     assert_eq!(
         run.requests
@@ -516,7 +523,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
         complete
             .requests
             .iter()
-            .all(|r| r.status() == artifactize::types::RequestStatus::Green)
+            .all(|r| r.status() == artifactize_core::types::RequestStatus::Green)
     );
 }
 
@@ -539,7 +546,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     let follower = &run.requests[0].id;
     let owner = original["requests"][0]["id"].as_str().unwrap();
     assert_eq!(
-        human::claim(&receipts, follower, &"alice".parse().unwrap())
+        human::claim(&receipts, &rid(follower), &"alice".parse().unwrap())
             .await
             .unwrap()
             .request_id
@@ -547,7 +554,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         owner
     );
     assert!(
-        human::claim(&receipts, owner, &"bob".parse().unwrap())
+        human::claim(&receipts, &rid(owner), &"bob".parse().unwrap())
             .await
             .is_err()
     );
@@ -567,7 +574,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     );
     human::submit(
         &receipts,
-        follower,
+        &rid(follower),
         &"alice".parse().unwrap(),
         &json!({"verdict":"RED","reason":"Needs work"}),
         CancellationToken::new(),
@@ -577,7 +584,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     assert!(
         human::submit(
             &receipts,
-            owner,
+            &rid(owner),
             &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
@@ -648,17 +655,21 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let follower = &run.requests[0].id;
     let receipts = fixture.receipts().await;
     assert!(
-        human::unclaim(&receipts, owner, &"alice".parse().unwrap())
+        human::unclaim(&receipts, &rid(owner), &"alice".parse().unwrap())
             .await
             .unwrap_err()
             .contains("claimant")
     );
-    let claim = human::claim(&receipts, owner, &"alice".parse().unwrap())
+    let claim = human::claim(&receipts, &rid(owner), &"alice".parse().unwrap())
         .await
         .unwrap();
     for (id, reviewer) in [(owner, "bob"), (follower.as_str(), "bob"), (owner, "")] {
         match reviewer.parse() {
-            Ok(reviewer) => assert!(human::unclaim(&receipts, id, &reviewer).await.is_err()),
+            Ok(reviewer) => assert!(
+                human::unclaim(&receipts, &rid(id), &reviewer)
+                    .await
+                    .is_err()
+            ),
             Err(_) => assert!(
                 reviewer.is_empty(),
                 "invalid reviewer rejected at the input edge"
@@ -666,7 +677,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
         }
     }
     // A follower forwards the release to its original request, like a claim.
-    let released = human::unclaim(&receipts, follower, &"alice".parse().unwrap())
+    let released = human::unclaim(&receipts, &rid(follower), &"alice".parse().unwrap())
         .await
         .unwrap();
     assert_eq!(
@@ -674,14 +685,14 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
         (owner, claim.claimed_at)
     );
     assert!(
-        human::unclaim(&receipts, owner, &"alice".parse().unwrap())
+        human::unclaim(&receipts, &rid(owner), &"alice".parse().unwrap())
             .await
             .is_err()
     );
     assert!(
         human::submit(
             &receipts,
-            owner,
+            &rid(owner),
             &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
@@ -690,7 +701,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
         .is_err()
     );
     assert_eq!(
-        human::claim(&receipts, follower, &"bob".parse().unwrap())
+        human::claim(&receipts, &rid(follower), &"bob".parse().unwrap())
             .await
             .unwrap()
             .request_id
@@ -708,7 +719,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     );
     human::submit(
         &receipts,
-        owner,
+        &rid(owner),
         &"bob".parse().unwrap(),
         &green(),
         CancellationToken::new(),
@@ -717,7 +728,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     .unwrap();
     for id in [owner, follower.as_str()] {
         assert!(
-            human::unclaim(&receipts, id, &"bob".parse().unwrap())
+            human::unclaim(&receipts, &rid(id), &"bob".parse().unwrap())
                 .await
                 .unwrap_err()
                 .contains("not waiting")
@@ -731,14 +742,27 @@ async fn concurrent_submissions_commit_only_once() {
     let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, id, &"alice".parse().unwrap())
+    human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
         .await
         .unwrap();
     let result = green();
     let reviewer = "alice".parse().unwrap();
+    let request = rid(id);
     let (first, second) = tokio::join!(
-        human::submit(&receipts, id, &reviewer, &result, CancellationToken::new()),
-        human::submit(&receipts, id, &reviewer, &result, CancellationToken::new()),
+        human::submit(
+            &receipts,
+            &request,
+            &reviewer,
+            &result,
+            CancellationToken::new()
+        ),
+        human::submit(
+            &receipts,
+            &request,
+            &reviewer,
+            &result,
+            CancellationToken::new()
+        ),
     );
     assert_ne!(first.is_ok(), second.is_ok());
 }

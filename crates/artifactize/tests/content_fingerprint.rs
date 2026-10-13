@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use support::os::{cat_program, echo_program, shell, true_program};
 use tempfile::TempDir;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -39,7 +40,7 @@ impl Fixture {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        Command::new(support::os::cli())
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")

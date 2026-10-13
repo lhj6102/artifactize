@@ -63,12 +63,15 @@ async fn capture(reader: impl AsyncRead + Unpin, limit: usize) -> std::io::Resul
     Ok(bytes)
 }
 
-/// The variables a standalone program receives: `PATH`, the locale, and the home, temporary
-/// and system variables the platform's programs need to start; nothing else is inherited.
+/// The variables a standalone program receives: this process's whole environment, as in the
+/// author's terminal, without artifactize's own `ARTIFACTIZE_*` variables (its credentials and
+/// settings).
 pub(crate) fn passed_environment() -> BTreeMap<OsString, OsString> {
-    ["PATH", "LANG", "LC_ALL"]
-        .into_iter()
-        .chain(super::SYSTEM_VARIABLES.iter().copied())
-        .filter_map(|name| std::env::var_os(name).map(|value| (name.into(), value)))
+    std::env::vars_os()
+        .filter(|(name, _)| {
+            !name
+                .to_str()
+                .is_some_and(|name| name.to_ascii_uppercase().starts_with("ARTIFACTIZE_"))
+        })
         .collect()
 }

@@ -13,6 +13,7 @@ use std::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 fn example(name: &str) -> PathBuf {
@@ -31,7 +32,7 @@ impl Session {
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         command
             // Runtime evals name `grep` and declared tools name `python3` for PATH to find.
             .env("PATH", support::os::path())

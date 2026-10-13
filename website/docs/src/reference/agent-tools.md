@@ -143,9 +143,9 @@ and symlinks are rejected in both cases. Absolute commands run as given. JSON-pr
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
 Command calls use the owner's working directory (the containing folder for a file
-Artifact) as cwd, runtime's restricted environment (`PATH`/`LANG`, plus
-`SystemRoot`/`ComSpec`/`PATHEXT` on Windows) and
-private external HOME/TMP/output, a default 120000 ms deadline (1–2147483647), and
+Artifact) as cwd, the author's own environment (the
+[runtime environment](declarations.md#runtime-execution-library): the real home, no
+`ARTIFACTIZE_*` variables of the caller) with private external TMP/output, a default 120000 ms deadline (1–2147483647), and
 process-group cancellation/cleanup. Per-call directories are removed on success,
 failure and cancellation, including dropped call futures; caller-owned output
 roots remain. Commands are trusted read-only programs, not sandboxed.
@@ -153,11 +153,108 @@ roots remain. Commands are trusted read-only programs, not sandboxed.
 Internal callers use `tools::Registry::new(&config, "artifact/eval")`, `list()`
 and `call(name, args, output_root, cancellation).await`. Only Agent evals are
 accepted. Each Artifact in its admitted scope contributes its Agent declarations
-under `<name>_<artifactId>`; concatenation collisions are rejected. Human tools
+under `<name>_<artifactId>`; tool-name and session-provenance-name concatenation
+collisions are rejected. Human tools
 are never listed. Listing creates no directories and runs no owner code. Calls
 return normalized `ToolResult {content, is_error}` for successful, authored and
 system-error results. Registry calls do not mutate payloads or declarations. The
 Agent loop calls this registry.
+
+## Tool sessions
+
+A **tool session** keeps a harness running across calls during one review. It is
+not a saved Agent conversation. Declare its start and stop commands in the same
+Artifact as its bound command tools:
+
+```toml
+[views.agent_sessions.app]
+start = { command = "harness", args = ["start"], execution_paths = ["tools/harness"] }
+stop = { command = "harness", args = ["stop"], execution_paths = ["tools/harness"] }
+
+[views.agent_tools.click]
+session = "app"
+description = "Click an element of the running app."
+command = "harness"
+args = ["act"]
+protocol = "json"
+```
+
+`start` and `stop` require `command` and `args`; their only optional field is
+`execution_paths`. They use the usual executable lookup, scoped argv and JSON
+stdin envelope, with `args: {}`. They do not take `description`, `protocol`,
+`timeout_ms` or concurrency options. A command tool's `session` must name a
+session in its own Artifact; built-in and Human tools do not accept it.
+
+The harness implements this start contract:
+
+- Read the usual JSON envelope on stdin. `ARTIFACTIZE_SESSION_DIR` names a private
+  directory supplied by artifactize; use it for state shared by bound tools and stop.
+- When ready, print one newline-terminated line on stdout. Its content is ignored.
+- Keep the start process running for the whole session. Its exit ends the session.
+
+Bound tools, whether `json` or `plain`, and stop receive the same
+`ARTIFACTIZE_SESSION_DIR` and run in the author's environment, real home included, like
+every command.
+Each invocation still has its own private output and temporary directories.
+Concurrent reviews have independent session directories and environments, even
+on the same Artifact. Choose ports/displays through standard OS mechanisms
+(for example port 0 or an automatically selected display); a desktop harness
+starts its own headless display. The Agent sees no instance ID and cannot call
+start or stop.
+
+After execution-path pinning, artifactize starts only the sessions referenced by
+the eval's admitted tools, while holding the review's backend slot. Every session
+must be ready before the first model request. Spawn failure, exit before readiness,
+or readiness timeout produces `PREPARATION_FAILED` with no model request; already
+started sessions undergo stop and cleanup rollback. Any cleanup failure is also
+reported, with unconfirmed state retained for recovery. Readiness has an internal
+30-second bound. After readiness, stdout and stderr are drained and discarded.
+
+If the start process exits during the review, artifactize immediately kills its
+remaining process group/Job and cancels in-flight bound calls. The cleaned group
+is released once termination is confirmed, so later review cleanup does not signal
+its old numeric process-group ID. A failure to retire its saved identity is reported
+without skipping cancellation/join of bound calls or stop. Later bound calls return
+``The tool session `app` ended.``; there is no restart. This is an ordinary tool
+error in the saved conversation, not a new event kind.
+
+Stop is attempted after the Agent loop and before input revalidation, fingerprint recheck
+and result commit, on every ending: verdict, error, timeout, cancellation or dropped
+review future, including a review panic. Cleanup cancels and awaits in-flight bound
+calls before running stop. Stop uses its own cancellation token and an internal
+30-second bound, then artifactize kills and reaps the session group/Job. Its
+directory and admission records are removed only after all owned-process cleanup
+is confirmed, even when stop itself fails or hangs. Windows cleanup waits for all
+Job descendants, with a separate internal 30-second termination bound.
+
+A lazy cleanup executor owns session lifetimes independently of the caller's
+runtime: dropping that runtime still runs stop and cleanup. Process termination
+cannot run stop. Before the next tool session starts, artifactize sweeps directories
+whose saved owner identity has exited (including an unreaped zombie), or whose
+supervisor lease has been released after a cleanup failure even while its owner
+process remains alive. Active leases protect concurrent reviews. On Unix, start,
+stop and bound invocation groups are recorded before admission and each saved PID/start-time identity is checked
+before signalling, including when the group leader is already gone. Windows Jobs
+terminate when their owner dies; recovery waits up to 30 seconds for pending file
+sharing dispositions to clear. Cleanup or record-retirement failures are reported
+instead of publishing a successful result. Unconfirmed process cleanup retains its
+journals for recovery; failed directory removal leaves the remaining state for the
+next start to sweep after the lease is released. Sweep errors preserve the journals
+and refuse the new session instead of admitting it. A reused or waited-on result
+starts nothing.
+
+Start/stop execution-path pins use `<session>_<artifact>.start` and `.stop` keys
+in the result's existing `executionPaths` provenance, including remote records.
+`tools check` statically checks the referenced session's executables and operands
+without running it. `tools check --execute` on a bound tool and `session send`
+each own a fresh tool session and clean it up afterward.
+
+Internal callers start sessions with
+`registry.start_sessions(state, selected_tool_or_none, cancellation).await`,
+attach them with `registry.with_sessions(&sessions)`, then release and await
+`sessions.close().await` after their calls. Dropping the guard also starts cleanup.
+Session commands remain **trusted, not sandboxed**: commands can modify the
+workspace or escape cleanup by deliberately detaching descendants.
 
 ## Tool diagnostics
 
@@ -178,7 +275,7 @@ selects one Agent/Human eval and cannot be combined with `--artifact`, `--audien
 and tool flags; the short operation name or its published name is accepted.
 `--args` is valid only for Agent execution; Human schemas admit only an empty
 object and Human commands take no free arguments. A check never creates a Run,
-verdict or cache entry. Agent calls use isolated temporary output (removed after
+verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
 execution); Human calls use the reviewer's real environment. Exit codes are
 0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
 invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are

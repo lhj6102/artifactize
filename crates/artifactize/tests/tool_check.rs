@@ -4,10 +4,11 @@ use std::{
     process::{Command, Output},
 };
 
-use artifactize::store;
+use artifactize_core::store;
 use serde_json::{Value, json};
 use support::os::echo_program;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use support::os::TOOL;
@@ -90,7 +91,7 @@ fn fixture(repo: &Path) {
 }
 
 fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    Command::new(support::os::cli())
         .arg("--repo")
         .arg(repo)
         .arg("--state-dir")
@@ -98,7 +99,7 @@ fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
         .args(["tools", "check"])
         .args(args)
         .env("TOOL_CHECK_SECRET", "real-environment")
-        .env(support::os::home_env(), support::os::human_tool_home())
+        .envs(support::os::home_variables(support::os::human_tool_home()))
         .output()
         .unwrap()
 }
@@ -192,9 +193,9 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         "execute"
     );
     let text = agent["result"]["content"][0]["text"].as_str().unwrap();
-    let home = format!("{}|unset|", support::os::native("/home"));
-    assert!(text.contains(&home), "{text}");
-    assert!(!text.contains("reviewer-home"));
+    // The Agent tool runs in the author's environment, as the Human tool does: the same home
+    // and the same variables.
+    assert!(text.starts_with(support::os::human_tool_prefix()), "{text}");
     let human = parsed(
         &check(
             &repo,

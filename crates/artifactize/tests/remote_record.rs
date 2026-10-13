@@ -1,6 +1,6 @@
 use std::{fs, path::Path, process::Command, time::Duration};
 
-use artifactize::{
+use artifactize_core::{
     cache, human,
     project::{self, VerifyOptions, selection::Selection},
     remote::Record,
@@ -11,10 +11,11 @@ use serde_json::{Value, json};
 use support::os::{cat_program, shell, true_program};
 use tokio_util::sync::CancellationToken;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 fn cli(state: &Path, args: &[&str]) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .arg("--state-dir")
         .arg(state)
         .args(args)
@@ -62,7 +63,7 @@ fn write_repo(repo: &Path, profile: Value) {
     .unwrap();
 }
 
-async fn verify(repo: &Path, state: &Path) -> artifactize::store::RunView {
+async fn verify(repo: &Path, state: &Path) -> artifactize_core::store::RunView {
     project::verify(
         repo,
         Some(state),
@@ -258,8 +259,8 @@ async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
 #[tokio::test]
 async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     // An independent literal schema-5 fixture, not produced by the typed writer.
-    let text = include_str!("fixtures/legacy_remote_execution.json");
-    let execution: artifactize::store::Execution = serde_json::from_str(text).unwrap();
+    let text = include_str!("../../artifactize-core/tests/fixtures/legacy_remote_execution.json");
+    let execution: artifactize_core::store::Execution = serde_json::from_str(text).unwrap();
     assert_eq!(execution.id.len(), 207);
     let state = support::os::tempdir();
     let repo = support::os::tempdir();
@@ -291,7 +292,7 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
-        artifactize::store::STATE_SCHEMA_VERSION
+        artifactize_core::store::STATE_SCHEMA_VERSION
     );
 }
 
@@ -336,7 +337,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
 /// Agent call, and the request and the record show which profile produced it.
 #[tokio::test]
 async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
-    use artifactize::{
+    use artifactize_core::{
         config::{Profile, read_workspace_config},
         store::{Execution, ExecutionOptions, Producer, Provenance},
     };
@@ -376,7 +377,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     .unwrap();
     let key = cache::eval_keys(&config, &fingerprints)[&config.evals[0].id].clone();
     let variant: Profile = serde_json::from_value(fast.clone()).unwrap();
-    let completed: artifactize::types::Timestamp = "2026-10-04T00:00:01Z".parse().unwrap();
+    let completed: artifactize_core::types::Timestamp = "2026-10-04T00:00:01Z".parse().unwrap();
     let produced = Execution {
         id: "execution-run-elsewhere-1".parse().unwrap(),
         key: Some(key.value.clone()),
@@ -384,17 +385,17 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         fingerprints: key.fingerprints.clone(),
         artifact_kinds: key.artifact_kinds.clone(),
         eval_def_hash: key.eval_def_hash.clone(),
-        owner: Some(artifactize::process::ChildIdentity {
-            pid: artifactize::process::ProcessId::new(1),
+        owner: Some(artifactize_core::process::ChildIdentity {
+            pid: artifactize_core::process::ProcessId::new(1),
             start_time: 1,
         }),
-        state: artifactize::store::ExecutionState::Completed {
+        state: artifactize_core::store::ExecutionState::Completed {
             result: json!({"verdict":"GREEN","approved":true})
                 .try_into()
                 .unwrap(),
             at: completed,
         },
-        profile: artifactize::config::StoredProfile::from(&variant),
+        profile: artifactize_core::config::StoredProfile::from(&variant),
         options: ExecutionOptions::new(&variant, Some(&"fast".parse().unwrap())),
         usage: Some(
             serde_json::from_value(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}]))
@@ -411,7 +412,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         },
         started_at: "2026-10-04T00:00:00Z".parse().unwrap(),
         producer: Some(Producer {
-            name: "bob@laptop".into(),
+            name: "bob@laptop".parse().unwrap(),
             version: "0.5.0".into(),
             session: None,
         }),
@@ -436,7 +437,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     let request = &reused.requests[0];
     assert_eq!(
         serde_json::to_value(&request.profile).unwrap(),
-        serde_json::to_value(artifactize::config::StoredProfile::from(&variant)).unwrap()
+        serde_json::to_value(artifactize_core::config::StoredProfile::from(&variant)).unwrap()
     );
     assert_eq!(
         serde_json::to_value(&request.requested_profile).unwrap()["model"],
@@ -449,7 +450,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     assert_eq!(request.options.variant.as_deref(), Some("fast"));
     assert_eq!(
         request.options.backend,
-        Some(artifactize::config::Backend::Anthropic)
+        Some(artifactize_core::config::Backend::Anthropic)
     );
     assert_eq!(request.options.max_tokens, Some(500));
     let shown = cli(&state, &["cache", "show", &key.value]);

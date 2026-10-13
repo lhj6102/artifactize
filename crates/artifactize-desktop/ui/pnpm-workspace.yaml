@@ -1,0 +1,5 @@
+# The e2e tests drive WebKitWebDriver through tauri-driver; webdriverio's optional browser
+# driver downloads are not needed and never run.
+allowBuilds:
+  edgedriver: false
+  geckodriver: false

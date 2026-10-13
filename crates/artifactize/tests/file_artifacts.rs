@@ -4,7 +4,7 @@ use std::{
     process::{Command, Output},
 };
 
-use artifactize::{
+use artifactize_core::{
     cache::{self, Parallelism},
     config::{ArtifactKind, Fingerprint, RepoConfig, read_workspace_config},
     monitor::{self, Target},
@@ -15,6 +15,7 @@ use artifactize::{
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -57,7 +58,7 @@ impl Fixture {
     }
 
     fn run(&self, args: &[&str], code: i32) -> Output {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
@@ -269,7 +270,7 @@ fn explicit_file_fingerprints_allow_only_the_target_and_reject_ignore_even_if_em
 async fn fingerprints(
     config: &RepoConfig,
     output: &Path,
-) -> std::collections::BTreeMap<artifactize::types::ArtifactName, cache::PreparedFingerprint> {
+) -> std::collections::BTreeMap<artifactize_core::types::ArtifactName, cache::PreparedFingerprint> {
     cache::prepare(
         config,
         config.artifacts.keys(),
@@ -542,7 +543,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
         }),
     );
     let config = fixture.config();
-    let registry = artifactize::tools::human::Registry::for_artifact(&config, "file").unwrap();
+    let registry = artifactize_core::tools::human::Registry::for_artifact(&config, "file").unwrap();
     let command = registry.command(&"open_file".parse().unwrap()).unwrap();
     assert_eq!(command.cwd, config.root.join("files"));
     assert_eq!(
@@ -1022,10 +1023,11 @@ fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or
         json!({"name":"reference","basis":true}),
     );
     let mut config = fixture.config();
-    let names: Vec<artifactize::types::ArtifactName> = ["owner", "mount", "child", "reference"]
-        .into_iter()
-        .map(|id| id.parse().unwrap())
-        .collect();
+    let names: Vec<artifactize_core::types::ArtifactName> =
+        ["owner", "mount", "child", "reference"]
+            .into_iter()
+            .map(|id| id.parse().unwrap())
+            .collect();
     let fingerprints = names
         .iter()
         .map(|id| {
@@ -1221,7 +1223,8 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
         );
         let config = fixture.config();
         let agent = Registry::for_artifact(&config, "file").unwrap();
-        let human = artifactize::tools::human::Registry::for_artifact(&config, "file").unwrap();
+        let human =
+            artifactize_core::tools::human::Registry::for_artifact(&config, "file").unwrap();
         fs::remove_file(fixture.repo.join("input.txt")).unwrap();
         if kind == "directory" {
             fs::create_dir(fixture.repo.join("input.txt")).unwrap();
@@ -1291,7 +1294,7 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
     fs::create_dir_all(&parent).unwrap();
     support::os::set_mode(&ancestor, 0o111);
     let state = parent.join("state");
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&fixture.repo)
         .arg("--state-dir")
@@ -1303,7 +1306,7 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
     assert!(output.status.success(), "{output:?}");
     fs::write(ancestor.join("artifactize.json"), "legacy marker").unwrap();
     support::os::set_mode(&ancestor, 0o111);
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&fixture.repo)
         .arg("--state-dir")
@@ -1330,7 +1333,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
         .unwrap();
     assert_eq!(execution.artifact_kinds["file"], ArtifactKind::File);
     for full in [false, true] {
-        let mut record = artifactize::remote::Record::new(&execution, full).unwrap();
+        let mut record = artifactize_core::remote::Record::new(&execution, full).unwrap();
         let wire = serde_json::to_value(&record).unwrap();
         assert_eq!(wire["artifactKinds"]["file"], "file");
         record
@@ -1342,7 +1345,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
             record.validate().is_err(),
             "legacy key inputs must never match a kind-aware key"
         );
-        let mut record = artifactize::remote::Record::new(&execution, full).unwrap();
+        let mut record = artifactize_core::remote::Record::new(&execution, full).unwrap();
         record.publisher = Some("fixture".parse().unwrap());
         record.published_at = Some("2026-10-09T00:00:00Z".parse().unwrap());
         let mirrored = record.mirror("https://reviews.example/").unwrap();

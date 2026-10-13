@@ -1,5 +1,6 @@
 //! Declared commands share lookup, preflight and literal argv across audiences.
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 use std::{fs, path::PathBuf, process::Command, time::Duration};
@@ -46,7 +47,7 @@ impl Project {
     }
 
     fn run(&self, args: &[&str], code: i32) -> Value {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")

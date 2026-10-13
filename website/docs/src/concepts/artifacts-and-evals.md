@@ -136,7 +136,8 @@ again rather than reused.
 `tags = ["type:code", "scope:player"]` adds display-only metadata. Tags are at most 64 unique nonblank strings
 without ASCII control characters. `status`, `config graph`, `monitor` and their JSON
 Artifact output show them. Tags change no fingerprint, Eval definition hash, reuse
-key, relation or selection; there are no tag filters or relationship rules.
+key, relation or selection of `verify` and `status`; there are no tag filters for those and no
+relationship rules. Only the `artifactize review` search filters on tags, with `tag:` terms.
 
 Projects that want templates generate their own `.artf` files and commit them.
 Discovery and validation rules are in [Declaration validation](../reference/declarations.md#declaration-validation).

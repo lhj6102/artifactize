@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use support::os::shell;
 use tempfile::TempDir;
 
+#[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
@@ -37,7 +38,7 @@ impl Fixture {
     }
 
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        let mut command = Command::new(support::os::cli());
         // Its own process group, so Ctrl-Break reaches it alone on Windows.
         support::os::new_group(&mut command)
             .arg("--repo")
@@ -286,7 +287,7 @@ fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
                 .contains("2 of 2")
         );
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+    let output = Command::new(support::os::cli())
         .arg("--state-dir")
         .arg(&fixture.state)
         .args(["run", "show", run["id"].as_str().unwrap()])

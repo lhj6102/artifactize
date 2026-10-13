@@ -1,0 +1,599 @@
+//! Remote review store configuration and its bearer token.
+//!
+//! The remote is configured only by `$STATE/remote.json` and the environment, never by
+//! `index.artf`. Callers must never print or log the token.
+#[cfg(test)]
+mod lookup_tests;
+
+use std::{
+    fs,
+    io::{Read, Write},
+    net::IpAddr,
+    path::Path,
+    sync::OnceLock,
+    time::Duration,
+};
+
+use reqwest::{Method, Response, StatusCode, Url};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use super::storage::{Storage, Tokens};
+use crate::remote::Record;
+
+pub const CONFIG: &str = "remote.json";
+const TOKEN: &str = "remote-token.json";
+const LOGIN: &str = "run `artifactize remote login URL` or set ARTIFACTIZE_REMOTE_TOKEN";
+/// Bound bearer-header size while allowing token formats larger than this server's
+/// generated tokens; validation is identical for environment and saved tokens.
+const MAX_TOKEN_BYTES: usize = 4096;
+/// A URL/share declaration is small; bound its read so malformed local config
+/// cannot cause unbounded allocation. The existing parser sees one extra byte.
+const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+/// Remote reuse is optional; fail an unreachable connection quickly so local work resumes.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Bound each review-store request, including response reads, independently of provider work.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// Clip server-supplied client-error explanations before they enter CLI/audit diagnostics.
+const MAX_ERROR_CHARS: usize = 300;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum Share {
+    /// Reduced records without argv, captured output, tool calls or paths.
+    #[default]
+    Summary,
+    /// Also the saved execution as is.
+    Full,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TokenSource {
+    Env,
+    File,
+    None,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Config {
+    url: String,
+    #[serde(default)]
+    share: Share,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredToken {
+    url: String,
+    token: String,
+}
+
+/// A resolved remote; its token is private and never serialized.
+pub struct Remote {
+    pub url: Url,
+    pub share: Share,
+    pub token_source: TokenSource,
+    token: Option<String>,
+    client: OnceLock<reqwest::Client>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Principal {
+    pub principal: crate::types::TokenName,
+    pub scopes: Vec<Scope>,
+}
+
+/// A permission a remote token grants, as the server names it. A scope this version does
+/// not know is kept by its name, so it is still shown, but it grants nothing here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum Scope {
+    Read,
+    Publish,
+    Human,
+    Other(String),
+}
+
+impl From<String> for Scope {
+    fn from(name: String) -> Self {
+        match name.as_str() {
+            "read" => Self::Read,
+            "publish" => Self::Publish,
+            "human" => Self::Human,
+            _ => Self::Other(name),
+        }
+    }
+}
+
+impl From<Scope> for String {
+    fn from(scope: Scope) -> Self {
+        scope.to_string()
+    }
+}
+
+impl std::fmt::Display for Scope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Read => "read",
+            Self::Publish => "publish",
+            Self::Human => "human",
+            Self::Other(name) => name,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct Failure {
+    /// Network errors, timeouts and 5xx, on which callers may fail open.
+    pub unavailable: bool,
+    /// The server sent an HTTP response.
+    pub responded: bool,
+    pub message: String,
+}
+
+fn variable(name: &str) -> Option<String> {
+    crate::platform::environment::var_text(name).filter(|value| !value.is_empty())
+}
+
+/// Accept HTTPS, or plain HTTP only on loopback; never credentials, queries or fragments.
+pub fn parse_url(value: &str) -> Result<Url, String> {
+    let mut url = Url::parse(value).map_err(|_| "Invalid remote URL.".to_owned())?;
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("The remote URL must not contain credentials, a query or a fragment.".into());
+    }
+    let loopback = match url.host() {
+        Some(url::Host::Domain(host)) => host == "localhost",
+        Some(url::Host::Ipv4(ip)) => IpAddr::V4(ip).is_loopback(),
+        Some(url::Host::Ipv6(ip)) => IpAddr::V6(ip).is_loopback(),
+        None => false,
+    };
+    if !((url.scheme() == "https" && url.host().is_some()) || (url.scheme() == "http" && loopback))
+    {
+        return Err("The remote URL must use https:// (http:// only on loopback).".into());
+    }
+    if !url.path().ends_with('/') {
+        url.set_path(&format!("{}/", url.path()));
+    }
+    Ok(url)
+}
+
+fn valid_token(token: &str) -> Result<(), String> {
+    if (1..=MAX_TOKEN_BYTES).contains(&token.len())
+        && token.bytes().all(|byte| byte.is_ascii_graphic())
+    {
+        Ok(())
+    } else {
+        Err("A remote token is 1–4096 printable ASCII characters without spaces.".into())
+    }
+}
+
+fn read_config(state: &Path) -> Result<Option<Config>, String> {
+    let file = match crate::platform::open_no_follow(
+        fs::OpenOptions::new().read(true),
+        &state.join(CONFIG),
+    ) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("Cannot read {CONFIG}: {error}")),
+    };
+    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+        return Err(format!("{CONFIG} must be a regular file."));
+    }
+    let mut data = Vec::new();
+    file.take(MAX_CONFIG_BYTES + 1)
+        .read_to_end(&mut data)
+        .map_err(|e| e.to_string())?;
+    serde_json::from_slice(&data).map(Some).map_err(|_| {
+        format!("Invalid {CONFIG}; expected {{\"url\":\"https://...\",\"share\":\"summary\"}}.")
+    })
+}
+
+/// Resolve the remote from the environment and `$STATE/remote.json` without network access.
+/// `None` means no remote is configured or `ARTIFACTIZE_REMOTE=off`.
+pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote>, String> {
+    let state_dir = crate::store::state_dir(state)?;
+    let config = read_config(&state_dir)?;
+    let url = match (variable("ARTIFACTIZE_REMOTE"), &config) {
+        (Some(url), _) if url == "off" => return Ok(None),
+        (Some(url), _) => url,
+        (None, Some(config)) => config.url.clone(),
+        (None, None) => return Ok(None),
+    };
+    let url = parse_url(&url)?;
+    let share = match variable("ARTIFACTIZE_REMOTE_SHARE") {
+        Some(share) => serde_json::from_value(serde_json::Value::String(share))
+            .map_err(|_| "ARTIFACTIZE_REMOTE_SHARE must be summary or full.".to_owned())?,
+        None => config.map(|config| config.share).unwrap_or_default(),
+    };
+    let (token, token_source) = if let Some(token) = variable("ARTIFACTIZE_REMOTE_TOKEN") {
+        valid_token(&token).map_err(|e| format!("ARTIFACTIZE_REMOTE_TOKEN: {e}"))?;
+        (Some(token), TokenSource::Env)
+    } else {
+        match Storage::inspect(Some(&state_dir), repo, Tokens::Remote)?
+            .read::<StoredToken>(TOKEN)?
+        {
+            Some(stored) if parse_url(&stored.url)?.origin() == url.origin() => {
+                valid_token(&stored.token)?;
+                (Some(stored.token), TokenSource::File)
+            }
+            // A token is bound to the origin it was issued for.
+            Some(_) => {
+                return Err(format!(
+                    "The stored remote token was issued for another store; {LOGIN}."
+                ));
+            }
+            None => (None, TokenSource::None),
+        }
+    };
+    Ok(Some(Remote {
+        url,
+        share,
+        token_source,
+        token,
+        client: OnceLock::new(),
+    }))
+}
+
+fn client() -> Result<reqwest::Client, Failure> {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| Failure {
+            unavailable: false,
+            responded: false,
+            message: error.to_string(),
+        })
+}
+
+/// rustls reports handshake and certificate failures as InvalidData I/O errors, possibly
+/// nested inside other I/O errors whose `source` skips them.
+fn tls(error: &(dyn std::error::Error + 'static)) -> bool {
+    match error.downcast_ref::<std::io::Error>() {
+        Some(io) => {
+            io.kind() == std::io::ErrorKind::InvalidData
+                || io.get_ref().is_some_and(|inner| tls(inner))
+        }
+        None => error.source().is_some_and(tls),
+    }
+}
+
+fn transport(error: reqwest::Error) -> Failure {
+    let tls = tls(&error);
+    let cause = std::iter::successors(Some(&error as &dyn std::error::Error), |error| {
+        error.source()
+    })
+    .last()
+    .map(ToString::to_string)
+    .unwrap_or_default();
+    Failure {
+        unavailable: !tls && (error.is_connect() || error.is_timeout()),
+        responded: false,
+        message: if tls {
+            format!("TLS with the remote store failed: {cause}")
+        } else {
+            format!("Remote store is unreachable: {cause}")
+        },
+    }
+}
+
+/// A store's own text (an error, a record it could not decode), safe to show and save: the
+/// shared rule for server text that may echo the token this request carried.
+fn diagnostic(text: &str, token: Option<&str>) -> String {
+    crate::secret::server_text(text, token.as_slice(), MAX_ERROR_CHARS)
+}
+
+impl Remote {
+    fn request(&self, method: Method, route: &str) -> Result<reqwest::RequestBuilder, Failure> {
+        // One client per process reuses connections and the loaded trust store.
+        let client = match self.client.get() {
+            Some(client) => client,
+            None => {
+                let built = client()?;
+                self.client.get_or_init(|| built)
+            }
+        };
+        let mut request = client.request(method, self.url.join(route).expect("relative route"));
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+        Ok(request)
+    }
+
+    /// 401/403 and other client errors fail closed; 5xx and transport outages are unavailable.
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<Response, Failure> {
+        let response = request.send().await.map_err(transport)?;
+        let status = response.status();
+        if status.is_success() {
+            return Ok(response);
+        }
+        let failure = |unavailable, message: String| Failure {
+            unavailable,
+            responded: true,
+            message,
+        };
+        Err(match status {
+            StatusCode::UNAUTHORIZED if self.token.is_none() => {
+                failure(false, format!("No remote token; {LOGIN}."))
+            }
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => failure(
+                false,
+                format!(
+                    "The remote store rejected the token (HTTP {}).",
+                    status.as_u16()
+                ),
+            ),
+            _ => {
+                // A client error explains itself, for example a store of another schema.
+                let detail = if status.is_client_error() {
+                    response.json::<Value>().await.ok().and_then(|body| {
+                        body["error"]
+                            .as_str()
+                            .map(|error| diagnostic(error, self.token.as_deref()))
+                    })
+                } else {
+                    None
+                };
+                failure(
+                    status.is_server_error(),
+                    match detail {
+                        Some(detail) => format!(
+                            "The remote store answered HTTP {}: {detail}",
+                            status.as_u16()
+                        ),
+                        None => format!("The remote store answered HTTP {}.", status.as_u16()),
+                    },
+                )
+            }
+        })
+    }
+
+    async fn json<T: serde::de::DeserializeOwned>(
+        response: Response,
+        route: &str,
+    ) -> Result<T, Failure> {
+        response.json().await.map_err(|_| Failure {
+            unavailable: false,
+            responded: true,
+            message: format!("Invalid remote {route} response."),
+        })
+    }
+
+    /// Ask the server who this token is; works without a token to test reachability.
+    pub async fn whoami(&self) -> Result<Principal, Failure> {
+        let response = self.send(self.request(Method::GET, "v1/whoami")?).await?;
+        Self::json(response, "whoami").await
+    }
+
+    /// Decode each record at the HTTP boundary; malformed entries remain individually skippable.
+    pub async fn lookup(
+        &self,
+        keys: &[crate::types::ReuseKey],
+    ) -> Result<Vec<Result<Record, String>>, Failure> {
+        #[derive(Deserialize)]
+        struct Found {
+            entries: Vec<Value>,
+        }
+        let mut entries = Vec::new();
+        for chunk in keys.chunks(crate::server::MAX_LOOKUP_KEYS) {
+            let request = self
+                .request(Method::POST, "v1/lookup")?
+                .json(&json!({ "keys": chunk }));
+            let found: Found = Self::json(self.send(request).await?, "lookup").await?;
+            // A decode error quotes the record's own fields and values: server text.
+            entries.extend(found.entries.into_iter().map(|entry| {
+                serde_json::from_value::<Record>(entry)
+                    .map_err(|error| diagnostic(&error.to_string(), self.token.as_deref()))
+            }));
+        }
+        Ok(entries)
+    }
+
+    /// Append a record to its key's history; `false` when the store already has this execution.
+    pub async fn publish(&self, record: &Record) -> Result<bool, Failure> {
+        #[derive(Deserialize)]
+        struct Published {
+            created: bool,
+        }
+        let route = format!("v1/entries/{}", record.key);
+        let request = self.request(Method::PUT, &route)?.json(record);
+        let published: Published = Self::json(self.send(request).await?, "publish").await?;
+        Ok(published.created)
+    }
+}
+
+/// Verify a token from stdin against the store, then save it and `remote.json`.
+pub async fn login(
+    state: Option<&Path>,
+    repo: Option<&Path>,
+    url: Url,
+    share: Share,
+    token: String,
+) -> Result<(Remote, Principal), String> {
+    valid_token(&token)?;
+    let remote = Remote {
+        url,
+        share,
+        token_source: TokenSource::File,
+        token: Some(token),
+        client: OnceLock::new(),
+    };
+    let principal = remote.whoami().await.map_err(|failure| failure.message)?;
+    let storage = Storage::new(state, repo, Tokens::Remote)?;
+    storage.save(
+        TOKEN,
+        &StoredToken {
+            url: remote.url.to_string(),
+            token: remote.token.clone().expect("login token"),
+        },
+    )?;
+    let state = crate::store::state_dir(state)?;
+    let mut file = tempfile::NamedTempFile::new_in(&state).map_err(|e| e.to_string())?;
+    serde_json::to_writer(
+        &mut file,
+        &Config {
+            url: remote.url.to_string(),
+            share,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    file.flush().map_err(|e| e.to_string())?;
+    file.persist(state.join(CONFIG))
+        .map_err(|e| e.error.to_string())?;
+    Ok((remote, principal))
+}
+
+/// What `remote status` reports: where the remote is, what it shares, where its token comes
+/// from, and whether the store answers to it. Never the token.
+#[derive(Debug, Clone)]
+pub struct Status {
+    pub url: String,
+    pub share: Share,
+    pub token_source: TokenSource,
+    pub connection: Connection,
+}
+
+/// What asking the store who the token belongs to came to.
+#[derive(Debug, Clone)]
+pub enum Connection {
+    /// The token was accepted.
+    SignedIn {
+        principal: crate::types::TokenName,
+        scopes: Vec<Scope>,
+    },
+    /// The store answered with an HTTP response, but not with an accepted token.
+    Refused { error: String },
+    /// The store sent no HTTP response.
+    Unreachable { error: String },
+}
+
+impl Status {
+    /// The token was accepted.
+    pub fn signed_in(&self) -> bool {
+        matches!(self.connection, Connection::SignedIn { .. })
+    }
+
+    /// The store sent an HTTP response, whether or not it accepted the token.
+    pub fn reachable(&self) -> bool {
+        !matches!(self.connection, Connection::Unreachable { .. })
+    }
+
+    /// Why the token was not accepted.
+    pub fn error(&self) -> Option<&str> {
+        match &self.connection {
+            Connection::SignedIn { .. } => None,
+            Connection::Refused { error } | Connection::Unreachable { error } => Some(error),
+        }
+    }
+}
+
+/// The fields of `remote status --json`, which stay as they were.
+impl Serialize for Status {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire<'a> {
+            url: &'a str,
+            share: Share,
+            token_source: TokenSource,
+            reachable: bool,
+            principal: Option<&'a crate::types::TokenName>,
+            scopes: Option<&'a [Scope]>,
+            error: Option<&'a str>,
+        }
+        let (principal, scopes) = match &self.connection {
+            Connection::SignedIn { principal, scopes } => {
+                (Some(principal), Some(scopes.as_slice()))
+            }
+            _ => (None, None),
+        };
+        Wire {
+            url: &self.url,
+            share: self.share,
+            token_source: self.token_source,
+            reachable: self.reachable(),
+            principal,
+            scopes,
+            error: self.error(),
+        }
+        .serialize(serializer)
+    }
+}
+
+/// Resolve the remote and ask the store who its token belongs to; `None` when no remote is
+/// configured (or `ARTIFACTIZE_REMOTE=off`).
+pub async fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Status>, String> {
+    let Some(remote) = remote(state, repo)? else {
+        return Ok(None);
+    };
+    let connection = match remote.whoami().await {
+        Ok(principal) => Connection::SignedIn {
+            principal: principal.principal,
+            scopes: principal.scopes,
+        },
+        Err(failure) if failure.responded => Connection::Refused {
+            error: failure.message,
+        },
+        Err(failure) => Connection::Unreachable {
+            error: failure.message,
+        },
+    };
+    Ok(Some(Status {
+        url: remote.url.to_string(),
+        share: remote.share,
+        token_source: remote.token_source,
+        connection,
+    }))
+}
+
+/// Forget the stored token and `remote.json`; the server keeps the token until revoked.
+pub fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
+    Storage::new(state, repo, Tokens::Remote)?.remove(TOKEN)?;
+    match fs::remove_file(crate::store::state_dir(state)?.join(CONFIG)) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.to_string()),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_invalid_data_is_a_tls_failure() {
+        use std::io::{Error, ErrorKind};
+        let handshake = Error::other(Error::new(ErrorKind::InvalidData, "bad certificate"));
+        assert!(tls(&handshake));
+        assert!(!tls(&Error::from(ErrorKind::ConnectionRefused)));
+    }
+
+    #[test]
+    fn urls_need_https_except_on_loopback() {
+        for url in [
+            "https://reviews.example",
+            "https://reviews.example/team/",
+            "http://127.0.0.1:8417",
+            "http://[::1]:8417/",
+            "http://localhost:8417/",
+        ] {
+            assert!(parse_url(url).unwrap().path().ends_with('/'), "{url}");
+        }
+        for url in [
+            "http://reviews.example/",
+            "http://10.0.0.1/",
+            "https://user:secret@reviews.example/",
+            "https://reviews.example/?token=x",
+            "ftp://reviews.example/",
+            "reviews.example",
+        ] {
+            assert!(parse_url(url).is_err(), "{url}");
+        }
+    }
+}
