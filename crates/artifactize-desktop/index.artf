@@ -65,7 +65,7 @@ profile = { kind = "dependency", depends_on = ["desktop-backend", "desktop-ui", 
 
 [evals.journeys]
 title = "Every journey can be completed in the running app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 3600000, max_tokens = 16000000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 3600000, max_tokens = 32000000 }
 
 [evals.journeys.profile_variants]
 sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 3600000, max_tokens = 8000000 }
