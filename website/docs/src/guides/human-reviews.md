@@ -54,14 +54,10 @@ at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
 leave the request correctable. A successful submission exits 0, even for RED;
 it does not start a separate verifier.
 
-While Human requests wait, local state-change notifications wake the owned worker,
-which reconciles saved states and resumes newly READY dependents in the **same Run**,
-retaining its execution budget and earlier results. While waiting the Run remains
-RUNNING. There is no Human timeout. The artifactize-owned worker continues dependents
-after submission, even if the submitting terminal or observer has exited. Ctrl-C/SIGTERM
-exits the watcher with 130 and leaves execution alone; explicit `run cancel RUN_ID`
-stops owned work and withdraws pending requests while preserving committed evidence.
-Missing non-Human obligations without a pending Human request end INCOMPLETE (4).
+Interrupting the watcher exits 130 without affecting the Run described above.
+Explicit `run cancel RUN_ID` stops owned work and withdraws pending requests while
+preserving committed evidence. Missing non-Human obligations without a pending
+Human request end INCOMPLETE (4).
 `verify --reuse-only human`
 never records a Human request or waits: a Human eval reuses a sign-off or is
 [not executed](../reference/cli.md#reuse-only), as CI wants.

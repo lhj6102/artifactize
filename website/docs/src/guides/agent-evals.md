@@ -180,12 +180,15 @@ A failed Agent review records one of these `errorCode` values:
 | `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` reaches the deadline | yes |
 | `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes, before output |
 | `TIMEOUT` | The review's `timeout_ms` deadline | no |
-| `CANCELLED` | Ctrl-C or a cancelled Run | no |
+| `CANCELLED` | Explicit Run cancellation (`run cancel` or MCP `verify_cancel`) | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
+
+Ctrl-C interrupts a `verify --wait` watcher, not the Agent reviews it observes;
+the Run continues. Explicit cancellation requests stop the Run's owned work.
 
 ### Stopping a backend
 

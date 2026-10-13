@@ -75,6 +75,10 @@ curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/b
 
 ### macOS
 
+[Homebrew](https://brew.sh/) is a macOS package manager: it installs and updates
+command-line tools for you. If `brew` is not available in your terminal, follow
+[Homebrew's setup instructions](https://docs.brew.sh/Installation) first. Then run:
+
 ```sh
 brew install lhj6102/tap/artifactize
 artifactize --version
@@ -229,38 +233,10 @@ a team review store or with a script fingerprint. The first full `verify` review
 every executable eval once, Human sign-offs included. Dependency evals derive
 current evidence without execution. See [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 
-The monitor replaces eval modals with Scope → Runs → Run tree → Detail. Panes
-keep both immediate neighbours at every width, except at the ends of the
-drill-down. Each side pane is 16 columns below 100, 28 at 100–139, and 36 at 140
-or more; the focused Full pane fills the remaining width. Extremely small
-terminals clip the side panes rather than dropping a level.
-Each eval has one row, with `waits for X` / `blocked by X` and upstream navigation
-(`b` / Backspace). The headline keeps validation **at Run end**; a dim `*` marks
-rows changed since then. Esc steps back and never quits; `q` quits outside editing
-and Ctrl-C quits or cancels a running Human tool first. `?` shows help and `!` finds
-the next attention item. See
-[Monitor](../guides/human-reviews.md#monitor).
-
-Standalone `artifactize review` now uses the same Human Detail and keys as the
-monitor. Press `c` to claim explicitly; running a tool or submitting no longer
-claims for you. Removed keys and behavior:
-
-- `s` no longer opens a verdict popup. `g`/`r` opens the GREEN/RED form directly;
-  Ctrl-G/Ctrl-R switches verdicts while editing.
-- Enter no longer submits a flat form; Ctrl-S submits. Nested schemas open inline
-  JSON, where Enter inserts a newline.
-- `e` in a JSON form is text, not an editor shortcut. Ctrl-E opens `$EDITOR` in
-  standalone `review` only; monitor stays in the TUI.
-- `t` no longer runs a tool; it toggles Technical outside editing. Tab focuses
-  Tools, ↑/↓ or `j`/`k` selects a tool and Enter runs it after claim, with no
-  confirmation step.
-- Esc on the waiting list no longer quits. Esc cancels work, then
-  stops editing with the draft kept, then leaves Detail. `q` outside editing or
-  Ctrl-C quits; standalone `review` offers `k` to keep or `u` to release this
-  session's unsubmitted claims.
-
-`i` expands the instruction while not editing. See
-[Shared Human Detail](../guides/human-reviews.md#shared-human-detail).
+Monitor now opens an eval's Detail in its pane rather than a modal. Standalone
+Review shares that Human Detail: claims are explicit, and tools and submission
+never claim for you. The verdict forms, submit keys and editor shortcut changed;
+see [Human reviews and Monitor](../guides/human-reviews.md) for the current controls.
 
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command, and adds `codex` for ChatGPT plan

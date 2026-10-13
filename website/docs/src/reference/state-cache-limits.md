@@ -194,7 +194,7 @@ it holds no `--jobs` slot and consumes no `--max-executions` start, so runtime
 evals, Human requests and other backends keep running. Once it has its slot it
 occupies a job slot like any running eval, so a process runs at most
 `min(--jobs, free slots)` reviews of a limited backend. Explicit `run cancel RUN_ID` ends
-its waiting requests as CANCELLED, and its held slots are released. Interrupting
+its waiting requests with status ERROR and `errorCode = "CANCELLED"`, and its held slots are released. Interrupting
 `verify --wait` only stops observation; it does not cancel the Run.
 
 Tool-session directories live under `$STATE/tool-sessions/`, separately from saved

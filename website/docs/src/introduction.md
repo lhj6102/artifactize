@@ -1,25 +1,21 @@
 # Artifactize
 
-The AI-native collaboration layer for one-of-a-kind teammates and their agents.
+Build together on an Artifact Graph.
 
-Artifactize splits a project into Artifacts, each with its own evals, so every
-teammate, human or agent, can work their own way on their part, and integrating that
-work reuses reviews whose inputs still match. Folders declare Artifacts in TOML
-`index.artf`; sidecars such as `hero.png.artf` declare single files. artifactize builds the
-dependency graph and runs runtime, Agent (OpenAI or Anthropic API key, or a
-ChatGPT/Codex sign-in) and Human evals. Dependency evals derive readiness from other
-Artifacts without executing anything. Artifactsum is the default fingerprint;
-`fingerprint = false` disables reuse. While an eval and the fingerprints (what a review depends
-on) of its Artifact and the Artifacts it directly uses are unchanged, it reuses the
-earlier GREEN/RED result, and `verify` shows what it executed, what it reused and
-the tokens reuse saved: review cost follows the size of a change. `status`
-predicts what a change will re-review. A team review store (`artifactize server`) shares
-verdicts across teammates' checkouts and CI. The CLI drives reviews, `artifactize monitor`
-shows their progress and `artifactize review` searches saved requests and works through
-waiting Human sign-offs. It runs on Linux, macOS and Windows.
+Artifactize helps you and your teammates review each part of a project without
+redoing checks on unchanged work. An **Artifact** is a reviewable piece of work:
+a file, a folder, or the graph of connections between those parts. An **eval**
+is a check on an Artifact—a command, an agent's judgment, or a person's sign-off.
 
-Start with [Install](getting-started/install.md): prerequisites, backend setup, a 5-minute
-[quick start](getting-started/quick-start.md), the monitor and cleanup.
+- Work on your part in your own way. Declare which other parts your check uses
+  so their changes trigger the right reviews, not unrelated work.
+- Reuse reviews when their inputs still match. A **fingerprint** identifies those
+  inputs; `artifactize status` shows what needs another review.
+- Share results with teammates and CI through the team review store. Monitor
+  follows progress, and Review helps people work through their waiting sign-offs.
+
+It runs on Linux, macOS and Windows. The [concepts](concepts/artifacts-and-evals.md)
+explain declarations and relationships; the tour below needs no model or API key.
 
 ## Get started
 
@@ -34,8 +30,7 @@ artifactize verify --all --wait    # three GREEN results, exit 0
 artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
 ```
 
-[Install](getting-started/install.md) has every channel, the prerequisites and backend setup, and the
-[quick start](getting-started/quick-start.md) continues the tour.
+Continue with the [quick start](getting-started/quick-start.md) to explore more checks and reviews.
 
 ## Where to go next
 
