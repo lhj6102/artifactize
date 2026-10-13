@@ -77,9 +77,11 @@
       event.preventDefault();
       void quit();
     } else if (chord(event, "r") || event.key === "F5") {
+      // The current graph owns its declaration reload; leave the event for that screen.
+      if (app.screen === "graph") return;
       // Never reload the page: a refresh reads the state again.
       event.preventDefault();
-      if (app.screen !== "graph") browse.refresh();
+      browse.refresh();
     }
   }
 </script>
