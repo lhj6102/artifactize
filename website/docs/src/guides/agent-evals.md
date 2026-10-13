@@ -120,18 +120,13 @@ protocol = "json"
 
 The start command receives the usual JSON envelope and `ARTIFACTIZE_SESSION_DIR`,
 prints one line when ready, and stays running. Bound tools and stop use the same
-session directory and the author's environment. Cleanup cancels in-flight calls, runs stop and reaps owned
-process groups/Jobs before the result is published, for GREEN and RED alike.
-Dropped reviews, panics and caller-runtime shutdown also release the session.
-Abrupt process death cannot run stop: the next session start recovers abandoned
-state and, on Unix, identity-checks every recorded start, stop and bound-call group.
-Exited zombie owners do not prevent recovery. Retirement errors still run mandatory
-cleanup; unconfirmed termination keeps admission records and reports an error rather
-than a verdict. Released supervisor leases also permit recovery of failed cleanup
-while the caller process is still alive.
-Windows Jobs terminate with their owner, and normal cleanup waits for descendants
-before removing their files. These are tool sessions, not the saved conversations
-below; commands remain trusted and can deliberately detach from cleanup.
+session directory and the author's environment. Artifactize stops the session and
+cleans up owned processes after a review, including failed or interrupted reviews.
+If cleanup cannot be confirmed, it reports an error and retains recovery records;
+a later session start can recover abandoned work. Commands are trusted programs
+and can deliberately detach beyond that cleanup. Tool sessions are not the saved
+conversations below. See the [tool session reference](../reference/agent-tools.md#tool-sessions)
+for cleanup and crash-recovery details.
 
 ## Agent backends
 
@@ -139,13 +134,11 @@ below; commands remain trusted and can deliberately detach from cleanup.
 `reasoning`. `models` output uses the JSON envelope described under
 [Local diagnostics and maintenance](../reference/state-cache-limits.md#doctor-models-and-prune).
 
-The rig-core 0.43.0 adapter uses streaming OpenAI Responses with `store:false`,
-encrypted reasoning replay and parallel tool calls disabled, or Anthropic Messages.
-The latter requires a per-turn output cap (16384 tokens), separate from the review
-budget. One review deadline (default 240 seconds) covers all turns, retries and tools.
-Truncated or incomplete responses are ERROR, even if they contain a JSON verdict.
-Nested HTTP retries and redirects are disabled; artifactize retries turns itself, as
-described next.
+Agent reviews stream the model's answer as it is produced. One review deadline
+(default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
+responses are ERROR, even if they contain a JSON verdict. Artifactize handles
+retries as described below; the [provider transport reference](../reference/state-cache-limits.md#provider-transport)
+covers API settings and replay behavior.
 
 ### Retries and error codes
 

@@ -268,6 +268,16 @@ saved and the others have none. The request's verdict, result and usage stay in
 and [`session show --summary`](../guides/agent-evals.md#session-summary) counts them.
 A last line cut short by a crash is ignored when the file is read.
 
+### Provider transport
+
+The rig-core 0.43.0 provider client uses streaming OpenAI Responses with
+`store:false`, encrypted reasoning replay and parallel tool calls disabled, or
+Anthropic Messages. Anthropic requires a per-turn output cap of 16384 tokens,
+separate from the review budget. One review deadline covers all turns, retries and
+tools. Incomplete responses are errors even if a partial answer contains a verdict.
+Nested HTTP retries and redirects are disabled; artifactize handles turn retries
+as described in [retries and error codes](../guides/agent-evals.md#retries-and-error-codes).
+
 ### Transcript reader
 
 Monitor Detail displays readable message text, public reasoning summaries and

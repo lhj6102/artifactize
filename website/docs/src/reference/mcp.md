@@ -22,7 +22,7 @@ Tasks extension, progress stream or subscription API.
 | `verify_result` | `run`, optional `cursor` | `runs::result`: verdict and up to 20 concise findings, `next_cursor`; `ready:false` while active |
 | `verify_cancel` | `run` | `runs::cancel`: explicit cancellation acknowledgement; observe settlement for cleanup |
 
-`scope` uses the CLI selection-file shape:
+`scope` is the shared Selection JSON envelope, tagged by `kind`:
 
 ```json
 {"kind":"all"}
@@ -33,7 +33,9 @@ Other forms are `{"kind":"artifact","artifactId":"library"}`,
 `{"kind":"artifacts","artifactIds":["library","consumer"]}` and
 `{"kind":"evals","evalIds":["library/tests","consumer/review"]}`.
 Array selections contain 1–64 IDs, preserving first-occurrence order. Normal CLI dependency/reuse defaults apply;
-there are no transport-specific scheduling or lifecycle settings.
+there are no transport-specific scheduling or lifecycle settings. This envelope
+is not a CLI selection file: `--evals-file` and `--artifacts-file` accept JSON
+arrays of IDs or one ID per line, without a `kind` tag.
 
 A `request_key` is 1–128 ASCII letters/digits/`._:-`. Same repository + same key
 returns the same attempt, even after edits or completion. A new attempt needs a

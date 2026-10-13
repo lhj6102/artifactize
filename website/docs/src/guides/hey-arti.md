@@ -16,6 +16,11 @@ not introduce discretionary sign-offs or mark unfinished work as `basis`.
 
 ## Register the MCP server
 
+**MCP (Model Context Protocol)** connects your coding assistant to artifactize's
+tools, so it can inspect the project and start or observe reviews. **Stdio** means
+the host launches `artifactize mcp` and exchanges messages through that program's
+standard input and output, rather than connecting to a network port.
+
 Complete the [installation setup](../getting-started/install.md), then launch
 the coding host from **your project directory**.
 The stdio server uses the same binary and shared state as the CLI. It binds to one
