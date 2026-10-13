@@ -32,7 +32,7 @@ impl Fixture {
         );
         support::declaration::write(repo.join("index.artf"), json!({"name":"app", "fingerprint":false, "evals":[
             {"id":"a-fast","title":"Committed", "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check."}},
-            {"id":"z-controlled","title":"Controlled", "profile":{"kind":"runtime","command":support::os::python_program(),"args":[script]},"payload":{"instruction":"Check."}}
+            {"id":"z-controlled","title":"Controlled", "profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&script)]},"payload":{"instruction":"Check."}}
         ]}).to_string()).unwrap();
         let state = root.path().join("state");
         Self { root, repo, state }

@@ -22,7 +22,7 @@ pub use unreadable::{Unreadable, read_unreadable};
 mod lifecycle;
 pub(crate) mod migrations;
 pub(crate) mod run_control;
-pub use lifecycle::{ExecutionState, PendingRequest, RequestState, RunState};
+pub use lifecycle::{ExecutionState, GreenResult, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
 pub use snapshots::{ArtifactValidation, Blocker, ChildIdentity, HumanDefinition, Validation};
 mod wait_timeout;

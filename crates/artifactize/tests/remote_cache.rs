@@ -119,7 +119,7 @@ impl Server {
     }
 
     fn stop(&mut self) {
-        let _ = self.child.kill();
+        support::os::kill(self.child.id());
         let _ = self.child.wait();
     }
 }
@@ -156,10 +156,10 @@ impl Machine {
             .arg("--state-dir")
             .arg(&self.state)
             .args(args)
-            .env("USER", self.user)
             .env("ARTIFACTIZE_REMOTE", &self.url)
             .env("ARTIFACTIZE_REMOTE_TOKEN", &self.token)
             .env_remove("ARTIFACTIZE_REMOTE_SHARE");
+        support::os::sign_in_as(&mut command, self.user);
         command
     }
 
@@ -347,7 +347,11 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
         );
         // A summary carries no captured output or local paths.
         assert!(record.get("execution").is_none());
-        assert!(!record.to_string().contains(root.path().to_str().unwrap()));
+        assert!(
+            !record
+                .to_string()
+                .contains(&support::os::path_text(root.path()))
+        );
     }
 
     // Status reads the remote without mirroring it.

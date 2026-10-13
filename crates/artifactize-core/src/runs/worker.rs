@@ -128,12 +128,10 @@ pub(crate) async fn execute(context: &Context, id: &RunId) -> Result<(), String>
         Err(error) => {
             let code = if cancellation.is_cancelled() {
                 FailureCode::Cancelled
-            } else if error.starts_with("INPUT_CHANGED:") {
-                FailureCode::InputChanged
             } else {
-                FailureCode::PreparationFailed
+                error.code()
             };
-            fail(&receipts, id, code, error).await
+            fail(&receipts, id, code, error.to_string()).await
         }
     }
 }

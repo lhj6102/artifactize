@@ -64,11 +64,11 @@ impl Fixture {
         command
             // The declarations name `true`, `false` and `printf` for PATH to find.
             .env("PATH", support::os::path())
-            .env("USER", "alice")
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state);
+        support::os::sign_in_as(&mut command, "alice");
         command
     }
 

@@ -195,11 +195,38 @@ pub(crate) async fn reserve(
     }
     Ok((id, accepted))
 }
+/// Keep the failure kind typed through execution; prefixes belong only to display.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum Error {
+    #[error("INPUT_CHANGED: {0}")]
+    InputChanged(String),
+    #[error("{0}")]
+    Preparation(String),
+}
+impl Error {
+    pub(crate) fn code(&self) -> crate::types::FailureCode {
+        match self {
+            Self::InputChanged(_) => crate::types::FailureCode::InputChanged,
+            Self::Preparation(_) => crate::types::FailureCode::PreparationFailed,
+        }
+    }
+}
+impl From<String> for Error {
+    fn from(message: String) -> Self {
+        Self::Preparation(message)
+    }
+}
+impl From<&str> for Error {
+    fn from(message: &str) -> Self {
+        Self::Preparation(message.into())
+    }
+}
+
 /// Execute exactly the admitted Run. Never reserve a second Run or substitute changed declarations.
 pub(crate) async fn execute(
     mut run: Run,
     cancellation: CancellationToken,
-) -> Result<RunView, String> {
+) -> Result<RunView, Error> {
     let selection = &run.selection.clone();
     let options = &VerifyOptions {
         modes: run.modes.clone(),
@@ -218,7 +245,7 @@ pub(crate) async fn execute(
     }
     let parallelism = super::fingerprint_parallelism(options)?;
     let config = crate::config::read_workspace_declarations(repo)
-        .map_err(|e| format!("INPUT_CHANGED: {e}"))?;
+        .map_err(|e| Error::InputChanged(e.to_string()))?;
     let config = Arc::new(
         select_profiles(
             config,
@@ -226,12 +253,12 @@ pub(crate) async fn execute(
             options.profile.as_ref(),
             options.recursive,
         )
-        .map_err(|error| format!("INPUT_CHANGED: {error}"))?,
+        .map_err(Error::InputChanged)?,
     );
-    let graph = Graph::new(&config).map_err(|e| format!("INPUT_CHANGED: {e}"))?;
+    let graph = Graph::new(&config).map_err(|e| Error::InputChanged(e.to_string()))?;
     let selected = selection
         .resolve(&config)
-        .map_err(|e| format!("INPUT_CHANGED: {e}"))?;
+        .map_err(|e| Error::InputChanged(e.to_string()))?;
     let required: BTreeSet<_> = graph
         .dependency_closure(&selected.roots)
         .map_err(|e| e.to_string())?
@@ -249,7 +276,9 @@ pub(crate) async fn execute(
     if serde_json::to_string(&definitions).map_err(|e| e.to_string())?
         != serde_json::to_string(&run.definitions).map_err(|e| e.to_string())?
     {
-        return Err("INPUT_CHANGED: declarations changed after acceptance.".into());
+        return Err(Error::InputChanged(
+            "declarations changed after acceptance.".into(),
+        ));
     }
     let fingerprints = cache::prepare(
         &config,
@@ -273,7 +302,7 @@ pub(crate) async fn execute(
     {
         return Err(format!(
             "{variable} points Agent reviews at a local test endpoint; set ARTIFACTIZE_REMOTE=off so their results stay out of the review store."
-        ));
+        ).into());
     }
     if let Some(remote) = &remote
         && !options.force
@@ -317,7 +346,7 @@ pub(crate) async fn execute(
     {
         Ok(evidence) => evidence,
         Err(error) => {
-            return Err(error);
+            return Err(error.into());
         }
     };
     let evaluation = graph.evaluate_for_run(&evidence, run.modes.speculate);
@@ -502,7 +531,9 @@ pub(crate) async fn execute(
             "Agent session collection failed: {error}"
         );
     }
-    store::read_run(&run.state_dir, &run.id).await
+    store::read_run(&run.state_dir, &run.id)
+        .await
+        .map_err(Into::into)
 }
 
 pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {
@@ -543,7 +574,7 @@ fn unchanged_declarations(
     selection: &Selection,
     options: &VerifyOptions,
     saved: &store::definitions::Definitions,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let check = || -> Result<(), String> {
         let config = crate::config::read_workspace_declarations(repo).map_err(|e| e.to_string())?;
         let config = select_profiles(
@@ -562,5 +593,23 @@ fn unchanged_declarations(
         }
         Ok(())
     };
-    check().map_err(|error| format!("INPUT_CHANGED: {error}"))
+    check().map_err(Error::InputChanged)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+    use crate::types::FailureCode;
+
+    #[test]
+    fn failure_identity_comes_from_the_variant_not_owner_diagnostic_text() {
+        let preparation = Error::Preparation("INPUT_CHANGED: text from a command".into());
+        assert_eq!(preparation.code(), FailureCode::PreparationFailed);
+        let changed = Error::InputChanged("declarations changed after acceptance.".into());
+        assert_eq!(changed.code(), FailureCode::InputChanged);
+        assert_eq!(
+            changed.to_string(),
+            "INPUT_CHANGED: declarations changed after acceptance."
+        );
+    }
 }

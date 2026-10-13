@@ -32,8 +32,8 @@ fn command(repo: &Path, state: &Path) -> Command {
         .arg(repo)
         .arg("--state-dir")
         .arg(state)
-        .env("ARTIFACTIZE_REMOTE", "off")
-        .env("USER", "reviewer");
+        .env("ARTIFACTIZE_REMOTE", "off");
+    support::os::sign_in_as(&mut command, "reviewer");
     command
 }
 fn parsed(output: Output, code: i32) -> Value {
@@ -103,7 +103,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
         ),
         (
             "human_tools",
-            json!({"builtin":"open","args":["file:///etc/passwd"]}),
+            json!({"builtin":"open","args":["file:///outside"]}),
         ),
     ] {
         let mut value = json!({"name":"a","views":{}});
@@ -418,7 +418,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
         fs::read_to_string(record).unwrap(),
         format!(
             "1\n{}\n",
-            fs::canonicalize(repo.join("a/notes.md")).unwrap().display()
+            support::os::path_text(&fs::canonicalize(repo.join("a/notes.md")).unwrap())
         )
     );
 }

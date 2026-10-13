@@ -319,7 +319,10 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let hook = fixture.repo.join("review/hook.sh");
     support::os::write_script(
         &hook,
-        &format!("printf called > '{}'\nexit 91\n", marker.display()),
+        &format!(
+            "printf called > '{}'\nexit 91\n",
+            support::os::path_text(&marker)
+        ),
     );
     support::os::allow_execution(&hook);
     fixture.json(&["config", "check"], 0);

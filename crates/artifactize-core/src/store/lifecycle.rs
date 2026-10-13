@@ -29,13 +29,38 @@ pub enum ExecutionState {
     },
 }
 
+/// Evidence that has passed its criteria, while a dependency sign-off is still pending.
+/// The private payload keeps a RED result out of the public provisional state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GreenResult(ExecutionResult);
+
+impl TryFrom<ExecutionResult> for GreenResult {
+    type Error = String;
+    fn try_from(result: ExecutionResult) -> Result<Self, Self::Error> {
+        if result.verdict() != crate::runtime::Verdict::Green {
+            return Err("A provisional request requires GREEN evidence.".into());
+        }
+        Ok(Self(result))
+    }
+}
+impl AsRef<ExecutionResult> for GreenResult {
+    fn as_ref(&self) -> &ExecutionResult {
+        &self.0
+    }
+}
+impl From<GreenResult> for ExecutionResult {
+    fn from(result: GreenResult) -> Self {
+        result.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RequestState {
     Running,
     WaitingHuman,
     Deferred,
     Provisional {
-        result: ExecutionResult,
+        result: GreenResult,
         at: Timestamp,
     },
     Pending {
@@ -82,7 +107,7 @@ impl RequestState {
         )?;
         match status {
             RequestStatus::Provisional => Ok(Self::Provisional {
-                result: result.expect("validated provisional GREEN"),
+                result: result.expect("validated provisional GREEN").try_into()?,
                 at: at.ok_or("A provisional request needs its completion time.")?,
             }),
             RequestStatus::Green | RequestStatus::Red => Ok(Self::Completed {
@@ -140,7 +165,8 @@ impl RequestState {
     }
     pub fn result(&self) -> Option<&ExecutionResult> {
         match self {
-            Self::Completed { result, .. } | Self::Provisional { result, .. } => Some(result),
+            Self::Completed { result, .. } => Some(result),
+            Self::Provisional { result, .. } => Some(result.as_ref()),
             _ => None,
         }
     }
@@ -220,7 +246,10 @@ impl TryFrom<RequestState> for ExecutionState {
         match state {
             RequestState::Running => Ok(Self::Running),
             RequestState::WaitingHuman | RequestState::Deferred => Ok(Self::WaitingHuman),
-            RequestState::Provisional { result, at } => Ok(Self::Completed { result, at }),
+            RequestState::Provisional { result, at } => Ok(Self::Completed {
+                result: result.into(),
+                at,
+            }),
             RequestState::Completed { result, at } => Ok(Self::Completed { result, at }),
             RequestState::Failed { error, code, at } => Ok(Self::Failed { error, code, at }),
             RequestState::Pending { .. } => {
@@ -326,5 +355,28 @@ impl RunState {
             Self::Error { error, .. } | Self::Incomplete { error, .. } => error.as_deref(),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn provisional_constructor_rejects_red_and_preserves_green_evidence_when_promoted() {
+        let red = ExecutionResult::try_from(json!({"verdict":"RED","reason":"failed"})).unwrap();
+        assert!(GreenResult::try_from(red).is_err());
+        let expected = json!({"verdict":"GREEN","summary":"criteria met"});
+        let green = ExecutionResult::try_from(expected.clone()).unwrap();
+        let provisional = RequestState::Provisional {
+            result: green.try_into().unwrap(),
+            at: "2026-01-01T00:00:00Z".parse().unwrap(),
+        };
+        assert_eq!(provisional.status(), RequestStatus::Provisional);
+        assert_eq!(provisional.result().unwrap().to_json(), expected);
+        let execution = ExecutionState::try_from(provisional).unwrap();
+        assert_eq!(execution.status(), ExecutionStatus::Green);
+        assert_eq!(execution.result().unwrap().to_json(), expected);
     }
 }

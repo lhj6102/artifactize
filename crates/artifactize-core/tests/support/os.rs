@@ -388,6 +388,15 @@ pub fn sign_in_as<'a>(command: &'a mut Command, name: &str) -> &'a mut Command {
         .env("USERNAME", name)
 }
 
+/// Every supported spelling used by portable child tools (including Python tempfile)
+/// points to the same fixture-owned temporary directory.
+pub fn temporary_environment<'a>(command: &'a mut Command, path: &Path) -> &'a mut Command {
+    command
+        .env("TMPDIR", path)
+        .env("TMP", path)
+        .env("TEMP", path)
+}
+
 /// The value of the environment variable `name` in this process (Windows ignores the name's
 /// case), for tests that run as a probe a parent test starts with a prepared environment.
 pub fn environment_variable(name: &str) -> Option<std::ffi::OsString> {

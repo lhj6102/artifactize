@@ -124,7 +124,7 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        support::os::kill(self.child.id());
         let _ = self.child.wait();
     }
 }

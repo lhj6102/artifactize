@@ -205,7 +205,11 @@ describe("run graph of an Artifact with several evals", () => {
     await press(browser, ["ArrowDown"], async () => (await selected()) === first + 1, "the next eval selected");
     // The Detail follows the selection without being opened.
     const chosen = (await options())[first + 1].split(":")[1].trim();
-    await eventually(async () => (await browser.execute(() => document.body.innerText)).includes(`Check ${chosen}`), "the Detail follows");
+    // Search only the Monitor's fourth pane: the graph's Evals list already contains
+    // every title and cannot establish that the Detail followed the selection.
+    const peek = () => browser.execute(() => (document.querySelectorAll(".monitor section.panel")[3] as HTMLElement).innerText);
+    await eventually(async () => (await peek()).includes(`Check ${chosen}`), "the Detail pane follows the selected eval");
+    assert.match(await peek(), new RegExp(`app/${chosen}`));
     await press(browser, ["Enter"], async () => !(await detailClosed()), "the Detail opened");
     await press(browser, ["Escape"], detailClosed, "the Detail left");
     await evals().click();

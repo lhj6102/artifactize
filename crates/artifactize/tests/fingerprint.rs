@@ -363,7 +363,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let source = format!(
             "if {}; then printf '%s\\n%s\\n' \"$$\" \"$ARTIFACTIZE_OUTPUT_DIR\" > '{}'; {} & wait; fi; printf stable",
             if recheck { "test -e executed" } else { "true" },
-            marker.display(),
+            support::os::path_text(&marker),
             support::os::LINGERING
         );
         fixture.write(
@@ -518,7 +518,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
             json!({
                 "name":name,
                 "fingerprint":{
-                    "script":{"command":shell(),"args":["-c",script,"fingerprint",name,markers]},
+                    "script":{"command":shell(),"args":["-c",script,"fingerprint",name,support::os::path_text(&markers)]},
                 },
                 "evals":[eval("check", "exit 0")],
             }),
@@ -643,7 +643,7 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
                 "name":name,
                 "fingerprint":fingerprint(&format!(
                     "touch '{}.{name}'; {script}",
-                    started.display()
+                    support::os::path_text(&started)
                 )),
                 "evals":[eval("check", "touch executed")],
             }),
@@ -671,7 +671,7 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
     );
     // Gamma releases alpha only after beta has published its PID/start barrier.
     for name in ["alpha", "beta", "gamma"] {
-        assert!(Path::new(&format!("{}.{name}", started.display())).exists());
+        assert!(Path::new(&format!("{}.{name}", support::os::path_text(&started))).exists());
     }
     // Repeat the same handshake for verify instead of inheriting status's markers.
     fs::remove_file(fixture.repo.join("beta/ready")).unwrap();

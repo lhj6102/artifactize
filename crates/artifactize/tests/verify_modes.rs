@@ -45,7 +45,7 @@ impl Fixture {
         }
     }
     fn runtime(&self, id: &str, deps: &[&str]) -> Value {
-        json!({"id":id,"title":id,"profile":{"kind":"runtime","command":support::os::python_program(),"args":[self.script,id]},"payload":{"instruction":format!("Check {}.", deps.iter().map(|name| format!("{{{name}}}")).collect::<Vec<_>>().join(" "))}})
+        json!({"id":id,"title":id,"profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&self.script),id]},"payload":{"instruction":format!("Check {}.", deps.iter().map(|name| format!("{{{name}}}")).collect::<Vec<_>>().join(" "))}})
     }
     fn declare(&self, name: &str, evals: Vec<Value>) {
         let folder = self.repo.join(name);

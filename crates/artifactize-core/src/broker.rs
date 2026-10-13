@@ -243,7 +243,10 @@ pub(crate) fn derive(
         && let crate::store::RequestState::Completed { result, at } = &request.state
     {
         request.state = crate::store::RequestState::Provisional {
-            result: result.clone(),
+            result: result
+                .clone()
+                .try_into()
+                .expect("provisional evidence is GREEN"),
             at: *at,
         };
     }
@@ -969,14 +972,18 @@ impl Scheduler<'_, '_> {
                     && let crate::store::RequestState::Completed { result, at } = &request.state
                 {
                     request.state = crate::store::RequestState::Provisional {
-                        result: result.clone(),
+                        result: result
+                            .clone()
+                            .try_into()
+                            .expect("provisional evidence is GREEN"),
                         at: *at,
                     };
                     self.receipts.save_request(request).await?;
                 } else if evaluation.evals[request.eval_id.as_str()].status == EvalStatus::Green
                     && let crate::store::RequestState::Provisional { result, at } = &request.state
                 {
-                    request.state = crate::store::RequestState::completed(result.clone(), *at);
+                    request.state =
+                        crate::store::RequestState::completed(result.clone().into(), *at);
                     self.receipts.save_request(request).await?;
                 }
             }

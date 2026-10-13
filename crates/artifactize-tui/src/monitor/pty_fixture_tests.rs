@@ -2,7 +2,11 @@
 use super::*;
 use crate::agent::session::{self as saved, Answer, Header, Kind, Recorder, Saving};
 use serde_json::json;
-use std::fs;
+use std::{fs, time::Duration};
+
+/// Check the harness's command files often enough for interactive key delivery without
+/// continuously scanning an idle PTY fixture. Assertions wait on its acknowledgement files.
+const COMMAND_CHECK_INTERVAL: Duration = Duration::from_millis(20);
 
 #[tokio::test]
 #[ignore = "requires the external fixture PTY harness"]
@@ -113,7 +117,7 @@ async fn live_session_pty_fixture() {
                 crate::changes::drain().await;
                 fs::write(control.join("appended"), "flushed and notified").unwrap();
             }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            tokio::time::sleep(COMMAND_CHECK_INTERVAL).await;
         }
     });
     terminal::run(state, None, cancellation).await.unwrap();

@@ -121,7 +121,10 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     ] {
         assert!(!text.contains(leaked), "{leaked} in {text}");
     }
-    assert!(!text.contains(root.path().to_str().unwrap()), "{text}");
+    assert!(
+        !text.contains(&support::os::path_text(root.path())),
+        "{text}"
+    );
     let summary_json = summary.result.to_json();
     let mut keys: Vec<_> = summary_json.as_object().unwrap().keys().collect();
     keys.sort();
