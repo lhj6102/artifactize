@@ -12,7 +12,6 @@ name = "app"
 tags = ["type:code", "한글"]
 mounts = { input = "source" }
 fingerprint = { script = { command = "hash", args = ["{input}"], files = ["rules"], timeout_ms = 1000 } }
-review_policy = { dependency_gates = "ignore" }
 
 [views.agent_tools]
 read = { builtin = "read", description = "Read {artifactName}" }
@@ -91,8 +90,6 @@ fn every_declaration_feature_is_standard_toml_with_owner_data_untouched() {
 #[test]
 fn declaration_names_are_snake_case_at_every_typed_boundary() {
     for (snake, camel) in [
-        ("review_policy", "reviewPolicy"),
-        ("dependency_gates", "dependencyGates"),
         ("agent_tools", "agentTools"),
         ("human_tools", "humanTools"),
         ("input_schema", "inputSchema"),
@@ -300,8 +297,7 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
     let saved = artifactize_core::store::definitions::Definitions::from_view(&view).unwrap();
     assert_eq!(serde_json::to_value(saved).unwrap(), wire);
     let artifact = &wire["artifacts"]["app"];
-    assert!(artifact.get("reviewPolicy").is_some() && artifact.get("review_policy").is_none());
-    assert_eq!(artifact["reviewPolicy"]["dependencyGates"], "ignore");
+    assert!(artifact.get("reviewPolicy").is_none());
     assert_eq!(artifact["fingerprint"]["script"]["timeoutMs"], 1000);
     let tool = &artifact["views"]["agentTools"]["inspect"];
     assert_eq!(tool["inputSchema"]["additionalProperties"], false);

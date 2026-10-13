@@ -12,6 +12,14 @@ pub(super) fn result(
     error_code: Option<&str>,
 ) -> Result<(), String> {
     match status {
+        RequestStatus::Provisional
+            if result.is_some_and(|result| result.verdict() == crate::runtime::Verdict::Green)
+                && error.is_none()
+                && error_code.is_none() =>
+        {
+            Ok(())
+        }
+        RequestStatus::Provisional => Err("A provisional result needs GREEN evidence.".into()),
         RequestStatus::Green | RequestStatus::Red
             if result.is_some_and(|result| result.verdict().as_str() == status.as_str())
                 && error.is_none()

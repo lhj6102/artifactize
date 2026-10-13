@@ -74,17 +74,21 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
     )
     .unwrap();
     assert_ne!(fingerprint(), baseline);
+    fs::write(
+        repo.path().join(".artf"),
+        GRAPH.replace(
+            "title = 'Review graph'",
+            "gate = 'blocking'\ntitle = 'Review graph'",
+        ),
+    )
+    .unwrap();
+    assert_ne!(fingerprint(), baseline);
 }
 
 #[test]
 fn graph_declaration_is_root_only_and_rejects_non_subject_fields() {
     let repo = fixture();
-    for field in [
-        "fingerprint = false",
-        "fingerprint = {}",
-        "basis = false",
-        "mounts = {}\nreview_policy = {}",
-    ] {
+    for field in ["fingerprint = false", "fingerprint = {}", "basis = false"] {
         fs::write(
             repo.path().join(".artf"),
             format!("name = 'graph'\n{field}\n"),
@@ -96,6 +100,16 @@ fn graph_declaration_is_root_only_and_rejects_non_subject_fields() {
             "{error}"
         );
     }
+    fs::write(
+        repo.path().join(".artf"),
+        "name = 'graph'\nreview_policy = {}\n",
+    )
+    .unwrap();
+    assert!(
+        read(repo.path())
+            .unwrap_err()
+            .contains("unknown field `review_policy`")
+    );
     fs::write(repo.path().join(".artf"), "name = 'graph'\n").unwrap();
     let config = crate::config::read_workspace_config(repo.path()).unwrap();
     let graph = &config.artifacts["graph"];

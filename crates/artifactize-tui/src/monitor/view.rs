@@ -69,7 +69,7 @@ fn color(status: Status) -> Style {
         Status::Red => Color::Red,
         Status::Error => Color::Magenta,
         Status::Running => Color::Yellow,
-        Status::WaitingHuman => Color::Cyan,
+        Status::WaitingHuman | Status::Deferred | Status::SignoffsPending => Color::Cyan,
         Status::Blocked | Status::BudgetExhausted | Status::Incomplete => Color::LightRed,
         _ => Color::Gray,
     })

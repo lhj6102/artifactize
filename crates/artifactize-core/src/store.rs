@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{platform, workspace::canonical_target};
 
+mod blocked;
 pub mod definitions;
 mod executions;
 pub(crate) mod history;

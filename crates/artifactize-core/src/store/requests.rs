@@ -123,9 +123,7 @@ pub async fn read_waiting_originals(
         };
         // A follower whose original is gone or no longer waits stays listed as itself.
         let original = original
-            .filter(|original| {
-                original.request.status() == crate::types::RequestStatus::WaitingHuman
-            })
+            .filter(|original| original.request.status().is_human_wait())
             .unwrap_or_else(|| view.clone());
         if seen.insert(original.request.id.clone()) {
             originals.push(original);
@@ -336,7 +334,7 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
         }
     }
     if filter.waiting {
-        predicates.push("q.status='WAITING_HUMAN'".into());
+        predicates.push("q.status IN ('WAITING_HUMAN','DEFERRED')".into());
     }
     if !filter.statuses.is_empty() {
         let marks = vec!["?"; filter.statuses.len()].join(",");

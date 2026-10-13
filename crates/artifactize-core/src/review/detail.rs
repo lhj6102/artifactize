@@ -3,7 +3,6 @@
 use crate::{
     monitor::{duration, plain},
     store::{Request, RequestView},
-    types::RequestStatus,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -29,7 +28,7 @@ impl Stage {
 /// Status, claim and waiting time in one row; errors keep their first line.
 pub fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
     let request = &view.request;
-    let waiting = request.status() == RequestStatus::WaitingHuman;
+    let waiting = request.status().is_human_wait();
     let mut parts = vec![request.status().to_string()];
     if let Some(error) = &request.error() {
         let first = error.lines().next().unwrap_or_default();
@@ -90,7 +89,7 @@ pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, Strin
         _ => request.status().to_string(),
     };
     let claim = match &view.claim {
-        None if request.status() == RequestStatus::WaitingHuman => {
+        None if request.status().is_human_wait() => {
             format!("unclaimed; c claims it for {reviewer}")
         }
         None => "none".into(),

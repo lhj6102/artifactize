@@ -41,8 +41,8 @@ by ID, not by their position in the TOML source.
 | `views.agent_tools`, `views.human_tools` | Optional maps of declared tools |
 | `views.agent_sessions.<name>.start`, `.stop` | Tool-session commands: required `command` and `args`, optional `execution_paths`; no other fields |
 | `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
-| `review_policy.dependency_gates` | `green` (default) or `ignore`; only in the repository root's `index.artf` |
 | `evals.<id>.title` | Required nonblank title |
+| `evals.<id>.gate` | Optional `"blocking"`; keeps a Human sign-off strict under `--defer-human`. Omission follows the request mode; no other values |
 | `evals.<id>.profile` | Required `runtime`, `agent`, `human` or `dependency` profile |
 | `evals.<id>.payload.instruction` | Required nonblank instruction for runtime, Agent and Human evals |
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals |
@@ -60,7 +60,7 @@ finish terminating before their session files are removed.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
-`profile_variants`, `review_policy`, `dependency_gates` and `depends_on`.
+`profile_variants`, `gate` and `depends_on`.
 Unknown fields and camelCase spellings at these typed boundaries are rejected.
 JSON Schema keywords such as `additionalProperties`, `minLength` and `maxItems`
 keep their standard names. Owner-defined payload fields keep their chosen names.
@@ -222,6 +222,31 @@ fingerprint value after successful Human reconnection still settles
 ERROR/INPUT_CHANGED for a keyed request. Preparation failures abort before reuse
 or execution; tool calls return an error without running the tool.
 
+`review_policy` and `review_policy.dependency_gates` are removed, including an
+empty policy table. Configuration validation rejects them as unknown fields. Choose
+`--speculate` and `--defer-human` per verify request, never a declaration-level
+bypass. Old saved keys are ignored on read; no state migration is needed.
+
+## Human gate policy
+
+`gate = "blocking"` is an optional eval field, not a profile or global setting.
+It preserves a Human eval's pending gate under `verify --defer-human`. Omission
+retains ordinary strict behavior in default Runs and permits deferral only when
+that request opts in. On runtime, Agent or dependency evals it has no additional
+effect: only Human sign-offs can be deferred. Gate policy changes scheduling,
+not the judgment definition or its reuse key.
+
+```toml
+[evals.signoff]
+title = "The delivery is approved"
+gate = "blocking"
+profile = { kind = "human" }
+payload.instruction = "Approve the delivery before dependent work proceeds."
+```
+
+See [verify modes](cli.md#verify-modes) and
+[deferred sign-offs](../guides/human-reviews.md#deferred-sign-offs).
+
 ## Dependency evals
 
 ```toml
@@ -243,7 +268,9 @@ retain their existing behavior.
 A dependency eval checks each listed Artifact's required evals. GREEN evidence
 for every requirement produces GREEN. RED or BLOCKED evidence produces BLOCKED;
 missing, stale, ERROR, cancelled or waiting Human evidence produces
-WAIT_DEPENDENCY. A target without evals, including a basis Artifact, fulfills the
+WAIT_DEPENDENCY in default Runs. With speculation, ERROR also blocks immediately;
+with deferral, a pending deferrable Human gate passes for execution and derived
+results remain PROVISIONAL until real sign-offs exist. A target without evals, including a basis Artifact, fulfills the
 dependency condition. Basis Artifacts cannot own evals. Ordinary final Run
 obligations, including upstream dependency scopes, are unchanged.
 
@@ -258,8 +285,8 @@ Selecting `verify player/ready` includes the dependency requirements' evals with
 still derives it; `--reuse-only agent,human` constrains its requirements in the
 usual way. `--profile NAME` skips dependency evals and still validates the named
 variant on included executable evals; an explicit per-eval library profile
-selection for a dependency eval is rejected. `--ignore-gates` and
-`review_policy.dependency_gates = "ignore"` do not override its verdict.
+selection for a dependency eval is rejected. Neither per-request mode waives its
+final requirements.
 
 `blocked_by` is an ordered flat list: each unfulfilled listed Artifact, followed
 by its non-GREEN qualified eval IDs. JSON requests, validation and status expose

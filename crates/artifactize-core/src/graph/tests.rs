@@ -59,7 +59,6 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                     .collect(),
                 views: declaration.views,
                 fingerprint: declaration.fingerprint,
-                review_policy: declaration.review_policy,
             },
         );
     }
@@ -451,31 +450,22 @@ fn deep_graphs_keep_sparse_edges_and_iterative_traversal() {
 }
 
 #[test]
-fn ignored_gates_leave_actual_evidence_and_final_obligations_intact() {
+fn speculation_keeps_file_evidence_but_never_waives_final_obligations() {
     let config = reviewed(&["a", "b", "c"], &[("a", "b"), ("b", "c")]);
     let graph = Graph::new(&config).unwrap();
     let outcomes = evidence(&[("b/check", GREEN)]);
-    let ignored = graph.evaluate_with_policy(&outcomes, true);
-    assert!(ignored.evals["c/check"].can_execute());
-    assert_eq!(ignored.evals["b/check"].status, EvalStatus::Green);
-    assert!(!ignored.artifacts["b"].satisfied);
-    assert_eq!(ignored.obligations, ["a", "c"]);
-    assert_eq!(ignored.status, FinalStatus::Incomplete);
-    assert_eq!(
-        graph.evaluate(&outcomes).evals["b/check"].status,
-        EvalStatus::Wait
-    );
-    let failed = graph.evaluate_with_policy(
-        &evidence(&[
-            ("a/check", RED),
-            ("b/check", Evidence::OperationalError),
-            ("c/check", GREEN),
-        ]),
+    let pending = graph.evaluate_for_run(&outcomes, true);
+    assert_eq!(pending.evals["b/check"].evidence, Some(GREEN));
+    assert_eq!(pending.evals["b/check"].status, EvalStatus::Wait);
+    assert!(!pending.artifacts["b"].satisfied);
+    assert_eq!(pending.obligations, ["a", "b", "c"]);
+    assert_eq!(pending.status, FinalStatus::Incomplete);
+    let failed = graph.evaluate_for_run(
+        &evidence(&[("a/check", Evidence::OperationalError), ("b/check", GREEN)]),
         true,
     );
     assert_eq!(failed.status, FinalStatus::Error);
-    assert_eq!(failed.evals["a/check"].status, EvalStatus::Red);
-    assert_eq!(failed.evals["b/check"].status, EvalStatus::Error);
-    assert_eq!(failed.evals["c/check"].status, EvalStatus::Green);
-    assert_eq!(failed.obligations, ["a", "b"]);
+    assert_eq!(failed.evals["a/check"].status, EvalStatus::Error);
+    assert_eq!(failed.evals["b/check"].status, EvalStatus::Blocked);
+    assert_eq!(failed.evals["c/check"].status, EvalStatus::Blocked);
 }

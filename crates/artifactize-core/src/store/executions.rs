@@ -628,7 +628,8 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    /// The saved execution when its own settle added it to its key's history; never a mirror.
+    /// The saved execution eligible for publication; speculative Runs hold publication
+    /// until blocked work has been withdrawn. Mirrors never publish again.
     pub async fn published_execution(
         &self,
         execution_id: &str,
@@ -639,7 +640,7 @@ impl Receipts {
                 let data: Option<String> = db
                     .query_row(
                         &format!(
-                            "SELECT e.data FROM executions e WHERE e.id=? AND {}",
+                            "SELECT e.data FROM executions e LEFT JOIN runs r ON r.id=json_extract(e.data,'$.provenance.runId') WHERE e.id=? AND {} AND (r.id IS NULL OR r.status!='RUNNING' OR coalesce(json_extract(r.data,'$.modes.speculate'),0)=0 OR json_extract(r.data,'$.control.activity')='publishing')",
                             history::RECORD
                         ),
                         [execution_id],

@@ -8,6 +8,8 @@ pub(super) const WAIT_TIMEOUT_EXIT: u8 = 3;
 /// Public exit 4 means validation is incomplete, rather than RED or an operational error;
 /// retain the existing Run-outcome protocol used by verify and run show --wait.
 const INCOMPLETE_EXIT: u8 = 4;
+/// Distinct terminal outcome: all machine work passed, but real sign-offs remain.
+const SIGNOFFS_PENDING_EXIT: u8 = 5;
 
 pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<(), String> {
     if json_output {
@@ -362,6 +364,7 @@ pub(super) fn outcome_code(run: &crate::store::Run) -> u8 {
         crate::types::RunStatus::Green => 0,
         crate::types::RunStatus::Red => 1,
         crate::types::RunStatus::Incomplete => INCOMPLETE_EXIT,
+        crate::types::RunStatus::SignoffsPending => SIGNOFFS_PENDING_EXIT,
         crate::types::RunStatus::Running | crate::types::RunStatus::Error => 2,
     }
 }

@@ -1041,10 +1041,7 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
     );
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
-    let waiter = fixture.spawn(
-        &target,
-        &["--jobs", "1", "--max-executions", "1", "--ignore-gates"],
-    );
+    let waiter = fixture.spawn(&target, &["--jobs", "1", "--max-executions", "1"]);
     fixture.waiting_request();
     assert!(!target.join("independent/ran").exists());
     fixture.release();

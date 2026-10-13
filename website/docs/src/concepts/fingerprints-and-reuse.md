@@ -190,7 +190,7 @@ folder locations and repository paths are not identities. Extraction includes:
 - Input → consumer relations: child ownership (names, not child folder paths),
   mounts (including aliases), instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and dependency eval targets.
-- Qualified eval IDs, owning Artifact, titles and evaluation criteria: default
+- Qualified eval IDs, owning Artifact, titles, optional `gate` and evaluation criteria: default
   profile kind, the full `payload` including instruction and owner context,
   `pass_schema`, `fail_schema`, runtime `command`/`args`, and dependency `depends_on`.
 

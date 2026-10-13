@@ -384,18 +384,21 @@ impl TryFrom<FailureCode> for BackendStopCode {
     }
 }
 status!(FingerprintKind { Artifactsum => "artifactsum", Script => "script", Graph => "graph" });
-status!(ArtifactValidationStatus { Basis => "BASIS", Green => "GREEN", Incomplete => "INCOMPLETE", Error => "ERROR", Red => "RED", Blocked => "BLOCKED", Wait => "WAIT", Stale => "STALE", Unreviewed => "UNREVIEWED" });
+status!(ArtifactValidationStatus { Deferred => "DEFERRED", Provisional => "PROVISIONAL", Basis => "BASIS", Green => "GREEN", Incomplete => "INCOMPLETE", Error => "ERROR", Red => "RED", Blocked => "BLOCKED", Wait => "WAIT", Stale => "STALE", Unreviewed => "UNREVIEWED" });
 status!(RunStatus {
     Running => "RUNNING",
     Green => "GREEN",
     Red => "RED",
     Error => "ERROR",
     Incomplete => "INCOMPLETE",
+    SignoffsPending => "SIGNOFFS_PENDING",
 });
 status!(RequestStatus {
     Queued => "QUEUED",
     Running => "RUNNING",
     WaitingHuman => "WAITING_HUMAN",
+    Deferred => "DEFERRED",
+    Provisional => "PROVISIONAL",
     Green => "GREEN",
     Red => "RED",
     Error => "ERROR",
@@ -428,12 +431,19 @@ impl TryFrom<RequestStatus> for ExecutionStatus {
     fn try_from(status: RequestStatus) -> Result<Self, String> {
         match status {
             RequestStatus::Running => Ok(Self::Running),
-            RequestStatus::WaitingHuman => Ok(Self::WaitingHuman),
+            RequestStatus::WaitingHuman | RequestStatus::Deferred => Ok(Self::WaitingHuman),
+            RequestStatus::Provisional => Ok(Self::Green),
             RequestStatus::Green => Ok(Self::Green),
             RequestStatus::Red => Ok(Self::Red),
             RequestStatus::Error => Ok(Self::Error),
             other => Err(format!("Request state {other} is not an execution state.")),
         }
+    }
+}
+
+impl RequestStatus {
+    pub fn is_human_wait(self) -> bool {
+        matches!(self, Self::WaitingHuman | Self::Deferred)
     }
 }
 

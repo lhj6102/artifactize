@@ -33,6 +33,11 @@ pub enum ExecutionState {
 pub enum RequestState {
     Running,
     WaitingHuman,
+    Deferred,
+    Provisional {
+        result: ExecutionResult,
+        at: Timestamp,
+    },
     Pending {
         kind: PendingRequest,
         at: Option<Timestamp>,
@@ -76,6 +81,10 @@ impl RequestState {
             code.map(FailureCode::as_str),
         )?;
         match status {
+            RequestStatus::Provisional => Ok(Self::Provisional {
+                result: result.expect("validated provisional GREEN"),
+                at: at.ok_or("A provisional request needs its completion time.")?,
+            }),
             RequestStatus::Green | RequestStatus::Red => Ok(Self::Completed {
                 result: result.expect("validated verdict"),
                 at: at.ok_or("A finished request needs its completion time.")?,
@@ -85,11 +94,14 @@ impl RequestState {
                 code,
                 at: at.ok_or("A finished request needs its completion time.")?,
             }),
-            RequestStatus::Running | RequestStatus::WaitingHuman if at.is_some() => {
+            RequestStatus::Running | RequestStatus::WaitingHuman | RequestStatus::Deferred
+                if at.is_some() =>
+            {
                 Err("An active request cannot have a completion time.".into())
             }
             RequestStatus::Running => Ok(Self::Running),
             RequestStatus::WaitingHuman => Ok(Self::WaitingHuman),
+            RequestStatus::Deferred => Ok(Self::Deferred),
             _ => Ok(Self::Pending {
                 kind: match status {
                     RequestStatus::Queued => PendingRequest::Queued,
@@ -109,6 +121,8 @@ impl RequestState {
         match self {
             Self::Running => RequestStatus::Running,
             Self::WaitingHuman => RequestStatus::WaitingHuman,
+            Self::Deferred => RequestStatus::Deferred,
+            Self::Provisional { .. } => RequestStatus::Provisional,
             Self::Completed { result, .. } => match result.verdict() {
                 crate::runtime::Verdict::Green => RequestStatus::Green,
                 crate::runtime::Verdict::Red => RequestStatus::Red,
@@ -126,7 +140,7 @@ impl RequestState {
     }
     pub fn result(&self) -> Option<&ExecutionResult> {
         match self {
-            Self::Completed { result, .. } => Some(result),
+            Self::Completed { result, .. } | Self::Provisional { result, .. } => Some(result),
             _ => None,
         }
     }
@@ -144,7 +158,9 @@ impl RequestState {
     }
     pub fn completed_at(&self) -> Option<Timestamp> {
         match self {
-            Self::Completed { at, .. } | Self::Failed { at, .. } => Some(*at),
+            Self::Completed { at, .. } | Self::Provisional { at, .. } | Self::Failed { at, .. } => {
+                Some(*at)
+            }
             Self::Pending { at, .. } => *at,
             _ => None,
         }
@@ -203,7 +219,8 @@ impl TryFrom<RequestState> for ExecutionState {
     fn try_from(state: RequestState) -> Result<Self, String> {
         match state {
             RequestState::Running => Ok(Self::Running),
-            RequestState::WaitingHuman => Ok(Self::WaitingHuman),
+            RequestState::WaitingHuman | RequestState::Deferred => Ok(Self::WaitingHuman),
+            RequestState::Provisional { result, at } => Ok(Self::Completed { result, at }),
             RequestState::Completed { result, at } => Ok(Self::Completed { result, at }),
             RequestState::Failed { error, code, at } => Ok(Self::Failed { error, code, at }),
             RequestState::Pending { .. } => {
@@ -227,6 +244,9 @@ impl From<ExecutionState> for RequestState {
 #[derive(Debug, Clone)]
 pub enum RunState {
     Running,
+    SignoffsPending {
+        at: Timestamp,
+    },
     Green {
         at: Timestamp,
     },
@@ -254,9 +274,17 @@ impl RunState {
             RunStatus::Running => {
                 Err("A running Run cannot be completed or carry an error.".into())
             }
-            RunStatus::Green | RunStatus::Red if error.is_some() || at.is_none() => Err(
-                "A completed verdict Run needs a completion time and cannot carry an error.".into(),
-            ),
+            RunStatus::Green | RunStatus::Red | RunStatus::SignoffsPending
+                if error.is_some() || at.is_none() =>
+            {
+                Err(
+                    "A completed verdict Run needs a completion time and cannot carry an error."
+                        .into(),
+                )
+            }
+            RunStatus::SignoffsPending => Ok(Self::SignoffsPending {
+                at: at.expect("validated completion time"),
+            }),
             RunStatus::Green => Ok(Self::Green {
                 at: at.expect("validated completion time"),
             }),
@@ -276,6 +304,7 @@ impl RunState {
     pub fn status(&self) -> RunStatus {
         match self {
             Self::Running => RunStatus::Running,
+            Self::SignoffsPending { .. } => RunStatus::SignoffsPending,
             Self::Green { .. } => RunStatus::Green,
             Self::Red { .. } => RunStatus::Red,
             Self::Error { .. } => RunStatus::Error,
@@ -285,7 +314,8 @@ impl RunState {
     pub fn completed_at(&self) -> Option<Timestamp> {
         match self {
             Self::Running => None,
-            Self::Green { at }
+            Self::SignoffsPending { at }
+            | Self::Green { at }
             | Self::Red { at }
             | Self::Error { at, .. }
             | Self::Incomplete { at, .. } => Some(*at),

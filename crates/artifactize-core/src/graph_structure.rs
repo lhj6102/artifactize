@@ -52,6 +52,7 @@ pub enum Coverage {
 pub struct Eval {
     pub target: ArtifactName,
     pub title: String,
+    pub gate: Option<crate::config::Gate>,
     pub criteria: Criteria,
     pub payload: Option<EvalPayload>,
     pub pass_schema: Option<Map<String, Value>>,
@@ -158,6 +159,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
                 Eval {
                     target: eval.target.clone(),
                     title: declaration.title.clone(),
+                    gate: declaration.gate,
                     criteria,
                     payload: declaration.payload().cloned(),
                     pass_schema: declaration.pass_schema().cloned(),
