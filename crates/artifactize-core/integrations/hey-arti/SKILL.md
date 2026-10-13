@@ -39,13 +39,24 @@ Keys use snake_case; JSON Schema keywords retain their standard spelling.
 Do not use legacy JSON declarations, families, slices or invented options.
 Optional `tags` label Artifacts; they do not change reuse.
 
+The repository-root `.artf` can declare the project's graph as an Artifact, with
+its own required name and ordinary evals. Its built-in structural fingerprint
+covers named relations and evaluation criteria, not all source contents. Do not
+set `fingerprint`, `basis` or `review_policy` on it. It creates no default evals
+or dependencies and is not a substitute for declaring real source consumers.
+
 Start with the default **artifactsum**: omit `fingerprint` to hash own inputs.
 Folders exclude child Artifact folders and `.artf` declarations. File Artifacts
 hash their one target. Narrow a folder's fingerprint only when all omitted inputs
 really are irrelevant. A surrounding folder still hashes a neighboring file
 Artifact's target; the sidecar alone creates no child or dependency relation.
 
-For example, given `app/src/`, `spec/requirements.md`, and `logo.svg`:
+For example, given a self-contained Cargo project in `app/` (its `Cargo.toml`,
+`Cargo.lock`, `src/` and any `tests/`), `spec/requirements.md`, and `logo.svg`:
+keep the default app fingerprint so all test and build inputs are covered. If
+Cargo consumes a parent/workspace manifest or lockfile, declare those agreed
+shared inputs and reference them in each consuming eval too; a command does not
+automatically add the files it reads to its reuse key.
 
 `spec/index.artf` (only if the team agrees this is a no-eval input):
 
@@ -59,7 +70,6 @@ basis = true
 ```toml
 name = "app"
 tags = ["type:code"]
-fingerprint = { files = ["src"] }
 mounts = { requirements = "spec" }
 
 [views.agent_tools]
@@ -143,8 +153,8 @@ stdin containing `context` and `args`, and return, for example,
 second protocol. Keep tool output bounded and free of credentials.
 
 A session-bound command in the same declaration can inspect a private harness.
-For the app example above, first expand its fingerprint to `files = ["src",
-"tools"]` so the preview implementation is covered, then add:
+For the app example above, place the preview implementation in `app/tools/`;
+the default fingerprint already covers it along with the Cargo inputs. Then add:
 
 ```toml
 [views.agent_sessions.preview]
@@ -196,7 +206,7 @@ check`, `artifactize config graph`, `artifactize status --all`, and `artifactize
 tools check`. An explicit `--repo PATH` selects a repository for that fallback.
 
 An eval's reuse key combines its judgment definition with covered Artifact
-names, file/folder kinds and fingerprints. Changing its instruction/result schema
+names, Artifact kinds (`file`, `folder`, `graph`) and fingerprints. Changing its instruction/result schema
 or runtime command/argv changes the judgment; changing a title, tags, Agent
 execution options or tool declaration alone does not. Tool implementation changes
 that should matter belong in fingerprint-covered inputs. Provenance records what
