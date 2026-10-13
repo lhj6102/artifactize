@@ -1,208 +1,88 @@
-# Build together on an Artifact Graph.
+[![CI](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml/badge.svg)](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/artifactize.svg)](https://crates.io/crates/artifactize)
+[![License](https://img.shields.io/github/license/lhj6102/artifactize)](LICENSE)
 
-<img src="assets/brand/artifactize-icon-h56.png" width="31" height="28" align="middle" alt=""> Artifactize
+# Build together on an Artifact Graph.
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
     <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/promo.gif" width="640"
-         alt="The 27-second Artifactize promo: declare Artifacts, verify them with runtime, Agent and Human evals, build on separate branches, and reuse every still-valid review. A bar along the bottom shows playback progress.">
+         alt="A real terminal recording of Artifactize checking a project and reusing earlier reviews.">
   </a>
   <br>
-  <sub>27-second promo, no sound. Select it for the full-quality video.</sub>
+  <sub>27-second introduction, no sound. Select it for the full-quality video.</sub>
 </p>
 
-<p align="center">
-  <a href="https://artifactize.dev/docs/">Docs</a> ·
-  <a href="https://artifactize.dev/docs/getting-started/install.html">Install</a> ·
-  <a href="https://artifactize.dev/docs/getting-started/quick-start.html">Quick start</a> ·
-  <a href="https://artifactize.dev/docs/reference/overview.html">Reference</a> ·
-  <a href="https://artifactize.dev">artifactize.dev</a> ·
-  <a href="https://discord.gg/VswgKkPkS9">Discord</a>
-</p>
+Bring your way of working to the team. Pick a part, show what is ready, and build
+on work your teammates have already reviewed. Artifactize helps you and your
+coding assistant do that without repeating the same reviews.
 
-Artifactize splits a project into Artifacts (code, docs, designs, images), each with
-its own evals: tests, LLM reviews, human sign-offs and derived dependency checks.
-Every teammate, human or agent, works their own way on their part, and integrating
-that work reuses each review while its eval definition, covered Artifact kinds
-and fingerprints match. Earlier GREEN or RED results are reused. Artifactize is open source under the
-Apache License 2.0 and runs on Linux, macOS and Windows.
+An **Artifact** is a piece of the project: code, writing, a design or an image.
+The **graph** shows how these pieces connect. Give each piece its own checks—a test,
+an AI review or a person's sign-off. When a check's inputs haven't changed,
+Artifactize reuses its earlier result, including across branches and teammates.
 
-[Hey Arti](https://artifactize.dev/docs/guides/hey-arti.html) teaches a coding agent
-to structure those review boundaries and follow durable Runs through artifactize's MCP server.
+- **Check each part in its own way.** Use tests, AI reviews and human approval together.
+- **Keep work running while you step away.** A verification has its own Run ID;
+  closing the terminal doesn't stop it.
+- **Review changes, not everything again.** See what needs checking before you run it,
+  and share still-valid results with your team.
 
-## Why I built it
+## Install
 
-Building games with AI, working alone got fast, but working with others still felt
-like hitting a wall. There had to be a sweet spot between traditional development and
-AI-native work. So I looked for a way for every teammate, human or agent, to keep
-their own style and still add up to one coherent result, and I structured the project
-around evaluation.
+Pick the default method for your operating system. No Rust toolchain is needed
+for these prebuilt binaries.
 
-Artifactize is that collaboration layer: it splits a project into modules that each
-carry their own evaluation criteria, so everyone can work their way, and it cuts the
-evaluation cost wasted during integration.
-
-## See it in your terminal
-
-Change one file: `status` predicts one execution and names the file, and `verify`
-re-reviews only that Artifact.
-
-<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/change.gif" width="800"
-     alt="One file changes: artifactize status predicts one execution and four reuses and names the changed file, then artifactize verify reviews only that Artifact and reuses the other four results.">
-
-## How it helps a team
-
-- **Each part carries its own bar.** An Artifact declares the evals that judge it:
-  runtime evals run commands; Agent evals ask one exact model (OpenAI or Anthropic API
-  key, or a ChatGPT/Codex sign-in) with the read-only tools you declare; Human evals
-  wait for a sign-off; dependency evals derive readiness from other Artifacts'
-  required evals without executing anything. RED blocks what depends on it. Whoever works on a part, in
-  whatever style, meets the same bar.
-- **Integration reuses every review that still holds.** You define each Artifact's
-  fingerprint; by default, artifactsum hashes the Artifact's own files.
-  `fingerprint = false` disables reuse. While the eval and
-  the kinds and fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
-  earlier verdict, from any profile, and reports what it executed, what it reused and
-  the tokens reuse saved. Review cost follows the size of a change.
-- **Centralize the reviews, not the repo.** One `artifactize server` shares verdicts
-  across teammates' checkouts and CI, so a branch's reviews carry over to the merge
-  and a person signs off a change once.
-- **Know what a change will cost before you run it.** `status` predicts what
-  `verify` will execute, reuse or wait for, and names the files and dependencies
-  that changed.
-- **Human review in the terminal.** `artifactize monitor` drills down from Scope
-  to Runs, the Run tree and Detail: explicitly claim a sign-off, run tools and
-  submit without leaving the terminal.
-
-## Get started
-
-[Install Artifactize](https://artifactize.dev/docs/getting-started/install.html),
-then follow the [Quick start](https://artifactize.dev/docs/getting-started/quick-start.html).
-The installation guide is the single place for platform prerequisites, channels,
-updates and uninstalling.
-
-## A tiny example
-
-A folder with an `index.artf` is an Artifact. A sidecar such as `page.md.artf` declares
-the neighboring file. Both use TOML and require a `name`. This folder Artifact,
-from [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), checks that a page has a heading. Omitting `fingerprint` uses
-artifactsum, so the result is reusable while the inputs are unchanged:
-
-```toml
-name = "usage"
-
-[evals.heading]
-title = "The page has a top-level heading"
-profile = { kind = "runtime", command = "grep", args = ["-m", "1", "^# ", "page.md"], timeout_ms = 5000 }
-payload.instruction = "Check that {usage} starts with a top-level heading."
-```
-
-No model or API key is needed. From a checkout, in a POSIX shell:
+### Linux
 
 ```sh
-cd examples/runtime-relations
-export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
-artifactize verify --all --wait    # three GREEN results, exit 0
-artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
+curl -fsSL https://artifactize.dev/install.sh | sh
 ```
 
-The [Quick start](https://artifactize.dev/docs/getting-started/quick-start.html) continues with `status`, file Artifacts, dependency evals and a
-Human sign-off.
+### macOS
 
-A dependency eval can collect readiness without another review:
-
-```toml
-# player/index.artf
-name = "player"
-tags = ["scope:player"]
-
-[evals.ready]
-title = "Movement and art are ready"
-profile = { kind = "dependency", depends_on = ["player-movement", "hero-art"] }
+```sh
+brew install lhj6102/tap/artifactize
 ```
 
-`artifactize verify --eval player/ready --wait` includes the required dependency evals without `--recursive`. The result is
-derived from current evidence, not cached or published to the team store. Tags
-appear in status, graph and monitor output; they do not change reuse keys. See
-[Declarations (.artf)](https://artifactize.dev/docs/reference/declarations.html).
+### Windows
 
-## Upgrading
+```powershell
+winget install lhj6102.Artifactize
+```
 
-See the [installation guide's update and upgrade instructions](https://artifactize.dev/docs/getting-started/install.html#update).
+With Smart App Control enabled, use the
+[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D) version instead.
+Inside WSL 2, use the Linux method.
 
-## Reuse
+The [full installation guide](https://artifactize.dev/docs/getting-started/install.html)
+explains the alternatives—install scripts, Cargo and building from source—along
+with prerequisites, updates and uninstalling.
 
-`verify` reviews once; the next `verify` reuses every result whose eval and
-Artifact kinds and fingerprints are unchanged and says where each came from.
+Once installed, take the
+[5-minute quick start](https://artifactize.dev/docs/getting-started/quick-start.html).
+It uses an example project and needs no AI account or API key.
+[Hey Arti](https://artifactize.dev/docs/guides/hey-arti.html) lets a coding assistant
+use the same review workflow.
 
-<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/reuse.gif" width="800"
-     alt="artifactize status lists unreviewed evals and a waiting dependency; the first verify executes all five, the second reuses all five and its summary reads executed 0, reused 5.">
+## Learn more
 
-[Fingerprints and reuse](https://artifactize.dev/docs/concepts/fingerprints-and-reuse.html) ·
-[Runs, status and validation](https://artifactize.dev/docs/concepts/runs-and-status.html)
+- [Documentation](https://artifactize.dev/docs/): concepts, guides, examples and command reference.
+- [Community on Discord](https://discord.gg/VswgKkPkS9): questions, ideas and help.
+- [Source and license](LICENSE): open source under Apache License 2.0.
 
-## Human review in the terminal
+## The product running
 
-`verify` submits an artifactize-owned Run and returns its ID. The Run keeps waiting
-while a Human eval needs a sign-off; `verify --wait` follows it in the foreground.
-The monitor drills down through Scope → Runs → Run tree → Detail. Its immediate
-context and preview panes remain at every width, except at the ends of the drill-down. Side panes take
-16, 28 or 36 columns at widths below 100, 100–139 or 140 and above; the focused pane
-fills the rest, with sides clipped on extremely small terminals. `j`/`k` selects an
-eval and reveals its outcome in the peek; Enter or `o` opens Detail. Press `c` to
-claim a waiting Human request, run the tools its owner declared, choose GREEN or
-RED with `g`/`r`, and submit the schema-backed form with Ctrl-S. Standalone
-`artifactize review` uses the same Human Detail and keys. `i` expands the
-instruction and `t` opens Technical while not editing. Esc first stops editing,
-keeping the draft, then leaves Detail. A submission resumes the waiting Run's
-dependents.
+These are real screenshots of the experimental desktop app built from this branch,
+using an isolated example project. The human review is pending; no approval was
+claimed or submitted to make these pictures. The CLI also provides terminal
+Monitor and Review screens.
 
-`?` shows help and `!` finds the next error, RED or waiting Human eval. Esc steps
-back and never quits; `q` quits from idle views. Ctrl-C quits or cancels a running
-Human tool first. The tree names what an eval waits for; `b` jumps upstream and
-Backspace returns. Validation stays **at Run
-end** in the headline; a dim `*` marks rows changed by later request updates.
+**Monitor:** the example's documentation check has passed, a human sign-off waits,
+and the part that needs that sign-off waits with it.
 
-The monitor follows local state changes without a permanent daemon. Reads run in
-background jobs, so navigation and cancellation remain available during a refresh;
-unchanged selected evidence keeps its tree and Detail. The Run list holds one bounded
-page plus an older selected Run when newer entries push it off the page. `j`/`k` at
-a page edge moves to the next/previous page without retaining the earlier pages.
-Agent Detail shows live local sessions with scrolling and expandable tool activity
-groups;
-reused results keep their original evidence when it is available.
+<img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example project has a passed documentation check and a waiting human sign-off.">
 
-<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
-     alt="A Human sign-off in the terminal: the artifactize-owned Run waits; in the monitor, Enter opens the waiting eval's Detail pane beside the Run tree, c claims the request, the notes tool prints the design notes, g opens the GREEN form, Ctrl-S submits and the waiting Run completes.">
+**Review:** the same waiting request can be inspected before anyone claims it.
 
-[Human reviews](https://artifactize.dev/docs/guides/human-reviews.html)
-
-## Team review store
-
-Each machine keeps its own checkout and state. One `artifactize server` keeps the
-verdicts by reuse key and returns the latest, so a review done on one laptop is
-reused on the next and in CI. A read-only CI token reuses but never publishes.
-
-<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/team.gif" width="800"
-     alt="Alice's verify executes five evals and publishes them; on Bob's laptop status predicts five reuses and verify reuses all five from remote: alice@laptop.">
-
-[Team review store](https://artifactize.dev/docs/guides/team-review-store.html) ·
-[CI](https://artifactize.dev/docs/guides/ci.html) ·
-[Walkthrough](https://artifactize.dev/docs/guides/team-walkthrough.html)
-
-## Documentation
-
-Everything else is at **[artifactize.dev/docs](https://artifactize.dev/docs/)**:
-
-- [Concepts](https://artifactize.dev/docs/concepts/artifacts-and-evals.html): Artifacts, evals, fingerprints, Runs and status.
-- [Guides](https://artifactize.dev/docs/guides/agent-evals.html): Agent evals and backends, Human reviews, the team review store and CI.
-- [Reference](https://artifactize.dev/docs/reference/overview.html): every command and flag, `index.artf`, tools, state, limits and the review store protocol.
-- [Examples](https://artifactize.dev/docs/getting-started/examples.html): runtime relations, Agent and Human tools, file Artifacts and dependency evals.
-- [Community](https://discord.gg/VswgKkPkS9): questions, ideas and help on Discord.
-
-The recordings above are reproducible: their VHS tapes and demo projects are in
-[`website/demo`](https://github.com/lhj6102/artifactize/tree/main/website/demo) ([how to record](https://github.com/lhj6102/artifactize/blob/main/website/README.md#recordings)).
-
-## License
-
-Licensed under the [Apache License, Version 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
+<img src="assets/screenshots/review.png" width="1200" alt="Real Artifactize desktop Review: the example's unclaimed human review shows its instruction and declared tools.">

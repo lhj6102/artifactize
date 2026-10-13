@@ -1,0 +1,6 @@
+name = "screenshots"
+
+[views.agent_tools]
+list = { builtin = "list" }
+view_image = { builtin = "view_image" }
+evidence = { builtin = "read", args = ["evidence.json"] }

@@ -50,7 +50,7 @@ required = ["doc", "code", "fix"]
 additionalProperties = false
 
 [evals.follows-rules]
-title = "The documentation follows the documentation rules"
+title = "The documentation has one discoverable installation home"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 8000000 }
 
 [evals.follows-rules.profile_variants]
@@ -60,11 +60,21 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Read {writer-docs} with read_rules_writer-docs. Review the mdBook documentation {docs} in src/,
-starting from src/SUMMARY.md, using list_docs, glob_docs, grep_docs and read_docs. Check every W-
-item against every documentation page. Submit GREEN only when no item is clearly violated.
-Otherwise submit RED with up to 20 violations, most important first, each with the item id,
-a documentation path:line and one sentence on what to change in the documentation.
+Review the mdBook documentation {docs} in src/, starting from src/SUMMARY.md, using list_docs,
+glob_docs, grep_docs and read_docs. These are this Artifact's self-evaluation criteria:
+- D-INSTALL-ONE-PAGE: Within the docs, artifactize installation instructions exist only in
+  src/getting-started/install.md. Every other docs page links to it instead of repeating
+  installation commands or channel-specific installation steps.
+- D-INSTALL-FIND-METHODS: That install page lets a reader find the default installation method
+  for their operating system and the alternatives: other commands, package managers, the
+  install scripts and building from source.
+- D-CONCISE-FEATURES: Explain the product's features concisely; unnecessary repetition and
+  long-winded explanation fail this criterion.
+- D-PLAIN-DOCS: A reader who is not already an expert can understand the guide. Explain
+  necessary terms and commands in plain language rather than assuming professional expertise.
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
+20 violations, most important first, each with the item id, a documentation path:line and one
+sentence on what to change in the documentation.
 """
 
 [evals.follows-rules.pass_schema]

@@ -20,7 +20,10 @@ instruction = """
 Read {writer-introduction} with read_rules_writer-introduction. Read index.html of {landing}
 using read_landing, grep_landing and list_landing. Check the landing page's visible introduction
 and page content against every W- item; installer implementation scripts are not page content.
-Submit GREEN only when no item is clearly violated. Otherwise submit RED with up to 20 violations,
+Also check this Artifact's own criterion L-SINGLE-INSTALL: {landing} has no separate install
+instructions or install commands, and has a clear Install link or button pointing to the single
+docs installation page (getting-started/install.html).
+Submit GREEN only when no shared item or this own criterion is clearly violated. Otherwise submit RED with up to 20 violations,
 most important first, each with the item id, a page path:line and one sentence on what to change
 in the landing page.
 """

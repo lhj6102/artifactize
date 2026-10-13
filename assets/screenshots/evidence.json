@@ -1,0 +1,58 @@
+{
+  "kind": "real running desktop application screenshots",
+  "buildCommit": "cb9ad47b469e38e1bc5c6e01729f9d0e003f12d7",
+  "version": "artifactize 0.0.0-dev",
+  "data": "Isolated example project declared and verified through the real CLI (release, ship, docs). Not production review approvals.",
+  "humanActions": "None: no claim, release, or submission.",
+  "requests": [
+    {
+      "id": "run-Y1PP4k-1",
+      "runId": "run-Y1PP4k",
+      "evalId": "docs/lint",
+      "status": "GREEN",
+      "claim": null,
+      "result": {
+        "durationMs": 3,
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": "",
+        "truncated": false,
+        "verdict": "GREEN"
+      }
+    },
+    {
+      "id": "run-Y1PP4k-2",
+      "runId": "run-Y1PP4k",
+      "evalId": "release/signoff",
+      "status": "WAITING_HUMAN",
+      "claim": null,
+      "result": null
+    },
+    {
+      "id": "run-Y1PP4k-3",
+      "runId": "run-Y1PP4k",
+      "evalId": "ship/check",
+      "status": "WAIT_DEPENDENCY",
+      "claim": null,
+      "result": null
+    }
+  ],
+  "interactions": [
+    "launch Monitor",
+    "select the waiting sign-off",
+    "switch to Review",
+    "select the request preview"
+  ],
+  "screenshots": [
+    {
+      "file": "monitor.png",
+      "sha256": "14a6610411b13e2036cd67dc0ed2363cf060772aa4800dbb2647a8b7786d9cb5",
+      "visibleText": "artifactize\nMonitor\nReview\n◐1\n?1\nalice\nSettings\nCommands\nCtrl+K\nartifactize\n›\nmaster · repo\n›\nrun-Y1PP4k\n›\nsignoff\nScope\nALL\n◐1\n?1\nrepo\n◐1\n?1\nmaster · repo\n◐1\n?1\nRuns (1)\n↑\n↓\n◐\nRUNNING\n?1 …1 ✓1\n2s\nrun-Y1PP4k\nRun run-Y1PP4k\nTree\nGraph\nv\n◐ RUNNING\nvalidation pending · ?1 …1 ✓1 · elapsed 2s\n? release/signoff waiting Human · unclaimed\n◐\nRun\nEnter: usage, budgets, counts\n▾\n?\nrelease\nin progress: signoff\n0/1\n?\nsignoff\nHuman sign-off · unclaimed\n2s\n▾\n…\nship\nwaits for release\n0/1\n…\ncheck\nwaits for release ? in progress\n▸\n✓\ndocs\n1/1\nrelease/signoff · A person approves the release\nWAITING_HUMAN 2s · human\n\nStatus\nWAITING_HUMAN — waiting for a Human submission\nReason\nWaiting for a Human claim and submission.\nSource\nexecuted in this Run\nClaim\nunclaimed\nEnter or click: open"
+    },
+    {
+      "file": "review.png",
+      "sha256": "336cec2bba3ce020264ab8212589d777e07386154f7369d943c5d71004f1dd00",
+      "visibleText": "artifactize\nMonitor\nReview\n◐1\n?1\nalice\nSettings\nCommands\nCtrl+K\nartifactize review\n›\nwaiting Human reviews\n›\nrelease/signoff\nWaiting Human reviews (1)\nOpen ID\nCtrl+O\n\nEval\nRequest\nStatus\nClaim\nAge\nRepository\n? release/signoff\nrun-Y1PP4k-2\nWAITING_HUMAN\n-\n2s\n/home/user/.claude/jobs/fb8d56f7/tmp/runs/d/test-tmp/artifactize-desktop-e2e/fixture-g4sP6N/repo\nReview\nrelease/signoff · A person approves the release\nCLAIM\nTechnical ▸ t\nWAITING_HUMAN · unclaimed · waiting 2s\nINSTRUCTION expand i\nRead the release notes and approve them.\nTools fail_release (output) · notes_release (output) · open_release (launch) · slow_release (output) · Tab or click: tools\nUnclaimed. c claims it for alice and starts REVIEW.\nClaim\nc\nClose\nEsc\nc claim · i instruction · t technical · Esc back"
+    }
+  ]
+}

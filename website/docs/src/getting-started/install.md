@@ -31,6 +31,15 @@ Only `cargo install` needs a Rust toolchain: Rust 1.95 or later, from
 Pick your OS. Install from one channel only; the Store uses the `artifactize tools`
 facade, while other channels also install the standalone tools command.
 
+Start with the default for your OS, or choose an alternative below:
+
+| OS | Default | Alternatives |
+|---|---|---|
+| Linux | [Install script](#linux) | [Cargo binaries](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| macOS | [Homebrew](#macos) | [Install script](#macos), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| Windows | [winget](#windows) | [Microsoft Store or PowerShell script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+
+
 ### Linux
 
 ```sh
@@ -51,38 +60,6 @@ prerelease installs only when `ARTIFACTIZE_VERSION` names it:
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_VERSION=0.5.2 sh             # this release
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/bin" sh   # this directory
 ```
-
-With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), fetch the same
-prebuilt binaries into `~/.cargo/bin`:
-
-```sh
-cargo binstall artifactize artifactize-tools
-```
-
-Or build the latest stable release from crates.io:
-
-```sh
-cargo install artifactize artifactize-tools --locked
-cargo install artifactize@<version> artifactize-tools@<version> --locked   # a particular release
-```
-
-`--locked` builds with the dependency versions the release was tested with. The
-binaries go to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs them
-under `DIR/bin` instead. Both cargo commands work on macOS and Windows too.
-
-To build from source, install from a checkout; its `rust-toolchain.toml` selects
-stable Rust. The example projects and the [Quick start](quick-start.md) use a
-checkout too:
-
-```sh
-git clone https://github.com/lhj6102/artifactize
-cd artifactize
-cargo install --path crates/artifactize --locked
-cargo install --path crates/artifactize-tools --locked
-```
-
-Releases take their version from their tag, so a build from a checkout reports the
-placeholder version `0.0.0-dev`.
 
 ### macOS
 
@@ -155,6 +132,42 @@ with the [Linux](#linux) instructions. It is separate from a Windows install and
 its own state. Built-in `open` and `login codex` use the distribution's `xdg-open`,
 never a Windows program; see
 [Opening files and the browser](../reference/platforms.md#opening-files-and-the-browser).
+
+### Cargo (all platforms)
+
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), fetch the same
+prebuilt binaries into `~/.cargo/bin`:
+
+```sh
+cargo binstall artifactize artifactize-tools
+```
+
+Or build the latest stable release from crates.io:
+
+```sh
+cargo install artifactize artifactize-tools --locked
+cargo install artifactize@<version> artifactize-tools@<version> --locked   # a particular release
+```
+
+`--locked` builds with the dependency versions the release was tested with. The
+binaries go to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs them
+under `DIR/bin` instead. Both cargo commands work on macOS and Windows too.
+
+### Build from source (all platforms)
+
+To build from source, install from a checkout; its `rust-toolchain.toml` selects
+stable Rust. The example projects and the [Quick start](quick-start.md) use a
+checkout too:
+
+```sh
+git clone https://github.com/lhj6102/artifactize
+cd artifactize
+cargo install --path crates/artifactize --locked
+cargo install --path crates/artifactize-tools --locked
+```
+
+Releases take their version from their tag, so a build from a checkout reports the
+placeholder version `0.0.0-dev`.
 
 ## Update
 
