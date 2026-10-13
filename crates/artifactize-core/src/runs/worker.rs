@@ -18,15 +18,26 @@ async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> 
             if run.status() != RunStatus::Running {
                 return Err("Run already settled before admission.".into());
             }
-            match run.control.as_ref().map(|control| control.worker) {
+            let worker = run.control.as_ref().map(|control| control.worker);
+            match worker {
                 Some(Worker::Admitted { owner }) if owner == identity => {
                     return Ok::<_, String>(run);
                 }
                 Some(Worker::Starting { launcher })
-                | Some(Worker::Admitted { owner: launcher })
-                    if process::is_alive(Some(launcher)).map_err(|e| e.to_string())? =>
-                {
-                    changes.next_reconciled().await;
+                | Some(Worker::Admitted { owner: launcher }) => {
+                    if process::is_alive(Some(launcher)).map_err(|e| e.to_string())? {
+                        changes.next_reconciled().await;
+                    } else {
+                        // The submitter may commit admission and exit while this saved
+                        // graph is decoded. A dead old identity is not a rejected handoff:
+                        // compare fresh, compact SQLite control before refusing it.
+                        let current = store::run_control::observe(&context.state, id).await?;
+                        if current.status == RunStatus::Running
+                            && current.control.as_ref().map(|control| control.worker) == worker
+                        {
+                            return Err("Run worker identity was not admitted.".into());
+                        }
+                    }
                 }
                 _ => return Err("Run worker identity was not admitted.".into()),
             }

@@ -6,14 +6,22 @@ use std::{
     time::{Duration, Instant},
 };
 
+use artifactize_core::{
+    runs, store,
+    types::{RequestStatus, RunId, RunStatus},
+};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{cat_program, echo_program, false_program, shell, true_program};
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
+
+/// Bound fixture observation, not executor lifetimes or elapsed-time assertions.
+const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
 
 struct Fixture {
     root: TempDir,
@@ -67,6 +75,66 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap()
+    }
+
+    fn announced(child: &mut Child) -> RunId {
+        use std::io::BufRead;
+        let mut line = String::new();
+        std::io::BufReader::new(child.stderr.as_mut().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert!(line.starts_with("Started run-"), "{line}");
+        line.split_whitespace().nth(1).unwrap().parse().unwrap()
+    }
+
+    fn context(&self, repo: &Path) -> runs::Context {
+        runs::Context::new(repo, Some(&self.state), &support::os::cli()).unwrap()
+    }
+
+    /// Subscribe before the baseline and wait for this Run's ownership relation, not any
+    /// transient QUEUED row in the whole fixture database.
+    async fn observed_request(
+        &self,
+        repo: &Path,
+        id: &RunId,
+        ready: impl Fn(&store::Request) -> bool,
+    ) -> store::Request {
+        let mut changes = artifactize_core::changes::Subscription::new(&self.state).await;
+        let mut last = None;
+        tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
+            loop {
+                let view = runs::view(&self.context(repo), id).await.unwrap();
+                let request = &view.requests[0];
+                if ready(request) {
+                    return request.clone();
+                }
+                assert_eq!(view.run.status(), RunStatus::Running, "{view:?}");
+                last = Some(view);
+                changes.next_reconciled().await;
+            }
+        })
+        .await
+        .unwrap_or_else(|error| {
+            panic!("cache ownership relation for {id} was not reached: {error}; {last:?}")
+        })
+    }
+
+    async fn completed(&self, repo: &Path, id: &RunId, child: Child, code: i32) -> Value {
+        let ended = runs::wait(
+            &self.context(repo),
+            id,
+            Some(support::os::patience(OBSERVATION_BOUND)),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(ended.state.is_terminal(), "{ended:?}");
+        output(
+            tokio::task::spawn_blocking(move || child.wait_with_output().unwrap())
+                .await
+                .unwrap(),
+            code,
+        )
     }
 
     fn waiting_request(&self) -> Value {
@@ -825,33 +893,68 @@ fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
     assert_eq!(fixture.starts(), 2);
 }
 
-#[test]
-fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_owner_releases_the_claim() {
+#[tokio::test]
+async fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_owner_releases_the_claim()
+ {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
+    // Completion is controlled by cancellation and the release file, not the unrelated
+    // shared fixture's ten-second runtime timer. Keep the ordinary runtime deadline.
+    for repo in [&source, &target] {
+        let path = repo.join("index.artf");
+        let mut declaration = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+        declaration["evals"][0]["profile"]
+            .as_object_mut()
+            .unwrap()
+            .remove("timeout_ms");
+        support::declaration::write(path, declaration.to_string()).unwrap();
+    }
     let mut owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.starts() > 0);
-    let waiter = fixture.spawn(&target, &[]);
-    let waiting = fixture.waiting_request();
-    support::runs::cancel_active(&fixture.state, &target);
-    let cancelled = finish(waiter, 2);
+    let owner_id = Fixture::announced(&mut owner);
+    let owned = fixture
+        .observed_request(&source, &owner_id, |request| {
+            request.status() == RequestStatus::Running && fixture.starts() == 1
+        })
+        .await;
+    let mut waiter = fixture.spawn(&target, &[]);
+    let waiter_id = Fixture::announced(&mut waiter);
+    let waiting = fixture
+        .observed_request(&target, &waiter_id, |request| {
+            request.status() == RequestStatus::Queued
+                && request.execution_id == owned.execution_id
+                && request.child.is_none()
+        })
+        .await;
+    runs::cancel(&fixture.context(&target), &waiter_id)
+        .await
+        .unwrap();
+    let cancelled = fixture.completed(&target, &waiter_id, waiter, 2).await;
     assert_eq!(cancelled["requests"][0]["errorCode"], "CANCELLED");
     assert!(cancelled["requests"][0]["child"].is_null());
     assert!(owner.try_wait().unwrap().is_none());
     assert_eq!(
-        fixture.execution(waiting["executionId"].as_str().unwrap())["status"],
+        fixture.execution(waiting.execution_id.as_deref().unwrap())["status"],
         "RUNNING"
     );
     assert_eq!(fixture.starts(), 1);
-    let waiter = fixture.spawn(&target, &[]);
-    fixture.waiting_request();
-    support::runs::cancel_active(&fixture.state, &source);
-    let cancelled = finish(owner, 2);
+    let mut waiter = fixture.spawn(&target, &[]);
+    let next_id = Fixture::announced(&mut waiter);
+    fixture
+        .observed_request(&target, &next_id, |request| {
+            request.status() == RequestStatus::Queued
+                && request.execution_id == owned.execution_id
+                && request.child.is_none()
+        })
+        .await;
+    runs::cancel(&fixture.context(&source), &owner_id)
+        .await
+        .unwrap();
+    let cancelled = fixture.completed(&source, &owner_id, owner, 2).await;
     assert_eq!(cancelled["requests"][0]["errorCode"], "CANCELLED");
-    let execution = fixture.execution(waiting["executionId"].as_str().unwrap());
+    let execution = fixture.execution(waiting.execution_id.as_deref().unwrap());
     assert_eq!(execution["errorCode"], "CANCELLED");
-    let recovered = finish(waiter, 0);
+    let recovered = fixture.completed(&target, &next_id, waiter, 0).await;
     assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
     assert_eq!(fixture.count("executions"), 2);
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();

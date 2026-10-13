@@ -104,6 +104,48 @@ impl Fixture {
 
 #[tokio::test]
 async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence() {
+    // The real project had 35 requests when a submit-only caller exited before admission.
+    // Retain a substantial saved graph so reading its snapshot overlaps the handoff naturally;
+    // no elapsed-time assertion or watcher keeps the submitter alive.
+    const DETACHED_REQUESTS: usize = 35;
+    const INSTRUCTION_BYTES: usize = 64 * 1024;
+    let detached = Fixture::new();
+    let instruction = "Check. ".repeat(INSTRUCTION_BYTES / "Check. ".len());
+    let evals: Vec<_> = (0..DETACHED_REQUESTS)
+        .map(|index| {
+            json!({
+                "id":format!("check-{index}"),"title":"Check",
+                "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
+                "payload":{"instruction":instruction},
+            })
+        })
+        .collect();
+    support::declaration::write(
+        detached.repo.join("index.artf"),
+        json!({
+            "name":"app","fingerprint":false,"evals":evals,
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let submitted = support::os::run(detached.command().args(["verify", "--all", "--json"]));
+    assert!(submitted.status.success(), "{submitted:?}");
+    let accepted: Value = serde_json::from_slice(&submitted.stdout).unwrap();
+    let id: RunId = accepted["run"].as_str().unwrap().parse().unwrap();
+    assert_eq!(detached.settled(&id).await.state, runs::State::Green);
+    let completed = runs::view(&detached.context(), &id).await.unwrap();
+    assert!(matches!(
+        completed.run.control.unwrap().worker,
+        runs::Worker::Admitted { .. }
+    ));
+    assert_eq!(completed.requests.len(), DETACHED_REQUESTS);
+    assert!(
+        completed
+            .requests
+            .iter()
+            .all(|request| request.status() == RequestStatus::Green)
+    );
+
     let fixture = Fixture::new();
     let run = fixture.submit(Some("watch-attempt"));
     let view = fixture.controlled(&run).await;
