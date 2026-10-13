@@ -4,6 +4,10 @@ use crate::project::{VerifyOptions, selection::Selection};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::json;
 
+/// Read one ordinary page of the small loopback request before deliberately rejecting
+/// publication; the fixture needs a bounded request prefix, not the whole request body.
+const REJECTION_READ_BYTES: usize = 4096;
+
 fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
@@ -286,7 +290,7 @@ async fn remote_failure_after_local_submit_leaves_completed_modal_not_resubmissi
     let server = tokio::spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (mut connection, _) = listener.accept().await.unwrap();
-        let mut buffer = [0; 4096];
+        let mut buffer = [0; REJECTION_READ_BYTES];
         let _ = connection.read(&mut buffer).await.unwrap();
         connection
             .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")

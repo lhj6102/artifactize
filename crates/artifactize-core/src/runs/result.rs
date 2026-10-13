@@ -1,8 +1,7 @@
 //! Bounded pages derived from a saved Run/request/execution read snapshot, never a second store.
 use super::{Context, State, observe};
-use crate::types::{EvalId, RequestId, RequestStatus, RunId};
+use crate::types::{EvalId, RequestId, RequestStatus, RunId, Sha256Digest};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 /// Compact findings stay useful within MCP's response bound even with long owner summaries.
 const SUMMARY_CHARS: usize = 512;
 /// Shared page size; interfaces cannot accidentally emit an unbounded findings list.
@@ -36,7 +35,7 @@ impl RunVerdict {
 #[serde(try_from = "String", into = "String")]
 pub struct ResultCursor {
     run: RunId,
-    revision: String,
+    revision: Sha256Digest,
     offset: usize,
 }
 impl TryFrom<String> for ResultCursor {
@@ -49,9 +48,9 @@ impl TryFrom<String> for ResultCursor {
             .ok_or("Invalid result cursor.")?;
         let revision = parts
             .next()
-            .filter(|part| part.len() == 64 && part.bytes().all(|byte| byte.is_ascii_hexdigit()))
             .ok_or("Invalid result cursor.")?
-            .to_owned();
+            .parse::<Sha256Digest>()
+            .map_err(|_| "Invalid result cursor.")?;
         let run = parts.next().ok_or("Invalid result cursor.")?.parse()?;
         Ok(Self {
             run,
@@ -124,10 +123,7 @@ pub async fn result(
     .map_err(|e| e.to_string())??;
     let state = observe::state(&view.run, &view.requests);
     let revision =
-        Sha256::digest(serde_json::to_vec(&(&view, &details)).map_err(|e| e.to_string())?)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        Sha256Digest::of(&serde_json::to_vec(&(&view, &details)).map_err(|e| e.to_string())?);
     let offset = if let Some(cursor) = cursor {
         if cursor.run != *id || cursor.revision != revision {
             return Err("Expired or foreign result cursor.".into());

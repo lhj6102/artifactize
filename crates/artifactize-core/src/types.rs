@@ -250,6 +250,17 @@ identity!(DefinitionHash, sha256_hex);
 // State UUIDs and legacy session state identifiers share the saved segment domain.
 identity!(StateId, segment);
 identity!(Sha256Digest, sha256_hex);
+impl Sha256Digest {
+    /// Hash bytes into the same canonical lowercase spelling accepted at every edge.
+    pub fn of(bytes: &[u8]) -> Self {
+        Self(
+            sha2::Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        )
+    }
+}
 // Session locators use the bounded printable user@host label, not a filesystem segment;
 // a producer may contain a slash because locators split their four IDs from the right.
 identity!(ProducerId, |value: &str| (1..=MAX_ID_BYTES)

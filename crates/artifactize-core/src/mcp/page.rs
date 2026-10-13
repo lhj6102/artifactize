@@ -1,6 +1,6 @@
 //! Lossless bounded pages of CLI JSON, without transport-owned result snapshots.
+use crate::types::Sha256Digest;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::{fmt, str::FromStr};
 use time::OffsetDateTime;
 
@@ -11,7 +11,7 @@ const PAGE_BYTES: usize = 8 * 1024;
 /// Keep elapsed fields stable between pages without storing a result snapshot.
 /// Every continuation still hashes freshly read authoritative records.
 pub(super) struct Cursor {
-    revision: String,
+    revision: Sha256Digest,
     offset: usize,
     pub as_of: OffsetDateTime,
 }
@@ -21,14 +21,9 @@ impl FromStr for Cursor {
         let mut fields = value.splitn(3, ':');
         let revision = fields
             .next()
-            .filter(|hash| {
-                hash.len() == 64
-                    && hash
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            })
             .ok_or("Invalid detail cursor revision.")?
-            .to_owned();
+            .parse::<Sha256Digest>()
+            .map_err(|_| "Invalid detail cursor revision.")?;
         let offset = fields
             .next()
             .ok_or("Invalid detail cursor.")?
@@ -69,13 +64,10 @@ pub(super) fn project(
     as_of: OffsetDateTime,
 ) -> Result<Value, String> {
     let text = serde_json::to_string(&value).map_err(|e| e.to_string())?;
-    let revision = Sha256::digest(
-        serde_json::to_vec(&(&context.repo, &context.state, name, arguments, &text))
+    let revision = Sha256Digest::of(
+        &serde_json::to_vec(&(&context.repo, &context.state, name, arguments, &text))
             .map_err(|e| e.to_string())?,
-    )
-    .iter()
-    .map(|byte| format!("{byte:02x}"))
-    .collect::<String>();
+    );
     let offset = match cursor {
         None => 0,
         Some(cursor) => {
