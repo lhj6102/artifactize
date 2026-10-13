@@ -9,7 +9,7 @@ use crate::{
     types::{FailureCode, RequestKey, RunId, RunStatus},
 };
 pub use observe::{Counts, RunObservation, State, status, view, wait};
-pub use result::{Finding, ResultCursor, RunResultPage, RunVerdict, result};
+pub use result::{Finding, ResultCursor, ResultState, RunResultPage, RunVerdict, result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 pub(crate) use worker::{execute, supervise};

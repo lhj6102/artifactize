@@ -48,8 +48,14 @@ pub struct RunObservation {
     pub run: RunId,
     pub state: State,
     pub counts: Counts,
-    pub elapsed: u64,
-    pub next_check: u32,
+    #[serde(serialize_with = "seconds")]
+    pub elapsed: Duration,
+    #[serde(serialize_with = "seconds")]
+    pub next_check: Duration,
+}
+
+fn seconds<S: serde::Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u64(duration.as_secs())
 }
 
 fn counts(states: impl IntoIterator<Item = (RequestStatus, u64)>) -> Counts {
@@ -120,7 +126,7 @@ pub async fn view(context: &Context, id: &RunId) -> Result<RunView, String> {
     super::reconcile(&context.state, view).await
 }
 pub async fn status(context: &Context, id: &RunId) -> Result<RunObservation, String> {
-    const NEXT_CHECK_SECONDS: u32 = 30; // One ordinary bounded observation, not a polling cadence.
+    const NEXT_CHECK: Duration = Duration::from_secs(30); // One ordinary bounded observation, not a polling cadence.
     let mut saved = store::run_control::observe(&context.state, id).await?;
     if saved.repo != context.repo {
         return Err("Run not found in this repository.".into());
@@ -149,12 +155,11 @@ pub async fn status(context: &Context, id: &RunId) -> Result<RunObservation, Str
         elapsed: saved
             .completed_at
             .unwrap_or_else(Timestamp::now)
-            .since(saved.created_at)
-            .as_secs(),
+            .since(saved.created_at),
         next_check: if state.is_terminal() {
-            0
+            Duration::ZERO
         } else {
-            NEXT_CHECK_SECONDS
+            NEXT_CHECK
         },
     })
 }
@@ -193,4 +198,23 @@ pub async fn wait(
         }
     }
     last.ok_or_else(|| "State unavailable within the observation bound.".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn core_durations_keep_the_existing_integer_second_wire_values() {
+        let observed = RunObservation {
+            run: "run-wire".parse().unwrap(),
+            state: State::Running,
+            counts: Counts::default(),
+            elapsed: Duration::from_millis(1250),
+            next_check: Duration::from_secs(30),
+        };
+        let wire = serde_json::to_value(observed).unwrap();
+        assert_eq!(wire["elapsed"], 1);
+        assert_eq!(wire["next_check"], 30);
+    }
 }

@@ -374,9 +374,9 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
             "default review lists deferred sign-offs"
         );
         let result = runs::result(&fixture.context(), &run, None).await.unwrap();
-        assert!(result.ready);
+        assert!(result.ready());
         assert_eq!(
-            serde_json::to_value(result.verdict).unwrap(),
+            serde_json::to_value(result.verdict()).unwrap(),
             "SIGNOFFS_PENDING"
         );
         assert_eq!(

@@ -1,7 +1,7 @@
 //! Bounded pages derived from a saved Run/request/execution read snapshot, never a second store.
 use super::{Context, State, observe};
 use crate::types::{EvalId, RequestId, RequestStatus, RunId, Sha256Digest};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeMap};
 /// Compact findings stay useful within MCP's response bound even with long owner summaries.
 const SUMMARY_CHARS: usize = 512;
 /// Shared page size; interfaces cannot accidentally emit an unbounded findings list.
@@ -77,15 +77,85 @@ pub struct Finding {
     pub state: RequestStatus,
     pub summary: String,
 }
-#[derive(Debug, Clone, Serialize)]
+/// One result phase owns readiness and verdict. Only GREEN can carry recorded
+/// satisfaction; older GREEN Runs without validation may still lack that proof.
+#[derive(Debug, Clone, Copy)]
+pub enum ResultState {
+    Preparing,
+    Running,
+    Waiting,
+    Cancelling,
+    Green { satisfied: bool },
+    Red,
+    Incomplete,
+    SignoffsPending,
+    Error,
+    Cancelled,
+}
+impl ResultState {
+    fn from_observed(state: State, satisfied: bool) -> Self {
+        match state {
+            State::Preparing => Self::Preparing,
+            State::Running => Self::Running,
+            State::Waiting => Self::Waiting,
+            State::Cancelling => Self::Cancelling,
+            State::Green => Self::Green { satisfied },
+            State::Red => Self::Red,
+            State::Incomplete => Self::Incomplete,
+            State::SignoffsPending => Self::SignoffsPending,
+            State::Error => Self::Error,
+            State::Cancelled => Self::Cancelled,
+        }
+    }
+    pub fn state(self) -> State {
+        match self {
+            Self::Preparing => State::Preparing,
+            Self::Running => State::Running,
+            Self::Waiting => State::Waiting,
+            Self::Cancelling => State::Cancelling,
+            Self::Green { .. } => State::Green,
+            Self::Red => State::Red,
+            Self::Incomplete => State::Incomplete,
+            Self::SignoffsPending => State::SignoffsPending,
+            Self::Error => State::Error,
+            Self::Cancelled => State::Cancelled,
+        }
+    }
+}
+#[derive(Debug, Clone)]
 pub struct RunResultPage {
     pub run: RunId,
-    pub state: State,
-    pub ready: bool,
-    pub verdict: Option<RunVerdict>,
-    pub satisfied: bool,
+    pub phase: ResultState,
     pub findings: Vec<Finding>,
     pub next_cursor: Option<ResultCursor>,
+}
+impl RunResultPage {
+    pub fn state(&self) -> State {
+        self.phase.state()
+    }
+    pub fn ready(&self) -> bool {
+        self.state().is_terminal()
+    }
+    pub fn verdict(&self) -> Option<RunVerdict> {
+        RunVerdict::from_state(self.state())
+    }
+    pub fn satisfied(&self) -> bool {
+        matches!(self.phase, ResultState::Green { satisfied: true })
+    }
+}
+impl Serialize for RunResultPage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Preserve the flat CLI/MCP wire format; all status flags are derived here.
+        let mut output = serializer.serialize_map(None)?;
+        output.serialize_entry("run", &self.run)?;
+        output.serialize_entry("state", &self.state())?;
+        output.serialize_entry("ready", &self.ready())?;
+        output.serialize_entry("verdict", &self.verdict())?;
+        output.serialize_entry("satisfied", &self.satisfied())?;
+        output.serialize_entry("findings", &self.findings)?;
+        output.serialize_entry("next_cursor", &self.next_cursor)?;
+        output.end()
+    }
 }
 pub async fn result(
     context: &Context,
@@ -99,10 +169,7 @@ pub async fn result(
         }
         return Ok(RunResultPage {
             run: id.clone(),
-            state: observation.state,
-            ready: false,
-            verdict: None,
-            satisfied: false,
+            phase: ResultState::from_observed(observation.state, false),
             findings: Vec::new(),
             next_cursor: None,
         });
@@ -180,13 +247,47 @@ pub async fn result(
     });
     Ok(RunResultPage {
         run: id.clone(),
-        state,
-        ready: state.is_terminal(),
-        verdict: RunVerdict::from_state(state),
-        satisfied: view.run.validation.snapshot().is_some_and(|validation| {
-            matches!(validation.satisfied, crate::config::Field::Value(true))
-        }),
+        phase: ResultState::from_observed(
+            state,
+            view.run.validation.snapshot().is_some_and(|validation| {
+                matches!(validation.satisfied, crate::config::Field::Value(true))
+            }),
+        ),
         findings,
         next_cursor,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn result_phase_is_the_only_source_of_wire_readiness_and_verdict() {
+        let page = |phase| RunResultPage {
+            run: "run-wire".parse().unwrap(),
+            phase,
+            findings: Vec::new(),
+            next_cursor: None,
+        };
+        assert_eq!(
+            serde_json::to_value(page(ResultState::Running)).unwrap(),
+            json!({
+                "run":"run-wire","state":"running","ready":false,"verdict":null,
+                "satisfied":false,"findings":[],"next_cursor":null,
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(page(ResultState::Green { satisfied: true })).unwrap(),
+            json!({
+                "run":"run-wire","state":"green","ready":true,"verdict":"GREEN",
+                "satisfied":true,"findings":[],"next_cursor":null,
+            })
+        );
+        let red = serde_json::to_value(page(ResultState::Red)).unwrap();
+        assert_eq!(red["verdict"], "RED");
+        assert_eq!(red["ready"], true);
+        assert_eq!(red["satisfied"], false);
+    }
 }
