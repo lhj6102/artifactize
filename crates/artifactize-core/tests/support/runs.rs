@@ -128,6 +128,46 @@ pub fn cancel_active(state: &Path, repo: &Path) -> artifactize_core::types::RunI
     })
 }
 
+/// A terminal Run's worker can still close its last SQLite connection and checkpoint.
+/// Byte-preservation fixtures start their baseline only after that exact owner exits.
+pub fn finished_worker(
+    state: &Path,
+    repo: &Path,
+    id: &artifactize_core::types::RunId,
+    running: fn(u32) -> bool,
+) {
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                runtime.block_on(async {
+                    let mut changes = artifactize_core::changes::Subscription::new(state).await;
+                    let context = runs::Context::discover(repo, Some(state)).unwrap();
+                    let observed = runs::status(&context, id).await.unwrap();
+                    assert!(observed.state.is_terminal(), "fixture Run must be terminal");
+                    let view = runs::view(&context, id).await.unwrap();
+                    let runs::Worker::Admitted { owner } = view.run.control.unwrap().worker else {
+                        panic!("fixture worker was admitted");
+                    };
+                    tokio::time::timeout(ADMISSION_BOUND, async {
+                        while running(owner.pid.get()) {
+                            // Exit itself need not write SQLite; use the subscription's
+                            // existing owner-liveness reconciliation, not a fixture sleep.
+                            changes.next_reconciled().await;
+                        }
+                    })
+                    .await
+                    .expect("terminal fixture worker exits before the byte baseline");
+                });
+            })
+            .join()
+            .unwrap();
+    });
+}
+
 /// Saved executor identity, not the process watching it.
 pub fn worker_pid(state: &Path, repo: &Path) -> u32 {
     std::thread::scope(|scope| {

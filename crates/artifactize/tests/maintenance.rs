@@ -139,7 +139,9 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert!(!state.exists());
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 
-    runtime_run(&state, &repo);
+    let run = runtime_run(&state, &repo);
+    let id = run["id"].as_str().unwrap().parse().unwrap();
+    support::runs::finished_worker(&state, &repo, &id, support::os::running);
     let before = fs::read(state.join("state.sqlite")).unwrap();
     // Leftover 0.4 ChatGPT credentials are neither read nor removed.
     let auth = state.join("auth");
