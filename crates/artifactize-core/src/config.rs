@@ -619,6 +619,8 @@ impl Views {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Map<String, Value>", into = "Value")]
 pub enum Fingerprint {
+    /// Assigned by discovery only; it cannot be declared.
+    Graph,
     Script {
         command: String,
         args: Vec<crate::scope::Argument>,
@@ -729,6 +731,7 @@ impl TryFrom<Map<String, Value>> for Fingerprint {
 impl From<Fingerprint> for Value {
     fn from(fingerprint: Fingerprint) -> Self {
         match fingerprint {
+            Fingerprint::Graph => serde_json::json!({"graph": true}),
             Fingerprint::Script {
                 command,
                 args,
@@ -750,8 +753,17 @@ impl From<Fingerprint> for Value {
 }
 
 impl Fingerprint {
+    pub fn kind(&self) -> crate::types::FingerprintKind {
+        match self {
+            Self::Graph => crate::types::FingerprintKind::Graph,
+            Self::Artifactsum { .. } => crate::types::FingerprintKind::Artifactsum,
+            Self::Script { .. } => crate::types::FingerprintKind::Script,
+        }
+    }
+
     fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
         match self {
+            Self::Graph => Ok(()),
             Self::Script {
                 command,
                 args,
@@ -1123,7 +1135,7 @@ impl Artifact {
     /// Runtime commands and relative declarations use the containing folder.
     pub fn folder(&self) -> &Path {
         match self.kind {
-            ArtifactKind::Folder => &self.path,
+            ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
             ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
         }
     }
@@ -1136,6 +1148,7 @@ impl Artifact {
 
     pub fn declaration_path(&self) -> PathBuf {
         match self.kind {
+            ArtifactKind::Graph => PathBuf::from(".artf"),
             ArtifactKind::Folder => logical_join(&self.path, std::ffi::OsStr::new(CONFIG_FILE)),
             ArtifactKind::File => {
                 let mut path = self.path.as_os_str().to_owned();

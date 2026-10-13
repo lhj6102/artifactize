@@ -26,6 +26,7 @@ a worktree, and its Review search reaches every repository. It shows and changes
 
 ## Run graph
 
+- **J-GRAPH-CURRENT**: `artifactize-desktop graph --repo PATH` (also the declared Human `graph` tool) opens current declarations in the same graph view, without a saved Run; nodes zoom to their evals, the structure text exposes all criteria and labeled relations, Refresh or Ctrl+R/F5 reloads declarations. There are no Run verdicts on this screen.
 - **J-GRAPH-SWITCH**: `v` switches the open Run between the tree and the graph of its Artifacts.
 - **J-GRAPH-COLOURS**: nodes and edges are coloured by verdict (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked) and recolour in place when a result arrives.
 - **J-GRAPH-MOVE**: ← → move to the upstream or downstream Artifact; ↑ ↓ to the neighbour in the same column.

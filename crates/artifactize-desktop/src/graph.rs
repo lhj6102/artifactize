@@ -1,5 +1,7 @@
-//! The selected Run as a graph of Artifacts for the monitor's Graph view: nodes, dependency
-//! edges and their lights come from the library's [`monitor::graph`] over the shown tree.
+pub(crate) mod current;
+
+// The selected Run as a graph of Artifacts for the monitor's Graph view: nodes, dependency
+// edges and their lights come from the library's [`monitor::graph`] over the shown tree.
 use crate::{App, Failure};
 use artifactize_core::monitor;
 use serde::Serialize;

@@ -75,6 +75,7 @@ impl Runs {
                             Builtin::Section => "section",
                             Builtin::Help => "help",
                             Builtin::Open => "open",
+                            Builtin::Graph => "graph",
                         }
                         .to_owned()
                     })

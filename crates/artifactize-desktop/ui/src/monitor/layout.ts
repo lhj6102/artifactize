@@ -11,7 +11,7 @@ type Elk = { layout: (graph: object) => Promise<{ children?: { id: string; x?: n
 let elk: Promise<Elk> | null = null;
 
 /** Top-left positions of `graph`'s nodes. */
-export async function layout(graph: RunGraph): Promise<Map<string, Point>> {
+export async function layout(graph: Pick<RunGraph, "nodes" | "edges">): Promise<Map<string, Point>> {
   elk ??= Promise.all([import("elkjs/lib/elk-api.js"), import("elkjs/lib/elk-worker.min.js?url")]).then(
     ([{ default: ELK }, { default: workerUrl }]) => new ELK({ workerUrl }) as Elk,
   );

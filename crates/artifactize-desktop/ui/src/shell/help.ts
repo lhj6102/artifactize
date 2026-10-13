@@ -30,7 +30,11 @@ const HUMAN: Section = {
   ],
 };
 
-export const HELP: Record<"monitor" | "review" | "settings", Section[]> = {
+export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]> = {
+  graph: [
+    { title: "Current Artifact graph", keys: [["← / →", "Upstream / downstream Artifact"], ["↑ / ↓", "Artifact above / below; select an eval while zoomed"], ["Enter / click", "Zoom into an Artifact"], ["Enter on eval", "Expand structure and evaluation criteria"], ["Esc", "Zoom out"], ["Ctrl+R / F5", "Reload current declarations"]] },
+    COMMON,
+  ],
   monitor: [
     {
       title: "Navigate",

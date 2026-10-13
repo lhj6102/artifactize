@@ -128,7 +128,7 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
             }
         }
         for marker in &entries {
-            if ignored.matched(marker.path(), false).is_ignore() {
+            if marker.file_name() != ".artf" && ignored.matched(marker.path(), false).is_ignore() {
                 continue;
             }
             let filename = marker.file_name();
@@ -154,7 +154,39 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
                     "File Artifact declaration must be a regular file.",
                 ));
             }
-            if target.is_empty() || target.ends_with(".artf") {
+            if target.is_empty() {
+                if !relative.as_os_str().is_empty() {
+                    return Err(ConfigError::new(
+                        &file,
+                        "The graph Artifact .artf belongs only at the repository root.",
+                    ));
+                }
+                let source =
+                    read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+                let table: toml::Table =
+                    toml::from_str(&source).map_err(|error| ConfigError::new(&file, error))?;
+                for key in ["fingerprint", "basis"] {
+                    if table.contains_key(key) {
+                        return Err(ConfigError::declaration(
+                            &file,
+                            &[key],
+                            format!("The graph Artifact cannot declare {key}."),
+                        ));
+                    }
+                }
+                let mut declaration =
+                    parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
+                declaration.fingerprint = Some(Fingerprint::Graph);
+                insert_artifact(
+                    &mut config,
+                    PathBuf::new(),
+                    ArtifactKind::Graph,
+                    declaration,
+                    &file,
+                )?;
+                continue;
+            }
+            if target.ends_with(".artf") {
                 return Err(ConfigError::new(
                     &file,
                     "File Artifact target must not be a declaration (.artf).",

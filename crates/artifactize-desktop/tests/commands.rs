@@ -872,3 +872,63 @@ Check {broken}."""
         &json!({"source": "a:broken", "target": "a:after", "light": "error", "dependency": false})
     );
 }
+
+#[test]
+fn graph_view_projects_the_same_structure_as_the_fingerprint_and_agent_tool() {
+    let root = os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    fs::write(repo.join(".artf"), "name = 'graph'\n[evals.review]\ntitle = 'Review the graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review {app}.' }\n").unwrap();
+    fs::write(repo.join("index.artf"), "name = 'app'\n").unwrap();
+    let launch = Launch::parse([
+        "artifactize-desktop".into(),
+        "graph".into(),
+        "--repo".into(),
+        repo.clone().into_os_string(),
+        "--state-dir".into(),
+        state.clone().into_os_string(),
+        "--reviewer".into(),
+        "alice".into(),
+    ])
+    .unwrap();
+    assert_eq!(launch.mode, Mode::Graph);
+    let fixture = Fixture {
+        _root: root,
+        repo,
+        state,
+    };
+    let viewer = window(&fixture, Mode::Graph);
+    let structure = artifactize_core::graph_structure::read(&fixture.repo).unwrap();
+    let view = invoke(&viewer, "current_graph", json!({})).unwrap();
+    assert_eq!(view["fingerprint"], structure.fingerprint().as_str());
+    assert_eq!(view["structure"], structure.tree());
+    assert_eq!(
+        view["graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|node| node["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["app", "graph"]
+    );
+    assert_eq!(
+        view["graph"]["edges"],
+        json!([{"source":"a:app", "target":"a:graph", "light":"waiting", "dependency":false}])
+    );
+    assert_eq!(view["tree"][1]["children"][0]["name"], "Review the graph");
+    // There was never a verification or saved Run. Refresh reads the changed declaration.
+    fs::write(
+        fixture.repo.join("index.artf"),
+        "name = 'app'\nbasis = true\n",
+    )
+    .unwrap();
+    let refreshed = invoke(&viewer, "current_graph", json!({})).unwrap();
+    assert_ne!(refreshed["fingerprint"], view["fingerprint"]);
+    assert_eq!(
+        refreshed["structure"],
+        artifactize_core::graph_structure::read(&fixture.repo)
+            .unwrap()
+            .tree()
+    );
+}

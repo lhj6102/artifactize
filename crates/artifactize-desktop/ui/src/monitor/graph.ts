@@ -23,7 +23,7 @@ export const LEGEND: Light[] = ["green", "active", "waiting", "red", "error", "b
  * What a layout depends on: the Artifacts and the edges between them, never their lights. A
  * graph with the same shape keeps its node positions when its lights change.
  */
-export function shape(graph: RunGraph): string {
+export function shape(graph: Pick<RunGraph, "nodes" | "edges">): string {
   const nodes = graph.nodes.map((node) => node.id).sort();
   const edges = graph.edges.map((edge) => `${edge.source}>${edge.target}`).sort();
   return JSON.stringify([nodes, edges]);
@@ -38,7 +38,7 @@ export type Arrow = "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown";
  * nearest node above or below in the same column that shares an upstream or downstream
  * Artifact with it (any node of the column when none does). `null` when there is none.
  */
-export function neighbor(graph: RunGraph, at: Map<string, Point>, id: string, key: Arrow): string | null {
+export function neighbor(graph: Pick<RunGraph, "nodes" | "edges">, at: Map<string, Point>, id: string, key: Arrow): string | null {
   const here = at.get(id);
   if (!here) return null;
   const downstream = (node: string) => graph.edges.filter((edge) => edge.source === node).map((edge) => edge.target);

@@ -8,7 +8,8 @@ dependency evals, scoped references and the runtime execution environment.
 
 `index.artf` declares its containing folder. `<filename>.artf` declares the
 neighboring file whose complete name is `<filename>`, including its extension.
-Both use standard TOML and require `name`.
+Both use standard TOML and require `name`. The repository root's nameless `.artf`
+declares the [graph Artifact](#graph-artifact), with no source file.
 
 Discovery walks from the repository root and skips `.git`, `node_modules`, and
 subdirectories and sidecar paths listed in an optional root `.artfignore`
@@ -119,6 +120,52 @@ own project generator and commit its `.artf` output. Older fields such as
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
 option is also rejected.
+
+## Graph Artifact
+
+An optional nameless `.artf` at the repository root declares the whole project's
+Artifact graph. `index.artf` still declares the root folder; `<filename>.artf`
+still declares a neighboring file. A nameless `.artf` in another visited directory
+is a declaration error. The root `.artf`, like `index.artf`, is read even when an
+`.artfignore` pattern matches its filename. There can be only one graph Artifact.
+
+```toml
+# .artf at the repository root
+name = "project-graph"
+
+[views.agent_tools.structure]
+builtin = "graph"
+args = []
+
+[views.human_tools.viewer]
+builtin = "graph"
+kind = "launch"
+args = []
+
+[evals.review]
+title = "The Artifact boundaries and evaluation criteria fit the project"
+profile = { kind = "human" }
+payload = { instruction = "Use the graph viewer to review the current structure." }
+```
+
+It is an ordinary named Artifact: declare any runtime, Agent, Human or dependency
+evals and tools, and select it by name in `verify`, `status`, CI or `--reuse-only`.
+It has no default evals, child ownership or relations to other Artifacts. Explicit
+mounts and instruction/argv references work normally. Commands run from the
+repository root; declaring the graph does not make it the owner of that folder.
+Its scope uses `kind = "graph"` and its declaration path is `.artf`.
+
+Do not declare `fingerprint`, even `false` or an empty table: its fingerprint is
+always the current extracted graph. `basis`, even `false`, is also rejected: the
+graph is a reviewable structural subject, not a source input. Mounts remain valid
+because they connect declared tools or evals to other Artifacts. No source file is
+created or required. Ordinary Artifact cycles are allowed; extraction is flat and
+includes the graph Artifact's own declaration without recursive fingerprinting.
+
+The [graph fingerprint](../concepts/fingerprints-and-reuse.md#graph-fingerprint)
+changes with structural definitions, not source file bytes or evaluation
+execution options. There is no diff, history or automatic review policy: results
+are reviewed or reused against the current state only.
 
 ## File Artifacts
 

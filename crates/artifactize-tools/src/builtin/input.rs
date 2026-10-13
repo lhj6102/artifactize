@@ -16,7 +16,7 @@ impl Input {
         let validator = crate::schema::compile(&super::input_schema(builtin))?;
         crate::schema::validate(&validator, &value)?;
         let input = match builtin {
-            Builtin::Section | Builtin::Help | Builtin::Open => {
+            Builtin::Graph | Builtin::Section | Builtin::Help | Builtin::Open => {
                 return Err("This builtin requires declared args.".into());
             }
             Builtin::Read => serde_json::from_value(value).map(Self::Read),
