@@ -1,6 +1,6 @@
 # <img src="assets/brand/artifactize-icon-h56.png" width="31" height="28" align="middle" alt=""> Artifactize
 
-**The AI-native collaboration layer for one-of-a-kind teammates and their agents.**
+**Build together on an Artifact Graph.**
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
@@ -16,7 +16,8 @@
   <a href="https://artifactize.dev/docs/getting-started/install.html">Install</a> ·
   <a href="https://artifactize.dev/docs/getting-started/quick-start.html">Quick start</a> ·
   <a href="https://artifactize.dev/docs/reference/overview.html">Reference</a> ·
-  <a href="https://artifactize.dev">artifactize.dev</a>
+  <a href="https://artifactize.dev">artifactize.dev</a> ·
+  <a href="https://discord.gg/VswgKkPkS9">Discord</a>
 </p>
 
 Artifactize splits a project into Artifacts (code, docs, designs, images), each with
@@ -243,6 +244,7 @@ Everything else is at **[artifactize.dev/docs](https://artifactize.dev/docs/)**:
 - [Guides](https://artifactize.dev/docs/guides/agent-evals.html): Agent evals and backends, Human reviews, the team review store and CI.
 - [Reference](https://artifactize.dev/docs/reference/overview.html): every command and flag, `index.artf`, tools, state, limits and the review store protocol.
 - [Examples](https://artifactize.dev/docs/getting-started/examples.html): runtime relations, Agent and Human tools, file Artifacts and dependency evals.
+- [Community](https://discord.gg/VswgKkPkS9): questions, ideas and help on Discord.
 
 The recordings above are reproducible: their VHS tapes and demo projects are in
 [`website/demo`](https://github.com/lhj6102/artifactize/tree/main/website/demo) ([how to record](https://github.com/lhj6102/artifactize/blob/main/website/README.md#recordings)).
