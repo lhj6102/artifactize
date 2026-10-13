@@ -410,7 +410,7 @@ fn wait_for(mut child: Child) -> Output {
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
-            child.kill().unwrap();
+            support::os::kill(child.id());
             panic!("verify did not finish after cancellation");
         }
         thread::sleep(Duration::from_millis(20));

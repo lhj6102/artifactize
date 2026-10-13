@@ -585,8 +585,7 @@ fn review_keys_need_detail_focus_and_an_owned_request() {
         control(&mut review, 's'),
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
-            verdict: crate::runtime::Verdict::Red,
-            result: json!({"verdict":"RED","reason":"qcit"}),
+            result: json!({"verdict":"RED","reason":"qcit"}).try_into().unwrap(),
             claim: false
         })
     );
@@ -666,11 +665,10 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     assert!(text.contains("REVIEW (yours)"), "{text}");
     // A fixed field ignores typing.
     press(&mut review, KeyCode::Char('x'));
-    let submit = |verdict: crate::runtime::Verdict, result: Value| {
+    let submit = |_verdict: crate::runtime::Verdict, result: Value| {
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
-            verdict,
-            result,
+            result: result.try_into().unwrap(),
             claim: false,
         })
     };
@@ -789,8 +787,9 @@ fn other_schemas_edit_inline_and_ctrl_e_opens_the_editor() {
         review.edited(Ok(r#"{"approved":true,"checks":["a"]}"#.into())),
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
-            verdict: crate::runtime::Verdict::Green,
-            result: json!({"approved":true,"checks":["a"],"verdict":"GREEN"}),
+            result: json!({"approved":true,"checks":["a"],"verdict":"GREEN"})
+                .try_into()
+                .unwrap(),
             claim: false
         })
     );

@@ -218,7 +218,7 @@ print('protocol:v1')
     let (command, mut args) =
         support::os::python_script(&path, &support::os::fingerprint_probe(script));
     args.extend([
-        json!(probe),
+        json!(support::os::path_text(&probe)),
         json!("$HOME; ../literal $(touch executed)"),
         json!("{test}/key"),
     ]);

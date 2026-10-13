@@ -73,6 +73,28 @@ pub fn release_refusal(
     }
 }
 
+/// A Human submission has one verdict, parsed with its owner fields at the UI edge.
+/// The private envelope prevents a separate display choice from contradicting the result;
+/// the request's owner schema is still checked by the shared Human submission operation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Submission(crate::agent::verdict::ValidatedResult);
+impl TryFrom<Value> for Submission {
+    type Error = String;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        serde_json::from_value(value)
+            .map(Self)
+            .map_err(|error| error.to_string())
+    }
+}
+impl Submission {
+    pub fn verdict(&self) -> crate::runtime::Verdict {
+        self.0.verdict
+    }
+    pub fn to_json(&self) -> Value {
+        self.0.to_json()
+    }
+}
+
 /// Lifecycle work with owned inputs, so the screen keeps drawing while it runs.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Job {
@@ -87,8 +109,7 @@ pub enum Job {
     /// Claim first when `claim`, then submit and publish like `request submit`.
     Submit {
         id: RequestId,
-        verdict: crate::runtime::Verdict,
-        result: Value,
+        result: Submission,
         claim: bool,
     },
     /// Release the reviewer's remaining claims; quit afterwards when `quit`.
@@ -244,7 +265,6 @@ impl Job {
             }
             Job::Submit {
                 id,
-                verdict: _,
                 result,
                 claim: first,
             } => {
@@ -253,7 +273,7 @@ impl Job {
                         let (receipts, _) = human::open(&state, &id).await?;
                         claimed = Some(human::claim(&receipts, &id, &reviewer).await?);
                     }
-                    human::submit_and_publish(&state, &id, &reviewer, &result, cancel)
+                    human::submit_and_publish(&state, &id, &reviewer, &result.to_json(), cancel)
                         .await
                         .map(Box::new)
                 }
@@ -402,5 +422,26 @@ pub fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
             text: error,
             error: true,
         },
+    }
+}
+
+#[cfg(test)]
+mod submission_tests {
+    use super::Submission;
+    use crate::runtime::Verdict;
+    use serde_json::json;
+
+    #[test]
+    fn submission_parses_one_verdict_and_keeps_its_owner_fields() {
+        for (value, verdict) in [
+            (json!({"verdict":"GREEN","approved":true}), Verdict::Green),
+            (json!({"verdict":"RED","reason":"needs work"}), Verdict::Red),
+        ] {
+            let submitted = Submission::try_from(value.clone()).unwrap();
+            assert_eq!(submitted.verdict(), verdict);
+            assert_eq!(submitted.to_json(), value);
+        }
+        assert!(Submission::try_from(json!({"approved":true})).is_err());
+        assert!(Submission::try_from(json!({"verdict":"ERROR"})).is_err());
     }
 }

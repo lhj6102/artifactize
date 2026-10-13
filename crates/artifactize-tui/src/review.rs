@@ -653,11 +653,12 @@ impl Review {
         }
     }
 
-    fn submit(&mut self, verdict: crate::runtime::Verdict, result: Value) -> Action {
-        match self.owned_request() {
-            Ok(id) => Action::Start(Job::Submit {
+    fn submit(&mut self, result: Value) -> Action {
+        match self.owned_request().and_then(|id| {
+            artifactize_core::review::Submission::try_from(result).map(|result| (id, result))
+        }) {
+            Ok((id, result)) => Action::Start(Job::Submit {
                 id,
-                verdict,
                 result,
                 claim: false,
             }),
@@ -676,7 +677,7 @@ impl Review {
         let label = match &job {
             Job::Claim { .. } => "Claiming the review".into(),
             Job::Run { tool, .. } => format!("Running {tool}"),
-            Job::Submit { verdict, .. } => format!("Submitting {}", verdict.as_str()),
+            Job::Submit { result, .. } => format!("Submitting {}", result.verdict().as_str()),
             Job::Release { .. } => "Releasing the claim".into(),
         };
         self.busy = Some(Busy {
@@ -806,9 +807,8 @@ impl Review {
             }
             Ok(text) => {
                 form.set_json(text);
-                let verdict = form.verdict;
                 match form.result() {
-                    Ok(result) => return self.submit(verdict, result),
+                    Ok(result) => return self.submit(result),
                     Err(error) => form.error = Some(error),
                 }
             }

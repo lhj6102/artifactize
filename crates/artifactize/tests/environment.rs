@@ -42,7 +42,7 @@ impl Project {
             &repo.join("probe.py"),
             &PROBE.replace("HOME_NAME", support::os::home_env()),
         );
-        let home = home.to_str().unwrap().to_owned();
+        let home = support::os::path_text(&home);
         support::declaration::write(
             repo.join("index.artf"),
             declare(support::os::python_program(), &home).to_string(),

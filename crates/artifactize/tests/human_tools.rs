@@ -262,11 +262,12 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
     let executable = owner.join("unique-human-tool-not-on-path");
     support::os::write_script(&executable, "printf '%s' \"$PWD\"\n");
     support::os::make_executable(&executable);
+    let executable = support::os::path_text(&executable);
     for (command, success) in [
         ("unique-human-tool-not-on-path", false),
         ("./unique-human-tool-not-on-path", true),
         ("../a/unique-human-tool-not-on-path", false),
-        (executable.to_str().unwrap(), true),
+        (executable.as_str(), true),
     ] {
         write_artifact(
             &owner,

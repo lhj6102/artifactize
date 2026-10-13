@@ -544,14 +544,14 @@ pub async fn human_submit(
     let id = id.into_inner();
     guard(&app, &id, review::review_refusal).await?;
     let request = opened(&app, &id)?;
-    let verdict = draft.verdict.into();
-    let result = form::result(&request.request, draft)?;
+    let result = form::result(&request.request, draft)?
+        .try_into()
+        .map_err(Failure::Invalid)?;
     let outcome = run_job(
         &app,
         job,
         Job::Submit {
             id: id.clone(),
-            verdict,
             result,
             claim: false,
         },

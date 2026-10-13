@@ -150,11 +150,11 @@ impl Review {
             }
             Control::Submit => {
                 let result = match &self.mode {
-                    Mode::Form(form) => form.result().map(|result| (form.verdict, result)),
+                    Mode::Form(form) => form.result(),
                     _ => return self.notify("Choose GREEN or RED first.", true),
                 };
                 match result {
-                    Ok((verdict, result)) => self.submit(verdict, result),
+                    Ok(result) => self.submit(result),
                     Err(error) => {
                         if let Mode::Form(form) = &mut self.mode {
                             form.error = Some(error);

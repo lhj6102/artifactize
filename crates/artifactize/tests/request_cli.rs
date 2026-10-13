@@ -156,7 +156,7 @@ fn finish(mut child: Child, code: i32) -> Value {
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
-            child.kill().unwrap();
+            support::os::kill(child.id());
             child.wait().unwrap();
             panic!("verify did not finish");
         }
