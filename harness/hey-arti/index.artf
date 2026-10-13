@@ -1,6 +1,6 @@
 name = "arti-harness"
 tags = ["type:harness"]
-fingerprint = { files = ["driver.py", "test_driver.py", "cases.toml", "fixtures", "README.md"] }
+fingerprint = { files = ["driver.py", "live.py", "host_smoke.py", "test_driver.py", "cases.toml", "fixtures", "README.md"] }
 
 [views.agent_tools]
 list = { builtin = "list" }

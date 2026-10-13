@@ -8,7 +8,8 @@ policy, budgets, selection files and profile variants.
 Every command accepts the common options `--repo PATH` (default: the current
 directory), `--state-dir PATH` (default: the state home below) and `--json`, before
 or after the subcommand, at most once each; commands that do not read a repository
-or state ignore them, except `monitor` and `review` (which reject `--json`).
+or state ignore them, except `monitor` and `review` (which reject `--json`). `mcp` always emits
+JSON-RPC protocol on stdout, even with `--json`; startup errors go to stderr.
 Current-directory tool output is unchanged by `--json`; it is already text or JSON
 as listed below. After the program operand of `tools help`, trailing flags belong
 to that program, not artifactize.
@@ -21,6 +22,7 @@ to that program, not artifactize.
 |---|---|---|---|
 | `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--request-key KEY`, `--reuse-only KINDS` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
+| `mcp` | | [MCP stdio protocol](mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
 | `config graph [ARTIFACT]` | | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
@@ -68,7 +70,8 @@ Ctrl-C stops a watcher with exit 130; closing it never cancels the Run. `run sho
 Run until it finishes; when its own timeout expires first it prints the current
 Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
 (unknown, repeated, conflicting or missing options and values) and operational
-errors: text on stderr, or `{"error":"..."}` on stdout with `--json`. There is no
+errors: text on stderr, or `{"error":"..."}` on stdout with `--json` (except
+`mcp`, whose stdout remains protocol-only). There is no
 `plan`, `history` or `--full`.
 
 Run/request ID arguments (including `request list --run` and `review REQUEST_ID`)

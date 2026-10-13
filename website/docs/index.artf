@@ -17,7 +17,7 @@ Check that the mdBook documentation in {docs} (src/, starting from src/SUMMARY.m
 of {core}. Compare what the docs state about commands, flags, defaults, exit codes, output, \
 index.artf fields, tool declarations and state behavior with the code, using list_docs, glob_docs, \
 grep_docs and read_docs for the docs and list_core, glob_core, grep_core and read_core for the code \
-(start from src/cli.rs and src/config.rs). Also compare guides/hey-arti.md with the canonical \
+(start from src/cli.rs, src/mcp.rs and src/config.rs). Also compare guides/hey-arti.md with the canonical \
 Artifactizer skill {hey-arti}, using read_hey-arti; verify MCP-first guidance and Human/lifecycle \
 boundaries agree without claiming plugin distribution. Tool paths are relative to each Artifact, for example \
 src/reference/cli.md in docs. Submit GREEN when no statement clearly contradicts the code or \

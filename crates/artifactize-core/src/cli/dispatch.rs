@@ -21,6 +21,16 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
     };
     let executor = matches!(cli.command, Some(Command::VerifyExecution { .. }));
     match cli.command {
+        Some(Command::Mcp) => {
+            let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
+            let runs = crate::runs::Context::new(
+                &repo,
+                context.state_dir.as_deref(),
+                &std::env::current_exe().map_err(|e| e.to_string())?,
+            )?;
+            crate::mcp::serve(runs).await?;
+            Ok(0)
+        }
         None => {
             Cli::command()
                 .write_help(&mut io::stdout().lock())

@@ -66,6 +66,10 @@ it does not run project tools or start a session. Saved evidence is available
 through `run_list`, `run_show`, `request_list`, `request_show`, `session_show` and
 `cache_show`; `doctor`, `models` and `remote_status` help inspect readiness.
 
+See the [MCP reference](../reference/mcp.md) for exact arguments and detail paging.
+Inspection tools return bounded UTF-8 fragments of their CLI JSON in `entries[].text`;
+append continuation pages until `next_cursor` is null, then parse JSON.
+
 MCP does not expose login/logout, Human claim/submit/release, prune/cache removal,
 remote push, TUIs, the store server, tool execution or session follow-ups. A person
 uses their normal review interface; an agent cannot approve through MCP.
@@ -158,6 +162,9 @@ at the bound is normal. `verify_status` reads saved state; `verify_result` reads
 terminal findings with an optional continuation cursor, or `ready:false` while
 active. Follow continuation pages for complete evidence. RED is a verdict, not a
 tool invocation error.
+
+This intermediate MCP build accepts both mode names but rejects `true` with a
+clear "not supported yet" error until the verify-modes integration lands.
 
 Two per-request choices default off: `speculate` can speed integration by starting
 downstream evals before upstream judgment, at the cost of work cancelled after

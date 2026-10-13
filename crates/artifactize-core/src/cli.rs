@@ -66,6 +66,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Serve bounded verification and inspection tools over MCP stdio.
+    Mcp,
     #[command(name = "__verify", hide = true)]
     VerifyWorker { run_id: RunId },
     #[command(name = "__execute", hide = true)]
@@ -476,7 +478,14 @@ pub fn run(screens: Screens) -> ExitCode {
         .take_while(|arg| *arg != "--")
         .filter_map(|arg| arg.to_str())
         .collect();
-    let json = options.contains(&"--json");
+    let json = options.contains(&"--json")
+        && !matches!(
+            &parsed,
+            Ok(Cli {
+                command: Some(Command::Mcp),
+                ..
+            })
+        );
     if let Some(name) = repeated_global(&options) {
         return failure(&format!("{name} cannot be used multiple times."), json);
     }

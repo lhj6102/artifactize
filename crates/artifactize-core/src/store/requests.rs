@@ -48,6 +48,22 @@ pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<Reques
     .await
 }
 
+pub async fn read_requests_in(
+    state: &Path,
+    run: Option<&str>,
+    repo: Option<&Path>,
+) -> Result<Vec<RequestView>, String> {
+    read(
+        state,
+        Filter {
+            run,
+            repo,
+            ..Filter::default()
+        },
+    )
+    .await
+}
+
 pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String> {
     read(
         state,

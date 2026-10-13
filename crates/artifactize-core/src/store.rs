@@ -40,8 +40,8 @@ pub use receipts::{
 };
 pub(crate) use requests::read_request_repo;
 pub use requests::{
-    RequestView, read_original, read_request, read_request_batch, read_requests, read_run_requests,
-    read_session_request, read_waiting, read_waiting_originals,
+    RequestView, read_original, read_request, read_request_batch, read_requests, read_requests_in,
+    read_run_requests, read_session_request, read_waiting, read_waiting_originals,
 };
 
 /// Let concurrent readers/writers finish short SQLite transactions without an

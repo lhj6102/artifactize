@@ -374,14 +374,16 @@ fn help_is_displayed_without_arguments() {
     assert!(text.contains("--repo <PATH>"));
     assert!(text.contains("--state-dir <PATH>"));
     assert!(text.contains("--json"));
-    for hidden in ["graph", "mcp"] {
-        assert!(
-            !text
-                .lines()
-                .any(|line| line.trim_start().starts_with(hidden)),
-            "{hidden} is hidden or removed: {text}"
-        );
-    }
+    assert!(
+        text.lines()
+            .any(|line| line.trim_start().starts_with("mcp"))
+    );
+    assert!(
+        !text
+            .lines()
+            .any(|line| line.trim_start().starts_with("graph")),
+        "graph is hidden or removed: {text}"
+    );
 }
 
 #[test]

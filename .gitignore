@@ -6,3 +6,7 @@
 .claude/worktrees/
 .claude/settings.local.json
 /website/demo/media/*.mp4
+
+# Manual hey-arti evidence is external, machine-local and never a source input.
+/harness/hey-arti/live-evidence.json
+/harness/hey-arti/__pycache__/

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use super::{cancellation_listener, print_json};
 use crate::{
-    human, query, store,
+    human, store,
     tools::human::Content,
     types::{RequestId, RunId},
 };
@@ -69,15 +69,10 @@ pub(super) async fn execute(
 ) -> Result<u8, String> {
     match command {
         RequestCommand::List { run } => {
-            let views = store::read_requests(state, run.as_deref()).await?;
             if json {
-                print_json(
-                    &views
-                        .iter()
-                        .map(|view| query::request_output(view, time::OffsetDateTime::now_utc()))
-                        .collect::<Vec<_>>(),
-                )?;
+                print_json(&crate::inspect::request_list(state, run.as_ref(), None).await?)?;
             } else {
+                let views = store::read_requests(state, run.as_deref()).await?;
                 let mut out = io::stdout().lock();
                 writeln!(out, "REQUEST\tRUN\tEVAL\tSTATUS\tREVIEWER").map_err(|e| e.to_string())?;
                 for view in views {
@@ -97,10 +92,7 @@ pub(super) async fn execute(
             }
         }
         RequestCommand::Show { id } => {
-            print_json(&query::request_output(
-                &store::read_request(state, &id).await?,
-                time::OffsetDateTime::now_utc(),
-            ))?;
+            print_json(&crate::inspect::request_show(state, &id).await?)?;
         }
         RequestCommand::Claim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
@@ -156,10 +148,7 @@ pub(super) async fn execute(
                 human::submit_and_publish(state, &id, &reviewer, &result, cancellation).await;
             listener.abort();
             result?;
-            print_json(&query::request_output(
-                &store::read_request(state, &id).await?,
-                time::OffsetDateTime::now_utc(),
-            ))?;
+            print_json(&crate::inspect::request_show(state, &id).await?)?;
         }
     }
     Ok(0)
