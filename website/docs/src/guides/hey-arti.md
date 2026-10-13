@@ -16,8 +16,8 @@ not introduce discretionary sign-offs or mark unfinished work as `basis`.
 
 ## Register the MCP server
 
-Install an artifactize version with `artifactize mcp`, make its binary available
-on the host's PATH, and launch the coding host from **your project directory**.
+Complete the [installation setup](../getting-started/install.md), then launch
+the coding host from **your project directory**.
 The stdio server uses the same binary and shared state as the CLI. It binds to one
 repository/state when started; it is not the HTTP review store (`artifactize
 server`), and requires no port, token argument or changed host timeout.

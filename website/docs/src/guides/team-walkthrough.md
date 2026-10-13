@@ -24,8 +24,9 @@ artifactize --state-dir "$WALK/server" server token add ci --scopes read
 artifactize --state-dir "$WALK/server" server run      # Listening on http://127.0.0.1:8417/
 ```
 
-Leave `server run` in its own terminal. A real deployment puts a TLS proxy or
-tunnel in front, because clients accept plain HTTP only on loopback.
+Leave `server run` in its own terminal. This walkthrough connects only programs
+on the same computer. For separate computers, first follow the
+[secure connection setup](team-review-store.md#connect-teammates-securely).
 
 ## 2. Alice reviews first
 
