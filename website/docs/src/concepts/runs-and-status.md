@@ -38,10 +38,11 @@ have no internal gates. `--ignore-gates` bypasses execution gates only: final va
 still requires actual GREEN evidence or explicit `basis = true` throughout the required
 scope. A basis never waives its dependencies. Selected GREEN results with missing
 obligations remain recorded in an INCOMPLETE Run; both text and JSON output identify
-unmet obligations. Human evals record WAITING_HUMAN requests, and `verify` waits
-for their results as it waits for runtime and Agent evals: when a submission
-arrives, evals that depend on it run in the same Run. There is no Human wait deadline
-or `verify --timeout-ms`; all eval kinds share the same settlement wait rule.
+unmet obligations. Human evals record WAITING_HUMAN requests, and the artifactize-owned
+Run waits for their results as for runtime and Agent evals: when a submission
+arrives, evals that depend on it run in the same Run. Plain `verify` submits and
+returns; `verify --wait` follows that Run in the foreground. There is no Human wait
+deadline or `verify --timeout-ms`; all eval kinds share the same settlement wait rule.
 `--reuse-only KINDS` (for example `agent,human` in CI)
 lets evals of the listed kinds only reuse a result; one with nothing to reuse is not
 executed and leaves the Run INCOMPLETE ([CLI](../reference/cli.md#reuse-only)).

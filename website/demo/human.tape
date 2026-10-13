@@ -1,6 +1,7 @@
-# Embedded Human review: verify waits by default; in the monitor, Enter drills from the Run to
-# the eval and opens its Detail pane, c claims the request, Tab reaches the tools, the notes tool
-# runs, g opens the GREEN schema form and Ctrl-S submits. Record with website/demo/record.sh
+# Embedded Human review: verify submits and returns; the artifactize-owned Run waits for
+# the sign-off. verify --wait follows it in the foreground. In the monitor, Enter drills
+# from the Run to the eval and opens its Detail pane, c claims the request, Tab reaches
+# the tools, the notes tool runs, g opens the GREEN schema form and Ctrl-S submits. Record with website/demo/record.sh
 # (from the repository root). 14 px keeps the monitor above 100 columns, so the tree stays
 # beside the focused pane.
 Output website/demo/media/human.gif

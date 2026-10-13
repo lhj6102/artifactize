@@ -149,10 +149,11 @@ TOML
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 
-Alice's `verify` records the request and waits for it. In a second terminal, in
-the same directory and with the same `ARTIFACTIZE_STATE_HOME`, she claims it and
+Alice's `verify --wait` submits a Run, which records the request, and follows it in
+the foreground. In a second terminal, in the same directory and with the same
+`ARTIFACTIZE_STATE_HOME`, she claims it and
 signs off. Her token has the `human` scope, so `request submit` publishes the
-sign-off, and her `verify` finishes GREEN:
+sign-off, and her `verify --wait` finishes GREEN:
 
 ```sh
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
@@ -172,8 +173,9 @@ reviewer and the authenticated publisher:
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 1 (runtime 0, agent 0, human 1)
 ```
 
-Had Bob run `verify --all --wait` first, his `verify` would have waited, and his request
-would settle as soon as Alice's sign-off reached the store. Bob's own token lacks `human`, so a
-sign-off he submits stays local, with a warning.
+Had Bob run `verify --all --wait` first, his `verify --wait` would have followed the
+waiting Run, and his request would settle as soon as Alice's sign-off reached the
+store. Bob's own token lacks `human`, so a sign-off he submits stays local, with a
+warning.
 
 To clean up, stop the server and `rm -rf "$WALK"`.

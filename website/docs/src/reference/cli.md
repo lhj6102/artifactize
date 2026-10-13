@@ -172,8 +172,8 @@ leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
 error. There are no reservations, refunds, admission pools or restart ledger.
 
-`verify` waits for Human results as it waits for runtime and Agent evals: while a
-Human request of the Run waits, the Run stays RUNNING, and a submission resumes the
+The artifactize-owned Run waits for Human results as for runtime and Agent evals:
+while a Human request waits, the Run stays RUNNING, and a submission resumes the
 evals that depend on it in the same Run
 ([Human reviews](../guides/human-reviews.md)). There is no Human wait timeout:
 plain verify submits, and `--wait` observes until the Run ends. An observer's

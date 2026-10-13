@@ -193,8 +193,9 @@ such as `Waiting for a free codex slot: all 4 are in use on this machine
 it holds no `--jobs` slot and consumes no `--max-executions` start, so runtime
 evals, Human requests and other backends keep running. Once it has its slot it
 occupies a job slot like any running eval, so a process runs at most
-`min(--jobs, free slots)` reviews of a limited backend. Cancelling a `verify` ends
-its waiting requests as CANCELLED, and its held slots are released.
+`min(--jobs, free slots)` reviews of a limited backend. Explicit `run cancel RUN_ID` ends
+its waiting requests as CANCELLED, and its held slots are released. Interrupting
+`verify --wait` only stops observation; it does not cancel the Run.
 
 Tool-session directories live under `$STATE/tool-sessions/`, separately from saved
 conversations. They retain admission records for start, stop and bound invocation

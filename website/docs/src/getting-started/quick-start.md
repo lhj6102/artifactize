@@ -89,9 +89,10 @@ review` does the same in a terminal UI: it lists waiting requests and previews t
 instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
 Enter (or a click) runs one at once. `g`/`r` opens the GREEN/RED fields; Ctrl-S
 submits. Esc stops editing before returning to the list, keeping the draft.
-`verify` waits for Human results like any other, so dependents continue in the
-same Run; once the sign-off arrives it exits 4 here, because
-`spec/review` has no result yet.
+The artifactize-owned Run waits for Human results like any other, so dependents
+continue in the same Run. Plain `verify` submits and returns; `verify --wait`
+follows the Run in the foreground and exits 4 here once the sign-off arrives,
+because `spec/review` has no result yet.
 
 For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
 then run `artifactize verify --eval spec/review`, adding `--profile anthropic` or `--profile codex` for the other backends. Without

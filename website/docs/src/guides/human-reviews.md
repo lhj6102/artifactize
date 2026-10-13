@@ -14,7 +14,7 @@ requests alive. A waiting keyed execution retains its exclusive claim; forced wa
 Cross-repository followers refer to the claiming
 execution and forward Human actions to its original request and repository.
 
-A submission that arrives while `verify` waits runs the Human eval's dependents in
+A submission that arrives while the Run waits runs the Human eval's dependents in
 the same Run. Human sign-offs reuse by default: artifactsum supplies the target and
 dependency fingerprints. A later `verify` reuses the submitted result and runs its
 dependents. **`fingerprint = false` means no reuse** when declared by the target or any
@@ -54,8 +54,8 @@ at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
 leave the request correctable. A successful submission exits 0, even for RED;
 it does not start a separate verifier.
 
-While Human requests wait, local state-change notifications wake `verify`, which
-reconciles saved states and resumes newly READY dependents in the **same Run**,
+While Human requests wait, local state-change notifications wake the owned worker,
+which reconciles saved states and resumes newly READY dependents in the **same Run**,
 retaining its execution budget and earlier results. While waiting the Run remains
 RUNNING. There is no Human timeout. The artifactize-owned worker continues dependents
 after submission, even if the submitting terminal or observer has exited. Ctrl-C/SIGTERM
@@ -467,8 +467,8 @@ falls back to five-second authoritative reconciliation, without an insecure
 transport fallback. A persistent read-only SQLite `data_version` connection and
 file-identity probe detect missed commits and database replacement. Clocks and
 busy spinners redraw cached data instead of reloading the database on each tick.
-`verify` separately reconciles dead execution owners/backend slots and optional
-remote results, retaining its existing absolute Human deadline. Session invalidation
+The artifactize-owned worker separately reconciles dead execution owners/backend
+slots and optional remote results, without a Human wait deadline. Session invalidation
 hints wake only the selected session reader, without a full database query; a
 five-second file probe also detects missed appends and removal. Rendering performs
 no file I/O, and terminal input takes priority over append/index bursts. This does
