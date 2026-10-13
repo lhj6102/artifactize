@@ -17,11 +17,23 @@ as soon as they build.
 
 - Linux (x86_64 or aarch64), macOS (Apple silicon or Intel) or Windows (x64). WSL 2
   runs the Linux build.
-- `python3` and `grep` on `PATH` for the example projects. Projects run their declared
+- The example projects use `python3` to run Python checks and `grep` to search text.
+  Both commands must be available in your terminal. Projects run their declared
   commands as given on every OS; see [Operating systems](../reference/platforms.md).
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime, Human and dependency evals
   need none.
+
+`PATH` is the list of directories your terminal searches for commands. Before
+starting the examples, check that it can find their required tools:
+
+```sh
+python3 --version
+grep --help
+```
+
+These should print a Python version and grep's help. If either command is not
+found, install that tool or add its directory to `PATH` before continuing.
 
 Only `cargo install` needs a Rust toolchain: Rust 1.95 or later, from
 [rustup](https://rustup.rs), and a C compiler (SQLite is built from source).

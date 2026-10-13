@@ -128,7 +128,7 @@ on it names the machine and state where the conversation lives. Once the local s
 records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
 its summary record, or the full record with share `full`, outside any database
 transaction. Records carry the key, the Eval definition hash, the fingerprint of
-each Artifact the key covers, its `artifactKinds` map (`folder`/`file`), and the
+each Artifact the key covers, its `artifactKinds` map (`folder`/`file`/`graph`), and the
 execution `options` (backend, model,
 reasoning, limits and profile variant) and an Agent result's `executionPaths` pins. `request submit` publishes Human sign-offs.
 A token without `read` looks nothing up and one without `publish` publishes nothing,
@@ -158,8 +158,12 @@ Connection errors, request timeouts and 5xx answers fail open: one warning, then
 process continues without the remote, reusing the local latest record of each key and
 reviewing locally what has none. 401/403, TLS failures, other error answers, invalid
 configuration, and a successful answer whose body cannot be read or decoded (a body
-timeout included) fail closed (exit 2). A 401/403 gets artifactize's own message that
+timeout included) fail closed. A 401/403 gets artifactize's own message that
 the store rejected the token; another 4xx answer carries the store's own error message
-when it sends one. A lookup that fails before the Run
-starts leaves no Run; a later failure records the Run as ERROR. A record that does
-not validate is ignored with a warning, and its eval is reviewed locally.
+when it sends one. Verification looks up remote evidence after durably accepting
+the Run: a failed lookup leaves an ERROR Run, not a missing Run. Submit-only
+`verify` exits 0 on acceptance; `verify --wait` observes that ERROR and exits 2.
+Invalid configuration can still reject submission before acceptance. Synchronous
+commands such as `status` report a fail-closed lookup with exit 2 directly.
+A record that does not validate is ignored with a warning, and its eval is
+reviewed locally.

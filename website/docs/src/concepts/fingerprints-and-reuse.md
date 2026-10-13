@@ -119,7 +119,7 @@ JSON/state field names, not snake_case declaration keys:
 - `producer` (`user@host` and artifactize version), the Human `reviewer`, and for
   a remote record its `origin` with the publisher;
 - `completedAt`, `fingerprints` (each Artifact the key covers), `artifactKinds`
-  (the same names mapped to `folder` or `file`) and `key`. The kind map is an
+  (the same names mapped to `folder`, `file` or `graph`) and `key`. The kind map is an
   additive execution/team-store field, not a declaration option.
 
 Before accepting reuse, artifactize validates admitted file targets again:

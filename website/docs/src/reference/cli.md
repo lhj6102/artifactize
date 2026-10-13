@@ -290,7 +290,7 @@ Human requirements produce WAIT_DEPENDENCY; fulfilled requirements produce GREEN
 rows from the Run's saved evidence and current request states; Detail's `Waits for`
 section lists the upstream Artifacts and their completion state (`w` shows pending evals).
 Tags appear on Artifact entries in text/JSON graph and status, and in the monitor.
-JSON graph/status and saved definitions also carry `kind` (`file` or `folder`)
+JSON graph/status and saved definitions also carry `kind` (`file`, `folder` or `graph`)
 and the workspace-relative target `path`. Text graph/status mark file Artifacts
 and show their paths; the monitor shows `[file]` in the tree and the path in Detail.
 

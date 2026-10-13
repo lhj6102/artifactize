@@ -119,7 +119,7 @@ fingerprint and the profile variant). `--history` lists every record, latest fir
 within each key. `show` prints the key's latest saved execution as JSON, with
 result, actual `profile`, `options` (backend, model, reasoning, limits and
 variant), `fingerprints` (each Artifact the key covers), additive `artifactKinds`
-(the covered names mapped to `folder`/`file`), provenance, usage and
+(the covered names mapped to `folder`/`file`/`graph`), provenance, usage and
 `producer` (`user@host` and artifactize version; submitted Human results also
 record their `reviewer`); a missing key prints `null` and exits 4. `show
 --history` prints all of the key's records as a JSON array, latest first. Entries
@@ -267,6 +267,54 @@ saved and the others have none. The request's verdict, result and usage stay in
 `state.sqlite`; the session is the only record of the conversation and its tool calls,
 and [`session show --summary`](../guides/agent-evals.md#session-summary) counts them.
 A last line cut short by a crash is ignored when the file is read.
+
+### Transcript reader
+
+Monitor Detail displays readable message text, public reasoning summaries and
+collapsed tool activity, not raw message envelopes or private reasoning payloads.
+Streaming updates replace their provisional text with final content; interrupted
+partial output is labeled. Public OpenAI/Codex summaries are read from streaming
+frames without changing the bytes passed to rig, the provider client library.
+Display-only events never enter replayed model history.
+
+The reader follows new messages until you scroll away. Resize preserves the
+reading position while paused and stays at the bottom while following. Tool
+activity expands to names, targets and recorded states, not full tool arguments
+or successful output. `session show --json` exports the complete saved events.
+Missing local sessions, never-saved conversations and remote references are
+reported separately; a remote reference cannot open arbitrary local files.
+
+History is indexed incrementally into private temporary text and row files, with
+only the visible pages loaded. There is no fixed first-2-MiB history cutoff.
+One complete event needs memory proportional to its size while being decoded;
+other history and layout work yields between bounded chunks. Complete malformed
+events report errors, while partial lines and incomplete UTF-8 wait for the next
+append. Replacement, truncation or deletion resets the reader; closing or resetting
+it removes its temporary files. Later `session send` events remain readable after
+the original review ends.
+
+### Local readers
+
+Monitor and Review use read-only state queries and cached Git discovery, rather
+than rediscovering declarations or fingerprints on every refresh. Local readers
+share a temporary hub inside the first subscriber process: an owner-only Unix
+socket or Windows named pipe, not a permanent daemon. Registration is acknowledged
+before the initial snapshot. Readers reconnect and resync after hub exit or a
+bounded hint-queue overflow; writers never elect a hub.
+
+If IPC is unsafe or unavailable, five-second authoritative reconciliation replaces
+it without an insecure transport fallback. A persistent read-only SQLite
+`data_version` connection and file-identity probe detect missed commits and database
+replacement. Clocks and spinners redraw cached data. Session hints wake only the
+selected transcript reader; a five-second file probe also catches missed appends
+or removal. Rendering does no file I/O, and input takes priority over history work.
+This is local coordination, not remote team-store push delivery.
+
+The Run worker separately reconciles dead execution owners and backend slots and
+optional remote results, without a Human wait deadline. Explicit Human actions use
+the shared atomic claim, fingerprint recheck, schema validation and
+`submit_and_publish` APIs. Followers resolve to their original request. Publication
+failure after local settlement preserves and shows that settlement.
 
 ## Local diagnostics and maintenance
 

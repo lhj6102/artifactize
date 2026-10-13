@@ -441,43 +441,16 @@ between sections and evidence; ↑/↓ and PgUp/PgDn scroll the focused area.
 
 Detail depends on the eval kind:
 
-- **Agent:** a live transcript in Detail, including RUNNING reviews and the original
-  local session behind reused evidence. Its title keeps one line of outcome:
-  state, elapsed time, profile and dependencies. Summary/result sections are opt-in
-  with `d` or Details; `d`/Esc returns to the transcript. Provider-normalized text and public
-  reasoning summaries update the active block before the turn finishes, coalesced
-  about every 100 ms. Public summaries appear under a subdued Thinking label only
-  when the provider/model supplies them; their absence is not simulated. Encrypted,
-  redacted and raw reasoning payloads never enter this view. OpenAI/Codex public
-  summary SSE frames are observed without changing bytes delivered to rig, since
-  rig's generic reasoning delta does not distinguish public summaries from raw
-  reasoning. Typed completed summaries are the safe fallback. Display-only delivery
-  events are not fed back into model history; final content replaces provisional
-  content instead of duplicating it, and interrupted partial output is labeled.
-  The initial view follows the bottom. ↑/PgUp or the wheel pauses at the
-  reading position; ↓/PgDn back to the bottom resumes following. Home/End and the
-  Top/Bottom buttons jump through the full history. The bottom border shows the row
-  position, bottom/history and following/paused state. Resize preserves the logical
-  reading anchor while paused and stays at the bottom while following. F2 disables
-  mouse capture without changing keyboard scrolling or paste. The transcript shows
-  actual message text with readable Markdown headings/code indentation, not serialized
-  message envelopes. Consecutive tools share a collapsed activity line; click it or
-  press Enter/Space for the first visible group to expand only names, targets and
-  recorded states. Prose separates groups. Running targets and short failure reasons
-  remain visible; explicitly expanded groups stay open across updates and resize.
-  Successful tool output, detailed arguments, private reasoning and media payloads stay out
-  of this view. Final verdicts and meaningful errors appear as text. `session show
-  --json` remains the explicit lossless view of the saved record.
-  Missing recorded local sessions explain session GC; never-saved and remote
-  conversations are distinguished, and remote references never open arbitrary local
-  paths. Replacement, truncation and deletion reset the selected document. Complete
-  malformed events show an error; partial newline/UTF-8 tails wait for the next append.
-  History is indexed incrementally with private ephemeral formatted-text/row files
-  and visible-window page-in, not a permanent first-2-MiB cutoff. One complete typed
-  event temporarily needs memory proportional to that event when decoded once;
-  large history/layout jobs otherwise yield between bounded chunks. Temporary files
-  are removed when the selected reader closes or resets. Later `session send` events
-  remain visible after the review's end event.
+- **Agent:** a live conversation, including a running review or the original local
+  conversation behind reused evidence. ↑/PgUp pauses following so you can read;
+  End returns to the latest messages. Expand a tool group to see its names,
+  targets and recorded states. `d` opens the saved result and other details;
+  `d` or Esc returns to the conversation. Only public reasoning summaries appear,
+  when the provider supplies them; private reasoning stays hidden. Missing or
+  remote conversations explain why they cannot be shown here. Use `session show
+  --json` for the complete saved record. See the
+  [transcript reader reference](../reference/state-cache-limits.md#transcript-reader)
+  for storage, streaming and history behavior.
 - **Runtime:** saved stdout/stderr, exit code and capture truncation beside the
   sections, or below them in a Detail narrower than 90 columns. Running,
   timeout/cancellation and remote summary-only results show logs as unavailable;
@@ -493,25 +466,10 @@ Detail depends on the eval kind:
   Monitor never opens `$EDITOR`. Outside editing or work, `q` quits,
   `?` shows monitor help and `!` opens the next attention item.
 
-Browsing uses read-only state queries and cached Git discovery, not configuration
-rediscovery or fingerprints on each refresh. Local monitor/review readers share a
-temporary hub hosted inside the first subscriber process (no permanent daemon),
-using an owner-only Unix socket or Windows named pipe. Registration is acknowledged
-before the initial snapshot. Readers reconnect and resync if the hub exits or
-bounded hint queues overflow; writers never elect a hub. Unsafe or unavailable IPC
-falls back to five-second authoritative reconciliation, without an insecure
-transport fallback. A persistent read-only SQLite `data_version` connection and
-file-identity probe detect missed commits and database replacement. Clocks and
-busy spinners redraw cached data instead of reloading the database on each tick.
-The artifactize-owned worker separately reconciles dead execution owners/backend
-slots and optional remote results, without a Human wait deadline. Session invalidation
-hints wake only the selected session reader, without a full database query; a
-five-second file probe also detects missed appends and removal. Rendering performs
-no file I/O, and terminal input takes priority over append/index bursts. This does
-not add remote team-store push events. Only explicit Human actions write or
-run owner tools, through the same atomic claim, fingerprint recheck, schema
-validation and `submit_and_publish` APIs as `review`. Followers resolve to their
-original request. If remote publishing fails after local settlement, Detail
-shows the completed local result and the publication failure instead of offering
-another submission. Leaving Human Detail keeps its claim; Release relinquishes
-it. Terminal modes, cursor, mouse capture and paste are restored on exit.
+Browsing is read-only. Only explicit Human actions claim work, run tools or submit
+results. Leaving Human Detail keeps its claim; Release gives it back. If publishing
+to the team store fails after submission, Detail shows the completed local result
+and the publication failure rather than asking you to submit again. Terminal
+settings are restored on exit. See the
+[local reader reference](../reference/state-cache-limits.md#local-readers) for
+subscription and recovery behavior.

@@ -206,8 +206,8 @@ filename is allowed. `fingerprint = {}` and `files = ["."]` are rejected, as is
 `fingerprint = false` remain available.
 
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
-its containing folder. Scope entries carry `kind = "file"` or `"folder"`.
-`execution_paths` stay workspace-relative provenance pins for both kinds.
+its containing folder. Scope entries carry `kind = "file"`, `"folder"` or `"graph"`.
+`execution_paths` stay workspace-relative provenance pins for all three kinds.
 
 The target must remain an existing regular file with no symlink traversal, not
 just at discovery. It is validated at fingerprint preparation/recheck, before
@@ -340,7 +340,7 @@ Every executable eval on an Artifact receives the same literal value, saved on
 its request and in the Run's Artifact validation. artifactize adds no repository,
 eval, profile, tool-view, dependency or content salt to script output. The eval's
 [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key) combines it with the
-Artifact names and kinds (`folder`/`file`), dependency fingerprints and Eval
+Artifact names and kinds (`folder`/`file`/`graph`), dependency fingerprints and Eval
 definition hash. Physical paths never enter the reuse key. Artifactsum
 failures abort preparation in the same way.
 

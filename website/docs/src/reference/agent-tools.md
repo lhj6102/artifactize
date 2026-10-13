@@ -86,7 +86,7 @@ The `json` protocol receives exactly one request on stdin:
 }
 ```
 
-Scope entries contain canonical physical paths, `kind` (`file` or `folder`) and
+Scope entries contain canonical physical paths, `kind` (`file`, `folder` or `graph`) and
 logical child/mount maps. For a file Artifact, `context.artifactPath` and its
 scope entry's `path` name the file, not the process cwd; the cwd is its containing
 folder. File Artifact references reject `/path` suffixes.

@@ -258,7 +258,7 @@ including cycle peers. Text lists Artifacts with tags and file-kind markers, eva
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
 child/mount/instruction/argv/dependency relation metadata, cycle markers and
-dependency-first SCCs. Artifact entries carry `kind` (`file` or `folder`) and
+dependency-first SCCs. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
 workspace-relative target `path`. Status also shows file kinds/paths; the monitor
 uses `[file]` on tree rows and keeps the target path in Detail.
 Component IDs refer to the full graph and may be
