@@ -442,15 +442,10 @@ mod tests {
     /// inside it. A process cannot leave a job, so the probe runs in a test process of its own.
     #[test]
     fn a_detached_launch_inside_a_job_without_breakaway_still_starts() {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "platform::windows::process::tests::detached_launch_probe",
-                "--nocapture",
-            ])
-            .env("ARTIFACTIZE_DETACHED_PROBE", "1")
-            .output()
-            .unwrap();
+        let output = crate::test_os::run_test(
+            "platform::windows::process::tests::detached_launch_probe",
+            &[("ARTIFACTIZE_DETACHED_PROBE", "1".into())],
+        );
         assert!(output.status.success(), "{output:?}");
         assert!(
             String::from_utf8_lossy(&output.stdout).contains("1 passed"),

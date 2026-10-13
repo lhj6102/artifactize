@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use super::{
-    NodeId,
+    NodeId, Target,
     states::{Activity, Busy, Completion, EvalView, NotRun},
     tree::{Kind, Node},
 };
@@ -125,9 +125,10 @@ pub fn graph(tree: &[Node]) -> Graph {
     let artifacts: Vec<(ArtifactName, &Node, Completion)> = tree
         .iter()
         .filter_map(|node| match node.kind {
-            Kind::Artifact { completion, .. } => {
-                node.name.parse().ok().map(|name| (name, node, completion))
-            }
+            Kind::Artifact { completion, .. } => match Target::from(&node.id) {
+                Target::Artifact(name) => Some((name, node, completion)),
+                _ => None,
+            },
             Kind::Eval(_) => None,
         })
         .collect();
