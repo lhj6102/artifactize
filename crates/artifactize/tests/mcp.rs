@@ -194,6 +194,17 @@ fn runtime(id: &str, command: impl AsRef<str>, args: Value) -> Value {
 #[tokio::test]
 async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     let project = Project::new(json!([]));
+    let malformed = project
+        .command()
+        .args(["--json", "mcp", "--unknown"])
+        .output()
+        .unwrap();
+    assert!(!malformed.status.success());
+    assert!(
+        malformed.stdout.is_empty(),
+        "startup diagnostics are not protocol messages"
+    );
+    assert!(String::from_utf8_lossy(&malformed.stderr).contains("unexpected argument"));
     let script = project._root.path().join("controlled.py");
     support::os::write_python_script(
         &script,

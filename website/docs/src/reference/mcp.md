@@ -95,7 +95,8 @@ the structured answer and legacy text mirror. The entry is a UTF-8 fragment of t
 ```
 
 Concatenate `entries[].text` in order until `next_cursor` is null, then parse the
-joined text as JSON. Reinvoke the **same tool with the same arguments**, adding
+joined text as JSON. Serialization is compact; CLI pretty-print whitespace is
+not preserved. Reinvoke the **same tool with the same arguments**, adding
 `cursor` from the previous page. Offsets are UTF-8 byte offsets. `run_list.offset`
 selects the next group of Run records; it is distinct from the cursor continuing
 one group's JSON. `verify_result` instead pages its structured `findings` array.

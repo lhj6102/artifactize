@@ -1,5 +1,5 @@
 //! Repository-bound inspection and lossless detail paging, with no CLI duplication.
-use super::{encode, input::*, page, parse};
+use super::{RUN_LIST_LIMIT, encode, input::*, page, parse};
 use crate::{project::VerifyOptions, runs};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -49,8 +49,8 @@ pub(super) async fn inspect(
         }
         "run_list" => {
             let args: Runs = parse(arguments)?;
-            let limit = args.limit.unwrap_or(20);
-            if limit > 20 {
+            let limit = args.limit.unwrap_or(RUN_LIST_LIMIT);
+            if limit > RUN_LIST_LIMIT {
                 return Err("limit must be at most 20; use offset for older Runs.".into());
             }
             encode(

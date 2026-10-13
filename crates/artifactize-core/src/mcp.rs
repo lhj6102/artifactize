@@ -15,6 +15,8 @@ use tokio_util::sync::CancellationToken;
 /// Leave room under the host's 45-second deadline for transport serialization.
 const MAX_WAIT_SECONDS: u64 = 40;
 const DEFAULT_WAIT_SECONDS: u64 = 30;
+/// Limit each Run-list query to the agreed maximum record group; offset selects older groups.
+const RUN_LIST_LIMIT: u32 = 20;
 /// Includes a zero-bound initial read and failure recovery; no call reaches 45 s.
 const WAIT_CALL_LIMIT: Duration = Duration::from_secs(44);
 /// Both the structured answer and legacy mirror count toward the public response cap.

@@ -1,4 +1,5 @@
 //! The complete public tool surface; deliberately no credential or Human actions.
+use super::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, RUN_LIST_LIMIT};
 use rmcp::model::Tool;
 use serde_json::{Value, json};
 
@@ -29,7 +30,7 @@ pub(super) fn tools() -> Vec<Tool> {
         tool(
             "verify_wait",
             "Observe Run end or bound, equally for all eval kinds. Disconnect/cancellation only drops this observer.",
-            json!({"run":string,"seconds":{"type":"integer","minimum":0,"maximum":40,"default":30}}),
+            json!({"run":string,"seconds":{"type":"integer","minimum":0,"maximum":MAX_WAIT_SECONDS,"default":DEFAULT_WAIT_SECONDS}}),
             &["run"],
             false,
         ),
@@ -64,7 +65,7 @@ pub(super) fn tools() -> Vec<Tool> {
         tool(
             "run_list",
             "List this repository's saved Runs, newest first. limit <=20; offset selects older records.",
-            json!({"limit":{"type":"integer","minimum":0,"maximum":20,"default":20},"offset":{"type":"integer","minimum":0}}),
+            json!({"limit":{"type":"integer","minimum":0,"maximum":RUN_LIST_LIMIT,"default":RUN_LIST_LIMIT},"offset":{"type":"integer","minimum":0}}),
             &[],
             true,
         ),
