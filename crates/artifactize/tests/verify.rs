@@ -737,76 +737,49 @@ fn force_neither_expands_selection_nor_bypasses_gates() {
 }
 
 #[test]
-fn ignore_gates_saves_actual_verdicts_but_never_waives_final_obligations() {
+fn speculation_keeps_actual_verdicts_without_waiving_final_obligations() {
     let fixture = Fixture::runtime_fixture();
-    let individual = fixture.verify(&["blocked", "--ignore-gates"], 4);
-    assert_eq!(individual["ignoreGates"], true);
+    let individual = fixture.verify(&["blocked", "--speculate"], 4);
+    assert!(individual.get("ignoreGates").is_none());
     assert_eq!(request(&individual, "blocked/check")["status"], "GREEN");
-    assert_eq!(individual["validation"]["obligations"], json!(["red"]));
     assert_eq!(individual["validation"]["satisfied"], false);
-    assert_eq!(individual["validation"]["evals"][0]["status"], "GREEN");
-    let recursive = fixture.verify(&["blocked", "--recursive", "--ignore-gates"], 1);
-    assert_eq!(request(&recursive, "blocked/check")["status"], "GREEN");
+    assert!(
+        individual["validation"]["obligations"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("red"))
+    );
+    let recursive = fixture.verify(&["blocked", "--recursive", "--speculate"], 1);
+    assert_eq!(request(&recursive, "blocked/check")["status"], "BLOCKED");
     assert_eq!(request(&recursive, "red/check")["status"], "RED");
-    assert_eq!(recursive["validation"]["obligations"], json!(["red"]));
-
-    let path = fixture.repo.join("blocked/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
-    declaration["evals"][0]["profile"] =
-        json!({"kind":"runtime","command":"/missing-command","args":[]});
-    support::declaration::write(path, declaration.to_string()).unwrap();
-    let failed = fixture.verify(&["blocked", "--ignore-gates"], 2);
-    assert_eq!(request(&failed, "blocked/check")["status"], "ERROR");
-    assert_eq!(failed["status"], "ERROR");
-    assert_eq!(failed["validation"]["evals"][0]["status"], "ERROR");
 }
 
-#[tokio::test]
-async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
-    use artifactize_core::{
-        project::{VerifyOptions, selection::Selection, verify},
-        store::read_run,
-    };
-    use tokio_util::sync::CancellationToken;
-
+#[test]
+fn removed_gate_bypass_is_rejected_in_declarations_verify_and_status() {
     let fixture = Fixture::runtime_fixture();
-    support::declaration::write(
-        fixture.repo.join("index.artf"),
-        r#"{"name":"root","basis":true,"review_policy":{"dependency_gates":"ignore"}}"#,
-    )
-    .unwrap();
-    let inherited = fixture.verify(&["blocked"], 4);
-    assert_eq!(inherited["ignoreGates"], true);
-    assert_eq!(request(&inherited, "blocked/check")["status"], "GREEN");
-    assert_eq!(inherited["validation"]["obligations"], json!(["red"]));
-
-    let enforced = verify(
-        &fixture.repo,
-        Some(&fixture.state),
-        &Selection::Artifact {
-            artifact_id: "blocked".parse().unwrap(),
-        },
-        &VerifyOptions {
-            ignore_gates: Some(false),
-            ..Default::default()
-        },
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert!(!enforced.run.ignore_gates);
-    assert_eq!(enforced.run.status().as_str(), "INCOMPLETE");
-    assert_eq!(enforced.requests[0].status().as_str(), "WAIT_DEPENDENCY");
-    let saved = read_run(&fixture.state, &enforced.run.id).await.unwrap();
-    assert!(!saved.run.ignore_gates);
-
-    support::declaration::write(
-        fixture.repo.join("index.artf"),
-        r#"{"name":"root","basis":true,"review_policy":{"dependency_gates":"green"}}"#,
-    )
-    .unwrap();
-    let override_green = fixture.verify(&["blocked", "--ignore-gates"], 4);
-    assert_eq!(request(&override_green, "blocked/check")["status"], "GREEN");
+    for args in [
+        ["verify", "--all", "--ignore-gates"],
+        ["status", "--all", "--ignore-gates"],
+    ] {
+        let output = fixture.command().args(args).output().unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("--ignore-gates"));
+    }
+    for policy in ["green", "ignore"] {
+        support::declaration::write(
+            fixture.repo.join("index.artf"),
+            json!({"name":"root","basis":true,"review_policy":{"dependency_gates":policy}})
+                .to_string(),
+        )
+        .unwrap();
+        let output = fixture
+            .command()
+            .args(["config", "check"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field `review_policy`"));
+    }
 }
 
 #[test]
@@ -819,7 +792,7 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     let individual = fixture.verify(&["test"], 4);
     assert_eq!(individual["validation"]["obligations"], json!(["input"]));
     assert_eq!(individual["requests"][0]["status"], "GREEN");
-    let recursive = fixture.verify(&["test", "--recursive", "--ignore-gates"], 4);
+    let recursive = fixture.verify(&["test", "--recursive"], 4);
     assert_eq!(recursive["validation"]["obligations"], json!(["input"]));
     let text = fixture
         .command()

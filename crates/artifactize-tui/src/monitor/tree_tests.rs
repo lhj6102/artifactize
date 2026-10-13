@@ -595,7 +595,7 @@ fn artifact_rows_roll_up_current_eval_rows_and_mark_changes_after_the_run() {
 }
 
 #[test]
-fn ignored_gates_and_saved_blocked_requests() {
+fn speculative_readiness_and_saved_blocked_requests() {
     let definitions = definitions(
         &[(&["code-style"], &[]), (&["cli"], &[0])],
         vec![runtime("code-style/approved"), runtime("cli/follows-style")],
@@ -605,7 +605,7 @@ fn ignored_gates_and_saved_blocked_requests() {
         request("cli/follows-style", "QUEUED", json!({})),
     ];
     let (mut run, requests) = saved(definitions.clone(), true, requests);
-    run.run.ignore_gates = true;
+    run.run.modes.speculate = true;
     let nodes = tree(&run, &requests, now());
     assert_eq!(
         view(&nodes, "cli/follows-style"),
@@ -1095,8 +1095,8 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
         "⊘ matches-cli  not run: blocked by cli ⊘ blocked"
     );
     assert!(!find(&nodes, "a:docs").changed);
-    // A dependency eval on the held Artifact is blocked too; with gates ignored, the
-    // ordinary downstream counts the GREEN as its own evidence.
+    // A dependency eval on the held Artifact is blocked too: speculation never
+    // waives a known RED dependency.
     let definitions = definitions(
         &[(&["code-style"], &[]), (&["cli"], &[0]), (&["docs"], &[1])],
         vec![
@@ -1122,21 +1122,15 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
         view(&nodes, "docs/ready"),
         &EvalView::BlockedBy(x(&["cli"]))
     );
-    run.run.ignore_gates = true;
+    run.run.modes.speculate = true;
     let nodes = tree(&run, &requests, now());
     assert_eq!(
         view(&nodes, "docs/matches-cli"),
-        &EvalView::InProgress(Activity::Queued(Queue::Jobs))
-    );
-    assert_eq!(
-        line(&nodes, "a:cli"),
-        "✓ cli  1/1",
-        "no gates hold it under ignore_gates"
+        &EvalView::BlockedBy(x(&["cli"]))
     );
     assert_eq!(
         view(&nodes, "docs/ready"),
-        &EvalView::Done(Source::Derived),
-        "its targets now count their own evidence too"
+        &EvalView::BlockedBy(x(&["cli"]))
     );
 }
 

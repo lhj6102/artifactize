@@ -1,0 +1,126 @@
+//! Scheduling policy for speculative work and deferred sign-offs.
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::{
+    config::{EvalId, Gate, ProfileKind, RepoConfig},
+    graph::{Evidence, Graph, Readiness},
+    store::{Request, Run},
+};
+
+pub(super) fn deferred(config: &RepoConfig, run: &Run, requests: &[Request]) -> BTreeSet<EvalId> {
+    if !run.modes.defer_human || run.reuse_only.contains(&ProfileKind::Human) {
+        return BTreeSet::new();
+    }
+    requests
+        .iter()
+        .filter(|request| request.profile.kind() == ProfileKind::Human)
+        .filter(|request| {
+            config
+                .evals
+                .iter()
+                .find(|eval| eval.id == request.eval_id)
+                .is_some_and(|eval| eval.declaration.gate != Some(Gate::Blocking))
+        })
+        .map(|request| request.eval_id.clone())
+        .collect()
+}
+
+/// Late means after this Artifact's machine evidence is final, never after a guessed
+/// duration. A same-Artifact RED/ERROR withdraws the sign-off rather than asking a person.
+pub(super) fn machines<'a>(
+    config: &'a RepoConfig,
+    request: &Request,
+) -> impl Iterator<Item = &'a EvalId> {
+    let target = request.target.clone();
+    config
+        .evals
+        .iter()
+        .filter(move |eval| eval.target == target)
+        .filter(|eval| {
+            !matches!(
+                eval.declaration.profile().kind(),
+                ProfileKind::Human | ProfileKind::Dependency
+            )
+        })
+        .map(|eval| &eval.id)
+}
+
+/// Longest remaining dependency path is counted in eval obligations, not wall-clock
+/// guesses. SCC peers do not gate one another; derived evals use their explicit targets.
+pub(super) fn order(
+    graph: &Graph<'_>,
+    requests: &[Request],
+    evidence: &BTreeMap<EvalId, Evidence>,
+) -> Vec<usize> {
+    let evaluation = graph.evaluate(evidence);
+    let predecessors: BTreeMap<_, BTreeSet<_>> = requests
+        .iter()
+        .map(|request| {
+            (
+                request.eval_id.clone(),
+                graph.gates(&request.eval_id).into_iter().cloned().collect(),
+            )
+        })
+        .collect();
+    let mut successors: BTreeMap<EvalId, BTreeSet<EvalId>> = predecessors
+        .keys()
+        .map(|id| (id.clone(), BTreeSet::new()))
+        .collect();
+    for (id, gates) in &predecessors {
+        for gate in gates {
+            successors
+                .entry(gate.clone())
+                .or_default()
+                .insert(id.clone());
+        }
+    }
+    let weight = |id: &EvalId| {
+        let eval = &evaluation.evals[id.as_str()];
+        usize::from(
+            eval.status != crate::graph::EvalStatus::Blocked
+                && !(eval.derived && eval.status.passes_gate())
+                && !matches!(
+                    evidence.get(id),
+                    Some(Evidence::Current(_)) | Some(Evidence::OperationalError)
+                ),
+        )
+    };
+    let mut pending: BTreeMap<_, _> = successors
+        .iter()
+        .map(|(id, next)| (id.clone(), next.len()))
+        .collect();
+    let mut ready: Vec<_> = pending
+        .iter()
+        .filter_map(|(id, count)| (*count == 0).then_some(id.clone()))
+        .collect();
+    let mut lengths: BTreeMap<_, _> = pending.keys().map(|id| (id.clone(), weight(id))).collect();
+    // Reverse topological reduction avoids recursion even for long Artifact chains.
+    while let Some(id) = ready.pop() {
+        let tail = lengths[&id];
+        for gate in predecessors.get(&id).into_iter().flatten() {
+            let length = lengths.get_mut(gate).expect("indexed gate");
+            *length = (*length).max(weight(gate) + tail);
+            let count = pending.get_mut(gate).expect("indexed gate");
+            *count -= 1;
+            if *count == 0 {
+                ready.push(gate.clone());
+            }
+        }
+    }
+    let mut order: Vec<_> = (0..requests.len()).collect();
+    order.sort_by_key(|&index| {
+        let id = &requests[index].eval_id;
+        (
+            evaluation.evals[id.as_str()].readiness != Readiness::Ready,
+            std::cmp::Reverse(lengths[id]),
+            index,
+        )
+    });
+    order
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Stop {
+    Blocked,
+    Yield,
+}

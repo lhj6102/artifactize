@@ -615,7 +615,7 @@ export type StateChanged = {
 };
 
 /**  Every status the monitor shows, most urgent first. */
-export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "GREEN" | "BASIS";
+export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "DEFERRED" | "PROVISIONAL" | "SIGNOFFS_PENDING" | "GREEN" | "BASIS";
 
 /**  A settled submission: how it stands, its notice and the completed request. */
 export type Submitted = {

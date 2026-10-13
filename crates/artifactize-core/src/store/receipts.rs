@@ -89,7 +89,6 @@ pub struct Run {
     pub definitions: super::definitions::Definitions,
     pub recursive: bool,
     pub force: bool,
-    pub ignore_gates: bool,
     pub jobs: usize,
     /// Fingerprints computed at once; absent in Runs saved before 0.5.
     pub fingerprint_jobs: Option<usize>,
@@ -136,8 +135,6 @@ pub(crate) struct RunWire {
     pub recursive: bool,
     #[serde(default)]
     pub force: bool,
-    #[serde(default)]
-    pub ignore_gates: bool,
     #[serde(default = "default_jobs")]
     pub jobs: usize,
     /// Fingerprints computed at once; absent in Runs saved before 0.5.
@@ -184,7 +181,6 @@ impl TryFrom<RunWire> for Run {
             definitions: wire.definitions,
             recursive: wire.recursive,
             force: wire.force,
-            ignore_gates: wire.ignore_gates,
             jobs: wire.jobs,
             fingerprint_jobs: wire.fingerprint_jobs,
             max_executions: wire.max_executions,
@@ -217,7 +213,6 @@ impl From<Run> for RunWire {
             definitions: record.definitions,
             recursive: record.recursive,
             force: record.force,
-            ignore_gates: record.ignore_gates,
             jobs: record.jobs,
             fingerprint_jobs: record.fingerprint_jobs,
             max_executions: record.max_executions,
@@ -719,7 +714,7 @@ impl Receipts {
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 for request in requests {
                     // A concurrent submission may already have settled this saved request.
-                    if request.status() == crate::types::RequestStatus::WaitingHuman {
+                    if request.status().is_human_wait() {
                         continue;
                     }
                     transaction.execute("UPDATE requests SET status=?,data=?,execution_id=? WHERE id=? AND status NOT IN ('GREEN','RED','ERROR')", params![request.status(),serde_json::to_string(&request)?,request.execution_id,request.id])?;

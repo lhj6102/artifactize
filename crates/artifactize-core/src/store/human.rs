@@ -17,7 +17,7 @@ pub struct HumanClaim {
 fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), Error> {
     let data: Option<String> = db
         .query_row(
-            "SELECT e.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE q.id=? AND q.status='WAITING_HUMAN' AND e.status='WAITING_HUMAN'",
+            "SELECT e.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE q.id=? AND q.status IN ('WAITING_HUMAN','DEFERRED') AND e.status='WAITING_HUMAN'",
             [id],
             |row| row.get(0),
         )
@@ -27,7 +27,7 @@ fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), 
     let execution: Execution = super::unreadable::evidence("execution", &data)
         .ok_or_else(|| Error::Invalid(format!("Request {id} has an unreadable execution.")))?;
     let data: String = db.query_row(
-        "SELECT data FROM requests WHERE id=? AND status='WAITING_HUMAN'",
+        "SELECT data FROM requests WHERE id=? AND status IN ('WAITING_HUMAN','DEFERRED')",
         [&execution.provenance.request_id],
         |row| row.get(0),
     )?;
@@ -96,7 +96,7 @@ impl Receipts {
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let mut statement = db.prepare(
-                    "SELECT data FROM requests WHERE id IN (SELECT value FROM json_each(?)) AND status!='WAITING_HUMAN'",
+                    "SELECT data FROM requests WHERE id IN (SELECT value FROM json_each(?)) AND status NOT IN ('WAITING_HUMAN','DEFERRED')",
                 )?;
                 let rows = statement.query_map([serde_json::to_string(&ids)?], |row| {
                     row.get::<_, String>(0)
@@ -308,7 +308,7 @@ impl Receipts {
                 let published = executions::settle(&transaction, &execution, &request)?;
                 let followers = {
                     let mut statement = transaction.prepare(
-                        "SELECT data FROM requests WHERE execution_id=? AND status='WAITING_HUMAN'",
+                        "SELECT data FROM requests WHERE execution_id=? AND status IN ('WAITING_HUMAN','DEFERRED')",
                     )?;
                     statement
                         .query_map([&execution.id], |row| row.get::<_, String>(0))?
@@ -367,7 +367,7 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
     )?;
     let followers = {
         let mut statement = db
-            .prepare("SELECT data FROM requests WHERE execution_id=? AND status='WAITING_HUMAN'")?;
+            .prepare("SELECT data FROM requests WHERE execution_id=? AND status IN ('WAITING_HUMAN','DEFERRED')")?;
         statement
             .query_map([&execution.id], |row| row.get::<_, String>(0))?
             .filter_map(|row| match row {

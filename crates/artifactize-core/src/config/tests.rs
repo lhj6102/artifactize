@@ -467,10 +467,14 @@ fn artifactsum_defaults_to_the_owner_folder() {
 
 #[test]
 fn dropped_configuration_fields_are_rejected() {
+    assert!(
+        parse(json!({"name":"a","review_policy":{"maxConcurrentExecutors":1}}))
+            .unwrap_err()
+            .contains("unknown field `review_policy`")
+    );
     for declaration in [
         json!({"name":"a","critics":[]}),
         json!({"name":"a","envRequirements":{}}),
-        json!({"name":"a","review_policy":{"maxConcurrentExecutors":1}}),
     ] {
         assert!(parse(declaration).unwrap_err().contains("unknown field"));
     }

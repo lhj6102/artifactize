@@ -41,9 +41,14 @@ pub(super) async fn execute(
     parallelism: &cache::Parallelism,
     stops: &Stops,
     cancellation: CancellationToken,
+    deferred_human: bool,
 ) -> Result<Request, String> {
     if matches!(prepared, Ok(Prepared::Human)) && !cancellation.is_cancelled() {
-        request.state = crate::store::RequestState::WaitingHuman;
+        request.state = if deferred_human {
+            crate::store::RequestState::Deferred
+        } else {
+            crate::store::RequestState::WaitingHuman
+        };
         request.started_at = Some(now());
         request.execution_id = Some(execution.id.clone());
         request.provenance = Some(execution.provenance.clone());

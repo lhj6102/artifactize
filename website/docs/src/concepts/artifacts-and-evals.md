@@ -7,8 +7,9 @@ these declarations into one dependency graph.
 ## Folder configuration
 
 A folder with an `index.artf` is an Artifact. `name` is required; `mounts`,
-`basis`, `views`, `fingerprint` and `tags` are optional. `review_policy` belongs
-only to the repository root's `index.artf`.
+`basis`, `views`, `fingerprint` and `tags` are optional. Gate bypass declarations
+(`review_policy.dependency_gates`, including the `review_policy` table) are removed;
+choose `--speculate` and `--defer-human` per verification request instead.
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
 `usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval
@@ -105,8 +106,9 @@ targets' dependency scopes.
 `artifactize verify player/ready` selects the qualified eval directly and includes the required dependency
 evals automatically, without `--recursive`. The dependency eval runs no command or
 model, takes no execution budget or backend slot, and has no reuse key, cache record
-or team-store result. Its verdict comes from current evidence, even with `review_policy.dependency_gates = "ignore"`
-or `--ignore-gates`. Dependency-eval wait cycles are rejected; ordinary Artifact cycles
+or team-store result. Its verdict comes from current evidence. Speculation may
+execute machine work early; deferred Human evidence yields PROVISIONAL derived
+results, never full approval. Dependency-eval wait cycles are rejected; ordinary Artifact cycles
 retain their existing scheduling rules.
 
 [Runs, status and validation](runs-and-status.md) explains derived requests and unfulfilled dependency output.

@@ -110,8 +110,6 @@ pub struct Artifact {
     pub basis: Field<bool>,
     #[serde(default, skip_serializing_if = "missing")]
     pub fingerprint: Field<Fingerprint>,
-    #[serde(default, skip_serializing_if = "missing")]
-    pub review_policy: Field<Policy>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -205,14 +203,6 @@ pub struct Script {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Policy {
-    #[serde(default, skip_serializing_if = "missing")]
-    pub dependency_gates: Field<config::DependencyGates>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Eval {
     pub id: crate::types::EvalId,
@@ -229,6 +219,8 @@ pub struct Eval {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
+    #[serde(default, skip_serializing_if = "missing")]
+    pub gate: Field<config::Gate>,
     #[serde(default, skip_serializing_if = "missing")]
     pub id: Field<crate::config::LocalEvalId>,
     #[serde(default, skip_serializing_if = "missing")]

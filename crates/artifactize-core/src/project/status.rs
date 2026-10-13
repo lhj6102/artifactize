@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     cache,
-    config::{DependencyGates, Profile, read_workspace_config},
+    config::{Profile, read_workspace_config},
     graph::{Evidence, Graph, Readiness},
     project::{VerifyOptions, selection::select_profiles},
     remote::Session,
@@ -28,7 +28,6 @@ pub struct StatusView {
     pub selection: Selection,
     pub recursive: bool,
     pub force: bool,
-    pub ignore_gates: bool,
     pub selected_eval_ids: Vec<crate::config::EvalId>,
     pub included_eval_ids: Vec<crate::config::EvalId>,
     pub satisfied: bool,
@@ -115,14 +114,6 @@ pub async fn status(
         options.profile.as_ref(),
         options.recursive,
     )?;
-    let ignore_gates = options.ignore_gates.unwrap_or_else(|| {
-        config
-            .artifacts
-            .values()
-            .find(|artifact| artifact.path.as_os_str().is_empty())
-            .and_then(|artifact| artifact.review_policy.as_ref())
-            .is_some_and(|policy| matches!(policy.dependency_gates, Some(DependencyGates::Ignore)))
-    });
     let graph = Graph::new(&config).map_err(|error| error.to_string())?;
     let selected = selection.resolve(&config)?;
     let required: BTreeSet<_> = graph
@@ -217,7 +208,16 @@ pub async fn status(
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
-    let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
+    let evaluation = graph.evaluate(&evidence);
+    let deferred: BTreeSet<_> = store::read_waiting(&state, Some(&config.root)).await?
+        .into_iter().filter(|view| view.request.status() == crate::types::RequestStatus::Deferred)
+        .filter(|view| matches!(claim(&view.request.eval_id), Some(Claim::WaitHuman(id)) if Some(id) == view.request.execution_id.as_ref()))
+        .map(|view| view.request.eval_id).collect();
+    let mut shown_evidence = evidence.clone();
+    for id in &deferred {
+        shown_evidence.insert(id.clone(), Evidence::Deferred);
+    }
+    let shown = graph.evaluate(&shown_evidence);
     let obligations: Vec<_> = evaluation
         .obligations
         .iter()
@@ -228,7 +228,7 @@ pub async fn status(
     let mut artifacts = Vec::new();
     for id in &required {
         let artifact = &evaluation.artifacts[id.as_str()];
-        let status = ArtifactCondition::from(artifact.status);
+        let status = ArtifactCondition::from(shown.artifacts[id.as_str()].status);
         let own = &graph.artifacts()[id.as_str()];
         let unmet = graph
             .dependency_closure(&[*id])
@@ -412,9 +412,13 @@ pub async fn status(
             },
         };
         let status = if !force && matches!(claim(&eval.id), Some(Claim::WaitHuman(_))) {
-            EvalCondition::WaitingHuman
+            if deferred.contains(&eval.id) {
+                EvalCondition::Deferred
+            } else {
+                EvalCondition::WaitingHuman
+            }
         } else {
-            EvalCondition::from(current.status)
+            EvalCondition::from(shown.evals[eval.id.as_str()].status)
         };
         *counts.evals.entry(status).or_default() += 1;
         if included {
@@ -470,7 +474,6 @@ pub async fn status(
         selection: selection.clone(),
         recursive: options.recursive,
         force: options.force,
-        ignore_gates,
         selected_eval_ids,
         included_eval_ids,
         satisfied: obligations.is_empty(),

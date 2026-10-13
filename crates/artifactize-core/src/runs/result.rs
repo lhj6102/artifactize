@@ -15,6 +15,7 @@ pub enum RunVerdict {
     Green,
     Red,
     Incomplete,
+    SignoffsPending,
     Error,
     Cancelled,
 }
@@ -24,6 +25,7 @@ impl RunVerdict {
             State::Green => Some(Self::Green),
             State::Red => Some(Self::Red),
             State::Incomplete => Some(Self::Incomplete),
+            State::SignoffsPending => Some(Self::SignoffsPending),
             State::Error => Some(Self::Error),
             State::Cancelled => Some(Self::Cancelled),
             _ => None,

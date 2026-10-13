@@ -19,6 +19,9 @@ pub enum Status {
     Stale,
     Unreviewed,
     Incomplete,
+    Deferred,
+    Provisional,
+    SignoffsPending,
     Green,
     Basis,
 }
@@ -39,6 +42,9 @@ impl Status {
             Self::Stale => "STALE",
             Self::Unreviewed => "UNREVIEWED",
             Self::Incomplete => "INCOMPLETE",
+            Self::Deferred => "DEFERRED",
+            Self::Provisional => "PROVISIONAL",
+            Self::SignoffsPending => "SIGNOFFS_PENDING",
             Self::Green => "GREEN",
             Self::Basis => "BASIS",
         }
@@ -51,7 +57,8 @@ impl Status {
             Self::Red => "✗",
             Self::Error => "!",
             Self::Running => "◐",
-            Self::WaitingHuman => "?",
+            Self::WaitingHuman | Self::Deferred | Self::SignoffsPending => "?",
+            Self::Provisional => "○",
             Self::Queued => "·",
             Self::Blocked => "⊘",
             Self::WaitDependency | Self::Wait => "…",
@@ -69,6 +76,9 @@ impl Status {
             Self::Error => "operational failure, not a verdict",
             Self::Running => "executing",
             Self::WaitingHuman => "waiting for a Human submission",
+            Self::Deferred => "sign-off deferred; execution may proceed",
+            Self::Provisional => "criteria met; dependent sign-offs remain",
+            Self::SignoffsPending => "only sign-offs remain",
             Self::Blocked => "blocked by a RED dependency",
             Self::WaitDependency => "waiting for current GREEN dependency evidence",
             Self::BudgetExhausted => "maxExecutions reached before it started",
@@ -91,6 +101,7 @@ impl From<RunStatus> for Status {
             RunStatus::Red => Self::Red,
             RunStatus::Error => Self::Error,
             RunStatus::Incomplete => Self::Incomplete,
+            RunStatus::SignoffsPending => Self::SignoffsPending,
         }
     }
 }
@@ -101,6 +112,8 @@ impl From<RequestStatus> for Status {
             RequestStatus::Queued => Self::Queued,
             RequestStatus::Running => Self::Running,
             RequestStatus::WaitingHuman => Self::WaitingHuman,
+            RequestStatus::Deferred => Self::Deferred,
+            RequestStatus::Provisional => Self::Provisional,
             RequestStatus::Green => Self::Green,
             RequestStatus::Red => Self::Red,
             RequestStatus::Error => Self::Error,
@@ -117,6 +130,8 @@ impl From<ArtifactValidationStatus> for Status {
     fn from(status: ArtifactValidationStatus) -> Self {
         match status {
             ArtifactValidationStatus::Basis => Self::Basis,
+            ArtifactValidationStatus::Deferred => Self::Deferred,
+            ArtifactValidationStatus::Provisional => Self::Provisional,
             ArtifactValidationStatus::Green => Self::Green,
             ArtifactValidationStatus::Incomplete => Self::Incomplete,
             ArtifactValidationStatus::Error => Self::Error,
