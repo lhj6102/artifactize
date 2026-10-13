@@ -16,7 +16,11 @@ pub(crate) use worker::{execute, supervise};
 
 /// Per-Run execution modes. Future modes extend this type, not transport signatures.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RunModes {}
+#[serde(default)]
+pub struct RunModes {
+    pub speculate: bool,
+    pub defer_human: bool,
+}
 impl RunModes {
     pub(crate) fn is_default(&self) -> bool {
         self == &Self::default()
@@ -28,6 +32,7 @@ impl RunModes {
 pub enum Activity {
     Preparing,
     Executing,
+    Publishing,
     Waiting,
     Cancelling,
 }

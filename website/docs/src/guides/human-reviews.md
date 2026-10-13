@@ -69,6 +69,42 @@ never records a Human request or waits: a Human eval reuses a sign-off or is
 The [reference](../reference/human-tools.md#human-reviews) has the library API, the
 `request list` and `request show` fields and Run summaries.
 
+## Deferred sign-offs
+
+Choose `verify --defer-human` for a workflow where a person reviews the final
+state rather than steering each execution. It is per request, not a machine
+setting, and defaults off. `--speculate` can independently speed machine work;
+combining it with deferral still asks for deferrable sign-offs last.
+
+Pending sign-offs count as passing gates for execution only. Human requests are
+issued after their Artifact's machine evals finish and nothing blocks them;
+they appear as DEFERRED alongside ordinary WAITING_HUMAN requests in `review`,
+monitor, desktop and request listings. Claim, tools, release and submission use
+the same Human authority checks. Dependent machine results are PROVISIONAL,
+not approved. A blocked sign-off is withdrawn rather than offered to a person.
+
+When only these sign-offs remain, the owned Run ends SIGNOFFS_PENDING and
+`verify --wait` returns 5. It never fabricates a Human GREEN. Later GREEN
+submissions cause no replay: the next verify reuses unchanged machine results
+and sign-offs and is SATISFIED. RED blocks dependents on that next verify.
+Fingerprints must enable reuse; `fingerprint = false` still disables it.
+A completed Run's verdict is historical and is not rewritten after submission.
+
+For a sign-off whose rejection would waste substantial downstream work, retain
+the strict pending gate explicitly:
+
+```toml
+[evals.release]
+title = "The release is approved"
+gate = "blocking"
+profile = { kind = "human" }
+payload.instruction = "Review the release before dependent work proceeds."
+```
+
+Without `gate`, a Human eval follows the request's default mode. CI remains
+strict with `verify --all --wait --reuse-only agent,human`: neither deferral nor
+speculation substitutes for actual reusable Human GREEN evidence.
+
 ## Human tools
 
 `views.human_tools` is a separate safe-name map of predefined tools. The reviewer runs

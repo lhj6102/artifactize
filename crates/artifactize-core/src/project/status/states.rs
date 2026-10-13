@@ -7,6 +7,8 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ArtifactCondition {
+    Deferred,
+    Provisional,
     Basis,
     Blocked,
     Error,
@@ -21,6 +23,8 @@ impl From<ArtifactStatus> for ArtifactCondition {
     fn from(status: ArtifactStatus) -> Self {
         match status {
             ArtifactStatus::Basis => Self::Basis,
+            ArtifactStatus::Deferred => Self::Deferred,
+            ArtifactStatus::Provisional => Self::Provisional,
             ArtifactStatus::Green => Self::Pass,
             ArtifactStatus::Incomplete => Self::Incomplete,
             ArtifactStatus::Error => Self::Error,
@@ -40,6 +44,8 @@ impl fmt::Display for ArtifactCondition {
             Self::Error => "ERROR",
             Self::Incomplete => "INCOMPLETE",
             Self::Pass => "PASS",
+            Self::Deferred => "DEFERRED",
+            Self::Provisional => "PROVISIONAL",
             Self::Red => "RED",
             Self::Stale => "STALE",
             Self::Unreviewed => "UNREVIEWED",
@@ -51,6 +57,8 @@ impl fmt::Display for ArtifactCondition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EvalCondition {
+    Deferred,
+    Provisional,
     Blocked,
     Error,
     Pass,
@@ -63,6 +71,8 @@ pub enum EvalCondition {
 impl From<EvalStatus> for EvalCondition {
     fn from(status: EvalStatus) -> Self {
         match status {
+            EvalStatus::Deferred => Self::Deferred,
+            EvalStatus::Provisional => Self::Provisional,
             EvalStatus::Green => Self::Pass,
             EvalStatus::Red => Self::Red,
             EvalStatus::Error => Self::Error,
@@ -79,6 +89,8 @@ impl fmt::Display for EvalCondition {
             Self::Blocked => "BLOCKED",
             Self::Error => "ERROR",
             Self::Pass => "PASS",
+            Self::Deferred => "DEFERRED",
+            Self::Provisional => "PROVISIONAL",
             Self::Red => "RED",
             Self::Stale => "STALE",
             Self::Unreviewed => "UNREVIEWED",

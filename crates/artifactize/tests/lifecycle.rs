@@ -242,6 +242,15 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
 fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
     // Independent schema-5 fixture: field order, nulls and omission rules are historical.
     let wire = r#"{"id":"legacy-run","repoPath":"repo","stateDir":"state","status":"RUNNING","createdAt":"2026-01-01T00:00:00.000000000Z","completedAt":null,"selection":{"kind":"all"},"profile":null,"definitions":null,"recursive":false,"force":false,"ignoreGates":false,"jobs":2,"maxExecutions":null,"executionsStarted":0,"waitTimeoutMs":null,"waitTimedOut":false,"validation":null,"error":null}"#;
+    // Removed saved keys are ignored on read, without a schema migration.
+    let historical = wire.replace("\"ignoreGates\":false", "\"ignoreGates\":true");
+    let decoded = serde_json::from_str::<store::Run>(&historical).unwrap();
+    assert!(
+        serde_json::to_value(&decoded)
+            .unwrap()
+            .get("ignoreGates")
+            .is_none()
+    );
     for status in ["RUNNING", "GREEN", "RED", "ERROR", "INCOMPLETE"] {
         for at in ["null", "\"2026-01-01T00:00:01.000000000Z\""] {
             for error in ["null", "\"failure\""] {
@@ -260,7 +269,10 @@ fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
                 let run = serde_json::from_str::<store::Run>(&text);
                 assert_eq!(run.is_ok(), expected, "{status}, {at}, {error}");
                 if let Ok(run) = run {
-                    assert_eq!(serde_json::to_string(&run).unwrap(), text);
+                    assert_eq!(
+                        serde_json::to_string(&run).unwrap(),
+                        text.replace("\"ignoreGates\":false,", "")
+                    );
                 }
             }
         }

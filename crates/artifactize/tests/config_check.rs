@@ -317,7 +317,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         read_workspace_config(&fixture.0)
             .unwrap_err()
             .to_string()
-            .contains("repository root")
+            .contains("unknown field `review_policy`")
     );
     fs::remove_file(fixture.0.join("other/index.artf")).unwrap();
     if support::os::symlink_file(

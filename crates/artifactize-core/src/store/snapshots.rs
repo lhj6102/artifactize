@@ -112,8 +112,6 @@ pub struct ValidationSnapshot {
     #[serde(default, skip_serializing_if = "Field::missing")]
     pub force: Field<bool>,
     #[serde(default, skip_serializing_if = "Field::missing")]
-    pub ignore_gates: Field<bool>,
-    #[serde(default, skip_serializing_if = "Field::missing")]
     pub selected_eval_ids: Field<Vec<EvalId>>,
     #[serde(default, skip_serializing_if = "Field::missing")]
     pub included_eval_ids: Field<Vec<EvalId>>,

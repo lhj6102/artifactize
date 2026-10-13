@@ -175,21 +175,11 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     assert_eq!(row(&recursive, "evals", "blocked/check")["force"], true);
     assert_eq!(row(&recursive, "evals", "blocked/check")["action"], "wait");
     assert_eq!(row(&recursive, "evals", "red/check")["force"], false);
-    let ignored = fixture.json(&["status", "blocked", "--ignore-gates"], 1);
-    assert_eq!(row(&ignored, "evals", "blocked/check")["action"], "execute");
-    assert_eq!(ignored["obligations"], json!(["blocked", "red"]));
-
     support::declaration::write(
         fixture.repo.join("index.artf"),
-        r#"{"name":"project","basis":true,"review_policy":{"dependency_gates":"ignore"}}"#,
+        r#"{"name":"project","basis":true}"#,
     )
     .unwrap();
-    let configured = fixture.json(&["status", "blocked"], 1);
-    assert_eq!(configured["ignoreGates"], true);
-    assert_eq!(
-        row(&configured, "evals", "blocked/check")["action"],
-        "execute"
-    );
     let incomplete = fixture.json(&["status", "project"], 1);
     assert_eq!(
         row(&incomplete, "artifacts", "project")["state"],

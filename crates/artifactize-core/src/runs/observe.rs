@@ -18,6 +18,7 @@ pub enum State {
     Green,
     Red,
     Incomplete,
+    SignoffsPending,
     Error,
     Cancelled,
 }
@@ -25,7 +26,12 @@ impl State {
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            Self::Green | Self::Red | Self::Incomplete | Self::Error | Self::Cancelled
+            Self::Green
+                | Self::Red
+                | Self::Incomplete
+                | Self::SignoffsPending
+                | Self::Error
+                | Self::Cancelled
         )
     }
 }
@@ -52,13 +58,14 @@ fn counts(states: impl IntoIterator<Item = (RequestStatus, u64)>) -> Counts {
         .fold(Counts::default(), |mut counts, (state, count)| {
             counts.total += count;
             match state {
-                RequestStatus::Green | RequestStatus::Red | RequestStatus::Error => {
-                    counts.completed += count
-                }
+                RequestStatus::Green
+                | RequestStatus::Provisional
+                | RequestStatus::Red
+                | RequestStatus::Error => counts.completed += count,
                 RequestStatus::Running => counts.running += count,
-                RequestStatus::WaitingHuman | RequestStatus::WaitDependency => {
-                    counts.waiting += count
-                }
+                RequestStatus::WaitingHuman
+                | RequestStatus::Deferred
+                | RequestStatus::WaitDependency => counts.waiting += count,
                 _ => counts.pending += count,
             }
             counts
@@ -69,6 +76,7 @@ fn state_for(status: RunStatus, control: Option<&super::Control>, counts: &Count
         RunStatus::Green => State::Green,
         RunStatus::Red => State::Red,
         RunStatus::Incomplete => State::Incomplete,
+        RunStatus::SignoffsPending => State::SignoffsPending,
         RunStatus::Error
             if control
                 .is_some_and(|control| control.failure_code == Some(FailureCode::Cancelled)) =>
@@ -83,7 +91,7 @@ fn state_for(status: RunStatus, control: Option<&super::Control>, counts: &Count
                 }
                 return match control.activity {
                     Activity::Preparing => State::Preparing,
-                    Activity::Executing => State::Running,
+                    Activity::Executing | Activity::Publishing => State::Running,
                     Activity::Waiting => State::Waiting,
                     Activity::Cancelling => State::Cancelling,
                 };

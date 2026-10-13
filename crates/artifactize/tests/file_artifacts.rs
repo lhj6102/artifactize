@@ -233,7 +233,7 @@ fn names_are_required_and_globally_unique_and_policy_is_root_folder_only() {
         "input.artf",
         json!({"name":"file","review_policy":{"dependency_gates":"ignore"}}),
     );
-    fixture.error("input.artf", "root index.artf");
+    fixture.error("input.artf", "unknown field `review_policy`");
     fixture.declare("input.artf", json!({"name":"file"}));
     fixture.write("nested/input", "input");
     fixture.declare("nested/input.artf", json!({"name":"file"}));

@@ -93,13 +93,6 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
             let declaration =
                 parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
-            if !relative.as_os_str().is_empty() && declaration.review_policy.is_some() {
-                return Err(ConfigError::declaration(
-                    &file,
-                    &["review_policy"],
-                    "review_policy belongs only to the repository root index.artf.",
-                ));
-            }
             let name = declaration.name.clone();
             if let Some(parent) = &owner {
                 let parent = config.artifacts.get_mut(parent).unwrap();
@@ -199,13 +192,6 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
             let mut declaration =
                 parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
-            if declaration.review_policy.is_some() {
-                return Err(ConfigError::declaration(
-                    &file,
-                    &["review_policy"],
-                    "review_policy belongs only to the repository root index.artf.",
-                ));
-            }
             let value = toml::de::DeTable::parse(&source)
                 .map_err(|error| ConfigError::new(&file, error))?;
             if value.get_ref().get("fingerprint").is_none() {
@@ -281,7 +267,6 @@ fn insert_artifact(
         mounts,
         basis,
         fingerprint,
-        review_policy,
     } = declaration;
     if config.artifacts.contains_key(&name) {
         return Err(ConfigError::declaration(
@@ -314,7 +299,6 @@ fn insert_artifact(
             mounts,
             basis,
             fingerprint,
-            review_policy,
         },
     );
     Ok(())

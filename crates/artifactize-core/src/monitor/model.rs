@@ -272,7 +272,9 @@ fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
     }
     let active = matches!(
         request.status(),
-        crate::types::RequestStatus::Running | crate::types::RequestStatus::WaitingHuman
+        crate::types::RequestStatus::Running
+            | crate::types::RequestStatus::WaitingHuman
+            | crate::types::RequestStatus::Deferred
     );
     let start = request
         .started_at
@@ -372,7 +374,9 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                 )
             })
             .collect(),
-        waiting: with(crate::types::RequestStatus::WaitingHuman)
+        waiting: requests
+            .iter()
+            .filter(|view| view.request.status().is_human_wait())
             .map(|view| (view.request.eval_id.to_string(), claim(view)))
             .collect(),
         errors: with(crate::types::RequestStatus::Error)

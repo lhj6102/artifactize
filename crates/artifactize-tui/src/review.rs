@@ -312,7 +312,7 @@ impl Review {
         }
         if let (Ok(()), Some(id)) = (&result, self.open.clone()) {
             let read = match store::read_request(&self.state, &id).await {
-                Ok(view) if view.request.status() == crate::types::RequestStatus::WaitingHuman => {
+                Ok(view) if view.request.status().is_human_wait() => {
                     store::read_original(&self.state, &view).await
                 }
                 other => other,
@@ -372,7 +372,7 @@ impl Review {
             return;
         };
         let id = view.request.id.clone();
-        if view.request.status() != crate::types::RequestStatus::WaitingHuman
+        if !view.request.status().is_human_wait()
             || view.request.human_definition.is_none()
             || self.commands.as_ref().is_some_and(|(seen, _)| seen == &id)
         {

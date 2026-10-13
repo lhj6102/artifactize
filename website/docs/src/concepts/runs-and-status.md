@@ -10,11 +10,10 @@ the next `verify` will execute, reuse, derive or wait for, without running evals
 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, or
 `--all`. Eval IDs are qualified (`green/check`). Selection order is preserved, with
 duplicates removed at their first occurrence; Artifacts expand to their evals in ID
-order within each declaration. READY runtime evals execute concurrently up to
-`--jobs N` (default 4, minimum 1). Nonrecursive dispatch preserves selector order;
-automatically included dependency requirements are appended in configuration
-order. With `--recursive`, the entire included scope instead dispatches in
-configuration order, not explicitly selected evals first. The graph is
+order within each declaration. READY evals execute concurrently up to
+`--jobs N` (default 4, minimum 1). Scheduling prefers unblockable work and the
+longest remaining dependency path; selection/configuration order breaks ties.
+Selection order still defines saved requests, not dispatch priority. The graph is
 re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
 fingerprint claim occupy job slots while polling, but cache hits occupy none. An
@@ -34,9 +33,11 @@ without `--recursive`: `artifactize verify player/ready` is sufficient. A file A
 own evals, never the surrounding folder's.
 
 RED blocks downstream execution; missing/operational evidence waits. Cycle peers
-have no internal gates. `--ignore-gates` bypasses execution gates only: final validation
-still requires actual GREEN evidence or explicit `basis = true` throughout the required
-scope. A basis never waives its dependencies. Selected GREEN results with missing
+have no internal gates. The per-request modes permit speculative execution or
+deferred sign-offs, but final validation always requires actual GREEN evidence or
+explicit `basis = true` throughout the required scope. Gate bypass
+(`--ignore-gates`, `review_policy.dependency_gates` and the old library override)
+is removed; declarations using the old policy fail configuration validation. A basis never waives its dependencies. Selected GREEN results with missing
 obligations remain recorded in an INCOMPLETE Run; both text and JSON output identify
 unmet obligations. Human evals record WAITING_HUMAN requests, and the artifactize-owned
 Run waits for their results as for runtime and Agent evals: when a submission
@@ -48,7 +49,7 @@ lets evals of the listed kinds only reuse a result; one with nothing to reuse is
 executed and leaves the Run INCOMPLETE ([CLI](../reference/cli.md#reuse-only)).
 
 `verify --wait` exits 0 for GREEN/SATISFIED, 1 for RED, 2 for ERROR/cancelled and 4 for
-INCOMPLETE. Ctrl-C/SIGTERM exits 130 and stops watching, not verification. Explicit
+INCOMPLETE, or 5 for SIGNOFFS_PENDING when deferral leaves only sign-offs. Ctrl-C/SIGTERM exits 130 and stops watching, not verification. Explicit
 cancellation stops admission and active owned work, waits for cleanup and records
 ERROR/CANCELLED without erasing committed evidence. It never kills another Run's
 execution that this Run joined. A dead execution worker is reconciled as
@@ -59,6 +60,33 @@ The same canonical repository and key return the same Run, even after completion
 checkout changes; the first selection and options remain authoritative. Different keys,
 or omitting the key, create new Runs. Eval/cache reuse remains independent of submission
 identity. Keep the key when retrying a lost response; use a new key for a new attempt.
+
+### Speculation and deferred sign-offs
+
+The two [per-request verify modes](../reference/cli.md#verify-modes),
+`--speculate` and `--defer-human`, default off and are saved in the Run's `modes`.
+The same request key keeps its original choices.
+
+Speculation starts requested runtime, Agent and Human evals before unresolved
+gates, within all scheduling limits. Ready work has priority; speculative work
+uses spare capacity and yields first. Upstream RED/ERROR immediately cancels
+transitively blocked work and marks it BLOCKED without a reusable cancelled
+result. GREEN keeps results already produced for the same files.
+
+Deferral allows execution past pending Human gates. A deferrable sign-off's
+request is issued as late as possible, after its Artifact's machine reviews finish
+and no gate blocks it. Requests show DEFERRED, dependent results PROVISIONAL.
+Neither state is actual approval. `gate = "blocking"` retains the strict Human
+gate. When all other obligations pass, the Run ends SIGNOFFS_PENDING (exit 5),
+meaning **only sign-offs remain**; it does not wait for those submissions.
+Later submissions update requests, not the historical Run verdict. A new verify
+reuses unchanged provisional machine results: GREEN sign-offs allow SATISFIED;
+RED sign-offs block dependents. `--reuse-only agent,human` never treats a pending
+sign-off as GREEN and stays suitable for CI.
+
+`status` labels current deferred waits and provisional results, but its execution
+prediction remains strict: a new default verify still waits for Human evidence.
+Run/result readers expose SIGNOFFS_PENDING as terminal and not satisfied.
 
 Text output prints one line per request and marks a result taken from another
 request's execution (a fingerprint hit, or a joined execution) with its source Run
@@ -147,7 +175,7 @@ artifactize --repo PROJECT config check --json
 ```
 
 `status` accepts the same exclusive selectors as `verify`, defaulting to
-`--all`, and the same `--profile`, `--recursive`, `--force` and `--ignore-gates` policy
+`--all`, and the same `--profile`, `--recursive` and `--force` policy
 options. It reports current Artifact/eval states, unmet final obligations, and
 `execute` / `reuse` / `derive` / `wait` / `blocked` actions. All evals
 in the required closure are shown; `selected` and `included` distinguish explicit
