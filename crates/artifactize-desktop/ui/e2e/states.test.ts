@@ -4,7 +4,7 @@
 // of a completed eval.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { createStates, type Fixture } from "./fixture.ts";
+import { createStates, requests, type Fixture } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
@@ -108,12 +108,14 @@ describe("a Run with every verdict", () => {
 });
 
 describe("the Detail of a finished eval", () => {
+  let fixture: Fixture;
   let session: Session;
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
-    session = await start(await createStates());
+    fixture = await createStates();
+    session = await start(fixture);
     browser = session.browser;
     await eventually(async () => (await text()).includes("fine"), "the Run tree");
   });
@@ -135,14 +137,16 @@ describe("the Detail of a finished eval", () => {
     assert.match(shown, /Pass\./, `the instruction in ${shown.slice(0, 1500)}`);
     assert.match(shown, /Source\s+executed in this Run/, "where the result came from");
     assert.match(shown, /GREEN/, "the result");
-    assert.doesNotMatch(shown, /run-\S+-\d+/, "the request is part of the technical record");
+    const request = requests(fixture).find((saved) => saved.evalId === "fine/check");
+    assert.ok(request, "the real CLI saved the completed fine/check request");
+    // A per-Run TMPDIR can itself contain run-... and fixture-<digits>; only the
+    // actual request ID tests Technical disclosure, not a regex across any path.
+    assert.equal(shown.includes(request.id), false, "the request is part of the technical record");
     const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
-    const plain = (await text()).length;
     await press(browser, ["t"], async () => (await technical()) === "true", "the technical record shown");
-    assert.ok((await text()).length > plain, "the technical record adds fields");
-    assert.match(await text(), /run-\S+-\d+/, "the request");
+    assert.equal((await text()).includes(request.id), true, "the technical record shows the exact request");
     await press(browser, ["t"], async () => (await technical()) === "false", "the technical record hidden");
-    assert.equal((await text()).length, plain, "and takes them away again");
+    assert.equal((await text()).includes(request.id), false, "the exact request disappears again");
   });
 });
 
