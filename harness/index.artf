@@ -1,0 +1,5 @@
+name = "arti-onramp"
+
+[evals.ready]
+title = "The canonical skill and actual harness builder judgments are ready"
+profile = { kind = "dependency", depends_on = ["hey-arti", "arti-harness"] }

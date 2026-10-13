@@ -1,0 +1,41 @@
+# Inputs and agreed goals, not completed declarations or a golden partition.
+version = 1
+
+[[cases]]
+id = "library-consumer"
+source = "fixtures/library-consumer"
+goal = "Declare the pricing library, its real receipt consumer, and the independent shipping label. Cover behavior and consumer compatibility without re-reviewing the label on a library edit."
+consent = "You may add/evolve .artf declarations and a read-only-token CI workflow in this private copy. Do not change application behavior or add a Human gate."
+obligations = ["Library price behavior", "Receipt consumes the library", "Independent shipping label remains reviewed"]
+edit_path = "library/price.py"
+edit_before = "return units * 7"
+edit_after = "return units * 8"
+independent_path = "independent/label.txt"
+evolve = "Split a growing library into independently reviewed parts while preserving the independent label's reuse."
+human = false
+
+[[cases]]
+id = "docs-assets"
+source = "fixtures/docs-assets"
+goal = "Declare content and theme review boundaries, plus an independently reviewed banner.svg file Artifact. Include the banner's licensing input where it is actually judged; do not grant a file tool arbitrary sibling access."
+consent = "You may add/evolve .artf declarations and a read-only-token CI workflow in this private copy. No new Human gate is authorized."
+obligations = ["Published content accuracy", "Theme accessibility", "Banner visual and licensing suitability", "Site consumes the banner"]
+edit_path = "site/content/index.md"
+edit_before = "fruit trees"
+edit_after = "apple trees"
+independent_path = "assets/banner.svg"
+evolve = "Split growing content without losing the banner's independent file review or theme reuse."
+human = false
+
+[[cases]]
+id = "monorepo"
+source = "fixtures/monorepo"
+goal = "Declare UI, API and their response contract. Keep the team's already-agreed Human integration sign-off. Add a session-bound read-only preview tool using preview/probe.py; artifactize owns start/stop. Yield at the Human boundary and leave the Run/request handoff; never claim or submit the sign-off."
+consent = "You may add/evolve .artf declarations and a read-only-token CI workflow in this private copy. Preserve the existing person-owned integration gate. Only the later test driver's explicitly simulated person may act on this private fixture's Human requests."
+obligations = ["UI renders the actual API response", "API satisfies the response contract", "Human judges integrated publication readiness", "Preview uses artifactize-owned tool sessions"]
+edit_path = "api/handler.py"
+edit_before = "Hello orchard"
+edit_after = "Hello apples"
+independent_path = "contract/response.json"
+evolve = "Split a growing UI component; keep the contract review independent and the Human integration responsibility intact."
+human = true

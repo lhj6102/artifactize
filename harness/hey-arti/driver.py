@@ -1,0 +1,264 @@
+"""Stdlib-only hey-arti fixture and review-tool driver.
+
+Source fixtures never contain declarations. Live builder execution is wired in a
+later step; missing live evidence is deliberately not a passing result.
+"""
+
+import argparse
+import json
+import os
+from pathlib import Path, PurePosixPath
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import tomllib
+
+ROOT = Path(__file__).resolve().parent
+# Keep command-tool responses comfortably below the MCP/reviewer byte cap.
+PAGE_BYTES = 16 * 1024
+RESPONSE_BYTES = 48 * 1024
+REQUEST_BYTES = 64 * 1024
+
+
+def cases():
+    with (ROOT / "cases.toml").open("rb") as stream:
+        data = tomllib.load(stream)
+    if data["version"] != 1:
+        raise ValueError("unsupported case version")
+    result = {case["id"]: case for case in data["cases"]}
+    if len(result) != len(data["cases"]):
+        raise ValueError("duplicate case ID")
+    return result
+
+
+def inside(root, relative):
+    """No traversal, symlinks or host-selected absolute paths."""
+    path = PurePosixPath(relative)
+    if (not relative or len(relative) > 4096 or path.is_absolute()
+            or "\\" in relative or ":" in relative or any(ord(char) < 32 for char in relative)):
+        raise ValueError("expected a case-relative path")
+    if any(part in ("", ".", "..") for part in relative.split("/")):
+        raise ValueError("invalid path component")
+    target = root
+    for part in path.parts:
+        target = target / part
+        if target.is_symlink():
+            raise ValueError("symlinks are not admitted")
+    target.resolve().relative_to(root.resolve())
+    return target
+
+
+def private_directory(path):
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+
+
+def materialize(destination):
+    """Copy ordinary inputs to a fresh, external, private case area."""
+    destination = destination.resolve()
+    try:
+        destination.relative_to(ROOT.parents[1])
+    except ValueError:
+        pass
+    else:
+        raise ValueError("case outputs must be outside the project")
+    destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+    try:
+        for case in cases().values():
+            source = inside(ROOT, case["source"])
+            for path in source.rglob("*"):
+                if path.is_symlink() or not (path.is_dir() or path.is_file()):
+                    raise ValueError("fixtures must contain only ordinary files")
+                if path.name.endswith(".artf"):
+                    raise ValueError("source fixtures must not contain declarations")
+            target = destination / case["id"]
+            private_directory(target)
+            shutil.copytree(source, target / "repo")
+            private_directory(target / "state")
+            private_directory(target / "evidence")
+    except BaseException:
+        shutil.rmtree(destination)
+        raise
+    return destination
+
+
+def envelope():
+    raw = sys.stdin.buffer.read(REQUEST_BYTES + 1)
+    if len(raw) > REQUEST_BYTES:
+        raise ValueError("request exceeds the tool envelope limit")
+    request = json.loads(raw)
+    if request.get("version") != 1 or not isinstance(request.get("args"), dict):
+        raise ValueError("expected a version-1 JSON tool envelope")
+    return request["args"]
+
+
+def session_directory():
+    directory = Path(os.environ["ARTIFACTIZE_SESSION_DIR"]).resolve(strict=True)
+    if not directory.is_dir():
+        raise ValueError("missing artifactize session directory")
+    return directory
+
+
+def emit(data=None, error=None):
+    if error is None:
+        result = {"content": [{"type": "json", "data": data}]}
+    else:
+        result = {"isError": True, "content": [{"type": "text", "text": error}]}
+    encoded = json.dumps(result, ensure_ascii=True, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > RESPONSE_BYTES:
+        raise ValueError("response exceeds the reviewer limit; narrow the request")
+    print(encoded)
+
+
+def area(directory):
+    data = json.loads((directory / "session.json").read_text(encoding="utf-8"))
+    root = Path(data["area"])
+    # Only the area allocated by start can be read. The metadata isn't a path API.
+    if root.parent != directory or not root.name.startswith("cases-"):
+        raise ValueError("invalid session case area")
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("session case area is unavailable")
+    return root
+
+
+def case_result(directory, case_id):
+    case = cases().get(case_id)
+    if case is None:
+        raise ValueError("unknown case")
+    root = area(directory) / case_id
+    source = inside(ROOT, case["source"])
+    files = sorted(path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_file())
+    # No successful fake-host record is ever promoted to live evidence.
+    evidence_path = root / "evidence" / "live.json"
+    evidence = {"available": False, "reason": "Live builder pass has not been wired/run."}
+    if evidence_path.is_file():
+        if evidence_path.is_symlink() or evidence_path.stat().st_size > PAGE_BYTES:
+            raise ValueError("invalid or oversized live evidence")
+        record = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if record.get("mode") != "live":
+            raise ValueError("deterministic evidence cannot stand in for a live builder pass")
+        evidence = {"available": True, "record": record}
+    return {"case": case_id, "goal": case["goal"], "consent": case["consent"],
+            "obligations": case["obligations"], "evolve": case["evolve"],
+            "repository": str(root / "repo"), "source_files": files, "live_evidence": evidence}
+
+
+def read_result(directory, case_id, relative, offset=0, limit=PAGE_BYTES):
+    if case_id not in cases():
+        raise ValueError("unknown case")
+    if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= PAGE_BYTES:
+        raise ValueError("invalid byte range")
+    if not isinstance(relative, str):
+        raise ValueError("expected a source path")
+    # CI workflow declarations are review inputs; other hidden/credential files aren't.
+    workflow = relative.startswith(".github/workflows/") and relative.endswith((".yml", ".yaml"))
+    components = PurePosixPath(relative).parts
+    if any(part.startswith(".") for part in (components[1:] if workflow else components)):
+        raise ValueError("hidden files are not reviewer inputs")
+    root = area(directory) / case_id / "repo"
+    path = inside(root, relative)
+    if not path.is_file():
+        raise ValueError("expected a regular case file")
+    with path.open("rb") as stream:
+        size = path.stat().st_size
+        if offset > size:
+            raise ValueError("offset past end of file")
+        stream.seek(offset)
+        raw = stream.read(limit + 1)
+    if b"\x00" in raw:
+        raise ValueError("binary inputs are not supported by read")
+    page = raw[:limit]
+    # An offset must begin at a UTF-8 boundary; trim only an incomplete final codepoint.
+    while True:
+        try:
+            text = page.decode("utf-8")
+            break
+        except UnicodeDecodeError as error:
+            if error.reason != "unexpected end of data" or error.end != len(page):
+                raise ValueError("input/range is not valid UTF-8") from error
+            page = page[:error.start]
+    if raw and not page:
+        raise ValueError("limit is too small for one UTF-8 character")
+    next_offset = offset + len(page)
+    return {"case": case_id, "path": relative, "offset": offset, "text": text,
+            "next_offset": next_offset if next_offset < size else None}
+
+
+def start(directory):
+    # Allocate below the artifactize-owned private session directory, never /tmp's root.
+    parent = Path(tempfile.mkdtemp(prefix="cases-", dir=directory))
+    parent.rmdir()
+    case_area = materialize(parent)
+    try:
+        with socket.socket() as server:
+            server.bind(("127.0.0.1", 0))
+            server.listen()
+            (directory / "session.json").write_text(json.dumps({
+                "area": str(case_area), "port": server.getsockname()[1],
+            }), encoding="utf-8")
+            # Cases and endpoint are ready before artifactize sees this newline.
+            print("ready", flush=True)
+            with server.accept()[0] as client:
+                client.settimeout(5)
+                if client.recv(16) != b"stop":
+                    raise ValueError("invalid session stop request")
+    finally:
+        shutil.rmtree(case_area)
+        (directory / "session.json").unlink(missing_ok=True)
+
+
+def stop(directory):
+    metadata = directory / "session.json"
+    if not metadata.exists():
+        return
+    data = json.loads(metadata.read_text(encoding="utf-8"))
+    with socket.create_connection(("127.0.0.1", data["port"]), timeout=5) as client:
+        client.sendall(b"stop")
+    # Artifactize joins the start process and owns final directory/process cleanup.
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="operation", required=True)
+    check = commands.add_parser("check", help="Run deterministic tests, never a live builder")
+    check.add_argument("--artifactize", type=Path, help="Explicit candidate binary for CLI declaration seams")
+    for operation in ("start", "case", "read", "stop"):
+        commands.add_parser(operation)
+    options = parser.parse_args()
+    if options.operation == "check":
+        command = [sys.executable, "-I", str(ROOT / "test_driver.py")]
+        if options.artifactize:
+            command += ["--artifactize", str(options.artifactize.resolve(strict=True))]
+        return subprocess.run(command, check=False, timeout=120).returncode
+    try:
+        args = envelope()
+        directory = session_directory()
+        if options.operation == "start":
+            if args:
+                raise ValueError("start accepts no reviewer arguments")
+            start(directory)
+        elif options.operation == "stop":
+            if args:
+                raise ValueError("stop accepts no reviewer arguments")
+            stop(directory)
+        elif options.operation == "case":
+            if set(args) != {"case"}:
+                raise ValueError("case requires only a case ID")
+            emit(case_result(directory, args["case"]))
+        elif options.operation == "read":
+            if not {"case", "path"} <= args.keys() or not args.keys() <= {"case", "path", "offset", "limit"}:
+                raise ValueError("invalid read arguments")
+            emit(read_result(directory, args["case"], args["path"], args.get("offset", 0), args.get("limit", PAGE_BYTES)))
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        if options.operation in ("case", "read"):
+            # Don't echo host paths, request values or possibly credential-bearing exception text.
+            emit(error="Harness input unavailable or invalid; use a listed case and a narrow source path.")
+            return 0
+        print(f"Harness {options.operation} failed ({type(error).__name__}).", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
