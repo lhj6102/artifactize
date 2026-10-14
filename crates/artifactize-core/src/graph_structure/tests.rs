@@ -86,9 +86,9 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
 }
 
 #[test]
-fn graph_declaration_is_root_only_and_rejects_non_subject_fields() {
+fn graph_declaration_is_root_only_and_rejects_fingerprint_overrides() {
     let repo = fixture();
-    for field in ["fingerprint = false", "fingerprint = {}", "basis = false"] {
+    for field in ["fingerprint = false", "fingerprint = {}"] {
         fs::write(
             repo.path().join(".artf"),
             format!("name = 'graph'\n{field}\n"),
@@ -117,6 +117,31 @@ fn graph_declaration_is_root_only_and_rejects_non_subject_fields() {
     assert!(graph.children.is_empty());
     assert!(graph.mounts.is_empty());
     assert!(!config.evals.iter().any(|eval| eval.target == "graph"));
+    for basis in [false, true] {
+        fs::write(
+            repo.path().join(".artf"),
+            format!("name = 'graph'\nbasis = {basis}\n"),
+        )
+        .unwrap();
+        let config = crate::config::read_workspace_config(repo.path()).unwrap();
+        assert_eq!(config.artifacts["graph"].basis, Some(basis));
+        assert_eq!(config.artifacts["graph"].kind, ArtifactKind::Graph);
+        assert!(matches!(
+            config.artifacts["graph"].fingerprint,
+            Some(Fingerprint::Graph)
+        ));
+    }
+    fs::write(
+        repo.path().join(".artf"),
+        GRAPH.replace("name = 'graph'", "name = 'graph'\nbasis = true"),
+    )
+    .unwrap();
+    assert!(
+        read(repo.path())
+            .unwrap_err()
+            .contains("Basis Artifact graph cannot own Evals.")
+    );
+    fs::write(repo.path().join(".artf"), "name = 'graph'\nbasis = true\n").unwrap();
     fs::write(repo.path().join("child/.artf"), "name = 'other-graph'\n").unwrap();
     assert!(
         read(repo.path())

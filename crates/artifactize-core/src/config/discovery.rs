@@ -165,14 +165,12 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
                     read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
                 let table: toml::Table =
                     toml::from_str(&source).map_err(|error| ConfigError::new(&file, error))?;
-                for key in ["fingerprint", "basis"] {
-                    if table.contains_key(key) {
-                        return Err(ConfigError::declaration(
-                            &file,
-                            &[key],
-                            format!("The graph Artifact cannot declare {key}."),
-                        ));
-                    }
+                if table.contains_key("fingerprint") {
+                    return Err(ConfigError::declaration(
+                        &file,
+                        &["fingerprint"],
+                        "The graph Artifact cannot declare fingerprint.",
+                    ));
                 }
                 let mut declaration =
                     parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;

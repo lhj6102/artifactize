@@ -156,9 +156,11 @@ repository root; declaring the graph does not make it the owner of that folder.
 Its scope uses `kind = "graph"` and its declaration path is `.artf`.
 
 Do not declare `fingerprint`, even `false` or an empty table: its fingerprint is
-always the current extracted graph. `basis`, even `false`, is also rejected: the
-graph is a reviewable structural subject, not a source input. Mounts remain valid
-because they connect declared tools or evals to other Artifacts. No source file is
+always the current extracted graph. Otherwise ordinary Artifact rules apply:
+`basis = true` explicitly declares no own review obligations and cannot own evals;
+it does not satisfy unmet dependencies. A no-eval graph without `basis = true`
+remains UNREVIEWED, as any no-eval Artifact does. Mounts remain valid because they
+connect declared tools or evals to other Artifacts. No source file is
 created or required. Ordinary Artifact cycles are allowed; extraction is flat and
 includes the graph Artifact's own declaration without recursive fingerprinting.
 

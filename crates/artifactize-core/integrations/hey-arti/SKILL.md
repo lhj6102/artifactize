@@ -42,8 +42,10 @@ Optional `tags` label Artifacts; they do not change reuse.
 The repository-root `.artf` can declare the project's graph as an Artifact, with
 its own required name and ordinary evals. Its built-in structural fingerprint
 covers named relations and evaluation criteria, not all source contents. Do not
-set `fingerprint`, `basis` or `review_policy` on it. It creates no default evals
-or dependencies and is not a substitute for declaring real source consumers.
+set `fingerprint` or `review_policy` on it. Ordinary `basis` rules apply: only an
+agreed no-eval input uses `basis = true`, and its unmet dependencies still matter.
+It creates no default evals or dependencies and is not a substitute for declaring
+real source consumers.
 
 Start with the default **artifactsum**: omit `fingerprint` to hash own inputs.
 Folders exclude child Artifact folders and `.artf` declarations. File Artifacts
