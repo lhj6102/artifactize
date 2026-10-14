@@ -1,12 +1,16 @@
 use std::{
     fs,
     path::PathBuf,
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
+
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -16,6 +20,12 @@ struct Fixture {
     root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
 }
 
 impl Fixture {
@@ -116,12 +126,14 @@ impl Fixture {
     }
 
     fn start(&self) -> Child {
-        self.command()
+        let child = self
+            .command()
             .args(["verify", "--wait", "--all", "--json"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap()
+            .unwrap();
+        Child::new(child, &self.state, &self.repo)
     }
 
     fn waiting(&self) -> Value {
@@ -412,6 +424,7 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let child = Child::new(child, &fixture.state, &fixture.repo);
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
     let run_id = waiting["runId"].as_str().unwrap();
@@ -444,7 +457,11 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
             .iter()
             .all(|r| r["status"] == "GREEN")
     );
-    let db = rusqlite::Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    let db = rusqlite::Connection::open_with_flags(
+        fixture.state.join("state.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.query_row::<i64, _, _>("SELECT count(*) FROM runs", [], |r| r.get(0))
             .unwrap(),

@@ -4,11 +4,15 @@ use artifactize_core::{
     runs, store,
     types::{FailureCode, RequestStatus, RunId, RunStatus},
 };
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::Watcher;
+
 use serde_json::{Value, json};
 use std::{
     fs,
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
@@ -92,13 +96,21 @@ impl Fixture {
         .await
         .unwrap()
     }
-    fn watcher(&self, args: &[&str]) -> Child {
-        self.command()
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
+    fn watcher(&self, args: &[&str]) -> Watcher {
+        Watcher::new(
+            self.command()
+                .args(args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        )
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
     }
 }
 
@@ -275,7 +287,11 @@ async fn a2_request_keys_deduplicate_sequential_and_concurrent_attempts_only() {
     for id in &unkeyed {
         assert_eq!(fixture.settled(id).await.state, runs::State::Green);
     }
-    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    let db = rusqlite::Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.query_row("SELECT count(*) FROM runs", [], |row| row.get::<_, u32>(0))
             .unwrap(),
@@ -374,7 +390,11 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
             .await
             .unwrap();
     }
-    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    let db = rusqlite::Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
@@ -430,7 +450,11 @@ async fn a4_dead_worker_errors_without_replay_and_cleans_owned_children() {
         id,
         "a retry never replays interrupted work"
     );
-    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    let db = rusqlite::Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.query_row(
             "SELECT count(*) FROM executions WHERE status='RUNNING'",

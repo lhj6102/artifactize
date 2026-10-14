@@ -68,9 +68,15 @@ describe("settings", () => {
   });
 
   after(async () => {
-    await session?.stop();
-    store?.close();
-    await fixture.remove();
+    try { await session?.stop(); }
+    finally {
+      try {
+        if (store) await new Promise<void>((done) => {
+          store.closeAllConnections();
+          store.close(() => done());
+        });
+      } finally { await fixture.remove(); }
+    }
   });
 
   // UX edges: E-SET-KEYS

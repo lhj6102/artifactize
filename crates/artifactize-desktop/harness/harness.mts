@@ -17,7 +17,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { cancelRuns, cli, create, type Fixture } from "../ui/e2e/fixture.ts";
-import { startBuilt, type Session } from "../ui/e2e/driver.ts";
+import { LAUNCH_TIMEOUT, startBuilt, type Session } from "../ui/e2e/driver.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 
 const SOCKET = "control.sock";
@@ -87,6 +87,15 @@ async function settled(browser: WebdriverIO.Browser): Promise<string> {
   return last;
 }
 
+/** A launch is ready when the fixture's actual entry-point content has rendered. */
+async function rendered(browser: WebdriverIO.Browser, screen: "monitor" | "review" | "graph") {
+  await browser.waitUntil(() => browser.execute((entry) => {
+    if (entry === "graph") return !!document.querySelector('.svelte-flow__node[data-id="a:release"]');
+    const selector = entry === "review" ? '[aria-label="Requests"] [role="option"]' : '[role="treeitem"]';
+    return [...document.querySelectorAll(selector)].some((row) => row.textContent?.includes("signoff"));
+  }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
+}
+
 async function target(browser: WebdriverIO.Browser, element: number) {
   const found = await browser.$(`[data-snap="${element}"]`);
   if (!(await found.isExisting())) throw new Error(`no element [${element}] in the last snapshot; take a new snapshot`);
@@ -136,27 +145,34 @@ async function start(): Promise<void> {
   let session: Session | undefined;
   try {
     session = await startBuilt(fixture);
-    await settled(session.browser);
+    await rendered(session.browser, "monitor");
   } catch (error) {
-    await session?.stop();
-    cancelRuns(fixture);
-    rmSync(fixture.root, { recursive: true, force: true });
+    try { await session?.stop(); }
+    finally {
+      try { cancelRuns(fixture); }
+      finally { rmSync(fixture.root, { recursive: true, force: true }); }
+    }
     throw error;
   }
   let shown = { session, fixture };
   let edits = 0;
-  let ending = false;
-  const end = async () => {
-    if (ending) return;
-    ending = true;
-    await shown.session.stop();
-    cancelRuns(fixture);
-    rmSync(fixture.root, { recursive: true, force: true });
-  };
+  let ending: Promise<void> | undefined;
+  const end = () => ending ??= (async () => {
+    server.close();
+    try { await shown.session.stop(); }
+    finally {
+      try { cancelRuns(fixture); }
+      finally { rmSync(fixture.root, { recursive: true, force: true }); }
+    }
+  })();
   // A window has one command stream: a concurrent snapshot cannot race a relaunch.
   let pending = Promise.resolve();
   const server = createServer((socket: Socket) => {
-    createInterface({ input: socket }).once("line", (line) => {
+    const lines = createInterface({ input: socket });
+    socket.once("close", () => lines.close());
+    socket.once("error", () => lines.close());
+    lines.once("line", (line) => {
+      lines.close();
       pending = pending.then(async () => {
         let reply: unknown;
         try {
@@ -171,6 +187,7 @@ async function start(): Promise<void> {
             const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, "graph-state") } : fixture;
             const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
             shown = { session: await startBuilt(target, ...args), fixture: target };
+            await rendered(shown.session.browser, request.screen);
             reply = { text: await settled(shown.session.browser) };
           } else if (request.op === "change-declaration") {
             const path = join(fixture.repo, "docs", "index.artf");
@@ -187,10 +204,21 @@ async function start(): Promise<void> {
       }).catch((error: Error) => { socket.destroy(error); });
     });
   });
-  for (const name of ["SIGTERM", "SIGINT"] as const) process.on(name, () => void end().finally(() => process.exit(0)));
-  await new Promise<void>((done) => server.listen(SOCKET, done));
-  console.log("ready");
-  setInterval(() => {}, 1 << 30);
+  for (const name of ["SIGTERM", "SIGINT"] as const) process.on(name, () => void end().then(
+    () => process.exit(0),
+    (error: unknown) => { console.error(error); process.exit(1); },
+  ));
+  try {
+    await new Promise<void>((done, fail) => {
+      server.once("error", fail);
+      server.listen(SOCKET, () => { server.off("error", fail); done(); });
+    });
+    console.log("ready");
+    // The listening server owns the lifetime; no unowned keep-alive timer is needed.
+  } catch (error) {
+    await end();
+    throw error;
+  }
 }
 
 /** One request to the running session; the socket is relative to its directory. */

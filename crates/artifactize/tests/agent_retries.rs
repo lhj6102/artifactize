@@ -1,5 +1,9 @@
 //! Agent turn retries, error codes and stopping a backend, against loopback fakes.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -564,8 +568,14 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let child = command.spawn().unwrap();
-    let database = || rusqlite::Connection::open(project.state.join("state.sqlite")).ok();
+    let child = Child::new(command.spawn().unwrap(), &project.state, &project.repo);
+    let database = || {
+        rusqlite::Connection::open_with_flags(
+            project.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .ok()
+    };
     let waiting_for_slot = || {
         database().is_some_and(|db| {
             db.query_row(
@@ -613,13 +623,6 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     assert_eq!(slots, 0);
 }
 
-/// Yield to runnable futures without letting a paused runtime auto-advance its timers.
-async fn poll_ready() {
-    for _ in 0..32 {
-        tokio::task::yield_now().await;
-    }
-}
-
 #[tokio::test(start_paused = true)]
 async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() {
     use artifactize_core::llm::{Client, Turn};
@@ -651,7 +654,7 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
         ),
         "fixture".into(),
     );
-    let running = tokio::spawn(async move {
+    let mut running = Box::pin(async move {
         let cancellation = tokio_util::sync::CancellationToken::new();
         let mut attempts = Vec::new();
         let result = client
@@ -667,18 +670,16 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
             .await;
         (result, attempts)
     });
-    poll_ready().await;
+    // Poll the public turn future to its actual pending retry, not a scheduler yield count.
+    assert!(futures_util::poll!(&mut running).is_pending());
     assert_eq!(captured.requests().len(), 1);
     tokio::time::advance(Duration::from_millis(699)).await;
-    poll_ready().await;
+    assert!(futures_util::poll!(&mut running).is_pending());
     assert_eq!(captured.requests().len(), 1, "retry ran before Retry-After");
     tokio::time::advance(Duration::from_millis(1)).await;
-    poll_ready().await;
-    assert!(
-        running.is_finished(),
-        "retry did not run when Retry-After elapsed"
-    );
-    let (_, attempts) = running.await.unwrap();
+    let std::task::Poll::Ready((_, attempts)) = futures_util::poll!(&mut running) else {
+        panic!("retry did not finish at the declared virtual deadline");
+    };
     assert_eq!(attempts.len(), 2);
     let calls = captured.requests();
     assert_eq!(calls.len(), 2);
@@ -710,7 +711,7 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
         ),
         "fixture".into(),
     );
-    let running = tokio::spawn(async move {
+    let mut running = Box::pin(async move {
         let cancellation = tokio_util::sync::CancellationToken::new();
         client
             .turn(
@@ -724,12 +725,10 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
             )
             .await
     });
-    poll_ready().await;
-    assert!(
-        running.is_finished(),
-        "an impossible retry waited instead of failing immediately"
-    );
-    let error = running.await.unwrap().unwrap_err();
+    let std::task::Poll::Ready(result) = futures_util::poll!(&mut running) else {
+        panic!("an impossible retry waited instead of failing immediately");
+    };
+    let error = result.unwrap_err();
     assert!(
         error.message.contains("past the review deadline"),
         "{error:?}"

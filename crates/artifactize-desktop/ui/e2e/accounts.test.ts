@@ -3,7 +3,7 @@
 // redirect URL, signing out, and listing a backend's models. The system browser is a stand-in
 // that records the address it was given.
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -44,6 +44,17 @@ describe("accounts and models", () => {
   const opened = join(fixture.root, "opened");
   const status = () => browser.$('[data-testid="codex-status"]').getText();
   const text = () => browser.execute(() => document.body.innerText);
+  const browserLog = () => existsSync(opened) ? readFileSync(opened, "utf8").trim().split("\n").filter(Boolean) : [];
+  async function openedAddress(baseline: number): Promise<string> {
+    let address: string | undefined;
+    await eventually(async () => {
+      const displayed = await text();
+      address = browserLog().slice(baseline).find((entry) => displayed.includes(entry));
+      return address !== undefined;
+    }, "a new browser entry matches this displayed sign-in address");
+    return address!;
+  }
+
 
   before(async () => {
     auth = createServer((request, response) => {
@@ -81,16 +92,23 @@ describe("accounts and models", () => {
   });
 
   after(async () => {
-    await session?.stop();
-    auth?.close();
-    provider?.close();
-    await fixture.remove();
+    try { await session?.stop(); }
+    finally {
+      try {
+        await Promise.all([auth, provider].filter(Boolean).map((server) => new Promise<void>((done) => {
+          server.closeAllConnections();
+          server.close(() => done());
+        })));
+      } finally { await fixture.remove(); }
+    }
   });
 
   // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-CANCEL
   it("starts a Codex sign-in and cancels it, saving nothing", async () => {
+    const baseline = browserLog().length;
     await browser.$("button=Sign in with ChatGPT").click();
     await browser.$("button=Cancel sign-in").waitForExist({ timeout: 15000 });
+    await openedAddress(baseline);
     assert.match(await text(), /Waiting for the browser/);
     await browser.$("button=Cancel sign-in").click();
     await eventually(async () => !(await browser.$("button=Cancel sign-in").isExisting()), "the sign-in cancelled");
@@ -99,11 +117,11 @@ describe("accounts and models", () => {
 
   // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-PASTE
   it("finishes a sign-in with the pasted redirect URL", async () => {
+    const baseline = browserLog().length;
     await browser.$("button=Sign in with ChatGPT").click();
     await browser.$("#codex-redirect").waitForExist({ timeout: 15000 });
     // The address the browser stand-in was given carries the state the redirect must return.
-    await eventually(() => readFileSync(opened, "utf8").trim().length > 0, "the browser opened");
-    const address = readFileSync(opened, "utf8").trim().split("\n").at(-1)!;
+    const address = await openedAddress(baseline);
     const state = new URL(address).searchParams.get("state");
     assert.ok(state, "the sign-in address names a state");
     // The same address is shown in Settings, for a browser that did not open.
@@ -120,11 +138,11 @@ describe("accounts and models", () => {
     await eventually(async () => (await status()).includes("Signed in"), "signed in by the paste");
     await browser.$("button=Sign out of Codex").click();
     await eventually(async () => /Not signed in/.test(await status()), "signed out");
+    const baseline = browserLog().length;
     await browser.$("button=Sign in with ChatGPT").click();
     await browser.$("button=Cancel sign-in").waitForExist({ timeout: 15000 });
     assert.doesNotMatch(await text(), /Port 1455 is in use/, "the app listens for the browser");
-    await eventually(() => readFileSync(opened, "utf8").trim().split("\n").length >= 3, "the browser opened again");
-    const address = readFileSync(opened, "utf8").trim().split("\n").at(-1)!;
+    const address = await openedAddress(baseline);
     const state = new URL(address).searchParams.get("state");
     const reply = await fetch(`http://localhost:1455/auth/callback?code=e2e-return&state=${state}`);
     assert.equal(reply.status, 200);

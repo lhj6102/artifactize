@@ -26,6 +26,7 @@ function newest(directory: string): number {
  * the build, so say so at once instead of letting tests time out.
  */
 export function checkBuild() {
+  if (checked) return;
   const root = resolve(import.meta.dirname, "../../../..");
   const built = spawnSync("cargo", ["build", "-p", "artifactize", "-p", "artifactize-desktop"], {
     cwd: root,
@@ -33,6 +34,7 @@ export function checkBuild() {
   });
   if (built.status !== 0) throw new Error("cargo build -p artifactize -p artifactize-desktop failed; see its output above.");
   assertFresh();
+  checked = true;
 }
 
 /** The app embeds ui/dist when it compiles, so it must not be older than the files there. */

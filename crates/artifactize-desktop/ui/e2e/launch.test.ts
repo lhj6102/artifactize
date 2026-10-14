@@ -3,8 +3,8 @@
 // starts on the waiting sign-offs of every repository.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { addRepository, artifactize, create, type Fixture, requests } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { addRepository, addWorktrees, artifactize, create, type Fixture, requests } from "./fixture.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -18,6 +18,8 @@ async function eventually(check: () => Promise<boolean> | boolean, what: string,
 
 describe("launching the Monitor", () => {
   let fixture: Fixture;
+  let worktreeRuns: string[];
+  let initialRun: string;
   let session: Session;
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
@@ -27,7 +29,10 @@ describe("launching the Monitor", () => {
   const settingsShown = () => browser.execute(() => !!document.querySelector(".settings h1") && (document.querySelector(".settings") as HTMLElement).offsetParent !== null);
 
   before(async () => {
+    checkBuild();
     fixture = await create();
+    initialRun = requests(fixture)[0].runId;
+    worktreeRuns = await addWorktrees(fixture);
     await addRepository(fixture, "other");
     await addRepository(fixture, "third");
     session = await start(fixture, "--repo", fixture.repo);
@@ -66,6 +71,21 @@ describe("launching the Monitor", () => {
     }, "the other repository's Run replaces the Runs");
   });
 
+  // UX edges: E-MON-SCOPE-MOVE E-MON-RUNS-MOVE
+  it("narrows to one worktree and aggregates both at the repository boundary", async () => {
+    const ids = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')]
+      .map((row) => /run-\S+/.exec(row.innerText)?.[0] ?? ""));
+    const scope = (name: string) => browser.$(`//ul[@aria-label="Scope"]//li[span[text()="${name}"]]`);
+    for (const [index, name] of ["scope-one", "scope-two"].entries()) {
+      await scope(name).click();
+      await eventually(async () => (await ids()).length === 1 && (await ids())[0] === worktreeRuns[index], `only ${name}'s identified Run`);
+      assert.deepEqual(await ids(), [worktreeRuns[index]], "the other worktree is excluded");
+    }
+    await scope("repo").click();
+    await eventually(async () => (await ids()).length === 3, "the repository includes its three worktrees' Runs");
+    assert.deepEqual((await ids()).sort(), [initialRun, ...worktreeRuns].sort());
+  });
+
   // UX edges: E-SCREEN-SETTINGS E-SCREEN-REVIEW E-SCREEN-MONITOR
   it("switches screens with Ctrl+, Ctrl+2 and Ctrl+1", async () => {
     await browser.$('[role="tree"]').click();
@@ -84,6 +104,7 @@ describe("launching the Monitor for every repository", () => {
     browser.execute(() => (document.querySelector('[aria-label="Scope"] [aria-selected="true"]') as HTMLElement | null)?.innerText ?? "");
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     await addRepository(fixture, "other");
     await addRepository(fixture, "third");
@@ -127,6 +148,7 @@ describe("launching the Review screen for every repository", () => {
   const preview = () => browser.execute(() => [...document.querySelectorAll("section.panel h3")].at(-1)?.textContent?.trim() ?? "");
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     await addRepository(fixture, "other");
     await addRepository(fixture, "third");

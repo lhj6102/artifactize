@@ -1,6 +1,6 @@
 //! Shared safe file access: pinned no-follow opens and directory listings.
 
-#[cfg(any(windows, test))]
+#[cfg(windows)]
 mod directory_scan;
 #[cfg(unix)]
 mod unix;

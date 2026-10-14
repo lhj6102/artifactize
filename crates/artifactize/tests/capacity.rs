@@ -1,6 +1,10 @@
 //! Machine-wide Agent backend capacity from `$STATE/limits.json`, shared by every `verify`
 //! process through the RUNNING executions of each backend in `state.sqlite`.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -8,7 +12,7 @@ use support::runs::RecordOutput;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -106,14 +110,16 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        self.command(
-            repo,
-            &[&["verify", "--wait", "--all", "--json"][..], args].concat(),
-        )
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap()
+        let child = self
+            .command(
+                repo,
+                &[&["verify", "--wait", "--all", "--json"][..], args].concat(),
+            )
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        Child::new(child, &self.state(), repo)
     }
 
     fn database(&self) -> Connection {
@@ -122,13 +128,17 @@ impl Fixture {
 
     /// Slots held: RUNNING executions on a backend.
     fn slots(&self) -> u32 {
-        self.database()
-            .query_row(
-                "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap()
+        Connection::open_with_flags(
+            self.state().join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
     }
 
     /// Hold an openai slot with an execution of this live process (the test).
@@ -184,8 +194,11 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     let runs = [fixture.spawn(&first, &[]), fixture.spawn(&second, &[])];
     let mut seen_waiting = false;
     wait_until(|| {
-        seen_waiting |= Connection::open(fixture.state().join("state.sqlite"))
-            .is_ok_and(|db| capacity_waiters(&db) > 0);
+        seen_waiting |= Connection::open_with_flags(
+            fixture.state().join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .is_ok_and(|db| capacity_waiters(&db) > 0);
         seen_waiting
     });
     fixture.gate.open();

@@ -1,3 +1,7 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::Watcher;
+
 use std::{
     fs,
     path::PathBuf,
@@ -159,6 +163,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         .stdout(Stdio::null())
         .spawn()
         .unwrap();
+    let child = Watcher::new(child);
     let waiting = waiting_request(&fixture);
     let (id, run) = (
         waiting["id"].as_str().unwrap(),
@@ -262,12 +267,13 @@ fn redirected_or_no_console_help_never_waits_for_input() {
     for with_console in [true, false] {
         let mut command = Command::new(support::os::cli());
         support::os::console_launch(&mut command, with_console);
-        let mut child = command
+        let child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = Watcher::new(child);
         // Keep the empty input pipe OPEN until the child has exited: an accidental read
         // cannot succeed on EOF, so completion proves it did not pause. No clock involved.
         let input = child.stdin.take().unwrap();

@@ -298,7 +298,7 @@ fn screen(monitor: &mut Monitor) -> String {
 }
 
 pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
-    sized_at(monitor, width, height, OffsetDateTime::now_utc())
+    sized_at(monitor, width, height, now())
 }
 
 /// `sized`, with ages and elapsed times measured at `now`.
@@ -763,7 +763,7 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
             view.request.state = crate::store::RequestState::failed(
                 long.clone(),
                 view.request.error_code(),
-                crate::types::Timestamp::now(),
+                "2026-01-01T00:01:00Z".parse().unwrap(),
             );
         }
         if view.request.eval_id == "app/check" {
@@ -825,7 +825,7 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
             view.request.state = crate::store::RequestState::failed(
                 messy.into(),
                 view.request.error_code(),
-                crate::types::Timestamp::now(),
+                "2026-01-01T00:01:00Z".parse().unwrap(),
             );
         }
         if view.request.eval_id == "app/check" {

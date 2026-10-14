@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   const end = Date.now() + ms;
@@ -21,6 +21,7 @@ describe("review", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
@@ -147,6 +148,7 @@ describe("a GREEN submission on the Review screen", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;

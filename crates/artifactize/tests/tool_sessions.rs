@@ -1,4 +1,8 @@
 //! Tool-session seams through real CLI reviews and the offline provider.
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::{RunChild, Watcher};
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -269,12 +273,13 @@ fn concurrent_reviews_have_distinct_sessions_and_both_cleanup() {
 #[test]
 fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
     let fixture = Fixture::new("start", "stop", "crash", 2);
-    let mut child = fixture
+    let child = fixture
         .command(&["verify", "--wait", "--all"])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child = RunChild::new(child, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         !harness::records(&fixture.log(), "call").is_empty()
     });
@@ -304,7 +309,7 @@ fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
 fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders() {
     for variant in ["live", "leaderless", "mismatch", "zombie"] {
         let fixture = Fixture::new("start", "stop", "hold", 0);
-        let mut owner = fixture
+        let owner = fixture
             .command(&[
                 "tools",
                 "check",
@@ -317,9 +322,10 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
                 "act",
             ])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut owner = Watcher::new(owner);
         support::os::wait_until(Duration::from_secs(10), || {
             !harness::records(&fixture.log(), "call").is_empty()
         });
@@ -399,7 +405,7 @@ fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants(
             if stop { "act" } else { "hold-tree" },
             0,
         );
-        let mut owner = fixture
+        let owner = fixture
             .command(&[
                 "tools",
                 "check",
@@ -412,9 +418,10 @@ fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants(
                 "act",
             ])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut owner = Watcher::new(owner);
         let kind = if stop { "stop" } else { "call" };
         support::os::wait_until(Duration::from_secs(10), || {
             !harness::records(&fixture.log(), kind).is_empty()
@@ -493,6 +500,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         !harness::records(&fixture.log(), "start").is_empty()
     });
@@ -533,6 +541,7 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         fixture.log().join("awaiting-verdict").exists()
     });
@@ -579,6 +588,7 @@ fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let owner = Watcher::new(owner);
     support::os::wait_until(Duration::from_secs(10), || {
         !harness::records(&fixture.log(), "call").is_empty()
     });
@@ -612,7 +622,7 @@ fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
 #[test]
 fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable() {
     let fixture = Fixture::new("start", "stop", "freeze-cleanup", 0);
-    let mut owner = fixture
+    let owner = fixture
         .command(&[
             "tools",
             "check",
@@ -625,9 +635,10 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
             "act",
         ])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut owner = Watcher::new(owner);
     fs::write(fixture.log().join("owner"), owner.id().to_string()).unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
         !harness::records(&fixture.log(), "call").is_empty()
@@ -702,6 +713,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         !harness::records(&fixture.log(), "start").is_empty()
     });

@@ -1,7 +1,11 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild;
+
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command},
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -185,8 +189,8 @@ fn press(monitor: &mut Monitor, code: KeyCode) -> monitor::Action {
     monitor.key(KeyEvent::from(code))
 }
 
-fn finish(child: Child) -> std::process::Output {
-    support::os::finish(child, "verify")
+fn finish(child: RunChild) -> std::process::Output {
+    child.wait_with_output().unwrap()
 }
 
 #[tokio::test]
@@ -198,6 +202,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
             .command(&fixture.beta)
             .args(["verify", "--wait", "--all"]),
     );
+    let child = RunChild::new(child, &fixture.state, &fixture.beta);
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     let (live, human) = loop {
         let runs = store::read_runs(&fixture.state, Some(&fixture.beta), 10, 0)
@@ -337,7 +342,11 @@ fn flatten<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>) {
 }
 
 fn dump(state: &Path) -> Vec<String> {
-    let db = Connection::open(state.join("state.sqlite")).unwrap();
+    let db = Connection::open_with_flags(
+        state.join("state.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let tables: Vec<String> = db
         .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         .unwrap()

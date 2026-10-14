@@ -37,14 +37,35 @@ describe("current declaration graph", () => {
     await evals.click();
     await press(browser, ["Enter"], expanded, "structure text expanded from the selected eval");
     const shown = await structure();
-    assert.match(shown, /release\/signoff/);
-    assert.match(shown, /approved/);
-    assert.match(shown, /comment/);
-    assert.match(shown, /instruction/);
-    assert.match(shown, /ship\/check/);
-    assert.match(shown, /true/);
-    assert.match(shown, /release.*ship/);
-    assert.match(shown, /instruction/);
+    const criteria: Record<string, unknown> = {};
+    let evalId = "";
+    for (const line of shown.split("\n")) {
+      const heading = /├─ ([^:]+):/.exec(line);
+      if (heading) evalId = heading[1];
+      const payload = /criteria: (\{.*\})$/.exec(line);
+      if (payload) criteria[evalId] = JSON.parse(payload[1]);
+    }
+    assert.deepEqual(criteria, {
+      "release/signoff": {
+        target: "release", title: "A person approves the release", gate: null,
+        criteria: { kind: "human" }, payload: { instruction: "Read the release notes and approve them." },
+        passSchema: { type: "object", properties: { approved: { const: true },
+          comment: { type: "string", description: "What you checked." } },
+          required: ["approved", "comment"], additionalProperties: false },
+        failSchema: { type: "object", properties: { reason: { type: "string", minLength: 3 } },
+          required: ["reason"], additionalProperties: false },
+      },
+      "ship/check": { target: "ship", title: "Ship the release", gate: null,
+        criteria: { kind: "runtime", command: "true", args: [] },
+        payload: { instruction: "Ship {release}." }, passSchema: null, failSchema: null },
+      "docs/lint": { target: "docs", title: "Docs build", gate: null,
+        criteria: { kind: "runtime", command: "true", args: [] },
+        payload: { instruction: "Build the docs." }, passSchema: null, failSchema: null },
+    }, "every independently declared criterion and owner schema is exposed");
+    const relations = shown.split("\n").filter((line) => line.includes(" → "));
+    assert.deepEqual(relations, [
+      'release → ship {"kind":"instruction","eval_id":"ship/check","name":"release"}',
+    ], "the concrete input-to-consumer relation carries its instruction label");
     assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false);
   });
 

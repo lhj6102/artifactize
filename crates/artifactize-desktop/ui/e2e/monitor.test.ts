@@ -2,11 +2,11 @@
 // Run tree → Detail, the shared Human Detail's claim, release, tool, RED validation, Korean
 // text and GREEN submission, and a live update from another process.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 
 /** Wait until `check` holds, polling the app; WebKit renders asynchronously. */
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -26,6 +26,7 @@ describe("monitor", () => {
   const human = () => browser.$('[aria-label="Human review"]');
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture);
     browser = session.browser;
@@ -142,8 +143,14 @@ describe("monitor", () => {
     await eventually(async () => (await slow.getAttribute("aria-selected")) === "true", "slow selected");
     await browser.keys(["Enter"]);
     await eventually(async () => /Running slow_release/.test(await text()), "the tool running");
+    const marker = join(fixture.root, "slow.pid");
+    await eventually(() => existsSync(marker) && readFileSync(marker, "utf8").trim().length > 0, "the owned tool process started");
+    const pid = Number(readFileSync(marker, "utf8").trim());
+    const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    assert.ok(alive(), "the cancellation target is an actual running process");
     await browser.keys(["Escape"]);
     await eventually(async () => !/Running slow_release/.test(await text()), "the tool cancelled");
+    await eventually(() => !alive(), "Esc terminated the owned tool process");
     assert.ok(await human().isExisting(), "Esc cancelled the job and left the Detail open");
   });
 
@@ -227,6 +234,7 @@ describe("quitting the Monitor with a claim", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture);
     browser = session.browser;

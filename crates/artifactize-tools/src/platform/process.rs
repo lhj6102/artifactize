@@ -50,6 +50,9 @@ pub(crate) async fn run(
         }
     };
     tree.kill();
+    // Expiry/cancellation must reap the direct child before returning, not leave it
+    // to Tokio's best-effort orphan queue when the caller shuts down its runtime.
+    let _ = tree.child.wait().await;
     result
 }
 

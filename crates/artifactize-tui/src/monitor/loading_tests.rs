@@ -5,7 +5,7 @@ use crate::{
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
-use std::{fs, sync::Arc};
+use std::fs;
 
 async fn fixture(count: usize) -> (tempfile::TempDir, Receipts, Monitor) {
     let root = crate::test_os::tempdir();
@@ -54,44 +54,55 @@ async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolet
     );
     assert_eq!(monitor.open.as_deref(), Some("run-0"));
     monitor.refresh().await;
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-0");
+    monitor.focus = Pane::Artifacts;
+    let shown = tests::sized(&mut monitor, 200, 40);
+    assert!(shown.contains("Run run-0"), "{shown}");
+    assert!(!shown.contains("Run run-1"), "{shown}");
 }
 #[tokio::test]
 async fn page_edges_remain_bounded_and_the_selected_run_is_pinned_without_prefix_growth() {
     let (_root, receipts, mut monitor) = fixture(9).await;
     monitor.limit = 2;
     monitor.refresh().await;
-    assert_eq!(
-        monitor
-            .runs
-            .iter()
-            .map(|run| run.id.as_str())
-            .collect::<Vec<_>>(),
-        ["run-8", "run-7"]
-    );
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (2)", "run-8", "run-7"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert!(!shown.contains("run-6"), "{shown}");
     monitor.key(KeyEvent::from(KeyCode::Down));
     monitor.key(KeyEvent::from(KeyCode::Down));
     monitor.refresh().await;
-    assert_eq!(monitor.offset, 2);
-    assert_eq!(monitor.runs.len(), 2);
-    assert_eq!(monitor.open.as_deref(), Some("run-6"));
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (2)", "run-6", "run-5"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert!(!shown.contains("run-8"), "{shown}");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-6");
     monitor.key(KeyEvent::from(KeyCode::Up));
     monitor.refresh().await;
-    assert_eq!(monitor.offset, 0);
-    assert_eq!(monitor.open.as_deref(), Some("run-7"));
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (2)", "run-8", "run-7"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert!(!shown.contains("run-5"), "{shown}");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-7");
     let mut newest = monitor.run.as_ref().unwrap().0.run.clone();
     newest.id = "run-new".parse().unwrap();
     receipts.create_run(&newest, &[]).await.unwrap();
     monitor.refresh().await;
-    assert_eq!(monitor.limit, 2);
-    assert_eq!(monitor.runs.len(), 3);
-    assert_eq!(monitor.open.as_deref(), Some("run-7"));
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (3)", "run-new", "run-7"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-7");
     for _ in 0..4 {
         monitor.focus = Pane::Runs;
         monitor.select_run(monitor.runs.len() - 1);
         monitor.key(KeyEvent::from(KeyCode::Down));
-        monitor.refresh().await;
-        assert!(monitor.runs.len() <= 3);
+        let job = monitor.start_refresh(true, false).unwrap();
+        let completed = crate::task::joined(job.await).unwrap();
+        assert!(completed.result.as_ref().unwrap().runs.len() <= 3);
+        assert!(monitor.finish_refresh(completed).await);
     }
 }
 #[tokio::test]
@@ -99,7 +110,6 @@ async fn unrelated_writes_keep_the_selected_tree_and_detail_and_resync_forces_a_
     let (_root, receipts, mut monitor) = fixture(2).await;
     monitor.refresh().await;
     monitor.open_detail().await;
-    let nodes = monitor.nodes();
     let detail = monitor
         .detail
         .as_ref()
@@ -111,19 +121,28 @@ async fn unrelated_writes_keep_the_selected_tree_and_detail_and_resync_forces_a_
     unrelated.id = "run-0".parse().unwrap();
     unrelated.jobs = Some(unrelated.jobs.unwrap_or(0) + 1);
     receipts.save_run(&unrelated).await.unwrap();
-    monitor.refresh().await;
-    assert!(Arc::ptr_eq(&nodes, &monitor.nodes()));
+    let job = monitor.start_refresh(true, false).unwrap();
+    let completed = crate::task::joined(job.await).unwrap();
+    assert!(
+        completed.result.as_ref().unwrap().selected.is_none(),
+        "the loader does not send unchanged selected Run data again"
+    );
+    assert!(monitor.finish_refresh(completed).await);
     assert_eq!(
         monitor.detail.as_ref().unwrap().detail.field("Path"),
         detail.as_deref()
     );
     let job = monitor.start_refresh(true, true).unwrap();
+    let completed = crate::task::joined(job.await).unwrap();
     assert!(
-        monitor
-            .finish_refresh(crate::task::joined(job.await).unwrap())
-            .await
+        completed.result.as_ref().unwrap().selected.is_some(),
+        "an explicit resync sends a fresh selected Run baseline"
     );
-    assert!(!Arc::ptr_eq(&nodes, &monitor.nodes()));
+    assert!(monitor.finish_refresh(completed).await);
+    assert_eq!(
+        monitor.detail.as_ref().unwrap().detail.field("Path"),
+        detail.as_deref()
+    );
 }
 
 #[tokio::test]
@@ -138,14 +157,17 @@ async fn scope_navigation_restores_the_same_cached_run_after_clearing_the_displa
         .position(|row| matches!(row.scope, Scope::Repository(_)))
         .unwrap();
     assert_eq!(monitor.select_scope(index), Action::Refresh);
-    assert!(monitor.run.is_none());
+    monitor.focus = Pane::Artifacts;
+    assert!(tests::sized(&mut monitor, 200, 40).contains("Select a Run."));
     let job = monitor.start_refresh(false, false).unwrap();
     assert!(
         monitor
             .finish_refresh(crate::task::joined(job.await).unwrap())
             .await
     );
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id, id);
+    let shown = tests::sized(&mut monitor, 200, 40);
+    assert!(shown.contains(&format!("Run {id}")), "{shown}");
+    assert!(!shown.contains("Select a Run."), "{shown}");
     // Catalog rebuilding on navigation retains its global badges and the selected scope.
     assert_eq!(monitor.catalog.selected.as_ref(), Some(&monitor.scope));
 }

@@ -1,12 +1,16 @@
 //! Read-through/write-through of the remote review store: two state directories ("machines")
 //! and one real `artifactize server` on loopback.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::{RunChild, Watcher};
+
 use std::{
     fs,
     io::{BufRead, BufReader},
     net::TcpListener,
     path::{Path, PathBuf},
-    process::{Child, ChildStdout, Command, Output, Stdio},
+    process::{ChildStdout, Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -21,7 +25,7 @@ use support::runs::RecordOutput;
 
 struct Server {
     state: PathBuf,
-    child: Child,
+    child: Watcher,
     _stdout: BufReader<ChildStdout>,
     url: String,
 }
@@ -29,13 +33,14 @@ struct Server {
 impl Server {
     fn start(root: &Path) -> Self {
         let state = root.join("server");
-        let mut child = Command::new(support::os::cli())
+        let child = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&state)
             .args(["server", "run", "--listen", "127.0.0.1:0"])
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = Watcher::new(child);
         let mut stdout = BufReader::new(child.stdout.take().unwrap());
         let mut line = String::new();
         stdout.read_line(&mut line).unwrap();
@@ -67,7 +72,11 @@ impl Server {
 
     /// Stored (publisher, record) pairs.
     fn entries(&self) -> Vec<(String, Value)> {
-        let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            self.state.join("review-store.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         let mut statement = db
             .prepare("SELECT publisher,data FROM entries ORDER BY publisher,key,completed_at")
             .unwrap();
@@ -86,7 +95,11 @@ impl Server {
     /// The last use of each stored record, by execution ID; a lookup updates the record it
     /// returns.
     fn last_used(&self) -> Vec<(String, String)> {
-        let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            self.state.join("review-store.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         let mut statement = db
             .prepare("SELECT execution_id,last_used FROM entries ORDER BY execution_id")
             .unwrap();
@@ -498,6 +511,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let waiting = RunChild::new(waiting, &bob.state, &repo);
 
     // A token without the human scope keeps the sign-off local. Each signer's own verify
     // records the request and stops waiting at once.

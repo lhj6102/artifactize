@@ -374,7 +374,11 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .get("last")
             .is_none()
     );
-    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    let db = Connection::open_with_flags(
+        fixture.state.join("state.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let before: String = db
         .query_row("SELECT group_concat(data) FROM runs", [], |row| row.get(0))
         .unwrap();
@@ -390,7 +394,11 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .join(first["id"].as_str().unwrap())
             .is_dir()
     );
-    db.pragma_update(None, "user_version", 99).unwrap();
+    // Corrupt schema metadata as an explicit input, separate from the read-only observer.
+    Connection::open(fixture.state.join("state.sqlite"))
+        .unwrap()
+        .pragma_update(None, "user_version", 99)
+        .unwrap();
     assert!(
         fixture.json(&["status"], 2)["error"]
             .as_str()

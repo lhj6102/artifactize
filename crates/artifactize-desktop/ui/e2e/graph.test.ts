@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, createChain, createEvals, type Fixture, signoff } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -36,6 +36,7 @@ describe("run graph", () => {
     }));
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture);
     browser = session.browser;
@@ -118,6 +119,7 @@ describe("run graph of many Artifacts", () => {
   const mounted = () => browser.execute(() => document.querySelectorAll(".svelte-flow__node").length);
 
   before(async () => {
+    checkBuild();
     session = await start(createChain(85));
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), "the Run tree", 30000);
@@ -185,6 +187,7 @@ describe("run graph of an Artifact with several evals", () => {
   const detailClosed = async () => !(await browser.$("button*=Close").isExisting());
 
   before(async () => {
+    checkBuild();
     session = await start(createEvals(["alpha", "beta", "gamma"]));
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("alpha"), "the Run tree");

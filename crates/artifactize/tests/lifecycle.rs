@@ -162,7 +162,11 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let run = verify(&repo, &state).await;
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let request_text: String = db
         .query_row(
             "SELECT data FROM requests WHERE id=?",

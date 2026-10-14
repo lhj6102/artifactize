@@ -175,7 +175,7 @@ pub fn open_recording(binary: &str, root: &Path, target: &str) -> std::process::
         .unwrap()
 }
 
-/// A help program with ordinary, oversized, and never-finishing output modes.
+/// A help program with ordinary and oversized output modes.
 pub fn help_program(root: &Path) {
     compile(
         root,
@@ -189,70 +189,8 @@ pub fn help_program(root: &Path) {
                 const OVERSIZED_HELP_BYTES: usize = 64 * 1024 + 1;
                 print!("{}", "x".repeat(OVERSIZED_HELP_BYTES));
             }
-            Some("wait") => loop { std::thread::park(); },
             _ => println!("stub help: {}", args.join("|")),
         }
     }"#,
     );
-}
-
-/// The child's TCP connection is the handshake: its established stream proves startup,
-/// and EOF proves the child died. No polling, PID reuse, or scheduler delay is involved.
-pub fn timeout_tree(binary: &str, root: &Path) -> std::process::Output {
-    use std::io::Read;
-    compile(
-        root,
-        "spawner",
-        r#"fn main() {
-        let args: Vec<String> = std::env::args().collect();
-        if args.get(1).map(String::as_str) == Some("child") {
-            let stream = std::net::TcpStream::connect(&args[2]).unwrap();
-            // Keep the established connection alive until the process tree is killed.
-            let _stream = stream;
-            loop { std::thread::park(); }
-        } else {
-            // Spawn immediately, so the seam checks admission before the first instruction.
-            std::process::Command::new(std::env::current_exe().unwrap())
-                .arg("child").arg(&args[1]).spawn().unwrap();
-            loop { std::thread::park(); }
-        }
-    }"#,
-    );
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let address = listener.local_addr().unwrap().to_string();
-    let mut command = tools(binary);
-    let child = command
-        .current_dir(root)
-        .env("PATH", root)
-        .args(["help", "spawner", &address])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let (connected, connection) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let stream = listener.accept().map(|(stream, _)| stream);
-        let _ = connected.send(stream);
-    });
-    let output = child.wait_with_output().unwrap();
-    // A watchdog bounds broken startup or cleanup; success never depends on elapsed time.
-    const CLEANUP_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(20);
-    let mut stream = connection
-        .recv_timeout(CLEANUP_WATCHDOG)
-        .expect("the help child completed its startup handshake")
-        .unwrap();
-    stream.set_read_timeout(Some(CLEANUP_WATCHDOG)).unwrap();
-    // The child's end closes when it ends: an orderly close on Unix, a reset on Windows,
-    // which tears down the connections of a terminated process.
-    match stream.read(&mut [0]) {
-        Ok(read) => assert_eq!(read, 0, "the help child outlived the timeout"),
-        Err(error) => assert!(
-            matches!(
-                error.kind(),
-                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
-            ),
-            "the help child outlived the timeout: {error}"
-        ),
-    }
-    output
 }

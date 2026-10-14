@@ -1,7 +1,11 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild;
+
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -184,7 +188,11 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     }
     assert_eq!(request("cycle-a/check")["status"], "GREEN");
     assert_eq!(request("cycle-b/check")["status"], "GREEN");
-    let database = Connection::open(fixture.state.join(artifactize_core::store::DATABASE)).unwrap();
+    let database = Connection::open_with_flags(
+        fixture.state.join(artifactize_core::store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         database
             .pragma_query_value::<u32, _>(None, "user_version", |r| r.get(0))
@@ -406,7 +414,7 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     assert_eq!(fs::read_to_string(&marker).unwrap().lines().count(), 1);
 }
 
-fn wait_for(mut child: Child) -> Output {
+fn wait_for(mut child: RunChild) -> Output {
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
@@ -434,6 +442,7 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let child = RunChild::new(child, &fixture.state, &fixture.repo);
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
     while !marker.exists() {
         assert!(Instant::now() < deadline, "runtime did not start");
@@ -955,7 +964,6 @@ fn runtime_and_agent_starts_share_the_run_budget() {
 
 #[test]
 fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
-    use std::io::{BufRead, BufReader};
     let fixture = Fixture::new();
     let release = fixture._root.path().join("release");
     fixture.runtime(
@@ -973,14 +981,13 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         if json {
             command.arg("--json");
         }
-        let mut child = command
+        let child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        let mut stderr = BufReader::new(child.stderr.take().unwrap());
-        let mut line = String::new();
-        stderr.read_line(&mut line).unwrap();
+        let child = RunChild::new(child, &fixture.state, &fixture.repo);
+        let line = child.announcement();
         let id = line
             .strip_suffix('\n')
             .and_then(|line| line.strip_prefix("Started "))
@@ -997,10 +1004,9 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         assert!(running.status.success());
         assert_eq!(json_output(&running)["status"], "RUNNING");
         fs::write(&release, "").unwrap();
-        let mut rest = String::new();
-        std::io::Read::read_to_string(&mut stderr, &mut rest).unwrap();
-        assert_eq!(rest, "");
+        let announcement = line.to_owned();
         let output = wait_for(child);
+        assert_eq!(String::from_utf8_lossy(&output.stderr), announcement);
         assert_eq!(output.status.code(), Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
         if json {

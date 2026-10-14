@@ -3,8 +3,8 @@
 // page holds.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { artifactize, create, createChain, type Fixture, signoff } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { artifactize, create, createPagedRequests, type Fixture, signoff } from "./fixture.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
@@ -26,6 +26,7 @@ describe("opening a request", () => {
   const exists = () => human().isExisting();
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
@@ -76,14 +77,16 @@ describe("opening a request", () => {
 
 describe("paging requests", () => {
   let fixture: Fixture;
+  let expected: string[];
   let session: Session;
   let browser: WebdriverIO.Browser;
   const count = () => browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
   const title = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
+    checkBuild();
     // More requests than the 100 a page holds.
-    fixture = createChain(103);
+    ({ fixture, expected } = createPagedRequests());
     session = await start(fixture, "review");
     browser = session.browser;
     await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
@@ -100,8 +103,12 @@ describe("paging requests", () => {
     await press(browser, ["Escape"], async () => (await browser.$('[aria-label="Search requests"]').getValue()) === "", "the query cleared");
     await press(browser, ["Enter"], () => browser.$('[aria-label="Requests"]').isFocused(), "focus on the list");
     await eventually(async () => (await count()) === 100 && /page 1/.test(await title()), "the first page");
+    const identities = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Requests"] [role="option"] .mono')].map((cell) => cell.innerText));
+    assert.deepEqual(await identities(), expected.slice(0, 100), "the newest batch precedes the older batch");
     await press(browser, ["PageDown"], async () => (await count()) === 3 && /page 2/.test(await title()), "the older page");
+    assert.deepEqual(await identities(), expected.slice(100), "older request identities and order");
     await press(browser, ["PageUp"], async () => (await count()) === 100 && /page 1/.test(await title()), "the newer page");
+    assert.deepEqual(await identities(), expected.slice(0, 100), "paging back restores the identical newer order");
   });
 });
 
@@ -113,6 +120,7 @@ describe("a claim another reviewer holds", () => {
   const human = () => browser.$('[aria-label="Human review"]');
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
@@ -155,6 +163,7 @@ describe("a GREEN submission from the start", () => {
     }, key);
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     // In the Monitor, where a completed result stays open in the Detail.
     session = await start(fixture);

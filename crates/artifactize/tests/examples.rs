@@ -1,6 +1,10 @@
 //! The example projects run offline from the built binary, as their READMEs describe.
 //! Commands run from each example folder with an isolated state home; no Agent eval runs.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild;
+
 use std::{
     collections::BTreeMap,
     fs,
@@ -523,6 +527,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let verify = RunChild::new(verify, &session.0.path().join("state"), &repo);
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     let run_id = loop {
         let listed = session.json(&repo, &["request", "list", "--json"], 0);

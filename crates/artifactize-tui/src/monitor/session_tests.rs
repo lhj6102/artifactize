@@ -237,12 +237,34 @@ fn reset_and_saved_promotion_are_not_lost_when_job_is_stale() {
     live.finish(job, window);
     complete(&mut live);
     assert_eq!(live.scroll.mode, Mode::Following);
-    live.source.saved = false;
-    live.invalidate();
+    assert!(live.window.rows.join("\n").contains("replacement"));
+    std::fs::remove_file(
+        crate::agent::session::path(&live.source.state, &live.source.reference.session_id).unwrap(),
+    )
+    .unwrap();
+    let mut source = live.source.clone();
+    source.saved = false;
+    assert!(live.refresh(&source));
     let (job, window) = run_job(&mut live);
-    live.source.saved = true;
+    assert!(
+        window
+            .status
+            .as_deref()
+            .unwrap()
+            .contains("never recorded as saved")
+    );
+    source.saved = true;
+    assert!(live.refresh(&source));
     live.finish(job, window);
-    assert!(live.reader.as_ref().unwrap().source.saved);
+    complete(&mut live);
+    assert!(
+        live.window
+            .status
+            .as_deref()
+            .unwrap()
+            .contains("removed by session GC"),
+        "the next read uses the saved promotion received while its previous job was in flight"
+    );
 }
 
 #[test]
@@ -597,30 +619,64 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
         session_id: id.parse().unwrap(),
     };
     let state_id: crate::types::StateId = receipts.state_id().await.unwrap();
-    request.session = Some(crate::agent::session::SessionRef {
-        state: state_id.clone(),
-        ..session("session-1")
-    });
+    let mut source = crate::agent::session::live::Source {
+        state: state.clone(),
+        reference: crate::agent::session::SessionRef {
+            state: state_id,
+            ..session("session-1")
+        },
+        saved: true,
+    };
+    crate::test_os::create_private_dir_all(&crate::agent::session::directory(&state));
+    crate::test_session_files::write(&source, &crate::test_session_files::header(&source));
+    for index in 0..80 {
+        append(&source, &answer(&format!("first session row {index}")));
+    }
+    request.session = Some(source.reference.clone());
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;
     monitor.sync_peek().await;
-    let serial = monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial;
-    // Unchanged facts keep the reader; nothing is resolved per frame or per refresh.
+    tests::sized(&mut monitor, 160, 30);
+    complete(monitor.live_mut().unwrap());
+    assert!(tests::sized(&mut monitor, 160, 30).contains("last: first session row 79"));
+    // A paused visible window survives an unchanged refresh without blanking/reloading.
+    let live = monitor.live_mut().unwrap();
+    live.movement(Move::Top);
+    complete(live);
+    let rows = live.window.rows.clone();
+    let paused = tests::sized(&mut monitor, 160, 30);
+    assert!(!paused.contains("last: first session row 79"), "{paused}");
     monitor.refresh().await;
     monitor.sync_peek().await;
+    assert!(!tests::sized(&mut monitor, 160, 30).contains("reading the session…"));
+    complete(monitor.live_mut().unwrap());
     assert_eq!(
-        monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial,
-        serial
+        monitor
+            .peek
+            .as_ref()
+            .unwrap()
+            .live
+            .as_ref()
+            .unwrap()
+            .window
+            .rows,
+        rows
     );
-    // A replaced session is resolved again and read from the start.
-    request.session = Some(crate::agent::session::SessionRef {
-        state: state_id.clone(),
-        ..session("session-2")
-    });
+    assert!(tests::sized(&mut monitor, 160, 30).contains("first session row"));
+    // A replaced session drops the old window and follows the replacement transcript.
+    source.reference.session_id = "session-2".parse().unwrap();
+    crate::test_session_files::write(&source, &crate::test_session_files::header(&source));
+    append(&source, &answer("replacement start"));
+    append(&source, &answer("replacement tail"));
+    request.session = Some(source.reference);
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;
     monitor.sync_peek().await;
-    let live = monitor.peek.as_ref().unwrap().live.as_ref().unwrap();
-    assert_ne!(live.serial, serial);
-    assert_eq!(live.source.reference.session_id.as_str(), "session-2");
+    let pending = tests::sized(&mut monitor, 160, 30);
+    assert!(pending.contains("reading the session…"), "{pending}");
+    assert!(!pending.contains("first session row"), "{pending}");
+    complete(monitor.live_mut().unwrap());
+    let replaced = tests::sized(&mut monitor, 160, 30);
+    assert!(replaced.contains("last: replacement tail"), "{replaced}");
+    assert!(!replaced.contains("first session row"), "{replaced}");
 }

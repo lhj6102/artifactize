@@ -1,7 +1,11 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild;
+
 use std::{
     fs,
     path::PathBuf,
-    process::{Child, Command},
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -175,8 +179,8 @@ async fn press(review: &mut Review, key: impl Into<KeyEvent>) -> Action {
     }
 }
 
-fn finish(child: Child) -> (Option<i32>, Value) {
-    let output = support::os::finish(child, "verify");
+fn finish(child: RunChild) -> (Option<i32>, Value) {
+    let output = child.wait_with_output().unwrap();
     (
         output.status.code(),
         serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
@@ -193,6 +197,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
             .command()
             .args(["verify", "--wait", "--all", "--json"]),
     );
+    let child = RunChild::new(child, &fixture.state, &fixture.repo);
     let id = fixture.waiting().await;
     let mut review = Review::new(
         fixture.state.clone(),
@@ -234,13 +239,14 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     // A long path may be cut at the pane's edge: compare the text without the layout.
     let unwrapped = |text: &str| -> String {
         text.chars()
-            .filter(|c| !c.is_whitespace() && !"│┌┐└┘─".contains(*c))
+            .filter(|c| !c.is_whitespace() && !"│┌┐└┘─\"'".contains(*c))
             .collect()
     };
     let notes = support::os::path_text(&release.join("notes.md"));
     let cat = support::os::path_text(std::path::Path::new(&support::os::cat_program()));
-    let command = artifactize_core::review::shell([cat.as_str(), notes.as_str()]);
-    let shown = format!("$ {command}");
+    // Ignore display quoting as well as layout: host fixture paths may contain spaces.
+    // Compare independently declared command words, never the production formatter.
+    let shown = format!("$ {cat} {notes}");
     let prefix: String = unwrapped(&shown).chars().take(20).collect();
     assert!(unwrapped(&selected).contains(&prefix), "{selected}");
     assert!(!selected.contains("{artifactPath}"), "{selected}");

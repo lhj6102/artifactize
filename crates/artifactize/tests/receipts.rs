@@ -109,7 +109,11 @@ async fn readers_observe_empty_state_until_schema_commits() {
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     let receipts = Receipts::open(&template, &repo).await.unwrap();
-    let db = Connection::open(template.join(DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        template.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let schema = db
         .prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY rowid")
         .unwrap()
@@ -148,7 +152,11 @@ async fn readers_observe_empty_state_until_schema_commits() {
     commit_tx.send(()).unwrap();
     initializer.join().unwrap();
     assert_empty_reads(&state, &repo).await;
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
@@ -208,7 +216,11 @@ async fn repositories_share_one_state_database() {
             saved.push(run);
         }
     }
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.query_row::<u32, _, _>("SELECT count(DISTINCT repo) FROM runs", [], |r| r.get(0))
             .unwrap(),

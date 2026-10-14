@@ -12,10 +12,11 @@
 )]
 
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, VecDeque},
     fs,
     io::{BufRead, BufReader, Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{Shutdown, TcpListener, TcpStream},
     path::Path,
     sync::{
         Arc, Mutex,
@@ -85,11 +86,44 @@ pub enum Reply {
 
 type Handler = dyn Fn(&Request) -> Reply + Send + Sync;
 
+#[derive(Default)]
+struct ProviderLifetime {
+    stop: AtomicBool,
+    gates: Mutex<Vec<Gate>>,
+}
+
+struct ServingConnection {
+    socket: TcpStream,
+    thread: thread::JoinHandle<()>,
+}
+
+/// The retained teardown socket must not keep a completed HTTP connection open.
+struct CloseConnection(TcpStream);
+
+impl Drop for CloseConnection {
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(Shutdown::Both);
+    }
+}
+
+// Listener polling only observes cancellation; no test orders events by this interval.
+const ACCEPT_POLL: Duration = Duration::from_millis(5);
+// Bound a malformed/incomplete request, not the order of a test's provider interactions.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+// An unreleased response gate fails rather than leaving a test process hung indefinitely.
+const GATE_TIMEOUT: Duration = Duration::from_secs(30);
+
+thread_local! {
+    // Response gates join the provider that owns this connection, so teardown wakes them.
+    static PROVIDER: RefCell<Option<Arc<ProviderLifetime>>> = const { RefCell::new(None) };
+}
+
 pub struct FakeProvider {
     /// `http://127.0.0.1:PORT`, without a trailing slash.
     pub url: String,
     requests: Arc<Mutex<Vec<Request>>>,
-    stop: Arc<AtomicBool>,
+    lifetime: Arc<ProviderLifetime>,
+    connections: Arc<Mutex<Vec<ServingConnection>>>,
     thread: Option<thread::JoinHandle<()>>,
 }
 
@@ -100,21 +134,38 @@ impl FakeProvider {
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let requests = Arc::new(Mutex::new(Vec::new()));
-        let stop = Arc::new(AtomicBool::new(false));
+        let lifetime = Arc::new(ProviderLifetime::default());
+        let connections = Arc::new(Mutex::new(Vec::new()));
         let handler: Arc<Handler> = Arc::new(handler);
         let thread = thread::spawn({
             let requests = requests.clone();
-            let stop = stop.clone();
+            let lifetime = lifetime.clone();
+            let connections = connections.clone();
             move || {
-                while !stop.load(Ordering::SeqCst) {
+                while !lifetime.stop.load(Ordering::SeqCst) {
                     match listener.accept() {
                         Ok((stream, _)) => {
+                            let socket = stream.try_clone().unwrap();
                             let handler = handler.clone();
                             let requests = requests.clone();
-                            thread::spawn(move || serve(stream, &*handler, &requests));
+                            let lifetime = lifetime.clone();
+                            let serving = thread::spawn(move || {
+                                PROVIDER.with(|provider| {
+                                    *provider.borrow_mut() = Some(lifetime.clone())
+                                });
+                                serve(stream, &*handler, &requests, &lifetime.stop);
+                                PROVIDER.with(|provider| *provider.borrow_mut() = None);
+                            });
+                            connections
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .push(ServingConnection {
+                                    socket,
+                                    thread: serving,
+                                });
                         }
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                            thread::sleep(Duration::from_millis(5));
+                            thread::sleep(ACCEPT_POLL);
                         }
                         Err(error) => panic!("fake provider: {error}"),
                     }
@@ -124,7 +175,8 @@ impl FakeProvider {
         Self {
             url,
             requests,
-            stop,
+            lifetime,
+            connections,
             thread: Some(thread),
         }
     }
@@ -164,19 +216,53 @@ impl FakeProvider {
 
 impl Drop for FakeProvider {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        self.lifetime.stop.store(true, Ordering::SeqCst);
+        // Finish accepting before taking the connections, including an accept racing stop.
+        let mut panic = self.thread.take().and_then(|thread| thread.join().err());
+        let connections = std::mem::take(
+            &mut *self
+                .connections
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        // Close every client before joining any handler, even a handler paused at a gate.
+        for connection in &connections {
+            let _ = connection.socket.shutdown(Shutdown::Both);
+        }
+        // Stop is set before waking gates; holding each gate's mutex prevents a lost wake.
+        for gate in self
+            .lifetime
+            .gates
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+        {
+            let _open = gate
+                .0
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            gate.0.1.notify_all();
+        }
+        for connection in connections {
+            if let Err(error) = connection.thread.join() {
+                panic.get_or_insert(error);
+            }
+        }
+        // Never detach later handlers or double-panic while cleaning up a failing test.
+        if !thread::panicking()
+            && let Some(panic) = panic
+        {
+            std::panic::resume_unwind(panic);
         }
     }
 }
 
-fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>) {
-    stream.set_nonblocking(false).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>, stop: &AtomicBool) {
+    let stream = CloseConnection(stream);
+    stream.0.set_nonblocking(false).unwrap();
+    stream.0.set_read_timeout(Some(REQUEST_TIMEOUT)).unwrap();
+    let mut reader = BufReader::new(stream.0.try_clone().unwrap());
     let mut line = String::new();
     if reader.read_line(&mut line).unwrap_or(0) == 0 {
         return;
@@ -187,7 +273,9 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>) {
     let mut headers = BTreeMap::new();
     loop {
         let mut header = String::new();
-        reader.read_line(&mut header).unwrap();
+        if reader.read_line(&mut header).unwrap_or(0) == 0 {
+            return;
+        }
         let header = header.trim_end();
         if header.is_empty() {
             break;
@@ -200,7 +288,9 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>) {
         .get("content-length")
         .map_or(0, |length| length.parse().unwrap());
     let mut body = vec![0; length];
-    reader.read_exact(&mut body).unwrap();
+    if reader.read_exact(&mut body).is_err() {
+        return;
+    }
     let request = Request {
         method,
         path,
@@ -214,6 +304,9 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>) {
     };
     let reply = handler(&request);
     requests.lock().unwrap().push(request);
+    if stop.load(Ordering::SeqCst) {
+        return;
+    }
     let (status, mut extra, body) = match reply {
         Reply::Events(events) => (
             200,
@@ -423,17 +516,120 @@ impl Gate {
         self.0.1.notify_all();
     }
     pub fn wait(&self) {
+        let provider = PROVIDER.with(|provider| provider.borrow().clone());
+        if let Some(provider) = &provider {
+            provider.gates.lock().unwrap().push(self.clone());
+        }
+        let cancelled = || {
+            provider
+                .as_ref()
+                .is_some_and(|provider| provider.stop.load(Ordering::SeqCst))
+        };
         let (lock, changed) = &*self.0;
-        let (open, expired) = changed
-            .wait_timeout_while(
-                lock.lock().unwrap(),
-                os::patience(Duration::from_secs(30)),
-                |open| !*open,
-            )
+        let (open, _) = changed
+            .wait_timeout_while(lock.lock().unwrap(), os::patience(GATE_TIMEOUT), |open| {
+                !*open && !cancelled()
+            })
             .unwrap();
-        assert!(
-            *open && !expired.timed_out(),
-            "response gate was never released"
-        );
+        assert!(cancelled() || *open, "response gate was never released");
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    fn client(provider: &FakeProvider, path: &str) -> TcpStream {
+        let mut client = TcpStream::connect(provider.url.strip_prefix("http://").unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(os::patience(REQUEST_TIMEOUT)))
+            .unwrap();
+        write!(client, "GET {path} HTTP/1.1\r\nHost: fake\r\n\r\n").unwrap();
+        client
+    }
+
+    fn assert_closed(mut client: TcpStream) {
+        let mut byte = [0];
+        match client.read(&mut byte) {
+            Ok(0) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+            result => panic!("provider teardown left the client open: {result:?}"),
+        }
+    }
+
+    #[test]
+    fn completed_request_closes_its_socket_before_provider_teardown() {
+        let provider = FakeProvider::script(vec![Reply::Json(200, json!({"answer":"done"}))]);
+        let mut client = client(&provider, "/completed");
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 "), "{response}");
+        assert!(response.ends_with(r#"{"answer":"done"}"#), "{response}");
+        assert_eq!(provider.requests().len(), 1);
+    }
+
+    #[test]
+    fn provider_teardown_cancels_all_gated_handlers_and_closes_clients() {
+        let (entered, wait) = mpsc::channel();
+        let (finished, exits) = mpsc::channel();
+        let gate = Gate::default();
+        let provider = FakeProvider::start(move |_| {
+            entered.send(()).unwrap();
+            gate.wait();
+            finished.send(()).unwrap();
+            Reply::Json(200, json!({}))
+        });
+        let clients = [client(&provider, "/one"), client(&provider, "/two")];
+        for _ in &clients {
+            wait.recv_timeout(os::patience(GATE_TIMEOUT)).unwrap();
+        }
+        drop(provider);
+        for client in clients {
+            exits.recv_timeout(os::patience(GATE_TIMEOUT)).unwrap();
+            assert_closed(client);
+        }
+    }
+
+    #[test]
+    fn provider_teardown_joins_every_handler_before_reporting_a_panic() {
+        for unwinding in [false, true] {
+            let (entered, wait) = mpsc::channel();
+            let (finished, exits) = mpsc::channel();
+            let gate = Gate::default();
+            let provider = FakeProvider::start(move |request| {
+                if request.path == "/panic" {
+                    panic!("scripted handler panic");
+                }
+                entered.send(()).unwrap();
+                gate.wait();
+                finished.send(()).unwrap();
+                Reply::Json(200, json!({}))
+            });
+            // EOF proves the first accepted handler has finished unwinding, not just entered.
+            assert_closed(client(&provider, "/panic"));
+            let waiting = client(&provider, "/gated");
+            wait.recv_timeout(os::patience(GATE_TIMEOUT)).unwrap();
+            // The provider is moved into and destroyed inside the closure, never reused
+            // after an unwind; JoinHandle's conservative UnwindSafe bound is immaterial.
+            let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let provider = provider;
+                if unwinding {
+                    panic!("scripted test panic");
+                }
+                drop(provider);
+            }))
+            .unwrap_err();
+            assert_eq!(
+                panic.downcast_ref::<&str>(),
+                Some(&if unwinding {
+                    "scripted test panic"
+                } else {
+                    "scripted handler panic"
+                })
+            );
+            exits.recv_timeout(os::patience(GATE_TIMEOUT)).unwrap();
+            assert_closed(waiting);
+        }
     }
 }

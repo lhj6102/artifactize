@@ -1,3 +1,7 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::{RunChild, Watcher};
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -375,8 +379,10 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
             .command()
             .args(["verify", "--wait", "--all", "--json"])
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let child = RunChild::new(child, &fixture.state, &fixture.repo);
         let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
         // The redirect creates the marker before printf writes its two lines.
         while fs::read_to_string(&marker).map_or(true, |text| text.lines().count() < 2) {
@@ -540,13 +546,14 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
     let fixture = Fixture::new();
     let markers = concurrent_scripts(&fixture);
     let status = |jobs: &str| {
-        let mut child = fixture
+        let child = fixture
             .command()
             .args(["status", "--json", "--fingerprint-jobs", jobs])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = Watcher::new(child);
         let bound: usize = jobs.parse().unwrap();
         let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
         while fs::read_dir(&markers)

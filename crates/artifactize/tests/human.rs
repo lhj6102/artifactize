@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -23,6 +26,12 @@ struct Fixture {
     _root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
 }
 
 impl Fixture {
@@ -59,7 +68,11 @@ impl Fixture {
     }
 
     fn database(&self) -> Connection {
-        let db = Connection::open(self.state.join(store::DATABASE)).unwrap();
+        let db = Connection::open_with_flags(
+            self.state.join(store::DATABASE),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         db.busy_timeout(support::os::patience(Duration::from_secs(5)))
             .unwrap();
         db
@@ -553,7 +566,9 @@ async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
 async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     let fixture = Fixture::new(true);
     let original = fixture.cli_verify();
-    let other = Fixture::new(true);
+    let mut other = Fixture::new(true);
+    // The follower owns its Run in the shared state before its own repository drops.
+    other.state = fixture.state.clone();
     let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),
@@ -664,7 +679,9 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let fixture = Fixture::new(true);
     let original = fixture.cli_verify();
     let owner = original["requests"][0]["id"].as_str().unwrap();
-    let other = Fixture::new(true);
+    let mut other = Fixture::new(true);
+    // The follower owns its Run in the shared state before its own repository drops.
+    other.state = fixture.state.clone();
     let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),

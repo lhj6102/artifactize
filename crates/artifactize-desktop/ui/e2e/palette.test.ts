@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { verifyWaiting, addRepository, create, type Fixture, requests } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
@@ -41,6 +41,7 @@ describe("command palette", () => {
   };
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     // A second Run joins the waiting sign-off: its request is a follower of the first one.
     await verifyWaiting(fixture);

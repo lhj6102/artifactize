@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, requests, verifyWaiting, type Fixture } from "./fixture.ts";
-import { start, type Session } from "./driver.ts";
+import { checkBuild, start, type Session } from "./driver.ts";
 import { press } from "./keys.ts";
 
 for (const followerFirst of [false, true]) {
@@ -15,6 +15,7 @@ for (const followerFirst of [false, true]) {
     const field = () => browser.$("#field-comment");
 
     before(async () => {
+      checkBuild();
       fixture = await create();
       await verifyWaiting(fixture);
       const signoffs = requests(fixture).filter((request) => request.evalId === "release/signoff");

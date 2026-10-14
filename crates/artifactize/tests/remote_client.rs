@@ -1,3 +1,7 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::Watcher;
+
 use std::{
     fs,
     io::{Read, Write},
@@ -37,13 +41,14 @@ fn artifactize(state: &Path) -> Command {
 
 /// Run with `--json`; the output never contains `secret`.
 fn run(command: &mut Command, stdin: &str, secret: &str, code: i32) -> Value {
-    let mut child = command
+    let child = command
         .arg("--json")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child = Watcher::new(child);
     child
         .stdin
         .take()
@@ -408,6 +413,7 @@ fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let child = Watcher::new(child);
     // The pipe stays open meanwhile: a pty whose master closed is no longer a terminal.
     writer.write_all(format!("{token}\n").as_bytes()).unwrap();
     let output = child.wait_with_output().unwrap();

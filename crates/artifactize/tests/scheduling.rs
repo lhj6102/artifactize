@@ -1,15 +1,18 @@
 use std::{
     fs,
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
-use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::shell;
 use tempfile::TempDir;
+
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -52,11 +55,13 @@ impl Fixture {
     }
 
     fn spawn(&self, args: &[&str]) -> Child {
-        self.command(args)
+        let child = self
+            .command(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap()
+            .unwrap();
+        Child::new(child, &self.state, &self.repo)
     }
 
     fn run(&self, args: &[&str], code: i32) -> Value {
@@ -107,54 +112,105 @@ fn finish(mut child: Child, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-#[test]
-fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
+async fn observed(
+    fixture: &Fixture,
+    id: &artifactize_core::types::RunId,
+    ready: impl Fn(&artifactize_core::store::RunView) -> bool,
+) -> artifactize_core::store::RunView {
+    let context = artifactize_core::runs::Context::new(
+        &fixture.repo,
+        Some(&fixture.state),
+        &support::os::cli(),
+    )
+    .unwrap();
+    let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
+    // A fixture observation watchdog, not an execution lifetime or timing assertion.
+    const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
+    tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
+        loop {
+            let view = artifactize_core::runs::view(&context, id).await.unwrap();
+            if ready(&view) {
+                return view;
+            }
+            assert_eq!(
+                view.run.status(),
+                artifactize_core::types::RunStatus::Running
+            );
+            changes.next_reconciled().await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
     let fixture = Fixture::new(vec![eval("slow", SLOW), eval("zz-over-budget", "true")]);
     let child = fixture.spawn(&["--jobs", "2", "--max-executions", "1"]);
-    wait_until(|| fixture.starts().len() == 1 && fixture.state.join("state.sqlite").exists());
-    let database = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    database
-        .busy_timeout(support::os::patience(Duration::from_secs(5)))
+    let id = child.run();
+    let before = observed(&fixture, &id, |view| {
+        view.run.executions_started == 1
+            && view.requests[0].status() == artifactize_core::types::RequestStatus::Running
+            && view.requests[1].status() == artifactize_core::types::RequestStatus::BudgetExhausted
+    })
+    .await;
+    let mut notifications = artifactize_core::changes::Subscription::new(&fixture.state).await;
+    notifications.next_state().await;
+    // Another real Run changes the shared state; observing it must not consume another
+    // start or change the original Run's already-visible budget decision.
+    let other = fixture._root.path().join("other");
+    fs::create_dir(&other).unwrap();
+    support::declaration::write(
+        other.join("index.artf"),
+        json!({
+            "name":"other", "evals":[{"id":"check","title":"Check","profile":{
+                "kind":"runtime","command":support::os::true_program(),"args":[]},
+                "payload":{"instruction":"Check."}}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let output = Command::new(support::os::cli())
+        .args(["verify", "--wait", "--all"])
+        .arg("--repo")
+        .arg(&other)
+        .arg("--state-dir")
+        .arg(&fixture.state)
+        .output()
         .unwrap();
-    database
-        .execute_batch(
-            "CREATE TABLE fixture_update_count(count INTEGER); INSERT INTO fixture_update_count VALUES(0); CREATE TRIGGER fixture_budget_updates AFTER UPDATE ON requests WHEN NEW.status='BUDGET_EXHAUSTED' BEGIN UPDATE fixture_update_count SET count=count+1; END;",
-        )
-        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    notifications.next_state().await;
+    let after = observed(&fixture, &id, |view| view.run.executions_started == 1).await;
+    assert_eq!(
+        serde_json::to_value(&after.requests[1]).unwrap(),
+        serde_json::to_value(&before.requests[1]).unwrap(),
+        "the visible budget audit is unchanged"
+    );
+    assert_eq!(
+        after.requests[1].execution_id,
+        before.requests[1].execution_id
+    );
+    assert_eq!(fixture.starts(), ["slow"]);
     fs::write(fixture.repo.join("release"), "finish").unwrap();
     let run = finish(child, 4);
-    // Every rewrite while the execution ran is counted by the time the Run has finished.
-    let count: i64 = database
-        .query_row("SELECT count FROM fixture_update_count", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert!(
-        count <= 2,
-        "self-invalidations repeatedly rewrote a budget decision: {count}"
-    );
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
 }
 
 const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; printf 'end %s\n' \"$1\" >> events";
 
-#[test]
-fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
+#[tokio::test]
+async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
     for (args, cap) in [(vec!["--jobs", "2"], Some(2)), (vec![], None)] {
         let jobs = cap.unwrap_or(6);
         let fixture = Fixture::new((0..6).map(|id| eval(&format!("e{id}"), SLOW)).collect());
         let child = fixture.spawn(&args);
         wait_until(|| fixture.starts().len() >= jobs);
-        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-        db.busy_timeout(support::os::patience(Duration::from_millis(100)))
-            .unwrap();
-        db.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
-        let data: String = db
-            .query_row("SELECT data FROM runs", [], |row| row.get(0))
-            .unwrap();
-        let run: Value = serde_json::from_str(&data).unwrap();
-        assert_eq!(run["executionsStarted"], jobs);
+        let view = observed(&fixture, &child.run(), |view| {
+            view.run.executions_started == jobs as u64
+        })
+        .await;
+        assert_eq!(view.run.executions_started, jobs as u64);
         fs::write(fixture.repo.join("release"), "").unwrap();
         let run = finish(child, 0);
         match cap {
@@ -341,6 +397,87 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
         }
         assert!(!fixture.repo.join("e3.pids").exists());
     }
+}
+
+#[tokio::test]
+async fn owned_run_drop_and_unwind_release_the_worker_and_groups_before_fixture_state() {
+    for unwind in [false, true] {
+        let fixture = Fixture::new(vec![eval(
+            "controlled",
+            &format!(
+                "{} & printf '%s %s\\n' \"$$\" \"$!\" > pids; wait",
+                support::os::LINGERING
+            ),
+        )]);
+        let child = fixture.spawn(&[]);
+        let id = child.run();
+        let watcher = child.id();
+        wait_until(|| {
+            fs::read_to_string(fixture.repo.join("pids"))
+                .is_ok_and(|text| text.split_whitespace().count() == 2)
+        });
+        let before = observed(&fixture, &id, |view| {
+            view.requests[0].status() == artifactize_core::types::RequestStatus::Running
+        })
+        .await;
+        let artifactize_core::runs::Worker::Admitted { owner } = before.run.control.unwrap().worker
+        else {
+            panic!("controlled execution has an admitted worker");
+        };
+        let pids: Vec<u32> = fs::read_to_string(fixture.repo.join("pids"))
+            .unwrap()
+            .split_whitespace()
+            .map(|pid| pid.parse().unwrap())
+            .collect();
+        // The move owns the guard on every exit, including assertion unwind.
+        let result = std::panic::catch_unwind(move || {
+            let _owned = child;
+            assert!(!unwind, "fixture unwind probe");
+        });
+        assert_eq!(result.is_err(), unwind);
+        let context = artifactize_core::runs::Context::new(
+            &fixture.repo,
+            Some(&fixture.state),
+            &support::os::cli(),
+        )
+        .unwrap();
+        let after = artifactize_core::runs::view(&context, &id).await.unwrap();
+        assert_eq!(
+            after.requests[0].error_code(),
+            Some(artifactize_core::types::FailureCode::Cancelled)
+        );
+        assert!(
+            !support::os::running(owner.pid.get()),
+            "durable worker exited"
+        );
+        assert!(!support::os::running(watcher), "watcher was reaped");
+        assert!(pids.into_iter().all(|pid| !support::os::running(pid)));
+        assert!(
+            fixture.state.exists(),
+            "cleanup finishes before temporary state drops"
+        );
+    }
+}
+
+#[test]
+fn run_guard_constructor_reaps_the_caller_if_setup_unwinds_before_announcement() {
+    let fixture = Fixture::new(vec![]);
+    // Hold a caller on its input pipe without submitting a durable Run. Missing stderr
+    // deliberately exercises constructor unwind before announcement parsing can begin.
+    let caller = Command::new(support::os::python_program())
+        .args(["-c", "import sys; sys.stdin.read()"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let pid = caller.id();
+    let result = std::panic::catch_unwind(|| Child::new(caller, &fixture.state, &fixture.repo));
+    assert!(result.is_err());
+    assert!(
+        !support::os::running(pid),
+        "constructor guard kills and reaps its caller"
+    );
+    assert!(!fixture.state.exists(), "no Run was submitted");
 }
 
 #[test]

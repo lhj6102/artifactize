@@ -1,7 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -18,6 +18,10 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "support/order.rs"]
 mod order;
+
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -67,7 +71,7 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        support::os::new_group(&mut Command::new(support::os::cli()))
+        let child = support::os::new_group(&mut Command::new(support::os::cli()))
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
@@ -77,17 +81,12 @@ impl Fixture {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap()
+            .unwrap();
+        Child::new(child, &self.state, repo)
     }
 
     fn announced(child: &mut Child) -> RunId {
-        use std::io::BufRead;
-        let mut line = String::new();
-        std::io::BufReader::new(child.stderr.as_mut().unwrap())
-            .read_line(&mut line)
-            .unwrap();
-        assert!(line.starts_with("Started run-"), "{line}");
-        line.split_whitespace().nth(1).unwrap().parse().unwrap()
+        child.run()
     }
 
     fn context(&self, repo: &Path) -> runs::Context {
@@ -167,12 +166,15 @@ impl Fixture {
     }
 
     fn execution(&self, id: &str) -> Value {
-        let data: String = Connection::open(self.state.join("state.sqlite"))
-            .unwrap()
-            .query_row("SELECT data FROM executions WHERE id=?", [id], |row| {
-                row.get(0)
-            })
-            .unwrap();
+        let data: String = Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+        .query_row("SELECT data FROM executions WHERE id=?", [id], |row| {
+            row.get(0)
+        })
+        .unwrap();
         serde_json::from_str(&data).unwrap()
     }
 
@@ -233,12 +235,15 @@ impl Fixture {
     }
 
     fn count(&self, table: &str) -> u32 {
-        Connection::open(self.state.join("state.sqlite"))
-            .unwrap()
-            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
-            .unwrap()
+        Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+        .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
     }
 
     /// Seed records under the keys `seed-00000`, `seed-00001`, ... (each its own execution),
@@ -275,18 +280,25 @@ impl Fixture {
 
     /// The key a running execution holds.
     fn running_key(&self) -> String {
-        Connection::open(self.state.join("state.sqlite"))
-            .unwrap()
-            .query_row(
-                "SELECT key FROM executions WHERE status='RUNNING'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap()
+        Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+        .query_row(
+            "SELECT key FROM executions WHERE status='RUNNING'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
     }
 
     fn entries(&self) -> Vec<(String, String, i64, String, String)> {
-        let db = Connection::open(self.state.join("state.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         let mut statement = db
             .prepare(
                 "SELECT key,id,bytes,last_used,data FROM executions WHERE completed_at IS NOT NULL ORDER BY key,completed_at",
@@ -337,20 +349,41 @@ fn output(output: Output, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// Interrupt, freeze or resume a process, named as the Unix signals that do it.
-fn signal(pid: u32, signal: &str) {
-    match signal {
-        "-INT" => support::os::interrupt(pid),
-        "-STOP" => support::os::suspend(pid),
-        "-CONT" => support::os::resume(pid),
-        _ => unreachable!("{signal}"),
+/// A suspended fixture worker is resumed on unwind before its Run owner cancels it.
+struct Suspended(u32);
+impl Suspended {
+    fn new(pid: u32) -> Self {
+        support::os::suspend(pid);
+        Self(pid)
+    }
+}
+impl Drop for Suspended {
+    fn drop(&mut self) {
+        if support::os::running(self.0) {
+            support::os::resume(self.0);
+        }
     }
 }
 
-/// A killed owner cannot run foreground cleanup; stop its orphaned review and children. On
-/// Windows the owner's Job Object closed with it and took the review along already.
-fn kill_orphans(starts: &str) {
-    support::os::kill_tree(starts.lines().next().unwrap().parse().unwrap());
+/// A deliberately killed worker cannot clean its runtime process group on unwind.
+struct OrphanGroup(u32);
+impl OrphanGroup {
+    fn new(fixture: &Fixture) -> Self {
+        Self(
+            fs::read_to_string(fixture.root.path().join("starts"))
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        )
+    }
+}
+impl Drop for OrphanGroup {
+    fn drop(&mut self) {
+        support::os::kill_tree(self.0);
+    }
 }
 
 fn write(repo: &Path, path: &str, value: Value) {
@@ -813,10 +846,6 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
     assert_eq!(execution["status"], "RUNNING");
     assert!(execution["completedAt"].is_null());
     assert!(execution["ownerStartTime"].as_u64().unwrap() > 0);
-    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.busy_timeout(support::os::patience(Duration::from_millis(100)))
-        .unwrap();
-    db.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
     assert_eq!(
         fixture.command(&second, &["status"], 1)["evals"][0]["action"],
         "wait"
@@ -855,6 +884,7 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let target = fixture.shared_repo("target", "echo replacement >> \"$1\"; printf recovered");
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
+    let orphans = OrphanGroup::new(&fixture);
     let waiter = fixture.spawn(&target, &["--max-executions", "1"]);
     let waiting = fixture.waiting_request();
     let worker = fixture.execution(waiting["executionId"].as_str().unwrap())["ownerPid"]
@@ -876,7 +906,7 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
     assert_eq!(recovered["executionsStarted"], 1);
-    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
+    drop(orphans);
 }
 
 #[test]
@@ -1516,7 +1546,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
     let waiting = fixture.waiting_request();
-    signal(support::runs::worker_pid(&fixture.state, &target), "-STOP");
+    let suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &target));
     fixture.release();
     let original = finish(owner, 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
@@ -1530,7 +1560,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
         [waiting["executionId"].as_str().unwrap()],
     )
     .unwrap();
-    signal(support::runs::worker_pid(&fixture.state, &target), "-CONT");
+    drop(suspended);
     let joined = finish(waiter, 0);
     assert_eq!(
         joined["requests"][0]["result"],
@@ -1552,9 +1582,10 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
+    let orphans = OrphanGroup::new(&fixture);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
     let waiting = fixture.waiting_request();
-    signal(support::runs::worker_pid(&fixture.state, &target), "-STOP");
+    let suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &target));
     let mut execution: Execution =
         serde_json::from_value(fixture.execution(waiting["executionId"].as_str().unwrap()))
             .unwrap();
@@ -1570,7 +1601,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     // Keep the publisher alive while injecting its completion. The frozen waiter may
     // have an in-flight read snapshot from before publication; killing the publisher
     // would make that snapshot legitimately exhaust its zero execution budget.
-    signal(support::runs::worker_pid(&fixture.state, &source), "-STOP");
+    let _publisher_suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &source));
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
     execution.state = artifactize_core::store::ExecutionState::Completed {
         result: json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
@@ -1594,7 +1625,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
             .result(),
         request.result()
     );
-    signal(support::runs::worker_pid(&fixture.state, &target), "-CONT");
+    drop(suspended);
     // Drain stdout while the large result is written, rather than waiting on a full pipe.
     let joined = output(waiter.wait_with_output().unwrap(), 0);
     assert_eq!(
@@ -1608,7 +1639,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
         .unwrap() as u32;
     support::os::kill(worker);
     output(owner.wait_with_output().unwrap(), 2);
-    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
+    drop(orphans);
     assert_eq!(fixture.records(), 0);
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(fixture.starts(), 1);
@@ -1931,7 +1962,11 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
     let children: Vec<_> = repos.iter().map(|repo| fixture.spawn(repo, &[])).collect();
     wait_until(|| fixture.starts() == 2);
     wait_until(|| {
-        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            fixture.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         db.query_row::<u32, _, _>(
             "SELECT count(*) FROM requests WHERE status='QUEUED' AND execution_id IS NOT NULL",
             [],

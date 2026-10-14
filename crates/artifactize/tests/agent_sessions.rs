@@ -1,6 +1,10 @@
 //! Saved Agent conversations, `session show` and `session send`, and their size-bound
 //! collection, against loopback fakes.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::{RunChild, Watcher};
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -602,15 +606,17 @@ fn concurrent_sends_take_turns_in_one_thread() {
     let spawned: Vec<_> = ["first", "second"]
         .into_iter()
         .map(|message| {
-            project
-                .command(
-                    &provider,
-                    &project.state,
-                    &["session", "send", &id, message],
-                )
-                .stdout(Stdio::piped())
-                .spawn()
-                .unwrap()
+            Watcher::new(
+                project
+                    .command(
+                        &provider,
+                        &project.state,
+                        &["session", "send", &id, message],
+                    )
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .unwrap(),
+            )
         })
         .collect();
     waiting
@@ -734,9 +740,11 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
             &["verify", "--wait", "--all", "--force", "--json"],
         )
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
+    let running = RunChild::new(running, &project.state, &project.repo);
     let session = loop {
         let found = fs::read_dir(project.sessions())
             .unwrap()

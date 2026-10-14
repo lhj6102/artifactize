@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { createStates, requests, type Fixture } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -31,6 +31,7 @@ describe("a Run with every verdict", () => {
   const tree = () => browser.$('[role="tree"]');
 
   before(async () => {
+    checkBuild();
     fixture = await createStates();
     session = await start(fixture);
     browser = session.browser;
@@ -118,6 +119,7 @@ describe("the Detail of a finished eval", () => {
   const text = () => browser.execute(() => document.body.innerText);
 
   before(async () => {
+    checkBuild();
     fixture = await createStates();
     session = await start(fixture);
     browser = session.browser;
@@ -159,6 +161,7 @@ describe("a blocked eval", () => {
   let browser: WebdriverIO.Browser;
 
   before(async () => {
+    checkBuild();
     session = await start(await createStates());
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("down"), "the Run tree");

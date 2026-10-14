@@ -604,7 +604,34 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
 
 #[tokio::test]
 async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts() {
-    let (view, requests) = super::tests::live();
+    if crate::platform::environment::var("ARTIFACTIZE_HUMAN_MODAL_SEAM").is_none() {
+        let mut command = crate::test_os::self_test(
+            "monitor::redesign_tests::human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts",
+        );
+        crate::test_os::sign_in_as(command.as_std_mut(), "alice");
+        let output = command
+            .env("ARTIFACTIZE_HUMAN_MODAL_SEAM", "1")
+            .output()
+            .await
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let (view, mut requests) = super::tests::live();
+    let human = requests
+        .iter_mut()
+        .find(|view| view.request.eval_id == "app/review")
+        .unwrap();
+    // The injected review and saved tree request name the same Human request and schema.
+    human.request.id = "run-1-3".parse().unwrap();
+    human.request.human_definition =
+        Some(serde_json::from_value(crate::review::tests::demo()).unwrap());
+    human.claim.as_mut().unwrap().request_id = human.request.id.clone();
     let mut monitor = Monitor::new("/fixture-state".into(), None);
     monitor.set_run(view, requests);
     monitor.tree.select(vec![
@@ -705,27 +732,20 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     assert_eq!(monitor.focus, Pane::Artifacts);
     assert!(monitor.detail.is_none());
     assert!(!render_text(&mut monitor, 160, 40).contains("Ctrl-S"));
-    // The draft survives for the next open: the same verdict brings it back.
-    let id = monitor.reviews.keys().next().unwrap().clone();
-    let mut kept = monitor.reviews.remove(&id).unwrap();
-    assert_eq!(kept.mode(), &review::Mode::Request);
-    kept.control(review::Control::Red);
-    match kept.mode() {
-        review::Mode::Form(form) => assert_eq!(form.draft(), before),
-        _ => panic!("form"),
-    }
-    monitor.detail = None;
-    monitor.reviews.clear();
-    monitor.tree.select(vec![
-        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
-        "e:app/review"
-            .parse::<crate::monitor::model::NodeId>()
-            .unwrap(),
-    ]);
+    // Reopening through the same UI path restores the draft without inspecting its cache.
+    assert_eq!(
+        monitor.key(KeyEvent::from(KeyCode::Enter)),
+        Action::OpenDetail
+    );
     monitor.open_detail().await;
-    let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
-    review.control(review::Control::Red);
-    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
+    assert!(!render_text(&mut monitor, 160, 40).contains("reason*: qrg"));
+    monitor.key(KeyEvent::from(KeyCode::Char('r')));
+    assert_eq!(draft(&monitor), before);
+    let shown = render_text(&mut monitor, 160, 40);
+    assert!(
+        shown.contains("reason*: qrg") && shown.contains("q?!"),
+        "{shown}"
+    );
     assert_eq!(monitor.focus, Pane::Detail);
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.paste(" off");
@@ -1127,13 +1147,11 @@ async fn help_and_next_attention_reach_monitor_from_idle_human_details() {
         );
         assert!(monitor.detail.is_none());
         assert_eq!(
-            monitor.reviews.len(),
-            1,
-            "the review is kept for the next open"
-        );
-        assert_eq!(
             monitor.target(),
             Some(Target::Eval("p2/check".parse().unwrap()))
         );
+        let shown = render_text(&mut monitor, 160, 40);
+        assert!(shown.contains("p2/check"), "{shown}");
+        assert!(!shown.contains("Ctrl-S submit"), "{shown}");
     }
 }

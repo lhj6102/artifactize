@@ -453,7 +453,9 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     assert_eq!(press(&mut review, KeyCode::Enter), run("notes_release"));
     // A run drops the resolved commands until the next refresh resolves them again; a tool
     // that cannot be resolved shows its declaration and why.
-    assert!(review.commands.is_none());
+    let text = screen(&mut review);
+    assert!(text.contains("$ get {artifactPath}/notes.md"), "{text}");
+    assert!(!text.contains("$ get /repo/release/notes.md"), "{text}");
     resolved(&mut review);
     press(&mut review, KeyCode::Down);
     let text = screen(&mut review);
@@ -1055,7 +1057,13 @@ fn listed() -> Review {
     other.request.id = "run-2-1".parse().unwrap();
     other.request.eval_id = "docs/check".parse().unwrap();
     review.set_listed(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
-    review.refreshed = Some(OffsetDateTime::now_utc());
+    review.refreshed = Some(
+        OffsetDateTime::parse(
+            "2026-01-01T00:01:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap(),
+    );
     review
 }
 

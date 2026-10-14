@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 const crate = resolve(import.meta.dirname, "../..");
 const target = process.env.CARGO_TARGET_DIR ?? resolve(crate, "../../target");
@@ -21,10 +22,21 @@ const waiting = new Map<string, Fixture>();
 process.on("exit", () => {
   // Fixture Runs now outlive their callers. Explicitly cancel before removing their state.
   for (const [run, fixture] of waiting) {
-    artifactize(fixture, "run", "cancel", run);
-    artifactize(fixture, "run", "show", run, "--wait");
+    try {
+      artifactize(fixture, "run", "cancel", run);
+      artifactize(fixture, "run", "show", run, "--wait");
+    } catch (error) {
+      console.error(`could not settle fixture Run ${run}`, error);
+      process.exitCode = 1;
+    }
   }
-  for (const root of made) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  for (const root of made) {
+    try { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+    catch (error) {
+      console.error(`could not remove fixture root ${root}`, error);
+      process.exitCode = 1;
+    }
+  }
   // The scratch directory itself goes too, when nothing else is left in it.
   try {
     rmdirSync(scratch);
@@ -51,7 +63,7 @@ fingerprint = { files = ["."] }
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
 open = { description = "Open {artifactName}.", kind = "launch", command = "sh", args = ["-c", "echo launched > \\"$0\\"", "${root}/launched"] }
 fail = { description = "Fail on purpose.", kind = "output", command = "false", args = [] }
-slow = { description = "Wait a long time.", kind = "output", command = "sleep", args = ["600"] }
+slow = { description = "Wait until cancelled; record the owned process.", kind = "output", command = "sh", args = ["-c", "echo $$ > \\"$0\\"; exec sleep 600", "${root}/slow.pid"] }
 
 [evals.signoff]
 title = "A person approves the release"
@@ -129,10 +141,19 @@ export function requests(fixture: Fixture): Saved[] {
 
 /** A killed fixture owner cannot run its exit hook; its teardown explicitly settles Runs. */
 export function cancelRuns(fixture: Fixture): void {
-  for (const run of new Set(requests(fixture).map((request) => request.runId))) {
-    artifactize(fixture, "run", "cancel", run);
-    artifactize(fixture, "run", "show", run, "--wait");
-    waiting.delete(run);
+  if (!existsSync(join(fixture.state, "state.sqlite"))) return;
+  const listed = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "list", "--json"], {
+    encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+  });
+  if (listed.status !== 0) throw new Error(listed.stderr || listed.stdout || "cannot list fixture Runs for cleanup");
+  // Accepted Runs may not have produced a request yet when setup fails.
+  const runs = JSON.parse(listed.stdout) as { id: string; status: string }[];
+  for (const { id, status } of runs) {
+    if (status === "RUNNING") {
+      artifactize(fixture, "run", "cancel", id);
+      artifactize(fixture, "run", "show", id, "--wait");
+    }
+    waiting.delete(id);
   }
 }
 
@@ -159,7 +180,7 @@ function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
 
 /** Submit every eval and observe the scheduler's waiting phase, not an elapsed sleep.
  * Registration precedes the baseline read, so a change during setup cannot be missed. */
-export async function verifyWaiting(fixture: Fixture): Promise<void> {
+export async function verifyWaiting(fixture: Fixture): Promise<string> {
   const submitted = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
     encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
   });
@@ -193,6 +214,7 @@ export async function verifyWaiting(fixture: Fixture): Promise<void> {
     }
     inspect();
   });
+  return run;
 }
 
 /** Current declarations only: no verify and no saved Run. */
@@ -225,6 +247,21 @@ export async function addRepository(fixture: Fixture, name: string): Promise<str
   return repo;
 }
 
+/** Real worktrees of the fixture's one Git repository, each with its own identified Run. */
+export async function addWorktrees(fixture: Fixture): Promise<string[]> {
+  execFileSync("git", ["-C", fixture.repo, "add", "."]);
+  execFileSync("git", ["-C", fixture.repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+    "commit", "-qm", "Fixture inputs"]);
+  const runs: string[] = [];
+  for (const name of ["scope-one", "scope-two"]) {
+    const repo = join(fixture.root, name);
+    execFileSync("git", ["-C", fixture.repo, "worktree", "add", "-q", "-b", name, repo]);
+    writeFileSync(join(repo, "release", "notes.md"), `# Notes of ${name}\n- Distinct consumer inputs.\n`);
+    runs.push(await verifyWaiting({ ...fixture, repo }));
+  }
+  return runs;
+}
+
 /**
  * A fresh repository whose `count` Artifacts n000 … form one chain, each referring to the one
  * before it, all verified GREEN: a Run too large for the graph to draw every node at once.
@@ -254,6 +291,36 @@ Check ${reference}."""
   const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
   return fixture;
+}
+
+/** Two given chronological Run batches, with independently ordered request identities. */
+export function createPagedRequests(): { fixture: Fixture; expected: string[] } {
+  const fixture = createChain(100);
+  const older = requests(fixture);
+  const completed = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state,
+    "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], {
+    encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+  });
+  if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+  const newer = (JSON.parse(completed.stdout) as { requests: Saved[] }).requests;
+  // This is fixture setup, not an observation: explicit times make the two batches
+  // genuinely older/newer without depending on clock resolution or elapsed time.
+  const db = new DatabaseSync(join(fixture.state, "state.sqlite"));
+  try {
+    db.exec("PRAGMA busy_timeout=5000");
+    for (const [batch, created] of [[older, "2000-01-01T00:00:00.000000000Z"],
+      [newer, "2000-01-02T00:00:00.000000000Z"]] as const) {
+      db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, batch[0].runId);
+      for (const request of batch) db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
+    }
+  } finally { db.close(); }
+  const identity = (batch: Saved[], count: number) => Array.from({ length: count }, (_, index) => {
+    const evalId = `n${String(index).padStart(3, "0")}/check`;
+    const request = batch.find((request) => request.evalId === evalId);
+    if (!request) throw new Error(`missing fixture request ${evalId}`);
+    return request.id;
+  });
+  return { fixture, expected: [...identity(newer, 3), ...identity(older, 100)] };
 }
 
 /**

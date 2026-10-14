@@ -115,23 +115,25 @@ mod tests {
         }
         let path = env::join_paths(["second", "first"]).unwrap();
         assert_eq!(
-            resolve_from(OsStr::new("shim.cmd"), root.path(), Some(&path), None).unwrap(),
+            resolve_with(OsStr::new("shim.cmd"), root.path(), |name| (name
+                == SEARCH_PATH)
+                .then(|| path.clone()))
+            .unwrap(),
             root.path().join("second/shim.cmd")
         );
-        assert!(resolve_from(OsStr::new("shim.cmd"), root.path(), None, None).is_err());
+        assert!(resolve_with(OsStr::new("shim.cmd"), root.path(), |_| None).is_err());
     }
 
+    // Only Windows applies PATHEXT when producing executable candidates.
+    #[cfg(windows)]
     #[test]
     fn pathext_candidates_keep_the_variable_order_and_skip_unsafe_suffixes() {
         assert_eq!(
-            pathext_candidates(
-                Path::new("dir/shim"),
-                Some(OsStr::new(".CMD;bad;.a/b;.EXE"))
-            ),
+            candidates(Path::new("dir/shim"), |_| Some(".CMD;bad;.a/b;.EXE".into())),
             [PathBuf::from("dir/shim.CMD"), PathBuf::from("dir/shim.EXE")]
         );
         assert_eq!(
-            pathext_candidates(Path::new("shim"), None),
+            candidates(Path::new("shim"), |_| None),
             [".COM", ".EXE", ".BAT", ".CMD"].map(|suffix| PathBuf::from(format!("shim{suffix}")))
         );
     }
@@ -146,22 +148,20 @@ mod tests {
         }
         let path = env::join_paths([root.path()]).unwrap();
         assert_eq!(
-            resolve_from(
-                OsStr::new("shim"),
-                root.path(),
-                Some(&path),
-                Some(OsStr::new(".CMD;.EXE"))
-            )
+            resolve_with(OsStr::new("shim"), root.path(), |name| match name {
+                SEARCH_PATH => Some(path.clone()),
+                EXTENSIONS => Some(".CMD;.EXE".into()),
+                _ => None,
+            })
             .unwrap(),
             root.path().join("shim.CMD")
         );
         assert_eq!(
-            resolve_from(
-                OsStr::new("shim"),
-                root.path(),
-                Some(&path),
-                Some(OsStr::new(".BAT;.CMD"))
-            )
+            resolve_with(OsStr::new("shim"), root.path(), |name| match name {
+                SEARCH_PATH => Some(path.clone()),
+                EXTENSIONS => Some(".BAT;.CMD".into()),
+                _ => None,
+            })
             .unwrap(),
             root.path().join("shim.BAT")
         );

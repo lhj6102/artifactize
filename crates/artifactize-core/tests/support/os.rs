@@ -302,13 +302,24 @@ pub const OPENER: &str = if cfg!(target_os = "macos") {
 /// The environment variable naming the file a recording program appends to.
 pub const RECORD: &str = "ARTIFACTIZE_OPENER_RECORD";
 
+/// The compiler of Cargo's selected toolchain, unless the runner explicitly supplies one.
+/// Isolated environment probes remove Rust from PATH and replace HOME, so do not ask a
+/// rustup shim to rediscover the toolchain from that probe's environment.
+fn fixture_compiler() -> std::ffi::OsString {
+    std::env::var_os("RUSTC").unwrap_or_else(|| {
+        Path::new(env!("CARGO"))
+            .with_file_name(format!("rustc{}", std::env::consts::EXE_SUFFIX))
+            .into_os_string()
+    })
+}
+
 /// Build a program named `name` in `directory` from Rust `source`. A compiled program runs the
 /// same on every system and needs no shell.
 fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::PathBuf {
     let file = directory.join(format!("{name}-source.rs"));
     std::fs::write(&file, source).unwrap();
     let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let rustc = fixture_compiler();
     let output = Command::new(rustc)
         .args(["--edition", "2024", "-o"])
         .arg(&program)
@@ -435,16 +446,27 @@ pub fn start(command: &mut Command) -> std::process::Child {
 
 /// Wait for a spawned `child` to end within the usual patience; a child that does not is killed
 /// and the test fails naming `what`.
-pub fn finish(mut child: std::process::Child, what: &str) -> std::process::Output {
-    let deadline = std::time::Instant::now() + patience(std::time::Duration::from_secs(20));
-    while child.try_wait().unwrap().is_none() {
-        if std::time::Instant::now() > deadline {
-            child.kill().unwrap();
-            panic!("{what} did not finish");
+pub fn finish(child: std::process::Child, what: &str) -> std::process::Output {
+    // Reap even if polling fails or the deadline panics; Child's own Drop does neither.
+    struct Reap(Option<std::process::Child>);
+    impl Drop for Reap {
+        fn drop(&mut self) {
+            if let Some(child) = &mut self.0 {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
         }
+    }
+    let mut child = Reap(Some(child));
+    let deadline = std::time::Instant::now() + patience(std::time::Duration::from_secs(20));
+    while child.0.as_mut().unwrap().try_wait().unwrap().is_none() {
+        assert!(
+            std::time::Instant::now() <= deadline,
+            "{what} did not finish"
+        );
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    child.wait_with_output().unwrap()
+    child.0.take().unwrap().wait_with_output().unwrap()
 }
 
 /// Set a Unix permission mode, for checks of modes artifactize refuses or must tolerate.
@@ -637,45 +659,53 @@ pub fn mintty_pipe() -> (std::fs::File, std::fs::File) {
 }
 
 mod fixture {
+    use super::fixture_compiler;
     use std::{
         env::consts::EXE_SUFFIX,
         fs,
         path::{Path, PathBuf},
         process::Command,
-        sync::OnceLock,
+        sync::{Mutex, OnceLock},
     };
 
-    use sha2::{Digest, Sha256};
-
-    /// Every name the fixture answers to.
+    /// Every utility answered by the test process's own stand-in executable.
     const UTILITIES: &[&str] = &[
         "sh", "cat", "cksum", "echo", "env", "false", "grep", "head", "ls", "mkdir", "printf",
         "pwd", "rm", "sleep", "test", "touch", "tr", "true",
     ];
+    // Paths may be handed to several concurrent fixtures, so the test process owns this
+    // directory until exit. The registered cleanup drops its TempDir; nothing is kept.
+    static OWNED: Mutex<Option<tempfile::TempDir>> = Mutex::new(None);
 
-    /// The directory of fixture programs, built at most once per source: integration tests
-    /// share Cargo's temporary directory and unit tests the system's.
+    extern "C" fn cleanup() {
+        let directory = OWNED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        drop(directory);
+    }
+
+    // Use the executable's CRT, selected by Rust for MSVC/MinGW and crt-static alike.
+    // Explicitly linking msvcrt can register with a different CRT's exit table.
+    #[cfg(windows)]
+    unsafe extern "C" {
+        fn atexit(callback: extern "C" fn()) -> i32;
+    }
+
+    /// Built once for this test process. The local TempDir cleans up an initialization
+    /// panic; after publication, exit cleanup also runs when libtest reports panicking tests.
     pub(super) fn directory() -> &'static Path {
         static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
         DIRECTORY.get_or_init(|| {
-            let source = include_str!("fixture.rs");
-            let digest =
-                Sha256::digest([source.as_bytes(), include_bytes!("os/stand_in.rs")].concat());
-            let tag: String = digest[..8]
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect();
             let root =
                 option_env!("CARGO_TARGET_TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from);
-            let directory = root.join(format!("artifactize-fixture-{tag}"));
-            let shell = format!("sh{EXE_SUFFIX}");
-            if directory.join(&shell).is_file() {
-                return directory;
-            }
             fs::create_dir_all(&root).unwrap();
-            let staging = tempfile::tempdir_in(&root).unwrap();
-            let program = staging.path().join(format!("fixture{EXE_SUFFIX}"));
-            let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+            let directory = tempfile::Builder::new()
+                .prefix("artifactize-fixture-")
+                .tempdir_in(&root)
+                .unwrap();
+            let program = directory.path().join(format!("fixture{EXE_SUFFIX}"));
+            let rustc = fixture_compiler();
             let output = Command::new(rustc)
                 .args(["--edition", "2024", "--crate-name", "fixture", "-o"])
                 .arg(&program)
@@ -691,20 +721,127 @@ mod fixture {
                 String::from_utf8_lossy(&output.stderr)
             );
             for name in UTILITIES {
-                let link = staging.path().join(format!("{name}{EXE_SUFFIX}"));
-                fs::hard_link(&program, link).unwrap();
+                fs::hard_link(
+                    &program,
+                    directory.path().join(format!("{name}{EXE_SUFFIX}")),
+                )
+                .unwrap();
             }
-            // Another test process may have finished first; its copy is the same program.
-            let staged = staging.keep();
-            if fs::rename(&staged, &directory).is_err() {
-                let _ = fs::remove_dir_all(&staged);
-                assert!(
-                    directory.join(&shell).is_file(),
-                    "fixture directory missing"
-                );
-            }
-            directory
+            // SAFETY: cleanup is process-global, registered once by this OnceLock, and
+            // only drops the directory owned by this test process after its fixtures end.
+            #[cfg(unix)]
+            let registered = unsafe { libc::atexit(cleanup) };
+            // SAFETY: the same lifetime/ownership contract applies to the Windows CRT.
+            #[cfg(windows)]
+            let registered = unsafe { atexit(cleanup) };
+            assert_eq!(registered, 0, "fixture exit cleanup is registered");
+            let path = directory.path().to_path_buf();
+            *OWNED.lock().unwrap() = Some(directory);
+            path
         })
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    const DIRECTORY_RECORD: &str = "ARTIFACTIZE_TEST_FIXTURE_DIRECTORY_RECORD";
+    const PANIC_PROBE: &str = "ARTIFACTIZE_TEST_FIXTURE_PANIC";
+    const TERMINAL_READY: &str = "TERMINAL_LIFECYCLE_READY:";
+
+    #[test]
+    fn stand_in_directory_is_removed_after_success_and_test_unwind() {
+        let root = tempdir();
+        for panicking in [false, true] {
+            let record = root.path().join(format!("directory-{panicking}"));
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["stand_in_directory_exit_probe", "--ignored", "--nocapture"])
+                .env(DIRECTORY_RECORD, &record)
+                .env(PANIC_PROBE, panicking.to_string());
+            let output = finish(start(&mut command), "stand-in directory exit probe");
+            assert_eq!(
+                output.status.success(),
+                !panicking,
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let directory = std::path::PathBuf::from(fs::read_to_string(record).unwrap());
+            assert!(
+                !directory.exists(),
+                "test process retained its stand-in directory: {}",
+                directory.display()
+            );
+        }
+    }
+
+    /// Runs only in a child so its process-global directory can reach the exit boundary.
+    #[test]
+    #[ignore = "launched by the owned-directory lifecycle test"]
+    fn stand_in_directory_exit_probe() {
+        let record = std::env::var_os(DIRECTORY_RECORD).expect("directory record");
+        let program = stand_in_bin("true");
+        assert!(Command::new(&program).status().unwrap().success());
+        fs::write(record, program.parent().unwrap().to_str().unwrap()).unwrap();
+        assert!(
+            std::env::var(PANIC_PROBE).unwrap() != "true",
+            "scripted test unwind"
+        );
+    }
+
+    #[test]
+    fn pseudo_terminal_drop_reaps_its_child_and_finishes_output_on_unwind() {
+        for panicking in [false, true] {
+            let (terminal, receiver) = PseudoTerminal::start(
+                &std::env::current_exe().unwrap(),
+                &["pseudo_terminal_drop_probe", "--ignored", "--nocapture"],
+                &[],
+                100,
+                30,
+            );
+            let mut output = String::new();
+            let pid = loop {
+                output.push_str(&String::from_utf8_lossy(
+                    &receiver
+                        .recv_timeout(patience(std::time::Duration::from_secs(10)))
+                        .expect("the terminal child reports readiness"),
+                ));
+                if let Some((_, ready)) = output.split_once(TERMINAL_READY)
+                    && let Some((pid, _)) = ready.split_once('\n')
+                {
+                    break pid.trim().parse().unwrap();
+                }
+            };
+            // The terminal is consumed inside the closure, with no state reused on unwind.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let terminal = terminal;
+                if panicking {
+                    panic!("scripted terminal test unwind");
+                }
+                drop(terminal);
+            }));
+            assert_eq!(result.is_err(), panicking);
+            assert!(gone(pid), "the terminal child was not reaped");
+            // Buffered output may remain, but no serving thread can keep the channel open.
+            while receiver.try_recv().is_ok() {}
+            assert!(matches!(
+                receiver.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Disconnected)
+            ));
+        }
+    }
+
+    /// Runs only inside its parent's owned pseudo-terminal, not the test runner's input.
+    #[test]
+    #[ignore = "launched by the terminal lifecycle test"]
+    fn pseudo_terminal_drop_probe() {
+        use std::io::Write;
+        println!("{TERMINAL_READY}{}", std::process::id());
+        std::io::stdout().flush().unwrap();
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).unwrap();
     }
 }
 
@@ -1022,12 +1159,13 @@ fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
 /// from `start`'s receiver, which ends once `finish` has closed the terminal.
 pub struct PseudoTerminal {
     #[cfg(unix)]
-    child: std::process::Child,
+    child: Option<std::process::Child>,
     /// The terminal's controlling side, which what is typed is written to.
     #[cfg(unix)]
-    input: std::fs::File,
+    input: Option<std::fs::File>,
     #[cfg(windows)]
-    console: conpty::Console,
+    console: Option<conpty::Console>,
+    reader: Option<std::thread::JoinHandle<()>>,
 }
 
 impl PseudoTerminal {
@@ -1093,19 +1231,34 @@ impl PseudoTerminal {
                     Ok(())
                 });
             }
+            // Complete fallible descriptor setup before a child exists to clean up.
+            let input = master.try_clone().unwrap();
             let child = command.spawn().unwrap();
             // Only the program holds the terminal now, so its exit ends the output.
             drop(command);
-            let input = master.try_clone().unwrap();
-            (Self { child, input }, master)
+            (
+                Self {
+                    child: Some(child),
+                    input: Some(input),
+                    reader: None,
+                },
+                master,
+            )
         };
         #[cfg(windows)]
         let (terminal, output) = {
             let (console, output) = conpty::Console::start(program, args, without, columns, rows);
-            (Self { console }, output)
+            (
+                Self {
+                    console: Some(console),
+                    reader: None,
+                },
+                output,
+            )
         };
+        let mut terminal = terminal;
         let (sender, receiver) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        terminal.reader = Some(std::thread::spawn(move || {
             use std::io::Read;
             let mut output = output;
             let mut buffer = [0; 4096];
@@ -1114,7 +1267,7 @@ impl PseudoTerminal {
                     break;
                 }
             }
-        });
+        }));
         (terminal, receiver)
     }
 
@@ -1122,9 +1275,14 @@ impl PseudoTerminal {
     pub fn type_text(&mut self, text: &[u8]) {
         use std::io::Write;
         #[cfg(unix)]
-        self.input.write_all(text).unwrap();
+        self.input.as_mut().unwrap().write_all(text).unwrap();
         #[cfg(windows)]
-        self.console.input.write_all(text).unwrap();
+        self.console
+            .as_mut()
+            .unwrap()
+            .input
+            .write_all(text)
+            .unwrap();
     }
 
     /// Wait for the program to exit, then close the terminal so that its output ends.
@@ -1134,23 +1292,66 @@ impl PseudoTerminal {
         #[cfg(unix)]
         {
             loop {
-                if let Some(status) = self.child.try_wait().unwrap() {
+                let child = self.child.as_ref().unwrap();
+                // Keep the exited leader unreaped until its group is closed. Reaping it
+                // first could let its PID be reused as someone else's signal target.
+                // SAFETY: siginfo_t is plain C data; zero means waitid reported no event.
+                let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+                // SAFETY: observe only this owned child with a valid output pointer.
+                let observed = unsafe {
+                    libc::waitid(
+                        libc::P_PID,
+                        child.id(),
+                        &raw mut info,
+                        libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                    )
+                };
+                assert_eq!(observed, 0, "{}", std::io::Error::last_os_error());
+                if info.si_signo != 0 {
+                    kill_tree(child.id());
+                    let status = self.child.as_mut().unwrap().wait().unwrap();
+                    self.child.take();
                     return status.success();
                 }
-                if std::time::Instant::now() > deadline {
-                    self.child.kill().unwrap();
-                    panic!("the terminal program did not exit");
-                }
+                assert!(
+                    std::time::Instant::now() <= deadline,
+                    "the terminal program did not exit"
+                );
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
         }
         #[cfg(windows)]
         {
-            let success = self
-                .console
-                .wait(deadline.saturating_duration_since(std::time::Instant::now()));
-            self.console.close();
-            success
+            self.console
+                .as_mut()
+                .unwrap()
+                .wait(deadline.saturating_duration_since(std::time::Instant::now()))
+        }
+    }
+}
+
+impl Drop for PseudoTerminal {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            // start created a separate session/group: stop any descendants holding a slave,
+            // then reap the leader before joining the reader blocked on the master.
+            if let Some(mut child) = self.child.take() {
+                kill_tree(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            drop(self.input.take());
+        }
+        #[cfg(windows)]
+        drop(self.console.take());
+        if let Some(reader) = self.reader.take() {
+            let result = reader.join();
+            if !std::thread::panicking()
+                && let Err(panic) = result
+            {
+                std::panic::resume_unwind(panic);
+            }
         }
     }
 }
@@ -1214,7 +1415,7 @@ mod conpty {
             Console::{COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON},
             Threading::{
                 CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
-                EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
+                EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, INFINITE,
                 InitializeProcThreadAttributeList, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                 PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
                 UpdateProcThreadAttribute, WaitForSingleObject,
@@ -1222,9 +1423,27 @@ mod conpty {
         },
     };
 
+    struct PseudoConsole(HPCON);
+
+    impl Drop for PseudoConsole {
+        fn drop(&mut self) {
+            // SAFETY: this owns the console from creation, including partial setup failure.
+            unsafe { ClosePseudoConsole(self.0) };
+        }
+    }
+
+    struct Attributes(*mut std::ffi::c_void);
+
+    impl Drop for Attributes {
+        fn drop(&mut self) {
+            // SAFETY: created only after initialization; the backing buffer still lives.
+            unsafe { DeleteProcThreadAttributeList(self.0) };
+        }
+    }
+
     pub struct Console {
         pub input: PipeWriter,
-        console: Option<HPCON>,
+        console: Option<PseudoConsole>,
         process: HANDLE,
     }
 
@@ -1254,13 +1473,13 @@ mod conpty {
                 )
             };
             assert!(result >= 0, "CreatePseudoConsole: HRESULT {result:#x}");
+            let console = PseudoConsole(console);
             let mut bytes = 0;
             // SAFETY: a null list asks for the size the list needs.
             unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut bytes) };
             let mut list = vec![0_usize; bytes.div_ceil(size_of::<usize>())];
             let attributes = list.as_mut_ptr().cast();
-            // SAFETY: the buffer has the size asked for and is aligned for the list; the
-            // attribute value is the console handle itself, as the attribute requires.
+            // SAFETY: the buffer has the size asked for and is aligned for the list.
             unsafe {
                 assert_ne!(
                     InitializeProcThreadAttributeList(attributes, 1, 0, &mut bytes),
@@ -1268,12 +1487,17 @@ mod conpty {
                     "{}",
                     std::io::Error::last_os_error()
                 );
+            }
+            let attributes = Attributes(attributes);
+            // SAFETY: the list is initialized, and the value is the live console handle
+            // itself, as the attribute requires; both stay owned throughout startup.
+            unsafe {
                 assert_ne!(
                     UpdateProcThreadAttribute(
-                        attributes,
+                        attributes.0,
                         0,
                         PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE as usize,
-                        console as *const std::ffi::c_void,
+                        console.0 as *const std::ffi::c_void,
                         size_of::<HPCON>(),
                         std::ptr::null_mut(),
                         std::ptr::null(),
@@ -1292,7 +1516,7 @@ mod conpty {
             startup.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
             startup.StartupInfo.hStdOutput = INVALID_HANDLE_VALUE;
             startup.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
-            startup.lpAttributeList = attributes;
+            startup.lpAttributeList = attributes.0;
             let mut command_line: Vec<u16> = std::iter::once(program.to_str().unwrap())
                 .chain(args.iter().copied())
                 .map(quote)
@@ -1337,8 +1561,7 @@ mod conpty {
                 )
             };
             let error = std::io::Error::last_os_error();
-            // SAFETY: the list was initialized above and is deleted once.
-            unsafe { DeleteProcThreadAttributeList(attributes) };
+            drop(attributes);
             assert_ne!(created, 0, "CreateProcessW: {error}");
             // SAFETY: the thread handle is open and not used again.
             unsafe { CloseHandle(process.hThread) };
@@ -1368,18 +1591,17 @@ mod conpty {
 
         /// Close the console, ending its output.
         pub fn close(&mut self) {
-            if let Some(console) = self.console.take() {
-                // SAFETY: the console is open and closed once.
-                unsafe { ClosePseudoConsole(console) };
-            }
+            drop(self.console.take());
         }
     }
 
     impl Drop for Console {
         fn drop(&mut self) {
-            // SAFETY: the process handle is open; a program that has exited is unaffected.
+            // SAFETY: the process handle is open with termination/synchronization access.
+            // Termination is asynchronous: wait before closing its handle and output console.
             unsafe {
                 TerminateProcess(self.process, 1);
+                WaitForSingleObject(self.process, INFINITE);
                 CloseHandle(self.process);
             }
             self.close();
@@ -1780,7 +2002,7 @@ pub fn editor_command(directory: &Path, text: &str) -> String {
     let source = directory.join("draft-editor.rs");
     std::fs::write(&source, format!("fn main() {{ std::fs::write(std::env::args_os().nth(1).unwrap(), {text:?}).unwrap(); }}")).unwrap();
     let executable = directory.join(format!("draft-editor{}", std::env::consts::EXE_SUFFIX));
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let rustc = fixture_compiler();
     let output = Command::new(rustc)
         .args(["--edition", "2024", "-o"])
         .arg(&executable)

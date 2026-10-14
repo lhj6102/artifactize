@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { verifyWaiting, create, type Fixture } from "./fixture.ts";
-import { type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -28,6 +28,7 @@ describe("monitor navigation", () => {
   const helpOpen = () => browser.execute(() => !!document.querySelector('[role="dialog"]'));
 
   before(async () => {
+    checkBuild();
     fixture = await create();
     session = await start(fixture);
     browser = session.browser;
@@ -48,6 +49,15 @@ describe("monitor navigation", () => {
     await press(browser, ["Escape"], async () => !(await helpOpen()), "the keys dialog closed");
   });
 
+  // UX edges: E-MON-LIVE
+  it("shows an identified Run from another process without refreshing", async () => {
+    const rows = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')].map((row) => row.innerText));
+    const before = await rows();
+    const id = await verifyWaiting(fixture);
+    assert.ok(before.every((row) => !row.includes(id)), "the new Run was not already listed");
+    await eventually(async () => (await rows()).some((row) => row.includes(id)), "the subscribed new Run row appears without F5");
+  });
+
   // UX edges: E-REFRESH
   it("reads the state again with F5 and shows what changed on disk on the same screen", async () => {
     // Count the app's own full reads of the snapshot, which the webview sends as `browse`.
@@ -62,12 +72,11 @@ describe("monitor navigation", () => {
       };
     });
     const reads = () => browser.execute(() => (window as unknown as { reads: number }).reads) as Promise<number>;
-    await browser.pause(1500);
     // A change on disk: another Run. F5 right away asks for a full read that shows it.
     await verifyWaiting(fixture);
     const before = await reads();
     await press(browser, ["F5"], async () => (await reads()) > before, "a full read after F5");
-    await eventually(async () => /Runs \(2\)/i.test(await text()), "the second Run listed");
+    await eventually(async () => /Runs \(3\)/i.test(await text()), "the refreshed third Run listed");
     assert.match(await text(), /Monitor/, "on the same screen");
   });
 
@@ -126,6 +135,7 @@ describe("the Detail follows the tree's selection", () => {
     browser.$(`//li[@role="treeitem"][@aria-level="${level}"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "${name}")]]`);
 
   before(async () => {
+    checkBuild();
     session = await start(await create());
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), "the Run tree");
@@ -174,6 +184,7 @@ describe("moving between the panes", () => {
   const crumbs = () => browser.$('nav[aria-label="Breadcrumb"]').getText();
 
   before(async () => {
+    checkBuild();
     const fixture = await create();
     // A second Run, so the Runs pane has two rows to move between.
     await verifyWaiting(fixture);
@@ -209,6 +220,7 @@ describe("quitting without a claim", () => {
   let session: Session;
 
   before(async () => {
+    checkBuild();
     session = await start(await create());
     await session.browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
   });
@@ -239,6 +251,7 @@ describe("closing the window without a claim", () => {
   let session: Session;
 
   before(async () => {
+    checkBuild();
     session = await start(await create());
     await session.browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
   });

@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{fs, path::PathBuf, process::Command, time::Duration};
 
 use artifactize_core::{
@@ -46,6 +49,12 @@ fn runtime(command: &str) -> Value {
         "profile":{"kind":"runtime","command":command,"args":[]},
         "payload":{"instruction":"Check the input."},
     })
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
 }
 
 impl Fixture {
@@ -384,7 +393,11 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     let output = artifactize_core::query::run_output(&first, OffsetDateTime::now_utc());
     assert_eq!(output["requests"][0]["source"]["kind"], "derived");
     assert_eq!(output["summary"]["executed"]["total"], 1);
-    let db = Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
             .get::<_, i64>(0))
@@ -690,7 +703,11 @@ async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
         .unwrap();
     assert!(status.status.success());
     assert!(remote.requests().is_empty());
-    let db = Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
             .get::<_, i64>(0))

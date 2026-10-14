@@ -13,8 +13,12 @@ use tokio_util::sync::CancellationToken;
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
-async fn verify(repo: &std::path::Path, state: &std::path::Path) -> store::RunView {
-    project::verify(
+async fn verify_at(
+    repo: &std::path::Path,
+    state: &std::path::Path,
+    created_at: &str,
+) -> store::RunView {
+    let mut view = project::verify(
         repo,
         Some(state),
         &Selection::All,
@@ -22,7 +26,16 @@ async fn verify(repo: &std::path::Path, state: &std::path::Path) -> store::RunVi
         CancellationToken::new(),
     )
     .await
-    .unwrap()
+    .unwrap();
+    // The Monitor's initial selection must not depend on verify speed or clock resolution.
+    view.run.created_at = created_at.parse().unwrap();
+    store::Receipts::open(state, repo)
+        .await
+        .unwrap()
+        .save_run(&view.run)
+        .await
+        .unwrap();
+    view
 }
 
 #[tokio::test]
@@ -34,9 +47,9 @@ async fn contradictory_runs_do_not_abort_the_monitor() {
     support::declaration::write(repo.join("index.artf"), json!({
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
     }).to_string()).unwrap();
-    verify(&repo, &state).await;
+    verify_at(&repo, &state, "2026-01-01T00:00:00Z").await;
     // Corrupt the newest Run: the Monitor initially selects it and must still refresh.
-    let bad = verify(&repo, &state).await;
+    let bad = verify_at(&repo, &state, "2026-01-01T00:01:00Z").await;
     let db = Connection::open(state.join(DATABASE)).unwrap();
     db.execute(
         "UPDATE runs SET status='RUNNING',data=json_set(data,'$.status','RUNNING') WHERE id=?",

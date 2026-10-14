@@ -947,7 +947,7 @@ fn refreshes_fold_done_artifacts_unless_the_user_toggled_them() {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m2/x") {
             view.request.state = crate::store::RequestState::completed(
                 serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
-                crate::types::Timestamp::now(),
+                "2026-01-01T00:09:00Z".parse().unwrap(),
             );
         }
     }
@@ -1160,7 +1160,7 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m6/x") {
             view.request.state = crate::store::RequestState::completed(
                 serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
-                crate::types::Timestamp::now(),
+                "2026-01-01T00:09:00Z".parse().unwrap(),
             );
         }
     }
@@ -1184,17 +1184,14 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
 }
 
 #[test]
-fn the_tree_is_built_once_per_state_change_and_redraws_elapsed_times() {
+fn frames_preserve_rendered_rows_and_refresh_updates_their_state() {
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     wide(&mut monitor);
     let built = monitor.nodes();
-    render(&mut monitor, 200, 60);
-    render(&mut monitor, 200, 60);
+    let first = render(&mut monitor, 200, 60);
+    assert_eq!(render(&mut monitor, 200, 60), first);
     monitor.key(KeyEvent::from(KeyCode::Char('j')));
-    assert!(
-        std::sync::Arc::ptr_eq(&built, &monitor.nodes()),
-        "frames and keys reuse the tree"
-    );
+    assert!(render(&mut monitor, 200, 60).contains("◐ up-a"));
     // Elapsed times come from each row's clock, not from the cached text.
     let running = built
         .iter()
@@ -1206,11 +1203,20 @@ fn the_tree_is_built_once_per_state_change_and_redraws_elapsed_times() {
         running.right_at(now() + time::Duration::seconds(65), true),
         "11m 05s"
     );
-    // A refresh rebuilds it; closing the Run drops it.
+    // A changed saved verdict changes the visible row on refresh; closing removes it.
+    let (_, requests) = monitor.run.as_mut().unwrap();
+    let request = requests
+        .iter_mut()
+        .find(|view| view.request.eval_id == "up-a/x")
+        .unwrap();
+    request.request.state = crate::store::RequestState::completed(
+        serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
+        "2026-01-01T00:00:01Z".parse().unwrap(),
+    );
     monitor.sync_tree(false);
-    assert!(!std::sync::Arc::ptr_eq(&built, &monitor.nodes()));
+    assert!(render(&mut monitor, 200, 60).contains("✓ up-a"));
     monitor.run = None;
-    assert!(monitor.nodes().is_empty());
+    assert!(!render(&mut monitor, 200, 60).contains("up-a"));
 }
 
 /// Thousands of Artifacts, each depending on its predecessor, build in one linear pass.
