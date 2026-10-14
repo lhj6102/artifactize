@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{shell, sleep_program, symlink_file, true_program};
 use tempfile::TempDir;
@@ -71,20 +70,27 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
-    fn no_execution(&self) {
+    fn no_records(&self) {
+        // Observe the public read-only cache seam, never open a writer beside Run cleanup.
+        let output = self
+            .command()
+            .args(["cache", "list", "--history", "--json"])
+            .record_output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let records: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(records.is_empty(), "{records:?}");
+    }
+
+    fn no_execution(&self, run: &Value) {
         assert!(!self.repo.join("executed").exists());
-        let db = Connection::open(self.state.join("state.sqlite")).unwrap();
-        assert_eq!(
-            db.query_row("SELECT count(*) FROM executions", [], |row| row
-                .get::<_, u32>(0))
-                .unwrap(),
-            0
-        );
-        assert_eq!(
-            db.query_row("SELECT status FROM runs", [], |row| row.get::<_, String>(0))
-                .unwrap(),
-            "ERROR"
-        );
+        assert_eq!(run["executionsStarted"], 0);
+        assert_eq!(run["status"], "ERROR");
+        self.no_records();
     }
 }
 
@@ -123,7 +129,7 @@ fn exact_output_is_validated_before_any_review_can_start() {
             error["error"].as_str().unwrap().contains("1–128"),
             "{error}"
         );
-        fixture.no_execution();
+        fixture.no_execution(&error);
     }
     for bytes in support::os::valid_fingerprints() {
         fs::write(fixture.repo.join("key"), &bytes).unwrap();
@@ -187,11 +193,11 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
             "index.artf",
             json!({"name":"test","fingerprint":declared,"evals":[eval("check", "touch executed")]}),
         );
-        let error = fixture.verify(&["--all"], 2);
-        let error = error["error"].as_str().unwrap();
+        let run = fixture.verify(&["--all"], 2);
+        let error = run["error"].as_str().unwrap();
         assert!(error.contains(message), "{error}");
         assert!(!error.contains("private-diagnostic"));
-        fixture.no_execution();
+        fixture.no_execution(&run);
     }
 }
 
@@ -292,16 +298,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
             "must not persist a semantic verdict"
         );
         assert_eq!(run["validation"]["satisfied"], false);
-        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-        assert_eq!(
-            db.query_row::<u32, _, _>(
-                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
-                [],
-                |row| row.get(0)
-            )
-            .unwrap(),
-            0
-        );
+        fixture.no_records();
     }
     fixture.write(
         "index.artf",
@@ -396,23 +393,14 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         assert!(!Path::new(output).exists());
         assert!(support::os::gone(pid));
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();
-        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-        assert_eq!(
-            db.query_row::<u32, _, _>(
-                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
-                [],
-                |row| row.get(0)
-            )
-            .unwrap(),
-            0
-        );
+        fixture.no_records();
         if recheck {
             assert_eq!(result["requests"][0]["status"], "ERROR");
             assert_eq!(result["requests"][0]["errorCode"], "CANCELLED");
             assert!(result["requests"][0]["result"].is_null());
         } else {
             assert!(result["error"].as_str().unwrap().contains("cancelled"));
-            fixture.no_execution();
+            fixture.no_execution(&result);
         }
     }
 }
