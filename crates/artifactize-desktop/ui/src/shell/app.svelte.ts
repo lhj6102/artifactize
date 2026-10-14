@@ -28,11 +28,19 @@ export class AppState {
   palette = $state(false);
   help = $state(false);
 
-  /** The Review of request `id`, started on first use. A follower's ID and its original's name
-   * one Review: it takes the original's ID once it has read the request. */
+  /** One canonical Review, with requested IDs as aliases once IPC resolves them. */
   review(id: string): Review {
-    const known = this.reviews[id] ?? Object.values(this.reviews).find((review) => review.id === id);
-    return (known ?? (this.reviews[id] = new Review(id, this.jobs)));
+    return this.reviews[id] ?? (this.reviews[id] = new Review(id, this.jobs, (canonical, review) => this.#intern(canonical, review)));
+  }
+
+  #intern(id: string, incoming: Review): Review {
+    const aliases = Object.entries(this.reviews).filter(([, review]) => review === incoming);
+    // A replaced state forgot this handle; a late read cannot repopulate that pool.
+    if (aliases.length === 0) return incoming;
+    const canonical = this.reviews[id] ?? incoming;
+    for (const [alias] of aliases) this.reviews[alias] = canonical;
+    this.reviews[id] = canonical;
+    return canonical;
   }
 
   /** A replaced state: the reviews and drafts of the old one no longer apply. */

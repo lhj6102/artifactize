@@ -88,12 +88,12 @@ export class FormDraft {
 
 type Busy = { label: string; job: number; since: number };
 
-export class Review {
-  /** The request every action goes to; a follower's ID becomes its original's once read. */
+/** One canonical request owns these facts. Alias handles adopt this same instance,
+ * never copy its forms, drafts or running work. It is shared through AppState. */
+class ReviewState {
   id = $state("");
   view = $state.raw<HumanView | null>(null);
   area = $state<Area>("fields");
-  /** The instruction takes most of the body (`i`); focus alone never resizes the Detail. */
   expanded = $state(false);
   technical = $state(false);
   tool = $state(0);
@@ -101,11 +101,34 @@ export class Review {
   busy = $state<Busy | null>(null);
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);
-  /** Each verdict's draft as the library last answered it; choosing the verdict again hands it
-   * back, and the library says whether the recorded schema still takes it. */
-  #drafts = new SvelteMap<Verdict, Draft>();
-  /** Counts verdict choices: a form that arrives after a newer choice is not shown. */
-  #choice = 0;
+  readonly drafts = new SvelteMap<Verdict, Draft>();
+  choice = 0;
+
+  constructor(id: string) { this.id = id; }
+}
+
+export class Review {
+  #state = $state.raw(new ReviewState(""));
+  get id(): string { return this.#state.id; }
+  set id(value: string) { this.#state.id = value; }
+  get view(): HumanView | null { return this.#state.view; }
+  set view(value: HumanView | null) { this.#state.view = value; }
+  get area(): Area { return this.#state.area; }
+  set area(value: Area) { this.#state.area = value; }
+  get expanded(): boolean { return this.#state.expanded; }
+  set expanded(value: boolean) { this.#state.expanded = value; }
+  get technical(): boolean { return this.#state.technical; }
+  set technical(value: boolean) { this.#state.technical = value; }
+  get tool(): number { return this.#state.tool; }
+  set tool(value: number) { this.#state.tool = value; }
+  get output(): Output | null { return this.#state.output; }
+  set output(value: Output | null) { this.#state.output = value; }
+  get busy(): Busy | null { return this.#state.busy; }
+  set busy(value: Busy | null) { this.#state.busy = value; }
+  get notice(): Notice | null { return this.#state.notice; }
+  set notice(value: Notice | null) { this.#state.notice = value; }
+  get form(): FormDraft | null { return this.#state.form; }
+  set form(value: FormDraft | null) { this.#state.form = value; }
 
   readonly settled = $derived(this.view?.stage === "completed");
   readonly owned = $derived(this.view?.stage === "review");
@@ -114,10 +137,12 @@ export class Review {
   readonly editing = $derived(this.form !== null && !this.settled);
 
   readonly #jobs: Jobs;
+  readonly #intern: ((id: string, review: Review) => Review) | undefined;
 
-  constructor(id: string, jobs: Jobs) {
-    this.id = id;
+  constructor(id: string, jobs: Jobs, intern?: (id: string, review: Review) => Review) {
+    this.#state.id = id;
     this.#jobs = jobs;
+    this.#intern = intern;
   }
 
   /** Read the request (or, without `reload`, redraw its waiting time from the last read). */
@@ -130,6 +155,8 @@ export class Review {
   }
 
   #show(view: HumanView): void {
+    const canonical = this.#intern?.(view.id, this) ?? this;
+    if (canonical !== this) this.#state = canonical.#state;
     this.view = view;
     this.id = view.id;
     this.tool = Math.min(this.tool, Math.max(view.tools.length - 1, 0));
@@ -149,7 +176,7 @@ export class Review {
     try {
       return await work(job);
     } finally {
-      this.busy = null;
+      if (this.busy?.job === job) this.busy = null;
     }
   }
 
@@ -182,26 +209,27 @@ export class Review {
   async choose(verdict: Verdict): Promise<void> {
     if (this.busy || this.settled) return;
     this.area = "fields";
-    const choice = ++this.#choice;
+    const state = this.#state;
+    const choice = ++state.choice;
     if (this.form?.verdict === verdict) return;
     let draft: FormDraft;
     try {
-      draft = new FormDraft(this.id, await call(commands.humanForm(this.id, verdict, this.#drafts.get(verdict) ?? null)));
+      draft = new FormDraft(this.id, await call(commands.humanForm(this.id, verdict, this.#state.drafts.get(verdict) ?? null)));
     } catch (error) {
-      if (choice === this.#choice) this.notice = { text: message(error), error: true };
+      if (state === this.#state && choice === state.choice) this.notice = { text: message(error), error: true };
       return;
     }
     // Another verdict was chosen, or editing stopped, while this form was on its way.
-    if (choice !== this.#choice) return;
-    this.#drafts.delete(verdict);
-    if (this.form) this.#drafts.set(this.form.verdict, this.form.draft());
+    if (state !== this.#state || choice !== state.choice) return;
+    this.#state.drafts.delete(verdict);
+    if (this.form) this.#state.drafts.set(this.form.verdict, this.form.draft());
     this.form = draft;
   }
 
   /** Leave the form with its draft kept; the same verdict reopens it. */
   stopEditing(): void {
-    this.#choice += 1;
-    if (this.form) this.#drafts.set(this.form.verdict, this.form.draft());
+    this.#state.choice += 1;
+    if (this.form) this.#state.drafts.set(this.form.verdict, this.form.draft());
     this.form = null;
   }
 
@@ -242,7 +270,7 @@ export class Review {
       if (!submitted) return null;
       form.error = null;
       this.form = null;
-      this.#drafts.clear();
+      this.#state.drafts.clear();
       this.output = null;
       this.#acted(submitted);
       return submitted.settled;
