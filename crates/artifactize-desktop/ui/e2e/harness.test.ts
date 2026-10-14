@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { after, before, describe, it } from "node:test";
 import { createGraph } from "./fixture.ts";
-import { checkBuild } from "./driver.ts";
+import { checkBuild, LAUNCH_TIMEOUT } from "./driver.ts";
 import { Owned } from "./owned.ts";
 
 describe("desktop Agent session", () => {
@@ -15,7 +15,7 @@ describe("desktop Agent session", () => {
   let env: NodeJS.ProcessEnv;
   function call(mode: string, args: Record<string, unknown> = {}): string {
     const output = execFileSync(process.execPath, [harness, mode], {
-      env, input: JSON.stringify({ args }), encoding: "utf8", timeout: 30000,
+      env, input: JSON.stringify({ args }), encoding: "utf8", timeout: mode === "launch" ? LAUNCH_TIMEOUT : 30000,
     });
     if (mode === "stop") return output;
     const reply = JSON.parse(output) as { isError?: boolean; content: { text: string }[] };
@@ -31,7 +31,7 @@ describe("desktop Agent session", () => {
     owner = Owned.spawn(process.execPath, [harness, "start"], { env, stdio: ["ignore", "pipe", "inherit"] });
     await new Promise<void>((done, fail) => {
       const lines = createInterface({ input: owner.child.stdout! });
-      const deadline = setTimeout(() => finish(new Error("desktop Agent session did not become ready")), 30000);
+      const deadline = setTimeout(() => finish(new Error("desktop Agent session did not become ready")), LAUNCH_TIMEOUT);
       const exited = (code: number | null) => finish(new Error(`desktop Agent session exited ${code} before ready`));
       function finish(error?: Error) {
         clearTimeout(deadline);

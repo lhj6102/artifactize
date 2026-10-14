@@ -7,6 +7,9 @@ import { remote } from "webdriverio";
 import { app, cli, type Fixture } from "./fixture.ts";
 import { Owned } from "./owned.ts";
 
+/** A real WebKit app launch takes about 32 seconds on CI; callers must allow it to finish. */
+export const LAUNCH_TIMEOUT = 60000;
+
 /** The newest modification time of any file below `directory`. */
 function newest(directory: string): number {
   return readdirSync(directory, { withFileTypes: true }).reduce((latest, entry) => {
@@ -208,6 +211,7 @@ async function connect(port: number, args: string[], fixture: Fixture): Promise<
     hostname: "127.0.0.1",
     port,
     logLevel: "error",
+    connectionRetryTimeout: LAUNCH_TIMEOUT,
     capabilities: {
       // tauri-driver turns these into WebKitWebDriver's browser options.
       "tauri:options": {
