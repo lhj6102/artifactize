@@ -340,7 +340,9 @@ fn sessions(state: &Path) -> (CheckStatus, String, Details) {
     };
     // A database the schema check refuses has no id to report here.
     let state_id = store::read_state_id(state).ok().flatten();
-    let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / 1_048_576.0);
+    // Session storage uses binary mebibytes (2^20 bytes), not decimal megabytes.
+    const BYTES_PER_MIB: u64 = 1_048_576;
+    let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / BYTES_PER_MIB as f64);
     let message = format!(
         "{} Agent session{} take {} of {}; a collection brings them down to {}.{}",
         usage.sessions,

@@ -253,10 +253,13 @@ pub fn counts(counts: impl IntoIterator<Item = (Status, u64)>) -> String {
 
 /// Token totals for a headline: `950`, `12.3k`, `3.9M`.
 pub fn tokens(total: u64) -> String {
+    // Headlines abbreviate decimal thousands and millions as k and M, respectively.
+    const THOUSAND: u64 = 1_000;
+    const MILLION: u64 = 1_000_000;
     match total {
-        0..1_000 => total.to_string(),
-        1_000..1_000_000 => format!("{:.1}k", total as f64 / 1e3),
-        _ => format!("{:.1}M", total as f64 / 1e6),
+        0..THOUSAND => total.to_string(),
+        THOUSAND..MILLION => format!("{:.1}k", total as f64 / THOUSAND as f64),
+        _ => format!("{:.1}M", total as f64 / MILLION as f64),
     }
 }
 

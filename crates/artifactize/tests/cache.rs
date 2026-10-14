@@ -189,8 +189,8 @@ impl Fixture {
                             "command":shell(),
                             "args":[
                                 "review.sh",
-                                self.root.path().join("starts"),
-                                self.root.path().join("release"),
+                                support::os::path_text(&self.root.path().join("starts")),
+                                support::os::path_text(&self.root.path().join("release")),
                             ],
                             "timeout_ms":10000,
                         },
