@@ -188,7 +188,8 @@ class HarnessTests(unittest.TestCase):
         repo = Path(result["repository"])
         self.assertTrue(repo.is_dir())
         text = "café\n" * 10000
-        (repo / "large.txt").write_text(text, encoding="utf-8")
+        # Paging returns literal file bytes; keep this UTF-8 fixture identical on every OS.
+        (repo / "large.txt").write_text(text, encoding="utf-8", newline="\n")
         offset, pages = 0, []
         while True:
             page = self.call(environment, "read", {"case": "monorepo", "path": "large.txt", "offset": offset})
@@ -317,4 +318,4 @@ if __name__ == "__main__":
     parser.add_argument("--artifactize", type=Path)
     options = parser.parse_args()
     CANDIDATE = options.artifactize
-    unittest.main(argv=[sys.argv[0]])
+    unittest.main(argv=[sys.argv[0]], verbosity=2)
