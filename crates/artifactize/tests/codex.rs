@@ -1,5 +1,8 @@
 //! The `codex` backend end to end against a fake Codex endpoint and sign-in server.
 
+#[path = "support/order.rs"]
+mod order;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -789,6 +792,13 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         json!({"backend":"openai","model":"fake-openai-model","reasoning":"high"})
     );
     assert_eq!(provider.requests()[1].path, "/v1/responses");
+    // Latest-result selection follows given fixture times, not execution wall-clock order.
+    for (run, completed) in [
+        (&first, "2000-01-01T00:00:00.000000000Z"),
+        (&forced, "2000-01-02T00:00:00.000000000Z"),
+    ] {
+        order::completed_at(&project.state, &project.repo, run, completed);
+    }
     project.profile(json!({
         "kind":"agent",
         "backend":"codex",

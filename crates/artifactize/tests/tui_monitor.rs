@@ -15,6 +15,9 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
+#[path = "support/order.rs"]
+mod order;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
@@ -138,6 +141,20 @@ impl Fixture {
     fn seed(&self) -> (String, String) {
         let first = self.json(&self.alpha, &["verify", "--wait", "--all"], 1);
         let second = self.json(&self.alpha, &["verify", "--wait", "--all"], 1);
+        // Both monitor journeys select rows by Run order, not by host clock progression.
+        for (run, created) in [
+            (&first, "2000-01-01T00:00:00.000000000Z"),
+            (&second, "2000-01-02T00:00:00.000000000Z"),
+        ] {
+            let id = run["id"].as_str().unwrap();
+            support::runs::finished_worker(
+                &self.state,
+                &self.alpha,
+                &id.parse().unwrap(),
+                support::os::running,
+            );
+            order::created_at(&self.state, id, created);
+        }
         (
             first["id"].as_str().unwrap().into(),
             second["id"].as_str().unwrap().into(),
@@ -208,6 +225,11 @@ async fn live_verify_progress_and_runs_across_repositories() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
 
+    order::created_at(
+        &fixture.state,
+        live.as_str(),
+        "2000-01-03T00:00:00.000000000Z",
+    );
     let mut all = Monitor::new(fixture.state.clone(), None);
     all.refresh().await;
     let list = screen(&mut all);

@@ -16,6 +16,9 @@ use support::os::{cat_program, echo_program, false_program, shell, true_program}
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
+#[path = "support/order.rs"]
+mod order;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -650,19 +653,11 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
     );
     assert!(forced["requests"][0]["child"]["pid"].is_number());
     // Seed the record order: sequential executions can finish within one clock tick.
-    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     for (run, completed) in [
         (&original, "2000-01-01T00:00:00.000000000Z"),
         (&forced, "2000-01-02T00:00:00.000000000Z"),
     ] {
-        assert_eq!(
-            db.execute(
-                "UPDATE executions SET completed_at=?1,data=json_set(data,'$.completedAt',?1,'$.provenance.completedAt',?1) WHERE id=?2",
-                rusqlite::params![completed, run["requests"][0]["executionId"].as_str().unwrap()],
-            )
-            .unwrap(),
-            1,
-        );
+        order::completed_at(&fixture.state, &repo, run, completed);
     }
     // The forced result joins the key's history next to the original.
     let after = fixture.entries();
@@ -1027,7 +1022,19 @@ async fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
     fixture.release();
     let original = fixture.completed(&source, &owner_id, owner, 0).await;
     assert_eq!(fixture.records(), 2);
-    // The owner completed after the forced review, so its record is the latest.
+    // The owner is later in the seeded history, independent of host clock progression.
+    order::completed_at(
+        &fixture.state,
+        &target,
+        &forced,
+        "2000-01-01T00:00:00.000000000Z",
+    );
+    order::completed_at(
+        &fixture.state,
+        &source,
+        &original,
+        "2000-01-02T00:00:00.000000000Z",
+    );
     let reused = fixture.command(&target, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         reused["requests"][0]["executionId"],
