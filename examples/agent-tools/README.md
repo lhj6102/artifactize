@@ -20,8 +20,8 @@ What it demonstrates:
   object. GREEN must carry `covered` (requirement IDs) and `diagramMatches: true`,
   with optional `notes`. RED must carry `findings`. Fields outside
   `pass_schema`/`fail_schema` are rejected, and an invalid answer gets one repair
-  turn with tools disabled. The profile also sets budgets: `timeout_ms`,
-  `max_tool_calls` and `max_tokens`.
+  turn with tools disabled. The profile also sets `timeout_ms` and
+  `max_tool_calls` budgets.
 - **Built-in tools.** `read`, `grep` and `view_image` are declared as
   `{ builtin = "read" }`. They run inside artifactize, read only, and see `spec` plus
   its mount, so `reqs/requirements.md` can be read through the alias.

@@ -35,7 +35,7 @@ payload.instruction = "Run deterministic fixture, JSON envelope, private materia
 
 [evals.builder-quality]
 title = "Actual builders follow the skill in all three fixture projects"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 16000000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 payload.instruction = """
 Read {hey-arti}, {core}, and the source/cases of {arti-harness}. Use case_arti-harness
 for each of library-consumer, docs-assets and monorepo, and source_arti-harness to
