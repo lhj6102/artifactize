@@ -259,9 +259,8 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
     write_artifact(&repo, "root", json!({}), "Review.");
     let owner = repo.join("a");
     write_artifact(&owner, "a", json!({}), "Review.");
-    let executable = owner.join("unique-human-tool-not-on-path");
-    support::os::write_script(&executable, "printf '%s' \"$PWD\"\n");
-    support::os::make_executable(&executable);
+    let executable =
+        support::os::working_directory_program(&owner, "unique-human-tool-not-on-path");
     let executable = support::os::path_text(&executable);
     for (command, success) in [
         ("unique-human-tool-not-on-path", false),
@@ -278,7 +277,7 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
         let result = call(&repo).await;
         assert_eq!(!result.is_error(), success, "{command}: {result:?}");
         if success {
-            assert_eq!(text(&result), owner.to_str().unwrap());
+            assert_eq!(text(&result), support::os::path_text(&owner));
         }
     }
 }

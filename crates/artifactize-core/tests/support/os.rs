@@ -323,6 +323,22 @@ fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::Pa
     program
 }
 
+/// An executable-resolution fixture that reports its cwd as portable path text.
+pub fn working_directory_program(directory: &Path, name: &str) -> std::path::PathBuf {
+    compiled_program(
+        directory,
+        name,
+        r#"fn main() {
+    let directory = std::env::current_dir().unwrap();
+    let text = directory.to_str().unwrap();
+    #[cfg(windows)]
+    let text = text.replace('\\', "/");
+    print!("{text}");
+}
+"#,
+    )
+}
+
 /// Build a program named `name` in `directory` that appends its argument count and first
 /// argument, one per line, to the file named by `RECORD`.
 pub fn recording_program(directory: &Path, name: &str) -> std::path::PathBuf {

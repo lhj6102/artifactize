@@ -8,6 +8,7 @@ use std::{
 };
 
 pub const HARNESS: &str = r#"import json, os, pathlib, subprocess, sys, time
+PATH_TEXT_FUNCTION
 mode, log = sys.argv[1], pathlib.Path(sys.argv[2])
 def wait(path):
     while not path.exists() and log.exists(): time.sleep(0.01)
@@ -29,7 +30,7 @@ if mode in ['start', 'unready', 'exit']:
     child = subprocess.Popen([sys.executable, __file__, 'child', str(log), session.name])
     wait(log / ('child-' + session.name))
     (session / 'evidence').write_text('started first')
-    record('start', {'directory':str(session), 'pid':os.getpid(), 'child':child.pid, 'home':str(pathlib.Path.home())})
+    record('start', {'directory':path_text(session), 'pid':os.getpid(), 'child':child.pid, 'home':path_text(pathlib.Path.home())})
     if mode == 'exit': sys.exit(1)
     if mode == 'start': print('ready', flush=True)
     wait(session / 'exit')
@@ -38,7 +39,7 @@ elif mode in ['stop', 'hang-stop', 'fail-stop', 'readonly-stop']:
     if mode == 'hang-stop':
         child = subprocess.Popen([sys.executable, __file__, 'child', str(log), 'stop-' + session.name])
         wait(log / ('child-stop-' + session.name))
-    record('stop', {'directory':str(session), 'home':str(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
+    record('stop', {'directory':path_text(session), 'home':path_text(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
     if mode == 'hang-stop': wait(log / 'release')
     if mode == 'fail-stop': sys.exit(1)
     if mode == 'readonly-stop': deny_session_directory_writes(session)
@@ -48,7 +49,7 @@ elif mode in ['act', 'plain', 'hold', 'hold-tree', 'ignore-term', 'freeze-cleanu
         child = subprocess.Popen([sys.executable, __file__, 'child', str(log), 'call-' + session.name])
         wait(log / ('child-call-' + session.name))
     if mode in ['ignore-term', 'freeze-cleanup']: observe_session_interrupt(log, mode == 'freeze-cleanup')
-    record('call', {'directory':str(session), 'home':str(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
+    record('call', {'directory':path_text(session), 'home':path_text(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
     if mode in ['hold', 'hold-tree', 'ignore-term', 'freeze-cleanup']: wait(log / 'release')
     if mode == 'crash':
         (session / 'exit').write_text('')
@@ -67,7 +68,7 @@ pub fn script() -> String {
         super::os::session_file_holder(),
         super::os::session_interrupt_observer(),
         super::os::session_directory_write_denial(),
-        HARNESS
+        super::os::portable_path_probe(HARNESS)
     )
 }
 

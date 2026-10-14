@@ -192,7 +192,7 @@ fn session_commands_share_the_session_directory_and_run_in_the_authors_home() {
     let call = harness::records(&fixture.log(), "call").pop().unwrap();
     let stop = harness::records(&fixture.log(), "stop").pop().unwrap();
     for record in [&start, &call, &stop] {
-        assert_eq!(record["home"], home.to_str().unwrap(), "{record}");
+        assert_eq!(record["home"], support::os::path_text(&home), "{record}");
         assert_eq!(record["directory"], start["directory"], "{record}");
     }
 }

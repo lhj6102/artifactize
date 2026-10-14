@@ -727,7 +727,7 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     fixture.write("files/input.txt", "input");
     fixture.write(
         "files/tool.py",
-        "import json,os,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':{'cwd':os.getcwd(),'argv':sys.argv[1:],'artifactPath':x['context']['artifactPath'],'scope':x['context']['scope']}}]}))\n",
+        &support::os::portable_path_probe("import json,pathlib,sys\nPATH_TEXT_FUNCTION\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':{'cwd':path_text(pathlib.Path.cwd()),'argv':sys.argv[1:],'artifactPath':x['context']['artifactPath'],'scope':x['context']['scope']}}]}))\n"),
     );
     fixture.declare(
         "files/input.txt.artf",
@@ -751,7 +751,10 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     let data = call(&registry, "inspect_file", json!({}), &fixture.state).await;
     let path = |value: &Value| PathBuf::from(value.as_str().unwrap());
     let input = support::os::canonical(&config.root.join("files/input.txt"));
-    assert_eq!(path(&data["cwd"]), config.root.join("files"));
+    assert_eq!(
+        data["cwd"],
+        support::os::path_text(&config.root.join("files"))
+    );
     assert_eq!(path(&data["argv"][0]), input);
     assert_eq!(path(&data["artifactPath"]), input);
     assert_eq!(data["scope"]["file"]["kind"], "file");

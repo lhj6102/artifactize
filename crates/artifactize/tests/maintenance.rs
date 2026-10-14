@@ -567,7 +567,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
     assert_eq!(run["status"], "GREEN");
     assert_eq!(
         run["stateDir"],
-        support::os::canonical(&state).to_str().unwrap()
+        support::os::path_text(&support::os::canonical(&state))
     );
     // Noncached evidence satisfies its Run only; status correctly reports another review.
     assert_eq!(invoke(&["status"], 1)["evals"][0]["action"], "execute");
