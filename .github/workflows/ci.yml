@@ -1,9 +1,9 @@
 name: CI
 
 # Changes that touch only the website (built by website.yml) skip the Rust checks.
-# Only the Linux check gates pull requests. Windows and macOS run on main pushes and
-# weekly schedules as failure-reporting checks, so regressions turn main red and notify
-# subscribers; they never run on pull requests. Manual runs remain informational.
+# Pull requests run Linux checks; platform changes also gate on native Windows/macOS
+# contracts. Main pushes, schedules and manual runs exercise the full three-OS suite.
+# Every executed job gates the workflow outcome, including manual runs.
 on:
   push:
     branches: [main]
@@ -15,6 +15,31 @@ on:
   workflow_dispatch:
 
 jobs:
+  platform_changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          paths=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
+            ':(glob)crates/*/src/platform.rs' \
+            ':(glob)crates/*/src/platform/**' \
+            ':(glob)crates/artifactize-core/tests/support/os*' \
+            ':(glob)crates/artifactize-core/tests/support/os/**' \
+            .github/workflows/ci.yml)
+          if [[ -n "$paths" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
   check:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -72,27 +97,39 @@ jobs:
       - working-directory: crates/artifactize-desktop/ui
         run: pnpm e2e
   windows:
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: platform_changes
+    if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || needs.platform_changes.outputs.changed == 'true') }}
     runs-on: windows-latest
-    continue-on-error: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --locked --all-targets -- -D warnings
+      # This namespace exercises each native implementation behind the portable layer,
+      # including Windows creation-time jobs/ACLs and macOS zombie-group cleanup.
+      - name: Native platform contracts
+        if: github.event_name == 'pull_request'
+        run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
+      - if: github.event_name != 'pull_request'
+        run: cargo clippy --locked --all-targets -- -D warnings
       # Tests build their Windows stand-ins for /bin/sh with this rustc, and run python3.
-      - run: cargo test --locked --no-fail-fast
+      - if: github.event_name != 'pull_request'
+        run: cargo test --locked --no-fail-fast
   macos:
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: platform_changes
+    if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || needs.platform_changes.outputs.changed == 'true') }}
     runs-on: macos-latest
-    continue-on-error: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo test --locked --no-fail-fast
+      - name: Native platform contracts
+        if: github.event_name == 'pull_request'
+        run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
+      - if: github.event_name != 'pull_request'
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - if: github.event_name != 'pull_request'
+        run: cargo test --locked --no-fail-fast
