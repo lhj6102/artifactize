@@ -156,25 +156,11 @@ results still satisfy their own Run and keep their execution.
 
 ## Upgrading to 0.9
 
-0.9 uses TOML `.artf` declarations: `index.artf` for folders and `<file>.artf` for
-files. Declaration keys become snake_case and evals become `[evals.<id>]` tables. The
-ignore file becomes `.artfignore`. JSON output, state fields and JSON Schema keywords
-do not change spelling. There is no converter; have an agent rewrite and commit the
-declarations, then run `artifactize config check`.
-
-Families are removed. Projects that want templates generate `.artf` declarations
-with their own generator and commit them.
-
-State schema 6 starts a new state; earlier schemas are refused, not migrated. Set
-`ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new directory, or move the old state away. Reuse-key
-v2 matches no earlier result, including a script fingerprint's result and records in
-a team review store. The first full `verify` reviews every executable eval once,
-Human sign-offs included. Dependency evals have no execution; they derive their
-current verdicts. Later Runs reuse normally. See [State](../reference/state-cache-limits.md#state).
-
-The monitor and standalone `review` also share a redesigned Human Detail and an
-explicit `c` claim. See [Install: Upgrading to 0.9](../getting-started/install.md#upgrading-to-09)
-for the terminal layout and removed standalone keys.
+For declaration, state-directory and terminal changes, see
+[Install: Upgrading to 0.9](../getting-started/install.md#upgrading-to-09).
+Reuse-key v2 matches no pre-0.9 result, including script fingerprints and team
+review store records. The first full `verify` therefore reviews every executable
+eval once, Human sign-offs included; later Runs reuse normally.
 
 ## Graph fingerprint
 

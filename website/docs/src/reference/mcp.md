@@ -93,8 +93,10 @@ ID, with the same producer/state checks as the CLI. A missing cache record is
 JSON null (or an empty array for history), just as in CLI JSON output. Static
 `tools_check` never invokes project tools or starts sessions. `status` may run
 trusted fingerprint commands and consult the configured review store; declared
-commands are not an OS sandbox. `models`, `doctor` and `remote_status` may consult
-backend readiness without changing or disclosing credentials.
+commands are not an OS sandbox. MCP exposes no login/logout actions and never
+returns credentials. `models`, `doctor` and `remote_status` may check backend
+readiness. Codex model listing can renew artifactize-owned tokens or remove the
+stored sign-in after a terminal refresh rejection, just as the CLI does.
 
 ### Detail pages
 
