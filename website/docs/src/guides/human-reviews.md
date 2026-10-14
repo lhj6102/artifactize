@@ -361,7 +361,7 @@ path and tags are in Detail's Technical section. A basis Artifact is one row:
 |---|---|
 | `✓` done | GREEN, executed, reused or derived |
 | `✗` / `!` failed | RED / ERROR |
-| `◐` / `?` / `·` in progress | Running, waiting for a Human (with claimant), queued for a job/backend slot, or joining an execution |
+| `◐` / `?` / `·` in progress | Running, waiting for a Human (with claimant), awaiting admission, waiting for a backend slot or an explicit `--jobs` cap, or joining an execution |
 | `…` waits for X | A running Run waits for X's required evals to be GREEN |
 | `⊘` blocked by X | An upstream RED or blocked eval prevents execution |
 | `○` / `$` / `-` not run | A finished Run waited for X, has stale evidence or did not review the eval (`○`); its budget ran out (`$`); the eval has no request (`-`) |
