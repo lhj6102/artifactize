@@ -99,10 +99,8 @@ pub(crate) async fn reserve(
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
-    let directory = tempfile::Builder::new()
-        .prefix("run-")
-        .tempdir_in(runs)
-        .map_err(|e| e.to_string())?;
+    let directory =
+        crate::platform::private_tempdir_in("run-", &runs).map_err(|e| e.to_string())?;
     let id = directory
         .path()
         .file_name()

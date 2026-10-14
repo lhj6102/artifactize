@@ -12,15 +12,16 @@ use std::{fs, path::Path, process::Command};
 /// What a runtime eval or a command Agent tool is expected to see. The "toolchain" is a
 /// proxy that resolves through the home directory, as rustup's `cargo` does.
 const PROBE: &str = r#"import json, os, pathlib, sys
+PATH_TEXT_FUNCTION
 home = pathlib.Path(os.environ['HOME_NAME'])
-assert str(home) == sys.argv[1], home
+assert path_text(home) == sys.argv[1], home
 assert os.environ['AUTHOR_VARIABLE'] == 'from-the-terminal'
 assert (home / '.toolchains' / 'stable' / 'version').read_text().strip() == 'cargo 9.9'
 assert 'ARTIFACTIZE_REMOTE_TOKEN' not in os.environ
 assert 'ARTIFACTIZE_REMOTE' not in os.environ
 tmp = pathlib.Path(os.environ['TMPDIR'])
 assert tmp.is_dir() and not tmp.is_relative_to(home)
-(home / ('seen-tmp-' + sys.argv[2])).write_text(str(tmp))
+(home / ('seen-tmp-' + sys.argv[2])).write_text(path_text(tmp))
 if sys.argv[2] == 'tool':
     sys.stdin.read()
     print(json.dumps({'content': [{'type': 'text', 'text': 'ok'}]}))
@@ -40,7 +41,7 @@ impl Project {
         fs::create_dir(&repo).unwrap();
         support::os::write_python_script(
             &repo.join("probe.py"),
-            &PROBE.replace("HOME_NAME", support::os::home_env()),
+            &support::os::portable_path_probe(&PROBE.replace("HOME_NAME", support::os::home_env())),
         );
         let home = support::os::path_text(&home);
         support::declaration::write(

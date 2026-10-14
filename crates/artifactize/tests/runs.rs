@@ -110,6 +110,11 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
     const DETACHED_REQUESTS: usize = 35;
     const INSTRUCTION_BYTES: usize = 64 * 1024;
     let detached = Fixture::new();
+    let runs = detached.state.join("runs");
+    support::os::create_private_dir_all(&detached.state);
+    fs::create_dir(&runs).unwrap();
+    support::os::share_dir(&runs);
+    assert!(!support::os::private_dir(&runs));
     let instruction = "Check. ".repeat(INSTRUCTION_BYTES / "Check. ".len());
     let evals: Vec<_> = (0..DETACHED_REQUESTS)
         .map(|index| {
@@ -133,6 +138,9 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
     let accepted: Value = serde_json::from_slice(&submitted.stdout).unwrap();
     let id: RunId = accepted["run"].as_str().unwrap().parse().unwrap();
     assert_eq!(detached.settled(&id).await.state, runs::State::Green);
+    let directory = runs.join(id.as_str());
+    assert!(support::os::private_dir(&directory));
+    assert!(support::os::private_file(&directory.join("worker.stderr")));
     let completed = runs::view(&detached.context(), &id).await.unwrap();
     assert!(matches!(
         completed.run.control.unwrap().worker,

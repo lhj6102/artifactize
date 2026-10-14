@@ -445,13 +445,22 @@ pub fn mode(path: &Path) -> u32 {
     path.metadata().unwrap().permissions().mode() & 0o7777
 }
 
-/// Let everyone list and enter a directory: mode 0755 on Unix, and on Windows an extra
-/// Everyone read ACE. Either way it is no longer private.
+/// Let everyone list and enter a directory: mode 0755 on Unix, and on Windows an
+/// inheritable Everyone read ACE, so newly created children would also be shared.
 pub fn share_dir(path: &Path) {
     #[cfg(unix)]
     set_mode(path, 0o755);
     #[cfg(windows)]
-    grant_everyone_read(path);
+    {
+        // Everyone's well-known SID is language independent; OI/CI makes the
+        // fixture exercise inheritance rather than only the parent's own access.
+        let output = Command::new("icacls")
+            .arg(path)
+            .args(["/grant", "*S-1-1-0:(OI)(CI)(R)"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
 }
 
 /// The effective user ID of this process.
@@ -2319,6 +2328,15 @@ pub fn path_text(path: &Path) -> String {
     {
         text.to_owned()
     }
+}
+
+/// A Python fixture's displayed or recorded paths use the same portable spelling.
+/// The probe already imports pathlib; keep native path details in the shared helper.
+pub fn portable_path_probe(source: &str) -> String {
+    source.replace(
+        "PATH_TEXT_FUNCTION",
+        "def path_text(path):\n    return pathlib.Path(path).as_posix()\n",
+    )
 }
 
 /// Native executable suffix lookup used by the batch shim fixture.
