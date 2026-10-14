@@ -79,8 +79,9 @@ and then reuses as before. Reuse-key v2 matches no earlier records, including
 script fingerprints and team-store records. Dependency evals derive current
 evidence; they have no execution or reusable record. See
 [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
-[`doctor`](#doctor-models-and-prune) reports such a state as a hard error, and a
-database written by a newer artifactize the same way.
+A schema-6 state from 0.9 is supported: it upgrades additively to schema 7 and
+passes [`doctor`](#doctor-models-and-prune)'s schema check. Unsupported earlier
+schemas and newer schemas remain hard errors.
 
 Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
 sign-in and the review store token, is refused when it lies inside a git work tree or
@@ -267,6 +268,25 @@ saved and the others have none. The request's verdict, result and usage stay in
 `state.sqlite`; the session is the only record of the conversation and its tool calls,
 and [`session show --summary`](../guides/agent-evals.md#session-summary) counts them.
 A last line cut short by a crash is ignored when the file is read.
+
+### Follow-up replay
+
+`session send` uses the saved review's backend, model, reasoning and session id.
+OpenAI and Codex retain the same `prompt_cache_key`; Codex also retains the
+`session-id` header. Saved history and the system prompt are replayed unchanged
+so the cached prefix matches. Current project tools are offered again; changed
+covered fingerprints add a warning to the header and the model's context.
+
+A question is a new user turn framed as a follow-up, not a new review. The
+frame asks for plain text, permits the tools and states that the recorded verdict
+will not change. Modern review system prompts state that same distinction;
+older saved conversations rely on the new turn's framing. `session show` prints
+the person's original question, while its JSON export retains the framing too.
+
+Questions, answers and tool calls append to the same saved thread. Sends to one
+session serialize: each continues after the preceding answer. Each question has
+fresh profile budgets. A RUNNING request cannot be followed up; recorded verdict,
+result, usage and reuse evidence remain immutable.
 
 ### Provider transport
 

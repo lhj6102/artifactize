@@ -351,31 +351,12 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
 
-- The follow-up uses the review's backend, model and reasoning and its `sessionId`, so
-  `openai` and `codex` send the same `prompt_cache_key` (and `codex` the same
-  `session-id` header) and hit the review's prompt cache.
-- The eval's Agent tools are offered again, resolved against the current files of the
-  Run's repository (or `--repo`). When an Artifact the review's key covered has
-  another fingerprint now, the header says `files changed since this review`, and the
-  model is told so.
-- The answer is free text, with no verdict schema, and each follow-up gets the
-  profile's `maxToolCalls`, `maxTokens` and `timeoutMs` budgets afresh
-  (saved JSON field names). Your message is
-  sent as one new user turn that frames it as a follow-up, not a new review: `Follow-up
-  question from a person about the review above. This is not a new review: the verdict
-  stays as recorded, and the instruction to return one JSON object applied only to the
-  review. Answer in plain text, not JSON. You may use the tools again.`, then
-  `Question:` and your message. The review's system prompt says the same from the
-  start: the review returns one JSON verdict, and a later follow-up question is
-  answered in plain text. It and the saved history are sent unchanged, so the cached
-  prefix still matches. Conversations saved by artifactize before this lack that
-  sentence in their system prompt, and their follow-ups rely on the framing alone. `session show` prints your message
-  as you wrote it, and `--json` keeps both.
-- The message and the answer, tool calls included, are appended to the session, so
-  repeated sends continue one thread. Sends to one session take turns: a second
-  `session send` waits for the first and then continues after its answer.
-- The recorded verdict, result, usage and reuse never change. A request that is still
-  running cannot be followed up yet.
+A follow-up continues the saved conversation with the same model and current
+project tools. Its answer is plain text; it does not change the recorded verdict,
+result or reuse. The header warns when reviewed inputs have changed. Each question
+gets fresh profile budgets, and questions to one session run in order. See the
+[follow-up replay reference](../reference/state-cache-limits.md#follow-up-replay)
+for caching, stored messages and compatibility details.
 
 A reference to another machine or state fails with where it lives, for example
 `Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state

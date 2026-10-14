@@ -2,7 +2,8 @@
 
 [Human reviews](../guides/human-reviews.md#human-tools) shows a Human tool declaration.
 A Human tool is a command or a [built-in tool](builtin-tools.md) (`read`, `list`,
-`section`, `help` or `open`). Built-ins use the same placeholders and scope checks
+`section`, `help`, `open` or `graph`). `open` and `graph` are launch tools; the
+others print output. Built-ins use the same placeholders and scope checks
 for their target and run inside artifactize; the rest of this page is about commands.
 
 Arguments are fixed literal argv, with scope placeholders only: `{artifactPath}`

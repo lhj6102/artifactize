@@ -70,12 +70,20 @@ monitor show unfulfilled requirements. See [Artifacts and evals](../concepts/art
 
 ## Agent tools and the Human flow
 
+Both terminals must use the same temporary state directory. Before starting the
+waiting command below, print the first terminal's value with
+`echo "$ARTIFACTIZE_STATE_HOME"` (PowerShell: `$env:ARTIFACTIZE_STATE_HOME`).
+In the second terminal, replace `STATE_DIRECTORY` below with that printed path.
+For PowerShell, use `$env:ARTIFACTIZE_STATE_HOME = "STATE_DIRECTORY"` instead of
+`export`. Then open the same example directory.
+
 ```sh
 cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{}'
 artifactize verify --eval spec/signoff --wait   # records a WAITING_HUMAN request and waits
 # In a second terminal, in the same directory:
+export ARTIFACTIZE_STATE_HOME="STATE_DIRECTORY"  # copy the first terminal's path
 artifactize request list --run RUN_ID    # shows REQUEST_ID
 artifactize request claim REQUEST_ID
 artifactize request tool REQUEST_ID notes_spec

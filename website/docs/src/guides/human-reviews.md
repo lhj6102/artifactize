@@ -106,8 +106,8 @@ speculation substitutes for actual reusable Human GREEN evidence.
 `views.human_tools` is a separate safe-name map of predefined tools. The reviewer runs
 them; they take no free arguments. A [built-in tool](../reference/builtin-tools.md)
 works the same on Linux, macOS and Windows: `open` opens a file, folder or `http(s)`
-URL in the desktop's default application, and `read`, `list`, `section` and `help`
-print text in the terminal.
+URL in the desktop's default application; `graph` launches the current project
+graph viewer. `read`, `list`, `section` and `help` print text in the terminal.
 
 ```toml
 [views.human_tools]
@@ -116,7 +116,7 @@ notes = { description = "Print the review notes of {artifactName}.", builtin = "
 ```
 
 A built-in takes `builtin` and `args`, with an optional `description`. Its kind
-follows from the tool: `open` launches, the others print output.
+follows from the tool: `open` and `graph` launch, the others print output.
 
 A command tool runs a program you choose. It requires exactly `description`,
 `kind = "launch"` or `kind = "output"`, `command` and `args`, with optional
