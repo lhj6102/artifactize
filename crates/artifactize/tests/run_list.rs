@@ -159,6 +159,32 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ],
         0,
     );
+    // Fixed creation times make ordering and pagination independent of clock resolution.
+    let [selected, other, last] = {
+        let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();
+        [
+            (selected, "2000-01-01T00:00:00.000000000Z"),
+            (other, "2000-01-02T00:00:00.000000000Z"),
+            (last, "2000-01-03T00:00:00.000000000Z"),
+        ]
+        .map(|(run, created)| {
+            assert_eq!(
+                db.execute(
+                    "UPDATE runs SET data=json_set(data,'$.createdAt',?1) WHERE id=?2",
+                    rusqlite::params![created, run["id"].as_str().unwrap()],
+                )
+                .unwrap(),
+                1,
+            );
+            // Read the seeded audit before repository removal, including derived durations.
+            query(
+                &first,
+                &state,
+                &["run", "show", run["id"].as_str().unwrap()],
+                0,
+            )
+        })
+    };
     assert_eq!(selected["profile"], "brief");
     assert_eq!(
         selected["selection"],

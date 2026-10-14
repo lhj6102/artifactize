@@ -649,6 +649,21 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
         original["requests"][0]["executionId"]
     );
     assert!(forced["requests"][0]["child"]["pid"].is_number());
+    // Seed the record order: sequential executions can finish within one clock tick.
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    for (run, completed) in [
+        (&original, "2000-01-01T00:00:00.000000000Z"),
+        (&forced, "2000-01-02T00:00:00.000000000Z"),
+    ] {
+        assert_eq!(
+            db.execute(
+                "UPDATE executions SET completed_at=?1,data=json_set(data,'$.completedAt',?1,'$.provenance.completedAt',?1) WHERE id=?2",
+                rusqlite::params![completed, run["requests"][0]["executionId"].as_str().unwrap()],
+            )
+            .unwrap(),
+            1,
+        );
+    }
     // The forced result joins the key's history next to the original.
     let after = fixture.entries();
     assert_eq!(after.len(), 2);

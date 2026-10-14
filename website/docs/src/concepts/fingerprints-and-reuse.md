@@ -73,8 +73,12 @@ Artifact names and kinds (`folder`, `file` or `graph`) are part of the key, for 
 target and every covered dependency. A change from folder to file never reuses
 the former result, even if a script emits the same fingerprint. Physical paths
 are never key inputs, so copies with matching names, kinds and fingerprints reuse.
-Different Artifact names never share a result. The **Eval definition hash** is lowercase
-SHA-256 of canonical JSON with recursively sorted keys over the **evaluation criteria**:
+Changing a covered Artifact's name changes the key. Differently named targets can
+still share a result when their evaluation criteria and complete covered Artifact
+maps match: the key does not separately identify which covered Artifact is the target.
+For example, two Artifacts that mount each other can share results from identical evals.
+The **Eval definition hash** is lowercase SHA-256 of canonical JSON with recursively
+sorted keys over the **evaluation criteria**:
 
 - the eval kind (runtime, agent or human);
 - `payload`, including the instruction;
