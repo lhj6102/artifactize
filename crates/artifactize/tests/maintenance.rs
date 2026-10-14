@@ -142,6 +142,22 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     let run = runtime_run(&state, &repo);
     let id = run["id"].as_str().unwrap().parse().unwrap();
     support::runs::finished_worker(&state, &repo, &id, support::os::running);
+    // Terminal evidence can still live in WAL while readers close. Establish the physical
+    // byte baseline only after every completed page has reached the main database file.
+    {
+        // Bound fixture checkpoint establishment, not any execution or elapsed-time assertion.
+        const CHECKPOINT_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+        let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();
+        db.busy_timeout(support::os::patience(CHECKPOINT_BOUND))
+            .unwrap();
+        let checkpoint: (u32, u32, u32) = db
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(checkpoint, (0, 0, 0), "fixture WAL is fully checkpointed");
+        db.close().unwrap();
+    }
     let before = fs::read(state.join("state.sqlite")).unwrap();
     // Leftover 0.4 ChatGPT credentials are neither read nor removed.
     let auth = state.join("auth");
