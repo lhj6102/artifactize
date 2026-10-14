@@ -2,7 +2,9 @@
 
 Rules for Rust code. Items marked `M-` come from
 Microsoft's [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/guidelines/checklist/);
-`T-` (type-driven) and `F-` (functional) are this checklist's own.
+`T-` (type-driven), `F-` (functional) and `TEST-` (testing) are this checklist's own.
+The `TEST-` rules are language-neutral: they apply to Rust, TypeScript and Python tests,
+including e2e tests and harnesses.
 
 ## Verification and safety
 
@@ -29,6 +31,18 @@ Microsoft's [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guideli
 - **F-PURE-CORE**: computations (keys, hashes, decisions, summaries) are pure functions; effects (the database, processes, the network, files) stay at the edges.
 - **F-EXPRESSIONS**: iterator transformations and expressions are preferred over mutable accumulation loops where they read better.
 - **F-IMMUTABLE**: bindings are immutable by default, `mut` scopes are small, and shared mutable state is explicitly synchronized.
+
+## Tests (language-neutral)
+
+- **TEST-EXACT-STATE**: an async test waits for the exact state it asserts. Accepted, saved,
+  released and rendered are different states.
+- **TEST-CONTROLLED-TIME**: ordering and expiry tests use explicit times or a controlled clock.
+- **TEST-READ-ONLY**: observations go through read-only interfaces.
+- **TEST-OWN-FIXTURES**: a fixture owns its processes, connections and temporary files, and
+  cleans them up.
+- **TEST-SELF-CONTAINED**: tests build or declare every executable and input they use; they
+  do not rely on an earlier local build.
+- **TEST-SEAMS**: tests check seams only (observable boundaries), with no over-verification.
 
 ## Code written with AI
 
