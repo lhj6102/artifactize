@@ -4,6 +4,10 @@
 
 # Build together on an Artifact Graph.
 
+Bring your way of working to the team. Pick a part, show what is ready, and build
+on work your teammates have already reviewed. Artifactize helps you and your
+coding assistant do that without repeating the same reviews.
+
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
     <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/promo.gif" width="640"
@@ -12,10 +16,6 @@
   <br>
   <sub>27-second introduction, no sound. Select it for the full-quality video.</sub>
 </p>
-
-Bring your way of working to the team. Pick a part, show what is ready, and build
-on work your teammates have already reviewed. Artifactize helps you and your
-coding assistant do that without repeating the same reviews.
 
 An **Artifact** is a piece of the project: code, writing, a design or an image.
 The **graph** shows how these pieces connect. Give each piece its own checks—a test,
