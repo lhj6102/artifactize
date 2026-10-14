@@ -499,8 +499,9 @@ pub(crate) fn spawn_run(
             options.append(true);
         }
     }
+    let directory = state.join("runs").join(id.as_str());
     let stderr = options
-        .open(state.join("runs").join(id.as_str()).join("worker.stderr"))
+        .open(directory.join("worker.stderr"))
         .map_err(Error::Spawn)?;
     let program = platform::program::resolve(program.as_os_str(), repo).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
@@ -514,7 +515,9 @@ pub(crate) fn spawn_run(
             RunEntry::Executor => "__execute",
         })
         .arg(id.as_str())
-        .current_dir(repo)
+        // Internal workers must not pin the repository after publishing a terminal Run.
+        // Authored commands still use their declared repository cwd in `spawn_owned`.
+        .current_dir(directory)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr))
