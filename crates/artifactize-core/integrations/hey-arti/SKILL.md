@@ -247,9 +247,16 @@ Artifactize owns every Run. Start with `verify_start`, retain its returned Run I
 follow with bounded `verify_wait`, and read `verify_result` when terminal. Acceptance
 is not validation. Use `run_show`, `request_list`, `request_show` and `session_show`
 for bounded saved evidence when useful; `run_list` can help recover a known attempt.
-`doctor`, `models`, `remote_status` and `cache_show` inspect readiness without changing
-authentication or removing evidence. MCP never exposes credential flows, Human
-sign-off actions, destructive maintenance, tool execution or model follow-ups.
+`doctor`, `models`, `remote_status` and `cache_show` inspect readiness or saved
+data without revealing credentials or deleting review evidence. As with the CLI,
+Codex model listing can refresh artifactize-owned tokens or remove an invalid
+stored sign-in after a terminal refresh rejection. MCP exposes no login/logout
+actions, Human sign-off actions, destructive maintenance, tool execution or
+model follow-ups.
+
+Every READY eval can start without a default Run-concurrency cap; backend limits
+in `limits.json` still apply. Add the optional MCP `jobs` argument (CLI `--jobs N`)
+only when unrestricted concurrency causes trouble. Omit it otherwise.
 
 A caller `request_key` is optional, retained per retry-safe attempt. It is 1–128
 ASCII letters/digits/`._:-`. Same repository + same key returns the **same Run**,
