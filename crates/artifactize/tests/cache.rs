@@ -990,20 +990,27 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
     assert_eq!(fixture.starts(), 2);
 }
 
-#[test]
-fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
+#[tokio::test]
+async fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo forced >> \"$1\"; printf forced");
-    let owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.starts() > 0);
-    let forced = finish(fixture.spawn(&target, &["--force"]), 0);
+    let mut owner = fixture.spawn(&source, &[]);
+    let owner_id = Fixture::announced(&mut owner);
+    fixture
+        .observed_request(&source, &owner_id, |request| {
+            request.child.is_some() && fixture.starts() > 0
+        })
+        .await;
+    let mut child = fixture.spawn(&target, &["--force"]);
+    let forced_id = Fixture::announced(&mut child);
+    let forced = fixture.completed(&target, &forced_id, child, 0).await;
     let execution = fixture.execution(forced["requests"][0]["executionId"].as_str().unwrap());
     assert_eq!(execution["key"], fixture.running_key().as_str());
     assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
     fixture.release();
-    let original = finish(owner, 0);
+    let original = fixture.completed(&source, &owner_id, owner, 0).await;
     assert_eq!(fixture.records(), 2);
     // The owner completed after the forced review, so its record is the latest.
     let reused = fixture.command(&target, &["verify", "--wait", "--all"], 0);
