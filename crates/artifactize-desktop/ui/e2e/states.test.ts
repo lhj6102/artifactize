@@ -55,7 +55,11 @@ describe("a Run with every verdict", () => {
 
   // UX edges: E-GRAPH-OPEN
   it("colours RED, ERROR, blocked and GREEN Artifacts and the edge between a RED one and its dependent", async () => {
-    await eventually(async () => Object.keys((await lights()).nodes).length === 7, "seven Artifact nodes");
+    // Svelte Flow can mount nodes before its asynchronous layout renders the edges.
+    await eventually(async () => {
+      const graph = await lights();
+      return Object.keys(graph.nodes).length === 7 && Object.keys(graph.edges).length === 3;
+    }, "seven Artifact nodes and their three rendered edges");
     const { nodes, edges } = await lights();
     assert.deepEqual(nodes, {
       "a:red": "red",
