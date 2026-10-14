@@ -139,7 +139,7 @@ async fn missed_hints_reconcile_only_changed_views_and_resync_rebuilds_the_basel
     );
     // A Run lifecycle/metadata update must not decode its unchanged request bodies again.
     let mut saved = run.run;
-    saved.jobs += 1;
+    saved.jobs = Some(saved.jobs.unwrap_or(0) + 1);
     receipts.save_run(&saved).await.unwrap();
     assert_eq!(read(&mut reader, &state, &id, 3).0, 5);
     assert!(read(&mut reader, &state, &id, 3).1.is_none());

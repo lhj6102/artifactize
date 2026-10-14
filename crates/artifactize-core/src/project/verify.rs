@@ -18,14 +18,11 @@ use crate::{
     workspace,
 };
 
-/// Four concurrent evals keep ordinary machines responsive while overlapping review I/O;
-/// shared by API/CLI defaults and legacy Run decoding, and overridable with --jobs.
-pub const DEFAULT_JOBS: usize = 4;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct VerifyOptions {
     pub modes: crate::runs::RunModes,
-    pub jobs: usize,
+    /// Optional per-Run concurrency cap; absent admits every READY eval.
+    pub jobs: Option<usize>,
     /// Fingerprints computed at once, in preparation and end-of-review rechecks; `None` uses
     /// the available CPUs.
     pub fingerprint_jobs: Option<usize>,
@@ -37,21 +34,6 @@ pub struct VerifyOptions {
     pub recursive: bool,
     /// Force only explicitly selected Evals, never recursive dependencies.
     pub force: bool,
-}
-
-impl Default for VerifyOptions {
-    fn default() -> Self {
-        Self {
-            modes: Default::default(),
-            jobs: DEFAULT_JOBS,
-            fingerprint_jobs: None,
-            max_executions: None,
-            reuse_only: BTreeSet::new(),
-            profile: None,
-            recursive: false,
-            force: false,
-        }
-    }
 }
 
 /// Submit to artifactize and observe settlement. Cancelling this future/token only stops watching.
@@ -76,7 +58,7 @@ pub(crate) async fn reserve(
     options: &VerifyOptions,
     request_key: Option<&crate::types::RequestKey>,
 ) -> Result<(crate::types::RunId, bool), String> {
-    if options.jobs == 0 {
+    if options.jobs == Some(0) {
         return Err("jobs must be at least 1.".into());
     }
     let parallelism = super::fingerprint_parallelism(options)?;
@@ -238,7 +220,7 @@ pub(crate) async fn execute(
     };
     let repo = &run.repo_path;
     let state_dir = Some(run.state_dir.as_path());
-    if options.jobs == 0 {
+    if options.jobs == Some(0) {
         return Err("jobs must be at least 1.".into());
     }
     let parallelism = super::fingerprint_parallelism(options)?;

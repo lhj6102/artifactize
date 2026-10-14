@@ -181,10 +181,7 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     let (first, second) = (fixture.repo("a", 3), fixture.repo("b", 3));
     fixture.limits(json!({"backends":{"openai":1,"anthropic":2}}));
     fixture.gate.close();
-    let runs = [
-        fixture.spawn(&first, &["--jobs", "3"]),
-        fixture.spawn(&second, &["--jobs", "3"]),
-    ];
+    let runs = [fixture.spawn(&first, &[]), fixture.spawn(&second, &[])];
     let mut seen_waiting = false;
     wait_until(|| {
         seen_waiting |= Connection::open(fixture.state().join("state.sqlite"))
@@ -204,10 +201,7 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     fs::remove_file(fixture.state().join("limits.json")).unwrap();
     fixture.most.store(0, Ordering::SeqCst);
     fixture.gate.close();
-    let runs = [
-        fixture.spawn(&first, &["--jobs", "3"]),
-        fixture.spawn(&second, &["--jobs", "3"]),
-    ];
+    let runs = [fixture.spawn(&first, &[]), fixture.spawn(&second, &[])];
     wait_until(|| fixture.active.load(Ordering::SeqCst) > 1);
     fixture.gate.open();
     for run in runs {

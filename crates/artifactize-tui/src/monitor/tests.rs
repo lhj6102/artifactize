@@ -144,7 +144,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
         progress.errors,
         [("p2/check".into(), "[SPAWN] spawn failed".into())]
     );
-    assert_eq!(progress.budget, "executions 2/5 · jobs 4");
+    assert_eq!(progress.budget, "executions 2/5 · jobs unlimited");
     assert_eq!(progress.work, "executed 0 · reused 0 · derived 0");
     assert_eq!(
         progress.counts.iter().map(|(_, n)| n).sum::<u64>(),
@@ -519,13 +519,16 @@ fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_deta
                 );
             }
             // Counter names and budgets belong to the Run detail.
-            for absent in ["cacheReadTokens", "executions 2/5", "jobs 4"] {
+            for absent in ["cacheReadTokens", "executions 2/5", "jobs unlimited"] {
                 assert!(!text.contains(absent), "{width}x{height}: {absent}\n{text}");
             }
         }
     }
     let detail = detail(&view, &requests, &Target::Run, now());
-    assert_eq!(detail.field("Budget"), Some("executions 2/5 · jobs 4"));
+    assert_eq!(
+        detail.field("Budget"),
+        Some("executions 2/5 · jobs unlimited")
+    );
     assert_eq!(
         detail.field("Work"),
         Some("executed 2 · reused 0 · derived 0")
@@ -918,4 +921,16 @@ fn short_terminals_keep_every_attention_line_or_count_the_rest() {
     let text = sized(&mut monitor, 160, 12);
     assert!(text.contains("+3 more · Enter on the Run node"), "{text}");
     assert_eq!(text.matches("  boom").count(), 1, "{text}");
+}
+
+#[test]
+fn run_budget_shows_only_explicit_jobs_as_a_cap() {
+    let (mut view, requests) = live();
+    assert!(
+        progress(&view, &requests, now())
+            .budget
+            .ends_with("jobs unlimited")
+    );
+    view.run.jobs = Some(2);
+    assert!(progress(&view, &requests, now()).budget.ends_with("jobs 2"));
 }

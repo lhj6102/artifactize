@@ -332,7 +332,8 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
         EvalView::InProgress(Activity::Human(Some(reviewer))) => vec![Segment::plain(format!(
             "Human sign-off · claimed by {reviewer}"
         ))],
-        EvalView::InProgress(Activity::Queued(Queue::Jobs)) => plain("queued"),
+        EvalView::InProgress(Activity::Queued(Queue::Ready)) => plain("queued"),
+        EvalView::InProgress(Activity::Queued(Queue::Jobs)) => plain("queued · --jobs slots full"),
         EvalView::InProgress(Activity::Queued(Queue::Slot(backend))) => {
             vec![Segment::plain(format!("queued · {backend} slots full"))]
         }

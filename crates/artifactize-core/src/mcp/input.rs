@@ -27,6 +27,7 @@ impl<'de> Deserialize<'de> for Scope {
 pub(super) struct Start {
     pub scope: Scope,
     pub request_key: Option<RequestKey>,
+    pub jobs: Option<u32>,
     #[serde(default)]
     pub speculate: bool,
     #[serde(default)]

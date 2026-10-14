@@ -277,6 +277,25 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     let mut client = Client::new(project.command(), "2026-07-28").await;
     let tools = client.rpc("tools/list", json!({})).await;
     assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 17);
+    let start_schema = &tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "verify_start")
+        .unwrap()["inputSchema"]["properties"]["jobs"];
+    assert_eq!(start_schema["minimum"], 1);
+    assert!(start_schema.get("default").is_none());
+    let invalid = client
+        .rpc(
+            "tools/call",
+            json!({"name":"verify_start","arguments":{"scope":{"kind":"all"},"jobs":0}}),
+        )
+        .await;
+    assert_eq!(invalid["result"]["isError"], true);
+    assert!(
+        !project.state.join("state.sqlite").exists(),
+        "zero cap was rejected before Run reservation"
+    );
     let started = client
         .call(
             "verify_start",
@@ -285,6 +304,10 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         .await;
     assert!(serde_json::to_vec(&started).unwrap().len() < 2048);
     let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        runs::view(&project.context(), &run).await.unwrap().run.jobs,
+        None
+    );
     project
         .state(&run, artifactize_core::types::RequestStatus::Running)
         .await;
@@ -449,10 +472,14 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
     let started = client
         .call(
             "verify_start",
-            json!({"scope":{"kind":"all"},"defer_human":true}),
+            json!({"scope":{"kind":"all"},"defer_human":true,"jobs":1}),
         )
         .await;
     let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        runs::view(&project.context(), &run).await.unwrap().run.jobs,
+        Some(1)
+    );
     assert_eq!(
         client
             .call("verify_wait", json!({"run":run,"seconds":40}))

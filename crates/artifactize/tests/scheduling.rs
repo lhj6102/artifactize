@@ -140,8 +140,9 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
 const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; printf 'end %s\n' \"$1\" >> events";
 
 #[test]
-fn independent_evals_fill_jobs_without_exceeding_them_and_default_to_four() {
-    for (args, jobs) in [(vec!["--jobs", "2"], 2), (vec![], 4)] {
+fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
+    for (args, cap) in [(vec!["--jobs", "2"], Some(2)), (vec![], None)] {
+        let jobs = cap.unwrap_or(6);
         let fixture = Fixture::new((0..6).map(|id| eval(&format!("e{id}"), SLOW)).collect());
         let child = fixture.spawn(&args);
         wait_until(|| fixture.starts().len() >= jobs);
@@ -156,7 +157,13 @@ fn independent_evals_fill_jobs_without_exceeding_them_and_default_to_four() {
         assert_eq!(run["executionsStarted"], jobs);
         fs::write(fixture.repo.join("release"), "").unwrap();
         let run = finish(child, 0);
-        assert_eq!(run["jobs"], jobs);
+        match cap {
+            Some(limit) => assert_eq!(run["jobs"], limit),
+            None => assert!(
+                run.get("jobs").is_none(),
+                "unlimited is an absent saved field"
+            ),
+        }
         assert_eq!(run["executionsStarted"], 6);
         let mut active = 0;
         let mut peak = 0;

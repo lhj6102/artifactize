@@ -89,7 +89,7 @@ pub struct Run {
     pub definitions: super::definitions::Definitions,
     pub recursive: bool,
     pub force: bool,
-    pub jobs: usize,
+    pub jobs: Option<usize>,
     /// Fingerprints computed at once; absent in Runs saved before 0.5.
     pub fingerprint_jobs: Option<usize>,
     pub max_executions: Option<u64>,
@@ -135,8 +135,8 @@ pub(crate) struct RunWire {
     pub recursive: bool,
     #[serde(default)]
     pub force: bool,
-    #[serde(default = "default_jobs")]
-    pub jobs: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jobs: Option<usize>,
     /// Fingerprints computed at once; absent in Runs saved before 0.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fingerprint_jobs: Option<usize>,
@@ -248,10 +248,6 @@ pub struct StoppedBackend {
     pub eval_id: crate::types::EvalId,
     pub request_id: RequestId,
     pub error: String,
-}
-
-fn default_jobs() -> usize {
-    crate::project::DEFAULT_JOBS
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

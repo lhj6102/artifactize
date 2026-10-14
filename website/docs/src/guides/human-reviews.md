@@ -4,7 +4,8 @@ A Human eval asks a person for a GREEN or RED sign-off. The reviewer claims the
 waiting request, runs the Human tools you declared and submits a verdict, either
 with `artifactize request` commands or in the `artifactize review` terminal UI.
 
-READY Human evals persist WAITING_HUMAN and release their job slot. They consume
+READY Human evals persist WAITING_HUMAN and no longer count against an explicit
+`--jobs` cap. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. Artifactize's
 Run waits for Human results exactly as for runtime and Agent evals; there is no Human wait
 timeout and no fabricated verdict. Plain `verify` submits and returns its ID; `--wait`

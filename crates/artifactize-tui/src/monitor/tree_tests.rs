@@ -212,7 +212,7 @@ fn queued_for_a_slot_or_jobs_differs_from_waiting_for_an_artifact() {
     );
     assert_eq!(follows.compact, "←code-style");
     for (extra, queue, text) in [
-        (json!({}), Queue::Jobs, "queued"),
+        (json!({}), Queue::Ready, "queued"),
         (
             json!({
                 "blockedReason":"Waiting for a free codex slot: all 2 are in use on this machine (limits.json).",
@@ -609,7 +609,7 @@ fn speculative_readiness_and_saved_blocked_requests() {
     let nodes = tree(&run, &requests, now());
     assert_eq!(
         view(&nodes, "cli/follows-style"),
-        &EvalView::InProgress(Activity::Queued(Queue::Jobs))
+        &EvalView::InProgress(Activity::Queued(Queue::Ready))
     );
     // A saved BLOCKED reads by the current state: blocked only while something upstream
     // still blocks, otherwise it waited.
@@ -695,7 +695,7 @@ fn upstream_index_falls_back_to_relations_and_request_deps() {
     let nodes = tree(&run, &requests, now());
     assert_eq!(
         view(&nodes, "app/x"),
-        &EvalView::InProgress(Activity::Queued(Queue::Jobs))
+        &EvalView::InProgress(Activity::Queued(Queue::Ready))
     );
 }
 
@@ -1298,7 +1298,7 @@ fn saved_evidence_outside_the_runs_requests_fulfils_gates() {
     assert_eq!(line(&nodes, "a:b"), "✓ b  1/1");
     assert_eq!(
         view(&nodes, "c/y"),
-        &EvalView::InProgress(Activity::Queued(Queue::Jobs))
+        &EvalView::InProgress(Activity::Queued(Queue::Ready))
     );
     // A saved RED outside the Run blocks like any other.
     run.run

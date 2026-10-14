@@ -16,7 +16,7 @@ Tasks extension, progress stream or subscription API.
 
 | Tool | Arguments | Core operation / answer |
 | --- | --- | --- |
-| `verify_start` | `scope`, optional `request_key`, `speculate`, `defer_human` | Submit via `runs::start`; compact Run observation, not approval |
+| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate`, `defer_human` | Submit via `runs::start`; compact Run observation, not approval |
 | `verify_status` | `run` | `runs::status`: saved state, counts, elapsed seconds and `next_check` |
 | `verify_wait` | `run`, optional `seconds` | `runs::wait`: Run end or bound; default 30, integer 0–40, whole call under 45 seconds |
 | `verify_result` | `run`, optional `cursor` | `runs::result`: verdict and up to 20 concise findings, `next_cursor`; `ready:false` while active |
@@ -41,6 +41,12 @@ A `request_key` is 1–128 ASCII letters/digits/`._:-`. Same repository + same k
 returns the same attempt, even after edits or completion. A new attempt needs a
 new key or no key. Omitting the key always creates a new Run while retaining
 normal eval-result reuse.
+
+Concurrency is unlimited by default: all READY evals can start, subject to
+backend limits in `limits.json`. An optional positive integer `jobs` is the same
+per-Run cap as CLI `--jobs`; add it only when unrestricted concurrency causes
+trouble. The Run omits `jobs` when unlimited; older saved numeric caps remain
+readable.
 
 Both mode arguments default false and pass directly to shared `RunModes`.
 `speculate` starts requested downstream work within core scheduling limits before

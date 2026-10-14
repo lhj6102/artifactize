@@ -20,7 +20,7 @@ to that program, not artifactize.
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (4), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `mcp` | | [MCP stdio protocol](mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
@@ -185,10 +185,12 @@ still reuse their own local records, but a forced Run reads nothing from the sto
 Dependency evals are always derived, never forced. Speculation and deferral never waive
 their final requirements.
 
-`--jobs N` bounds the evals one `verify` runs at once. Agent reviews are further
+There is no default eval-concurrency cap: every READY eval starts as soon as it is
+ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it
+then bounds the evals of this Run. Agent reviews are still
 bounded machine-wide per backend by `$STATE/limits.json`
 ([Backend capacity](state-cache-limits.md#backend-capacity)); a request waiting for a backend slot
-holds no job slot and no executor start.
+holds no optional `--jobs` slot and no executor start.
 
 `--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
 fingerprints are computed at once; the default is the number of CPUs available to
@@ -198,7 +200,8 @@ Results and output do not depend on the bound or on completion order.
 
 `verify --max-executions N` sets a nonnegative, shared per-Run executor-start
 budget (unlimited when omitted); it is not an Artifact declaration field.
-The Run records `jobs`, `fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
+The Run records an explicit `jobs` cap (the field is absent when unlimited),
+`fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
 later returns ERROR. Human waiting, claim and tool actions and dependency
 derivation consume no starts. Fingerprint preparation/rechecks, cache hits, and

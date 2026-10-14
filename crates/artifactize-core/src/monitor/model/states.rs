@@ -32,7 +32,9 @@ pub enum Source {
 /// Why a queued eval has not started although nothing upstream holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Queue {
-    /// Waiting for one of the Run's `--jobs`.
+    /// Ready, waiting for scheduler admission without a Run cap.
+    Ready,
+    /// Waiting for the Run's explicitly chosen `--jobs` cap.
     Jobs,
     /// Waiting for a backend slot (limits.json); holds the backend name.
     Slot(crate::config::Backend),
@@ -617,8 +619,10 @@ impl<'a> States<'a> {
                 Queue::Slot(backend)
             } else if request.execution_id.is_some() {
                 Queue::Joined
-            } else {
+            } else if self.run.jobs.is_some() {
                 Queue::Jobs
+            } else {
+                Queue::Ready
             },
         ))
     }

@@ -158,8 +158,9 @@ cleanup.
 
 ## Backend capacity
 
-`--jobs` bounds the evals of one `verify` process. Several processes on one
-machine (worktrees, CI jobs, a team member's integration run) can still send more
+READY evals have no default Run-concurrency cap. An explicit `--jobs N` limits
+only that Run; add it when unrestricted concurrency causes trouble. Multiple
+Runs on one machine (worktrees, CI jobs, a team member's integration run) can still send more
 Agent reviews to one backend at once than its rate limit or subscription allows.
 `$STATE/limits.json` caps the Agent reviews in flight per backend across every
 `verify` that uses that state directory:
@@ -191,10 +192,10 @@ started.
 With every slot of its backend in use, a request waits, as QUEUED, with a reason
 such as `Waiting for a free codex slot: all 4 are in use on this machine
 (limits.json).`, and is retried as slots free up, in selection order. While it waits
-it holds no `--jobs` slot and consumes no `--max-executions` start, so runtime
-evals, Human requests and other backends keep running. Once it has its slot it
-occupies a job slot like any running eval, so a process runs at most
-`min(--jobs, free slots)` reviews of a limited backend. Explicit `run cancel RUN_ID` ends
+it does not count against an explicit `--jobs` cap and consumes no
+`--max-executions` start, so runtime evals, Human requests and other backends
+keep running. When admitted, it counts against `--jobs` if given; without that
+cap, only the backend's available slots limit its reviews. Explicit `run cancel RUN_ID` ends
 its waiting requests with status ERROR and `errorCode = "CANCELLED"`, and its held slots are released. Interrupting
 `verify --wait` only stops observation; it does not cancel the Run.
 

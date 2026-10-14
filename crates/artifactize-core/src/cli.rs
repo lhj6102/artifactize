@@ -121,14 +121,13 @@ pub enum Command {
         selection: SelectionArgs,
         #[command(flatten)]
         policy: PolicyArgs,
-        /// Maximum concurrent evals, including fingerprint waiters.
+        /// Opt-in maximum concurrent evals, including fingerprint waiters; otherwise unlimited.
         #[arg(
             long,
             value_name = "N",
-            default_value_t = crate::project::DEFAULT_JOBS as u32,
             value_parser = clap::value_parser!(u32).range(1..)
         )]
-        jobs: u32,
+        jobs: Option<u32>,
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,

@@ -245,6 +245,16 @@ fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
     // Removed saved keys are ignored on read, without a schema migration.
     let historical = wire.replace("\"ignoreGates\":false", "\"ignoreGates\":true");
     let decoded = serde_json::from_str::<store::Run>(&historical).unwrap();
+    assert_eq!(decoded.jobs, Some(2), "legacy numeric caps remain explicit");
+    assert_eq!(serde_json::to_value(&decoded).unwrap()["jobs"], 2);
+    let unlimited: store::Run = serde_json::from_str(&wire.replace("\"jobs\":2,", "")).unwrap();
+    assert_eq!(unlimited.jobs, None);
+    assert!(
+        serde_json::to_value(unlimited)
+            .unwrap()
+            .get("jobs")
+            .is_none()
+    );
     assert!(
         serde_json::to_value(&decoded)
             .unwrap()

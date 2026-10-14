@@ -375,7 +375,8 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             run.executions_started,
             run.max_executions
                 .map_or("unlimited".into(), |max| max.to_string()),
-            run.jobs,
+            run.jobs
+                .map_or("unlimited".into(), |limit| limit.to_string()),
         ),
         work: format!(
             "executed {} · reused {} · derived {}",

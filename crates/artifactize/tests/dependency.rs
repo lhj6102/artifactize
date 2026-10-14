@@ -620,7 +620,7 @@ async fn dependency_chains_derive_without_job_or_execution_budget() {
     fixture.declare("mid", vec![dependency(&["basis"])]);
     fixture.declare("player", vec![dependency(&["mid"])]);
     let options = VerifyOptions {
-        jobs: 1,
+        jobs: Some(1),
         max_executions: Some(0),
         reuse_only: std::collections::BTreeSet::from([ProfileKind::Dependency]),
         ..Default::default()

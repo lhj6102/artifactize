@@ -489,7 +489,10 @@ impl Scheduler<'_, '_> {
                         // Ready work owns capacity; speculative tasks yield before any ready task.
                         let backend = current.options.backend;
                         let jobs_full = !waiting.contains(&index)
-                            && running.len() + waiting.len() >= self.run.jobs;
+                            && self
+                                .run
+                                .jobs
+                                .is_some_and(|limit| running.len() + waiting.len() >= limit);
                         let backend_full = backend.is_some_and(|backend| {
                             capacity_waiting.contains(&index)
                                 && running.iter().any(|&active| {
@@ -588,7 +591,12 @@ impl Scheduler<'_, '_> {
                     {
                         continue;
                     }
-                    if !waiting.contains(&index) && running.len() + waiting.len() >= self.run.jobs {
+                    if !waiting.contains(&index)
+                        && self
+                            .run
+                            .jobs
+                            .is_some_and(|limit| running.len() + waiting.len() >= limit)
+                    {
                         continue;
                     }
                     let declared = self

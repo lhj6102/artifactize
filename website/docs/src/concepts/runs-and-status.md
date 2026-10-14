@@ -10,15 +10,19 @@ the next `verify` will execute, reuse, derive or wait for, without running evals
 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, or
 `--all`. Eval IDs are qualified (`green/check`). Selection order is preserved, with
 duplicates removed at their first occurrence; Artifacts expand to their evals in ID
-order within each declaration. READY evals execute concurrently up to
-`--jobs N` (default 4, minimum 1). Scheduling prefers unblockable work and the
+order within each declaration. Every READY eval starts as soon as it is ready,
+without a default concurrency cap. Add `--jobs N` (minimum 1) only if this
+concurrency causes trouble. Scheduling prefers unblockable work and the
 longest remaining dependency path; selection/configuration order breaks ties.
 Selection order still defines saved requests, not dispatch priority. The graph is
 re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
-fingerprint claim occupy job slots while polling, but cache hits occupy none. An
+fingerprint claim count against an explicit `--jobs` cap, but cache hits do not. An
 Agent review of a backend with a machine-wide limit also needs one of its
-[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one occupies no job slot. artifactize owns each Run independently of its requester. Plain `verify` prints the Run ID
+[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one does not count against `--jobs`.
+QUEUED means awaiting admission, a backend slot or a joined execution; only a
+Run with explicit `--jobs` can be waiting for a Run job slot. Artifactize owns
+each Run independently of its requester. Plain `verify` prints the Run ID
 and exits 0 when submission is accepted; `--json` prints `{"run","state"}`.
 Acceptance is not a validation verdict. Use `verify --wait` to announce the ID on stderr,
 observe settlement and render the final saved result. Interrupting or closing the watcher

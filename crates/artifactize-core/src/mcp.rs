@@ -39,6 +39,7 @@ impl Server {
             "verify_start" => {
                 let args: Start = parse(arguments)?;
                 let options = VerifyOptions {
+                    jobs: args.jobs.map(|limit| limit as usize),
                     modes: runs::RunModes {
                         speculate: args.speculate,
                         defer_human: args.defer_human,

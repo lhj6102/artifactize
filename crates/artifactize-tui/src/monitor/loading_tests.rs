@@ -109,7 +109,7 @@ async fn unrelated_writes_keep_the_selected_tree_and_detail_and_resync_forces_a_
         .map(str::to_owned);
     let mut unrelated = monitor.run.as_ref().unwrap().0.run.clone();
     unrelated.id = "run-0".parse().unwrap();
-    unrelated.jobs += 1;
+    unrelated.jobs = Some(unrelated.jobs.unwrap_or(0) + 1);
     receipts.save_run(&unrelated).await.unwrap();
     monitor.refresh().await;
     assert!(Arc::ptr_eq(&nodes, &monitor.nodes()));
