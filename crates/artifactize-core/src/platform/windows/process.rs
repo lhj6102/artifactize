@@ -317,13 +317,7 @@ fn resume(pid: u32) -> io::Result<()> {
 /// outlives it: a terminal, IDE or CI runner may hold artifactize in a kill-on-close job. A
 /// job that forbids breakaway refuses that spawn with access denied; the handoff then starts
 /// inside the job, as it did before.
-pub(crate) fn spawn_detached(command: Command) -> io::Result<tokio::process::Child> {
-    detached(command, true)
-}
-pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
-    detached(command, false)
-}
-fn detached(mut command: Command, fallback: bool) -> io::Result<tokio::process::Child> {
+pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process::Child> {
     // A new process inherits every inheritable handle, not only the standard handles it is
     // given. artifactize's own stdout, when a caller reads it through a pipe, would then stay
     // open until the handoff exits and keep that caller waiting. std gives each child its own
@@ -341,12 +335,18 @@ fn detached(mut command: Command, fallback: bool) -> io::Result<tokio::process::
     let detached = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     command.creation_flags(detached | CREATE_BREAKAWAY_FROM_JOB);
     match command.spawn() {
-        Err(error) if fallback && error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+        Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
             command.creation_flags(detached);
             command.spawn()
         }
         spawned => spawned,
     }
+}
+
+/// Run workers also detach from their requester when its enclosing Job forbids breakaway;
+/// that Job's lifetime remains an OS-imposed bound, just as for a desktop handoff.
+pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
+    spawn_detached(command)
 }
 
 /// The creation time, in 100 ns intervals since 1601. A process that has exited counts as
@@ -486,6 +486,26 @@ mod tests {
         assert_ne!(queried, 0);
         assert_ne!(in_job, 0, "the fallback starts the handoff inside the job");
         child.kill().await.unwrap();
+
+        // A Run worker uses the same restricted Job, but with owner-only cwd and stderr
+        // beneath a parent whose Everyone ACE would otherwise be inherited.
+        let parent = crate::test_os::tempdir();
+        crate::test_os::share_dir(parent.path());
+        let directory = crate::platform::private_tempdir_in("run-", parent.path()).unwrap();
+        let stderr_path = directory.path().join("worker.stderr");
+        let stderr = std::fs::File::create(&stderr_path).unwrap();
+        let mut command = crate::test_os::windows_marker(directory.path());
+        command.stderr(std::process::Stdio::from(stderr));
+        let mut worker = spawn_run(command).unwrap();
+        assert!(worker.wait().await.unwrap().success());
+        assert!(directory.path().join("marker").exists());
+        assert!(crate::test_os::private_dir(directory.path()));
+        assert!(!crate::test_os::has_inherited_aces(directory.path()));
+        assert!(crate::test_os::private_file(&stderr_path));
+        assert!(crate::test_os::private_file(
+            &directory.path().join("marker")
+        ));
+
         // Closing the job's last handle would end this process too; it closes at exit.
         std::mem::forget(job);
     }
