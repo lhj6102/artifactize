@@ -12,6 +12,8 @@ use support::runs::RecordOutput;
 use std::{
     cell::RefCell,
     fs,
+    io::Write,
+    net::{Ipv4Addr, TcpListener},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::{
@@ -302,6 +304,88 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
         .map(Result::unwrap)
         .collect();
     assert_eq!(backends, [Some("openai".to_owned())]);
+}
+
+#[tokio::test]
+async fn a_slot_waiter_finishes_by_reusing_a_forced_producers_completed_result() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("solo", 1);
+    // Keep the waiter's one job occupied until its Agent request has reused the cache.
+    // It cannot race through claim/reuse instead of the scheduler's cache-read path.
+    let barrier = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    barrier.set_nonblocking(true).unwrap();
+    let address = barrier.local_addr().unwrap();
+    // A stable key lets the waiting Run reuse the forced producer's eventual result.
+    support::declaration::write(
+        repo.join("solo0/index.artf"),
+        json!({"name":"solo0","evals":[
+            {"id":"review","title":"Review",
+                "profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
+                "payload":{"instruction":"Review."}},
+            {"id":"zz-hold","title":"Hold the job",
+                "profile":{"kind":"runtime","command":support::os::python_program(),
+                    "args":["-c","import socket,sys\nwith socket.create_connection((sys.argv[1],int(sys.argv[2]))) as stream:\n    assert stream.recv(1) == b'x'",address.ip().to_string(),address.port().to_string()]},
+                "payload":{"instruction":"Wait for the fixture's release."}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    fixture.limits(json!({"backends":{"openai":1}}));
+    fixture.gate.close();
+    // A forced execution holds the backend slot but does not claim its reuse key.
+    let child = fixture
+        .command(
+            &repo,
+            &[
+                "verify",
+                "--wait",
+                "--eval",
+                "solo0/review",
+                "--force",
+                "--json",
+            ],
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let producer = Child::new(child, &fixture.state(), &repo);
+    wait_until(|| fixture.active.load(Ordering::SeqCst) == 1);
+    let waiter = fixture.spawn(&repo, &["--jobs", "1"]);
+    let db = fixture.observed();
+    wait_until(|| capacity_waiters(&db) == 1);
+    let mut held = None;
+    wait_until(|| {
+        held = barrier.accept().ok().map(|(stream, _)| stream);
+        held.is_some()
+    });
+    let mut held = held.unwrap();
+
+    fixture.gate.open();
+    // Only the Agent eval was selected, so this producer's Artifact still has an obligation.
+    let produced = finish(producer, 4);
+    let waiter_id = waiter.run();
+    wait_until(|| {
+        db.query_row(
+            "SELECT status FROM requests WHERE run_id=?1 AND json_extract(data,'$.evalId')='solo0/review'",
+            [waiter_id.as_str()],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap()
+            == "GREEN"
+    });
+    held.write_all(b"x").unwrap();
+    drop(held);
+    // A GREEN request alone is not completion: the Run itself must settle without cancel.
+    owned_run::terminal(&fixture.state(), &waiter_id).await;
+    let reused = finish(waiter, 0);
+    assert_eq!(reused["status"], "GREEN");
+    assert_eq!(
+        reused["executionsStarted"], 1,
+        "only the runtime job starts"
+    );
+    assert_eq!(reused["requests"][0]["status"], "GREEN");
+    assert_eq!(reused["requests"][0]["provenance"]["runId"], produced["id"]);
 }
 
 #[test]
