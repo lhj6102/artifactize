@@ -83,8 +83,18 @@ own evals. Submit GREEN when no applicable rule is clearly violated. Otherwise s
 up to 20 violations, most important first, each with the rule id (item), a path:line (where) \
 and one sentence on what to change.
 """
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }, required = ["violations"], additionalProperties = false }
+
+[evals.follows-style.pass_schema]
+type = "object"
+properties = { summary = { type = "string", minLength = 1 } }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-style.fail_schema]
+type = "object"
+properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
+required = ["violations"]
+additionalProperties = false
 
 [evals.follows-e2e-rules]
 title = "The real-app E2E tests are isolated, causally observed and complete"
@@ -145,8 +155,18 @@ GREEN when none of these rules is clearly violated. Otherwise submit RED with up
 violations, most important first, each with the E2E rule id (item), a path:line and failure \
 scenario (where), and one sentence on what to change.
 """
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }, required = ["violations"], additionalProperties = false }
+
+[evals.follows-e2e-rules.pass_schema]
+type = "object"
+properties = { summary = { type = "string", minLength = 1 } }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-e2e-rules.fail_schema]
+type = "object"
+properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
+required = ["violations"]
+additionalProperties = false
 
 [evals.edge-ids]
 title = "Every edge id of the UX graph appears in the end-to-end tests"

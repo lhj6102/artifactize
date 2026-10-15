@@ -75,15 +75,22 @@ describe("command palette", () => {
     }
   });
 
-  // UX edges: E-PALETTE-FILTER
-  it("filters the commands by what is typed", async () => {
-    const listed = () => browser.execute(() => document.querySelectorAll("[data-command-item]").length);
+  // UX edges: E-PALETTE-OPEN E-PALETTE-FILTER
+  it("lists the enabled Monitor commands and filters them by what is typed", async () => {
+    await browser.$('[role="treeitem"][aria-selected="true"]').waitForExist({ timeout: 15000 });
+    const listed = () => browser.execute(() => [...document.querySelectorAll("[data-command-item]")]
+      .map((item) => item.querySelector("span")?.textContent?.trim() ?? "").sort());
     await ctrlK("filter");
-    const all = await listed();
-    assert.ok(all > 1, "several commands are listed");
+    // An unopened Monitor Detail offers Monitor navigation, not Review or Human actions.
+    // These are the person's commands for this screen, not a registry-derived oracle.
+    assert.deepEqual(await listed(), [
+      "Command palette", "Keyboard shortcuts", "Show Monitor", "Show Review", "Show Settings", "Quit",
+      "Refresh", "Next attention", "Focus Scope", "Focus Runs", "Focus Run tree",
+      "Show the Run graph", "Open Detail of the selected row",
+    ].sort(), "all and only the enabled commands of the Monitor");
     await typeText(browser, "Show Review");
-    await eventually(async () => (await listed()) === 1, "one command left");
-    assert.ok(await browser.$("[data-command-item]").getText().then((label) => label.includes("Show Review")));
+    await eventually(async () => JSON.stringify(await listed()) === JSON.stringify(["Show Review"]), "only the matching command remains");
+    assert.deepEqual(await listed(), ["Show Review"]);
     await escape("Esc");
   });
 

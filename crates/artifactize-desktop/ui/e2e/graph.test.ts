@@ -140,8 +140,26 @@ describe("run graph of many Artifacts", () => {
     const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
     for (let step = 0; step < 12; step += 1) await zoomIn.click();
     await eventually(async () => (await mounted()) < 85, "nodes outside the view are not drawn");
-    const first = await browser.execute(() => [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
-      .map((node) => node.dataset.id!).sort()[0]);
+    // Culling mounts a margin outside the canvas too. A mounted node (such as n039
+    // at the left edge) is not necessarily a pointer target: choose a wholly visible,
+    // hit-testable node through read-only geometry, then use the real WebDriver click.
+    const visible = () => browser.execute(() => {
+      const canvas = document.querySelector(".graph .canvas")?.getBoundingClientRect();
+      if (!canvas) return null;
+      return [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].map((node) => {
+        const box = node.getBoundingClientRect();
+        const x = box.left + box.width / 2;
+        const y = box.top + box.height / 2;
+        return { node, box, x, y, distance: Math.abs(x - (canvas.left + canvas.width / 2)) };
+      }).filter(({ node, box, x, y }) => box.width > 0 && box.height > 0 &&
+        box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom &&
+        document.elementFromPoint(x, y)?.closest(".svelte-flow__node") === node)
+        .sort((a, b) => a.distance - b.distance)[0]?.node.dataset.id ?? null;
+    });
+    await browser.waitUntil(async () => (await visible()) !== null, { timeout: 15000, timeoutMsg: "a zoomed graph node is actually hit-testable" });
+    const first = await visible();
+    assert.ok(first, "a real visible node can receive the pointer");
+    console.log(`e2e graph: click visible node ${first}`);
     await browser.$(`.svelte-flow__node[data-id="${first}"]`).click();
     await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "the selected graph node");
     const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
@@ -162,7 +180,7 @@ describe("run graph of many Artifacts", () => {
           "the evals",
         );
         const zoomOut = await browser.$(".svelte-flow__controls-zoomout");
-        assert.ok(await zoomOut.isEnabled(), "the camera is zoomed in before Escape");
+        await zoomOut.waitForEnabled({ timeout: 15000, timeoutMsg: "the camera actually zoomed in before Escape" });
         await step("Escape", name(40));
         // This chain cannot fit even at minimum zoom. All 85 nodes may briefly mount
         // during the camera move, but culling leaves only the visible portion afterwards.

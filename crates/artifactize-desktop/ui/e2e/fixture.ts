@@ -265,6 +265,74 @@ export async function addRepository(fixture: Fixture, name: string): Promise<str
   return repo;
 }
 
+function humanExample(repo: string, name: string, criterion: string, title: string, tags: string[] = []): void {
+  const directory = join(repo, name);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "index.artf"), `name = ${JSON.stringify(name)}
+tags = ${JSON.stringify(tags)}
+
+[evals.${criterion}]
+title = ${JSON.stringify(title)}
+profile = { kind = "human" }
+
+[evals.${criterion}.payload]
+instruction = ${JSON.stringify(`Review ${title}.`)}
+`);
+}
+
+/** Three otherwise comparable Human records: ignoring any tested filter leaves
+ * extra rows. Expected identities come from the submitted Run, never from search. */
+export async function addSearchExamples(fixture: Fixture): Promise<{
+  baseQuery: string; allIds: string[];
+  tag: { term: string; id: string }; status: { term: string; id: string }; text: { term: string; id: string };
+}> {
+  const repo = join(fixture.root, "search-examples");
+  humanExample(repo, "amber", "check", "AmberOnly example", ["search:target"]);
+  humanExample(repo, "blue", "check", "Blue example", ["search:other"]);
+  humanExample(repo, "cyan", "check", "Cyan example", ["search:other"]);
+  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
+  const target = { ...fixture, repo };
+  const run = await verifyWaiting(target);
+  const saved = requests(target).filter((request) => request.runId === run);
+  const named = (evalId: string) => {
+    const request = saved.find((request) => request.evalId === evalId);
+    if (!request) throw new Error(`missing search example ${evalId}`);
+    return request.id;
+  };
+  const red = named("blue/check");
+  for (const args of [["request", "claim", red, "--reviewer", "alice"],
+    ["request", "submit", red, "--reviewer", "alice", "--verdict", "RED", "--fields", "{}"]]) {
+    if (artifactize(target, ...args) !== 0) throw new Error(`cannot prepare RED search example: ${args.join(" ")}`);
+  }
+  return {
+    baseQuery: "kind:human repo:search-examples", allIds: saved.map((request) => request.id),
+    tag: { term: "tag:search:target", id: named("amber/check") },
+    status: { term: "status:red", id: red }, text: { term: "amber/check", id: named("amber/check") },
+  };
+}
+
+/** Historical tree identity belongs to a Run, not today's declarations. The first
+ * worker is fully joined before replacing its declaration with the next criterion. */
+export async function createNavigationFixture(): Promise<{
+  fixture: Fixture; scopes: { repo: string[]; other: string[] }; runs: { id: string; eval: string }[];
+}> {
+  const root = newRoot();
+  const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
+  humanExample(fixture.repo, "subject", "first-criterion", "First navigation criterion");
+  execFileSync("git", ["init", "-q", "--initial-branch=master", fixture.repo]);
+  const first = await verifyWaiting(fixture);
+  settleRuns(cli(), fixture.repo, fixture.state);
+  humanExample(fixture.repo, "subject", "second-criterion", "Second navigation criterion");
+  const second = await verifyWaiting(fixture);
+  const other = { ...fixture, repo: join(root, "other") };
+  humanExample(other.repo, "elsewhere", "other-criterion", "Other scope criterion");
+  execFileSync("git", ["init", "-q", "--initial-branch=master", other.repo]);
+  const third = await verifyWaiting(other);
+  return { fixture, scopes: { repo: [first, second], other: [third] }, runs: [
+    { id: first, eval: "first-criterion" }, { id: second, eval: "second-criterion" }, { id: third, eval: "other-criterion" },
+  ] };
+}
+
 /** Real worktrees of the fixture's one Git repository, each with its own identified Run. */
 export async function addWorktrees(fixture: Fixture): Promise<string[]> {
   execFileSync("git", ["-C", fixture.repo, "add", "."]);

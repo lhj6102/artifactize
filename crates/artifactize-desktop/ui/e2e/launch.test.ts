@@ -3,7 +3,7 @@
 // starts on the waiting sign-offs of every repository.
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { addRepository, addWorktrees, artifactize, create, type Fixture, requests } from "./fixture.ts";
+import { addRepository, addSearchExamples, addWorktrees, artifactize, create, type Fixture, requests } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 import { checkpoint, commandsRendered } from "./commands.ts";
@@ -211,13 +211,30 @@ describe("launching the Review screen for every repository", () => {
     await search("kind:human reviewer:alice", (shown) => shown.length === 1 && shown[0].includes(mine.id), "only alice's claimed request");
     await search("kind:human is:mine", (shown) => shown.length === 1 && shown[0].includes(mine.id), "only my claimed request");
     await search(`request:${mine.id}`, (shown) => shown.length === 1 && shown[0].includes(mine.id), "the request by its ID");
-    await search("kind:human tag:type:release", (shown) => shown.length === 3, "all three, tagged type:release");
+    // Each of these terms must discriminate within the same declared request set. If
+    // tag/status/free text is ignored, both its positive and negative queries fail.
+    const examples = await addSearchExamples(fixture);
+    const idsOf = (shown: string[]) => shown.map((row) => /run-\S+/.exec(row)![0]).sort();
+    const exact = (ids: string[]) => (shown: string[]) => JSON.stringify(idsOf(shown)) === JSON.stringify([...ids].sort());
+    await search(examples.baseQuery, exact(examples.allIds), "all the independent search examples");
+    for (const [kind, example, absent] of [
+      ["tag", examples.tag, "tag:search:absent"],
+      ["status", examples.status, "status:green"],
+      ["text", examples.text, "NoSuchSearchExample"],
+    ] as const) {
+      await search(`${examples.baseQuery} ${example.term}`, exact([example.id]), `${kind} selects its one matching request`);
+      await search(`${examples.baseQuery} ${absent}`, exact([]), `${kind} excludes every nonmatching request`);
+    }
+    await search(`${examples.baseQuery} ${examples.tag.term} ${examples.status.term}`, exact([]), "all terms must match the same request");
     // The claimed request's repository is the last word of its row.
     await search("kind:human reviewer:alice", (shown) => shown.length === 1, "alice's request again");
     const home = (await rows())[0].split("/").at(-1)!;
     const elsewhere = ["repo", "other", "third"].find((name) => name !== home)!;
     await search(`release kind:human repo:${home}`, (shown) => shown.length === 1 && shown[0].includes(mine.id), "free text and a repository together");
     await search(`release kind:human reviewer:alice repo:${elsewhere}`, (shown) => shown.length === 0, "no request matches every term");
-    await search("kind:human status:waiting_human", (shown) => shown.length === 3, "every waiting sign-off again");
+    const waitingExamples = examples.allIds.filter((id) => id !== examples.status.id);
+    await search("kind:human status:waiting_human", (shown) => shown.length === 5
+      && waitingExamples.every((id) => idsOf(shown).includes(id)) && !idsOf(shown).includes(examples.status.id),
+    "the three original sign-offs and two waiting examples, excluding the saved RED result");
   });
 });

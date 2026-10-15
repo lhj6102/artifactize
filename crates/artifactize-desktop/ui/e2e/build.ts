@@ -1,6 +1,6 @@
 // Build inputs and executable candidates belong to one suite, not Cargo's shared binary names.
 // This Linux WebKitGTK native helper uses the same POSIX group/lease boundary as Owned.
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { type ChildProcess, spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -56,7 +56,15 @@ export function resourceRoot(): string {
 
 /** A suite ends with its test runner or its owner's cancellation, not a build watchdog. */
 export async function runSuite(root: string, tests: string[], env: NodeJS.ProcessEnv): Promise<void> {
-  await execute(root, process.execPath, ["--test", "--test-concurrency=1", ...tests], env, "suite");
+  // The runtime's declared output survives candidate cleanup. Standalone invocations
+  // get a distinct result directory too, never a log below the soon-removed build.
+  const output = env.ARTIFACTIZE_OUTPUT_DIR ?? tmpdir();
+  mkdirSync(output, { recursive: true });
+  const diagnostics = mkdtempSync(join(output, "desktop-e2e-results-"));
+  console.error(`Full desktop E2E diagnostics: ${diagnostics}`);
+  await execute(root, process.execPath, ["--test", "--test-concurrency=1",
+    "--test-reporter=spec", `--test-reporter-destination=${join(diagnostics, "complete.log")}`,
+    `--test-reporter=${fileURLToPath(new URL("./concise.ts", import.meta.url))}`, "--test-reporter-destination=stdout", ...tests], env, "suite", false, diagnostics);
 }
 
 /** Each build operation owns its watchdog; stdout can be Cargo's artifact stream. */
@@ -66,13 +74,19 @@ async function command(root: string, program: string, args: string[], env: NodeJ
 
 /** Both lifetimes retain the same group ownership, signal handling and shutdown join. */
 async function execute(root: string, program: string, args: string[], env: NodeJS.ProcessEnv,
-  lifetime: "build" | "suite", capture = false): Promise<string> {
+  lifetime: "build" | "suite", capture = false, diagnostics?: string): Promise<string> {
   const owned = Owned.spawn(program, args, {
     cwd: workspace, env: { ...env, TMPDIR: join(root, "tmp"), DESKTOP_TEST_RESOURCES: root },
-    stdio: ["ignore", capture ? "pipe" : 2, "inherit"],
+    stdio: ["ignore", capture || diagnostics ? "pipe" : 2, diagnostics ? "pipe" : "inherit"],
   });
   let output = "";
-  owned.child.stdout?.on("data", (chunk) => { output += chunk; });
+  owned.child.stdout?.on("data", (chunk: Buffer) => {
+    if (capture) output += chunk;
+    if (diagnostics) { appendFileSync(join(diagnostics, "runner-stdout.log"), chunk); process.stderr.write(chunk); }
+  });
+  owned.child.stderr?.on("data", (chunk: Buffer) => {
+    if (diagnostics) { appendFileSync(join(diagnostics, "runner-stderr.log"), chunk); process.stderr.write(chunk); }
+  });
   let timedOut = false;
   let cancelled = false;
   const failures: unknown[] = [];

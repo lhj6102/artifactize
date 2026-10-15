@@ -2,7 +2,8 @@
 // with an unsubmitted claim (stay, then release and quit).
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
+import { addRepository, artifactize, create, type Fixture, signoff } from "./fixture.ts";
+import { press } from "./keys.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -50,18 +51,28 @@ describe("review", () => {
   });
 
   // UX edges: E-REVIEW-OPEN-ID E-HUMAN-CLAIM
-  it("opens a request by ID and claims it", async () => {
-    const id = signoff(fixture).id;
-    await browser.keys(["Control", "o"]);
-    const input = await browser.$('[aria-label="Request ID"]');
-    await input.waitForExist();
-    await input.setValue(id);
-    await browser.keys(["Enter"]);
-    const human = await browser.$('[aria-label="Human review"]');
-    await human.waitForExist({ timeout: 15000 });
+  it("opens the entered request ID rather than the selected request and claims it", async () => {
+    await browser.$('[aria-label="Requests"] [aria-selected="true"]').waitForExist({ timeout: 15000 });
+    const original = signoff(fixture).id;
+    const repo = await addRepository(fixture, "open-by-id");
+    const target = { ...fixture, repo };
+    const id = signoff(target).id;
+    assert.notEqual(id, original, "different repositories own independent reviews, not followers");
+    // Keep the original selected even if the live subscription added the newer request.
+    await browser.$(`//ul[@aria-label="Requests"]/li[contains(., "${original}")]`).click();
+    assert.ok((await browser.$('[aria-label="Requests"] [aria-selected="true"]').getText()).includes(original));
+    await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+    await browser.$('[aria-label="Request ID"]').setValue(id);
+    await press(browser, ["Enter"], () => browser.$('[aria-label="Human review"]').isExisting(), "the entered review opened");
+    const technical = () => browser.$('[aria-label="Human review"]').$("button*=Technical").getAttribute("aria-expanded");
+    await press(browser, ["t"], async () => (await technical()) === "true", "the opened review's identity");
+    const openedId = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] dt')]
+      .find((field) => field.textContent === "Request")?.nextElementSibling?.textContent ?? "");
+    await eventually(async () => (await openedId()) === id, "Detail identifies exactly the entered request");
+    assert.notEqual(await openedId(), original);
     await eventually(async () => (await text()).includes("Unclaimed. c claims it for alice"), "the claim stage");
-    await browser.keys(["c"]);
-    await eventually(async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
+    await press(browser, ["c"], () => signoff(target).claim?.reviewer === "alice", "the entered request claimed");
+    assert.equal(signoff(fixture).claim, null, "the previously selected request was not claimed");
   });
 
   async function claimReview() {

@@ -177,7 +177,7 @@ describe("monitor", () => {
     assert.ok(await human().isExisting(), "Esc cancelled the job and left the Detail open");
   });
 
-  // UX edges: E-HUMAN-RED E-HUMAN-INVALID
+  // UX edges: E-HUMAN-RED E-HUMAN-INVALID E-HUMAN-SWITCH
   it("keeps a RED result that fails its schema correctable and shows the failing path", async () => {
     await openReview();
     await browser.$('[aria-label="Human review"]').click();
@@ -194,6 +194,23 @@ describe("monitor", () => {
     assert.equal(await reason.getValue(), "no");
     await reason.setValue("not good enough");
     assert.equal(await reason.getValue(), "not good enough");
+    assert.equal(signoff(fixture).result, null, "the invalid RED result was not saved");
+    // Continue this rejected submission, without leaving its claimed review. Each verdict
+    // must rebuild the owner's corresponding schema, even after validation failed.
+    await press(browser, ["Control", "g"], async () =>
+      await browser.$("#field-comment").isExisting() && !(await reason.isExisting()), "the pass-schema form after invalid RED");
+    assert.equal(await browser.$("#field-approved").getValue(), "true (fixed)", "the pass schema's approved constant");
+    await browser.$("#field-comment").setValue("checked after rejection");
+    assert.equal(await browser.$("#field-comment").getValue(), "checked after rejection");
+    await press(browser, ["Control", "r"], async () =>
+      await reason.isExisting() && !(await browser.$("#field-comment").isExisting()), "the fail-schema form again");
+    await reason.setValue("a correctable reason");
+    assert.equal(await reason.getValue(), "a correctable reason");
+    assert.equal(await browser.$("#field-approved").isExisting(), false, "no pass-schema field in RED");
+    const saved = signoff(fixture);
+    assert.equal(saved.status, "WAITING_HUMAN");
+    assert.equal(saved.result, null, "switching did not submit the rejected draft");
+    assert.equal(saved.claim?.reviewer, "alice", "the same review remains claimed and editable");
   });
 
   // UX edges: E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT

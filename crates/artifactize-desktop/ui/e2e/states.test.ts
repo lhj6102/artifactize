@@ -145,12 +145,19 @@ describe("the Detail of a finished eval", () => {
     const check = await browser.$(`${fine}/following-sibling::li[@role="treeitem"][1]`);
     await check.click();
     await press(browser, ["Enter"], () => browser.$("button*=Close").isExisting(), "the Detail opened");
-    const shown = await text();
+    const request = requests(fixture).find((saved) => saved.evalId === "fine/check");
+    assert.ok(request?.result, "the real CLI saved the completed fine/check result");
+    assert.equal(request.status, "GREEN");
+    assert.equal(request.result.verdict, "GREEN");
+    // Read only the opened Detail, not GREEN text already present in the Run tree.
+    const detailText = () => browser.$('[role="document"]').getText();
+    const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
+      .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
+    const shown = await detailText();
     assert.match(shown, /Pass\./, `the instruction in ${shown.slice(0, 1500)}`);
     assert.match(shown, /Source\s+executed in this Run/, "where the result came from");
-    assert.match(shown, /GREEN/, "the result");
-    const request = requests(fixture).find((saved) => saved.evalId === "fine/check");
-    assert.ok(request, "the real CLI saved the completed fine/check request");
+    assert.match(await field("Result"), new RegExp(`^verdict ${request.result.verdict}(?:\\n|$)`), "the selected eval's saved verdict");
+    assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "Detail renders this eval's exact saved result");
     // A per-Run TMPDIR can itself contain run-... and fixture-<digits>; only the
     // actual request ID tests Technical disclosure, not a regex across any path.
     assert.equal(shown.includes(request.id), false, "the request is part of the technical record");

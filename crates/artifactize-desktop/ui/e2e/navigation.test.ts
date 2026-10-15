@@ -3,7 +3,7 @@
 // Detail; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { verifyWaiting, create, type Fixture } from "./fixture.ts";
+import { verifyWaiting, create, createNavigationFixture, createStates, type Fixture, requests } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 import { checkpoint, commandsRendered } from "./commands.ts";
@@ -91,13 +91,6 @@ describe("monitor navigation", () => {
     await press(browser, [" "], async () => (await expanded()) === "true", "release unfolded by Space");
   });
 
-  // UX edges: E-MON-ATTENTION
-  it("jumps to the next eval that needs attention with !", async () => {
-    await (await row(1, "docs")).click();
-    assert.doesNotMatch(await selected(), /signoff/);
-    await press(browser, ["!"], async () => /signoff/.test(await selected()), "the waiting sign-off selected");
-  });
-
   // UX edges: E-MON-BLOCKER
   it("jumps from a blocked eval to the upstream Artifact it waits for with b", async () => {
     await (await row(2, "check")).click();
@@ -121,6 +114,52 @@ describe("monitor navigation", () => {
     await press(browser, ["t"], async () => (await technical()) === "false", "the technical record hidden");
     await press(browser, ["Escape"], async () => !(await close().isExisting()), "the Detail closed");
     await eventually(() => browser.$('[role="tree"]').isFocused(), "focus back on the tree");
+  });
+});
+
+describe("attention across a Run's verdicts", () => {
+  let fixture: Fixture;
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+
+  beforeEach(async () => {
+    checkBuild();
+    fixture = await createStates();
+    session = await start(fixture);
+    browser = session.browser;
+    await browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
+  });
+
+  afterEach(async () => {
+    await session?.dispose();
+  });
+
+  // UX edges: E-MON-TREE-MOVE E-MON-ATTENTION
+  it("visits the next ERROR, RED and waiting Human eval in tree order, then wraps", async () => {
+    const eligible = new Map([
+      ["crash", { eval: "check", status: "ERROR" }],
+      ["red", { eval: "check", status: "RED" }],
+      ["gate", { eval: "signoff", status: "WAITING_HUMAN" }],
+    ]);
+    const saved = requests(fixture);
+    for (const [artifact, expected] of eligible) {
+      assert.equal(saved.find((request) => request.evalId === `${artifact}/${expected.eval}`)?.status, expected.status,
+        `${artifact} actually reached its declared attention state`);
+    }
+    // The UX says next in the shown tree, without prescribing a topological tie-break.
+    // Read its Artifact order, but use fixture-owned statuses, not the app's urgent flags.
+    const order = (await browser.execute(() => [...document.querySelectorAll('[role="treeitem"][aria-level="1"]')]
+      .map((row) => row.getAttribute("data-path")?.slice(2) ?? ""))).filter((name) => eligible.has(name));
+    assert.deepEqual([...order].sort(), [...eligible.keys()].sort());
+    await browser.$(`[role="treeitem"][data-path="a:${order[0]}"]`).click();
+    for (const artifact of [...order, order[0]]) {
+      const expected = eligible.get(artifact)!;
+      const path = `a:${artifact}/e:${artifact}/${expected.eval}`;
+      await press(browser, ["!"], async () =>
+        (await browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("data-path")) === path,
+      `the next eligible eval is ${artifact}/${expected.eval} (${expected.status})`);
+      assert.equal(await browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("aria-level"), "2", "an eval, not its Artifact");
+    }
   });
 });
 
@@ -172,25 +211,22 @@ describe("the Detail follows the tree's selection", () => {
 });
 
 describe("moving between the panes", () => {
+  let example: Awaited<ReturnType<typeof createNavigationFixture>>;
   let session: Session;
   let browser: WebdriverIO.Browser;
   const listbox = (name: string) => browser.$(`[role="listbox"][aria-label="${name}"]`);
-  /** The index of the selected option of a list. */
-  const chosen = (name: string) =>
-    browser.execute(
-      (label) => [...document.querySelectorAll(`[role="listbox"][aria-label="${label}"] [role="option"]`)].findIndex((option) => option.getAttribute("aria-selected") === "true"),
-      name,
-    );
-  const crumbs = () => browser.$('nav[aria-label="Breadcrumb"]').getText();
+  const runIds = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')]
+    .map((row) => /run-\S+/.exec(row.innerText)?.[0] ?? "").sort());
+  const selectedRun = () => browser.$('[aria-label="Runs"] [aria-selected="true"]').getText();
+  const chosen = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"]')]
+    .findIndex((option) => option.getAttribute("aria-selected") === "true"));
 
   beforeEach(async () => {
     checkBuild();
-    const fixture = await create();
-    // A second Run, so the Runs pane has two rows to move between.
-    await verifyWaiting(fixture);
-    session = await start(fixture, "--repo", fixture.repo);
+    example = await createNavigationFixture();
+    session = await start(example.fixture, "--repo", example.fixture.repo);
     browser = session.browser;
-    await eventually(async () => /Runs \(2\)/i.test(await browser.execute(() => document.body.innerText)), "two Runs");
+    await eventually(async () => JSON.stringify(await runIds()) === JSON.stringify([...example.scopes.repo].sort()), "the repository's exact Runs");
     await browser.$('[role="tree"]').click();
   });
 
@@ -198,21 +234,56 @@ describe("moving between the panes", () => {
     await session?.dispose();
   });
 
-  // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TO-SCOPE E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-TREE
-  it("steps out from the tree to the Runs and Scope and back in, moving the selection on the way", async () => {
+  /** Assert the historical criterion in the actual Tree, unfolding a finished Artifact
+   * through the UI if needed. Current declarations cannot substitute for the selected Run. */
+  async function treeShows(run: { id: string; eval: string }) {
+    const artifact = await browser.$('[role="treeitem"][data-path="a:subject"]');
+    await artifact.waitForExist();
+    await artifact.click();
+    await press(browser, ["l"], async () => (await artifact.getAttribute("aria-expanded")) === "true", "the historical evals unfolded");
+    const names = () => browser.execute(() => [...document.querySelectorAll('[role="treeitem"][aria-level="2"] .name')]
+      .map((name) => name.firstChild?.textContent?.trim() ?? ""));
+    await eventually(async () => (await names()).includes(run.eval), `${run.id}'s criterion is in the Tree`);
+    assert.deepEqual(await names(), [run.eval], "the other Run's criterion is absent");
+  }
+
+  // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TREE
+  it("switches identified Runs with the keyboard and replaces the Tree with each saved criterion", async () => {
+    const [older, newer] = example.runs;
+    assert.ok((await selectedRun()).includes(newer.id), "newest first");
+    await treeShows(newer);
     await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
-    const run = (await chosen("Runs")) as number;
-    const before = await crumbs();
-    await press(browser, ["ArrowDown"], async () => (await chosen("Runs")) !== run, "another Run selected");
-    await eventually(async () => (await crumbs()) !== before, "the tree shows the other Run");
-    await press(browser, ["ArrowUp"], async () => (await chosen("Runs")) === run, "the first Run selected again");
+    await press(browser, ["ArrowDown"], async () => (await selectedRun()).includes(older.id), "the older identified Run selected");
+    await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the older Run's Tree focused");
+    await treeShows(older);
+    await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "back to Runs");
+    await press(browser, ["ArrowUp"], async () => (await selectedRun()).includes(newer.id), "the newer identified Run selected again");
+    await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the newer Run's Tree focused");
+    await treeShows(newer);
+  });
+
+  // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-TO-SCOPE E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-TREE
+  it("narrows to different repositories and ALL with keyboard scopes and lists their exact Run IDs", async () => {
+    await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
     await press(browser, ["ArrowLeft"], () => listbox("Scope").isFocused(), "the Scope focused");
-    const scope = (await chosen("Scope")) as number;
-    await press(browser, ["ArrowUp"], async () => (await chosen("Scope")) === scope - 1, "the row above highlighted");
-    await press(browser, ["ArrowUp"], async () => (await chosen("Scope")) === 0, "the ALL scope selected");
-    await eventually(async () => (await crumbs()).includes("all repositories"), "the Runs of all repositories");
-    await press(browser, ["Enter"], () => listbox("Runs").isFocused(), "the Runs focused again");
-    await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the tree focused again");
+    const select = async (label: string, ids: string[]) => {
+      const labels = await browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"] .label')]
+        .map((row) => row.textContent?.trim() ?? ""));
+      const target = labels.indexOf(label);
+      assert.ok(target >= 0, `the ${label} scope exists`);
+      while ((await chosen()) !== target) {
+        const before = await chosen();
+        const direction = before < target ? 1 : -1;
+        await press(browser, [direction === 1 ? "ArrowDown" : "ArrowUp"], async () => (await chosen()) === before + direction, `keyboard scope step toward ${label}`);
+      }
+      await eventually(async () => JSON.stringify(await runIds()) === JSON.stringify([...ids].sort()), `only ${label}'s exact Runs`);
+      assert.deepEqual(await runIds(), [...ids].sort());
+    };
+    await select("ALL", [...example.scopes.repo, ...example.scopes.other]);
+    await select("other", example.scopes.other);
+    await select("repo", example.scopes.repo);
+    await press(browser, ["Enter"], () => listbox("Runs").isFocused(), "the narrowed Runs focused");
+    await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the narrowed Tree focused");
   });
 });
 
