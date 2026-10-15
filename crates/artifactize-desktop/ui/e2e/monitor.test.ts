@@ -24,6 +24,19 @@ describe("monitor", () => {
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
   const human = () => browser.$('[aria-label="Human review"]');
+  const toolOutput = () => browser.execute(() => {
+    const detail = document.querySelector('[aria-label="Human review"]');
+    const notice = detail?.querySelector(".notice");
+    const output = detail?.querySelector('[aria-label="Tool output"]');
+    const title = output?.querySelector(".box-title");
+    return {
+      notice: notice?.textContent?.trim() ?? "",
+      noticeError: notice?.classList.contains("error") ?? false,
+      title: title?.textContent?.trim() ?? "",
+      outputError: title?.classList.contains("error") ?? false,
+      text: output?.querySelector("pre")?.textContent ?? "",
+    };
+  });
   async function openReview(claim = true) {
     await browser.$('//li[@role="treeitem"][@aria-level="2"][.//span[starts-with(normalize-space(.), "signoff")]]').click();
     await press(browser, ["Enter"], () => human().isExisting(), "this case's Human Detail");
@@ -109,9 +122,21 @@ describe("monitor", () => {
     const notes = await browser.$('//li[@role="option"][.//span[text()="notes_release"]]');
     await notes.click();
     await eventually(async () => (await notes.getAttribute("aria-selected")) === "true", "notes selected");
-    await browser.keys(["Enter"]);
-    await eventually(async () => (await text()).includes("Ready to ship."), "tool output");
-    assert.match(await text(), /notes_release finished\./);
+    assert.doesNotMatch((await toolOutput()).text, /Ready to ship\./, "this case has not produced the notes output yet");
+    await press(browser, ["Enter"], async () => {
+      const shown = await toolOutput();
+      return shown.title === "Output · notes_release" && shown.notice === "notes_release finished." && /Ready to ship\./.test(shown.text);
+    }, "the selected notes tool's completed output and notice");
+    const shown = await toolOutput();
+    assert.equal(shown.title, "Output · notes_release");
+    assert.match(shown.text, /Ready to ship\./);
+    assert.equal(shown.notice, "notes_release finished.");
+    assert.equal(shown.outputError, false);
+    assert.equal(shown.noticeError, false);
+    const saved = signoff(fixture);
+    assert.equal(saved.status, "WAITING_HUMAN", "tool output is not a Human verdict");
+    assert.equal(saved.claim?.reviewer, "alice");
+    assert.ok(await human().isExisting(), "the same Human Detail remains open");
   });
 
   // UX edges: E-HUMAN-TOOL-LAUNCH
@@ -132,12 +157,27 @@ describe("monitor", () => {
     const fail = await browser.$('//li[@role="option"][.//span[text()="fail_release"]]');
     await fail.click();
     await eventually(async () => (await fail.getAttribute("aria-selected")) === "true", "fail selected");
-    await browser.keys(["Enter"]);
-    await eventually(
-      () => browser.execute(() => !!document.querySelector(".notice.error, [aria-label='Tool output'] .error")),
-      "the tool's error",
-    );
-    assert.match(await text(), /fail_release/);
+    const diagnostic = /Human tool exited unsuccessfully \([^)]*\b1\)\./;
+    const before = await toolOutput();
+    assert.doesNotMatch(before.text, diagnostic, "this case has not produced the failing tool's exit diagnostic yet");
+    assert.doesNotMatch(before.notice, /fail_release failed/);
+    await press(browser, ["Enter"], async () => {
+      const shown = await toolOutput();
+      return shown.noticeError && shown.outputError &&
+        shown.notice === "fail_release failed; a tool error is not a verdict." &&
+        shown.title === "Output · fail_release · tool error" && diagnostic.test(shown.text);
+    }, "the selected failing tool's actual exit diagnostic and error notice");
+    const shown = await toolOutput();
+    assert.equal(shown.notice, "fail_release failed; a tool error is not a verdict.");
+    assert.equal(shown.title, "Output · fail_release · tool error");
+    assert.match(shown.text, diagnostic);
+    assert.equal(shown.noticeError, true);
+    assert.equal(shown.outputError, true);
+    const saved = signoff(fixture);
+    assert.equal(saved.status, "WAITING_HUMAN", "a failed tool is not a Human verdict");
+    assert.equal(saved.result, null);
+    assert.equal(saved.claim?.reviewer, "alice", "the same Human review remains claimed");
+    assert.ok(await human().isExisting(), "the same Human Detail remains open after the tool error");
   });
 
   // UX edges: E-HUMAN-ESC-CANCEL

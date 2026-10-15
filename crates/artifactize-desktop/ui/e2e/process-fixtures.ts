@@ -73,7 +73,8 @@ export async function registrationFailureFixture() {
   const registry = scratch.path("bad-registry");
   mkdirSync(join(registry, "groups"), { recursive: true });
   const admitted = scratch.path("native-work-admitted");
-  const owner = scratch.node(`require("node:fs").writeFileSync(${JSON.stringify(admitted)}, "admitted"); setInterval(() => {}, 1000);`,
+  const owner = scratch.node(`import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(admitted)}, "admitted"); setInterval(() => {}, 1000);`,
     { DESKTOP_TEST_RESOURCES: registry });
   const acquisition = new Promise<Error>((done) => owner.owned.child.once("error", done));
   return { acquisition,
@@ -110,7 +111,8 @@ process.kill(process.pid, "SIGKILL");`);
 
 export async function execContractFixture() {
   return nativeFixture((scratch) => {
-  const owner = scratch.node(`require("node:fs").writeFileSync(3, String(process.pid) + "\\n");
+  const owner = scratch.node(`import { writeFileSync } from "node:fs";
+writeFileSync(3, String(process.pid) + "\\n");
 process.stdin.once("data", (data) => {
   process.stdout.write(data);
   process.stderr.write("actual target diagnostic\\n");
@@ -120,7 +122,8 @@ process.stdin.once("data", (data) => {
   let readiness = "";
   owner.owned.child.stdio[3]!.on("data", (chunk: Buffer) => { readiness += chunk; });
   return { owner,
-    execIdentityRetained: () => Number(readiness.trim()) === owner.owned.child.pid,
+    execIdentity: () => ({ reported: readiness.trim(), acquired: String(owner.owned.child.pid) }),
+    execDiagnostic: () => JSON.stringify({ readiness, stdout: owner.output, stderr: owner.errors, exitCode: owner.exitCode }),
     groupIdentityRetained: () => owner.owned.group === owner.owned.child.pid,
     stop: () => scratch.dispose(),
   };

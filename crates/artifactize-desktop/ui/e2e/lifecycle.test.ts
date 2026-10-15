@@ -71,7 +71,8 @@ it("keeps the actual program PID, stdin, stdout, stderr and an existing readines
   await withCleanup(async () => {
     owner.endInput("actual stdin payload");
     await owner.closed;
-    assert.equal(fixture.execIdentityRetained(), true, "exec retains the acquired process identity");
+    const identity = fixture.execIdentity();
+    assert.equal(identity.reported, identity.acquired, `exec retains the acquired process identity; ${fixture.execDiagnostic()}`);
     assert.equal(fixture.groupIdentityRetained(), true);
     assert.equal(owner.output, "actual stdin payload");
     assert.match(owner.errors, /actual target diagnostic/);

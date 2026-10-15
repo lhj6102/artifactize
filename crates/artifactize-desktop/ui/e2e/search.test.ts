@@ -3,7 +3,7 @@
 // takes a typed partial key and its value, and any other request opens read-only.
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { addRepository, create, type Fixture } from "./fixture.ts";
+import { addRepository, artifactize, create, type Fixture, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
 import { checkpoint, commandsRendered } from "./commands.ts";
@@ -71,6 +71,29 @@ describe("review search", () => {
     assert.ok(activity.commands.reviewSearch?.completed > 0, "normal search completion is observed");
     assert.equal(activity.search?.query, await query());
     assert.equal(activity.search?.completed, true);
+  });
+
+  // J-REVIEW-SEARCH; UX edges: E-SCREEN-MONITOR E-SCREEN-REVIEW E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS
+  it("focuses search with / after switching to Review with no waiting requests, without taking typed slashes", async () => {
+    await eventually(async () => (await rows()).length === 1, "the repository's waiting sign-off");
+    const id = signoff(fixture).id;
+    assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "alice"), 0);
+    assert.equal(artifactize(fixture, "request", "submit", id, "--reviewer", "alice", "--verdict", "GREEN", "--fields", '{"approved":true,"comment":"ok"}'), 0);
+    await eventually(async () => (await rows()).length === 0 &&
+      (await browser.execute(() => document.body.innerText)).includes("No Human reviews are waiting."), "the settled, empty waiting list");
+    assert.equal(await browser.$('[aria-label="Requests"]').isExisting(), false, "there is no Requests list to receive keyboard focus");
+    const kept = await query();
+    await press(browser, ["Control", "1"], focused("Runs"), "Monitor focused");
+    await press(browser, ["/"], async () => await focused("Runs")() && (await query()) === kept, "inactive Review leaves focus and its query alone");
+    await press(browser, ["Control", "2"], async () =>
+      (await browser.$('[role="tab"][aria-selected="true"]').getText()) === "Review", "the empty Review screen shown");
+    await press(browser, ["/"], focused("Search requests"), "search focused without a Requests list");
+    assert.equal(await query(), kept, "the shortcut focuses search without typing a slash");
+    await press(browser, ["Escape"], holds(""), "the waiting query cleared for typing");
+    await type("release/signoff ");
+    assert.equal(await query(), "release/signoff ", "a slash typed in the field remains part of the query");
+    await eventually(async () => (await rows()).length === 3 &&
+      (await rows()).every((row) => row.includes("release/signoff")), "the typed query searches the saved sign-offs");
   });
 
   // J-REVIEW-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR E-REVIEW-SEARCH-LEAVE

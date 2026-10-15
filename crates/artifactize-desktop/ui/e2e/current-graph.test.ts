@@ -63,8 +63,8 @@ describe("current declaration graph", () => {
   });
   afterEach(async () => { await session?.dispose(); });
 
-  // UX edges: E-CURRENT-LAUNCH E-CURRENT-ZOOM E-CURRENT-STRUCTURE
-  it("opens without a saved Run, zooms into evals and exposes complete criteria and labeled relations", async () => {
+  // J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-ZOOM → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
+  it("opens without a saved Run, zooms into complete criteria and relations, then refreshes changed declarations", async () => {
     const text = await browser.execute(() => document.body.innerText);
     assert.match(text, /Current Artifact graph/);
     assert.match(text, /Declarations only · no Run verdicts/);
@@ -108,13 +108,11 @@ describe("current declaration graph", () => {
       'release → ship {"kind":"instruction","eval_id":"ship/check","name":"release"}',
     ], "the concrete input-to-consumer relation carries its instruction label");
     assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false);
-  });
 
-  // UX edge: E-CURRENT-REFRESH
-  it("reloads changed declarations through Refresh, Ctrl+R and F5", async () => {
-    await browser.$(".current summary").click();
-    await browser.waitUntil(expanded, { timeout: 15000 });
+    // Continue the same launch, zoom and complete-structure journey: the text remains
+    // expanded while each real refresh reloads this window's changed declaration.
     const declaration = join(fixture.repo, "docs", "index.artf");
+    let previousTitle = "Docs build";
     for (const [index, keys] of [null, ["Control", "r"], ["F5"]].entries()) {
       const title = `Current docs criterion ${index}`;
       writeFileSync(declaration, readFileSync(declaration, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
@@ -129,9 +127,15 @@ describe("current declaration graph", () => {
       await browser.waitUntil(() => browser.execute((expected) =>
         document.querySelector('[role="listbox"][aria-label="Evals"]')?.textContent?.includes(expected) ?? false,
       title), { timeout: 15000, timeoutMsg: `the refreshed docs node exposes ${title}` });
-      assert.match(await browser.$('[role="listbox"][aria-label="Evals"]').getText(), new RegExp(title));
+      const currentEvals = await browser.$('[role="listbox"][aria-label="Evals"]').getText();
+      assert.match(currentEvals, new RegExp(title));
+      assert.ok(!currentEvals.includes(previousTitle), "the graph's evals replaced the previous declaration title");
+      const currentStructure = await structure();
+      assert.match(currentStructure, new RegExp(title));
+      assert.ok(!currentStructure.includes(previousTitle), "the structure text replaced the previous declaration title");
       assert.match(await browser.execute(() => document.body.innerText), /Declarations only · no Run verdicts/);
       await assertDeclarationsOnly();
+      previousTitle = title;
     }
   });
 });

@@ -213,11 +213,16 @@
     r.list?.focus();
   }
 
-  /** Screen-wide: Ctrl+O and Ctrl+F work wherever focus is while the Review screen shows. */
+  /** Screen-wide: search works even when an empty Requests list cannot take focus. */
   function global(event: KeyboardEvent) {
-    if (!active) return;
+    if (!active || event.defaultPrevented) return;
     if (chord(event, "o")) r.asking = true;
-    else if (chord(event, "f")) void search();
+    else if (
+      chord(event, "f") || (
+        plain(event, "/") && r.focus === "list" &&
+        !app.palette && !app.help && !r.asking && app.leaving.taken === null
+      )
+    ) void search();
     else return;
     event.preventDefault();
   }
@@ -238,7 +243,6 @@
     if (plain(event, "ArrowDown") || plain(event, "j")) r.index = Math.min(r.index + 1, rows.length - 1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) r.index = Math.max(r.index - 1, 0);
     else if ((plain(event, "Enter") || plain(event, "ArrowRight")) && selected) openRow(selected);
-    else if (plain(event, "/")) void search();
     else if (plain(event, "PageDown")) older();
     else if (plain(event, "PageUp")) newer();
     else if (plain(event, "r")) void load();
