@@ -159,7 +159,8 @@ owns() {
   shift 19
   [ "$1" = "$birth" ]
 }
-alive() { owns && kill -0 -- "-$0" 2>/dev/null; }
+# dash requires the explicit -s form when signal zero precedes -- and a group operand.
+alive() { owns && kill -s 0 -- "-$0" 2>/dev/null; }
 printf 'armed\\n'
 read _
 alive && kill -s TERM -- "-$0" 2>/dev/null

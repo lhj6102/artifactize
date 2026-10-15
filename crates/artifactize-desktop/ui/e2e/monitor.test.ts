@@ -2,10 +2,8 @@
 // Run tree → Detail, the shared Human Detail's claim, release, tool, RED validation, Korean
 // text and GREEN submission, and a live update from another process.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { artifactize, create, createNavigationFixture, type Fixture, signoff, slowTool } from "./fixture.ts";
+import { artifactize, create, createNavigationFixture, type Fixture, launched, signoff, slowTool } from "./fixture.ts";
 import { checkBuild, type Session, start, windowClosed } from "./driver.ts";
 import { afterRender, press } from "./keys.ts";
 import { checkpoint, commandsRendered } from "./commands.ts";
@@ -125,7 +123,7 @@ describe("monitor", () => {
     await browser.keys(["Enter"]);
     await eventually(async () => /open_release (launched|started|opened)/i.test(await text()), "the launch notice");
     // The application stand-in really ran.
-    await eventually(() => existsSync(join(fixture.root, "launched")), "the launched application");
+    await eventually(() => launched(fixture), "the launched application");
   });
 
   // UX edges: E-HUMAN-TOOL-FAIL

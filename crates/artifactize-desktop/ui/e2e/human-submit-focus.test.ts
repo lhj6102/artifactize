@@ -1,10 +1,9 @@
 // A submitted Human Detail stays open, but its removed form must not strand keyboard
 // focus: the next Escape leaves it in both the Monitor's Run graph and the Review screen.
 import assert from "node:assert/strict";
-import { basename, join } from "node:path";
 import { it } from "node:test";
 import { create, signoff } from "./fixture.ts";
-import { checkBuild, type Session, start } from "./driver.ts";
+import { checkBuild, saveEvidence, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 import { withCleanup } from "./owned.ts";
 
@@ -46,14 +45,10 @@ for (const screen of ["Monitor graph", "Review"]) {
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "checked before closing" });
       assert.equal(await browser.$("#field-comment").isExisting(), false, "the completed result replaced the form");
       assert.ok(await human().isExisting(), "submission leaves the completed Detail open");
-      if (process.env.HUMAN_FOCUS_EVIDENCE) {
-        await browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${basename(fixture.root)}-${screen.replaceAll(" ", "-")}-completed.png`));
-      }
+      await saveEvidence(browser, fixture, `${screen}-completed`);
       // No click or scripted focus between submitting from the field and pressing Escape.
       await press(browser, ["Escape"], async () => !(await human().isExisting()), "leaving the completed Detail");
-      if (process.env.HUMAN_FOCUS_EVIDENCE) {
-        await browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${basename(fixture.root)}-${screen.replaceAll(" ", "-")}-closed.png`));
-      }
+      await saveEvidence(browser, fixture, `${screen}-closed`);
     }, () => session?.dispose());
   });
 }

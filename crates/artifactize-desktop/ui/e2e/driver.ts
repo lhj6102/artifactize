@@ -3,7 +3,7 @@
 // WebKitWebDriver. These helpers own X11, session-bus and process-group setup;
 // Windows and macOS use different native automation boundaries, not this harness.
 import { createServer } from "node:net";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
 import { remote } from "webdriverio";
 import { app, environment, type Fixture } from "./fixture.ts";
@@ -21,14 +21,24 @@ export function displayLocked(display: string): boolean {
 }
 
 /** Linux's browser opener is replaced only inside the app's inherited environment. */
-export function browserStandIn(fixture: Fixture, output: string): Record<string, string> {
+export function browserStandIn(fixture: Fixture): { env: Record<string, string>; opened: () => string[] } {
+  const output = join(fixture.root, "opened");
   const bin = join(fixture.root, "bin");
   mkdirSync(bin, { recursive: true });
   const opener = join(bin, "xdg-open");
   const quoted = "'" + output.replaceAll("'", "'\\''") + "'";
   writeFileSync(opener, `#!/bin/sh\nprintf '%s\\n' "$1" >> ${quoted}\n`);
   chmodSync(opener, 0o755);
-  return { PATH: [bin, process.env.PATH].filter(Boolean).join(delimiter) };
+  return {
+    env: { PATH: [bin, process.env.PATH].filter(Boolean).join(delimiter) },
+    opened: () => existsSync(output) ? readFileSync(output, "utf8").trim().split("\n").filter(Boolean) : [],
+  };
+}
+
+/** Optional native evidence keeps environment lookup and output paths out of journeys. */
+export async function saveEvidence(browser: WebdriverIO.Browser, fixture: Fixture, label: string): Promise<void> {
+  const output = process.env.HUMAN_FOCUS_EVIDENCE;
+  if (output) await browser.saveScreenshot(join(output, `${basename(fixture.root)}-${label.replaceAll(" ", "-")}.png`));
 }
 
 /** A real WebKit app launch takes about 32 seconds on CI; callers must allow it to finish. */

@@ -44,6 +44,11 @@ function newRoot(): string {
 
 export type Fixture = { root: string; repo: string; state: string };
 
+/** The fixture's declared launch-tool stand-in actually wrote its completion marker. */
+export function launched(fixture: Fixture): boolean {
+  return existsSync(join(fixture.root, "launched"));
+}
+
 /** A captured native lifetime, not a PID that can later name an unrelated process. */
 export function slowTool(fixture: Fixture): (() => boolean) | null {
   const path = join(fixture.root, "slow.pid");

@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { it } from "node:test";
 import { windowClosed } from "./driver.ts";
 import { cleanup, resourceRoot } from "./build.ts";
@@ -203,6 +204,81 @@ it("reports an unavailable target immediately through its actual exit and diagno
     assert.ok(errors.includes(target), errors);
   }, async () => {
     await owner.stop();
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+it("releases admitted native resources and inherited stderr after its owner is killed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-admitted-orphan-"));
+  writeFileSync(join(root, "groups"), "");
+  const lock = join(root, "native-resource.lock");
+  const release = join(root, "teardown-release");
+  const program = `const fs = require("node:fs");
+function release() {
+  fs.rmSync(${JSON.stringify(lock)}, { force: true });
+  fs.writeSync(2, "orphan native resource released\\n");
+  process.exit(0);
+}
+process.once("SIGTERM", release);
+fs.writeFileSync(${JSON.stringify(lock)}, "owned native resource");
+process.stdout.write("ready\\n");
+// Teardown can release this declared fixture even if the watchdog regresses. It
+// cannot satisfy the assertions, which finish before teardown admits this path.
+setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) release(); }, 10);`;
+  const source = `import { existsSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+import { Owned, groupIdentity } from ${JSON.stringify(new URL("./owned.ts", import.meta.url).href)};
+const child = Owned.spawn(process.execPath, ["-e", ${JSON.stringify(program)}], {
+  env: { ...process.env, DESKTOP_TEST_RESOURCES: ${JSON.stringify(root)} }, stdio: ["ignore", "pipe", "inherit"]
+});
+child.child.once("error", (error) => { throw error; });
+child.child.once("close", () => { throw new Error("native fixture exited before owner interruption"); });
+const lines = createInterface({ input: child.child.stdout });
+lines.once("line", (line) => {
+  if (line !== "ready") throw new Error("native fixture did not acquire its resource");
+  writeFileSync(1, JSON.stringify({ ...groupIdentity(child.group), resourcesPresent: existsSync(${JSON.stringify(lock)}) }) + "\\n");
+  lines.close();
+});
+process.stdin.once("data", () => process.kill(process.pid, "SIGKILL"));`;
+  const owner = Owned.spawn(process.execPath, ["--input-type=module", "-e", source], { env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+  let errors = "";
+  owner.child.stderr!.on("data", (chunk) => { errors += chunk; });
+  const exited = new Promise<void>((done, fail) => {
+    owner.child.once("error", fail);
+    owner.child.once("exit", () => done());
+  });
+  const closed = new Promise<void>((done, fail) => {
+    owner.child.once("error", fail);
+    owner.child.once("close", () => done());
+  });
+  // Both observations are retained immediately; owner exit is only the intermediate
+  // event. The inherited stderr writers must really close before release completes.
+  void exited.catch(() => {});
+  void closed.catch(() => {});
+  const lines = createInterface({ input: owner.child.stdout! });
+  const acquired = new Promise<Group & { resourcesPresent: boolean }>((done, fail) => {
+    lines.once("line", (line) => {
+      try { done(JSON.parse(line) as Group & { resourcesPresent: boolean }); }
+      catch (error) { fail(error); }
+    });
+    void exited.then(() => fail(new Error(`owner exited before native readiness: ${errors}`)), fail);
+  });
+  await withCleanup(async () => {
+    const group = await acquired;
+    assert.equal(group.resourcesPresent, true);
+    assert.ok(existsSync(lock), "the real target acquired a mutable resource before interruption");
+    owner.child.stdin!.end("interrupt");
+    await exited;
+    assert.equal(owner.child.signalCode, "SIGKILL");
+    await groupsGone([group]);
+    assert.equal(existsSync(lock), false, "the orphan watchdog delivered TERM and released the native resource");
+    await closed;
+    assert.match(errors, /orphan native resource released/, "final inherited stderr was drained before actual close");
+  }, async () => {
+    writeFileSync(release, "release declared fixture");
+    await owner.stop();
+    await groupsGone(registeredGroups(root));
+    lines.close();
     rmSync(root, { recursive: true, force: true });
   });
 });

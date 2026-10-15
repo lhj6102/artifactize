@@ -3,9 +3,7 @@
 // redirect URL, signing out, and listing a backend's models. The system browser is a stand-in
 // that records the address it was given.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createOutside } from "./fixture.ts";
 import { browserStandIn, type Session, startEnv } from "./driver.ts";
@@ -46,10 +44,10 @@ networkTests(import.meta.url, () => {
     let browser: WebdriverIO.Browser;
     let auth: Server;
     let provider: Server;
-    let opened: string;
+    let opener: ReturnType<typeof browserStandIn>;
     const status = () => browser.$('[data-testid="codex-status"]').getText();
     const text = () => browser.execute(() => document.body.innerText);
-    const browserLog = () => existsSync(opened) ? readFileSync(opened, "utf8").trim().split("\n").filter(Boolean) : [];
+    const browserLog = () => opener.opened();
     async function openedAddress(baseline: number): Promise<string> {
       let address: string | undefined;
       await eventually(async () => {
@@ -63,7 +61,7 @@ networkTests(import.meta.url, () => {
 
     beforeEach(async () => {
       fixture = createOutside();
-      opened = join(fixture.root, "opened");
+      opener = browserStandIn(fixture);
       auth = createServer((request, response) => {
         request.resume();
         if (request.url === "/oauth/token") {
@@ -83,7 +81,7 @@ networkTests(import.meta.url, () => {
       const providerUrl = await listen(provider);
       // The browser stand-in: records the address instead of opening anything.
       session = await startEnv(fixture, {
-        ...browserStandIn(fixture, opened),
+        ...opener.env,
         ARTIFACTIZE_CODEX_AUTH_URL: authUrl,
         ARTIFACTIZE_CODEX_AUTH_FILE: undefined,
         ARTIFACTIZE_OPENAI_BASE_URL: `${providerUrl}/v1`,
