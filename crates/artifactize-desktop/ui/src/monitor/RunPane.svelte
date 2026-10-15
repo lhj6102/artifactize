@@ -6,6 +6,7 @@
   import { getAppState } from "../shell/app.svelte";
   import { type Tree, visible, find } from "./tree.svelte";
   import type { Attachment } from "svelte/attachments";
+  import { untrack } from "svelte";
   import Panel from "../shell/Panel.svelte";
   import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
@@ -73,8 +74,27 @@
     queueMicrotask(measure);
   };
 
+  /** Keep the keyboard in the pane while its old view unmounts and the new one loads. */
+  function switchView(next: "tree" | "graph") {
+    if (next === view) return;
+    rp.focusPending = next;
+    element?.focus({ preventScroll: true });
+    view = next;
+  }
+
+  /** Complete only an explicit switch, never a live update or focus moved elsewhere. */
+  function focusView(next: "tree" | "graph", focus: () => void) {
+    if (rp.focusPending !== next) return;
+    rp.focusPending = null;
+    if (active && view === next && document.activeElement === element) focus();
+  }
+
+  const focusTree: Attachment<HTMLElement> = (list) => {
+    untrack(() => focusView("tree", () => list.focus({ preventScroll: true })));
+  };
+
   function keydown(event: KeyboardEvent) {
-    if (plain(event, "v")) view = view === "tree" ? "graph" : "tree";
+    if (plain(event, "v")) switchView(view === "tree" ? "graph" : "tree");
     else if (view === "graph") {
       // The graph handles its own keys; what reaches here steps back or refreshes.
       if (plain(event, "Escape")) onback();
@@ -100,8 +120,8 @@
 <Panel title={run ? `Run ${run.id}` : "Run"} {focused} bind:element {onfocus} onkeydown={keydown}>
   {#snippet actions()}
     <div class="views" role="group" aria-label="Run view">
-      <button class="button small" aria-pressed={view === "tree"} onclick={() => (view = "tree")} title="Artifacts and evals (v)">Tree</button>
-      <button class="button small" aria-pressed={view === "graph"} onclick={() => (view = "graph")} title="Graph of Artifacts (v)">Graph <kbd>v</kbd></button>
+      <button class="button small" aria-pressed={view === "tree"} onclick={() => switchView("tree")} title="Artifacts and evals (v)">Tree</button>
+      <button class="button small" aria-pressed={view === "graph"} onclick={() => switchView("graph")} title="Graph of Artifacts (v)">Graph <kbd>v</kbd></button>
     </div>
   {/snippet}
   {#if !run}
@@ -125,6 +145,7 @@
           bind:zoomed
           {active}
           onselect={(path) => tree.select(path)}
+          onready={(focus) => focusView("graph", focus)}
           {onopen}
         />
       {/await}
@@ -160,6 +181,7 @@
             onscroll={measure}
             {@attach scrollTo(() => `[data-path="${CSS.escape(selectedId)}"]`)}
             {@attach remeasure}
+            {@attach focusTree}
           >
             {#each rows as row (row.path.join("/"))}
               {@const node = row.node}

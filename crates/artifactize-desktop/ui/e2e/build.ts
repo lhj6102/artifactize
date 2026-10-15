@@ -114,8 +114,8 @@ export async function offerCandidate(candidate: Candidate): Promise<void> {
   }
 }
 
-export function resourceRoot(): string {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "artifactize-desktop-build-")));
+export function resourceRoot(directory = tmpdir()): string {
+  const root = realpathSync(mkdtempSync(join(directory, "artifactize-desktop-build-")));
   mkdirSync(join(root, "tmp"));
   writeFileSync(join(root, "groups"), "");
   lease(root);

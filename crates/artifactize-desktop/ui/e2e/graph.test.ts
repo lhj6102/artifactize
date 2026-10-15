@@ -83,6 +83,7 @@ describe("run graph", () => {
       const { nodes, edges } = await graph();
       return nodes["a:release"]?.light === "green" && edges["a:release>a:ship"] === "green";
     }, "release and its edge GREEN");
+    assert.equal(await evals.isFocused(), true, "a live graph update does not steal focus from the evals");
     const after = (await graph()).nodes;
     for (const node of ["a:release", "a:ship", "a:docs"]) {
       assert.equal(after[node].at, before[node].at, `${node} kept its place`);
@@ -96,6 +97,40 @@ describe("run graph", () => {
     await press(browser, ["Escape"], async () => !(await review()), "Detail left");
     await evals.click();
     await press(browser, ["Escape"], async () => !(await evals.isExisting()), "zoomed out");
+  });
+
+  // UX edges: E-GRAPH-OPEN E-GRAPH-CLOSE E-GRAPH-MOVE E-MON-TREE-MOVE
+  it("keeps the selected Artifact and keyboard focus through repeated tree/graph switches without a mouse", async () => {
+    const tree = () => browser.$('[role="tree"][aria-label="Artifacts and evals"]');
+    const selected = () => browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("data-path");
+    const on = (id: string) => () => browser.execute((want) =>
+      document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === want, id);
+    await eventually(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), "the initial Runs pane focused");
+    await press(browser, ["Enter"], () => tree().isFocused(), "the Run tree focused");
+
+    // Navigate the actual visible rows to ship, not a DOM focus or selection mutation.
+    const paths = await browser.execute(() => [...document.querySelectorAll('[role="treeitem"]')]
+      .map((row) => row.getAttribute("data-path")));
+    const from = paths.indexOf(await selected());
+    const to = paths.indexOf("a:ship");
+    assert.ok(from >= 0 && to >= 0, "the selected row and ship are visible in this Run");
+    const step = Math.sign(to - from);
+    for (let at = from; at !== to;) {
+      at += step;
+      const path = paths[at];
+      await press(browser, [step > 0 ? "ArrowDown" : "ArrowUp"], async () => (await selected()) === path, `tree selection on ${path}`);
+    }
+
+    await press(browser, ["v"], on("a:ship"), "the selected ship Artifact focused in the graph");
+    assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /ship/);
+    await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:ship", "ship still selected and the tree focused");
+    await press(browser, ["v"], on("a:ship"), "ship focused after another switch to the graph");
+    await press(browser, ["ArrowLeft"], on("a:release"), "release focused upstream without a mouse");
+    assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /release/);
+    await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:release", "release selected and the tree focused again");
+    const next = await browser.execute(() => document.querySelector('[role="treeitem"][aria-selected="true"]')?.nextElementSibling?.getAttribute("data-path"));
+    assert.ok(next, "release has a following visible row");
+    await press(browser, ["ArrowDown"], async () => await tree().isFocused() && (await selected()) === next, "tree navigation continues from release");
   });
 
   // UX edges: E-GRAPH-MOVE E-GRAPH-CLOSE

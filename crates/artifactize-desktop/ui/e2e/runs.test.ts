@@ -1,71 +1,46 @@
-// Linux WebKitGTK's OS fixture boundary: saved terminal state is not process exit,
-// and a reused PID must not hold cleanup hostage. No app or backend is replaced here.
+// Saved terminal state is not process exit; use the shared native scenario API.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { describe, it } from "node:test";
-import { cleanup } from "./build.ts";
-import { exited, finishFixture, removeFixture, running, workers } from "./runs.ts";
-import { groupAlive, Owned, registerGroup } from "./owned.ts";
+import { nativeUnsupported } from "./native-fixtures.ts";
+import { failedRunCleanupFixture, fixtureGroup, fixtureLifecycle, fixtureSnapshot, workerExitFixture } from "./run-fixtures.ts";
+import { withCleanup } from "./owned.ts";
 
-/** Aggregation must retain the real failing CLI/cancellation cause, not merely a
- * generic cleanup wrapper message. State and executable assertions below still apply. */
+/** Retain the real failing CLI/cancellation cause, not merely a cleanup wrapper. */
 function failedCleanup(error: unknown): boolean {
   if (error instanceof AggregateError) return error.errors.length > 0 && error.errors.every(failedCleanup);
   return error instanceof Error && (/cannot list fixture Runs|bad option/.test(error.message) || failedCleanup(error.cause));
 }
 
-// These cases exercise Linux procfs birth identities and POSIX fixture ownership, not
-// other OSes' worker implementations. On the supported Linux harness this gate is false:
-// missing procfs, permissions or process capabilities still throw and fail the case.
-describe("Linux durable worker exit", { skip: process.platform !== "linux" && "WebKitGTK's native fixture layer observes procfs birth identities" }, () => {
+// The observed behavior exists only in the Linux procfs/POSIX native fixture layer.
+// Missing required setup on supported Linux throws; it does not become a skip.
+describe("Linux durable worker exit", { skip: nativeUnsupported }, () => {
   it("distinguishes an actual worker, another birth identity and an exited worker", async () => {
-    const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-run-exit-"));
-    // Its stdin is an ownership lease: even a killed test runner closes it and ends it.
-    const child = spawn(process.execPath, ["--input-type=module", "-e",
-      'process.stdin.resume(); process.stdin.on("end", () => process.exit(0)); console.log("ready");',
-      "--", "--state-dir", root, "__execute", "run-exit-probe"], { stdio: ["pipe", "pipe", "inherit"] });
-    const ended = new Promise<void>((done) => child.once("close", () => done()));
-    try {
-      await new Promise<void>((done, fail) => {
-        const lines = createInterface({ input: child.stdout });
-        const deadline = setTimeout(() => { lines.close(); fail(new Error("worker probe never became ready")); }, 5000);
-        lines.once("line", () => { clearTimeout(deadline); lines.close(); done(); });
-        child.once("error", fail);
-      });
-      const owners = workers(root);
-      assert.equal(owners.length, 1);
-      const owner = owners[0];
-      assert.equal(owner.pid, child.pid);
-      assert.equal(running(owner), true);
-      assert.equal(running({ ...owner, start_time: owner.start_time + 1 }), false, "a reused PID is not the owned lifetime");
-      assert.throws(() => exited(owners, 0), /preserve their working files/, "terminal publication alone cannot make a live worker exited");
-      child.stdin.end();
-      await ended;
-      assert.equal(running(owner), false);
-      exited(owners, 0);
-    } finally {
-      child.kill("SIGKILL");
-      await ended;
-      rmSync(root, { recursive: true, force: true });
-    }
+    const fixture = await workerExitFixture();
+    await withCleanup(async () => {
+      await fixture.child.line();
+      assert.equal(fixture.discover(), 1);
+      assert.equal(fixture.matchesWorker(), true);
+      assert.equal(fixture.active(), true);
+      assert.equal(fixture.anotherBirthActive(), false, "a reused PID is not the owned lifetime");
+      assert.throws(() => fixture.requireExited(), /preserve their working files/, "terminal publication alone cannot make a live worker exited");
+      fixture.release();
+      await fixture.child.closed;
+      assert.equal(fixture.active(), false);
+      fixture.requireExited();
+    }, () => fixture.stop());
   });
 
   it("removes a fixture on normal completion and assertion unwind only after shutdown", async () => {
     for (const unwind of [false, true]) {
-      const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-fixture-finish-"));
-      writeFileSync(join(root, "input"), "owned input");
+      const fixture = await fixtureLifecycle();
       let stopped = false;
       const failure = new Error("journey assertion failed");
-      try {
+      await withCleanup(async () => {
         const exercise = async () => {
           try { if (unwind) throw failure; }
           finally {
-            await finishFixture(process.execPath, root, async () => {
-              assert.ok(existsSync(join(root, "input")), "inputs exist until the shutdown boundary");
+            await fixture.finish(async () => {
+              assert.ok(fixture.inputsPresent(), "inputs exist until the shutdown boundary");
               stopped = true;
             });
           }
@@ -73,79 +48,54 @@ describe("Linux durable worker exit", { skip: process.platform !== "linux" && "W
         if (unwind) await assert.rejects(exercise(), (error: unknown) => error === failure);
         else await exercise();
         assert.ok(stopped);
-        assert.equal(existsSync(root), false);
-      } finally { rmSync(root, { recursive: true, force: true }); }
+        assert.equal(fixture.rootPresent(), false);
+      }, () => fixture.stop());
     }
   });
 
   it("preserves inputs and the original error when native shutdown fails", async () => {
-    const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-fixture-stop-failure-"));
+    const fixture = await fixtureLifecycle();
     const failure = new Error("native shutdown failed");
-    try {
-      writeFileSync(join(root, "input"), "owned input");
-      await assert.rejects(finishFixture(process.execPath, root, async () => { throw failure; }),
-        (error: unknown) => error === failure);
-      assert.ok(existsSync(join(root, "input")));
-    } finally { rmSync(root, { recursive: true, force: true }); }
+    await withCleanup(async () => {
+      await assert.rejects(fixture.finish(async () => { throw failure; }), (error: unknown) => error === failure);
+      assert.ok(fixture.inputsPresent());
+    }, () => fixture.stop());
   });
 
   it("preserves native inputs until the actual owned group exits, without following another birth", async () => {
-    const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-fixture-group-"));
-    const owner = Owned.spawn(process.execPath, ["--input-type=module", "-e",
-      'process.stdin.resume(); console.log("ready");'], { stdio: ["pipe", "pipe", "inherit"] });
-    try {
-      await new Promise<void>((done, fail) => {
-        const lines = createInterface({ input: owner.child.stdout! });
-        const deadline = setTimeout(() => { lines.close(); fail(new Error("native group probe never became ready")); }, 5000);
-        lines.once("line", () => { clearTimeout(deadline); lines.close(); done(); });
-        owner.child.once("error", fail);
-      });
-      writeFileSync(join(root, "input"), "owned profile");
-      registerGroup(root, owner.group);
-      assert.equal(groupAlive(owner.group, -1), false, "another birth identity is not this lifetime");
-      assert.throws(() => removeFixture(process.execPath, root), /owned native group.*preserve fixture/);
-      assert.ok(existsSync(join(root, "input")), "a live writer retains its profile");
-      await owner.stop();
-      removeFixture(process.execPath, root);
-      assert.equal(existsSync(root), false);
-    } finally {
-      await owner.stop();
-      rmSync(root, { recursive: true, force: true });
-    }
+    const fixture = await fixtureGroup();
+    await withCleanup(async () => {
+      await fixture.owner.line();
+      fixture.register();
+      assert.equal(fixture.anotherBirthActive(), false, "another birth identity is not this lifetime");
+      assert.throws(() => fixture.remove(), /owned native group.*preserve fixture/);
+      assert.ok(fixture.inputsPresent(), "a live writer retains its profile");
+      await fixture.owner.stop();
+      fixture.remove();
+      assert.equal(fixture.rootPresent(), false);
+    }, () => fixture.stop());
   });
 
-  it("preserves a nested executable snapshot until its owner has cleaned it", () => {
-    const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-fixture-nested-"));
-    try {
-      mkdirSync(join(root, "session", "candidate-owned"), { recursive: true });
-      assert.throws(() => removeFixture(process.execPath, root), /owned executable snapshots.*preserve fixture/);
-      assert.ok(existsSync(join(root, "session", "candidate-owned")));
-    } finally { rmSync(root, { recursive: true, force: true }); }
+  it("preserves a nested executable snapshot until its owner has cleaned it", async () => {
+    const fixture = await fixtureSnapshot();
+    await withCleanup(() => {
+      assert.throws(() => fixture.remove(), /owned executable snapshots.*preserve fixture/);
+      assert.ok(fixture.snapshotPresent());
+    }, () => fixture.stop());
   });
 
   it("preserves state and executable inputs when durable-Run cleanup fails", async () => {
-    const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-run-failure-"));
-    try {
-      mkdirSync(join(root, "tmp"));
-      writeFileSync(join(root, "groups"), "");
-      const cli = join(root, "cli");
-      // A declared executable that refuses artifactize's arguments creates a real CLI
-      // failure at the cleanup seam, without a fake saved-terminal JSON response.
-      symlinkSync(process.execPath, cli);
-      writeFileSync(join(root, "candidate.json"), JSON.stringify({ root, cli, app: cli }));
-      const state = join(root, "fixtures", "fixture-failure", "graph-state");
-      mkdirSync(state, { recursive: true });
-      mkdirSync(join(root, "fixtures", "fixture-failure", "repo"));
-      writeFileSync(join(state, "state.sqlite"), "owned state");
-      await assert.rejects(cleanup(root), failedCleanup);
+    const fixture = await failedRunCleanupFixture();
+    await withCleanup(async () => {
+      await assert.rejects(fixture.cleanup(), failedCleanup);
       let stopped = false;
-      await assert.rejects(finishFixture(cli, join(root, "fixtures", "fixture-failure"), async () => { stopped = true; }), failedCleanup);
+      await assert.rejects(fixture.finish(async () => { stopped = true; }), failedCleanup);
       assert.equal(stopped, true, "settlement failure still shuts down the holder on unwind");
       const stopError = new Error("native stop also failed");
-      await assert.rejects(finishFixture(cli, join(root, "fixtures", "fixture-failure"), async () => { throw stopError; }),
+      await assert.rejects(fixture.finish(async () => { throw stopError; }),
         (error: unknown) => error instanceof AggregateError && error.errors.length === 2 && error.errors[0] === stopError);
-      assert.ok(existsSync(join(state, "state.sqlite")), "failure retains owned state");
-      assert.ok(existsSync(cli), "failure retains executable inputs");
-    } finally { rmSync(root, { recursive: true, force: true }); }
+      assert.ok(fixture.statePresent(), "failure retains owned state");
+      assert.ok(fixture.executablePresent(), "failure retains executable inputs");
+    }, () => fixture.stop());
   });
 });

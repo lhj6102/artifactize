@@ -19,6 +19,7 @@
     active = true,
     onselect,
     onopen,
+    onready,
   }: {
     run: string;
     /** The browse revision: a new one means a new snapshot to read the graph from. */
@@ -30,6 +31,8 @@
     active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
+    /** The graph is mounted and can accept a requested keyboard-focus handoff. */
+    onready?: (focus: () => void) => void;
   } = $props();
   const commands = useIpc();
   const g = new RunGraphState();
@@ -100,7 +103,7 @@
 {:else}
   {#key g.shown.graph.run}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} {onready} />
     </SvelteFlowProvider>
   {/key}
 {/if}

@@ -8,8 +8,8 @@
 // before then an admission pipe's EOF self-terminates the gate. Linux /bin/sh and
 // /bin/sleep are required OS helpers, independent of the target's PATH.
 import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { type Writable } from "node:stream";
 
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -196,8 +196,23 @@ if alive; then printf 'owned group %s did not stop\\n' "$0" >&2; exit 1; fi`, St
       watchdog.unref();
       (watchdog.stdin as unknown as { unref?: () => void } | null)?.unref?.();
       (watchdog.stdout as unknown as { unref?: () => void } | null)?.unref?.();
+      // A local registry must not hide detached users from the enclosing candidate.
+      // Publish both the target and its cleanup owner before the asynchronous ACK can
+      // admit work. Register enclosing owners first, even when a deliberately broken
+      // local registry rejects acquisition: they must still join that failed launch.
       const resources = options.env?.DESKTOP_TEST_RESOURCES ?? process.env.DESKTOP_TEST_RESOURCES;
-      if (resources) appendFileSync(join(resources, "groups"), JSON.stringify({ group: child.pid, start_time: birth }) + "\n");
+      const registries = new Set<string>();
+      for (const root of [resources, process.env.DESKTOP_TEST_RESOURCES]) {
+        if (!root) continue;
+        for (let ancestor = resolve(root); ; ancestor = dirname(ancestor)) {
+          if (existsSync(join(ancestor, "groups")) && existsSync(join(ancestor, "tmp"))) registries.add(ancestor);
+          if (dirname(ancestor) === ancestor) break;
+        }
+      }
+      const watchdogOwner = groupIdentity(watchdog.pid!);
+      const record = [JSON.stringify({ group: child.pid, start_time: birth }), JSON.stringify(watchdogOwner)].join("\n") + "\n";
+      for (const root of [...registries].reverse()) appendFileSync(join(root, "groups"), record);
+      if (resources && !registries.has(resolve(resources))) appendFileSync(join(resources, "groups"), record);
     } catch (error) { owned.#setupFailed(error); }
     return owned;
   }

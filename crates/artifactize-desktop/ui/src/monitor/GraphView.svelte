@@ -23,6 +23,7 @@
     structural = false,
     onselect,
     onopen,
+    onready,
   }: {
     graph: Pick<RunGraph, "nodes" | "edges">;
     /** Static structure has no Run verdicts. */
@@ -36,6 +37,8 @@
     active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
+    /** Offer the existing focus path once the canvas and its focus handlers are mounted. */
+    onready?: (focus: () => void) => void;
   } = $props();
   const v = new GraphViewState();
   setGraphViewState(v);
@@ -207,6 +210,23 @@
     };
   };
 
+  /** A newly mounted view accepts focus only when its caller has a pending handoff. */
+  const ready: Attachment<HTMLElement> = (canvas) => {
+    void tick().then(() => {
+      if (!canvas.isConnected || hidden()) return;
+      onready?.(() => {
+        if (hidden()) return;
+        if (zoomed) v.list?.focus({ preventScroll: true });
+        else {
+          const id = positions.has(selected[0]) ? selected[0] : graph.nodes[0]?.id;
+          if (!id) return;
+          hold(id);
+          void centre(id);
+        }
+      });
+    });
+  };
+
   /** Expanding the structural text changes the canvas height. Keep the selected graph in
    * view rather than clipping it below the new canvas; the Run view keeps its own camera. */
   const structuralSize: Attachment<HTMLElement> = (canvas) => {
@@ -306,7 +326,7 @@
 
 <div class="graph" class:split={zoomed !== null}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={v.canvas} {@attach holdFocus} {@attach structuralSize} onkeydown={keydown} tabindex="-1">
+  <div class="canvas" bind:this={v.canvas} {@attach holdFocus} {@attach ready} {@attach structuralSize} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
       bind:nodes
       bind:edges
