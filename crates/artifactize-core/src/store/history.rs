@@ -42,9 +42,9 @@ pub struct Entry {
     pub fingerprint: Option<crate::types::Fingerprint>,
     pub completed_at: Option<crate::types::Timestamp>,
     /// `user@host` of the machine that produced the result.
-    pub producer: Option<String>,
+    pub producer: Option<crate::types::ProducerId>,
     /// The selected profile variant, when the result came from one.
-    pub variant: Option<String>,
+    pub variant: Option<crate::config::ProfileVariantName>,
     /// The remote store URL of a mirrored record.
     pub origin: Option<crate::types::StoreUrl>,
     /// How many records the key holds.
@@ -90,15 +90,17 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
     connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
-                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank,e.data FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
+                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank,e.data FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
             ))?;
             Ok(statement
                 .query_map([history], |row| {
                     let id: crate::types::ExecutionId = row.get(2)?;
-                    let data: String = row.get(15)?;
-                    if super::unreadable::evidence::<Execution>("execution", &data).is_none() {
+                    let data: String = row.get(13)?;
+                    let Some(execution) =
+                        super::unreadable::evidence::<Execution>("execution", &data)
+                    else {
                         return Ok(None);
-                    }
+                    };
                     Ok(Some(Entry {
                         key: row.get(0)?,
                         eval_def_hash: row.get(1)?,
@@ -108,12 +110,12 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
                         eval_id: row.get(5)?,
                         fingerprint: row.get(6)?,
                         completed_at: row.get(7)?,
-                        producer: row.get(8)?,
-                        variant: row.get(9)?,
-                        origin: row.get(10)?,
-                        records: row.get(11)?,
-                        bytes: row.get(12)?,
-                        last_used: row.get(13)?,
+                        producer: execution.producer.map(|producer| producer.name),
+                        variant: execution.options.variant,
+                        origin: row.get(8)?,
+                        records: row.get(9)?,
+                        bytes: row.get(10)?,
+                        last_used: row.get(11)?,
                     }))
                 })?
                 .filter_map(|row| row.transpose())

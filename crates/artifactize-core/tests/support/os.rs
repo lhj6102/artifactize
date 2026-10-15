@@ -4,6 +4,13 @@
 //! described with each helper.
 #![expect(dead_code, reason = "each test binary uses a different part")]
 
+#[path = "os/files.rs"]
+mod files;
+
+/// Observe released SQLite handles without mutating the fixture's database or names.
+pub fn database_released(path: &std::path::Path) -> std::io::Result<bool> {
+    files::database_released(path)
+}
 #[path = "os/observation.rs"]
 mod observation;
 #[path = "os/worker.rs"]

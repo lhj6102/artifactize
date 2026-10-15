@@ -12,6 +12,10 @@ use tokio::{
     net::TcpListener,
 };
 
+// Read canned HTTP traffic in 4 KiB chunks without putting the whole request on the
+// task's stack; both headers and bodies keep accumulating until their framing is complete.
+const READ_CHUNK_BYTES: usize = 4096;
+
 #[derive(Clone)]
 pub(crate) struct Request {
     pub line: String,
@@ -36,7 +40,7 @@ impl Server {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut bytes = Vec::new();
                 let end = loop {
-                    let mut buffer = [0; 4096];
+                    let mut buffer = [0; READ_CHUNK_BYTES];
                     let count = socket.read(&mut buffer).await.unwrap();
                     assert_ne!(count, 0);
                     bytes.extend_from_slice(&buffer[..count]);
@@ -56,7 +60,7 @@ impl Server {
                     .map(|value| value.parse().unwrap())
                     .unwrap_or(0);
                 while bytes.len() < end + length {
-                    let mut buffer = [0; 4096];
+                    let mut buffer = [0; READ_CHUNK_BYTES];
                     let count = socket.read(&mut buffer).await.unwrap();
                     assert_ne!(count, 0);
                     bytes.extend_from_slice(&buffer[..count]);

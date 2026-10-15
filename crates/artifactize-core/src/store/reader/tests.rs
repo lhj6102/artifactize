@@ -73,6 +73,15 @@ async fn read_run_releases_database_before_return_on_success_and_errors() {
     for id in ["run-0", "run-absent", ""] {
         let (root, _repo, state, receipts) = fixture(1, 1).await;
         drop(receipts);
+        let database = state.join(DATABASE);
+        let held =
+            Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        assert!(
+            !crate::test_os::database_released(&database).unwrap(),
+            "the probe must detect an idle read-only SQLite handle"
+        );
+        drop(held);
         let result = store::read_run(&state, id).await;
         if id == "run-0" {
             let saved = result.unwrap();
@@ -82,8 +91,7 @@ async fn read_run_releases_database_before_return_on_success_and_errors() {
             assert!(result.is_err(), "{id:?} must not identify a saved Run");
         }
         // No retry or runtime yield: returning the read must release the database.
-        fs::rename(state.join(DATABASE), state.join("released.sqlite")).unwrap();
-        fs::rename(state.join("released.sqlite"), state.join(DATABASE)).unwrap();
+        assert!(crate::test_os::database_released(&database).unwrap());
         root.close().unwrap();
     }
 }
