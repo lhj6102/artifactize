@@ -2,28 +2,14 @@
 // remote store sign-in, status and sign-out against a loopback fake store, saved where the
 // CLI's own `remote status` reads it.
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { after, before, describe, it } from "node:test";
-import { cli, createOutside } from "./fixture.ts";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { createOutside, remoteStatus } from "./fixture.ts";
 import { type Session, startEnv } from "./driver.ts";
 import { typeText } from "./keys.ts";
 
 const KEY = "sk-e2e-settings-value";
 const TOKEN = "azt_e2esettingstoken0123456789abcdef";
-
-/** `artifactize remote status --json` on the fixture's state, without blocking the fake store
- * that runs in this process. */
-function cliStatus(state: string, repo: string): Promise<{ code: number; stdout: string }> {
-  return new Promise((done) => {
-    execFile(
-      cli(),
-      ["--state-dir", state, "--repo", repo, "remote", "status", "--json"],
-      { encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "", ARTIFACTIZE_REMOTE_TOKEN: "" } },
-      (error, stdout) => done({ code: error ? Number(error.code ?? 1) : 0, stdout }),
-    );
-  });
-}
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   const end = Date.now() + ms;
@@ -35,7 +21,7 @@ async function eventually(check: () => Promise<boolean> | boolean, what: string,
 }
 
 describe("settings", () => {
-  const fixture = createOutside();
+  let fixture: ReturnType<typeof createOutside>;
   let session: Session;
   let browser: WebdriverIO.Browser;
   let store: Server;
@@ -45,14 +31,16 @@ describe("settings", () => {
   const text = () => browser.execute(() => document.body.innerText);
   const html = () => browser.execute(() => document.documentElement.outerHTML);
 
-  before(async () => {
+  beforeEach(async () => {
+    fixture = createOutside();
+    principal = "alice-laptop";
     // The store's whoami: this token is alice-laptop's; any other is refused.
     store = createServer((request, response) => {
       const ok = request.url === "/v1/whoami" && request.headers.authorization === `Bearer ${TOKEN}`;
       response.writeHead(ok ? 200 : 401, { "content-type": "application/json" });
       response.end(JSON.stringify(ok ? { principal, scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
     });
-    await new Promise<void>((done) => store.listen(0, "127.0.0.1", done));
+    await new Promise<void>((done, fail) => { store.once("error", fail); store.listen(0, "127.0.0.1", done); });
     const address = store.address();
     assert.ok(address && typeof address === "object");
     url = `http://127.0.0.1:${address.port}/`;
@@ -67,16 +55,19 @@ describe("settings", () => {
     await browser.$("button=Settings").waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    try { await session?.stop(); }
-    finally {
-      try {
-        if (store) await new Promise<void>((done) => {
-          store.closeAllConnections();
-          store.close(() => done());
-        });
-      } finally { await fixture.remove(); }
-    }
+  afterEach(async () => {
+    const failures: unknown[] = [];
+    try { await session?.stop(); } catch (error) { failures.push(error); }
+    try {
+      if (store) await new Promise<void>((done, fail) => {
+        store.closeAllConnections();
+        if (!store.listening) return done();
+        store.close((error) => error ? fail(error) : done());
+      });
+    } catch (error) { failures.push(error); }
+    try { await fixture.remove(); } catch (error) { failures.push(error); }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, "store fixture cleanup failed");
   });
 
   // UX edges: E-SET-KEYS
@@ -93,6 +84,7 @@ describe("settings", () => {
 
   // UX edges: E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-PUSH E-SET-REMOTE-LOGOUT
   it("signs in to a remote store, shows its status, and signs out", async () => {
+    await browser.$("button=Settings").click();
     await eventually(async () => (await text()).includes("No remote review store is configured."), "no store yet");
     await browser.$("#remote-url").click();
     await typeText(browser, url);
@@ -107,7 +99,7 @@ describe("settings", () => {
     assert.ok(!(await html()).includes(TOKEN), "the token is nowhere on the page");
 
     // The CLI reads the same saved sign-in.
-    const status = await cliStatus(fixture.state, fixture.repo);
+    const status = await remoteStatus(fixture);
     assert.equal(status.code, 0, status.stdout);
     const parsed = JSON.parse(status.stdout);
     assert.equal(parsed.principal, "alice-laptop");
@@ -129,7 +121,7 @@ describe("settings", () => {
     await eventually(async () => /Would push \d+, already in the store \d+, skipped \d+\./.test(await text()), "the dry run's report");
     await browser.$("button=Sign out of the store").click();
     await eventually(async () => (await text()).includes("No remote review store is configured."), "signed out");
-    const after = await cliStatus(fixture.state, fixture.repo);
+    const after = await remoteStatus(fixture);
     assert.deepEqual(JSON.parse(after.stdout), { configured: false });
   });
 });

@@ -11,6 +11,7 @@ pub(crate) mod history;
 mod human;
 pub use human::HumanClaim;
 mod catalog;
+pub(crate) mod connection;
 pub mod prune;
 pub(crate) mod receipts;
 mod result;

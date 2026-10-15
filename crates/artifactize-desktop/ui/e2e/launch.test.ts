@@ -2,7 +2,7 @@
 // repositories, scopes, Runs and verdicts, the screen shortcuts, and the Review screen that
 // starts on the waiting sign-offs of every repository.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { addRepository, addWorktrees, artifactize, create, type Fixture, requests } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
@@ -29,7 +29,7 @@ describe("launching the Monitor", () => {
   const active = () => browser.execute(() => document.querySelector('[role="tab"][data-state="active"]')?.textContent ?? "");
   const settingsShown = () => browser.execute(() => !!document.querySelector(".settings h1") && (document.querySelector(".settings") as HTMLElement).offsetParent !== null);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     initialRun = requests(fixture)[0].runId;
@@ -41,8 +41,8 @@ describe("launching the Monitor", () => {
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-MON-SCOPE-MOVE E-MON-RUNS-MOVE
@@ -104,7 +104,7 @@ describe("launching the Monitor for every repository", () => {
   const selectedScope = () =>
     browser.execute(() => (document.querySelector('[aria-label="Scope"] [aria-selected="true"]') as HTMLElement | null)?.innerText ?? "");
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     await addRepository(fixture, "other");
@@ -115,8 +115,8 @@ describe("launching the Monitor for every repository", () => {
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-LAUNCH-MONITOR E-MON-SCOPE-MOVE
@@ -148,7 +148,7 @@ describe("launching the Review screen for every repository", () => {
   const query = () => browser.execute(() => (document.querySelector('[aria-label="Search requests"]') as HTMLInputElement).value);
   const preview = () => browser.execute(() => [...document.querySelectorAll("section.panel h3")].at(-1)?.textContent?.trim() ?? "");
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     await addRepository(fixture, "other");
@@ -159,8 +159,8 @@ describe("launching the Review screen for every repository", () => {
     await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-LAUNCH-REVIEW

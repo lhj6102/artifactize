@@ -1,7 +1,7 @@
 // A submitted Human Detail stays open, but its removed form must not strand keyboard
 // focus: the next Escape leaves it in both the Monitor's Run graph and the Review screen.
 import assert from "node:assert/strict";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { it } from "node:test";
 import { create, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
@@ -46,12 +46,12 @@ for (const screen of ["Monitor graph", "Review"]) {
       assert.equal(await browser.$("#field-comment").isExisting(), false, "the completed result replaced the form");
       assert.ok(await human().isExisting(), "submission leaves the completed Detail open");
       if (process.env.HUMAN_FOCUS_EVIDENCE) {
-        await browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${screen.replaceAll(" ", "-")}-completed.png`));
+        await browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${basename(fixture.root)}-${screen.replaceAll(" ", "-")}-completed.png`));
       }
       // No click or scripted focus between submitting from the field and pressing Escape.
       await press(browser, ["Escape"], async () => !(await human().isExisting()), "leaving the completed Detail");
       if (process.env.HUMAN_FOCUS_EVIDENCE) {
-        await browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${screen.replaceAll(" ", "-")}-closed.png`));
+        await browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${basename(fixture.root)}-${screen.replaceAll(" ", "-")}-closed.png`));
       }
     } catch (error) {
       if (session) {
@@ -61,12 +61,12 @@ for (const screen of ["Monitor graph", "Review"]) {
           focused: { tag: document.activeElement?.tagName, id: document.activeElement?.id, label: document.activeElement?.getAttribute("aria-label") },
         })));
         if (process.env.HUMAN_FOCUS_EVIDENCE) {
-          await session.browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${screen.replaceAll(" ", "-")}-failure.png`));
+          await session.browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${basename(fixture.root)}-${screen.replaceAll(" ", "-")}-failure.png`));
         }
       }
       throw error;
     } finally {
-      await session?.stop();
+      await session?.dispose();
     }
   });
 }

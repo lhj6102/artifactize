@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { createGraph, type Fixture } from "./fixture.ts";
 import { start, type Session } from "./driver.ts";
 import { press } from "./keys.ts";
@@ -14,13 +14,13 @@ describe("current declaration graph", () => {
   const structure = () => browser.$(".current pre").getText();
   const expanded = () => browser.execute(() => document.querySelector(".current details")?.hasAttribute("open") ?? false);
 
-  before(async () => {
+  beforeEach(async () => {
     fixture = createGraph();
     session = await start(fixture, "graph", "--repo", fixture.repo);
     browser = session.browser;
     await browser.$('.svelte-flow__node[data-id="a:release"]').waitForExist({ timeout: 15000 });
   });
-  after(async () => { await session?.stop(); });
+  afterEach(async () => { await session?.dispose(); });
 
   // UX edges: E-CURRENT-LAUNCH E-CURRENT-ZOOM E-CURRENT-STRUCTURE
   it("opens without a saved Run, zooms into evals and exposes complete criteria and labeled relations", async () => {
@@ -71,6 +71,8 @@ describe("current declaration graph", () => {
 
   // UX edge: E-CURRENT-REFRESH
   it("reloads changed declarations through Refresh, Ctrl+R and F5", async () => {
+    await browser.$(".current summary").click();
+    await browser.waitUntil(expanded, { timeout: 15000 });
     const declaration = join(fixture.repo, "docs", "index.artf");
     for (const [index, keys] of [null, ["Control", "r"], ["F5"]].entries()) {
       const title = `Current docs criterion ${index}`;
@@ -81,13 +83,11 @@ describe("current declaration graph", () => {
         await browser.waitUntil(async () => (await structure()).includes(title), { timeout: 15000 });
       }
       await browser.$("button=Refresh").waitForEnabled({ timeout: 15000 });
-      // Refresh replaces the graph while its previous zoom camera can still be moving.
-      // Focus the current node and use the confirmed keyboard action, not coordinates
-      // computed before that camera move; await the new eval list before reading it.
-      await browser.$('.svelte-flow__node[data-id="a:docs"]').execute((node) => (node as HTMLElement).focus());
-      await press(browser, ["Enter"], () => browser.execute((expected) =>
+      // Use the real node control after refresh; observation never installs focus.
+      await browser.$('.svelte-flow__node[data-id="a:docs"]').click();
+      await browser.waitUntil(() => browser.execute((expected) =>
         document.querySelector('[role="listbox"][aria-label="Evals"]')?.textContent?.includes(expected) ?? false,
-      title), "the refreshed docs node exposes its current eval title");
+      title), { timeout: 15000, timeoutMsg: "the refreshed docs node exposes its current eval title" });
       assert.match(await browser.$('[role="listbox"][aria-label="Evals"]').getText(), new RegExp(title));
       assert.match(await browser.execute(() => document.body.innerText), /Declarations only · no Run verdicts/);
     }

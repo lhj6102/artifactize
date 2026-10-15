@@ -3,7 +3,7 @@
 // another process live without moving any node while zoomed into release, still opens the
 // highlighted eval's Detail afterwards, and moves between connected Artifacts by keyboard.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { artifactize, create, createChain, createEvals, type Fixture, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
@@ -35,7 +35,7 @@ describe("run graph", () => {
       ),
     }));
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture);
@@ -43,8 +43,8 @@ describe("run graph", () => {
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-GRAPH-OPEN E-GRAPH-RECOLOUR E-GRAPH-ZOOM-IN E-GRAPH-EVAL-OPEN
@@ -100,6 +100,9 @@ describe("run graph", () => {
 
   // UX edges: E-GRAPH-MOVE E-GRAPH-CLOSE
   it("moves along edges with the arrow keys and switches back to the tree with v", async () => {
+    await browser.$("button*=Graph").click();
+    await browser.$('.svelte-flow__node[data-id="a:release"]').click();
+    await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "this case's whole graph");
     await eventually(
       () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === "a:release"),
       "focus back on release",
@@ -118,15 +121,15 @@ describe("run graph of many Artifacts", () => {
   const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
   const mounted = () => browser.execute(() => document.querySelectorAll(".svelte-flow__node").length);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     session = await start(createChain(85));
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), "the Run tree", 30000);
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-GRAPH-BEYOND E-GRAPH-ZOOM-OUT
@@ -137,12 +140,10 @@ describe("run graph of many Artifacts", () => {
     const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
     for (let step = 0; step < 12; step += 1) await zoomIn.click();
     await eventually(async () => (await mounted()) < 85, "nodes outside the view are not drawn");
-    await browser.execute(() => {
-      const node = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].sort((a, b) =>
-        (a.dataset.id ?? "").localeCompare(b.dataset.id ?? ""),
-      )[0];
-      node.focus();
-    });
+    const first = await browser.execute(() => [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
+      .map((node) => node.dataset.id!).sort()[0]);
+    await browser.$(`.svelte-flow__node[data-id="${first}"]`).click();
+    await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "the selected graph node");
     const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
     /** Press `key` and wait for focus on `want`. */
     const step = (key: string, want: string) => press(browser, [key], async () => (await focused()) === want, `focus on ${want}`);
@@ -200,7 +201,7 @@ describe("run graph of an Artifact with several evals", () => {
   const evals = () => browser.$('[role="listbox"][aria-label="Evals"]');
   const detailClosed = async () => !(await browser.$("button*=Close").isExisting());
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     session = await start(createEvals(["alpha", "beta", "gamma"]));
     browser = session.browser;
@@ -209,8 +210,8 @@ describe("run graph of an Artifact with several evals", () => {
     await browser.$('.svelte-flow__node[data-id="a:app"]').waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-GRAPH-ZOOM-IN E-GRAPH-EVAL-SELECT E-GRAPH-EVAL-OPEN E-GRAPH-ZOOM-OUT

@@ -7,11 +7,10 @@ import { createInterface } from "node:readline";
 import { describe, it } from "node:test";
 import { createGraph } from "./fixture.ts";
 import { checkBuild, LAUNCH_TIMEOUT } from "./driver.ts";
-import { Owned } from "./owned.ts";
+import { groupAlive, Owned } from "./owned.ts";
 import { snapshotsGone } from "./build.ts";
-import { running, states, workers } from "./runs.ts";
+import { running, startedWorkers, states } from "./runs.ts";
 
-const alive = (group: number) => { try { process.kill(-group, 0); return true; } catch { return false; } };
 async function eventually(check: () => boolean, what: string) {
   // Includes the driver watchdog grace and the resource lease's durable-Run cleanup.
   await new Promise<void>((done, fail) => {
@@ -64,12 +63,12 @@ describe("an interrupted candidate owner", { skip: process.platform !== "linux" 
         const fixtures = join(candidate, "fixtures");
         const exposed = readdirSync(fixtures).flatMap((name) => states(join(fixtures, name)));
         assert.equal(exposed.length, 2, "interruption owns Monitor state and graph-state");
-        const owners = exposed.flatMap(workers);
+        const owners = await startedWorkers(exposed);
         assert.ok(owners.some(running), "actual durable workers exist before interruption");
-        const groups = readFileSync(join(candidate, "groups"), "utf8").trim().split("\n").map(Number).filter(alive);
+        const groups = readFileSync(join(candidate, "groups"), "utf8").trim().split("\n").map(Number).filter((group) => groupAlive(group));
         assert.ok(groups.length > 0, "the session registers its owned OS process groups");
         owner.child.kill(signal);
-        await eventually(() => groups.every((group) => !alive(group)), "the session's children stop");
+        await eventually(() => groups.every((group) => !groupAlive(group)), "the session's children stop");
         await eventually(() => {
           if (existsSync(candidate!)) return false;
           assert.ok(owners.every((identity) => !running(identity)), "candidate removal follows every durable worker's actual exit");

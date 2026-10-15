@@ -2,7 +2,7 @@
 // Tools focused, switching the verdict being edited, and paging through more requests than one
 // page holds.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { artifactize, create, createPagedRequests, type Fixture, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { afterRender, press, typeText } from "./keys.ts";
@@ -26,7 +26,7 @@ describe("opening a request", () => {
   const gone = async () => !(await human().isExisting());
   const exists = () => human().isExisting();
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
@@ -34,8 +34,8 @@ describe("opening a request", () => {
     await eventually(async () => (await listed()) === 1, "the waiting sign-off");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-REVIEW-OPEN
@@ -86,7 +86,7 @@ describe("paging requests", () => {
   const count = () => browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
   const title = () => browser.execute(() => document.body.innerText);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     // More requests than the 100 a page holds.
     ({ fixture, expected } = createPagedRequests());
@@ -95,8 +95,8 @@ describe("paging requests", () => {
     await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-REVIEW-PAGE
@@ -122,7 +122,7 @@ describe("a claim another reviewer holds", () => {
   const text = () => browser.execute(() => document.body.innerText);
   const human = () => browser.$('[aria-label="Human review"]');
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
@@ -130,8 +130,8 @@ describe("a claim another reviewer holds", () => {
     await eventually(async () => (await browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length)) === 1, "the sign-off");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE
@@ -166,7 +166,7 @@ describe("a GREEN submission from the start", () => {
       document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: name, isComposing: true, bubbles: true }));
     }, key);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     // In the Monitor, where a completed result stays open in the Detail.
@@ -175,8 +175,8 @@ describe("a GREEN submission from the start", () => {
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
@@ -195,6 +195,7 @@ describe("a GREEN submission from the start", () => {
     // dispatch, not only a still-unchanged database while an accidental command is pending.
     const writes = ["humanForm", "humanClaim", "humanRelease", "humanRun", "humanSubmit", "humanCancel", "humanJson"];
     const before = (await checkpoint(browser)).activity;
+    assert.ok(before.commands.humanClaim?.completed > 0, "the same read-only activity probe observes this case's successful claim");
     await browser.execute(() => document.activeElement?.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
     for (const key of ["g", "r", "q", "u", "c", "Escape"]) await composing(key);
     await browser.execute(() => {

@@ -16,6 +16,36 @@ pub fn python_program() -> &'static str {
     "python3"
 }
 
+// A probe can deliberately remove Python from PATH and replace the user's home. Resolve
+// the fixture infrastructure before preparing that environment, not inside the probe.
+const FIXTURE_PYTHON: &str = "ARTIFACTIZE_TEST_PYTHON";
+
+fn fixture_python() -> &'static Path {
+    static PYTHON: OnceLock<PathBuf> = OnceLock::new();
+    PYTHON.get_or_init(|| {
+        if let Some(program) = std::env::var_os(FIXTURE_PYTHON) {
+            return PathBuf::from(program);
+        }
+        let output = Command::new(python_program())
+            .args(["-I", "-c", "import sys; print(sys.executable)"])
+            .stdin(Stdio::null())
+            .output()
+            .expect("resolve the fixture infrastructure's Python before changing its environment");
+        assert!(output.status.success(), "fixture Python: {output:?}");
+        let program = PathBuf::from(
+            String::from_utf8(output.stdout)
+                .expect("fixture Python path is Unicode")
+                .trim_end(),
+        );
+        assert!(program.is_absolute(), "fixture Python path is absolute");
+        program
+    })
+}
+
+pub(super) fn prepare_probe(command: &mut Command) {
+    command.env(FIXTURE_PYTHON, fixture_python());
+}
+
 /// Portable path text for executable ownership diagnostics, without changing native argv.
 pub fn path_text(path: &Path) -> String {
     let text = path.to_string_lossy();
@@ -73,7 +103,7 @@ impl Executable {
         // fs::copy lets unrelated concurrent forks inherit its writer even with CLOEXEC:
         // after the parent closes it, exec can still fail with ETXTBUSY until those
         // children exec. Reaping the copier releases every writer before publication.
-        let copied = Command::new(python_program())
+        let copied = Command::new(fixture_python())
             .args([
                 "-I",
                 "-c",
@@ -202,7 +232,7 @@ except Exception:
     raise
 "#;
     let directory = fs::canonicalize(directory).map_err(|error| error.to_string())?;
-    let mut child = Command::new(python_program())
+    let mut child = Command::new(fixture_python())
         .args(["-I", "-c", CLEANUP])
         .arg(std::process::id().to_string())
         .arg(birth.to_string())

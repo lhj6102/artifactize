@@ -134,7 +134,7 @@ describe("Linux durable worker exit", { skip: process.platform !== "linux" && "W
       assert.equal(stopped, true, "settlement failure still shuts down the holder on unwind");
       const stopError = new Error("native stop also failed");
       await assert.rejects(finishFixture(cli, join(root, "fixtures", "fixture-failure"), async () => { throw stopError; }),
-        (error: unknown) => error instanceof AggregateError && error.errors.length === 2 && error.errors[1] === stopError);
+        (error: unknown) => error instanceof AggregateError && error.errors.length === 2 && error.errors[0] === stopError);
       assert.ok(existsSync(join(state, "state.sqlite")), "failure retains owned state");
       assert.ok(existsSync(cli), "failure retains executable inputs");
     } finally { rmSync(root, { recursive: true, force: true }); }

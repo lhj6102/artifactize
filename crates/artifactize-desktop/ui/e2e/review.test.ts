@@ -1,7 +1,7 @@
 // The standalone review end to end: the waiting list, opening a request by ID, and quitting
 // with an unsubmitted claim (stay, then release and quit).
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 
@@ -20,15 +20,15 @@ describe("review", () => {
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
     browser = session.browser;
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-REVIEW-PREVIEW
@@ -64,8 +64,22 @@ describe("review", () => {
     await eventually(async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
   });
 
+  async function claimReview() {
+    await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
+    await browser.keys(["Control", "o"]);
+    const input = await browser.$('[aria-label="Request ID"]');
+    await input.waitForExist();
+    await input.setValue(signoff(fixture).id);
+    await browser.keys(["Enter"]);
+    await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
+    await eventually(async () => (await text()).includes("Unclaimed. c claims it for alice"), "the claim stage");
+    await browser.keys(["c"]);
+    await eventually(async () => signoff(fixture).claim?.reviewer === "alice" && (await text()).includes("REVIEW (yours)"), "this case's claim");
+  }
+
   // UX edges: E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL
   it("leaves a field's form with Esc, then the Detail with the next Esc, keyboard only", async () => {
+    await claimReview();
     await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
     await browser.keys(["g"]);
     await eventually(
@@ -84,6 +98,7 @@ describe("review", () => {
 
   // UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
   it("asks before quitting with the claim: Esc stays, u releases and quits", async () => {
+    await claimReview();
     await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
     const dialog = await browser.$('[role="alertdialog"]');
     /** The prompt is open and holds focus, so its keys reach it. */
@@ -148,7 +163,7 @@ describe("a GREEN submission on the Review screen", () => {
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture, "review");
@@ -156,8 +171,8 @@ describe("a GREEN submission on the Review screen", () => {
     await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT

@@ -177,9 +177,11 @@ pub async fn wait(
     }
     let deadline = bound.map(|bound| tokio::time::Instant::now() + bound);
     let mut last = None;
-    {
+    let mut subscription = None;
+    let result = {
         let observing = async {
-            let mut changes = crate::changes::Subscription::new(&context.state).await;
+            let changes =
+                subscription.insert(crate::changes::Subscription::new(&context.state).await);
             loop {
                 let current = status(context, id).await?;
                 let ended = current.state.is_terminal();
@@ -192,11 +194,17 @@ pub async fn wait(
         };
         tokio::pin!(observing);
         tokio::select! {
-            result = &mut observing => { result?; }
-            _ = cancellation.cancelled() => return Err("Run observation was cancelled.".into()),
-            _ = async { if let Some(deadline) = deadline { tokio::time::sleep_until(deadline).await; } else { std::future::pending::<()>().await; } } => {}
+            result = &mut observing => result,
+            _ = cancellation.cancelled() => Err("Run observation was cancelled.".into()),
+            _ = async { if let Some(deadline) = deadline { tokio::time::sleep_until(deadline).await; } else { std::future::pending::<()>().await; } } => Ok(()),
         }
+    };
+    // Completion, deadline and cancellation all release this observer before returning.
+    // Otherwise CLI runtime shutdown can interrupt the detached watch's SQLite cleanup.
+    if let Some(changes) = subscription {
+        changes.close().await?;
     }
+    result?;
     last.ok_or_else(|| "State unavailable within the observation bound.".into())
 }
 

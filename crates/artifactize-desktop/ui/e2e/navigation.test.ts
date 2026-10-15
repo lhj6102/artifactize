@@ -2,7 +2,7 @@
 // jumping to what needs attention and to an upstream blocker, and stepping back out of a
 // Detail; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { verifyWaiting, create, type Fixture } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
@@ -28,7 +28,7 @@ describe("monitor navigation", () => {
     browser.$(`//li[@role="treeitem"][@aria-level="${level}"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "${name}")]]`);
   const helpOpen = () => browser.execute(() => !!document.querySelector('[role="dialog"]'));
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture);
@@ -36,8 +36,8 @@ describe("monitor navigation", () => {
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-HELP-OPEN E-HELP-CLOSE
@@ -75,7 +75,7 @@ describe("monitor navigation", () => {
     }, "the refresh's native read completed", { handled: true });
     await commandsRendered(browser);
     await eventually(async () => (await rows()).some((row) => row.includes(id)), "the exact refreshed Run rendered");
-    assert.equal((await rows()).length, 3, "the refreshed list contains all three Runs");
+    assert.equal((await rows()).length, previous.length + 1, "the refreshed list contains this case's newly submitted Run");
     assert.equal(await browser.$('[role="tab"][data-state="active"]').getText(), "Monitor", "on the same screen");
   });
 
@@ -133,15 +133,15 @@ describe("the Detail follows the tree's selection", () => {
   const row = (level: 1 | 2, name: string) =>
     browser.$(`//li[@role="treeitem"][@aria-level="${level}"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "${name}")]]`);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     session = await start(await create());
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-MON-TREE-MOVE E-MON-TREE-DETAIL
@@ -162,7 +162,8 @@ describe("the Detail follows the tree's selection", () => {
   it("shows the newly selected row after a click into the Detail", async () => {
     await (await row(2, "check")).click();
     await eventually(async () => /check/.test(await detail()), "the Detail shows ship/check");
-    await browser.execute(() => (document.querySelectorAll("section.panel")[3] as HTMLElement).click());
+    const panes = await browser.$$("section.panel");
+    await panes[3].click();
     await (await row(1, "docs")).click();
     await eventually(async () => /docs/.test(await detail()), "the Detail shows docs after a click");
     await (await row(2, "check")).click();
@@ -182,7 +183,7 @@ describe("moving between the panes", () => {
     );
   const crumbs = () => browser.$('nav[aria-label="Breadcrumb"]').getText();
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     const fixture = await create();
     // A second Run, so the Runs pane has two rows to move between.
@@ -193,8 +194,8 @@ describe("moving between the panes", () => {
     await browser.$('[role="tree"]').click();
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TO-SCOPE E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-TREE
@@ -218,14 +219,14 @@ describe("moving between the panes", () => {
 describe("quitting without a claim", () => {
   let session: Session;
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     session = await start(await create());
     await session.browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-QUIT-CLEAN
@@ -249,14 +250,14 @@ describe("quitting without a claim", () => {
 describe("closing the window without a claim", () => {
   let session: Session;
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     session = await start(await create());
     await session.browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-QUIT-CLEAN

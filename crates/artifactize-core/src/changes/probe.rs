@@ -28,10 +28,7 @@ impl Probe {
     pub async fn close(&mut self) -> Result<(), String> {
         if let Some(open) = self.open.take() {
             // Connection's Drop only queues work; explicit close observes SQLite releasing files.
-            open.connection
-                .close()
-                .await
-                .map_err(|error| error.to_string())?;
+            crate::store::connection::close(open.connection).await?;
         }
         Ok(())
     }
@@ -93,10 +90,7 @@ impl Probe {
                 });
             }
             other => {
-                connection
-                    .close()
-                    .await
-                    .map_err(|error| error.to_string())?;
+                crate::store::connection::close(connection).await?;
                 other?;
             }
         }
@@ -114,10 +108,7 @@ async fn open(path: &Path) -> Result<Connection, String> {
         .call(|db| db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT))
         .await
     {
-        connection
-            .close()
-            .await
-            .map_err(|error| error.to_string())?;
+        crate::store::connection::close(connection).await?;
         return Err(error.to_string());
     }
     Ok(connection)

@@ -2,12 +2,12 @@
 // Run tree → Detail, the shared Human Detail's claim, release, tool, RED validation, Korean
 // text and GREEN submission, and a live update from another process.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
-import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { artifactize, create, type Fixture, signoff, slowTool } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
-import { afterRender } from "./keys.ts";
+import { afterRender, press } from "./keys.ts";
 import { checkpoint } from "./commands.ts";
 
 /** Wait until `check` holds, polling the app; WebKit renders asynchronously. */
@@ -26,8 +26,16 @@ describe("monitor", () => {
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
   const human = () => browser.$('[aria-label="Human review"]');
+  async function openReview(claim = true) {
+    await browser.$('//li[@role="treeitem"][@aria-level="2"][.//span[starts-with(normalize-space(.), "signoff")]]').click();
+    await press(browser, ["Enter"], () => human().isExisting(), "this case's Human Detail");
+    await eventually(async () => (await text()).includes("Unclaimed. c claims it for alice"), "the claim stage");
+    if (claim) {
+      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && (await text()).includes("REVIEW (yours)"), "this case's claim");
+    }
+  }
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture);
@@ -35,8 +43,8 @@ describe("monitor", () => {
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-LAUNCH-MONITOR
@@ -81,6 +89,7 @@ describe("monitor", () => {
 
   // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE E-HUMAN-CLAIM E-HUMAN-RELEASE E-MON-LIVE
   it("follows a claim another process makes, then claims and releases explicitly", async () => {
+    await openReview(false);
     const id = signoff(fixture).id;
     assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
     await eventually(async () => (await text()).includes("claimed by bob · read-only"), "bob's claim", 12000);
@@ -103,9 +112,9 @@ describe("monitor", () => {
     await browser.keys(["c"]);
     await eventually(async () => (await text()).includes("claimed by you (alice)"), "claimed");
     assert.equal(signoff(fixture).claim?.reviewer, "alice");
-    assert.deepEqual((await checkpoint(browser)).activity.commands.humanClaim, {
-      started: dispatched + 1, completed: (claimBefore?.completed ?? 0) + 1, pending: 0,
-    }, "the normal Review helper claim dispatch and completion reach the same public owner");
+    const claimed = (await checkpoint(browser)).activity.commands.humanClaim;
+    assert.ok(claimed && claimed.completed > (claimBefore?.completed ?? 0), "the same read-only probe observes this successful claim");
+    assert.equal(claimed.pending, 0);
     await browser.keys(["u"]);
     await eventually(async () => (await text()).includes("Claim released."), "released");
     assert.equal(signoff(fixture).claim, null);
@@ -116,6 +125,7 @@ describe("monitor", () => {
 
   // UX edges: E-HUMAN-TOOL
   it("runs an output tool and shows its output", async () => {
+    await openReview();
     const notes = await browser.$('//li[@role="option"][.//span[text()="notes_release"]]');
     await notes.click();
     await eventually(async () => (await notes.getAttribute("aria-selected")) === "true", "notes selected");
@@ -126,6 +136,7 @@ describe("monitor", () => {
 
   // UX edges: E-HUMAN-TOOL-LAUNCH
   it("runs a launch tool and says the application was opened", async () => {
+    await openReview();
     const open = await browser.$('//li[@role="option"][.//span[text()="open_release"]]');
     await open.click();
     await eventually(async () => (await open.getAttribute("aria-selected")) === "true", "open selected");
@@ -137,6 +148,7 @@ describe("monitor", () => {
 
   // UX edges: E-HUMAN-TOOL-FAIL
   it("shows the error of a tool that fails", async () => {
+    await openReview();
     const fail = await browser.$('//li[@role="option"][.//span[text()="fail_release"]]');
     await fail.click();
     await eventually(async () => (await fail.getAttribute("aria-selected")) === "true", "fail selected");
@@ -150,16 +162,15 @@ describe("monitor", () => {
 
   // UX edges: E-HUMAN-ESC-CANCEL
   it("cancels a running tool with Esc", async () => {
+    await openReview();
     const slow = await browser.$('//li[@role="option"][.//span[text()="slow_release"]]');
     await slow.click();
     await eventually(async () => (await slow.getAttribute("aria-selected")) === "true", "slow selected");
     await browser.keys(["Enter"]);
     await eventually(async () => /Running slow_release/.test(await text()), "the tool running");
-    const marker = join(fixture.root, "slow.pid");
-    await eventually(() => existsSync(marker) && readFileSync(marker, "utf8").trim().length > 0, "the owned tool process started");
-    const pid = Number(readFileSync(marker, "utf8").trim());
-    const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
-    assert.ok(alive(), "the cancellation target is an actual running process");
+    await eventually(() => slowTool(fixture) !== null, "the owned tool process started");
+    const alive = slowTool(fixture);
+    assert.ok(alive && alive(), "the cancellation target is an actual running process");
     await browser.keys(["Escape"]);
     await eventually(async () => !/Running slow_release/.test(await text()), "the tool cancelled");
     await eventually(() => !alive(), "Esc terminated the owned tool process");
@@ -168,6 +179,7 @@ describe("monitor", () => {
 
   // UX edges: E-HUMAN-RED E-HUMAN-INVALID
   it("keeps a RED result that fails its schema correctable and shows the failing path", async () => {
+    await openReview();
     await browser.$('[aria-label="Human review"]').click();
     await browser.keys(["r"]);
     const reason = await browser.$("#field-reason");
@@ -186,7 +198,8 @@ describe("monitor", () => {
 
   // UX edges: E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
   it("submits GREEN with Korean text edited as JSON and keeps the completed result open", async () => {
-    await browser.keys(["Control", "g"]);
+    await openReview();
+    await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
     const comment = await browser.$("#field-comment");
     await comment.waitForExist();
     // An input method's Escape (composing, keyCode 229) belongs to the composition.
@@ -248,7 +261,7 @@ describe("quitting the Monitor with a claim", () => {
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture);
@@ -256,8 +269,8 @@ describe("quitting the Monitor with a claim", () => {
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE

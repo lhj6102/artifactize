@@ -3,12 +3,12 @@
 // dependent Artifact that waits for it.
 // Native Linux WebKitGTK fixtures: POSIX command stand-ins and signal crashes belong here,
 // not in portable journey assertions. A different native driver needs its own OS setup.
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, watch, writeFileSync } from "node:fs";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { readCandidate } from "./build.ts";
-import { removeFixture, settleRuns } from "./runs.ts";
+import { identity, removeFixture, running, settleRuns } from "./runs.ts";
 
 /** The declared immutable candidates inherited from the owning suite or tool session. */
 export const cli = () => readCandidate().cli;
@@ -41,6 +41,31 @@ function newRoot(): string {
 }
 
 export type Fixture = { root: string; repo: string; state: string };
+
+/** Native fixture inputs never borrow the person's auth files, profiles or service
+ * configuration. Keep executable lookup, but require scenarios to declare credentials
+ * and endpoints explicitly. No process-wide environment is changed. */
+export function environment(fixture: Fixture): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.startsWith("ARTIFACTIZE_") || name.endsWith("_API_KEY") || ["CLAUDE_CODE_OAUTH_TOKEN", "CODEX_HOME", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS"].includes(name)) delete env[name];
+  }
+  for (const [name, directory] of Object.entries({ HOME: "home", XDG_CONFIG_HOME: "config", XDG_DATA_HOME: "data", XDG_CACHE_HOME: "cache", XDG_RUNTIME_DIR: "runtime", TMPDIR: "tmp" })) {
+    env[name] = join(fixture.root, directory);
+    mkdirSync(env[name], { recursive: true, mode: 0o700 });
+  }
+  return { ...env, USER: "alice", ARTIFACTIZE_REMOTE: "off", DESKTOP_TEST_FIXTURE_ROOT: fixture.root };
+}
+
+/** A captured native lifetime, not a PID that can later name an unrelated process. */
+export function slowTool(fixture: Fixture): (() => boolean) | null {
+  const path = join(fixture.root, "slow.pid");
+  if (!existsSync(path)) return null;
+  const text = readFileSync(path, "utf8").trim();
+  if (!text) return null;
+  const owner = identity(Number(text));
+  return () => running(owner);
+}
 
 const release = (root: string) => `name = "release"
 tags = ["type:release"]
@@ -99,7 +124,7 @@ Build the docs."""
 /** Run the CLI against the fixture; returns its exit status. */
 export function artifactize(fixture: Fixture, ...args: string[]): number {
   const result = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...args], {
-    env: { ...process.env, USER: "alice", ARTIFACTIZE_REMOTE: "off" },
+    env: environment(fixture),
     encoding: "utf8",
   });
   if (result.error) throw result.error;
@@ -115,12 +140,21 @@ export type Saved = {
   result: Record<string, unknown> | null;
 };
 
+/** Remote status without blocking an external store served by the calling test. */
+export function remoteStatus(fixture: Fixture): Promise<{ code: number; stdout: string }> {
+  return new Promise((done) => {
+    execFile(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "remote", "status", "--json"],
+      { encoding: "utf8", env: { ...environment(fixture), ARTIFACTIZE_REMOTE: "" } },
+      (error, stdout) => done({ code: error ? Number(error.code ?? 1) : 0, stdout }));
+  });
+}
+
 /** The saved requests, as `request list --json` prints them. */
 export function requests(fixture: Fixture): Saved[] {
   const result = spawnSync(
     cli(),
     ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],
-    { encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" } },
+    { encoding: "utf8", env: environment(fixture) },
   );
   if (result.status !== 0) throw new Error(result.stderr);
   return JSON.parse(result.stdout) as Saved[];
@@ -157,7 +191,7 @@ function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
  * snapshots too, including one final read at the existing observation deadline. */
 export async function verifyWaiting(fixture: Fixture): Promise<string> {
   const submitted = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
-    encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+    encoding: "utf8", env: environment(fixture),
   });
   if (submitted.status !== 0) throw new Error(submitted.stderr || submitted.stdout || "verify submission failed");
   const { run } = JSON.parse(submitted.stdout) as { run: string };
@@ -185,7 +219,7 @@ export async function verifyWaiting(fixture: Fixture): Promise<string> {
       if (finished) return;
       try {
         const output = execFileSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", run, "--json"], {
-          encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+          encoding: "utf8", env: environment(fixture),
         });
         const saved = JSON.parse(output) as { status: string; control: { activity: string }; requests: Saved[] };
         last = JSON.stringify({ status: saved.status, control: saved.control,
@@ -283,7 +317,7 @@ export function createPagedRequests(): { fixture: Fixture; expected: string[] } 
   const older = requests(fixture);
   const completed = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
     "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], {
-    encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+    encoding: "utf8", env: environment(fixture),
   });
   if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
   const newer = (JSON.parse(completed.stdout) as { requests: Saved[] }).requests;

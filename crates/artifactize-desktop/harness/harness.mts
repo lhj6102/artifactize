@@ -13,10 +13,10 @@
 // snapshots that candidate into its session, never searches shared targets or rebuilds it.
 import { createConnection, createServer, type Socket } from "node:net";
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { cancelRuns, cli, create, type Fixture } from "../ui/e2e/fixture.ts";
+import { cli, create, environment, type Fixture } from "../ui/e2e/fixture.ts";
 import { LAUNCH_TIMEOUT, startBuilt, type Session } from "../ui/e2e/driver.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 import { cargoGate, cleanup, snapshotCandidate } from "../ui/e2e/build.ts";
@@ -130,7 +130,7 @@ async function handle(session: Session, fixture: Fixture, request: Request): Pro
       return { text: await settled(browser, before) };
     case "cli": {
       const done = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...request.args], {
-        env: { ...process.env, USER: "alice", ARTIFACTIZE_REMOTE: "off" },
+        env: environment(fixture),
         encoding: "utf8",
         timeout: 60000,
       });
@@ -166,35 +166,43 @@ export function commandStream(close: () => void, release: () => Promise<void>) {
   };
 }
 
+/** Preserve the operation's failure as well as any failed cleanup, including in tool replies. */
+async function throwAfterCleanup(error: unknown, release: () => Promise<void>): Promise<never> {
+  try { await release(); }
+  catch (shutdown) { throw new AggregateError([error, shutdown], "operation and cleanup failed"); }
+  throw error;
+}
+
+function errorText(error: unknown): string {
+  if (error instanceof AggregateError) return `${error.message}: ${error.errors.map(errorText).join("; ")}`;
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function start(): Promise<void> {
   if (!sessionDir) throw new Error("ARTIFACTIZE_SESSION_DIR is not set; run this as a tool session.");
   process.chdir(sessionDir);
-  const candidate = snapshotCandidate(sessionDir);
+  const candidate = await snapshotCandidate(sessionDir);
   let fixture: Fixture;
   try { fixture = await create(); }
-  catch (error) { await cleanup(candidate.root); throw error; }
-  const exposed = new Map([[fixture.state, fixture]]);
-  const removeFixture = async () => {
-    for (const target of exposed.values()) cancelRuns(target);
-    rmSync(fixture.root, { recursive: true, force: true });
+  catch (error) { return throwAfterCleanup(error, () => cleanup(candidate.root)); }
+  let shown: { session: Session; fixture: Fixture } | undefined;
+  // Do not remove inputs if shutdown fails; cleanup joins every registered native group
+  // and durable Run, including states exposed by earlier graph launches.
+  const release = async () => {
+    await shown?.session.stop();
+    shown = undefined;
     await cleanup(candidate.root);
   };
-  let session: Session | undefined;
   try {
-    session = await startBuilt(fixture);
+    const session = await startBuilt(fixture);
+    shown = { session, fixture };
     await rendered(session.browser, "monitor");
   } catch (error) {
-    await session?.stop();
-    await removeFixture();
-    throw error;
+    return throwAfterCleanup(error, release);
   }
-  let shown = { session, fixture };
   let edits = 0;
   // Signals and socket stop share admission closure and drain before reading shown.
-  const commands = commandStream(() => { server.close(); }, async () => {
-    await shown.session.stop();
-    await removeFixture();
-  });
+  const commands = commandStream(() => { server.close(); }, release);
   const end = () => commands.end();
   const server = createServer((socket: Socket) => {
     const lines = createInterface({ input: socket });
@@ -213,24 +221,34 @@ async function start(): Promise<void> {
           }
           reply = await commands.run(async () => {
             if (request.op === "launch") {
-              await shown.session.stop();
+              await shown?.session.stop();
+              shown = undefined;
               const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, "graph-state") } : fixture;
-              exposed.set(target.state, target);
               const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
-              shown = { session: await startBuilt(target, ...args), fixture: target };
-              await rendered(shown.session.browser, request.screen);
-              return { text: await settled(shown.session.browser) };
+              const session = await startBuilt(target, ...args);
+              // Accept the replacement before rendering can fail or shutdown can drain us.
+              shown = { session, fixture: target };
+              try {
+                await rendered(session.browser, request.screen);
+                return { text: await settled(session.browser) };
+              } catch (error) {
+                return throwAfterCleanup(error, async () => {
+                  await session.stop();
+                  shown = undefined;
+                });
+              }
             } else if (request.op === "change-declaration") {
               const path = join(fixture.repo, "docs", "index.artf");
               const title = `Docs criterion revision ${++edits}`;
               writeFileSync(path, readFileSync(path, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
               return { text: `Changed docs/lint title to ${title}. The app has not been refreshed.` };
             } else {
+              if (!shown) throw new Error("no app session is running; launch an entry point first");
               return handle(shown.session, shown.fixture, request);
             }
           });
         } catch (error) {
-          reply = { error: error instanceof Error ? error.message : String(error) };
+          reply = { error: errorText(error) };
         }
         socket.end(JSON.stringify(reply) + "\n");
       })().catch((error: Error) => { socket.destroy(error); });
@@ -248,8 +266,7 @@ async function start(): Promise<void> {
     console.log("ready");
     // The listening server owns the lifetime; no unowned keep-alive timer is needed.
   } catch (error) {
-    await end();
-    throw error;
+    return throwAfterCleanup(error, end);
   }
 }
 
@@ -291,7 +308,9 @@ if (import.meta.main) {
   } else if (mode === "start") {
     await start();
   } else if (mode === "stop") {
-    await ask({ op: "stop" }).catch(() => ({}));
+    const reply = await ask({ op: "stop" });
+    if (typeof reply.error === "string") throw new Error(reply.error);
+    if (reply.stopped !== true) throw new Error("the app session did not acknowledge cleanup");
   } else {
     const args = await input();
     const request: Request =

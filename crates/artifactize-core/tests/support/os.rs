@@ -2109,6 +2109,7 @@ pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> C
     for (name, value) in environment {
         command.env(name, value);
     }
+    worker::prepare_probe(&mut command);
     command
 }
 

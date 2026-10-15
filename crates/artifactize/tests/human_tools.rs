@@ -426,8 +426,29 @@ impl Launched {
 }
 impl Drop for Launched {
     fn drop(&mut self) {
-        self.own();
-        let _ = fs::write(self.root.join("release"), "");
+        // A successful launch can still be starting its interpreter when an assertion
+        // unwinds. Keep the root and release in place until that pending handoff arrives.
+        // The first signal also opens the deliberately held handoff in the cleanup probe.
+        let _ = fs::write(self.root.join("release-handoff"), "");
+        const HANDOFF_BOUND: Duration = Duration::from_secs(30);
+        const HANDOFF_POLL: Duration = Duration::from_millis(10);
+        let deadline = std::time::Instant::now() + support::os::patience(HANDOFF_BOUND);
+        let adopted = loop {
+            if self.own().is_some() {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(HANDOFF_POLL);
+        };
+        let released = fs::write(self.root.join("release"), "");
+        if !std::thread::panicking() {
+            assert!(adopted, "detached child did not finish its PID handoff");
+            released.expect("release the owned detached child");
+        }
+        // Processes drops next and joins the adopted birth identity before the caller's
+        // TempDir drops, on both ordinary completion and assertion unwinding.
     }
 }
 
@@ -435,12 +456,54 @@ impl Drop for Launched {
 /// for its fixture's explicit release rather than a timing-dependent sleep lifetime.
 const LAUNCH: &str = r"import os, pathlib, time
 root = pathlib.Path.cwd()
+if (root / 'hold-handoff').exists():
+    (root / 'handoff-ready').write_text('')
+    while not (root / 'release-handoff').exists(): time.sleep(0.01)
 for name, contents in [('pid', str(os.getpid())), ('marker', os.environ.get('ARTIFACTIZE_HUMAN_MARKER', 'launched'))]:
     pending = root / (name + '.pending')
     pending.write_text(contents)
     pending.replace(root / name)
 while not (root / 'release').exists(): time.sleep(0.01)
 ";
+
+#[tokio::test]
+async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
+    for unwind in [false, true] {
+        let repo = support::os::tempdir();
+        fs::write(repo.path().join("hold-handoff"), "").unwrap();
+        write_artifact(
+            repo.path(),
+            "a",
+            json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
+            "Review.",
+        );
+        let launched = Launched::new(repo.path());
+        assert_eq!(
+            call(repo.path()).await.content(),
+            [Content::Launch { launched: true }]
+        );
+        support::os::wait_until(Duration::from_secs(5), || {
+            repo.path().join("handoff-ready").exists()
+        });
+        assert!(!repo.path().join("pid").exists(), "PID handoff is held");
+        let root = repo.path().to_owned();
+        let result = std::panic::catch_unwind(move || {
+            let _owned = launched;
+            assert!(!unwind, "pending detached launch unwind probe");
+        });
+        assert_eq!(result.is_err(), unwind);
+        let pid = fs::read_to_string(root.join("pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            !support::os::running(pid),
+            "the pending child was adopted and stopped"
+        );
+        repo.close().unwrap();
+        assert!(!root.exists(), "child cleanup precedes fixture removal");
+    }
+}
 
 #[test]
 fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize_variables() {

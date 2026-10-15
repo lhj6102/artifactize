@@ -1,7 +1,7 @@
 // The command palette in the real app: it opens by its button and by Ctrl+K, runs a command,
 // and opens again after every way of closing it, screen switches included.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { verifyWaiting, addRepository, create, type Fixture, requests } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
@@ -42,7 +42,7 @@ describe("command palette", () => {
     `the request ID dialog resolves to the review of ${id}`);
   };
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     // A second Run joins the waiting sign-off: its request is a follower of the first one.
@@ -60,8 +60,8 @@ describe("command palette", () => {
     });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-PALETTE-OPEN E-PALETTE-CLOSE
@@ -129,6 +129,7 @@ describe("command palette", () => {
   });
 
   it("opens after a request opened by ID, Esc and a search of every repository", async () => {
+    await press(browser, ["Control", "2"], () => browser.$('[aria-label="Search requests"]').isExisting(), "this case's Review screen");
     const original = requests(fixture).find((request) => request.evalId === "release/signoff");
     assert.ok(original);
     const listed = () =>

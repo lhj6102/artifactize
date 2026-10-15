@@ -10,7 +10,7 @@ if (mode === "cleanup") {
   const candidate = await prepare();
   if (mode === "prepare") {
     // The verification builder owns this declared input until its Run becomes terminal.
-    retain(candidate.root);
+    await retain(candidate.root);
     console.log(candidate.manifest);
   } else if (mode === "suite") {
     try {
@@ -18,7 +18,12 @@ if (mode === "cleanup") {
       await runSuite(candidate.root, tests, {
         ...process.env, DESKTOP_TEST_CANDIDATE: candidate.manifest,
       });
-    } finally { await cleanup(candidate.root); }
+    } catch (error) {
+      try { await cleanup(candidate.root); }
+      catch (shutdown) { throw new AggregateError([error, shutdown], "desktop suite and cleanup failed"); }
+      throw error;
+    }
+    await cleanup(candidate.root);
   } else {
     await cleanup(candidate.root);
     throw new Error(`unknown desktop test runner mode: ${mode}`);

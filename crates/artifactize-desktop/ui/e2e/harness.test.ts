@@ -4,13 +4,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { create, createGraph } from "./fixture.ts";
 import { checkBuild, LAUNCH_TIMEOUT, start, type Session } from "./driver.ts";
 import { commandStream, snapshot, target } from "../../harness/harness.mts";
 import { Owned } from "./owned.ts";
 import { snapshotsGone } from "./build.ts";
-import { running, states, workers } from "./runs.ts";
+import { running, startedWorkers, states } from "./runs.ts";
 import { press } from "./keys.ts";
 
 function deferred<T>() {
@@ -76,12 +76,12 @@ describe("desktop command stream lifecycle", () => {
 
 describe("desktop snapshot controls", () => {
   let session: Session;
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     session = await start(await create());
     await session.browser.$('[role="treeitem"]').waitForExist();
   });
-  after(async () => { await session?.stop(); });
+  afterEach(async () => { await session?.dispose(); });
 
   it("observes without DOM markers and never retargets a removed control to its identical replacement", async () => {
     const { browser } = session;
@@ -106,18 +106,20 @@ describe("desktop Agent session", () => {
   let owner: Owned;
   let env: NodeJS.ProcessEnv;
   let directory: string;
+  let stopped = false;
   function call(mode: string, args: Record<string, unknown> = {}): string {
     const output = execFileSync(process.execPath, [harness, mode], {
       env, input: JSON.stringify({ args }), encoding: "utf8", timeout: mode === "launch" ? LAUNCH_TIMEOUT : 30000,
     });
-    if (mode === "stop") return output;
+    if (mode === "stop") { stopped = true; return output; }
     const reply = JSON.parse(output) as { isError?: boolean; content: { text: string }[] };
     assert.equal(reply.isError ?? false, false, output);
     return reply.content.map((part) => part.text).join("\n");
   }
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
+    stopped = false;
     directory = join(createGraph().root, "session");
     mkdirSync(directory);
     env = { ...process.env, ARTIFACTIZE_SESSION_DIR: directory, ARTIFACTIZE_REMOTE: "off" };
@@ -137,9 +139,9 @@ describe("desktop Agent session", () => {
       owner.child.once("exit", exited);
     });
   });
-  after(async () => {
+  afterEach(async () => {
     if (!owner) return;
-    try { call("stop"); }
+    try { if (!stopped) call("stop"); }
     finally {
       await owner.stop();
       await snapshotsGone(directory);
@@ -180,7 +182,7 @@ describe("desktop Agent session", () => {
     assert.match(query("eval:release/signoff"), /release\/signoff/);
   });
 
-  it("settles workers from every exposed state before deleting the fixture", () => {
+  it("settles workers from every exposed state before deleting the fixture", async () => {
     call("launch", { screen: "graph" });
     assert.match(call("cli", { args: ["verify", "--all", "--json"] }), /"run": "run-/);
     const candidate = join(directory, readdirSync(directory).find((name) => name.startsWith("candidate-"))!);
@@ -188,7 +190,7 @@ describe("desktop Agent session", () => {
     const root = join(fixtures, readdirSync(fixtures)[0]);
     const exposed = states(root);
     assert.equal(exposed.length, 2, "both Monitor state and graph-state exist");
-    const owners = exposed.flatMap(workers);
+    const owners = await startedWorkers(exposed);
     assert.ok(owners.some(running), "durable workers actually exist before stop");
     // Relaunching away from the graph must not lose its state ownership.
     call("launch", { screen: "monitor" });

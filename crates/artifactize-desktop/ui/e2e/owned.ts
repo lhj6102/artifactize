@@ -63,6 +63,8 @@ export class Owned {
   readonly group: number;
   readonly #watchdog: ChildProcess | null;
   readonly #birth: number | null;
+  readonly #closed: Promise<void>;
+  readonly #watchdogClosed: Promise<void>;
   #ending: Promise<void> | undefined;
 
   private constructor(child: ChildProcess, watchdog: ChildProcess | null, birth: number | null) {
@@ -70,6 +72,13 @@ export class Owned {
     this.group = child.pid ?? 0;
     this.#watchdog = watchdog;
     this.#birth = birth;
+    // close follows exit AND draining inherited/pipe stdio. Keep the actual child
+    // referenced: awaiting a Promise alone does not keep Node's event loop alive.
+    this.#closed = new Promise((done) => child.once("close", () => done()));
+    this.#watchdogClosed = watchdog ? new Promise((done) => watchdog.once("close", () => done())) : Promise.resolve();
+    // Callers observe launch errors too; ownership must still be able to join close.
+    child.on("error", () => {});
+    watchdog?.on("error", (error) => console.error("owned process watchdog failed", error));
   }
 
   /** Start `command` in a process group of its own, ended with this process. */
@@ -99,10 +108,10 @@ sleep ${GRACE}
 owns && kill -s KILL -- "-$0" 2>/dev/null`, String(child.pid), String(birth ?? "")],
       { stdio: ["pipe", "ignore", "ignore"], detached: true },
     );
-    // Neither keeps this process alive; the pipe stays open until it ends.
+    // The watchdog must not outlive the owner by holding its event loop open, but
+    // the work itself remains referenced until its real close (including stdio).
     watchdog.unref();
     (watchdog.stdin as unknown as { unref?: () => void } | null)?.unref?.();
-    child.unref();
     return new Owned(child, watchdog, birth);
   }
 
@@ -113,13 +122,20 @@ owns && kill -s KILL -- "-$0" 2>/dev/null`, String(child.pid), String(birth ?? "
   }
 
   async #stop(): Promise<void> {
+    if (this.group) {
+      const alive = () => groupAlive(this.group, this.#birth ?? -1);
+      if (alive()) signal(this.group, "SIGTERM");
+      for (let waited = 0; waited < GRACE * 1000 && alive(); waited += 50) await pause(50);
+      if (alive()) signal(this.group, "SIGKILL");
+      for (let waited = 0; waited < 5000 && alive(); waited += 50) await pause(50);
+      if (alive()) throw new Error(`owned process group ${this.group} did not stop`);
+    }
+    await this.#closed;
+    // Only disarm the fallback after successful shutdown. Join its close too rather
+    // than treating delivery of SIGKILL as acknowledgement of cleanup.
+    this.#watchdog?.ref();
     this.#watchdog?.kill("SIGKILL");
-    if (!this.group) return;
-    const alive = () => groupAlive(this.group, this.#birth ?? -1);
-    if (alive()) signal(this.group, "SIGTERM");
-    for (let waited = 0; waited < GRACE * 1000 && alive(); waited += 50) await pause(50);
-    if (alive()) signal(this.group, "SIGKILL");
-    for (let waited = 0; waited < 5000 && alive(); waited += 50) await pause(50);
-    if (alive()) throw new Error(`owned process group ${this.group} did not stop`);
+    await this.#watchdogClosed;
+    this.#watchdog?.stdin?.destroy();
   }
 }

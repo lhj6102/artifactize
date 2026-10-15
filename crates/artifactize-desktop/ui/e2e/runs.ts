@@ -6,6 +6,25 @@ import { join } from "node:path";
 import { groupAlive, type Group } from "./owned.ts";
 
 export type Identity = { pid: number; start_time: number };
+
+export function identity(pid: number): Identity {
+  const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  return { pid, start_time: Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[19]) };
+}
+
+/** After the app and durable launchers are joined, even intentionally detached
+ * Human tools remain owned by their fixture environment until their actual exit. */
+function fixtureProcesses(root: string): Identity[] {
+  return readdirSync("/proc").filter((name) => /^\d+$/.test(name)).flatMap((name) => {
+    try {
+      const env = readFileSync(`/proc/${name}/environ`, "utf8").split("\0");
+      return env.includes(`DESKTOP_TEST_FIXTURE_ROOT=${root}`) ? [identity(Number(name))] : [];
+    } catch (error) {
+      if (["ENOENT", "ESRCH", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? "")) return [];
+      throw error;
+    }
+  });
+}
 /** Cleanup watchdog only: on expiry preserve working files and executable inputs. */
 const EXIT_BOUND = 30000;
 const pause = new Int32Array(new SharedArrayBuffer(4));
@@ -41,6 +60,18 @@ export function workers(state: string): Identity[] {
   });
 }
 
+/** An accepted verify may still be handing off. Observe actual worker admission before
+ * an interruption scenario, instead of assuming its CLI receipt means it is running. */
+export async function startedWorkers(states: string[]): Promise<Identity[]> {
+  const deadline = Date.now() + EXIT_BOUND;
+  for (;;) {
+    const owners = states.flatMap(workers);
+    if (owners.some(running)) return owners;
+    if (Date.now() >= deadline) throw new Error("fixture Run workers did not start");
+    await new Promise((done) => setTimeout(done, 25));
+  }
+}
+
 export function exited(owners: Identity[], bound = EXIT_BOUND): void {
   const deadline = Date.now() + bound;
   while (owners.some(running)) {
@@ -60,10 +91,12 @@ export function states(root: string): string[] {
  * must preserve inputs. Keep both failures if shutdown also fails. */
 export async function finishFixture(program: string, root: string | undefined, stop: () => Promise<void>): Promise<void> {
   const failures: unknown[] = [];
+  // First close the holder's admission and join in-flight UI/CLI work. A Run list
+  // collected while it can still accept verify is not a complete shutdown snapshot.
+  try { await stop(); } catch (error) { failures.push(error); }
   try {
     if (root && existsSync(root)) for (const state of states(root)) settleRuns(program, join(root, "repo"), state);
   } catch (error) { failures.push(error); }
-  try { await stop(); } catch (error) { failures.push(error); }
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, "fixture settlement and shutdown failed; preserve inputs");
   if (root) removeFixture(program, root);
@@ -86,6 +119,7 @@ export function removeFixture(program: string, root: string): void {
       if (groupAlive(owner.group, owner.start_time)) throw new Error(`owned native group ${owner.group} still runs; preserve fixture ${root}`);
     }
   }
+  exited(fixtureProcesses(root));
   rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
@@ -115,11 +149,14 @@ export function settleRuns(program: string, repo: string, state: string): void {
       throw new Error(shown.stderr || `fixture Run ${id} did not settle`);
     }
     const worker = saved.control?.worker;
-    const owner = worker?.owner ?? worker?.launcher;
-    if (owner) owners.push(owner);
+    if (worker?.owner) owners.push(worker.owner);
+    if (worker?.launcher) owners.push(worker.launcher);
   }
   // A handoff could occur during the saved-state reads. Capture the final supervisor
   // and executor identities too, then join every one before deleting state or binaries.
   owners.push(...workers(state));
   exited(owners);
+  // A recorded launcher can hand off after the first scan. It is now joined, so
+  // its accepted executor cannot still be only a pending spawn when we rescan.
+  exited(workers(state));
 }

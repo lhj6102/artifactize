@@ -16,21 +16,33 @@ const BUILD_TIMEOUT = 15 * 60 * 1000;
 const CLEANUP_TIMEOUT = 20000;
 
 export type Candidate = { root: string; cli: string; app: string; manifest: string };
-const leases = new Map<string, ChildProcess>();
+const leases = new Map<string, { child: ChildProcess; closed: Promise<void> }>();
 
 /** A pipe, unlike an exit hook, closes on SIGKILL too. Child watchdogs stop their groups;
  * this lease then settles durable Runs and removes the candidate after all groups are gone. */
 function lease(root: string) {
   const child = spawn("sh", ["-c", 'read _; "$0" "$1" cleanup "$2"', process.execPath,
     fileURLToPath(new URL("./build.ts", import.meta.url)), root], { detached: true, stdio: ["pipe", "ignore", "ignore"] });
+  const closed = new Promise<void>((done, fail) => {
+    child.once("error", fail);
+    child.once("close", () => done());
+  });
+  // Install rejection observation immediately, while the creator retains the actual
+  // failure for the explicit release boundary below.
+  void closed.catch((error: unknown) => { console.error(`candidate lease failed for ${root}`, error); process.exitCode = 1; });
   child.unref();
   (child.stdin as unknown as { unref?: () => void } | null)?.unref?.();
-  leases.set(root, child);
+  leases.set(root, { child, closed });
 }
 
 /** Transfer a prepared candidate's lifetime explicitly to the verification builder. */
-export function retain(root: string) {
-  leases.get(root)?.kill("SIGKILL");
+export async function retain(root: string): Promise<void> {
+  const lease = leases.get(root);
+  if (!lease) return;
+  lease.child.ref();
+  lease.child.kill("SIGKILL");
+  await lease.closed;
+  lease.child.stdin?.destroy();
   leases.delete(root);
 }
 
@@ -62,21 +74,24 @@ async function execute(root: string, program: string, args: string[], env: NodeJ
   let output = "";
   owned.child.stdout?.on("data", (chunk) => { output += chunk; });
   let timedOut = false;
-  const stop = () => { void owned.stop().catch((error: unknown) => console.error(error)); };
+  let cancelled = false;
+  const failures: unknown[] = [];
+  const stop = () => { cancelled = true; void owned.stop().catch(() => {}); };
   const timeout = lifetime === "build" ? setTimeout(() => { timedOut = true; stop(); }, BUILD_TIMEOUT) : undefined;
-  for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, stop);
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, stop);
   try {
     const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done, fail) => {
       owned.child.once("error", fail);
       owned.child.once("close", (code, signal) => done({ code, signal }));
     });
-    if (timedOut || result.code !== 0) throw new Error(`${program} ${args.join(" ")} ${timedOut ? "timed out" : `exited ${result.code ?? result.signal}`}`);
-    return output;
-  } finally {
-    clearTimeout(timeout);
-    for (const signal of ["SIGINT", "SIGTERM"] as const) process.off(signal, stop);
-    await owned.stop();
-  }
+    if (cancelled || result.code !== 0) throw new Error(`${program} ${args.join(" ")} ${timedOut ? "timed out" : cancelled ? "was cancelled" : `exited ${result.code ?? result.signal}`}`);
+  } catch (error) { failures.push(error); }
+  clearTimeout(timeout);
+  try { await owned.stop(); } catch (error) { failures.push(error); }
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.off(signal, stop);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "owned execution and cleanup failed");
+  return output;
 }
 
 /** No task writes ui/dist: the exact frontend input is declared to Tauri for this invocation. */
@@ -113,7 +128,8 @@ export async function prepare(): Promise<Candidate> {
     if (!cli || !app) throw new Error("Cargo did not emit the CLI and desktop executable candidates");
     return save(root, cli, app);
   } catch (error) {
-    await cleanup(root);
+    try { await cleanup(root); }
+    catch (shutdown) { throw new AggregateError([error, shutdown], "candidate build and cleanup failed"); }
     throw error;
   }
 }
@@ -135,7 +151,7 @@ export function readCandidate(manifest = process.env.DESKTOP_TEST_CANDIDATE): Ca
 }
 
 /** A tool session owns its executable snapshot until every child and durable Run has stopped. */
-export function snapshotCandidate(directory: string): Candidate {
+export async function snapshotCandidate(directory: string): Promise<Candidate> {
   const source = readCandidate();
   const root = realpathSync(mkdtempSync(join(directory, "candidate-")));
   mkdirSync(join(root, "tmp"));
@@ -152,8 +168,8 @@ export function snapshotCandidate(directory: string): Candidate {
     process.env.TMPDIR = join(root, "tmp");
     return candidate;
   } catch (error) {
-    rmSync(root, { recursive: true, force: true });
-    retain(root);
+    try { await cleanup(root); }
+    catch (shutdown) { throw new AggregateError([error, shutdown], "candidate snapshot and cleanup failed"); }
     throw error;
   }
 }
@@ -180,8 +196,10 @@ export async function cleanup(root: string): Promise<void> {
       removeFixture(candidate.cli, fixture);
     }
   }
+  // A local fallback is still a user of these inputs until its real close. If this
+  // cleanup belongs to the detached fallback itself, there is no local lease to join.
+  await retain(root);
   rmSync(root, { recursive: true, force: true });
-  retain(root);
 }
 
 async function childrenGone(directory: string, prefix: string): Promise<void> {
@@ -204,7 +222,12 @@ export async function cargoGate(mode: "clippy" | "test"): Promise<void> {
     const env = await frontend(root);
     const args = mode === "clippy" ? ["clippy", "--locked", "-p", "artifactize-desktop", "--all-targets", "--", "-D", "warnings"] : ["test", "--locked", "-p", "artifactize-desktop"];
     await command(root, "cargo", args, env);
-  } finally { await cleanup(root); }
+  } catch (error) {
+    try { await cleanup(root); }
+    catch (shutdown) { throw new AggregateError([error, shutdown], "native Cargo gate and cleanup failed"); }
+    throw error;
+  }
+  await cleanup(root);
 }
 
 // The owner's pipe watchdog uses the same cleanup boundary after an uncatchable SIGKILL.

@@ -2,7 +2,7 @@
 // launch lists its own repository's waiting sign-off; a search reaches the others, completion
 // takes a typed partial key and its value, and any other request opens read-only.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { addRepository, create, type Fixture } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
@@ -46,7 +46,7 @@ describe("review search", () => {
   const suggestions = () =>
     browser.execute(() => [...document.querySelectorAll('[aria-label="Suggestions"] [role="option"]')].map((option) => option.textContent?.trim()));
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     await addRepository(fixture, "other");
@@ -56,8 +56,8 @@ describe("review search", () => {
     await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-LAUNCH-REVIEW
@@ -110,6 +110,7 @@ describe("review search", () => {
 
   // UX edges: E-REVIEW-READONLY E-REVIEW-SEARCH-LEAVE
   it("opens a request that is not a Human review read-only", async () => {
+    await press(browser, ["/"], focused("Search requests"), "this case's search field");
     // Esc clears the query; a new search, then Enter leaves for the list.
     await press(browser, ["Escape"], holds(""), "the query cleared");
     // A space ends the term and closes the suggestions, so Enter leaves the field.

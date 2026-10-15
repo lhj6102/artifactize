@@ -1,6 +1,6 @@
 // The real IPC resolves both request IDs to one review and one kept draft, in either order.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { artifactize, create, requests, verifyWaiting, type Fixture } from "./fixture.ts";
 import { checkBuild, start, type Session } from "./driver.ts";
 import { press } from "./keys.ts";
@@ -14,7 +14,7 @@ for (const followerFirst of [false, true]) {
     const human = () => browser.$('[aria-label="Human review"]');
     const field = () => browser.$("#field-comment");
 
-    before(async () => {
+    beforeEach(async () => {
       checkBuild();
       fixture = await create();
       await verifyWaiting(fixture);
@@ -29,7 +29,7 @@ for (const followerFirst of [false, true]) {
       browser = session.browser;
       await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
     });
-    after(async () => { await session?.stop(); });
+    afterEach(async () => { await session?.dispose(); });
 
     async function open(id: string) {
       await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the request ID dialog");

@@ -3,7 +3,7 @@
 // between the tree and the graph, and the instruction, request, result and technical record
 // of a completed eval.
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { createStates, requests, type Fixture } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
@@ -30,7 +30,7 @@ describe("a Run with every verdict", () => {
   const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
   const tree = () => browser.$('[role="tree"]');
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await createStates();
     session = await start(fixture);
@@ -38,8 +38,8 @@ describe("a Run with every verdict", () => {
     await eventually(async () => (await text()).includes("crash"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-GRAPH-OPEN E-GRAPH-CLOSE
@@ -48,7 +48,8 @@ describe("a Run with every verdict", () => {
     await press(browser, ["v"], () => browser.$(".svelte-flow__node").isExisting(), "the graph");
     assert.ok(!(await tree().isExisting()), "the graph replaces the tree");
     // The tree's list left with the switch; the graph's own node takes the keys.
-    await browser.execute(() => document.querySelector<HTMLElement>(".svelte-flow__node")?.focus());
+    await browser.$(".svelte-flow__node").click();
+    await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "zoomed out to a focused node");
     await press(browser, ["v"], () => tree().isExisting(), "the tree again");
     await tree().click();
     await press(browser, ["v"], () => browser.$(".svelte-flow__node").isExisting(), "the graph once more");
@@ -56,6 +57,8 @@ describe("a Run with every verdict", () => {
 
   // UX edges: E-GRAPH-OPEN
   it("colours RED, ERROR, blocked and GREEN Artifacts and the edge between a RED one and its dependent", async () => {
+    await browser.$("button*=Graph").click();
+    await browser.$(".svelte-flow__node").waitForExist({ timeout: 15000 });
     // Svelte Flow can mount nodes before its asynchronous layout renders the edges.
     await eventually(async () => {
       const graph = await lights();
@@ -79,6 +82,8 @@ describe("a Run with every verdict", () => {
 
   // UX edges: E-GRAPH-MOVE
   it("moves along edges with ← and →, and between the nodes of one column with ↑ and ↓", async () => {
+    await browser.$("button*=Graph").click();
+    await browser.$(".svelte-flow__node").waitForExist({ timeout: 15000 });
     const on = (id: string) => async () => (await focused()) === id;
     await browser.$('.svelte-flow__node[data-id="a:red"]').click();
     // A click zooms in; step back out to the whole graph with the node focused.
@@ -101,7 +106,8 @@ describe("a Run with every verdict", () => {
       .sort((a, b) => a.y - b.y)
       .map((node) => node.id);
     assert.ok(order.length >= 2, "a column of at least two nodes");
-    await browser.execute((id) => document.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`)?.focus(), order[0]);
+    await browser.$(`.svelte-flow__node[data-id="${order[0]}"]`).click();
+    await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "the first node in the column focused");
     await eventually(on(order[0]), `focus on ${order[0]}`);
     for (const next of order.slice(1)) {
       await press(browser, ["ArrowDown"], on(next), `focus on ${next}, below`);
@@ -118,7 +124,7 @@ describe("the Detail of a finished eval", () => {
   let browser: WebdriverIO.Browser;
   const text = () => browser.execute(() => document.body.innerText);
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await createStates();
     session = await start(fixture);
@@ -126,8 +132,8 @@ describe("the Detail of a finished eval", () => {
     await eventually(async () => (await text()).includes("fine"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-MON-DETAIL-TECHNICAL E-MON-TREE-DETAIL
@@ -160,15 +166,15 @@ describe("a blocked eval", () => {
   let session: Session;
   let browser: WebdriverIO.Browser;
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     session = await start(await createStates());
     browser = session.browser;
     await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("down"), "the Run tree");
   });
 
-  after(async () => {
-    await session?.stop();
+  afterEach(async () => {
+    await session?.dispose();
   });
 
   // UX edges: E-MON-BLOCKER

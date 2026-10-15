@@ -1,7 +1,10 @@
 use std::{
     fs,
-    path::PathBuf,
+    io::{self, BufRead, BufReader, Write},
+    net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+    path::{Path, PathBuf},
     process::{Command, Stdio},
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -16,7 +19,57 @@ use owned_run::RunChild as Child;
 mod support;
 use support::runs::RecordOutput;
 
+// One fixture-owned writer records acknowledged events. Concurrent Python text-file
+// appends can overwrite each other on Windows; those lost records are not scheduler bugs.
+struct EventLog {
+    address: SocketAddr,
+    task: Option<JoinHandle<io::Result<()>>>,
+}
+
+impl EventLog {
+    fn new(repo: &Path) -> Self {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut file = fs::File::create(repo.join("events")).unwrap();
+        let task = std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream?;
+                let mut event = String::new();
+                BufReader::new(&mut stream).read_line(&mut event)?;
+                if event == "stop\n" {
+                    return Ok(());
+                }
+                // A killed fixture can disconnect before publishing its next event.
+                if event.is_empty() {
+                    continue;
+                }
+                file.write_all(event.as_bytes())?;
+                stream.write_all(b"ok\n")?;
+            }
+            Ok(())
+        });
+        Self {
+            address,
+            task: Some(task),
+        }
+    }
+}
+
+impl Drop for EventLog {
+    fn drop(&mut self) {
+        let stopped =
+            TcpStream::connect(self.address).and_then(|mut stream| stream.write_all(b"stop\n"));
+        let joined = self.task.take().unwrap().join();
+        if !std::thread::panicking() {
+            joined.expect("join the fixture event writer").unwrap();
+            stopped.expect("stop the fixture event writer");
+        }
+    }
+}
+
 struct Fixture {
+    // The writer is joined before its temporary files are removed, including on unwind.
+    events: Option<EventLog>,
     _root: TempDir,
     repo: PathBuf,
     state: PathBuf,
@@ -39,10 +92,24 @@ impl Fixture {
         )
         .unwrap();
         Self {
+            events: None,
             repo,
             state: root.path().join("state"),
             _root: root,
         }
+    }
+
+    fn recorded(evals: impl FnOnce(SocketAddr) -> Vec<Value>) -> Self {
+        let mut fixture = Self::new(vec![]);
+        let events = EventLog::new(&fixture.repo);
+        let evals = evals(events.address);
+        fixture.events = Some(events);
+        support::declaration::write(
+            fixture.repo.join("index.artf"),
+            json!({"name":"test","fingerprint":false,"evals":evals}).to_string(),
+        )
+        .unwrap();
+        fixture
     }
 
     fn command(&self, args: &[&str]) -> Command {
@@ -141,7 +208,7 @@ async fn observed(
     let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
     // A fixture observation watchdog, not an execution lifetime or timing assertion.
     const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
-    tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
+    let result = tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
         loop {
             let view = artifactize_core::store::read_run(&fixture.state, id)
                 .await
@@ -156,13 +223,16 @@ async fn observed(
             changes.next_reconciled().await;
         }
     })
-    .await
-    .unwrap()
+    .await;
+    changes.close().await.unwrap();
+    result.unwrap()
 }
 
 #[tokio::test]
 async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
-    let fixture = Fixture::new(vec![eval("slow", SLOW), eval("zz-over-budget", "pass")]);
+    let fixture = Fixture::recorded(|address| {
+        vec![slow_eval("slow", address), eval("zz-over-budget", "pass")]
+    });
     let child = fixture.spawn(&["--jobs", "2", "--max-executions", "1"]);
     let id = child.run();
     let before = observed(&fixture, &id, |view| {
@@ -213,22 +283,37 @@ async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() 
     let run = finish(child, 4);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
+    notifications.close().await.unwrap();
 }
 
-const SLOW: &str = r#"import pathlib, sys, time
-with pathlib.Path('events').open('a', encoding='utf-8') as events:
-    events.write('start ' + sys.argv[1] + '\n')
+fn slow_eval(id: &str, address: SocketAddr) -> Value {
+    let mut check = eval(id, SLOW);
+    check["profile"]["args"] = json!(["-c", SLOW, id, address.to_string()]);
+    check
+}
+
+const SLOW: &str = r#"import pathlib, socket, sys, time
+host, port = sys.argv[2].rsplit(':', 1)
+def record(kind):
+    with socket.create_connection((host, int(port))) as stream:
+        stream.sendall((kind + ' ' + sys.argv[1] + '\n').encode())
+        with stream.makefile('rb') as response:
+            assert response.readline() == b'ok\n'
+record('start')
 while not pathlib.Path('release').exists():
     time.sleep(0.01)
-with pathlib.Path('events').open('a', encoding='utf-8') as events:
-    events.write('end ' + sys.argv[1] + '\n')
+record('end')
 "#;
 
 #[tokio::test]
 async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
     for (args, cap) in [(vec!["--jobs", "2"], Some(2)), (vec![], None)] {
         let jobs = cap.unwrap_or(6);
-        let fixture = Fixture::new((0..6).map(|id| eval(&format!("e{id}"), SLOW)).collect());
+        let fixture = Fixture::recorded(|address| {
+            (0..6)
+                .map(|id| slow_eval(&format!("e{id}"), address))
+                .collect()
+        });
         let child = fixture.spawn(&args);
         wait_until(|| fixture.starts().len() >= jobs);
         let view = observed(&fixture, &child.run(), |view| {

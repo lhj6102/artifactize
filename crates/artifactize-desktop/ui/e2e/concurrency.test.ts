@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { cargoGate, snapshotsGone } from "./build.ts";
 import { create, createGraph, verifyWaiting, type Fixture } from "./fixture.ts";
 import { checkBuild, LAUNCH_TIMEOUT, start, type Session } from "./driver.ts";
@@ -20,21 +20,21 @@ describe("native Cargo and real desktop candidates", () => {
   let directory: string;
   let native: Promise<Error | undefined> | undefined;
 
-  before(async () => {
+  beforeEach(async () => {
     checkBuild();
     fixture = await create();
     session = await start(fixture);
     await session.browser.$('[role="tree"]').waitForExist({ timeout: LAUNCH_TIMEOUT });
     await session.browser.waitUntil(() => session.browser.execute(() => document.querySelector('[role="tree"]')?.textContent?.includes("signoff") ?? false));
   });
-  after(async () => {
+  afterEach(async () => {
     try {
       if (owner) {
         try { execFileSync(process.execPath, [harness, "stop"], { env, timeout: LAUNCH_TIMEOUT }); }
         finally { await owner.stop(); await snapshotsGone(directory); }
       }
     } finally {
-      try { await session?.stop(); }
+      try { await session?.dispose(); }
       finally { await native; }
     }
   });

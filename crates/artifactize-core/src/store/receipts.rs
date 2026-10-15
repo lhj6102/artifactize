@@ -1055,6 +1055,6 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     .await;
     // A query result arrives before the DB worker drops its connection. Join the
     // close on every return path so callers can immediately release the state files.
-    connection.close().await.map_err(|e| e.to_string())?;
+    super::connection::close(connection).await?;
     result
 }

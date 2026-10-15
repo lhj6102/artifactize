@@ -1,11 +1,13 @@
 // Drive the real Linux WebKitGTK app through tauri-driver and WebKitWebDriver.
-// These shared native helpers intentionally own Linux X11/process-group setup: Windows
-// uses a different WebDriver and macOS has no Tauri WebDriver, neither is this harness.
-import { createConnection } from "node:net";
+// Required Linux capabilities: procfs, Xvfb, dbus-run-session, tauri-driver and
+// WebKitWebDriver. These helpers own X11, session-bus and process-group setup;
+// Windows and macOS use different native automation boundaries, not this harness.
+import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
 import { remote } from "webdriverio";
-import { app, type Fixture } from "./fixture.ts";
+import { app, environment, type Fixture } from "./fixture.ts";
+import { removeFixture } from "./runs.ts";
 import { readCandidate } from "./build.ts";
 import { Owned, registerGroup } from "./owned.ts";
 
@@ -45,16 +47,47 @@ export type Session = {
   groups: number[];
   /** End the session and wait until every process it owns is gone. */
   stop: () => Promise<void>;
+  /** Final case teardown: close the app, join its durable work, then remove inputs. */
+  dispose: () => Promise<void>;
 };
 
-// Ports per process, so a run never meets a leftover driver of another.
-let next = 4600 + (process.pid % 200) * 2;
+/** Ask the OS for distinct free endpoints, not PID-modulo fixed names shared by suites.
+ * The drivers cannot inherit bound sockets: release immediately before launch, then
+ * verify BOTH listeners belong to this process group before sending any commands. */
+async function ports(): Promise<number[]> {
+  const servers = [createServer(), createServer()];
+  const acquired = await Promise.allSettled(servers.map((server) => new Promise<number>((done, fail) => {
+    server.once("error", fail);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") fail(new Error("no reserved driver endpoint"));
+      else done(address.port);
+    });
+  })));
+  const closed = await Promise.allSettled(servers.map((server) => new Promise<void>((done, fail) => {
+    if (!server.listening) return done();
+    server.close((error) => error ? fail(error) : done());
+  })));
+  const failures = [...acquired, ...closed].flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+  if (failures.length) throw new AggregateError(failures, "driver endpoint acquisition or release failed");
+  return acquired.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+}
 
-function listening(port: number): Promise<boolean> {
-  return new Promise((done) => {
-    const socket = createConnection({ port, host: "127.0.0.1" });
-    socket.once("connect", () => { socket.destroy(); done(true); });
-    socket.once("error", () => done(false));
+/** A free-port handoff can lose a race to an unrelated process. Never connect to it:
+ * Linux socket inodes establish that the real listener is in our driver's group. */
+function listening(port: number, group: number): boolean {
+  const inodes = new Set(["/proc/net/tcp", "/proc/net/tcp6"].flatMap((path) => readFileSync(path, "utf8").trim().split("\n").slice(1)
+    .map((line) => line.trim().split(/\s+/)).filter((fields) => fields[3] === "0A" && parseInt(fields[1].split(":")[1], 16) === port).map((fields) => `socket:[${fields[9]}]`)));
+  if (!inodes.size) return false;
+  return readdirSync("/proc").filter((name) => /^\d+$/.test(name)).some((pid) => {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      if (Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[2]) !== group) return false;
+      return readdirSync(`/proc/${pid}/fd`).some((fd) => inodes.has(readlinkSync(`/proc/${pid}/fd/${fd}`)));
+    } catch (error) {
+      if (["ENOENT", "ESRCH", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+      throw error;
+    }
   });
 }
 
@@ -110,49 +143,56 @@ async function display(): Promise<Display> {
  * Xvfb on display `number`, ready once it reports the number (-displayfd). It listens on the
  * abstract socket only: no TCP, and no /tmp/.X11-unix socket, which a desktop (WSLg) may own.
  */
-function xvfb(number: number): Promise<Display | { failure: string }> {
+async function xvfb(number: number): Promise<Display | { failure: string }> {
   const owned = Owned.spawn(
     "Xvfb",
     [`:${number}`, "-displayfd", "3", "-screen", "0", "1600x1000x24", "-nolisten", "tcp", "-nolisten", "unix"],
     { stdio: ["ignore", "ignore", "pipe", "pipe"] },
   );
   const server = owned.child;
-  return new Promise((done, fail) => {
-    let errors = "";
-    server.stderr?.on("data", (chunk) => (errors += chunk));
-    server.once("error", (error: NodeJS.ErrnoException) => {
-      void owned.stop();
-      fail(
-        new Error(
-          error.code === "ENOENT"
-            ? "The e2e tests run the app on a private Xvfb display; install Xvfb (for example `apt install xvfb`)."
-            : `Xvfb did not start: ${error.message}`,
-        ),
-      );
+  let errors = "";
+  server.stderr?.on("data", (chunk) => { errors += chunk; });
+  try {
+    const selected = await new Promise<string | null>((done, fail) => {
+      const reported = server.stdio[3] as NodeJS.ReadableStream;
+      let text = "";
+      const deadline = setTimeout(() => finish(new Error("Xvfb did not report display readiness")), LAUNCH_TIMEOUT);
+      const error = (error: Error) => finish(error);
+      const close = () => finish(undefined, null);
+      const data = (chunk: Buffer) => {
+        text += chunk;
+        if (text.includes("\n")) finish(undefined, text.trim());
+      };
+      function finish(error?: Error, value: string | null = null) {
+        clearTimeout(deadline);
+        reported.off("data", data);
+        server.off("error", errorHandler);
+        server.off("close", close);
+        if (error) fail(error); else done(value);
+      }
+      const errorHandler = error;
+      server.once("error", errorHandler);
+      server.once("close", close);
+      reported.on("data", data);
     });
-    // In use (or refused): the caller tries the next number.
-    server.once("exit", () => void owned.stop().then(() => done({ failure: errors.trim() })));
-    const reported = server.stdio[3] as NodeJS.ReadableStream;
-    let text = "";
-    reported.on("data", (chunk) => {
-      text += chunk;
-      if (!text.includes("\n")) return;
-      server.removeAllListeners("exit");
-      // The app draws on X only: no Wayland compositor of the desktop either.
-      done({ env: { DISPLAY: `:${text.trim()}`, GDK_BACKEND: "x11" }, server: owned });
-    });
-  });
+    if (selected === null) {
+      await owned.stop();
+      return { failure: errors.trim() };
+    }
+    if (selected !== String(number)) throw new Error(`Xvfb reported an unexpected display: ${selected}`);
+    return { env: { DISPLAY: `:${selected}`, GDK_BACKEND: "x11" }, server: owned };
+  } catch (error) {
+    try { await owned.stop(); }
+    catch (shutdown) { throw new AggregateError([error, shutdown], "Xvfb setup and shutdown failed"); }
+    throw error;
+  }
 }
 
 async function launch(fixture: Fixture, overrides: Record<string, string | undefined>, args: string[]): Promise<Session> {
   checkBuild();
-  const port = next;
-  next += 2;
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    ARTIFACTIZE_REMOTE: "off",
-    ...overrides,
-  };
+  if (process.platform !== "linux") throw new Error("the native E2E driver requires Linux WebKitGTK, procfs and private Xvfb displays");
+  const [port, nativePort] = await ports();
+  const env: Record<string, string | undefined> = { ...environment(fixture), ...overrides };
   const screen = await display();
   const owned: Owned[] = screen.server ? [screen.server] : [];
   const end = async () => {
@@ -164,8 +204,9 @@ async function launch(fixture: Fixture, overrides: Record<string, string | undef
     for (const child of owned) registerGroup(fixture.root, child.group);
     if (screen.env.DISPLAY) delete env.WAYLAND_DISPLAY;
     for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
-    // tauri-driver starts WebKitWebDriver, which starts the app: all in the driver's group.
-    const driver = Owned.spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
+    // A private session bus prevents GTK from using or auto-launching the person's
+    // shared bus. It, tauri-driver, WebKitWebDriver and the app share our owned group.
+    const driver = Owned.spawn("dbus-run-session", ["--", "tauri-driver", "--port", String(port), "--native-port", String(nativePort)], {
       env: {
         ...env,
         ...screen.env,
@@ -184,15 +225,21 @@ async function launch(fixture: Fixture, overrides: Record<string, string | undef
       driver.child.once("error", fail);
     });
     registerGroup(fixture.root, driver.group);
+    await until(async () => listening(port, driver.group) && listening(nativePort, driver.group), "this session's driver listeners");
     const browser = await connect(port, args, fixture);
+    let ending: Promise<void> | undefined;
+    const stop = () => ending ??= (async () => {
+      // Forcefully joining the native group also covers a window already closed by q.
+      // The WebDriver delete request is best effort, not the cleanup acknowledgement.
+      await browser.deleteSession().catch(() => {});
+      await end();
+    })();
     return {
       browser,
       display: screen.env.DISPLAY ?? null,
       groups: owned.map((child) => child.group),
-      stop: async () => {
-        await browser.deleteSession().catch(() => {});
-        await end();
-      },
+      stop,
+      dispose: async () => { await stop(); removeFixture(readCandidate().cli, fixture.root); },
     };
   } catch (error) {
     try { await end(); }
@@ -202,7 +249,6 @@ async function launch(fixture: Fixture, overrides: Record<string, string | undef
 }
 
 async function connect(port: number, args: string[], fixture: Fixture): Promise<WebdriverIO.Browser> {
-  await until(() => listening(port), "tauri-driver");
   return remote({
     hostname: "127.0.0.1",
     port,

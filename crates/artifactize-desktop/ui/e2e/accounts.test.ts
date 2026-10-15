@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { createOutside } from "./fixture.ts";
 import { browserStandIn, type Session, startEnv } from "./driver.ts";
 import { networkTests } from "./network.ts";
@@ -27,7 +27,8 @@ function token(): string {
 }
 
 function listen(server: Server): Promise<string> {
-  return new Promise((done) => {
+  return new Promise((done, fail) => {
+    server.once("error", fail);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       assert.ok(address && typeof address === "object");
@@ -40,12 +41,12 @@ function listen(server: Server): Promise<string> {
 // never the host port shared with a person or another evaluator.
 networkTests(import.meta.url, () => {
   describe("accounts and models", () => {
-    const fixture = createOutside();
+    let fixture: ReturnType<typeof createOutside>;
     let session: Session;
     let browser: WebdriverIO.Browser;
     let auth: Server;
     let provider: Server;
-    const opened = join(fixture.root, "opened");
+    let opened: string;
     const status = () => browser.$('[data-testid="codex-status"]').getText();
     const text = () => browser.execute(() => document.body.innerText);
     const browserLog = () => existsSync(opened) ? readFileSync(opened, "utf8").trim().split("\n").filter(Boolean) : [];
@@ -60,7 +61,9 @@ networkTests(import.meta.url, () => {
     }
 
 
-    before(async () => {
+    beforeEach(async () => {
+      fixture = createOutside();
+      opened = join(fixture.root, "opened");
       auth = createServer((request, response) => {
         request.resume();
         if (request.url === "/oauth/token") {
@@ -76,7 +79,8 @@ networkTests(import.meta.url, () => {
         response.writeHead(listed ? 200 : 404, { "content-type": "application/json" });
         response.end(JSON.stringify(listed ? { object: "list", data: [{ id: "gpt-e2e", object: "model", created: 0, owned_by: "e2e" }] } : {}));
       });
-      const [authUrl, providerUrl] = await Promise.all([listen(auth), listen(provider)]);
+      const authUrl = await listen(auth);
+      const providerUrl = await listen(provider);
       // The browser stand-in: records the address instead of opening anything.
       session = await startEnv(fixture, {
         ...browserStandIn(fixture, opened),
@@ -91,16 +95,18 @@ networkTests(import.meta.url, () => {
       await eventually(async () => (await status()).includes("Not signed in"), "no Codex sign-in yet");
     });
 
-    after(async () => {
-      try { await session?.stop(); }
-      finally {
-        try {
-          await Promise.all([auth, provider].filter(Boolean).map((server) => new Promise<void>((done) => {
-            server.closeAllConnections();
-            server.close(() => done());
-          })));
-        } finally { await fixture.remove(); }
-      }
+    afterEach(async () => {
+      const failures: unknown[] = [];
+      try { await session?.stop(); } catch (error) { failures.push(error); }
+      const closed = await Promise.allSettled([auth, provider].filter(Boolean).map((server) => new Promise<void>((done, fail) => {
+        server.closeAllConnections();
+        if (!server.listening) return done();
+        server.close((error) => error ? fail(error) : done());
+      })));
+      for (const result of closed) if (result.status === "rejected") failures.push(result.reason);
+      try { await fixture.remove(); } catch (error) { failures.push(error); }
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) throw new AggregateError(failures, "account fixture cleanup failed");
     });
 
     // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-CANCEL
@@ -115,8 +121,7 @@ networkTests(import.meta.url, () => {
       assert.match(await status(), /Not signed in/);
     });
 
-    // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-PASTE
-    it("finishes a sign-in with the pasted redirect URL", async () => {
+    async function signInWithPaste() {
       const baseline = browserLog().length;
       await browser.$("button=Sign in with ChatGPT").click();
       await browser.$("#codex-redirect").waitForExist({ timeout: 15000 });
@@ -130,14 +135,15 @@ networkTests(import.meta.url, () => {
       await browser.$("button=Finish sign-in").click();
       await eventually(async () => (await status()).startsWith("Signed in"), "signed in");
       assert.match(await text(), /Signed in with Codex\./);
-    });
+    }
+
+    // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-PASTE
+    it("finishes a sign-in with the pasted redirect URL", signInWithPaste);
 
     // UX edges: E-SET-CODEX-RETURN
     it("finishes a sign-in when the browser returns to the app's loopback address", async () => {
-      // Start signed out, so only the return can make the status change.
-      await eventually(async () => (await status()).includes("Signed in"), "signed in by the paste");
-      await browser.$("button=Sign out of Codex").click();
-      await eventually(async () => /Not signed in/.test(await status()), "signed out");
+      // This case starts signed out; only its own browser return can change that.
+      assert.match(await status(), /Not signed in/);
       const baseline = browserLog().length;
       await browser.$("button=Sign in with ChatGPT").click();
       await browser.$("button=Cancel sign-in").waitForExist({ timeout: 15000 });
@@ -151,6 +157,7 @@ networkTests(import.meta.url, () => {
 
     // UX edges: E-SET-CODEX-LOGOUT
     it("signs out of Codex", async () => {
+      await signInWithPaste();
       await browser.$("button=Sign out of Codex").click();
       await eventually(async () => /Not signed in/.test(await status()), "signed out");
     });
