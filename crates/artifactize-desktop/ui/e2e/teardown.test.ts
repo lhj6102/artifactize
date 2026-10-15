@@ -77,6 +77,9 @@ async function eventually(check: () => boolean, what: string, ms = 10000) {
   assert.fail(`timed out: ${what}`);
 }
 
+// This is teardown of the declared Linux WebKitGTK/Xvfb harness, not a claim about
+// Windows/macOS automation. The gate never skips on Linux: missing Xvfb, procfs or
+// driver capabilities reject setup and remain failures through the holder's cleanup.
 describe("an interrupted test process", { skip: process.platform !== "linux" && "process groups and Xvfb are Linux" }, () => {
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     it(`leaves nothing running after ${signal}`, async () => {

@@ -1,9 +1,9 @@
 // J-GRAPH-CURRENT: the graph launch reads current declarations, not saved Run state.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { createGraph, type Fixture } from "./fixture.ts";
+import { createGraph, type Fixture, savedRuns } from "./fixture.ts";
 import { start, type Session } from "./driver.ts";
 import { press } from "./keys.ts";
 
@@ -13,6 +13,47 @@ describe("current declaration graph", () => {
   let browser: WebdriverIO.Browser;
   const structure = () => browser.$(".current pre").getText();
   const expanded = () => browser.execute(() => document.querySelector(".current details")?.hasAttribute("open") ?? false);
+
+  /** Refresh also resets the camera. Wait for a stable, hit-testable real pointer
+   * target before one WebDriver click, rather than clicking during that transition. */
+  async function clickArtifact(name: string) {
+    const selector = `.current .svelte-flow__node[data-id="a:${name}"]`;
+    await browser.waitUntil(() => browser.executeAsync<boolean, [string]>((selector, done) => {
+      const node = document.querySelector(selector);
+      if (!node) return done(false);
+      const before = node.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        const after = node.getBoundingClientRect();
+        const canvas = node.closest(".svelte-flow")?.getBoundingClientRect();
+        const hit = document.elementFromPoint(after.x + after.width / 2, after.y + after.height / 2);
+        done(node.isConnected && before.x === after.x && before.y === after.y && before.width === after.width && before.height === after.height &&
+          !!canvas && after.left >= canvas.left && after.right <= canvas.right && after.top >= canvas.top && after.bottom <= canvas.bottom &&
+          hit?.closest(".svelte-flow__node") === node);
+      });
+    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` });
+    await browser.$(selector).click();
+  }
+
+  /** Observe the actual fixture graph, not just its declarations-only caption. */
+  async function assertDeclarationsOnly() {
+    await browser.$('.current .svelte-flow__edge[data-id="a:release>a:ship"]').waitForExist({ timeout: 15000 });
+    const drawn = await browser.execute(() => ({
+      nodes: [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")].map((node) => ({
+        id: node.dataset.id,
+        label: node.getAttribute("aria-label"),
+        neutral: node.dataset.light === "waiting" && node.querySelector(".artifact")?.classList.contains("light-waiting"),
+      })).sort((a, b) => (a.id ?? "").localeCompare(b.id ?? "")),
+      edges: [...document.querySelectorAll<SVGElement>(".current .svelte-flow__edge")].map((edge) => ({
+        id: edge.dataset.id,
+        neutral: edge.dataset.light === "waiting" && edge.classList.contains("light-waiting"),
+      })),
+    }));
+    assert.deepEqual(drawn, {
+      nodes: ["docs", "release", "ship"].map((name) => ({ id: `a:${name}`, label: `${name}: current structure`, neutral: true })),
+      edges: [{ id: "a:release>a:ship", neutral: true }],
+    }, "the drawn declarations and relation are neutral, without Run verdict colors or status labels");
+    assert.deepEqual(savedRuns(fixture), [], "current graph does not create a saved Run, whether or not an empty database exists");
+  }
 
   beforeEach(async () => {
     fixture = createGraph();
@@ -28,8 +69,8 @@ describe("current declaration graph", () => {
     assert.match(text, /Current Artifact graph/);
     assert.match(text, /Declarations only · no Run verdicts/);
     assert.equal(await browser.$(".legend").getText(), "Current structure · arrows: input → consumer");
-    assert.equal(existsSync(join(fixture.state, "state.sqlite")), false, "no saved Run database was created");
-    await browser.$('.svelte-flow__node[data-id="a:release"]').click();
+    await assertDeclarationsOnly();
+    await clickArtifact("release");
     const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
     await evals.waitForExist({ timeout: 10000 });
     assert.match(await evals.getText(), /A person approves the release/);
@@ -84,12 +125,13 @@ describe("current declaration graph", () => {
       }
       await browser.$("button=Refresh").waitForEnabled({ timeout: 15000 });
       // Use the real node control after refresh; observation never installs focus.
-      await browser.$('.svelte-flow__node[data-id="a:docs"]').click();
+      await clickArtifact("docs");
       await browser.waitUntil(() => browser.execute((expected) =>
         document.querySelector('[role="listbox"][aria-label="Evals"]')?.textContent?.includes(expected) ?? false,
-      title), { timeout: 15000, timeoutMsg: "the refreshed docs node exposes its current eval title" });
+      title), { timeout: 15000, timeoutMsg: `the refreshed docs node exposes ${title}` });
       assert.match(await browser.$('[role="listbox"][aria-label="Evals"]').getText(), new RegExp(title));
       assert.match(await browser.execute(() => document.body.innerText), /Declarations only · no Run verdicts/);
+      await assertDeclarationsOnly();
     }
   });
 });

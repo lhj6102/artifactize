@@ -151,6 +151,19 @@ export function requests(fixture: Fixture): Saved[] {
   return JSON.parse(result.stdout) as Saved[];
 }
 
+/** All saved Runs through the public CLI, including non-default statuses and old entries.
+ * An empty state database is allowed: absence of Runs is a semantic query, not a file test. */
+export function savedRuns(fixture: Fixture): { id: string }[] {
+  const result = spawnSync(
+    cli(),
+    ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "list", "--all", "--limit", "4294967295", "--json"],
+    { encoding: "utf8", env: environment(fixture) },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(result.stderr);
+  return JSON.parse(result.stdout) as { id: string }[];
+}
+
 /** A killed fixture owner cannot run its exit hook; its teardown explicitly settles Runs. */
 export function cancelRuns(fixture: Fixture): void {
   settleRuns(cli(), fixture.repo, fixture.state);

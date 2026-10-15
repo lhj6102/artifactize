@@ -18,6 +18,9 @@ function failedCleanup(error: unknown): boolean {
   return error instanceof Error && (/cannot list fixture Runs|bad option/.test(error.message) || failedCleanup(error.cause));
 }
 
+// These cases exercise Linux procfs birth identities and POSIX fixture ownership, not
+// other OSes' worker implementations. On the supported Linux harness this gate is false:
+// missing procfs, permissions or process capabilities still throw and fail the case.
 describe("Linux durable worker exit", { skip: process.platform !== "linux" && "WebKitGTK's native fixture layer observes procfs birth identities" }, () => {
   it("distinguishes an actual worker, another birth identity and an exited worker", async () => {
     const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-run-exit-"));

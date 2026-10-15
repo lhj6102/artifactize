@@ -90,7 +90,10 @@ export async function startAgent(): Promise<AgentSession> {
         return reply.content.map((part) => part.text).join("\n");
       },
       async observeWork() {
-        const candidates = readdirSync(directory).filter((name) => name.startsWith("candidate-"));
+        // A lease receipt is a sibling candidate-*.lease.json file, not a snapshot.
+        const candidates = readdirSync(directory, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory() && entry.name.startsWith("candidate-"))
+          .map((entry) => entry.name);
         if (candidates.length !== 1) throw new Error("Agent session has no unambiguous owned executable snapshot");
         const candidate = join(directory, candidates[0]);
         const manifest = JSON.parse(readFileSync(join(candidate, "candidate.json"), "utf8")) as { cli: string; app: string };
