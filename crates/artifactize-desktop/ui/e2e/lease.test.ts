@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { it } from "node:test";
 import { cleanup } from "./build.ts";
+import { joinLease } from "./lease-receipt.ts";
 import { Owned, withCleanup } from "./owned.ts";
 
 /** This bounds an actual detached cleanup report, not an application transition. */
@@ -61,6 +62,7 @@ process.stdin.once("data", () => process.kill(process.pid, "SIGKILL"));`;
     assert.deepEqual(await outcome(diagnostics), { code: 1, signal: null, disarmed: false });
     assert.match(readFileSync(join(diagnostics, "stderr.log"), "utf8"), /ENOTDIR/);
     assert.ok(existsSync(root), "failed detached cleanup retains its inputs");
+    await assert.rejects(joinLease(root), /detached candidate cleanup failed/);
     rmSync(join(root, "tmp"));
     mkdirSync(join(root, "tmp"));
     await cleanup(root);
@@ -109,6 +111,7 @@ await offerCandidate({ root, cli: root + "/cli", app: root + "/app", manifest: r
     assert.match(readFileSync(join(diagnostics, "stdout.log"), "utf8"), /lease stdout retained/);
     assert.match(readFileSync(join(diagnostics, "stderr.log"), "utf8"), /lease stderr retained/);
     assert.ok(existsSync(root), "unexpected lease failure is not treated as cleanup acknowledgement");
+    await assert.rejects(joinLease(root), /detached candidate cleanup failed/);
   }, async () => {
     owner.child.stdin!.end();
     await owner.stop();

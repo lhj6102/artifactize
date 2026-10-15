@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acknowledge } from "./handoff.ts";
+import { CLEANUP_TIMEOUT, diagnosticsDirectory, forgetLease, joinLease, RECEIPT_SUFFIX, recordLease } from "./lease-receipt.ts";
 import { groupAlive, Owned, registeredGroups } from "./owned.ts";
 import { removeFixture } from "./runs.ts";
 
@@ -13,8 +14,6 @@ export const workspace = resolve(import.meta.dirname, "../../../..");
 const ui = resolve(import.meta.dirname, "..");
 /** A cold GTK/Rust build can take minutes on CI; this bounds work, not a UI transition. */
 const BUILD_TIMEOUT = 15 * 60 * 1000;
-/** Watchdogs get time to end nested driver groups before their executable files are removed. */
-const CLEANUP_TIMEOUT = 20000;
 
 export type Candidate = { root: string; cli: string; app: string; manifest: string };
 const leases = new Map<string, { child: ChildProcess; closed: Promise<void>; disarm: () => void; check: () => void }>();
@@ -22,9 +21,7 @@ const leases = new Map<string, { child: ChildProcess; closed: Promise<void>; dis
 /** A pipe, unlike an exit hook, closes on SIGKILL too. Files, unlike parent-owned pipes,
  * retain the fallback's diagnostics and result even when its original owner is gone. */
 function lease(root: string) {
-  const output = process.env.ARTIFACTIZE_OUTPUT_DIR ?? tmpdir();
-  mkdirSync(output, { recursive: true });
-  const diagnostics = mkdtempSync(join(output, "desktop-e2e-cleanup-"));
+  const diagnostics = diagnosticsDirectory("desktop-e2e-cleanup-");
   console.error(`Desktop E2E cleanup diagnostics for ${root}: ${diagnostics}`);
   const stdout = openSync(join(diagnostics, "stdout.log"), "a");
   let child: ChildProcess;
@@ -66,6 +63,16 @@ exit "$result"`, process.execPath, fileURLToPath(new URL("./build.ts", import.me
     check: () => { if (failure) throw failure; },
     disarm: () => { disarmed = true; child.ref(); child.kill("SIGKILL"); },
   });
+  try {
+    if (!child.pid) throw new Error("candidate cleanup lease did not launch");
+    recordLease(root, child.pid, diagnostics);
+  } catch (error) {
+    // A receipt is acquired before any work is admitted. Failed registration ends
+    // the still-idle fallback; its real close and setup error remain owned below.
+    failure = error instanceof Error ? error : new Error(String(error));
+    child.ref();
+    child.kill("SIGKILL");
+  }
 }
 
 /** A failed fallback closes admission and fails active work, not just a later exit hook. */
@@ -82,6 +89,7 @@ async function disarm(root: string): Promise<void> {
   lease.disarm();
   await lease.closed;
   lease.child.stdin?.destroy();
+  forgetLease(root);
   leases.delete(root);
 }
 
@@ -118,9 +126,7 @@ export function resourceRoot(): string {
 export async function runSuite(root: string, tests: string[], env: NodeJS.ProcessEnv): Promise<void> {
   // The runtime's declared output survives candidate cleanup. Standalone invocations
   // get a distinct result directory too, never a log below the soon-removed build.
-  const output = env.ARTIFACTIZE_OUTPUT_DIR ?? tmpdir();
-  mkdirSync(output, { recursive: true });
-  const diagnostics = mkdtempSync(join(output, "desktop-e2e-results-"));
+  const diagnostics = diagnosticsDirectory("desktop-e2e-results-", env);
   console.error(`Full desktop E2E diagnostics: ${diagnostics}`);
   await execute(root, process.execPath, ["--test", "--test-concurrency=1",
     "--test-reporter=spec", `--test-reporter-destination=${join(diagnostics, "complete.log")}`,
@@ -159,11 +165,14 @@ async function execute(root: string, program: string, args: string[], env: NodeJ
       owned.child.once("error", fail);
       owned.child.once("close", (code, signal) => done({ code, signal }));
     }));
-    if (cancelled || result.code !== 0) throw new Error(`${program} ${args.join(" ")} ${timedOut ? "timed out" : cancelled ? "was cancelled" : `exited ${result.code ?? result.signal}`}`);
+    if (!cancelled && result.code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${result.code ?? result.signal}`);
   } catch (error) { failures.push(error); }
   clearTimeout(timeout);
   try { await owned.stop(); } catch (error) { failures.push(error); }
+  try { leases.get(root)?.check(); } catch (error) { failures.push(error); }
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.off(signal, stop);
+  // Cancellation remains authoritative while shutdown joins/drains after a zero exit.
+  if (cancelled) failures.push(new Error(`${program} ${args.join(" ")} ${timedOut ? "timed out" : "was cancelled"}`));
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, "owned execution and cleanup failed");
   return output;
@@ -233,6 +242,7 @@ export async function snapshotCandidate(directory: string): Promise<Candidate> {
   writeFileSync(join(root, "groups"), "");
   lease(root);
   try {
+    leases.get(root)?.check();
     const cli = join(root, "artifactize");
     const app = join(root, "desktop");
     copyFileSync(source.cli, cli);
@@ -249,8 +259,15 @@ export async function snapshotCandidate(directory: string): Promise<Candidate> {
   }
 }
 
-/** Remove owned inputs only after all registered build/test/driver groups have stopped. */
+/** External owners join a detached fallback before touching its inputs, even if its
+ * candidate directory disappeared before the final report and process termination. */
 export async function cleanup(root: string): Promise<void> {
+  if (!leases.has(root)) await joinLease(root);
+  await cleanupInputs(root);
+}
+
+/** Remove owned inputs only after all registered build/test/driver groups have stopped. */
+async function cleanupInputs(root: string): Promise<void> {
   const deadline = Date.now() + CLEANUP_TIMEOUT;
   while (existsSync(join(root, "groups"))) {
     const alive = registeredGroups(root).filter(({ group, start_time }) => groupAlive(group, start_time));
@@ -284,7 +301,16 @@ export async function cleanup(root: string): Promise<void> {
 
 async function childrenGone(directory: string, prefix: string): Promise<void> {
   const deadline = Date.now() + CLEANUP_TIMEOUT;
-  while (existsSync(directory) && readdirSync(directory).some((name) => name.startsWith(prefix))) {
+  while (existsSync(directory)) {
+    const children = readdirSync(directory).filter((name) => name.startsWith(prefix));
+    if (children.length === 0) return;
+    const failures: unknown[] = [];
+    for (const name of children.filter((name) => name.endsWith(RECEIPT_SUFFIX))) {
+      try { await joinLease(join(directory, name.slice(0, -RECEIPT_SUFFIX.length))); }
+      catch (error) { failures.push(error); }
+    }
+    if (failures.length) throw new AggregateError(failures, `child cleanup failed; preserve ${directory}`);
+    if (!existsSync(directory) || !readdirSync(directory).some((name) => name.startsWith(prefix))) return;
     if (Date.now() >= deadline) throw new Error(`owned child inputs did not finish cleanup: ${directory}`);
     await new Promise((done) => setTimeout(done, 50));
   }
@@ -310,5 +336,6 @@ export async function cargoGate(mode: "clippy" | "test"): Promise<void> {
   await cleanup(root);
 }
 
-// The owner's pipe watchdog uses the same cleanup boundary after an uncatchable SIGKILL.
-if (import.meta.main && process.argv[2] === "cleanup") await cleanup(process.argv[3]);
+// The detached shell itself owns this invocation; it must not wait for its own receipt.
+// An enclosing owner instead uses cleanup()/snapshotsGone() to join the shell's final exit.
+if (import.meta.main && process.argv[2] === "cleanup") await cleanupInputs(process.argv[3]);

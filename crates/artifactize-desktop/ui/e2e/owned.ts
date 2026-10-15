@@ -54,11 +54,16 @@ function groupBirth(group: number): number | null {
   }
 }
 
-/** Register a native session's groups on its fixture, before the first observation. */
-export function registerGroup(root: string, group: number): void {
+/** Capture the acquired lifetime before publishing it to another cleanup owner. */
+export function groupIdentity(group: number): Group {
   const start_time = groupBirth(group);
   if (start_time === null) throw new Error(`owned process group ${group} exited before registration`);
-  appendFileSync(join(root, "native-groups"), JSON.stringify({ group, start_time }) + "\n");
+  return { group, start_time };
+}
+
+/** Register a native session's groups on its fixture, before the first observation. */
+export function registerGroup(root: string, group: number): void {
+  appendFileSync(join(root, "native-groups"), JSON.stringify(groupIdentity(group)) + "\n");
 }
 
 function signal(group: number, name: NodeJS.Signals) {
