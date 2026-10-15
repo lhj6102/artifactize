@@ -621,6 +621,24 @@ pub enum ArtifactStatus {
     Unreviewed,
 }
 
+impl From<ArtifactStatus> for crate::types::ArtifactValidationStatus {
+    fn from(status: ArtifactStatus) -> Self {
+        match status {
+            ArtifactStatus::Deferred => Self::Deferred,
+            ArtifactStatus::Provisional => Self::Provisional,
+            ArtifactStatus::Basis => Self::Basis,
+            ArtifactStatus::Green => Self::Green,
+            ArtifactStatus::Incomplete => Self::Incomplete,
+            ArtifactStatus::Error => Self::Error,
+            ArtifactStatus::Red => Self::Red,
+            ArtifactStatus::Blocked => Self::Blocked,
+            ArtifactStatus::Wait => Self::Wait,
+            ArtifactStatus::Stale => Self::Stale,
+            ArtifactStatus::Unreviewed => Self::Unreviewed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactEvaluation {
     pub status: ArtifactStatus,

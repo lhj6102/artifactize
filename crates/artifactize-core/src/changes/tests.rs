@@ -225,6 +225,35 @@ async fn two_readers_observe_short_writer_and_hub_owner_exit_without_db_change()
     second.close().await.unwrap();
 }
 #[tokio::test]
+async fn subscribed_fixture_joins_shutdown_before_removing_namespace_on_success_and_unwind() {
+    use futures_util::FutureExt;
+    for unwind in [false, true] {
+        let root = crate::test_os::tempdir();
+        let database = root.path().join(crate::store::DATABASE);
+        rusqlite::Connection::open(&database).unwrap();
+        let namespace = Endpoint::new(root.path()).unwrap().directory().to_owned();
+        let result = std::panic::AssertUnwindSafe(super::test_support::subscribed(
+            root.path(),
+            move |subscription| {
+                Box::pin(async move {
+                    assert_eq!(next(subscription).await, Change::Resync);
+                    assert!(!unwind, "fixture assertion unwind");
+                })
+            },
+        ))
+        .catch_unwind()
+        .await;
+        assert_eq!(result.is_err(), unwind);
+        assert!(crate::test_os::database_released(&database).unwrap());
+        assert!(
+            !namespace.exists(),
+            "the external IPC namespace was removed"
+        );
+        root.close().unwrap();
+    }
+}
+
+#[tokio::test]
 async fn closed_subscription_releases_database_and_files_before_returning() {
     let state = temporary_state();
     let database = state.path().join(crate::store::DATABASE);
@@ -239,16 +268,9 @@ async fn closed_subscription_releases_database_and_files_before_returning() {
         .expect("subscription shutdown completes")
         .unwrap();
 
-    // A detached SQLite reader can still retain WAL locks, even where unlinking is allowed.
-    // Do not await again between completed shutdown and reclaiming the actual state files.
-    let replacement = rusqlite::Connection::open(&database).unwrap();
-    replacement.busy_timeout(Duration::ZERO).unwrap();
-    replacement
-        .execute_batch(
-            "PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; INSERT INTO fixture VALUES(1); COMMIT;",
-        )
-        .unwrap();
-    replacement.close().unwrap();
+    // Even an idle read-only handle must be gone, without changing SQLite or its names.
+    // Do not await again between completed shutdown and observing/reclaiming the files.
+    assert!(crate::test_os::database_released(&database).unwrap());
     std::fs::remove_dir_all(state.path()).unwrap();
     assert!(
         !state.path().exists(),

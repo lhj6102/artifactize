@@ -42,8 +42,15 @@ impl Fixture {
         let result = registry
             .call("inspect_a", args, &self.output, CancellationToken::new())
             .await;
-        assert_eq!(fs::read_dir(&self.output).unwrap().count(), 1);
+        assert_eq!(self.output_entries(), [self.output.join("retained")]);
         result
+    }
+
+    fn output_entries(&self) -> Vec<PathBuf> {
+        fs::read_dir(&self.output)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect()
     }
 }
 
@@ -653,7 +660,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
         )
         .contains("cancelled")
     );
-    assert_eq!(fs::read_dir(&fixture.output).unwrap().count(), 1);
+    assert_eq!(fixture.output_entries(), [fixture.output.join("retained")]);
 }
 
 #[tokio::test]
@@ -736,7 +743,7 @@ async fn dropping_call_cleans_process_before_removing_directories() {
     };
     drop(call);
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        while fs::read_dir(&fixture.output).unwrap().count() != 1 {
+        while fixture.output_entries() != [fixture.output.join("retained")] {
             tokio::task::yield_now().await;
         }
     })

@@ -2,6 +2,8 @@
 //! The first subscriber temporarily hosts a hub; there is no daemon and writers never elect one.
 mod probe;
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
 mod tests;
 mod transport;
 
@@ -204,6 +206,9 @@ struct Publishing {
     pending: Mutex<Outbox>,
     wake: Notify,
     drained: Notify,
+    // Fixture barriers must distinguish an actual hub ACK from best-effort timeout.
+    #[cfg(test)]
+    delivery_error: Mutex<Option<String>>,
 }
 /// Cloneable synchronous producer, also safe to invoke on the SQLite worker thread.
 #[derive(Clone, Default)]
@@ -231,6 +236,8 @@ impl Publisher {
             pending: Mutex::new(Outbox::default()),
             wake: Notify::new(),
             drained: Notify::new(),
+            #[cfg(test)]
+            delivery_error: Mutex::default(),
         });
         publishers.insert(
             publisher.endpoint.identity.clone(),
@@ -365,7 +372,11 @@ async fn publish(publisher: Arc<Publishing>) {
             }
             Ok::<_, std::io::Error>(())
         };
-        let _ = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
+        let _delivery = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
+        #[cfg(test)]
+        if !matches!(&_delivery, Ok(Ok(()))) {
+            *publisher.delivery_error.lock().unwrap() = Some(format!("{_delivery:?}"));
+        }
         publisher.pending.lock().unwrap().delivered = target;
         publisher.drained.notify_one();
     }

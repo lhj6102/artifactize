@@ -109,8 +109,6 @@ fn selection_duration_and_verdict_are_parsed_at_the_command_boundary() {
         vec!["verify", "--evals", "app/check,invalid"],
         vec!["verify", "--artifacts", "app,invalid/name"],
         vec!["config", "graph", "app/check"],
-        vec!["verify", "--all", "--timeout-ms", "0"],
-        vec!["verify", "--all", "--timeout-ms", "2147483648"],
         vec!["request", "submit", "r1", "--verdict", "green"],
     ] {
         assert!(Cli::try_parse_from(std::iter::once("artifactize").chain(args)).is_err());
@@ -131,6 +129,36 @@ fn selection_duration_and_verdict_are_parsed_at_the_command_boundary() {
         panic!("submit")
     };
     assert_eq!(verdict, crate::runtime::Verdict::Green);
+}
+
+#[test]
+fn run_wait_duration_validates_milliseconds_on_the_command_that_accepts_it() {
+    let parse = |millis| {
+        Cli::try_parse_from([
+            "artifactize",
+            "run",
+            "show",
+            "run-valid",
+            "--wait",
+            "--timeout-ms",
+            millis,
+        ])
+    };
+    for millis in ["0", "2147483648"] {
+        assert_eq!(
+            parse(millis).unwrap_err().kind(),
+            ErrorKind::ValueValidation
+        );
+    }
+    for (millis, expected) in [("1", 1), ("2147483647", 2_147_483_647)] {
+        let Some(Command::Run {
+            command: RunCommand::Show { timeout_ms, .. },
+        }) = parse(millis).unwrap().command
+        else {
+            panic!("run show command");
+        };
+        assert_eq!(timeout_ms, Some(std::time::Duration::from_millis(expected)));
+    }
 }
 
 #[test]

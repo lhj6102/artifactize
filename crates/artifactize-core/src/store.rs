@@ -25,7 +25,10 @@ pub(crate) mod migrations;
 pub(crate) mod run_control;
 pub use lifecycle::{ExecutionState, GreenResult, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
-pub use snapshots::{ArtifactValidation, Blocker, ChildIdentity, HumanDefinition, Validation};
+pub use snapshots::{
+    ArtifactValidation, Blocker, ChildIdentity, EvalValidation, HumanDefinition, Validation,
+    ValidationSnapshot,
+};
 mod wait_timeout;
 pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};

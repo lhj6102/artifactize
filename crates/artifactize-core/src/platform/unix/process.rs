@@ -524,71 +524,9 @@ mod tests {
     use std::{process::Stdio, time::Duration};
 
     use process_wrap::tokio::ProcessGroup;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-
-    /// Owns the checkpoint before the gate's PID write. Closing it on a failed
-    /// assertion releases pre_exec with cancellation, so spawn still reaps the child.
-    struct BeforeIdentity(tokio::net::UnixStream);
-
-    impl BeforeIdentity {
-        fn hold(command: &mut Command) -> Self {
-            let (parent, child) = UnixStream::pair().unwrap();
-            parent.set_nonblocking(true).unwrap();
-            let parent_fd = parent.as_raw_fd();
-            // SAFETY: the forked child uses only async-signal-safe syscalls and
-            // stack data. Both socket endpoints stay alive until spawn begins;
-            // closing the inherited parent endpoint makes fixture Drop release EOF.
-            unsafe {
-                command.pre_exec(move || {
-                    libc::close(parent_fd);
-                    let fd = child.as_raw_fd();
-                    let pid = (libc::getpid() as u32).to_ne_bytes();
-                    let mut offset = 0;
-                    while offset < pid.len() {
-                        let written =
-                            libc::write(fd, pid[offset..].as_ptr().cast(), pid.len() - offset);
-                        if written < 0 {
-                            let error = io::Error::last_os_error();
-                            if error.raw_os_error() == Some(libc::EINTR) {
-                                continue;
-                            }
-                            return Err(error);
-                        }
-                        if written == 0 {
-                            return Err(io::Error::from_raw_os_error(libc::EPIPE));
-                        }
-                        offset += written as usize;
-                    }
-                    let mut release = 0_u8;
-                    loop {
-                        match libc::read(fd, (&mut release as *mut u8).cast(), 1) {
-                            1 => return Ok(()),
-                            -1 => {
-                                let error = io::Error::last_os_error();
-                                if error.raw_os_error() != Some(libc::EINTR) {
-                                    return Err(error);
-                                }
-                            }
-                            _ => return Err(io::Error::from_raw_os_error(libc::ECANCELED)),
-                        }
-                    }
-                });
-            }
-            Self(tokio::net::UnixStream::from_std(parent).unwrap())
-        }
-
-        async fn pid(&mut self) -> u32 {
-            let mut pid = [0; 4];
-            self.0.read_exact(&mut pid).await.unwrap();
-            u32::from_ne_bytes(pid)
-        }
-
-        async fn release(&mut self) {
-            self.0.write_all(&[1]).await.unwrap();
-        }
-    }
+    use crate::test_os::BeforeIdentity;
 
     // Darwin killpg excludes zombies and returns EPERM for a zombie-only group.
     // Other Unix kernels already accept this signal; their cleanup tests cover it.

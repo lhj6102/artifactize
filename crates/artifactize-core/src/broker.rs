@@ -256,6 +256,21 @@ impl Scheduler<'_, '_> {
     async fn run(&mut self) -> Result<BTreeMap<crate::config::EvalId, Evidence>, String> {
         // Registration precedes any baseline/scheduling read; racing commits stay dirty.
         let mut changes = crate::changes::Subscription::new(&self.run.state_dir).await;
+        let result = self.subscribed(&mut changes).await;
+        let closed = changes.close().await;
+        match (result, closed) {
+            (Ok(evidence), Ok(())) => Ok(evidence),
+            (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+            (Err(error), Err(close)) => {
+                Err(format!("{error}; closing scheduler subscription: {close}"))
+            }
+        }
+    }
+
+    async fn subscribed(
+        &mut self,
+        changes: &mut crate::changes::Subscription,
+    ) -> Result<BTreeMap<crate::config::EvalId, Evidence>, String> {
         let mut reconcile = tokio::time::interval(OWNER_RECONCILE);
         reconcile.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         reconcile.tick().await;

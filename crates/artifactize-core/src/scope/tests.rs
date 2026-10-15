@@ -301,19 +301,15 @@ fn mount_validation_rejects_unknown_ambiguous_and_physical_aliases() {
                 .to_string()
                 .contains("physical entry")
         );
+        fs::remove_file(fixture.0.join("review/input")).unwrap();
     }
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        let _ = fs::remove_file(fixture.0.join("review/input"));
-        crate::test_os::junction(&fixture.0, &fixture.0.join("review/input"));
-        assert!(
-            read_workspace_config(&fixture.0)
-                .unwrap_err()
-                .to_string()
-                .contains("physical entry")
-        );
-    }
+    crate::test_os::link_dir(&fixture.0, &fixture.0.join("review/input"));
+    assert!(
+        read_workspace_config(&fixture.0)
+            .unwrap_err()
+            .to_string()
+            .contains("physical entry")
+    );
 }
 
 #[test]
@@ -401,17 +397,13 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
             });
         }
     }
-    // Junctions redirect a path as directory symlinks do, and need no privilege.
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        crate::test_os::junction(
-            &fixture.0.join("owner/directory"),
-            &fixture.0.join("owner/joined"),
-        );
-        crate::test_os::junction(&outside.0, &fixture.0.join("owner/escape"));
-        links.extend(["joined/file", "escape/secret"]);
-    }
+    // Native directory links need no special privilege, including Windows junctions.
+    crate::test_os::link_dir(
+        &fixture.0.join("owner/directory"),
+        &fixture.0.join("owner/joined"),
+    );
+    crate::test_os::link_dir(&outside.0, &fixture.0.join("owner/escape"));
+    links.extend(["joined/file", "escape/secret"]);
     let config = fixture.config();
     let scope = artifact_scope(&config, &[&"owner".parse().unwrap()]).unwrap();
     for path in links {
@@ -448,23 +440,17 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
                 .contains("symlinks")
         );
     }
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        // A directory symlink is removed as a directory on Windows; without one (lacking
-        // the privilege to create it), there is nothing at "owner" yet to remove.
-        if symlinked {
-            crate::test_os::remove_link_dir(&fixture.0.join("owner"));
-        }
-        crate::test_os::junction(&fixture.0.join("old-owner"), &fixture.0.join("owner"));
-        assert!(
-            scope
-                .resolve_input(&config.root, &"owner".parse().unwrap(), "directory/file")
-                .unwrap_err()
-                .to_string()
-                .contains("symlinks")
-        );
+    if symlinked {
+        crate::test_os::remove_link_dir(&fixture.0.join("owner"));
     }
+    crate::test_os::link_dir(&fixture.0.join("old-owner"), &fixture.0.join("owner"));
+    assert!(
+        scope
+            .resolve_input(&config.root, &"owner".parse().unwrap(), "directory/file")
+            .unwrap_err()
+            .to_string()
+            .contains("symlinks")
+    );
 }
 
 #[test]
@@ -502,7 +488,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
             eval_id: "review/check".parse().unwrap(),
             index: 0,
             name: "input".parse().unwrap(),
-            path: "nested/file".into()
+            path: "nested/file".parse().unwrap()
         },
     }));
     let scope = eval_scope(&config, eval).unwrap();

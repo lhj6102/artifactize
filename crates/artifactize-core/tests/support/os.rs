@@ -4,6 +4,8 @@
 //! described with each helper.
 #![expect(dead_code, reason = "each test binary uses a different part")]
 
+#[path = "os/checkpoints.rs"]
+mod checkpoints;
 #[path = "os/files.rs"]
 mod files;
 
@@ -21,6 +23,17 @@ use std::fs;
 use std::{path::Path, process::Command};
 
 pub type OwnedExecutable = worker::Executable;
+
+#[cfg(unix)]
+pub type BeforeIdentity = checkpoints::BeforeIdentity;
+
+#[cfg(windows)]
+pub fn process_in_job(
+    child: &tokio::process::Child,
+    job: &std::os::windows::io::OwnedHandle,
+) -> bool {
+    checkpoints::process_in_job(child, job)
+}
 
 /// The test process owns an immutable copy of Cargo's declared CLI until its workers end.
 /// Cargo may replace its published binary during concurrent library fixture builds.
@@ -926,10 +939,27 @@ pub fn wait_for_zombie(pid: u32) {
     assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
 }
 
+/// Construct a FIFO where that native file kind exists; Windows has no FIFO pathname.
+pub fn fifo_if_supported(path: &Path) -> Option<()> {
+    #[cfg(unix)]
+    {
+        fifo(path);
+        Some(())
+    }
+    #[cfg(windows)]
+    {
+        let _ = path;
+        None
+    }
+}
+
 /// A pipe named like the one Git Bash's mintty hands a program: the writer and the reader,
 /// which `is_terminal` takes for a terminal although it has no console.
 #[cfg(windows)]
 pub fn mintty_pipe() -> (std::fs::File, std::fs::File) {
+    // Small byte-stream buffers are sufficient: this fixture observes pipe naming,
+    // not throughput, and never needs to allocate an unbounded console transcript.
+    const PIPE_BUFFER_BYTES: u32 = 4096;
     use std::{os::windows::io::FromRawHandle, ptr};
     use windows_sys::Win32::{
         Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE},
@@ -947,8 +977,8 @@ pub fn mintty_pipe() -> (std::fs::File, std::fs::File) {
             PIPE_ACCESS_OUTBOUND,
             PIPE_TYPE_BYTE | PIPE_WAIT,
             1,
-            4096,
-            4096,
+            PIPE_BUFFER_BYTES,
+            PIPE_BUFFER_BYTES,
             0,
             ptr::null(),
         );
@@ -1409,7 +1439,9 @@ impl PseudoTerminal {
         terminal.reader = Some(std::thread::spawn(move || {
             use std::io::Read;
             let mut output = output;
-            let mut buffer = [0; 4096];
+            // Stream terminal output in small chunks; transcript size is not a stack allocation.
+            const READ_CHUNK_BYTES: usize = 4096;
+            let mut buffer = [0; READ_CHUNK_BYTES];
             while let Ok(read @ 1..) = output.read(&mut buffer) {
                 if sender.send(buffer[..read].to_vec()).is_err() {
                     break;

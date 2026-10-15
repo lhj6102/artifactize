@@ -3,7 +3,6 @@ use std::{fs, path::PathBuf};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use artifactize_tools::builtin::{READ_BYTES, RESULT_BYTES, SEARCH_FILE_BYTES};
 use tokio_util::sync::CancellationToken;
 
 use super::image;
@@ -12,6 +11,13 @@ use crate::{
     test_os::{symlink_dir, symlink_file},
     tools::{Content, Registry, ToolResult},
 };
+
+// Public tool limits, stated independently of the implementation so changing a
+// production bound cannot silently move the regression fixtures with it.
+const READ_BYTES: usize = 64 * 1024;
+const RESULT_BYTES: usize = 512 * 1024;
+const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
+const IMAGE_BYTES: usize = 4 * 1024 * 1024;
 
 struct Fixture {
     directory: TempDir,
@@ -143,7 +149,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
         );
     }
     let mut bytes = image::tests::fixtures()[1].1.clone();
-    bytes.resize(image::IMAGE_LIMIT, 0);
+    bytes.resize(IMAGE_BYTES, 0);
     fixture.write("a/large", &bytes);
     assert!(
         !fixture

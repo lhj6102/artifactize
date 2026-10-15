@@ -101,7 +101,7 @@ pub enum Edge {
         eval_id: EvalId,
         index: usize,
         name: crate::config::ReferenceName,
-        path: String,
+        path: crate::scope::LogicalTarget,
     },
 }
 

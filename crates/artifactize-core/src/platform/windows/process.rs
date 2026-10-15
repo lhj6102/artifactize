@@ -466,25 +466,16 @@ mod tests {
 
     #[tokio::test]
     async fn detached_launch_probe() {
-        use windows_sys::Win32::System::JobObjects::IsProcessInJob;
-
         if std::env::var_os("ARTIFACTIZE_DETACHED_PROBE").is_none() {
             return;
         }
         let job = crate::test_os::windows_job_without_breakaway();
         let command = crate::test_os::stdin_waiter();
         let mut child = spawn_detached(command).unwrap();
-        let mut in_job = 0;
-        // SAFETY: both handles are open and the out pointer is valid.
-        let queried = unsafe {
-            IsProcessInJob(
-                child.raw_handle().unwrap(),
-                job.as_raw_handle(),
-                &mut in_job,
-            )
-        };
-        assert_ne!(queried, 0);
-        assert_ne!(in_job, 0, "the fallback starts the handoff inside the job");
+        assert!(
+            crate::test_os::process_in_job(&child, &job),
+            "the fallback starts the handoff inside the job"
+        );
         child.kill().await.unwrap();
 
         // A Run worker uses the same restricted Job, but with owner-only cwd and stderr

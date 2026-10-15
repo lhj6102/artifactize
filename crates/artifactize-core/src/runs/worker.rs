@@ -10,8 +10,8 @@ use tokio_util::sync::CancellationToken;
 const ADMISSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> {
-    let mut changes = crate::changes::Subscription::new(&context.state).await;
     let identity = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
+    let mut changes = crate::changes::Subscription::new(&context.state).await;
     let admitted = async {
         loop {
             let run = store::read_run(&context.state, id).await?.run;
@@ -43,9 +43,18 @@ async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> 
             }
         }
     };
-    tokio::time::timeout(ADMISSION_TIMEOUT, admitted)
+    let result = tokio::time::timeout(ADMISSION_TIMEOUT, admitted)
         .await
-        .map_err(|_| "Run admission expired.".to_owned())?
+        .map_err(|_| "Run admission expired.".to_owned())
+        .and_then(std::convert::identity);
+    let closed = changes.close().await;
+    match (result, closed) {
+        (Ok(run), Ok(())) => Ok(run),
+        (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(close)) => {
+            Err(format!("{error}; closing admission subscription: {close}"))
+        }
+    }
 }
 
 /// A separate artifactize supervisor settles an executor crash even with no observers.
@@ -89,6 +98,21 @@ pub(crate) async fn supervise(context: &Context, id: &RunId) -> Result<(), Strin
 pub(crate) async fn execute(context: &Context, id: &RunId) -> Result<(), String> {
     let run = admission(context, id).await?;
     let mut changes = crate::changes::Subscription::new(&context.state).await;
+    let result = execute_admitted(context, id, run, &mut changes).await;
+    let closed = changes.close().await;
+    match (result, closed) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+        (Err(error), Err(close)) => Err(format!("{error}; closing worker subscription: {close}")),
+    }
+}
+
+async fn execute_admitted(
+    context: &Context,
+    id: &RunId,
+    run: store::Run,
+    changes: &mut crate::changes::Subscription,
+) -> Result<(), String> {
     let receipts = Receipts::open(&context.state, &context.repo).await?;
     let cancellation = CancellationToken::new();
     if run

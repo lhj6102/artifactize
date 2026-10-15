@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 mod support;
 
+// A stalled fixture fails within this watchdog; ordering and expiry use handshakes or paused time.
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn command(program: &str, args: &[&str]) -> Command {

@@ -270,12 +270,8 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
     assert_eq!(read_selection_file(directory.path()).unwrap_err(), error);
     // The null device is no regular file on any system.
     assert!(read_selection_file(crate::test_os::null_device()).is_err());
-    // Only Unix has FIFOs.
-    // Unix-only special-file or filesystem permission behavior.
-    #[cfg(unix)]
-    {
-        let fifo = directory.path().join("fifo");
-        crate::test_os::fifo(&fifo);
+    let fifo = directory.path().join("fifo");
+    if crate::test_os::fifo_if_supported(&fifo).is_some() {
         assert_eq!(read_selection_file(&fifo).unwrap_err(), error);
     }
     assert!(read_selection_file(&directory.path().join("missing")).is_err());

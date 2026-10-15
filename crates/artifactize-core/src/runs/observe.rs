@@ -201,11 +201,19 @@ pub async fn wait(
     };
     // Completion, deadline and cancellation all release this observer before returning.
     // Otherwise CLI runtime shutdown can interrupt the detached watch's SQLite cleanup.
-    if let Some(changes) = subscription {
-        changes.close().await?;
+    let closed = match subscription {
+        Some(changes) => changes.close().await,
+        None => Ok(()),
+    };
+    match (result, closed) {
+        (Ok(()), Ok(())) => {
+            last.ok_or_else(|| "State unavailable within the observation bound.".into())
+        }
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+        (Err(error), Err(close)) => Err(format!(
+            "{error}; closing observation subscription: {close}"
+        )),
     }
-    result?;
-    last.ok_or_else(|| "State unavailable within the observation bound.".into())
 }
 
 #[cfg(test)]

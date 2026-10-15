@@ -247,71 +247,105 @@ fn first_header_write_failure_never_promotes_reference_and_later_failure_retains
 
 #[tokio::test]
 async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notify() {
-    use crate::changes::{Change, Subscription};
+    use crate::changes::Change;
+    use futures_util::FutureExt;
+    // A stalled notification is a fixture failure, not an absence/ordering oracle.
+    const NOTIFICATION_BOUND: Duration = Duration::from_secs(4);
     let (_root, saving, request, id) = fixture();
-    let mut subscription = Subscription::new(&saving.state).await;
-    assert_eq!(
-        tokio::time::timeout(Duration::from_secs(4), subscription.next())
-            .await
-            .unwrap(),
-        Change::Resync
-    );
-    let mut recorder = Recorder::new(Some(&saving), &request, &id);
-    recorder.start(Header::default());
-    crate::changes::drain().await;
-    assert_eq!(
-        tokio::time::timeout(Duration::from_secs(4), subscription.next())
-            .await
-            .unwrap(),
-        Change::SessionInvalidated(id.clone())
-    );
-    let path = path(&saving.state, &id).unwrap();
-    assert_eq!(Conversation::load(&path).unwrap().unwrap().events.len(), 1);
-    recorder.event(Kind::Answer(Answer::Completed("flushed".into())));
-    crate::changes::drain().await;
-    assert_eq!(
-        tokio::time::timeout(Duration::from_secs(4), subscription.next())
-            .await
-            .unwrap(),
-        Change::SessionInvalidated(id.clone())
-    );
-    assert!(matches!(
-        &Conversation::load(&path).unwrap().unwrap().events[1].kind,
-        Kind::Answer(answer) if answer.text() == Some("flushed")
-    ));
-    let reference = expected_reference(&saving, &request, &id);
-    let saved = fs::read(&path).unwrap();
-    // Inject the failed append without using the recorder's state as a test oracle.
-    recorder.state = Recording::Review {
-        file: File::open(&path).unwrap(),
-        reference: reference.clone(),
-    };
-    recorder.event(Kind::End(End::default()));
-    recorder.event(Kind::End(End::default()));
-    assert_eq!(recorder.reference(), Some(&reference));
-    assert_eq!(fs::read(&path).unwrap(), saved);
+    let state = saving.state.clone();
+    crate::changes::test_support::subscribed(&state, move |subscription| {
+        Box::pin(async move {
+            // Retain one publisher so the barrier covers every batch, including transport errors.
+            let publisher = crate::changes::Publisher::new(&saving.state);
+            assert_eq!(
+                tokio::time::timeout(NOTIFICATION_BOUND, subscription.next())
+                    .await
+                    .unwrap(),
+                Change::Resync
+            );
+            let mut recorder = Recorder::new(Some(&saving), &request, &id);
+            recorder.start(Header::default());
+            crate::changes::drain().await;
+            assert_eq!(
+                tokio::time::timeout(NOTIFICATION_BOUND, subscription.next())
+                    .await
+                    .unwrap(),
+                Change::SessionInvalidated(id.clone())
+            );
+            let path = path(&saving.state, &id).unwrap();
+            assert_eq!(Conversation::load(&path).unwrap().unwrap().events.len(), 1);
+            recorder.event(Kind::Answer(Answer::Completed("flushed".into())));
+            crate::changes::drain().await;
+            assert_eq!(
+                tokio::time::timeout(NOTIFICATION_BOUND, subscription.next())
+                    .await
+                    .unwrap(),
+                Change::SessionInvalidated(id.clone())
+            );
+            assert!(matches!(
+                &Conversation::load(&path).unwrap().unwrap().events[1].kind,
+                Kind::Answer(answer) if answer.text() == Some("flushed")
+            ));
+            let reference = expected_reference(&saving, &request, &id);
+            let saved = fs::read(&path).unwrap();
+            // Inject the failed append without using the recorder's state as a test oracle.
+            recorder.state = Recording::Review {
+                file: File::open(&path).unwrap(),
+                reference: reference.clone(),
+            };
+            recorder.event(Kind::End(End::default()));
+            recorder.event(Kind::End(End::default()));
+            assert_eq!(recorder.reference(), Some(&reference));
+            assert_eq!(fs::read(&path).unwrap(), saved);
 
-    let mut pending = Recorder::new(Some(&saving), &request, &id);
-    pending.event(Kind::End(End::default()));
-    let mut off = Recorder::new(None, &request, &id);
-    off.start(Header::default());
-    off.event(Kind::End(End::default()));
-    let (_bad_root, bad_path, file) = fail_file();
-    pending.start_file(file, reference, Header::default());
-    pending.event(Kind::End(End::default()));
-    assert!(pending.reference().is_none());
-    assert!(off.reference().is_none());
-    assert_eq!(fs::read_to_string(&bad_path).unwrap(), "unchanged");
-    assert_eq!(fs::read(&path).unwrap(), saved);
-    crate::changes::drain().await;
-    // Queue an independent sentinel after drain: an erroneous recorder notification
-    // would arrive ahead of it. No absence timeout or scheduler assumption is needed.
-    let sentinel: crate::types::SessionId = "after-failed-writes".parse().unwrap();
-    crate::changes::Publisher::new(&saving.state)
-        .notify(Change::SessionInvalidated(sentinel.clone()));
-    crate::changes::drain().await;
-    assert_eq!(
-        subscription.next().await,
-        Change::SessionInvalidated(sentinel)
-    );
+            let mut pending = Recorder::new(Some(&saving), &request, &id);
+            pending.event(Kind::End(End::default()));
+            let mut off = Recorder::new(None, &request, &id);
+            off.start(Header::default());
+            off.event(Kind::End(End::default()));
+            let (_bad_root, bad_path, file) = fail_file();
+            pending.start_file(file, reference, Header::default());
+            pending.event(Kind::End(End::default()));
+            assert!(pending.reference().is_none());
+            assert!(off.reference().is_none());
+            assert_eq!(fs::read_to_string(&bad_path).unwrap(), "unchanged");
+            assert_eq!(fs::read(&path).unwrap(), saved);
+            tokio::time::timeout(
+                NOTIFICATION_BOUND,
+                crate::changes::test_support::delivered(&publisher),
+            )
+            .await
+            .unwrap();
+            // Every earlier batch has its hub Delivered ACK before this separate marker is
+            // submitted. Receiving it proves that the subscriber consumed every earlier frame.
+            let sentinel: crate::types::SessionId = "after-failed-writes".parse().unwrap();
+            publisher.notify(Change::SessionInvalidated(sentinel.clone()));
+            tokio::time::timeout(
+                NOTIFICATION_BOUND,
+                crate::changes::test_support::delivered(&publisher),
+            )
+            .await
+            .unwrap();
+            let mut notifications = Vec::new();
+            tokio::time::timeout(NOTIFICATION_BOUND, async {
+                loop {
+                    let change = subscription.next().await;
+                    let marker = change == Change::SessionInvalidated(sentinel.clone());
+                    notifications.push(change);
+                    if marker {
+                        break;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            // Dirty sessions are sorted, not FIFO: the marker can be yielded before an earlier
+            // fixture-session notification. Inspect the complete already-delivered set, too.
+            while let Some(change) = subscription.next().now_or_never() {
+                notifications.push(change);
+            }
+            assert_eq!(notifications, [Change::SessionInvalidated(sentinel)]);
+        })
+    })
+    .await;
 }

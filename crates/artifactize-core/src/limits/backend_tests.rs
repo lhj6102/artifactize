@@ -2,8 +2,8 @@
 use super::*;
 use std::fs;
 
-#[test]
-fn limits_keep_typed_backend_keys_and_existing_wire_order() {
+#[tokio::test]
+async fn limits_keep_typed_backend_keys_and_existing_wire_order() {
     let directory = crate::test_os::tempdir();
     fs::write(
         directory.path().join(FILE),
@@ -18,13 +18,18 @@ fn limits_keep_typed_backend_keys_and_existing_wire_order() {
         serde_json::to_string(limits.backends()).unwrap(),
         r#"{"anthropic":2,"codex":4,"openai":8}"#
     );
-    let display = limits
-        .backends()
+    let report = crate::diagnostics::doctor(Some(directory.path()), None)
+        .await
+        .unwrap();
+    let check = report
+        .checks
         .iter()
-        .map(|(backend, slots)| format!("{backend} {slots}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    assert_eq!(display, "anthropic 2, codex 4, openai 8");
+        .find(|check| check.name == "limits")
+        .unwrap();
+    assert_eq!(
+        check.message,
+        "Backend capacity on this machine: anthropic 2, codex 4, openai 8."
+    );
     fs::write(directory.path().join(FILE), "{}").unwrap();
     let empty = Limits::read(directory.path()).unwrap();
     assert!(empty.backends().is_empty());

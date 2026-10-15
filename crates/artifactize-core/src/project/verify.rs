@@ -4,7 +4,6 @@ use std::{
     sync::Arc,
 };
 
-use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -434,48 +433,73 @@ pub(crate) async fn execute(
         run.control.as_mut().expect("owned Run").failure_code =
             Some(crate::types::FailureCode::Cancelled);
     }
-    run.validation = serde_json::from_value(json!({
-        "selection":run.selection,
-        "recursive":run.recursive,
-        "force":run.force,
-        "selectedEvalIds":selected.evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
-        "includedEvalIds":evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
-        "satisfied":satisfied && !cancellation.is_cancelled(),
-        "obligations":evaluation
-            .obligations
-            .iter()
-            .filter(|id| required.contains(*id))
-            .collect::<Vec<_>>(),
-        "artifacts":required
-            .iter()
-            .map(|id| {
-                let a = &evaluation.artifacts[id.as_str()];
-                let mut artifact = json!({
-                    "id":id,
-                    "status":format!("{:?}", a.status).to_uppercase(),
-                    "passed":a.passed,
-                    "total":a.total,
-                    "satisfied":a.satisfied,
-                });
-                if let Some(fingerprint) = fingerprints.get(id) {
-                    artifact["fingerprintKind"] = json!(config.artifacts[*id].fingerprint.as_ref().map(crate::config::Fingerprint::kind));
-                    artifact["fingerprint"] = json!(fingerprint.value);
-                }
-                artifact
-            })
-            .collect::<Vec<_>>(),
-        "evals":required_evals
-            .iter()
-            .map(|(id, eval)| {
-                json!({
-                    "id":id,
-                    "status":status(eval.status),
-                    "blockedBy":eval.blocked_by,
+    use crate::config::Field;
+    run.validation = store::Validation(Some(store::ValidationSnapshot {
+        selection: Field::Value(store::definitions::SavedSelection {
+            known: run.selection.clone(),
+            extra: Default::default(),
+        }),
+        recursive: Field::Value(run.recursive),
+        force: Field::Value(run.force),
+        selected_eval_ids: Field::Value(
+            selected.evals.iter().map(|eval| eval.id.clone()).collect(),
+        ),
+        included_eval_ids: Field::Value(evals.iter().map(|eval| eval.id.clone()).collect()),
+        satisfied: Field::Value(satisfied && !cancellation.is_cancelled()),
+        obligations: Field::Value(
+            evaluation
+                .obligations
+                .iter()
+                .filter(|id| required.contains(*id))
+                .map(|id| (*id).clone())
+                .collect(),
+        ),
+        artifacts: Field::Value(
+            required
+                .iter()
+                .map(|id| {
+                    let artifact = &evaluation.artifacts[id.as_str()];
+                    let (fingerprint_kind, fingerprint) = fingerprints.get(id).map_or(
+                        (Field::Missing, Field::Missing),
+                        |fingerprint| {
+                            (
+                                config.artifacts[*id]
+                                    .fingerprint
+                                    .as_ref()
+                                    .map(crate::config::Fingerprint::kind)
+                                    .into(),
+                                Field::Value(fingerprint.value.clone()),
+                            )
+                        },
+                    );
+                    store::ArtifactValidation {
+                        id: (*id).clone(),
+                        status: Field::Value(artifact.status.into()),
+                        passed: Field::Value(artifact.passed as u64),
+                        total: Field::Value(artifact.total as u64),
+                        satisfied: Field::Value(artifact.satisfied),
+                        fingerprint_kind,
+                        fingerprint,
+                        extra: Default::default(),
+                    }
                 })
-            })
-            .collect::<Vec<_>>(),
-    }))
-    .expect("generated validation snapshot");
+                .collect(),
+        ),
+        evals: Field::Value(
+            required_evals
+                .iter()
+                .map(|(id, eval)| store::EvalValidation {
+                    id: (*id).clone(),
+                    status: Field::Value(status(eval.status)),
+                    blocked_by: Field::Value(
+                        eval.blocked_by.iter().copied().map(Into::into).collect(),
+                    ),
+                    extra: Default::default(),
+                })
+                .collect(),
+        ),
+        extra: Default::default(),
+    }));
     if cancellation.is_cancelled() {
         receipts
             .retire_worker(&run.id, crate::types::FailureCode::Cancelled)

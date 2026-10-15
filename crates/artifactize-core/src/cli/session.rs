@@ -67,8 +67,8 @@ pub(super) async fn execute(
         SessionCommand::Send { reference, message } => {
             let located = locate(state, &reference).await?;
             if matches!(
-                located.request.request.status().as_str(),
-                "QUEUED" | "RUNNING"
+                located.request.request.status(),
+                crate::types::RequestStatus::Queued | crate::types::RequestStatus::Running
             ) {
                 return Err(format!(
                     "Request {} is still running; send a follow-up once its review has finished.",
