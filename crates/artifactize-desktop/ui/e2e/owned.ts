@@ -3,11 +3,14 @@
 // process, however it ends: a runner abort, Ctrl+C, SIGTERM
 // or SIGKILL. Each runs in its own process group with everything it starts, and a watchdog
 // holds a pipe from this process: when this process ends in any way the kernel closes the
-// pipe, and the watchdog ends the group (SIGTERM, so Xvfb removes its lock and socket, then
-// SIGKILL). A normal stop ends the group itself and waits until it is gone.
+// pipe, and the watchdog ends and joins the group (SIGTERM, so Xvfb removes its lock and
+// socket, then SIGKILL). Native work is admitted only after registry + watchdog ACK;
+// before then an admission pipe's EOF self-terminates the gate. Linux /bin/sh and
+// /bin/sleep are required OS helpers, independent of the target's PATH.
 import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { type Writable } from "node:stream";
 
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
@@ -76,6 +79,9 @@ function signal(group: number, name: NodeJS.Signals) {
 
 /** Seconds a group gets to end on SIGTERM before SIGKILL, here and in the watchdog. */
 const GRACE = 2;
+/** Parent and orphan watchdog observe the same bounded actual-exit boundary. */
+const POLL = 50;
+const JOIN_TIMEOUT = 5000;
 
 /** Keep the primary failure and attempt every owned teardown, even when an earlier
  * teardown fails. A failed release never turns a test into success. */
@@ -95,71 +101,108 @@ export class Owned {
   readonly child: ChildProcess;
   readonly group: number;
   #watchdog: ChildProcess | null = null;
+  #watchdogDisarmed = false;
   #birth: number | null = null;
   readonly #closed: Promise<void>;
+  readonly #admission: Writable | null;
   #watchdogClosed: Promise<void> = Promise.resolve();
   readonly #setupFailures: unknown[] = [];
   #ending: Promise<void> | undefined;
 
-  private constructor(child: ChildProcess) {
+  private constructor(child: ChildProcess, admission: Writable | null) {
     this.child = child;
     this.group = child.pid ?? 0;
+    this.#admission = admission;
     // close follows exit AND draining inherited/pipe stdio. Keep the actual child
     // referenced: awaiting a Promise alone does not keep Node's event loop alive.
     this.#closed = new Promise((done) => child.once("close", () => done()));
-    // Callers observe launch errors too; ownership must still be able to join close.
-    child.on("error", () => {});
+    // Keep native spawn errors too; setup failures emitted for launch waiters must
+    // not be recorded twice when stop() reports the same acquisition failure.
+    child.on("error", (error) => {
+      if (!this.#setupFailures.includes(error)) this.#setupFailures.push(error);
+      this.#admission?.destroy();
+      void this.stop().catch(() => {});
+    });
+    admission?.on("error", (error) => { if (!this.#ending) this.#setupFailed(error); });
   }
 
-  /** Start `command` in a process group of its own, ended with this process. */
+  /** Gate the detached lifetime before it can acquire native resources. EOF before
+   * admission exits the gate; after admission an acknowledged watchdog owns cleanup. */
   static spawn(command: string, args: string[], options: SpawnOptions): Owned {
-    const child = spawn(command, args, { ...options, detached: true });
-    const owned = new Owned(child);
+    const stdio = Array.isArray(options.stdio) ? [...options.stdio] : Array(3).fill(options.stdio ?? "pipe");
+    while (stdio.length < 3) stdio.push("pipe");
+    // Preserve existing extra descriptors, notably Xvfb's -displayfd 3.
+    const admission = stdio.length;
+    stdio.push("pipe");
+    const target = options.shell
+      ? [typeof options.shell === "string" ? options.shell : "/bin/sh", "-c", [command, ...args].join(" ")]
+      : [command, ...args];
+    const child = spawn("/bin/sh", ["-c", `IFS= read -r admitted <&${admission} || exit 125
+[ "$admitted" = start ] || exit 125
+exec ${admission}<&-
+exec "$@"`, "owned-admission", ...target], { ...options, shell: false, detached: true, stdio });
+    const owned = new Owned(child, child.stdio[admission] as Writable | null);
     if (!child.pid) return owned;
     try {
-      const birth = owned.#birth = groupBirth(child.pid);
-      // Its own group too, so a Ctrl+C to the terminal's group cannot end it before it acts.
-      // Recheck the leader's birth before either signal: a later lifetime with the same
-      // numeric PID/PGID is not ours. A missing leader may still have children in its group.
+      const { start_time: birth } = groupIdentity(child.pid);
+      owned.#birth = birth;
+      // Fixed Linux OS helpers are independent of the target's restricted PATH.
+      // The watchdog arms before native exec and retains the same birth-aware group.
       const watchdog = spawn(
-        "sh",
+        "/bin/sh",
         ["-c", `birth=$1
-  owns() {
-    [ -e "/proc/$0/stat" ] || return 0
-    read -r stat < "/proc/$0/stat" || return 1
-    tail=\${stat##*) }
-    set -- $tail
-    shift 19
-    [ "$1" = "$birth" ]
-  }
-  read _
-  owns && kill -s TERM -- "-$0" 2>/dev/null
-  sleep ${GRACE}
-  owns && kill -s KILL -- "-$0" 2>/dev/null`, String(child.pid), String(birth ?? "")],
-        { stdio: ["pipe", "ignore", "ignore"], detached: true },
+owns() {
+  [ -e "/proc/$0/stat" ] || return 0
+  read -r stat < "/proc/$0/stat" || return 1
+  tail=\${stat##*) }
+  set -- $tail
+  shift 19
+  [ "$1" = "$birth" ]
+}
+alive() { owns && kill -0 -- "-$0" 2>/dev/null; }
+printf 'armed\\n'
+read _
+alive && kill -s TERM -- "-$0" 2>/dev/null
+waited=0
+while alive && [ "$waited" -lt ${GRACE * 1000 / POLL} ]; do /bin/sleep ${POLL / 1000}; waited=$((waited+1)); done
+alive && kill -s KILL -- "-$0" 2>/dev/null
+waited=0
+while alive && [ "$waited" -lt ${JOIN_TIMEOUT / POLL} ]; do /bin/sleep ${POLL / 1000}; waited=$((waited+1)); done
+if alive; then printf 'owned group %s did not stop\\n' "$0" >&2; exit 1; fi`, String(child.pid), String(birth)],
+        { stdio: ["pipe", "pipe", "inherit"], detached: true },
       );
       owned.#watchdog = watchdog;
       owned.#watchdogClosed = new Promise((done) => watchdog.once("close", (code, signal) => {
         done();
-        if (!owned.#ending) owned.#setupFailed(new Error(`owned watchdog ended before its work: ${code ?? signal}`));
+        if (!owned.#watchdogDisarmed) owned.#setupFailed(new Error(`owned watchdog ended before release: ${code ?? signal}`));
       }));
       watchdog.once("error", (error) => owned.#setupFailed(error));
-      // The watchdog must not outlive the owner by holding its event loop open, but
-      // the work itself remains referenced until its real close (including stdio).
+      watchdog.stdout!.once("error", (error) => owned.#setupFailed(error));
+      let acknowledgement = "";
+      let armed = false;
+      watchdog.stdout!.on("data", (chunk: Buffer) => {
+        if (armed) return;
+        acknowledgement += chunk;
+        if (!acknowledgement.includes("\n")) return;
+        armed = true;
+        if (acknowledgement !== "armed\n") { owned.#setupFailed(new Error("owned watchdog did not acknowledge cleanup")); return; }
+        // Group registration below is synchronous and complete before this callback.
+        // Cancellation/setup failure closes admission permanently, including late ACKs.
+        if (!owned.#ending && owned.#setupFailures.length === 0) owned.#admission?.end("start\n");
+      });
+      // The gate/work keeps Node alive. The acknowledged fallback must not keep an
+      // otherwise exiting owner alive; its input EOF is the death notification.
       watchdog.unref();
       (watchdog.stdin as unknown as { unref?: () => void } | null)?.unref?.();
-      // Install ownership before registration can fail (for example a full disk).
+      (watchdog.stdout as unknown as { unref?: () => void } | null)?.unref?.();
       const resources = options.env?.DESKTOP_TEST_RESOURCES ?? process.env.DESKTOP_TEST_RESOURCES;
-      if (resources) {
-        if (birth === null && groupAlive(child.pid)) throw new Error(`cannot identify acquired process group ${child.pid}`);
-        if (birth !== null) appendFileSync(join(resources, "groups"), JSON.stringify({ group: child.pid, start_time: birth }) + "\n");
-      }
+      if (resources) appendFileSync(join(resources, "groups"), JSON.stringify({ group: child.pid, start_time: birth }) + "\n");
     } catch (error) { owned.#setupFailed(error); }
     return owned;
   }
 
   #setupFailed(error: unknown): void {
-    this.#setupFailures.push(error);
+    if (!this.#setupFailures.includes(error)) this.#setupFailures.push(error);
     // Report to launch waiters, and retain the stop promise for their final join.
     // Observe rejection now; stop() still returns that exact failure to its owner.
     queueMicrotask(() => this.child.emit("error", error));
@@ -173,19 +216,20 @@ export class Owned {
   }
 
   async #stop(): Promise<void> {
+    this.#admission?.destroy();
     if (this.group) {
       const alive = () => groupAlive(this.group, this.#birth ?? undefined);
       if (alive()) signal(this.group, "SIGTERM");
-      for (let waited = 0; waited < GRACE * 1000 && alive(); waited += 50) await pause(50);
+      for (let waited = 0; waited < GRACE * 1000 && alive(); waited += POLL) await pause(POLL);
       if (alive()) signal(this.group, "SIGKILL");
-      for (let waited = 0; waited < 5000 && alive(); waited += 50) await pause(50);
+      for (let waited = 0; waited < JOIN_TIMEOUT && alive(); waited += POLL) await pause(POLL);
       if (alive()) throw new Error(`owned process group ${this.group} did not stop`);
     }
     await this.#closed;
     // Only disarm the fallback after successful shutdown. Join its close too rather
     // than treating delivery of SIGKILL as acknowledgement of cleanup.
     this.#watchdog?.ref();
-    this.#watchdog?.kill("SIGKILL");
+    this.#watchdogDisarmed = this.#watchdog?.kill("SIGKILL") ?? false;
     await this.#watchdogClosed;
     this.#watchdog?.stdin?.destroy();
     if (this.#setupFailures.length === 1) throw this.#setupFailures[0];
