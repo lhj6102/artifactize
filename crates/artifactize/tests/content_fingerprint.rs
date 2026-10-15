@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{
     fs,
     path::PathBuf,
@@ -13,6 +16,8 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
+    // Fields drop in declaration order: release durable workers before their temporary state.
+    _runs: owned_run::RepoLease,
     _root: TempDir,
     repo: PathBuf,
     state: PathBuf,
@@ -23,9 +28,11 @@ impl Fixture {
         let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
+        let state = root.path().join("state");
         Self {
+            _runs: owned_run::RepoLease::new(&state, &repo),
             repo,
-            state: root.path().join("state"),
+            state,
             _root: root,
         }
     }
@@ -63,19 +70,16 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
-    /// Evals that started an execution in this Run, rather than reusing one.
-    fn executed(&self, code: i32) -> Vec<String> {
+    /// Evals whose results were produced in this Run, including same-Run joins but not
+    /// evidence reused from an earlier Run.
+    fn fresh_results(&self, code: i32) -> Vec<String> {
         let run = self.json(&["verify", "--wait", "--all"], code);
-        let prefix = format!("execution-{}-", run["id"].as_str().unwrap());
         run["requests"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|request| {
-                request["executionId"]
-                    .as_str()
-                    .is_some_and(|id| id.starts_with(&prefix))
-            })
+            // IDs are opaque; provenance identifies the producing Run even for joins.
+            .filter(|request| request["provenance"]["runId"] == run["id"])
             .map(|request| request["evalId"].as_str().unwrap().to_owned())
             .collect()
     }
@@ -115,25 +119,25 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
         fixture.file(&format!("{name}/file.txt"), "v1");
     }
     assert_eq!(
-        fixture.executed(0),
+        fixture.fresh_results(0),
         ["base/check", "mid/check", "top/check"]
     );
-    assert!(fixture.executed(0).is_empty());
+    assert!(fixture.fresh_results(0).is_empty());
     // mid mounts base, so its key covers base's fingerprint; top is two connections away.
     fixture.file("base/file.txt", "v2");
-    assert_eq!(fixture.executed(0), ["base/check", "mid/check"]);
+    assert_eq!(fixture.fresh_results(0), ["base/check", "mid/check"]);
     fixture.file("mid/file.txt", "v2");
-    assert_eq!(fixture.executed(0), ["mid/check", "top/check"]);
+    assert_eq!(fixture.fresh_results(0), ["mid/check", "top/check"]);
 
     // A developer whose review of top reads base says so in top's fingerprint.
     let covered = json!({"script":{"command":shell(),"args":[
         "-c", "cat file.txt \"$1\" | cksum | tr ' ' -", "fixture", "{base}/file.txt"
     ]}});
     fixture.artifact("top", artifact("top", covered, json!({"mid":"mid"}), PASS));
-    assert_eq!(fixture.executed(0), ["top/check"]);
+    assert_eq!(fixture.fresh_results(0), ["top/check"]);
     fixture.file("base/file.txt", "v3");
     assert_eq!(
-        fixture.executed(0),
+        fixture.fresh_results(0),
         ["base/check", "mid/check", "top/check"]
     );
 }
@@ -168,7 +172,7 @@ fn a_dependency_disabling_fingerprints_leaves_its_dependents_unkeyed() {
     // Declaring one restores reuse.
     fixture.artifact("core", json!({"name":"core","basis":true,"fingerprint":{}}));
     fixture.json(&["verify", "--wait", "--all"], 0);
-    assert!(fixture.executed(0).is_empty());
+    assert!(fixture.fresh_results(0).is_empty());
 }
 
 #[test]
@@ -184,7 +188,7 @@ fn equal_fingerprints_of_different_artifacts_never_share_a_result() {
     assert_eq!(requests[0]["fingerprint"], requests[1]["fingerprint"]);
     assert_eq!(requests[0]["evalDefHash"], requests[1]["evalDefHash"]);
     assert_ne!(requests[0]["key"], requests[1]["key"]);
-    assert!(fixture.executed(0).is_empty());
+    assert!(fixture.fresh_results(0).is_empty());
 }
 
 #[test]
@@ -211,14 +215,14 @@ fn a_tool_declaration_change_alone_reuses() {
     declaration["views"] = tool("Lint a file.");
     fixture.artifact("app", declaration.clone());
     fixture.file("app/file.txt", "v1");
-    assert_eq!(fixture.executed(0), ["app/check"]);
+    assert_eq!(fixture.fresh_results(0), ["app/check"]);
     // A tool is a way of viewing the Artifact, not part of it (#85).
     declaration["views"] = tool("Lint one file and report every finding.");
     declaration["views"]["agent_tools"]["lint"]["input_schema"]["properties"]["strict"] =
         json!({"type":"boolean"});
     fixture.artifact("app", declaration);
     assert_eq!(fixture.json(&["status"], 0)["evals"][0]["action"], "reuse");
-    assert!(fixture.executed(0).is_empty());
+    assert!(fixture.fresh_results(0).is_empty());
 }
 #[test]
 fn a_merge_rereviews_only_the_new_pairing_by_default() {
@@ -246,39 +250,45 @@ fn a_merge_rereviews_only_the_new_pairing_by_default() {
         "app",
         artifact("app", default, json!({"pair":"pair"}), PASS),
     );
-    assert_eq!(fixture.executed(0).len(), 4);
+    assert_eq!(
+        fixture
+            .fresh_results(0)
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        ["app/check", "left/check", "pair/check", "right/check"]
+            .map(str::to_owned)
+            .into_iter()
+            .collect()
+    );
     fixture.file("left/part.txt", "v2");
-    assert_eq!(fixture.executed(0), ["left/check", "pair/check"]);
+    assert_eq!(fixture.fresh_results(0), ["left/check", "pair/check"]);
 }
 
 #[test]
 fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
     let fixture = Fixture::new();
-    fixture.artifact(
-        "py",
-        artifact(
-            "py",
-            json!({}),
-            json!({}),
-            &[
-                "-c",
-                "python3 check.py && mkdir -p out && echo report > out/report.txt",
-            ],
-        ),
-    );
+    let mut declaration = artifact("py", json!({}), json!({}), &["check.py"]);
+    declaration["evals"][0]["profile"]["command"] = json!(support::os::python_program());
+    fixture.artifact("py", declaration);
     fixture.file("py/helper.py", "VALUE = 1\n");
-    fixture.file("py/check.py", "import helper\nassert helper.VALUE == 1\n");
+    fixture.file(
+        "py/check.py",
+        "import helper\nfrom pathlib import Path\nassert helper.VALUE == 1\nPath('out').mkdir(exist_ok=True)\nPath('out/report.txt').write_bytes(b'report\\n')\n",
+    );
     // A repository-root .gitignore applies to every Artifact below it.
     fixture.file(".gitignore", "out/\n");
     let run = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
     assert!(fixture.repo.join("py/__pycache__").is_dir());
-    assert!(fixture.repo.join("py/out/report.txt").is_file());
+    assert_eq!(
+        fs::read_to_string(fixture.repo.join("py/out/report.txt")).unwrap(),
+        "report\n"
+    );
     assert_eq!(
         run["validation"]["artifacts"][0]["fingerprintKind"],
         "artifactsum"
     );
-    assert!(fixture.executed(0).is_empty());
+    assert!(fixture.fresh_results(0).is_empty());
 
     fixture.artifact(
         "py",
@@ -300,10 +310,10 @@ fn dependency_cycles_terminate() {
     fixture.artifact("b", artifact("b", json!({}), json!({"peer":"a"}), PASS));
     fixture.file("a/file.txt", "v1");
     fixture.file("b/file.txt", "v1");
-    assert_eq!(fixture.executed(0), ["a/check", "b/check"]);
-    assert!(fixture.executed(0).is_empty());
+    assert_eq!(fixture.fresh_results(0), ["a/check", "b/check"]);
+    assert!(fixture.fresh_results(0).is_empty());
     fixture.file("a/file.txt", "v2");
-    assert_eq!(fixture.executed(0), ["a/check", "b/check"]);
+    assert_eq!(fixture.fresh_results(0), ["a/check", "b/check"]);
 }
 #[test]
 fn status_explains_which_inputs_and_dependencies_changed() {
@@ -482,7 +492,7 @@ fn default_artifactsum_reuses_and_tags_appear_in_graph_status_and_saved_monitor_
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(first["requests"][0]["key"], reused["requests"][0]["key"]);
     fixture.file("basis/rules.txt", "changed");
-    assert_eq!(fixture.executed(0), ["app/check"]);
+    assert_eq!(fixture.fresh_results(0), ["app/check"]);
 }
 
 #[test]
@@ -553,8 +563,8 @@ fn an_ignore_rule_in_another_case_never_hides_a_change() {
             fixture.file(".gitignore", "secret/\n");
         }
         fixture.file("app/Secret/key.txt", "v1");
-        assert_eq!(fixture.executed(0), ["app/check"]);
-        assert!(fixture.executed(0).is_empty());
+        assert_eq!(fixture.fresh_results(0), ["app/check"]);
+        assert!(fixture.fresh_results(0).is_empty());
         // On a case-insensitive volume this write reaches the original entry through an
         // alias. The enumerated name, not the caller's spelling, still controls the matcher.
         let path = if fixture.repo.join("app/secret").exists() {
@@ -563,6 +573,6 @@ fn an_ignore_rule_in_another_case_never_hides_a_change() {
             "app/Secret/key.txt"
         };
         fixture.file(path, "v2");
-        assert_eq!(fixture.executed(0), ["app/check"]);
+        assert_eq!(fixture.fresh_results(0), ["app/check"]);
     }
 }

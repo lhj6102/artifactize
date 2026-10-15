@@ -17,6 +17,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph, Wrap},
 };
+#[cfg(not(test))]
 use time::OffsetDateTime;
 
 /// The expanded instruction (or Technical section) takes this share of the body height.
@@ -141,7 +142,11 @@ pub(super) fn draw_peek(frame: &mut Frame, area: Rect, view: &RequestView, revie
     let outer = Block::bordered().title(format!(" {} ", title(view)));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
-    let mut lines = vec![Line::from(meta(view, reviewer, OffsetDateTime::now_utc())).bold()];
+    #[cfg(not(test))]
+    let now = OffsetDateTime::now_utc();
+    #[cfg(test)]
+    let now = super::tests::now();
+    let mut lines = vec![Line::from(meta(view, reviewer, now)).bold()];
     if let Some(shared) = shared(view) {
         lines.push(Line::from(shared).yellow());
     }
@@ -456,8 +461,12 @@ impl Review {
             Constraint::Length(fold.width() as u16 + 1),
         ])
         .areas(meta_area);
+        #[cfg(not(test))]
+        let now = OffsetDateTime::now_utc();
+        #[cfg(test)]
+        let now = super::tests::now();
         frame.render_widget(
-            Line::from(meta(&view, &self.reviewer, OffsetDateTime::now_utc())).bold(),
+            Line::from(meta(&view, &self.reviewer, now)).bold(),
             meta_text,
         );
         frame.render_widget(fold.right_aligned(), fold_area);

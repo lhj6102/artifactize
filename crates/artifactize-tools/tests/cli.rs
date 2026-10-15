@@ -32,14 +32,33 @@ fn subcommands_share_scoped_files_and_exit_codes() {
         text(call(root.path(), &["section", "notes.md", "First"])),
         "# First\nalpha\n## Child\nchild\n"
     );
-    for args in [
-        vec!["list", "."],
-        vec!["glob", "*.md"],
-        vec!["grep", "alpha"],
+    for (args, expected) in [
+        (
+            vec!["list", "."],
+            serde_json::json!({
+                "artifactId":"cwd", "path":"",
+                "entries":[{"kind":"file", "name":"notes.md", "path":"notes.md"}],
+                "totalEntries":1, "truncated":false, "nextOffset":null,
+            }),
+        ),
+        (
+            vec!["glob", "*.md"],
+            serde_json::json!({"path":"", "files":["notes.md"], "truncated":false}),
+        ),
+        (
+            vec!["grep", "alpha"],
+            serde_json::json!({
+                "path":"", "matches":[{"path":"notes.md", "line":2, "text":"alpha"}],
+                "truncated":false,
+            }),
+        ),
     ] {
         let output = text(call(root.path(), &args));
-        let _: serde_json::Value = serde_json::from_str(&output).unwrap();
-        assert!(output.contains("notes.md"));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&output).unwrap(),
+            expected,
+            "{args:?}"
+        );
     }
     let missing = call(root.path(), &["section", "notes.md", "Absent"]);
     assert_eq!(missing.status.code(), Some(1));

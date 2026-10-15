@@ -1,9 +1,11 @@
+import { renderHosted as render } from "../test-host";
 // The Run graph against a mocked command boundary and layout: nodes take their lights, a click
 // zooms into an Artifact and lists its evals from the tree, selecting one moves the tree's
 // selection and Enter opens Detail, Esc zooms out, and a new snapshot recolours in place.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 import type { RunGraph as Graph, TreeNode } from "../ipc/client";
 import RunGraph from "./RunGraph.svelte";
 import { LIMIT } from "./graph";
@@ -38,6 +40,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   layout.mockReset();
+  vi.useRealTimers();
 });
 
 function graph(release: Graph["nodes"][number]["light"], ship = "waiting" as const): Graph {
@@ -147,22 +150,32 @@ describe("RunGraph", () => {
       "run-b": { ...graph("red"), run: "run-b", nodes: [{ id: "a:other", name: "other", light: "red" }], edges: [] },
     };
     mockIPC((cmd, args) => (cmd === "run_graph" ? runs[(args as { run: string }).run] : null));
-    let release: (() => void) | null = null;
-    layout.mockImplementation(async (laid: Graph) => {
-      if (laid.run === "run-b") await new Promise<void>((done) => (release = done));
-      return new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }]));
+    let release!: (positions: Map<string, { x: number; y: number }>) => void;
+    const staleLayout = new Promise<Map<string, { x: number; y: number }>>((done) => (release = done));
+    let started!: () => void;
+    const layingOut = new Promise<void>((done) => (started = done));
+    layout.mockImplementation((laid: Graph) => {
+      if (laid.run === "run-b") {
+        started();
+        return staleLayout;
+      }
+      return Promise.resolve(new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
     });
     const props = { run: "run-a", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn() };
     const { rerender } = render(RunGraph, props);
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     await rerender({ run: "run-b", revision: 2 });
-    await waitFor(() => expect(release).not.toBeNull());
+    await layingOut;
+    runs["run-a"] = graph("green");
     await rerender({ run: "run-a", revision: 3 });
-    await waitFor(() => expect(node("a:release")).not.toBeNull());
-    release!();
-    await new Promise((done) => setTimeout(done, 50));
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
+    release(new Map([["a:other", { x: 0, y: 0 }]]));
+    // place() already awaits this exact layout promise: let its continuation run, then
+    // flush any view update before asserting that the stale response did not replace Run A.
+    await staleLayout;
+    await tick();
     expect(node("a:other")).toBeNull();
-    expect(node("a:release")?.dataset.light).toBe("active");
+    expect(node("a:release")?.dataset.light).toBe("green");
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
@@ -213,7 +226,11 @@ describe("RunGraph", () => {
   });
 
   it("lays out again after a failed layout, and after the layout cache dropped a Run", async () => {
-    const small = (run: string): Graph => ({ ...graph("green"), run });
+    const small = (run: string): Graph => ({
+      run,
+      nodes: [{ id: `a:${run}`, name: run, light: "green" }],
+      edges: [],
+    });
     mockIPC((cmd, args) => (cmd === "run_graph" ? small((args as { run: string }).run) : null));
     let failing = true;
     layout.mockImplementation(async (laid: Graph) => {
@@ -226,46 +243,46 @@ describe("RunGraph", () => {
     // A failed layout is not kept: the next snapshot tries again.
     failing = false;
     await rerender({ revision: 2 });
-    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    await waitFor(() => expect(node("a:run-0")).not.toBeNull());
     expect(layout).toHaveBeenCalledTimes(2);
     // Eight more Runs push run-0's layout out of the cache; back on run-0 it is laid out again.
     let revision = 3;
     for (let run = 1; run <= 8; run += 1) {
       await rerender({ run: `run-${run}`, revision: revision++ });
-      await waitFor(() => expect(layout).toHaveBeenCalledTimes(2 + run));
+      await waitFor(() => expect(node(`a:run-${run}`)).not.toBeNull());
     }
     await rerender({ run: "run-8", revision: revision++ });
     await rerender({ run: "run-1", revision: revision++ });
-    await new Promise((done) => setTimeout(done, 20));
+    await waitFor(() => expect(node("a:run-1")).not.toBeNull());
     expect(layout).toHaveBeenCalledTimes(10);
     await rerender({ run: "run-0", revision: revision++ });
-    await waitFor(() => expect(layout).toHaveBeenCalledTimes(11));
+    await waitFor(() => expect(node("a:run-0")).not.toBeNull());
+    expect(layout).toHaveBeenCalledTimes(11);
   });
 
   it("lets go of keyboard focus when its screen hides and does not take it back unasked", async () => {
     const { rerender } = setup(() => graph("active"));
     await waitFor(() => expect(node("a:release")).not.toBeNull());
+    // Start the controlled frame clock before focus schedules its first watch.
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    const frame = async () => {
+      vi.advanceTimersToNextFrame();
+      await tick();
+    };
     node("a:release")!.focus();
     expect(document.activeElement).toBe(node("a:release"));
-    const frames = vi.spyOn(window, "requestAnimationFrame");
-    const focus = vi.spyOn(HTMLElement.prototype, "focus");
-    const settle = () => new Promise((done) => setTimeout(done, 120));
-    const nodeFocus = () => focus.mock.contexts.filter((element) => (element as HTMLElement).classList.contains("svelte-flow__node")).length;
 
     // Another screen shows an already open Detail: nothing there takes focus.
     await rerender({ active: false });
     (document.activeElement as HTMLElement).blur();
-    await settle();
-    const called = frames.mock.calls.length;
-    await settle();
-    expect(frames.mock.calls.length).toBe(called);
-    expect(nodeFocus()).toBe(0);
+    await frame();
+    expect(document.activeElement).toBe(document.body);
+    await frame();
     expect(document.activeElement).toBe(document.body);
 
     // Back on the graph's screen: no hold returns until a node is focused afresh.
     await rerender({ active: true });
-    await settle();
-    expect(nodeFocus()).toBe(0);
+    await frame();
     expect(document.activeElement).toBe(document.body);
 
     // A hidden ancestor (the screen's hidden attribute) ends a fresh hold the same way.
@@ -273,27 +290,28 @@ describe("RunGraph", () => {
     const screenElement = node("a:release")!.closest(".graph")!.parentElement!;
     screenElement.setAttribute("hidden", "");
     (document.activeElement as HTMLElement).blur();
-    focus.mockClear();
-    await settle();
-    const hiddenCalls = frames.mock.calls.length;
-    await settle();
-    expect(frames.mock.calls.length).toBe(hiddenCalls);
-    expect(nodeFocus()).toBe(0);
+    await frame();
+    expect(document.activeElement).toBe(document.body);
+    await frame();
+    expect(document.activeElement).toBe(document.body);
     screenElement.removeAttribute("hidden");
-    frames.mockRestore();
-    focus.mockRestore();
+    await frame();
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("keeps a key that lands on the page while a redraw drops the held node's focus", async () => {
     const { rerender, onselect } = setup(() => graph("active"));
     await waitFor(() => expect(node("a:release")).not.toBeNull());
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
     node("a:release")!.focus();
     onselect.mockClear();
     // The redraw's gap: focus is on the page when the key arrives, before any frame.
     (document.activeElement as HTMLElement).blur();
     await fireEvent.keyDown(document.body, { key: "ArrowRight" });
     expect(onselect).toHaveBeenCalledWith(["a:ship"]);
-    await waitFor(() => expect(document.activeElement).toBe(node("a:ship")));
+    vi.advanceTimersToNextFrame();
+    await tick();
+    expect(document.activeElement).toBe(node("a:ship"));
 
     // A hidden graph's hold is gone: a key on the page is not the graph's.
     await rerender({ active: false });
@@ -307,6 +325,7 @@ describe("RunGraph", () => {
   it("puts focus back as soon as a redraw removes the focused node", async () => {
     setup(() => graph("active"));
     await waitFor(() => expect(node("a:release")).not.toBeNull());
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
     node("a:release")!.focus();
     // Culling takes the node out and draws it again in one update.
     const element = node("a:release")!;

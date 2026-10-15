@@ -11,13 +11,13 @@ use support::runs::RecordOutput;
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -25,6 +25,8 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 /// A workspace of Artifacts, each with one Agent eval and its own fingerprint.
 struct Project {
+    // Fields drop in declaration order: release durable workers before their temporary state.
+    _runs: owned_run::RepoLease,
     _root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
@@ -48,8 +50,10 @@ impl Project {
             )
             .unwrap();
         }
+        let state = root.path().join("state");
         let project = Self {
-            state: root.path().join("state"),
+            _runs: owned_run::RepoLease::new(&state, &repo),
+            state,
             repo,
             _root: root,
         };
@@ -68,7 +72,17 @@ impl Project {
     }
 
     fn verify(&self, provider: &FakeProvider, args: &[&str], json: bool) -> Output {
-        let mut command = Command::new(support::os::cli());
+        self.verify_with_cli(&support::os::cli(), provider, args, json)
+    }
+
+    fn verify_with_cli(
+        &self,
+        executable: &std::path::Path,
+        provider: &FakeProvider,
+        args: &[&str],
+        json: bool,
+    ) -> Output {
+        let mut command = Command::new(executable);
         command
             .arg("--repo")
             .arg(&self.repo)
@@ -495,6 +509,125 @@ fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
     assert_eq!(models.load(Ordering::SeqCst), 2);
 }
 
+/// Cargo's published path can be replaced while another fixture's caller and worker run.
+/// A private candidate must keep serving later Runs, including their durable self-spawn.
+#[test]
+fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
+    let root = support::os::tempdir();
+    let source = root.path().join(support::os::cli().file_name().unwrap());
+    fs::copy(support::os::cli(), &source).unwrap();
+    let candidate = support::os::OwnedExecutable::copy_from(&source).unwrap();
+    let project = Project::new(&[("notes", agent("openai"))]);
+    let release = support::Gate::default();
+    let (arrived, admitted) = std::sync::mpsc::sync_channel(1);
+    let provider = FakeProvider::start({
+        let release = release.clone();
+        move |request| {
+            if !replayed(request) {
+                arrived.send(()).unwrap();
+                release.wait();
+            }
+            pass(request)
+        }
+    });
+    thread::scope(|scope| {
+        let running =
+            scope.spawn(|| project.verify_with_cli(candidate.path(), &provider, &["--all"], true));
+        // The provider request proves the real durable worker is alive, not just admitted.
+        // Release on assertion unwind as well, before the scoped caller is joined.
+        struct ReleaseOnExit(support::Gate);
+        impl Drop for ReleaseOnExit {
+            fn drop(&mut self) {
+                self.0.open();
+            }
+        }
+        let release_on_exit = ReleaseOnExit(release.clone());
+        admitted
+            .recv_timeout(support::os::patience(Duration::from_secs(20)))
+            .expect("the candidate's durable worker reached the provider");
+        fs::remove_file(&source).unwrap();
+        fs::write(&source, "replacement is deliberately not the declared CLI").unwrap();
+        release.open();
+        drop(release_on_exit);
+        let output = running.join().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(request(&run, "notes/review")["status"], "GREEN");
+    });
+    let working = FakeProvider::start(pass);
+    let output = project.verify_with_cli(candidate.path(), &working, &["--all", "--force"], true);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let review = request(&run, "notes/review");
+    assert_eq!(review["status"], "GREEN");
+    assert!(review["executionId"].is_string(), "a new worker executed");
+    let directory = candidate.path().parent().unwrap().to_owned();
+    // A terminal receipt can precede worker teardown; release the Run owner before its
+    // executable, including on Windows where a running executable cannot be unlinked.
+    drop(project);
+    drop(candidate);
+    assert!(!directory.exists(), "the scoped candidate was cleaned up");
+}
+
+#[test]
+fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
+    const RECORD: &str = "ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD";
+    const PANIC: &str = "ARTIFACTIZE_TEST_CLI_DIRECTORY_PANIC";
+    let root = support::os::tempdir();
+    for panicking in [false, true] {
+        let record = root.path().join(format!("candidate-{panicking}"));
+        let mut command = support::os::test_command(
+            "owned_cli_exit_probe",
+            &[
+                (RECORD, record.as_os_str().to_owned()),
+                (PANIC, panicking.to_string().into()),
+            ],
+        );
+        command.arg("--ignored");
+        let output = support::os::finish(support::os::start(&mut command), "owned CLI exit");
+        assert_eq!(
+            output.status.success(),
+            !panicking,
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let directory = PathBuf::from(fs::read_to_string(record).unwrap());
+        assert!(!directory.exists(), "the process-owned CLI was cleaned up");
+    }
+}
+
+#[test]
+#[ignore = "launched by the owned CLI exit lifecycle test"]
+fn owned_cli_exit_probe() {
+    let executable = support::os::cli();
+    fs::write(
+        support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD").unwrap(),
+        support::os::path_text(executable.parent().unwrap()),
+    )
+    .unwrap();
+    assert!(
+        support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_PANIC")
+            .unwrap()
+            .into_string()
+            .unwrap()
+            != "true",
+        "scripted test unwind"
+    );
+}
+
 #[test]
 fn a_codex_usage_limit_stops_codex_for_the_run() {
     let project = Project::new(&[("a", agent("codex")), ("b", agent("codex"))]);
@@ -565,10 +698,12 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         .env("OPENAI_API_KEY", "fake-openai-key")
         .env("ANTHROPIC_API_KEY", "fake-anthropic-key")
         .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
-        .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let child = Child::new(command.spawn().unwrap(), &project.state, &project.repo);
+        .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base());
+    let child = Child::new(
+        support::os::start(&mut command),
+        &project.state,
+        &project.repo,
+    );
     let database = || {
         rusqlite::Connection::open_with_flags(
             project.state.join("state.sqlite"),
@@ -579,21 +714,14 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     let waiting_for_slot = || {
         database().is_some_and(|db| {
             db.query_row(
-                "SELECT count(*) FROM requests WHERE json_extract(data,'$.evalId')='b/review' AND json_extract(data,'$.blockedReason') LIKE 'Waiting for a free openai slot%'",
-                [],
-                |row| row.get::<_, u32>(0),
+                "SELECT json_extract(data,'$.blockedReason') FROM requests WHERE run_id=? AND eval_id='b/review'",
+                [child.run()],
+                |row| row.get::<_, Option<String>>(0),
             )
-            .is_ok_and(|count| count == 1)
+            .is_ok_and(|reason| reason.is_some_and(|reason| reason.starts_with("Waiting for a free openai slot")))
         })
     };
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
-    while !waiting_for_slot() {
-        assert!(
-            Instant::now() < deadline,
-            "b never waited for the openai slot"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    support::os::wait_until(Duration::from_secs(20), waiting_for_slot);
     release.open();
     let output = child.wait_with_output().unwrap();
     assert_eq!(
@@ -612,15 +740,13 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     assert!(skipped["executionId"].is_null());
     assert_eq!(request(&run, "c/review")["status"], "GREEN");
     assert_eq!(models.load(Ordering::SeqCst), 1);
-    let slots: u32 = database()
-        .unwrap()
-        .query_row(
-            "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(slots, 0);
+    // A fresh Run can admit both openai reviews under the same one-slot limit. This proves
+    // capacity was released through the public execution seam, not private row counts.
+    let working = FakeProvider::start(pass);
+    let next = project.run(&working, &["--all", "--force"], 0);
+    for eval in ["a/review", "b/review", "c/review"] {
+        assert_eq!(request(&next, eval)["status"], "GREEN", "{next}");
+    }
 }
 
 #[tokio::test(start_paused = true)]

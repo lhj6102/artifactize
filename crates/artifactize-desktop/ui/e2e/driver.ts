@@ -1,50 +1,41 @@
-// Drive the real app through tauri-driver and WebKitWebDriver.
-import { spawnSync } from "node:child_process";
+// Drive the real Linux WebKitGTK app through tauri-driver and WebKitWebDriver.
+// These shared native helpers intentionally own Linux X11/process-group setup: Windows
+// uses a different WebDriver and macOS has no Tauri WebDriver, neither is this harness.
 import { createConnection } from "node:net";
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { delimiter, join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { remote } from "webdriverio";
-import { app, cli, type Fixture } from "./fixture.ts";
-import { Owned } from "./owned.ts";
+import { app, type Fixture } from "./fixture.ts";
+import { readCandidate } from "./build.ts";
+import { Owned, registerGroup } from "./owned.ts";
+
+/** Linux Xvfb's abstract socket and lock are native resources, not portable path text. */
+export function displayListening(display: string): boolean {
+  const path = `@/tmp/.X11-unix/X${display.slice(1)}`;
+  return readFileSync("/proc/net/unix", "utf8").split("\n").some((line) => line.trim().split(/\s+/).at(-1) === path);
+}
+export function displayLocked(display: string): boolean {
+  return existsSync(`/tmp/.X${display.slice(1)}-lock`);
+}
+
+/** Linux's browser opener is replaced only inside the app's inherited environment. */
+export function browserStandIn(fixture: Fixture, output: string): Record<string, string> {
+  const bin = join(fixture.root, "bin");
+  mkdirSync(bin, { recursive: true });
+  const opener = join(bin, "xdg-open");
+  const quoted = "'" + output.replaceAll("'", "'\\''") + "'";
+  writeFileSync(opener, `#!/bin/sh\nprintf '%s\\n' "$1" >> ${quoted}\n`);
+  chmodSync(opener, 0o755);
+  return { PATH: [bin, process.env.PATH].filter(Boolean).join(delimiter) };
+}
 
 /** A real WebKit app launch takes about 32 seconds on CI; callers must allow it to finish. */
 export const LAUNCH_TIMEOUT = 60000;
 
-/** The newest modification time of any file below `directory`. */
-function newest(directory: string): number {
-  return readdirSync(directory, { withFileTypes: true }).reduce((latest, entry) => {
-    const path = join(directory, entry.name);
-    return Math.max(latest, entry.isDirectory() ? newest(path) : statSync(path).mtimeMs);
-  }, 0);
-}
-
-/**
- * Build the app the tests drive, then check it. `cargo test -p artifactize-desktop` replaces
- * the same binary with one built for tests (Tauri's test feature), and the app embeds ui/dist
- * when it compiles: a run on either would mislead. Building here (a no-op when it is current)
- * puts the normal app back; an app still older than ui/dist means `pnpm build` ran after
- * the build, so say so at once instead of letting tests time out.
- */
+/** The suite has declared an immutable candidate; never rebuild or inspect a shared target. */
 export function checkBuild() {
-  if (checked) return;
-  const root = resolve(import.meta.dirname, "../../../..");
-  const built = spawnSync("cargo", ["build", "-p", "artifactize", "-p", "artifactize-desktop"], {
-    cwd: root,
-    stdio: ["ignore", "ignore", "inherit"],
-  });
-  if (built.status !== 0) throw new Error("cargo build -p artifactize -p artifactize-desktop failed; see its output above.");
-  assertFresh();
-  checked = true;
+  readCandidate();
 }
-
-/** The app embeds ui/dist when it compiles, so it must not be older than the files there. */
-export function assertFresh() {
-  const dist = resolve(import.meta.dirname, "../dist");
-  if (statSync(app).mtimeMs < newest(dist)) {
-    throw new Error(`${app} is older than ${dist}; run \`pnpm build\` before \`cargo build\`, not after.`);
-  }
-}
-let checked = false;
 
 export type Session = {
   browser: WebdriverIO.Browser;
@@ -62,7 +53,7 @@ let next = 4600 + (process.pid % 200) * 2;
 function listening(port: number): Promise<boolean> {
   return new Promise((done) => {
     const socket = createConnection({ port, host: "127.0.0.1" });
-    socket.once("connect", () => (socket.end(), done(true)));
+    socket.once("connect", () => { socket.destroy(); done(true); });
     socket.once("error", () => done(false));
   });
 }
@@ -81,16 +72,8 @@ export async function start(fixture: Fixture, ...args: string[]): Promise<Sessio
   return launch(fixture, {}, args);
 }
 
-/**
- * Start the app like `start` from binaries that are already built (and only checked): for a
- * harness that runs where cargo is unavailable.
- */
+/** Start a tool session from its explicitly prepared, session-private executable snapshot. */
 export async function startBuilt(fixture: Fixture, ...args: string[]): Promise<Session> {
-  if (!existsSync(app) || !existsSync(cli)) {
-    throw new Error("Build first: cargo build -p artifactize -p artifactize-desktop (after pnpm build in the ui folder).");
-  }
-  assertFresh();
-  checked = true;
   return launch(fixture, {}, args);
 }
 
@@ -162,10 +145,7 @@ function xvfb(number: number): Promise<Display | { failure: string }> {
 }
 
 async function launch(fixture: Fixture, overrides: Record<string, string | undefined>, args: string[]): Promise<Session> {
-  if (!checked) {
-    checkBuild();
-    checked = true;
-  }
+  checkBuild();
   const port = next;
   next += 2;
   const env: Record<string, string | undefined> = {
@@ -174,37 +154,51 @@ async function launch(fixture: Fixture, overrides: Record<string, string | undef
     ...overrides,
   };
   const screen = await display();
-  if (screen.env.DISPLAY) delete env.WAYLAND_DISPLAY;
-  for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
-  // tauri-driver starts WebKitWebDriver, which starts the app: all in the driver's group.
-  const driver = Owned.spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
-    env: {
-      ...env,
-      ...screen.env,
-      // A fresh WebView profile per run: no pane sizes or other storage from earlier runs.
-      XDG_DATA_HOME: join(fixture.root, "data"),
-      // Typed keys reach the app through GTK's built-in input method: literal text, never a
-      // desktop input method's composition (Korean input is a manual test, see the README).
-      GTK_IM_MODULE: "gtk-im-context-simple",
-      XMODIFIERS: "",
-    },
-    stdio: ["ignore", "ignore", "inherit"],
-  });
-  const owned = [driver, ...(screen.server ? [screen.server] : [])];
-  const end = () => Promise.all(owned.map((child) => child.stop()));
-  const browser = await connect(port, args, fixture).catch(async (error) => {
-    await end();
-    throw error;
-  });
-  return {
-    browser,
-    display: screen.env.DISPLAY ?? null,
-    groups: owned.map((child) => child.group),
-    stop: async () => {
-      await browser.deleteSession().catch(() => {});
-      await end();
-    },
+  const owned: Owned[] = screen.server ? [screen.server] : [];
+  const end = async () => {
+    const results = await Promise.allSettled(owned.map((child) => child.stop()));
+    const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason as unknown);
+    if (errors.length) throw new AggregateError(errors, "native session groups did not stop");
   };
+  try {
+    for (const child of owned) registerGroup(fixture.root, child.group);
+    if (screen.env.DISPLAY) delete env.WAYLAND_DISPLAY;
+    for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
+    // tauri-driver starts WebKitWebDriver, which starts the app: all in the driver's group.
+    const driver = Owned.spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
+      env: {
+        ...env,
+        ...screen.env,
+        // A fresh WebView profile per run: no pane sizes or other storage from earlier runs.
+        XDG_DATA_HOME: join(fixture.root, "data"),
+        // Typed keys reach the app through GTK's built-in input method: literal text, never a
+        // desktop input method's composition (Korean input is a manual test, see the README).
+        GTK_IM_MODULE: "gtk-im-context-simple",
+        XMODIFIERS: "",
+      },
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+    owned.push(driver);
+    await new Promise<void>((done, fail) => {
+      driver.child.once("spawn", () => done());
+      driver.child.once("error", fail);
+    });
+    registerGroup(fixture.root, driver.group);
+    const browser = await connect(port, args, fixture);
+    return {
+      browser,
+      display: screen.env.DISPLAY ?? null,
+      groups: owned.map((child) => child.group),
+      stop: async () => {
+        await browser.deleteSession().catch(() => {});
+        await end();
+      },
+    };
+  } catch (error) {
+    try { await end(); }
+    catch (shutdown) { throw new AggregateError([error, shutdown], "native launch and cleanup failed"); }
+    throw error;
+  }
 }
 
 async function connect(port: number, args: string[], fixture: Fixture): Promise<WebdriverIO.Browser> {
@@ -217,7 +211,7 @@ async function connect(port: number, args: string[], fixture: Fixture): Promise<
     capabilities: {
       // tauri-driver turns these into WebKitWebDriver's browser options.
       "tauri:options": {
-        application: app,
+        application: app(),
         // A plain launch lists every repository in the state; tests that narrow pass `--repo`.
         args: [...args, "--state-dir", fixture.state, "--reviewer", "alice"],
       },

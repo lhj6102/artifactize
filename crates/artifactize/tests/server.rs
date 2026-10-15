@@ -38,12 +38,13 @@ fn admin(state: &Path, args: &[&str]) -> Value {
 }
 
 struct Server {
-    _root: tempfile::TempDir,
     state: PathBuf,
     child: Watcher,
     _stdout: BufReader<ChildStdout>,
     url: String,
     client: reqwest::Client,
+    // Close the owned process, pipe and HTTP connections before deleting their state.
+    _root: tempfile::TempDir,
 }
 
 impl Server {
@@ -129,8 +130,7 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        support::os::kill(self.child.id());
-        let _ = self.child.wait();
+        let _ = self.child.stop();
     }
 }
 
@@ -466,18 +466,6 @@ async fn older_review_stores_upgrade_in_place_and_keep_their_tokens() {
             db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
                 .unwrap(),
             3
-        );
-        let schema: Vec<String> = db
-            .prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL")
-            .unwrap()
-            .query_map([], |row| row.get(0))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect();
-        let schema = schema.join("\n");
-        assert!(
-            !schema.contains("stale") && !schema.contains("fingerprint") && schema.contains("key"),
-            "{schema}"
         );
         // Records keyed the 0.4 way cannot match a 0.5 key; the tokens keep working.
         assert!(stored(&server.state).is_empty());

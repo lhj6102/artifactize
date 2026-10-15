@@ -4,12 +4,17 @@ use std::{fs, process::Command};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
+
+#[path = "support/run.rs"]
+mod owned_run;
 
 #[test]
 fn ordinary_verify_reuses_graph_results_until_structure_changes() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
+    let _runs = owned_run::RepoLease::new(&state, &repo);
     fs::create_dir(&repo).unwrap();
     let graph = json!({
         "name": "project-graph",
@@ -30,7 +35,8 @@ fn ordinary_verify_reuses_graph_results_until_structure_changes() {
             .arg(&state)
             .args(args)
             .arg("--json")
-            .output()
+            .env("ARTIFACTIZE_REMOTE", "off")
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -68,6 +74,11 @@ fn ordinary_verify_reuses_graph_results_until_structure_changes() {
         0,
     );
     assert_eq!(content_only["executionsStarted"], 0);
+    assert_eq!(content_only["requests"][0]["key"], fingerprint);
+    assert_eq!(
+        content_only["requests"][0]["executionId"],
+        first["requests"][0]["executionId"]
+    );
     fs::write(
         repo.join("index.artf"),
         "name = 'renamed-app'\nbasis = true\n",
@@ -88,7 +99,10 @@ fn ordinary_verify_reuses_graph_results_until_structure_changes() {
     assert_eq!(changed["executionsStarted"], 1);
     assert_ne!(changed["requests"][0]["key"], fingerprint);
     let status = invoke(&["status", "--all"], 0);
-    assert!(status.to_string().contains("project-graph"));
+    assert_eq!(status["satisfied"], true);
+    assert!(status["evals"].as_array().unwrap().iter().any(|eval| {
+        eval["id"] == "project-graph/check" && eval["key"] == changed["requests"][0]["key"]
+    }));
 
     // The graph differs only in its fingerprint: a no-eval basis is ordinary,
     // and it does not silently satisfy an unmet input's obligations.

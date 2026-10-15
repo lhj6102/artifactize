@@ -6,9 +6,12 @@ depends on are unchanged, so review cost follows the size of a change.
 
 ## Fingerprints
 
-Every Artifact uses **artifactsum** by default. Omit `fingerprint` to hash its own
-files, or choose a script. A fingerprint adds no tool declarations or other
-Artifact's value; dependencies enter through the [reuse key](#the-reuse-key).
+Folder and file Artifacts use **artifactsum** by default. Omit `fingerprint` to
+hash their own files, or choose a script. The root graph Artifact always uses the
+[structural graph fingerprint](#graph-fingerprint); it cannot declare `fingerprint`
+to override or disable that value. For folder and file Artifacts, the configurable
+forms below add no tool declarations or other Artifact's value; dependencies enter
+through the [reuse key](#the-reuse-key).
 
 - Omission uses artifactsum: `artifactsum:` plus SHA-256 over the Artifact's
   own input paths and bytes. `fingerprint = {}` also works for folders. A folder hashes its own files;
@@ -93,8 +96,10 @@ Artifact, so changing only a tool's description or schema does not review again.
 make a tool change matter, include the relevant files in the fingerprint.
 
 An executable eval has a key only when its target and every Artifact it depends on
-have a fingerprint. Omission supplies artifactsum, including for basis Artifacts. If
-any declares `fingerprint = false`, the eval has no reuse: every `verify` reviews it
+have a fingerprint. Omission supplies artifactsum for folder and file Artifacts,
+including basis Artifacts of those kinds; graph Artifacts always supply their
+structural graph fingerprint. If a folder or file Artifact declares
+`fingerprint = false`, the eval has no reuse: every `verify` reviews it
 again. For an unforced READY Runtime/Agent eval, `status` names the disabled target
 or dependency in its execution reason. A READY Human eval instead gives the
 request-awaiting-claim-and-submission reason; forced, blocked and waiting evals

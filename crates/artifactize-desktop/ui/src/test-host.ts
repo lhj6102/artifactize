@@ -5,5 +5,12 @@ import TestHost from "./TestHost.svelte";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function renderHosted(child: Component<any>, props: Record<string, unknown> = {}) {
-  return render(TestHost, { props: { child, props } });
+  const view = render(TestHost, { props: { child, childProps: props } });
+  return {
+    ...view,
+    async rerender(next: Record<string, unknown>) {
+      props = { ...props, ...next };
+      await view.rerender({ childProps: props });
+    },
+  };
 }

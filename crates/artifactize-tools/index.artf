@@ -1,5 +1,8 @@
 name = "tools"
-fingerprint = { files = ["."] }
+# Cargo also reads the workspace manifest and locked dependency graph.
+[fingerprint.script]
+command = "node"
+args = ["{desktop}/fingerprint.mjs", ".", "{graph}/Cargo.toml", "{graph}/Cargo.lock"]
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -88,3 +91,24 @@ properties.where = { type = "string", minLength = 1 }
 properties.change = { type = "string", minLength = 1 }
 required = ["item", "where", "change"]
 additionalProperties = false
+
+[evals.fmt]
+title = "The Rust formatting check passes"
+profile = { kind = "runtime", command = "cargo", args = ["fmt", "--check", "-p", "artifactize-tools"], timeout_ms = 60000 }
+
+[evals.fmt.payload]
+instruction = "Check the formatting of {tools}."
+
+[evals.clippy]
+title = "Clippy passes for every Rust target"
+profile = { kind = "runtime", command = "cargo", args = ["clippy", "--locked", "-p", "artifactize-tools", "--all-targets", "--", "-D", "warnings"], timeout_ms = 1800000 }
+
+[evals.clippy.payload]
+instruction = "Check every Rust target of {tools}, treating every clippy warning as an error."
+
+[evals.tests]
+title = "The Rust crate tests pass"
+profile = { kind = "runtime", command = "cargo", args = ["test", "--locked", "-p", "artifactize-tools"], timeout_ms = 1800000 }
+
+[evals.tests.payload]
+instruction = "Run the tests of {tools}. Fixtures build or declare every executable they use and own their resources."

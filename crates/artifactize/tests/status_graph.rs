@@ -1,3 +1,8 @@
+#[path = "support/order.rs"]
+mod order;
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -14,6 +19,7 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
+    runs: Option<owned_run::RepoLease>,
     root: TempDir,
     repo: PathBuf,
     state: PathBuf,
@@ -24,9 +30,11 @@ impl Fixture {
         let root = support::os::tempdir();
         let repo = root.path().join("repo");
         support::copy_fixture(name, &repo);
+        let state = root.path().join("state");
         Self {
+            runs: Some(owned_run::RepoLease::new(&state, &repo)),
             repo,
-            state: root.path().join("state"),
+            state,
             root,
         }
     }
@@ -121,6 +129,13 @@ fn runtime_status_separates_current_validation_from_saved_attempts() {
     assert_eq!(basis["obligations"], json!([]));
 
     let run = fixture.json(&["verify", "--wait", "--all"], 2);
+    // The history fixture has distinct declared times, not host-clock ordering.
+    order::run_times(
+        &fixture.state,
+        run["id"].as_str().unwrap(),
+        "2000-01-01T00:00:00Z",
+        "2000-01-01T00:00:01Z",
+    );
     let view = fixture.json(&["status"], 1);
     assert_eq!(view["satisfied"], false);
     assert_eq!(view["counts"]["reuse"], 0);
@@ -143,6 +158,12 @@ fn runtime_status_separates_current_validation_from_saved_attempts() {
         assert_eq!(eval["action"], action);
     }
     let rerun = fixture.json(&["verify", "--wait", "green"], 0);
+    order::run_times(
+        &fixture.state,
+        rerun["id"].as_str().unwrap(),
+        "2000-01-02T00:00:00Z",
+        "2000-01-02T00:00:01Z",
+    );
     assert_eq!(rerun["validation"]["satisfied"], true);
     let later = fixture.json(&["status"], 1);
     assert_eq!(
@@ -315,15 +336,10 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
 #[test]
 fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let fixture = Fixture::new("declarations");
-    let marker = fixture.root.path().join("hook-executed");
+    let marker = fixture.repo.join("review/hook-executed");
     let hook = fixture.repo.join("review/hook.sh");
-    support::os::write_script(
-        &hook,
-        &format!(
-            "printf called > '{}'\nexit 91\n",
-            support::os::path_text(&marker)
-        ),
-    );
+    // The hook runs in its Artifact; no native temporary root is interpolated into a shell.
+    support::os::write_script(&hook, "printf called > hook-executed\nexit 91\n");
     support::os::allow_execution(&hook);
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);
@@ -346,7 +362,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
 
 #[test]
 fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
-    let fixture = Fixture::new("runtime");
+    let mut fixture = Fixture::new("runtime");
     let first = fixture.json(&["verify", "--wait", "green"], 0);
     let other = fixture.root.path().join("other");
     copy_directory(&fixture.repo, &other);
@@ -394,6 +410,15 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .join(first["id"].as_str().unwrap())
             .is_dir()
     );
+    assert_eq!(
+        fs::read_to_string(
+            Path::new(first["requests"][0]["runDir"].as_str().unwrap()).join("output/result.txt")
+        )
+        .unwrap(),
+        "runtime output\n"
+    );
+    // Release ownership before deliberately making this state unreadable to lifecycle APIs.
+    drop(fixture.runs.take());
     // Corrupt schema metadata as an explicit input, separate from the read-only observer.
     Connection::open(fixture.state.join("state.sqlite"))
         .unwrap()

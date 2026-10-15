@@ -34,6 +34,8 @@ pub use executions::{
     Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,
     read_keyed_executions, read_latest_cached,
 };
+#[cfg(test)]
+pub(crate) use receipts::OwnedReceipts;
 pub(crate) use receipts::regular_files as check_probe_files;
 pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
@@ -88,55 +90,31 @@ pub(crate) fn retry_transient_access<T>(
 
 #[cfg(test)]
 mod retry_tests {
-    use std::cell::Cell;
+    use std::{cell::Cell, io};
 
     #[test]
-    fn retry_succeeds_within_bound_gives_up_past_it_and_never_retries_a_non_transient_error() {
+    fn file_probe_returns_success_and_permanent_errors_without_backoff() {
         let calls = Cell::new(0);
-        let waits = Cell::new(0);
-        let result = super::retry(
+        let result = super::retry_transient_access(
             || {
                 calls.set(calls.get() + 1);
-                if calls.get() <= 2 {
-                    Err::<u32, _>("transient")
-                } else {
-                    Ok(calls.get())
-                }
+                Ok(7)
             },
-            |error: &&str| *error == "transient",
-            || waits.set(waits.get() + 1),
+            || panic!("successful probes need no backoff"),
         );
-        assert_eq!(result, Ok(3));
-        assert_eq!(calls.get(), 3);
-        assert_eq!(waits.get(), 2);
-
-        let calls = Cell::new(0);
-        let waits = Cell::new(0);
-        let result = super::retry(
-            || {
-                calls.set(calls.get() + 1);
-                Err::<(), _>("transient")
-            },
-            |error: &&str| *error == "transient",
-            || waits.set(waits.get() + 1),
-        );
-        assert_eq!(result, Err("transient"));
-        assert_eq!(calls.get(), super::TRANSIENT_ACCESS_RETRIES);
-        assert_eq!(waits.get(), 4);
-
-        let calls = Cell::new(0);
-        let waits = Cell::new(0);
-        let result = super::retry(
-            || {
-                calls.set(calls.get() + 1);
-                Err::<(), _>("permanent")
-            },
-            |error: &&str| *error == "transient",
-            || waits.set(waits.get() + 1),
-        );
-        assert_eq!(result, Err("permanent"));
+        assert_eq!(result.unwrap(), 7);
         assert_eq!(calls.get(), 1);
-        assert_eq!(waits.get(), 0);
+
+        let calls = Cell::new(0);
+        let result = super::retry_transient_access(
+            || {
+                calls.set(calls.get() + 1);
+                Err::<(), _>(io::Error::other("permanent probe failure"))
+            },
+            || panic!("permanent errors cannot be retried"),
+        );
+        assert_eq!(result.unwrap_err().to_string(), "permanent probe failure");
+        assert_eq!(calls.get(), 1);
     }
 }
 

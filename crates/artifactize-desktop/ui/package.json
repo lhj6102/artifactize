@@ -8,7 +8,7 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
-    "e2e": "node --test --test-concurrency=1 e2e/*.test.ts",
+    "e2e": "node e2e/run.ts",
     "lint": "eslint --no-inline-config src && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
   },
   "dependencies": {

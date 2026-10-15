@@ -44,8 +44,9 @@ async fn contradictory_runs_do_not_abort_the_monitor() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
+    let _lease = support::runs::RepoLease::new(root, &state, &repo);
     support::declaration::write(repo.join("index.artf"), json!({
-        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
+        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     verify_at(&repo, &state, "2026-01-01T00:00:00Z").await;
     // Corrupt the newest Run: the Monitor initially selects it and must still refresh.
@@ -66,6 +67,13 @@ async fn contradictory_runs_do_not_abort_the_monitor() {
         .iter()
         .map(|cell| cell.symbol())
         .collect();
+    // The deliberately malformed receipt is setup, not a worker's real lifecycle. Restore
+    // it after rendering so the fixture can observe terminal worker exit during teardown.
+    db.execute(
+        "UPDATE runs SET status=?1,data=json_set(data,'$.status',?1) WHERE id=?2",
+        [bad.run.status().as_str(), bad.run.id.as_str()],
+    )
+    .unwrap();
     assert!(text.contains(bad.run.id.as_str()), "{text}");
     assert!(text.contains("A running Run cannot be completed"), "{text}");
     assert!(!text.contains("read failed"), "{text}");

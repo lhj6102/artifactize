@@ -5,6 +5,8 @@ import type { CodexPrompt, CodexStatus, KeyStatus, Model, Provider, RemoteStatus
 export class SettingsState {
   /** Numbers the remote-store calls: only the newest answer is shown. */
   remoteCalls = $state(0);
+  /** Outstanding store reads or mutations, for the section's accessible busy state. */
+  remotePending = $state(0);
   keys = $state.raw<KeyStatus[]>([]);
   codex = $state.raw<CodexStatus | null>(null);
   codexError = $state<string | null>(null);

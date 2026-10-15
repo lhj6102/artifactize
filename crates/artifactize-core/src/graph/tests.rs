@@ -8,7 +8,8 @@ use crate::{
 
 fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> RepoConfig {
     let mut config = RepoConfig {
-        root: "/unused".into(),
+        // Graph evaluation uses declarations only; this synthetic root is never opened.
+        root: "unused".into(),
         artifacts: BTreeMap::new(),
         evals: Vec::new(),
         relations: edges

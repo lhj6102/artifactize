@@ -22,11 +22,12 @@ fn split_json_newline_and_utf8_tail_wait_for_complete_records_and_end_is_not_ter
         .unwrap();
     file.write_all(&bytes[..split]).unwrap();
     let before = finish(&mut reader, 80, 20, Position::Bottom);
-    assert_eq!(reader.records_len(), 1);
+    assert!(before.status.is_none(), "{:?}", before.status);
     assert!(!before.rows.join("\n").contains("late"));
     file.write_all(&bytes[split..bytes.len() - 1]).unwrap();
-    finish(&mut reader, 80, 20, Position::Bottom);
-    assert_eq!(reader.records_len(), 1);
+    let unterminated = finish(&mut reader, 80, 20, Position::Bottom);
+    assert!(unterminated.status.is_none(), "{:?}", unterminated.status);
+    assert!(!unterminated.rows.join("\n").contains("late"));
     file.write_all(b"\n").unwrap();
     assert!(
         finish(&mut reader, 80, 20, Position::Bottom)
@@ -141,7 +142,7 @@ fn huge_small_records_bounded_batches_cache_and_append_byte_accounting() {
     let mut reader = Reader::new(source.clone());
     let first = reader.step(80, 30, Position::Bottom);
     assert!(first.loading);
-    assert!(reader.records_len() <= 128);
+    assert!(!first.rows.join("\n").contains("history end"));
     let window = finish(&mut reader, 80, 30, Position::Bottom);
     assert!(window.status.is_none(), "{:?}", window.status);
     assert!(window.rows.join("\n").contains("history end"));
@@ -336,7 +337,7 @@ async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let _receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let mut view = crate::monitor::tests::request(
         "app/check",
         "RUNNING",
@@ -370,7 +371,6 @@ async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
         live::resolve(&state, &view).await.unwrap(),
         Resolution::Unavailable(_)
     ));
-    assert!(receipts.state_id().await.unwrap().len() > 1);
 }
 
 #[tokio::test]
@@ -379,7 +379,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({
         "id":"run-1",
         "repoPath":repo,

@@ -2,6 +2,7 @@
 // out of order never roll the shown snapshot back, and a newer snapshot always advances the
 // revision Detail reads by.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BrowseView } from "../ipc/client";
 import { Browse } from "./browse.svelte";
@@ -37,8 +38,6 @@ function backend() {
   return answers;
 }
 
-const settle = () => new Promise((done) => setTimeout(done, 0));
-
 afterEach(() => clearMocks());
 
 describe("Browse", () => {
@@ -48,10 +47,10 @@ describe("Browse", () => {
     browse.view = view(1);
     const read = browse.navigate({ full: true });
     const clock = browse.redraw();
-    await settle();
-    answers.find((pending) => pending.cmd === "browse")?.answer(2);
+    await waitFor(() => expect(answers.map((pending) => pending.cmd)).toEqual(["browse", "redraw"]));
+    answers.find((pending) => pending.cmd === "browse")!.answer(2);
     await read;
-    answers.find((pending) => pending.cmd === "redraw")?.answer(1);
+    answers.find((pending) => pending.cmd === "redraw")!.answer(1);
     await clock;
     expect(browse.view?.revision).toBe(2);
     expect(browse.revision).toBe(2);
@@ -63,11 +62,11 @@ describe("Browse", () => {
     browse.view = view(1);
     const read = browse.navigate({ full: true });
     const clock = browse.redraw();
-    await settle();
-    answers.find((pending) => pending.cmd === "redraw")?.answer(2);
+    await waitFor(() => expect(answers.map((pending) => pending.cmd)).toEqual(["browse", "redraw"]));
+    answers.find((pending) => pending.cmd === "redraw")!.answer(2);
     await clock;
     expect(browse.revision).toBe(2);
-    answers.find((pending) => pending.cmd === "browse")?.answer(2);
+    answers.find((pending) => pending.cmd === "browse")!.answer(2);
     await read;
     expect(browse.view?.revision).toBe(2);
   });

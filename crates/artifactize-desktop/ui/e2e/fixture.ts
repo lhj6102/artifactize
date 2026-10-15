@@ -1,52 +1,39 @@
 // Fixture state for the end-to-end tests, built only through the real `artifactize` CLI:
 // a release Artifact with a waiting Human sign-off, its tools and owner schemas, and a
 // dependent Artifact that waits for it.
+// Native Linux WebKitGTK fixtures: POSIX command stand-ins and signal crashes belong here,
+// not in portable journey assertions. A different native driver needs its own OS setup.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, watch, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, watch, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { readCandidate } from "./build.ts";
+import { removeFixture, settleRuns } from "./runs.ts";
 
-const crate = resolve(import.meta.dirname, "../..");
-const target = process.env.CARGO_TARGET_DIR ?? resolve(crate, "../../target");
-/** The CLI and the app the tests run; `cargo build -p artifactize -p artifactize-desktop`. */
-export const cli = join(target, "debug", "artifactize");
-export const app = join(target, "debug", "artifactize-desktop");
-/** State must be outside the project, including a checkout with a root graph declaration.
- * One child directory keeps fixture markers out of the system temporary root. */
-const scratch = join(tmpdir(), "artifactize-desktop-e2e");
+/** The declared immutable candidates inherited from the owning suite or tool session. */
+export const cli = () => readCandidate().cli;
+export const app = () => readCandidate().app;
+/** Fixtures live below their owning candidate, outside any project graph or Git repository. */
 
 /** Every fixture root made by this process goes when it ends, however its tests ended. */
 const made: string[] = [];
-const waiting = new Map<string, Fixture>();
 process.on("exit", () => {
-  // Fixture Runs now outlive their callers. Explicitly cancel before removing their state.
-  for (const [run, fixture] of waiting) {
-    try {
-      artifactize(fixture, "run", "cancel", run);
-      artifactize(fixture, "run", "show", run, "--wait");
-    } catch (error) {
-      console.error(`could not settle fixture Run ${run}`, error);
-      process.exitCode = 1;
-    }
-  }
+  // Runs outlive callers. Include states exposed through the harness CLI, and never
+  // remove working files after a failed cancellation or worker-exit observation.
   for (const root of made) {
-    try { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
-    catch (error) {
-      console.error(`could not remove fixture root ${root}`, error);
+    if (!existsSync(root)) continue;
+    try {
+      removeFixture(cli(), root);
+    } catch (error) {
+      console.error(`could not settle and remove fixture root ${root}`, error);
       process.exitCode = 1;
     }
-  }
-  // The scratch directory itself goes too, when nothing else is left in it.
-  try {
-    rmdirSync(scratch);
-  } catch {
-    // Not empty (another process's fixtures), or already gone.
   }
 });
 
 /** A new fixture root below the scratch space, removed when this process ends. */
 function newRoot(): string {
+  const scratch = join(readCandidate().root, "fixtures");
   mkdirSync(scratch, { recursive: true });
   const root = mkdtempSync(join(scratch, "fixture-"));
   made.push(root);
@@ -111,7 +98,7 @@ Build the docs."""
 
 /** Run the CLI against the fixture; returns its exit status. */
 export function artifactize(fixture: Fixture, ...args: string[]): number {
-  const result = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, ...args], {
+  const result = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...args], {
     env: { ...process.env, USER: "alice", ARTIFACTIZE_REMOTE: "off" },
     encoding: "utf8",
   });
@@ -131,7 +118,7 @@ export type Saved = {
 /** The saved requests, as `request list --json` prints them. */
 export function requests(fixture: Fixture): Saved[] {
   const result = spawnSync(
-    cli,
+    cli(),
     ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],
     { encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" } },
   );
@@ -141,20 +128,7 @@ export function requests(fixture: Fixture): Saved[] {
 
 /** A killed fixture owner cannot run its exit hook; its teardown explicitly settles Runs. */
 export function cancelRuns(fixture: Fixture): void {
-  if (!existsSync(join(fixture.state, "state.sqlite"))) return;
-  const listed = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "list", "--json"], {
-    encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
-  });
-  if (listed.status !== 0) throw new Error(listed.stderr || listed.stdout || "cannot list fixture Runs for cleanup");
-  // Accepted Runs may not have produced a request yet when setup fails.
-  const runs = JSON.parse(listed.stdout) as { id: string; status: string }[];
-  for (const { id, status } of runs) {
-    if (status === "RUNNING") {
-      artifactize(fixture, "run", "cancel", id);
-      artifactize(fixture, "run", "show", id, "--wait");
-    }
-    waiting.delete(id);
-  }
+  settleRuns(cli(), fixture.repo, fixture.state);
 }
 
 /** The saved Human sign-off request. */
@@ -175,18 +149,17 @@ function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
     writeFileSync(join(repo, name, "index.artf"), text);
   }
   writeFileSync(join(repo, "release", "notes.md"), notes);
-  execFileSync("git", ["init", "-q", repo]);
+  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
 }
 
 /** Submit every eval and observe the scheduler's waiting phase, not an elapsed sleep.
  * Registration precedes the baseline read, so a change during setup cannot be missed. */
 export async function verifyWaiting(fixture: Fixture): Promise<string> {
-  const submitted = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
+  const submitted = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
     encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
   });
   if (submitted.status !== 0) throw new Error(submitted.stderr || submitted.stdout || "verify submission failed");
   const { run } = JSON.parse(submitted.stdout) as { run: string };
-  waiting.set(run, fixture);
   await new Promise<void>((done, fail) => {
     let finished = false;
     const observed = watch(fixture.state, () => inspect());
@@ -202,7 +175,7 @@ export async function verifyWaiting(fixture: Fixture): Promise<string> {
     function inspect() {
       if (finished) return;
       try {
-        const output = execFileSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", run, "--json"], {
+        const output = execFileSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", run, "--json"], {
           encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
         });
         const saved = JSON.parse(output) as { status: string; control: { activity: string }; requests: Saved[] };
@@ -286,7 +259,7 @@ Check ${reference}."""
     mkdirSync(join(repo, name(index)), { recursive: true });
     writeFileSync(join(repo, name(index), "index.artf"), text);
   }
-  execFileSync("git", ["init", "-q", repo]);
+  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
   const fixture = { root, repo, state };
   const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
@@ -297,12 +270,15 @@ Check ${reference}."""
 export function createPagedRequests(): { fixture: Fixture; expected: string[] } {
   const fixture = createChain(100);
   const older = requests(fixture);
-  const completed = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state,
+  const completed = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
     "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], {
     encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
   });
   if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
   const newer = (JSON.parse(completed.stdout) as { requests: Saved[] }).requests;
+  // --wait observes terminal publication, not worker exit. Join every writer before
+  // installing the controlled chronology, so finalization cannot overwrite its inputs.
+  settleRuns(cli(), fixture.repo, fixture.state);
   // This is fixture setup, not an observation: explicit times make the two batches
   // genuinely older/newer without depending on clock resolution or elapsed time.
   const db = new DatabaseSync(join(fixture.state, "state.sqlite"));
@@ -369,7 +345,7 @@ Approve."""
 `,
   );
   artifact("later", "true", "[]", "Run after {gate}.");
-  execFileSync("git", ["init", "-q", repo]);
+  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
   const fixture = { root, repo, state };
   // RED/ERROR are committed while the independent Human sign-off keeps the Run waiting.
   await verifyWaiting(fixture);
@@ -399,7 +375,7 @@ Check ${name}."""
     .join("");
   mkdirSync(join(repo, "app"), { recursive: true });
   writeFileSync(join(repo, "app", "index.artf"), `name = "app"\n${evals}`);
-  execFileSync("git", ["init", "-q", repo]);
+  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
   const fixture = { root, repo, state };
   const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
@@ -412,16 +388,11 @@ Check ${name}."""
  * deletes it.
  */
 export function createOutside(): Fixture & { remove: () => Promise<void> } {
-  const root = mkdtempSync(join(tmpdir(), "artifactize-e2e-"));
+  const root = newRoot();
   const repo = join(root, "repo");
   mkdirSync(repo, { recursive: true });
-  // The closing WebView may still write its profile (below `data`) as the session ends.
-  const remove = async () => {
-    for (let attempt = 0; attempt < 20 && existsSync(root); attempt += 1) {
-      rmSync(root, { recursive: true, force: true });
-      await new Promise((done) => setTimeout(done, 100));
-    }
-  };
+  // A failed session.stop must not delete a still-writing WebView's profile.
+  const remove = async () => { removeFixture(cli(), root); };
   return { root, repo, state: join(root, "state"), remove };
 }
 

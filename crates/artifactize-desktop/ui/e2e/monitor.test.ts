@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
+import { afterRender } from "./keys.ts";
+import { checkpoint } from "./commands.ts";
 
 /** Wait until `check` holds, polling the app; WebKit renders asynchronously. */
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -54,6 +56,9 @@ describe("monitor", () => {
     const selected = await browser.$('[role="treeitem"][aria-selected="true"]').getText();
     assert.match(selected, /signoff/);
     assert.match(shown, /WAITING_HUMAN — waiting for a Human submission/);
+    const activity = (await checkpoint(browser)).activity;
+    assert.ok(activity.commands.launch?.completed > 0, "the window observes its normal launch completion");
+    assert.ok(activity.commands.browse?.completed > 0, "the AppState Browse helper reports to the same owner");
   });
 
   // UX edges: E-MON-SCOPE-RUNS E-MON-RUNS-TREE E-MON-TREE-MOVE E-MON-TREE-DETAIL
@@ -84,16 +89,23 @@ describe("monitor", () => {
 
     // A composing keystroke (an input method's) is never a shortcut.
     await human().click();
+    const claimBefore = (await checkpoint(browser)).activity.commands.humanClaim;
+    const dispatched = claimBefore?.started ?? 0;
     await browser.execute(() => {
       const target = document.querySelector('[aria-label="Human review"]');
       target?.dispatchEvent(new KeyboardEvent("keydown", { key: "c", isComposing: true, bubbles: true }));
     });
-    await browser.pause(500);
+    await afterRender(browser);
+    assert.equal((await checkpoint(browser)).activity.commands.humanClaim?.started ?? 0, dispatched,
+      "a composition dispatches no claim, including one whose native completion is still pending");
     assert.equal(signoff(fixture).claim, null, "a composition claims nothing");
 
     await browser.keys(["c"]);
     await eventually(async () => (await text()).includes("claimed by you (alice)"), "claimed");
     assert.equal(signoff(fixture).claim?.reviewer, "alice");
+    assert.deepEqual((await checkpoint(browser)).activity.commands.humanClaim, {
+      started: dispatched + 1, completed: (claimBefore?.completed ?? 0) + 1, pending: 0,
+    }, "the normal Review helper claim dispatch and completion reach the same public owner");
     await browser.keys(["u"]);
     await eventually(async () => (await text()).includes("Claim released."), "released");
     assert.equal(signoff(fixture).claim, null);
@@ -215,14 +227,17 @@ describe("monitor", () => {
       );
     const before = await width();
     const dividers = await browser.$$("[data-pane-resizer]");
-    // Scope | Runs, the sidebar | Run tree, then the Run tree | Detail divider. paneforge
-    // listens for moves only from an effect after the press starts the drag, so the pointer
-    // pauses after the press and moves in steps, as a hand does; one instant move (what
-    // dragAndDrop sends) could arrive before the listener and drop the whole drag.
-    const pointer = browser.action("pointer");
-    pointer.move({ origin: dividers[2] }).down().pause(150);
-    for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x: 20, y: 0, duration: 20 });
-    await pointer.pause(100).up().perform();
+    // Paneforge installs its move listener in a post-press render effect. Keep the real
+    // pointer held across that render boundary, rather than guessing how long it takes.
+    await browser.action("pointer", { id: "resize" }).move({ origin: dividers[2] }).down().perform(true);
+    try {
+      await afterRender(browser);
+      const pointer = browser.action("pointer", { id: "resize" });
+      for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x: 20, y: 0 });
+      await pointer.perform(true);
+      await eventually(async () => (await width()) > before + 60, "the dragged Run tree");
+      await browser.action("pointer", { id: "resize" }).up().perform();
+    } finally { await browser.releaseActions(); }
     await eventually(async () => (await width()) > before + 60, "a wider Run tree");
   });
 });

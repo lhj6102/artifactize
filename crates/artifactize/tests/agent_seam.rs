@@ -1,5 +1,8 @@
 //! The loopback test endpoints that point Agent backends at a fake provider.
 
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -14,6 +17,8 @@ use serde_json::{Value, json};
 use support::{FakeProvider, Reply, anthropic, openai};
 
 struct Project {
+    // Fields drop in declaration order: release durable workers before their temporary state.
+    _runs: owned_run::RepoLease,
     _root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
@@ -48,8 +53,10 @@ impl Project {
             .to_string(),
         )
         .unwrap();
+        let state = root.path().join("state");
         Self {
-            state: root.path().join("state"),
+            _runs: owned_run::RepoLease::new(&state, &repo),
+            state,
             repo,
             _root: root,
         }

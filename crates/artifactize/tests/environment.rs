@@ -2,6 +2,9 @@
 //! their variables and the toolchains found through them. Only what is artifactize's own
 //! differs: its credentials and settings stay out, and each run has a private temporary
 //! directory that goes with it.
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -29,6 +32,15 @@ if sys.argv[2] == 'tool':
 
 struct Project {
     root: tempfile::TempDir,
+}
+
+impl Drop for Project {
+    fn drop(&mut self) {
+        owned_run::release_repo(
+            &self.root.path().join("state"),
+            &self.root.path().join("repo"),
+        );
+    }
 }
 
 impl Project {

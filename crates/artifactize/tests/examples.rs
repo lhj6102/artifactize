@@ -6,6 +6,7 @@ mod owned_run;
 use owned_run::RunChild;
 
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
@@ -29,21 +30,32 @@ fn example(name: &str) -> PathBuf {
     )
 }
 
-struct Session(TempDir);
+struct Session {
+    // Leases drop before state, even when an assertion interrupts a submission barrier.
+    leases: RefCell<BTreeMap<PathBuf, owned_run::RepoLease>>,
+    root: TempDir,
+}
 
 impl Session {
     fn new() -> Self {
-        Self(support::os::tempdir())
+        Self {
+            leases: RefCell::new(BTreeMap::new()),
+            root: support::os::tempdir(),
+        }
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
+        self.leases
+            .borrow_mut()
+            .entry(repo.to_owned())
+            .or_insert_with(|| owned_run::RepoLease::new(&self.root.path().join("state"), repo));
         let mut command = Command::new(support::os::cli());
         command
             // Runtime evals name `grep` and declared tools name `python3` for PATH to find.
             .env("PATH", support::os::path())
             .current_dir(repo)
             .args(args)
-            .env("ARTIFACTIZE_STATE_HOME", self.0.path().join("state"))
+            .env("ARTIFACTIZE_STATE_HOME", self.root.path().join("state"))
             .env_remove("OPENAI_API_KEY")
             .env_remove("ANTHROPIC_API_KEY");
         command
@@ -63,7 +75,7 @@ impl Session {
 
     /// A private copy for edits that turn an example RED.
     fn copy(&self, name: &str) -> PathBuf {
-        let target = self.0.path().join(name);
+        let target = self.root.path().join(name);
         support::copy_directory(&example(name), &target);
         target
     }
@@ -85,8 +97,8 @@ fn parse(output: &Output) -> Value {
 }
 
 /// Every file below `root`, so tests notice anything an example writes into its own folder.
-fn files(root: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
+fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut found = BTreeMap::new();
     let mut pending = vec![root.to_owned()];
     while let Some(directory) = pending.pop() {
         for entry in fs::read_dir(directory).unwrap() {
@@ -94,11 +106,13 @@ fn files(root: &Path) -> Vec<PathBuf> {
             if path.is_dir() {
                 pending.push(path);
             } else {
-                found.push(path.strip_prefix(root).unwrap().to_owned());
+                found.insert(
+                    path.strip_prefix(root).unwrap().to_owned(),
+                    fs::read(&path).unwrap(),
+                );
             }
         }
     }
-    found.sort();
     found
 }
 
@@ -527,7 +541,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let verify = RunChild::new(verify, &session.0.path().join("state"), &repo);
+    let verify = RunChild::new(verify, &session.root.path().join("state"), &repo);
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     let run_id = loop {
         let listed = session.json(&repo, &["request", "list", "--json"], 0);

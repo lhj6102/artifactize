@@ -17,7 +17,7 @@ const TOKEN = "azt_e2esettingstoken0123456789abcdef";
 function cliStatus(state: string, repo: string): Promise<{ code: number; stdout: string }> {
   return new Promise((done) => {
     execFile(
-      cli,
+      cli(),
       ["--state-dir", state, "--repo", repo, "remote", "status", "--json"],
       { encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "", ARTIFACTIZE_REMOTE_TOKEN: "" } },
       (error, stdout) => done({ code: error ? Number(error.code ?? 1) : 0, stdout }),

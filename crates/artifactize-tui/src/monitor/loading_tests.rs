@@ -176,27 +176,55 @@ async fn scope_navigation_restores_the_same_cached_run_after_clearing_the_displa
 async fn run_navigation_reuses_catalog_and_page_but_detects_a_commit_without_any_hint() {
     let (_root, receipts, mut monitor) = fixture(3).await;
     monitor.refresh().await;
-    monitor.select_run(1);
+    // Navigation gets four reads, allowing SQL refactoring while keeping it cheaper
+    // than rebuilding the catalog and page for every selection.
+    const NAVIGATION_QUERY_BUDGET: usize = 4;
+    // A committed change may reload all three views, with room for split queries;
+    // twelve reads cap snapshot work without prescribing joins or query order.
+    const COMMIT_QUERY_BUDGET: usize = 12;
+
+    assert_eq!(monitor.select_run(1), Action::Refresh);
     let job = monitor.start_refresh(false, false).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
-    assert_eq!(
-        completed.queries.len(),
-        2,
-        "Only the selected Run and joined requests are read"
+    assert!(
+        completed.queries.len() <= NAVIGATION_QUERY_BUDGET,
+        "navigation exceeded its query budget: {} > {NAVIGATION_QUERY_BUDGET}",
+        completed.queries.len()
     );
     assert!(monitor.finish_refresh(completed).await);
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-1");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-1");
+    assert_eq!(
+        monitor
+            .runs
+            .iter()
+            .map(|run| run.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run-2", "run-1", "run-0"]
+    );
+    monitor.focus = Pane::Artifacts;
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (3)", "Run run-1"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
     let mut inserted = monitor.run.as_ref().unwrap().0.run.clone();
     inserted.id = "run-new".parse().unwrap();
     receipts.create_run(&inserted, &[]).await.unwrap();
-    // No subscription/hint is involved here; data_version belongs to this exact reader.
-    monitor.select_run(2);
+    // No subscription/hint is involved here; the next navigation must see the commit.
+    assert_eq!(monitor.select_run(2), Action::Refresh);
     let job = monitor.start_refresh(false, false).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
-    assert_eq!(completed.queries.len(), 7);
+    assert!(
+        completed.queries.len() <= COMMIT_QUERY_BUDGET,
+        "commit refresh exceeded its query budget: {} > {COMMIT_QUERY_BUDGET}",
+        completed.queries.len()
+    );
     assert!(monitor.finish_refresh(completed).await);
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-0");
     assert!(monitor.runs.iter().any(|run| run.id.as_str() == "run-new"));
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-0");
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (4)", "Run run-0"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
 }
 
 #[tokio::test]

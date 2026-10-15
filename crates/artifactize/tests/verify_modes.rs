@@ -1,7 +1,10 @@
 //! C1–C3: observable cancellation, deferred sign-offs and scheduling seams.
+#[path = "support/run.rs"]
+mod owned_run;
+
 use artifactize_core::{
     changes::Subscription,
-    human, runs,
+    human,
     store::{self, Receipts, RunView},
     types::{RequestStatus, RunId, RunStatus},
 };
@@ -27,6 +30,12 @@ struct Fixture {
     state: PathBuf,
     script: PathBuf,
 }
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
+}
+
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();
@@ -63,9 +72,6 @@ impl Fixture {
             .env("ARTIFACTIZE_REMOTE", "off");
         command
     }
-    fn context(&self) -> runs::Context {
-        runs::Context::new(&self.repo, Some(&self.state), &support::os::cli()).unwrap()
-    }
     fn submit(&self, args: &[&str], provider: Option<&support::FakeProvider>) -> RunId {
         let mut command = self.command();
         command.args(["verify", "--all", "--json"]).args(args);
@@ -90,7 +96,7 @@ impl Fixture {
         let mut changes = Subscription::new(&self.state).await;
         let result = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
             loop {
-                let view = runs::view(&self.context(), id).await.unwrap();
+                let view = store::read_run(&self.state, id).await.unwrap();
                 if predicate(&view) {
                     return view;
                 }
@@ -105,7 +111,7 @@ impl Fixture {
         })
         .await;
         if result.is_err() {
-            let view = runs::view(&self.context(), id).await.unwrap();
+            let view = store::read_run(&self.state, id).await.unwrap();
             panic!(
                 "observable state not reached: {}\n{}",
                 serde_json::to_string_pretty(&view).unwrap(),
@@ -121,29 +127,22 @@ impl Fixture {
         result.unwrap()
     }
     async fn settled(&self, id: &RunId) -> RunView {
-        let observation = runs::wait(
-            &self.context(),
-            id,
-            Some(support::os::patience(Duration::from_secs(30))),
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap();
-        assert!(observation.state.is_terminal(), "{observation:?}");
-        runs::view(&self.context(), id).await.unwrap()
+        owned_run::terminal(&self.state, id).await
     }
+
     fn release(&self, artifact: &str, eval: &str, code: u8) {
-        fs::write(
-            self.repo.join(artifact).join(format!("{eval}-release")),
-            code.to_string(),
-        )
-        .unwrap();
+        use std::io::Write;
+        let folder = self.repo.join(artifact);
+        let mut marker = tempfile::NamedTempFile::new_in(&folder).unwrap();
+        write!(marker, "{code}").unwrap();
+        // Publish complete control bytes at once; the child must never parse a partial write.
+        marker
+            .persist(folder.join(format!("{eval}-release")))
+            .unwrap();
     }
     fn ready(&self, artifact: &str, eval: &str) -> bool {
-        self.repo
-            .join(artifact)
-            .join(format!("{eval}-ready"))
-            .exists()
+        fs::read_to_string(self.repo.join(artifact).join(format!("{eval}-ready")))
+            .is_ok_and(|contents| contents == "ready")
     }
     async fn sign(&self, view: &RunView, eval: &str, verdict: &str) {
         let request = view
@@ -215,6 +214,12 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
                     && fixture.ready("down", "runtime")
                     && fixture.ready("leaf", "check")
                     && started.load(Ordering::SeqCst)
+                    && status(view, "up/check") == RequestStatus::Running
+                    && status(view, "down/runtime") == RequestStatus::Running
+                    && status(view, "leaf/check") == RequestStatus::Running
+                    && view.requests.iter().any(|request| {
+                        request.eval_id.as_str() == "down/runtime" && request.child.is_some()
+                    })
                     && status(view, "down/sign") == RequestStatus::WaitingHuman
             })
             .await;
@@ -306,7 +311,11 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
         );
         fixture.declare("down", vec![fixture.runtime("check", &["up"])]);
         let run = fixture.submit(&["--defer-human", "--request-key", "mode-choice"], None);
-        let active = fixture.until(&run, |_| fixture.ready("up", "check")).await;
+        let active = fixture
+            .until(&run, |view| {
+                fixture.ready("up", "check") && status(view, "up/check") == RequestStatus::Running
+            })
+            .await;
         assert!(
             store::read_waiting(&fixture.state, None)
                 .await
@@ -318,7 +327,9 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
         fixture.release("up", "check", 0);
         let awaiting = fixture
             .until(&run, |view| {
-                status(view, "up/sign") == RequestStatus::Deferred && fixture.ready("down", "check")
+                status(view, "up/sign") == RequestStatus::Deferred
+                    && fixture.ready("down", "check")
+                    && status(view, "down/check") == RequestStatus::Running
             })
             .await;
         assert_eq!(
@@ -373,12 +384,6 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
             1,
             "default review lists deferred sign-offs"
         );
-        let result = runs::result(&fixture.context(), &run, None).await.unwrap();
-        assert!(result.ready());
-        assert_eq!(
-            serde_json::to_value(result.verdict()).unwrap(),
-            "SIGNOFFS_PENDING"
-        );
         assert_eq!(
             store::read_waiting_originals(&fixture.state, None)
                 .await
@@ -389,7 +394,7 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
         let retry = fixture.submit(&["--speculate", "--request-key", "mode-choice"], None);
         assert_eq!(retry, run);
         assert!(
-            runs::view(&fixture.context(), &retry)
+            store::read_run(&fixture.state, &retry)
                 .await
                 .unwrap()
                 .run
@@ -397,7 +402,7 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
                 .defer_human
         );
         assert!(
-            !runs::view(&fixture.context(), &retry)
+            !store::read_run(&fixture.state, &retry)
                 .await
                 .unwrap()
                 .run
@@ -446,7 +451,11 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
     );
     fixture.declare("down", vec![fixture.runtime("check", &["up"])]);
     let run = fixture.submit(&["--defer-human"], None);
-    fixture.until(&run, |_| fixture.ready("up", "check")).await;
+    fixture
+        .until(&run, |view| {
+            fixture.ready("up", "check") && status(view, "up/check") == RequestStatus::Running
+        })
+        .await;
     assert!(
         store::read_waiting(&fixture.state, None)
             .await
@@ -467,7 +476,9 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
     );
     fixture.sign(&awaiting, "up/sign", "GREEN").await;
     fixture
-        .until(&run, |_| fixture.ready("down", "check"))
+        .until(&run, |view| {
+            fixture.ready("down", "check") && status(view, "down/check") == RequestStatus::Running
+        })
         .await;
     fixture.release("down", "check", 0);
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
@@ -485,24 +496,36 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
         None,
     );
     fixture
-        .until(&run, |_| fixture.ready("z-root", "check"))
+        .until(&run, |view| {
+            fixture.ready("z-root", "check")
+                && status(view, "z-root/check") == RequestStatus::Running
+        })
         .await;
     assert!(!fixture.ready("a-short", "check"));
     assert!(!fixture.ready("c-middle", "check"));
     fixture.release("z-root", "check", 0);
     fixture
-        .until(&run, |_| fixture.ready("c-middle", "check"))
+        .until(&run, |view| {
+            fixture.ready("c-middle", "check")
+                && status(view, "c-middle/check") == RequestStatus::Running
+        })
         .await;
     assert!(!fixture.ready("a-short", "check"));
     assert!(!fixture.ready("b-tail", "check"));
     fixture.release("c-middle", "check", 0);
     fixture
-        .until(&run, |_| fixture.ready("a-short", "check"))
+        .until(&run, |view| {
+            fixture.ready("a-short", "check")
+                && status(view, "a-short/check") == RequestStatus::Running
+        })
         .await;
     assert!(!fixture.ready("b-tail", "check"));
     fixture.release("a-short", "check", 0);
     fixture
-        .until(&run, |_| fixture.ready("b-tail", "check"))
+        .until(&run, |view| {
+            fixture.ready("b-tail", "check")
+                && status(view, "b-tail/check") == RequestStatus::Running
+        })
         .await;
     fixture.release("b-tail", "check", 0);
     let ended = fixture.settled(&run).await;

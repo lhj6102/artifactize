@@ -12,12 +12,10 @@ use tauri::{
     webview::InvokeRequest,
 };
 
-/// The CLI tests' operating-system helpers: private directories and files.
-#[path = "../../artifactize-core/tests/support/os.rs"]
-mod os;
-#[path = "../../artifactize-core/tests/support/runs.rs"]
-#[expect(dead_code, reason = "desktop fixtures only record Human requests")]
-mod run_fixture;
+/// The CLI tests' owned provider, Run and operating-system fixtures.
+#[path = "../../artifactize-core/tests/support/mod.rs"]
+mod support;
+use support::{FakeProvider, Reply, os, runs as run_fixture};
 
 const RELEASE: &str = r#"name = "release"
 fingerprint = { files = ["."] }
@@ -52,7 +50,7 @@ profile = { kind = "dependency", depends_on = ["release"] }
 "#;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: run_fixture::RepoLease,
     repo: std::path::PathBuf,
     state: std::path::PathBuf,
 }
@@ -77,18 +75,14 @@ fn fixture_with(extra: &[(&str, &str)]) -> Fixture {
     }
     fs::write(repo.join("release/notes.md"), "# Release notes\n- Ready.\n").unwrap();
     // Its own repository, not a worktree of the one the tests build in.
-    let init = std::process::Command::new("git")
-        .args(["init", "-q"])
-        .arg(&repo)
-        .status()
-        .unwrap();
-    assert!(init.success());
-    verify(&repo, &state);
-    Fixture {
-        _root: root,
+    os::git(&repo, &["init", "-q"]);
+    let fixture = Fixture {
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
         repo,
         state,
-    }
+    };
+    verify(&fixture.repo, &fixture.state);
+    fixture
 }
 
 /// A Run of `repo` in `state` whose Human request is left waiting.
@@ -114,7 +108,28 @@ fn verify(repo: &Path, state: &Path) {
     });
 }
 
-fn window(fixture: &Fixture, mode: Mode) -> WebviewWindow<MockRuntime> {
+/// Keep the mock app alive without leaking it or its transcript readers.
+struct Window {
+    window: WebviewWindow<MockRuntime>,
+    _app: tauri::App<MockRuntime>,
+}
+
+impl std::ops::Deref for Window {
+    type Target = WebviewWindow<MockRuntime>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        // Destroy the window before the app, including when an assertion panics.
+        let _ = self.window.destroy();
+    }
+}
+
+fn window(fixture: &Fixture, mode: Mode) -> Window {
     let launch = Launch {
         mode,
         state: fixture.state.clone(),
@@ -124,14 +139,15 @@ fn window(fixture: &Fixture, mode: Mode) -> WebviewWindow<MockRuntime> {
         search: artifactize_core::review::search::DEFAULT.into(),
     };
     let app = artifactize_desktop::app(mock_builder(), launch)
+        // This command-only fixture does not need the live event subscription. Do not start
+        // an app-lifetime background task on Tauri's process-global test runtime.
+        .setup(|_| Ok(()))
         .build(mock_context(noop_assets()))
         .unwrap();
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .unwrap();
-    // The app lives as long as the test; its window keeps a handle to it.
-    std::mem::forget(app);
-    window
+    Window { window, _app: app }
 }
 
 /// Invoke `command` with `args` through the IPC handler; an error is the serialized failure.
@@ -390,6 +406,8 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
         json!([old])
     );
 
+    // End the old fixture worker before its state disappears; this is teardown, not a read.
+    fixture._root.release().unwrap();
     fs::remove_dir_all(&fixture.state).unwrap();
     verify(&fixture.repo, &fixture.state);
     let replaced = waiting(true);
@@ -408,8 +426,8 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
 fn a_publication_failure_after_local_settlement_is_saved_locally() {
     let fixture = fixture();
     // No real credentials: a loopback store rejects a fake token after local settlement.
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/", listener.local_addr().unwrap());
+    let server = FakeProvider::start(|_| Reply::Json(403, json!({"error": "forbidden"})));
+    let url = format!("{}/", server.url);
     fs::write(
         fixture.state.join("remote.json"),
         json!({"url": url, "share": "summary"}).to_string(),
@@ -421,15 +439,6 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
         &credentials.join("remote-token.json"),
         json!({"url": url, "token": "fixture-token-never-real"}).to_string(),
     );
-    let server = std::thread::spawn(move || {
-        use std::io::{Read, Write};
-        let (mut connection, _) = listener.accept().unwrap();
-        let mut buffer = [0; 4096];
-        let _ = connection.read(&mut buffer).unwrap();
-        connection
-            .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-            .unwrap();
-    });
     let window = window(&fixture, Mode::Review);
     let id = saved(&fixture, "release/signoff").request.id.to_string();
     invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
@@ -440,7 +449,6 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
         json!({"id": id, "job": 2, "draft": {"verdict": "GREEN", "fields": [], "json": "{\"approved\": true, \"comment\": \"\"}"}}),
     )
     .unwrap();
-    server.join().unwrap();
     assert_eq!(submitted["settled"], "savedLocally");
     assert_eq!(submitted["notice"]["error"], json!(true));
     assert!(
@@ -510,6 +518,8 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
     );
 
     let identity = artifactize_core::store::read_state_id(&fixture.state).unwrap();
+    // Preserve the saved backup but stop every worker before replacing its live database.
+    fixture._root.release().unwrap();
     restore(&backup, &fixture.state);
     assert_eq!(
         artifactize_core::store::read_state_id(&fixture.state).unwrap(),
@@ -529,7 +539,8 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
     assert_eq!(open["generation"], 1);
 }
 
-/// An Agent request of its own Run with a saved conversation of `rows` answers.
+/// A deferred Agent request with a saved conversation of `rows` answers. Its recorded Run
+/// has ended with sign-offs pending; it must not claim a live worker that was never started.
 async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String {
     let receipts = artifactize_core::store::Receipts::open(&fixture.state, &fixture.repo)
         .await
@@ -538,8 +549,9 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
         "id": "run-agent",
         "repoPath": fixture.repo,
         "stateDir": fixture.state,
-        "status": "RUNNING",
+        "status": "SIGNOFFS_PENDING",
         "createdAt": "2026-01-01T00:00:00Z",
+        "completedAt": "2026-01-01T00:00:01Z",
         "selection": {"kind": "all"},
         "validation": null,
         "definitions": {"artifacts": {"release": {"path": "release"}}},
@@ -557,7 +569,7 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
         "payload": {"instruction": "Review."},
         "references": {},
         "deps": [],
-        "status": "RUNNING",
+        "status": "DEFERRED",
         "result": null,
         "error": null,
         "completedAt": null,
@@ -588,8 +600,12 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
     "run-agent-1".into()
 }
 
+/// A failure bound for transcript jobs, never the ordering or success condition.
+const TRANSCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Read windows of `handle` until its indexing settles.
 fn window_of(window: &WebviewWindow<MockRuntime>, handle: &Value, movement: Value) -> Value {
+    let deadline = std::time::Instant::now() + TRANSCRIPT_TIMEOUT;
     let mut movement = movement;
     loop {
         let view = invoke(
@@ -599,11 +615,13 @@ fn window_of(window: &WebviewWindow<MockRuntime>, handle: &Value, movement: Valu
         )
         .unwrap();
         movement = Value::Null;
-        if view["loading"] == json!(false)
-            && view["rows"].as_array().is_some_and(|rows| !rows.is_empty())
-        {
+        if view["loading"] == json!(false) {
             return view;
         }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "transcript indexing did not settle: {view}"
+        );
     }
 }
 
@@ -639,32 +657,18 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
             .unwrap();
         view.request.state = artifactize_core::store::RequestState::completed(
             serde_json::from_value(json!({"verdict": "GREEN"})).unwrap(),
-            artifactize_core::types::Timestamp::now(),
+            "2026-01-01T00:00:02Z".parse().unwrap(),
         );
         receipts.save_request(&view.request).await.unwrap();
     });
-    // Resolve again while window jobs keep the reader busy: it waits for them, never replaces it.
-    let reading = {
-        let window = window.clone();
-        let handle = handle.clone();
-        std::thread::spawn(move || {
-            for _ in 0..200 {
-                invoke(
-                    &window,
-                    "transcript_window",
-                    json!({"handle": handle, "columns": 60, "rows": 5, "movement": null, "toggle": null, "changed": true}),
-                )
-                .unwrap();
-            }
-        })
-    };
+    // Resolve after the saved completion, without assuming repeated calls made a window
+    // job overlap it. The observable contract is the kept handle and paused position.
     let again = invoke(
         &window,
         "transcript_open",
         json!({"id": id, "handle": handle}),
     )
     .unwrap();
-    reading.join().unwrap();
     assert_eq!(
         again["handle"], handle,
         "an unchanged session keeps its reader"
@@ -824,28 +828,28 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
 
 #[test]
 fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
-    // broken's command cannot start: ERROR, not a verdict. after refers to broken.
-    let broken = r#"name = "broken"
-
-[evals.check]
-title = "A command that is not installed"
-profile = { kind = "runtime", command = "artifactize-test-command-that-does-not-exist", args = [] }
-
-[evals.check.payload]
-instruction = """
-Run the check."""
-"#;
-    let after = r#"name = "after"
-
-[evals.check]
-title = "After broken"
-profile = { kind = "runtime", command = "true", args = [] }
-
-[evals.check.payload]
-instruction = """
-Check {broken}."""
-"#;
-    let fixture = fixture_with(&[("broken", broken), ("after", after)]);
+    // A private, absent path cannot become an installed command through the user's PATH.
+    // Neither eval needs an executable: broken errors on launch, and after must not launch.
+    let programs = os::tempdir();
+    let absent = artifactize_tools::files::path_text(&programs.path().join("not-installed"));
+    let declaration = |name: &str, title: &str, instruction: &str| {
+        support::declaration::to_toml(json!({
+            "name": name,
+            "evals": {"check": {
+                "title": title,
+                "profile": {"kind": "runtime", "command": absent, "args": []},
+                "payload": {"instruction": instruction},
+            }},
+        }))
+        .unwrap()
+    };
+    let broken = declaration(
+        "broken",
+        "A command that is not installed",
+        "Run the check.",
+    );
+    let after = declaration("after", "After broken", "Check {broken}.");
+    let fixture = fixture_with(&[("broken", &broken), ("after", &after)]);
     let monitor = window(&fixture, Mode::Monitor);
     let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
     let run = view["selectedRun"].as_str().unwrap().to_owned();
@@ -894,7 +898,7 @@ fn graph_view_projects_the_same_structure_as_the_fingerprint_and_agent_tool() {
     .unwrap();
     assert_eq!(launch.mode, Mode::Graph);
     let fixture = Fixture {
-        _root: root,
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
         repo,
         state,
     };

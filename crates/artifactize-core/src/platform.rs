@@ -98,6 +98,20 @@ pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     }
 }
 
+/// Decode one native tool path line. Unix paths may end in a literal carriage return;
+/// only Windows accepts CRLF as the line terminator rather than part of the path.
+pub(crate) fn path_from_line(bytes: &[u8]) -> std::path::PathBuf {
+    let path = if CRLF_LINE_ENDINGS {
+        bytes
+            .strip_suffix(b"\r\n")
+            .or_else(|| bytes.strip_suffix(b"\n"))
+            .unwrap_or(bytes)
+    } else {
+        bytes.strip_suffix(b"\n").unwrap_or(bytes)
+    };
+    path_from_bytes(path)
+}
+
 /// Default state directory policy belongs with the platform's environment names.
 pub(crate) fn state_directory() -> Option<std::path::PathBuf> {
     resolve_state_directory(

@@ -3,16 +3,18 @@
 use std::{fs, path::Path, process::Command};
 
 use artifactize_core::{
-    project::{self, VerifyOptions, selection::Selection},
+    project::{VerifyOptions, selection::Selection},
     store::{self, DATABASE, Execution, Request},
 };
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
+
+#[path = "support/run.rs"]
+mod owned_run;
 
 fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
     let mut command = Command::new(support::os::cli());
@@ -35,15 +37,16 @@ fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
 }
 
 async fn verify(repo: &Path, state: &Path) -> store::RunView {
-    project::verify(
-        repo,
-        Some(state),
-        &Selection::All,
-        &VerifyOptions::default(),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap()
+    let context =
+        artifactize_core::runs::Context::new(repo, Some(state), &support::os::cli()).unwrap();
+    let started =
+        artifactize_core::runs::start(&context, &Selection::All, &VerifyOptions::default(), None)
+            .await
+            .unwrap();
+    // Own this submission only: other rows are deliberately corrupted fixture inputs.
+    // The lease also waits for the worker's final connections before corruption begins.
+    let _run = owned_run::RunLease::new(state, repo, started.run.clone());
+    owned_run::terminal(state, &started.run).await
 }
 
 #[tokio::test]

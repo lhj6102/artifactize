@@ -10,10 +10,12 @@ args = [
   "{core}/Cargo.toml",
   "{tools}/src",
   "{tools}/Cargo.toml",
+  "{graph}/Cargo.toml",
+  "{graph}/Cargo.lock",
 ]
 
-# The app runs headless for the whole review: `start` builds nothing, it needs the normal
-# builds (cargo build -p artifactize -p artifactize-desktop, after pnpm build in ui/).
+# The app runs headless for the whole review. start snapshots the explicitly prepared
+# candidate manifest into its own session; it never consumes shared Cargo output names.
 [views.agent_tools]
 list = { builtin = "list" }
 glob = { builtin = "glob" }
@@ -24,8 +26,6 @@ read = { builtin = "read" }
 start = { command = "node", args = ["harness/harness.mts", "start"], execution_paths = [
   "crates/artifactize-desktop/harness",
   "crates/artifactize-desktop/ui/e2e",
-  "target/debug/artifactize-desktop",
-  "target/debug/artifactize",
 ] }
 stop = { command = "node", args = ["harness/harness.mts", "stop"], execution_paths = ["crates/artifactize-desktop/harness"] }
 
@@ -146,3 +146,24 @@ Read the TEST- rules of {code-style} with read_style_code-style. Review the auto
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
 fail_schema = { type = "object", properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }, required = ["violations"], additionalProperties = false }
+
+[evals.fmt]
+title = "The Rust formatting check passes"
+profile = { kind = "runtime", command = "cargo", args = ["fmt", "--check", "-p", "artifactize-desktop"], timeout_ms = 60000 }
+
+[evals.fmt.payload]
+instruction = "Check the formatting of {desktop}."
+
+[evals.clippy]
+title = "Clippy passes for every Rust target"
+profile = { kind = "runtime", command = "node", args = ["harness/harness.mts", "clippy"], timeout_ms = 1800000 }
+
+[evals.clippy.payload]
+instruction = "Build the frontend input and check every Rust target of {desktop} with {core} with {tools}, treating every clippy warning as an error."
+
+[evals.tests]
+title = "The Rust crate tests pass"
+profile = { kind = "runtime", command = "node", args = ["harness/harness.mts", "test"], timeout_ms = 1800000 }
+
+[evals.tests.payload]
+instruction = "Build the frontend input and run the Rust tests of {desktop} with {core} with {tools} with {cli} with {tui}. Each fixture owns its resources even when desktop e2e runs concurrently."

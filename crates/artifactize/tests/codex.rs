@@ -2,6 +2,8 @@
 
 #[path = "support/order.rs"]
 mod order;
+#[path = "support/run.rs"]
+mod owned_run;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -16,10 +18,19 @@ use std::{
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, codex, openai};
 
+// Provider diagnostics are clipped to this public display bound only after secret checks.
+const DIAGNOSTIC_CHARS: usize = 4096;
+
 struct Project {
     root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
+}
+
+impl Drop for Project {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
 }
 
 impl Project {
@@ -866,7 +877,7 @@ fn a_models_error_with_the_token_at_the_clip_withholds_it() {
             .to_owned();
         Reply::Json(
             400,
-            json!({"error":{"message":format!("{}{token}", "x".repeat(4089))}}),
+            json!({"error":{"message":format!("{}{token}", "x".repeat(DIAGNOSTIC_CHARS - "Bearer ".len()))}}),
         )
     });
     let output = project

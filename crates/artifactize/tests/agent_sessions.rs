@@ -5,11 +5,16 @@
 mod owned_run;
 use owned_run::{RunChild, Watcher};
 
+#[path = "support/order.rs"]
+mod order;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
 use std::{
+    cell::RefCell,
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
@@ -17,14 +22,15 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
-use artifactize_core::agent::FOLLOW_UP;
+// An independent expectation for the provider/session wire framing, not the production
+// formatter or constant that emits it.
+const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the verdict stays as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
 
 /// A workspace of one Artifact, `notes`, with one Agent eval whose result must list
 /// `covered`, and a content fingerprint.
@@ -32,6 +38,15 @@ struct Project {
     root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
+    states: RefCell<BTreeSet<PathBuf>>,
+}
+
+impl Drop for Project {
+    fn drop(&mut self) {
+        for state in self.states.get_mut().iter() {
+            owned_run::release_repo(state, &self.repo);
+        }
+    }
 }
 
 impl Project {
@@ -73,7 +88,12 @@ impl Project {
         let credentials = json!({"access_token":codex::jwt("account-1", expires),
             "refresh_token":"refresh","account_id":"account-1","expires_at":expires,"saved_at":1});
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
-        Self { root, repo, state }
+        Self {
+            root,
+            repo,
+            state,
+            states: RefCell::default(),
+        }
     }
 
     fn limits(&self, limits: Value) {
@@ -81,6 +101,7 @@ impl Project {
     }
 
     fn command(&self, provider: &FakeProvider, state: &Path, args: &[&str]) -> Command {
+        self.states.borrow_mut().insert(state.to_owned());
         let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
@@ -389,7 +410,6 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             text_of(follow.last().unwrap()),
             format!("{FOLLOW_UP}\n\nQuestion:\nWhy GREEN?")
         );
-        assert!(FOLLOW_UP.contains("This is not a new review") && FOLLOW_UP.contains("not JSON"));
 
         // A second follow-up continues the same thread.
         let text = project.text(&provider, &["session", "send", &session, "Still?"], 0);
@@ -675,10 +695,15 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
             .unwrap()
             .len()
     };
+    for (index, (_, session)) in reviews.iter().enumerate() {
+        order::session_written_at(
+            &project.sessions().join(format!("{session}.jsonl")),
+            (index as u64 + 1) * 60,
+        );
+    }
     let sizes: Vec<_> = reviews.iter().map(|(_, session)| size(session)).collect();
     let total: u64 = sizes.iter().sum();
-    // Down to the largest session, two of the three go, whichever are oldest: the order
-    // itself is the store's unit test, on given write times.
+    // Keep enough room for the largest session: the two explicitly oldest go.
     let target = *sizes.iter().max().unwrap();
     let doctor = project.json(&provider, &["doctor"], 0);
     let check = doctor["checks"]
@@ -697,26 +722,14 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     assert_eq!(pruned["removedSessions"], json!([]));
     project.limits(json!({"agentSessions":{"maxBytes":total - 1,"targetBytes":target}}));
     let dry = project.json(&provider, &["prune", "--dry-run"], 0);
-    let doomed: Vec<_> = dry["wouldRemoveSessions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|session| session.as_str().unwrap().to_owned())
-        .collect();
-    assert_eq!(doomed.len(), 2, "{dry}");
-    let [removed, survivor] = [true, false].map(|gone| {
-        reviews
-            .iter()
-            .filter(|(_, session)| doomed.contains(session) == gone)
-            .cloned()
-            .collect::<Vec<_>>()
-    });
-    assert_eq!((removed.len(), survivor.len()), (2, 1));
-    let survivor = survivor[0].1.clone();
+    let removed = &reviews[..2];
+    let survivor = reviews[2].1.clone();
+    let expected = json!([&removed[0].1, &removed[1].1]);
+    assert_eq!(dry["wouldRemoveSessions"], expected, "{dry}");
     let file = |session: &str| project.sessions().join(format!("{session}.jsonl"));
     assert!(file(&removed[0].1).exists());
     let pruned = project.json(&provider, &["prune"], 0);
-    assert_eq!(pruned["removedSessions"], dry["wouldRemoveSessions"]);
+    assert_eq!(pruned["removedSessions"], expected);
     assert!(!file(&removed[0].1).exists() && !file(&removed[1].1).exists());
     assert!(file(&survivor).exists());
     for form in [&removed[0].0, &removed[1].1] {
@@ -743,22 +756,45 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     let running = RunChild::new(running, &project.state, &project.repo);
-    let session = loop {
-        let found = fs::read_dir(project.sessions())
-            .unwrap()
-            .filter_map(|entry| {
-                let name = entry.unwrap().file_name().into_string().unwrap();
-                name.strip_suffix(".jsonl").map(str::to_owned)
-            })
-            .find(|session| *session != survivor);
-        if let Some(session) = found {
-            break session;
-        }
-        assert!(Instant::now() < deadline, "the review never started");
-        thread::sleep(Duration::from_millis(20));
-    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let session = runtime.block_on(async {
+        let mut changes = artifactize_core::changes::Subscription::new(&project.state).await;
+        tokio::time::timeout(support::os::patience(Duration::from_secs(20)), async {
+            loop {
+                let saved = artifactize_core::store::read_run(&project.state, &running.run())
+                    .await
+                    .unwrap();
+                if let Some(request) = saved.requests.iter().find(|request| {
+                    request.status() == artifactize_core::types::RequestStatus::Running
+                }) && let Some(session) = &request.session_id
+                {
+                    // Creating a JSONL filename is not the saved review header. The exact
+                    // RUNNING request and the complete header must both be observable.
+                    let header = fs::read_to_string(file(session.as_str()))
+                        .ok()
+                        .and_then(|text| {
+                            text.lines()
+                                .next()
+                                .and_then(|line| serde_json::from_str::<Value>(line).ok())
+                        });
+                    if header.is_some_and(|header| {
+                        header["kind"] == "review"
+                            && header["sessionId"] == session.as_str()
+                            && header["requestId"] == request.id.as_str()
+                    }) {
+                        break session.to_string();
+                    }
+                }
+                changes.next_reconciled().await;
+            }
+        })
+        .await
+        .expect("running request and saved session header")
+    });
     let pruned = project.json(&provider, &["prune"], 0);
     assert_eq!(pruned["removedSessions"], json!([&survivor]));
     assert!(project.sessions().join(format!("{session}.jsonl")).exists());

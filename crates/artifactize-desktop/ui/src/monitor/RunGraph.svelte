@@ -5,7 +5,7 @@
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
-  import { call, commands, message, type RunGraph, type TreeNode } from "../ipc/client";
+  import { call, useIpc, message, type RunGraph, type TreeNode } from "../ipc/client";
   import { RunGraphState, setRunGraphState } from "./runGraph.svelte";
   import GraphView from "./GraphView.svelte";
   import { LIMIT, shape } from "./graph";
@@ -31,6 +31,7 @@
     onselect: (path: string[]) => void;
     onopen: () => void;
   } = $props();
+  const commands = useIpc();
   const g = new RunGraphState();
   setRunGraphState(g);
 

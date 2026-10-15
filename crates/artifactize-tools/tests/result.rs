@@ -73,19 +73,44 @@ fn constructors_guard_content_counts_and_replace_blank_diagnostics() {
 #[test]
 fn command_output_and_saved_results_share_shape_validation() {
     let directory = os::tempdir();
-    for wire in [
-        json!({"content":[{"type":"text","text":"ok"}]}),
-        json!({"content":[{"type":"text","text":"failure"}],"isError":true}),
-        json!({"content":[],"isError":true}),
-        json!({"content":[{"type":"json","data":42}],"isError":true}),
-        json!({"content":[{"type":"text","text":" "}],"isError":true}),
+    for (wire, expected) in [
+        (
+            json!({"content":[{"type":"text","text":"ok"}]}),
+            Some((false, "ok")),
+        ),
+        (
+            json!({"content":[{"type":"text","text":"failure"}],"isError":true}),
+            Some((true, "failure")),
+        ),
+        (json!({"content":[],"isError":true}), None),
+        (
+            json!({"content":[{"type":"json","data":42}],"isError":true}),
+            None,
+        ),
+        (
+            json!({"content":[{"type":"text","text":" "}],"isError":true}),
+            None,
+        ),
     ] {
         let bytes = serde_json::to_vec(&wire).unwrap();
-        let parsed = result::parse(&bytes, directory.path());
-        let saved = serde_json::from_slice::<ToolResult>(&bytes);
-        assert_eq!(parsed.is_ok(), saved.is_ok(), "{wire}");
-        if let (Ok(parsed), Ok(saved)) = (parsed, saved) {
-            assert_eq!(parsed, saved);
+        // Both boundaries use the fixture's expectations, not each other as an oracle.
+        let outcomes = [
+            result::parse(&bytes, directory.path()).map_err(|error| error.to_string()),
+            serde_json::from_slice::<ToolResult>(&bytes).map_err(|error| error.to_string()),
+        ];
+        for outcome in outcomes {
+            match expected {
+                Some((is_error, text)) => {
+                    let result = outcome.unwrap();
+                    assert_eq!(result.is_error(), is_error, "{wire}");
+                    assert_eq!(
+                        result.content(),
+                        &[Content::Text { text: text.into() }],
+                        "{wire}"
+                    );
+                }
+                None => assert!(outcome.is_err(), "{wire}: {outcome:?}"),
+            }
         }
     }
 }

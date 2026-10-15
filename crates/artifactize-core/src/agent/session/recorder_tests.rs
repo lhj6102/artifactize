@@ -1,4 +1,4 @@
-//! Recorder effects and references follow its enum state, not independent optional fields.
+//! Recorder references, persisted events and notifications expose its recording behavior.
 use super::*;
 use std::{fs, time::Duration};
 
@@ -18,6 +18,20 @@ fn fixture() -> (tempfile::TempDir, Saving, Request, crate::types::SessionId) {
     (root, saving, request, "fixture-session".parse().unwrap())
 }
 
+fn expected_reference(
+    saving: &Saving,
+    request: &Request,
+    id: &crate::types::SessionId,
+) -> SessionRef {
+    SessionRef {
+        producer: saving.producer.clone(),
+        state: saving.state_id.clone(),
+        run_id: request.run_id.clone(),
+        request_id: request.id.clone(),
+        session_id: id.clone(),
+    }
+}
+
 #[test]
 fn disabled_and_pending_recorders_do_not_create_files_or_references_before_start() {
     let (_root, saving, request, id) = fixture();
@@ -25,18 +39,29 @@ fn disabled_and_pending_recorders_do_not_create_files_or_references_before_start
     off.start(Header::default());
     off.message(1, &Message::user("not saved"), false);
     off.event(Kind::End(End::default()));
-    assert!(matches!(off.state, Recording::Off));
+    off.event(Kind::End(End::default()));
     assert!(off.reference().is_none());
     assert!(!directory(&saving.state).exists());
     let mut pending = Recorder::new(Some(&saving), &request, &id);
+    pending.message(1, &Message::user("before header"), false);
     pending.event(Kind::Answer(Answer::Completed("before header".into())));
-    assert!(matches!(pending.state, Recording::Pending(_)));
+    pending.event(Kind::End(End::default()));
     assert!(pending.reference().is_none());
     assert!(!directory(&saving.state).exists());
+    pending.start(Header::default());
+    assert_eq!(
+        pending.reference(),
+        Some(&expected_reference(&saving, &request, &id))
+    );
+    let conversation = Conversation::load(&path(&saving.state, &id).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(conversation.events.len(), 1);
+    assert!(matches!(&conversation.events[0].kind, Kind::Review(_)));
 }
 
 #[test]
-fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
+fn initial_header_is_lazy_authoritative_and_repeated_end_preserves_saved_reference() {
     let (_root, saving, request, id) = fixture();
     let mut recorder = Recorder::new(Some(&saving), &request, &id);
     assert_eq!(recorder.id(), id.as_str());
@@ -47,12 +72,8 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
         model: Some("fixture-model".parse().unwrap()),
         ..Header::default()
     });
-    let reference = recorder.reference().unwrap().clone();
-    assert_eq!(reference.request_id, request.id);
-    assert_eq!(reference.run_id, request.run_id);
-    assert_eq!(reference.state, saving.state_id);
-    assert_eq!(reference.producer, saving.producer);
-    assert_eq!(reference.session_id, id);
+    let reference = expected_reference(&saving, &request, &id);
+    assert_eq!(recorder.reference(), Some(&reference));
     recorder.start(Header {
         model: Some("ignored".parse().unwrap()),
         ..Header::default()
@@ -61,13 +82,19 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
     recorder.event(Kind::End(End::Completed(
         serde_json::from_value(json!({"verdict":"GREEN"})).unwrap(),
     )));
+    recorder.event(Kind::End(End::default()));
     recorder.event(Kind::Answer(Answer::Completed("after end".into())));
     assert_eq!(recorder.reference(), Some(&reference));
     let conversation = Conversation::load(&path(&saving.state, &id).unwrap())
         .unwrap()
         .unwrap();
-    assert_eq!(conversation.events.len(), 4);
-    assert_eq!(conversation.header().version, Some(VERSION));
+    assert_eq!(conversation.events.len(), 5);
+    assert_eq!(conversation.header().version, Some(1));
+    assert_eq!(conversation.header().session_id.as_ref(), Some(&id));
+    assert_eq!(
+        conversation.header().producer.as_ref(),
+        Some(&saving.producer)
+    );
     assert_eq!(
         conversation.header().model.as_deref(),
         Some("fixture-model")
@@ -80,7 +107,16 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
             .all(|event| event.at.is_some() && event.send.is_none())
     );
     assert!(matches!(
-        &conversation.events[3].kind,
+        &conversation.events[1].kind,
+        Kind::Message(message) if message.turn == 1 && message.message == Message::user("recorded")
+    ));
+    assert!(matches!(
+        &conversation.events[2].kind,
+        Kind::End(End::Completed(verdict)) if verdict.verdict == crate::runtime::Verdict::Green
+    ));
+    assert!(matches!(&conversation.events[3].kind, Kind::End(_)));
+    assert!(matches!(
+        &conversation.events[4].kind,
         Kind::Answer(answer) if answer.text() == Some("after end")
     ));
 }
@@ -91,11 +127,17 @@ fn open_failure_disables_future_events_and_append_does_not_create_missing_files(
     fs::write(directory(&saving.state), "directory blocked").unwrap();
     let mut recorder = Recorder::new(Some(&saving), &request, &id);
     recorder.start(Header::default());
-    assert!(matches!(recorder.state, Recording::Failed));
     assert!(recorder.reference().is_none());
+    assert_eq!(
+        fs::read_to_string(directory(&saving.state)).unwrap(),
+        "directory blocked"
+    );
     fs::remove_file(directory(&saving.state)).unwrap();
     recorder.start(Header::default());
+    recorder.message(1, &Message::user("after open failure"), false);
     recorder.event(Kind::End(End::default()));
+    recorder.event(Kind::End(End::default()));
+    assert!(recorder.reference().is_none());
     assert!(!directory(&saving.state).exists());
     let missing = path(&saving.state, &id).unwrap();
     assert!(Recorder::append(&saving.state, &missing, &id, 1).is_err());
@@ -138,46 +180,69 @@ fn followup_has_send_number_no_new_header_and_no_new_saved_review_reference() {
     );
 }
 
-fn fail_file() -> (tempfile::TempDir, File) {
+fn fail_file() -> (tempfile::TempDir, std::path::PathBuf, File) {
     let root = crate::test_os::tempdir();
     let path = root.path().join("read-only-writer");
     fs::write(&path, "unchanged").unwrap();
-    let file = File::open(path).unwrap();
-    (root, file)
+    let file = File::open(&path).unwrap();
+    (root, path, file)
 }
 
 #[test]
 fn first_header_write_failure_never_promotes_reference_and_later_failure_retains_it() {
     let (_root, saving, request, id) = fixture();
     let mut recorder = Recorder::new(Some(&saving), &request, &id);
-    let Recording::Pending(pending) = std::mem::replace(&mut recorder.state, Recording::Off) else {
-        panic!("pending");
-    };
-    let (_bad_root, file) = fail_file();
-    recorder.start_file(file, pending.reference, Header::default());
-    assert!(matches!(recorder.state, Recording::Failed));
+    let (_bad_root, bad_path, file) = fail_file();
+    recorder.start_file(
+        file,
+        expected_reference(&saving, &request, &id),
+        Header::default(),
+    );
     assert!(recorder.reference().is_none());
+    recorder.start(Header::default());
+    recorder.message(1, &Message::user("after header failure"), false);
     recorder.event(Kind::End(End::default()));
-    assert!(matches!(recorder.state, Recording::Failed));
+    recorder.event(Kind::End(End::default()));
+    assert!(recorder.reference().is_none());
+    assert_eq!(fs::read_to_string(&bad_path).unwrap(), "unchanged");
+    assert!(!directory(&saving.state).exists());
+
     let mut review = Recorder::new(Some(&saving), &request, &id);
     review.start(Header::default());
-    let reference = review.reference().unwrap().clone();
-    let (_bad_root, file) = fail_file();
+    let reference = expected_reference(&saving, &request, &id);
+    let path = path(&saving.state, &id).unwrap();
+    let saved = fs::read(&path).unwrap();
+    // Inject an unwritable handle at the I/O boundary; only saved effects are asserted.
     review.state = Recording::Review {
-        file,
+        file: File::open(&path).unwrap(),
         reference: reference.clone(),
     };
     review.event(Kind::End(End::default()));
-    assert!(matches!(review.state, Recording::SavedFailure(_)));
     assert_eq!(review.reference(), Some(&reference));
     review.start(Header::default());
-    review.event(Kind::Answer(Answer::default()));
+    review.message(2, &Message::user("after append failure"), false);
+    review.event(Kind::End(End::default()));
+    review.event(Kind::Answer(Answer::Completed(
+        "after append failure".into(),
+    )));
     assert_eq!(review.reference(), Some(&reference));
-    let (_bad_root, file) = fail_file();
-    review.state = Recording::FollowUp { file, send: 3 };
-    review.event(Kind::Answer(Answer::default()));
-    assert!(matches!(review.state, Recording::Failed));
-    assert!(review.reference().is_none());
+    assert_eq!(fs::read(&path).unwrap(), saved);
+    assert_eq!(Conversation::load(&path).unwrap().unwrap().events.len(), 1);
+    drop(review);
+
+    let mut follow = Recorder::append(&saving.state, &path, &id, 3).unwrap();
+    // The follow-up gets the same controlled write fault as the original review.
+    follow.state = Recording::FollowUp {
+        file: File::open(&path).unwrap(),
+        send: 3,
+    };
+    follow.event(Kind::Answer(Answer::Completed("failed follow-up".into())));
+    follow.start(Header::default());
+    follow.message(3, &Message::user("after follow-up failure"), false);
+    follow.event(Kind::End(End::default()));
+    follow.event(Kind::End(End::default()));
+    assert!(follow.reference().is_none());
+    assert_eq!(fs::read(&path).unwrap(), saved);
 }
 
 #[tokio::test]
@@ -201,7 +266,7 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
         Change::SessionInvalidated(id.clone())
     );
     let path = path(&saving.state, &id).unwrap();
-    assert!(Conversation::load(&path).unwrap().unwrap().events.len() == 1);
+    assert_eq!(Conversation::load(&path).unwrap().unwrap().events.len(), 1);
     recorder.event(Kind::Answer(Answer::Completed("flushed".into())));
     crate::changes::drain().await;
     assert_eq!(
@@ -214,11 +279,30 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
         &Conversation::load(&path).unwrap().unwrap().events[1].kind,
         Kind::Answer(answer) if answer.text() == Some("flushed")
     ));
-    let reference = recorder.reference().unwrap().clone();
-    let (_bad_root, file) = fail_file();
-    recorder.state = Recording::Review { file, reference };
+    let reference = expected_reference(&saving, &request, &id);
+    let saved = fs::read(&path).unwrap();
+    // Inject the failed append without using the recorder's state as a test oracle.
+    recorder.state = Recording::Review {
+        file: File::open(&path).unwrap(),
+        reference: reference.clone(),
+    };
     recorder.event(Kind::End(End::default()));
     recorder.event(Kind::End(End::default()));
+    assert_eq!(recorder.reference(), Some(&reference));
+    assert_eq!(fs::read(&path).unwrap(), saved);
+
+    let mut pending = Recorder::new(Some(&saving), &request, &id);
+    pending.event(Kind::End(End::default()));
+    let mut off = Recorder::new(None, &request, &id);
+    off.start(Header::default());
+    off.event(Kind::End(End::default()));
+    let (_bad_root, bad_path, file) = fail_file();
+    pending.start_file(file, reference, Header::default());
+    pending.event(Kind::End(End::default()));
+    assert!(pending.reference().is_none());
+    assert!(off.reference().is_none());
+    assert_eq!(fs::read_to_string(&bad_path).unwrap(), "unchanged");
+    assert_eq!(fs::read(&path).unwrap(), saved);
     crate::changes::drain().await;
     // Queue an independent sentinel after drain: an erroneous recorder notification
     // would arrive ahead of it. No absence timeout or scheduler assumption is needed.

@@ -3,39 +3,34 @@
 // tauri-driver, WebKitWebDriver and the app.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { describe, it } from "node:test";
-import { join } from "node:path";
-import { cancelRuns } from "./fixture.ts";
-import { LAUNCH_TIMEOUT } from "./driver.ts";
+import { cli } from "./fixture.ts";
+import { finishFixture } from "./runs.ts";
+import { groupAlive } from "./owned.ts";
+import { displayListening, displayLocked, LAUNCH_TIMEOUT } from "./driver.ts";
 
 type Held = { display: string | null; groups: number[]; root: string };
 
 /** The holder, its stdout reader, durable Runs and root all belong to one cleanup guard. */
 async function hold(): Promise<{ owner: ReturnType<typeof spawn>; held: Held; stop: () => Promise<void> }> {
-  const owner = spawn(process.execPath, [new URL("./hold-session.ts", import.meta.url).pathname], {
+  const owner = spawn(process.execPath, [fileURLToPath(new URL("./hold-session.ts", import.meta.url))], {
     stdio: ["ignore", "pipe", "inherit"],
   });
   const lines = createInterface({ input: owner.stdout! });
   const exited = new Promise<void>((done) => owner.once("close", () => done()));
   let root: string | undefined;
   let held: Held | undefined;
-  const stop = async () => {
-    try {
-      // A failed assertion must settle durable Runs while their owning state still exists,
-      // before killing the holder (which cannot execute its fixture exit hook on SIGKILL).
-      if (root && existsSync(root)) cancelRuns({ root, repo: join(root, "repo"), state: join(root, "state") });
-    } finally {
-      if (owner.exitCode === null && owner.signalCode === null) owner.kill("SIGKILL");
-      await exited;
-      lines.close();
-      owner.stdout?.destroy();
-      if (held) for (const group of held.groups) await eventually(() => !alive(group), `owned group ${group} gone`);
-      // Only remove the root once the holder and its profile-writing groups are gone.
-      if (root) rmSync(root, { recursive: true, force: true });
-    }
-  };
+  const stop = () => finishFixture(cli(), root, async () => {
+    // Always stop the holder on assertion unwind, even if durable settlement failed.
+    // finishFixture removes inputs only after both settlement and this shutdown succeed.
+    if (owner.exitCode === null && owner.signalCode === null) owner.kill("SIGKILL");
+    await exited;
+    lines.close();
+    owner.stdout?.destroy();
+    if (held) for (const group of held.groups) await eventually(() => !groupAlive(group), `owned group ${group} gone`);
+  });
   try {
     held = await new Promise<Held>((done, fail) => {
       const deadline = setTimeout(() => finish(new Error("the session holder did not become ready")), LAUNCH_TIMEOUT);
@@ -68,20 +63,6 @@ async function hold(): Promise<{ owner: ReturnType<typeof spawn>; held: Held; st
   }
 }
 
-function alive(group: number): boolean {
-  try {
-    process.kill(-group, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The display's abstract socket is still listening. */
-function listening(display: string): boolean {
-  return readFileSync("/proc/net/unix", "utf8").includes(`@/tmp/.X11-unix/X${display.slice(1)}`);
-}
-
 async function eventually(check: () => boolean, what: string, ms = 10000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -99,12 +80,12 @@ describe("an interrupted test process", { skip: process.platform !== "linux" && 
       try {
         assert.ok(held.display, "a private display");
         assert.equal(held.groups.length, 2, "the driver's group and Xvfb's");
-        for (const group of held.groups) assert.ok(alive(group), `group ${group} runs`);
-        assert.ok(listening(held.display), "the display listens");
+        for (const group of held.groups) assert.ok(groupAlive(group), `group ${group} runs`);
+        assert.ok(displayListening(held.display), "the display listens");
         owner.kill(signal);
-        for (const group of held.groups) await eventually(() => !alive(group), `group ${group} gone after ${signal}`);
-        await eventually(() => !listening(held.display!), `display ${held.display} closed`);
-        await eventually(() => !existsSync(`/tmp/.X${held.display!.slice(1)}-lock`), `display ${held.display} unlocked`);
+        for (const group of held.groups) await eventually(() => !groupAlive(group), `group ${group} gone after ${signal}`);
+        await eventually(() => !displayListening(held.display!), `display ${held.display} closed`);
+        await eventually(() => !displayLocked(held.display!), `display ${held.display} unlocked`);
       } finally {
         await holder.stop();
       }

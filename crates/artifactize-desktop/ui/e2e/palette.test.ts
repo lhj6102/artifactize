@@ -37,7 +37,9 @@ describe("command palette", () => {
     await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
     await browser.$('[aria-label="Request ID"]').click();
     await typeText(browser, id);
-    await press(browser, ["Enter"], () => browser.$('[aria-label="Human review"]').isExisting(), `the review of ${id}`);
+    await press(browser, ["Enter"], async () =>
+      !(await browser.$('[aria-label="Request ID"]').isExisting()) && await browser.$('[aria-label="Human review"]').isExisting(),
+    `the request ID dialog resolves to the review of ${id}`);
   };
 
   before(async () => {

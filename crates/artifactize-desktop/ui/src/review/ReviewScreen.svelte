@@ -8,7 +8,7 @@
   import type { Attachment } from "svelte/attachments";
   import {
     call,
-    commands,
+    useIpc,
     message,
     onStateChanged,
     type LaunchView,
@@ -26,6 +26,7 @@
   import { tone } from "../shell/tone";
 
   let { launch, active }: { launch: LaunchView; active: boolean } = $props();
+  const commands = useIpc();
   // The launch is fixed for the window's life: its search is where the screen starts.
   // svelte-ignore state_referenced_locally
   const r = new ReviewScreenState(launch.search);

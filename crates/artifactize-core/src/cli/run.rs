@@ -1,6 +1,6 @@
 //! Saved Run listing and bounded wait workflows.
 
-use super::{Context, print_json};
+use super::{Context, INTERRUPTED_EXIT, print_json};
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -78,7 +78,7 @@ pub(super) async fn show(
         .await;
         listener.abort();
         if cancellation.is_cancelled() {
-            return Ok(130);
+            return Ok(INTERRUPTED_EXIT);
         }
         result?;
     }

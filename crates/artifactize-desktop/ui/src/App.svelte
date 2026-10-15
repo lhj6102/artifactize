@@ -5,7 +5,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
-  import { call, commands, message, onStateChanged } from "./ipc/client";
+  import { call, message, onStateChanged } from "./ipc/client";
   import CurrentGraph from "./monitor/CurrentGraph.svelte";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewScreen from "./review/ReviewScreen.svelte";
@@ -19,11 +19,16 @@
   import { HELP } from "./shell/help";
   import { AppState, setAppState } from "./shell/app.svelte";
 
+  import { exposeActivity, setActivity } from "./ipc/activity.svelte";
+
   const app = new AppState();
+  setActivity(app.activity);
+  const commands = app.ipc;
   setAppState(app);
   const { browse, leaving } = app;
 
   onMount(() => {
+    const hideActivity = exposeActivity(app.activity);
     call(commands.launch()).then(
       (view) => {
         app.start(view);
@@ -41,6 +46,7 @@
       .onCloseRequested((event) => leaving.closeRequested(event))
       .then((stop) => (unlisten = stop), () => {});
     return () => {
+      hideActivity();
       clearInterval(clock);
       unchanged();
       unlisten?.();

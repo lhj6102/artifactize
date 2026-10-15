@@ -156,7 +156,7 @@ fn profile_fields_and_numeric_limits_match_declarations() {
 
 #[test]
 fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
-    let args = json!(["$HOME", "{input}", "; touch marker", "line\nbreak"]);
+    let args = json!(["$OWNER_VAR", "{input}", "; touch marker", "line\nbreak"]);
     let profile =
         json!({"kind": "runtime", "command": "arbitrary-program", "args": args, "timeout_ms": 1e3});
     let declaration = parse(json!({"name": "a", "evals": [eval(profile)]})).unwrap();
@@ -239,7 +239,6 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
         "a\nb",
         "a\u{7f}b",
     ] {
-        assert!(validation::path(path).is_err(), "{path:?}");
         assert!(
             parse(json!({
                 "name":"a",
@@ -266,6 +265,12 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
             .is_err()
         );
     }
+    let declaration = |path: &str| {
+        parse(json!({
+            "name":"a",
+            "fingerprint":{"script":{"command":"entry","args":[],"files":[path]}},
+        }))
+    };
     for path in [
         "file",
         "nested/file",
@@ -273,12 +278,16 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
         "1:/relative",
         "a:b",
     ] {
-        assert!(validation::path(path).is_ok(), "{path:?}");
+        let parsed = declaration(path).unwrap();
+        let Some(Fingerprint::Script { files, .. }) = parsed.fingerprint else {
+            panic!("script declaration");
+        };
+        assert_eq!(files, [path], "{path:?}");
     }
-    assert!(validation::path(&"a".repeat(1024)).is_ok());
-    assert!(validation::path(&"a".repeat(1025)).is_err());
-    assert!(validation::path(&"🦀".repeat(512)).is_ok());
-    assert!(validation::path(&"🦀".repeat(513)).is_err());
+    assert!(declaration(&"a".repeat(1024)).is_ok());
+    assert!(declaration(&"a".repeat(1025)).is_err());
+    assert!(declaration(&"🦀".repeat(512)).is_ok());
+    assert!(declaration(&"🦀".repeat(513)).is_err());
 }
 
 #[test]
@@ -610,10 +619,12 @@ fn omitted_fingerprint_is_artifactsum_and_only_false_disables_it() {
         .unwrap()
         .fingerprint
         .unwrap();
-    assert_eq!(
-        serde_json::to_value(default).unwrap(),
-        serde_json::to_value(explicit).unwrap()
-    );
+    for fingerprint in [default, explicit] {
+        assert_eq!(
+            serde_json::to_value(fingerprint).unwrap(),
+            json!({"files":["."],"ignore":[]})
+        );
+    }
     assert!(
         parse(json!({"name":"a","fingerprint":false}))
             .unwrap()

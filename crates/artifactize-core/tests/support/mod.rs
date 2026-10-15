@@ -33,6 +33,16 @@ pub mod os;
 pub mod runs;
 pub mod tool_sessions;
 
+/// A fixture task is joined on success and cancelled on assertion failure or timeout,
+/// never detached by dropping its handle. The process runner then owns child teardown.
+pub fn spawn<F>(future: F) -> tokio_util::task::AbortOnDropHandle<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio_util::task::AbortOnDropHandle::new(tokio::spawn(future))
+}
+
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the
 /// docs can run them as they are; on Windows the copies name the `os::bin` stand-ins, and
 /// their deadlines of a second or more get `os::slow` room. A shorter one is there to expire.

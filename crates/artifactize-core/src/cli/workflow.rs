@@ -1,6 +1,6 @@
 //! Repository discovery and verification workflows, without text rendering.
 
-use super::{Context, cancellation_listener, print_json};
+use super::{Context, INTERRUPTED_EXIT, cancellation_listener, print_json};
 
 use std::{
     io::{self, Write},
@@ -67,7 +67,7 @@ pub(super) async fn verify(
     let result = crate::runs::wait(&runs, &observation.run, None, cancellation.clone()).await;
     listener.abort();
     if cancellation.is_cancelled() {
-        return Ok(130);
+        return Ok(INTERRUPTED_EXIT);
     }
     result?;
     let view = crate::runs::view(&runs, &observation.run).await?;

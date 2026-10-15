@@ -1,16 +1,18 @@
 // Leaving the window with claims this window took: every way out (q, the window's
 // close button, repeated close requests) asks once and waits for the answer; only the
 // prompt's keep or release ends the window.
-import { commands } from "../ipc/client";
+import { commands, type Commands } from "../ipc/client";
 
 export class Leaving {
+  constructor(readonly ipc: Commands = commands) {}
+
   /** The claims the open prompt asks about; `null` while no prompt is open. */
   taken = $state.raw<string[] | null>(null);
 
   /** Whether the window may close now; otherwise the prompt opens (or stays open). */
   async allowed(): Promise<boolean> {
     if (this.taken !== null) return false;
-    const taken = await commands.humanTaken();
+    const taken = await this.ipc.humanTaken();
     if (taken.length === 0) return this.taken === null;
     this.taken = taken;
     return false;

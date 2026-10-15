@@ -107,14 +107,15 @@ describe("review", () => {
     );
 
     // The window's own close requests, twice in a row: both wait for the prompt's answer.
-    await browser.execute(() => {
+    await browser.execute(async () => {
       const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: object) => Promise<unknown> } })
         .__TAURI_INTERNALS__;
-      void internals.invoke("plugin:window|close", { label: "main" });
-      void internals.invoke("plugin:window|close", { label: "main" });
+      await Promise.all([
+        internals.invoke("plugin:window|close", { label: "main" }),
+        internals.invoke("plugin:window|close", { label: "main" }),
+      ]);
     });
     await dialog.waitForExist({ timeout: 10000 });
-    await browser.pause(500);
     assert.equal(await browser.execute(() => document.title), "Artifactize", "the window stays");
     assert.equal(signoff(fixture).claim?.reviewer, "alice");
     await eventually(
@@ -180,7 +181,8 @@ describe("a GREEN submission on the Review screen", () => {
     await browser.keys(["Control", "s"]);
     await eventually(async () => signoff(fixture).status === "GREEN", "GREEN saved");
     await eventually(async () => /completed result/i.test(await text()), "the completed result");
-    await browser.pause(1000);
+    // The scheduler's terminal receipt, not a delay, crosses the completion broadcasts.
+    assert.equal(artifactize(fixture, "run", "show", signoff(fixture).runId, "--wait"), 0);
     assert.ok(await human.isExisting(), "the completed Detail stays open");
     assert.match(await text(), /completed result/i);
   });

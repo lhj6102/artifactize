@@ -13,7 +13,6 @@ use artifactize_core::{
     project::{self, VerifyOptions, selection::Selection},
     store::{self, Receipts, RunView},
 };
-use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{cat_program, false_program, true_program};
 use tokio_util::sync::CancellationToken;
@@ -65,17 +64,6 @@ impl Fixture {
 
     async fn receipts(&self) -> Receipts {
         Receipts::open(&self.state, &self.repo).await.unwrap()
-    }
-
-    fn database(&self) -> Connection {
-        let db = Connection::open_with_flags(
-            self.state.join(store::DATABASE),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .unwrap();
-        db.busy_timeout(support::os::patience(Duration::from_secs(5)))
-            .unwrap();
-        db
     }
 
     fn cli_verify(&self) -> Value {
@@ -345,27 +333,18 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         .await
         .is_err()
     );
-    assert_eq!(
-        fixture
-            .database()
-            .query_row(
-                "SELECT count(*) FROM requests WHERE claimed_by IS NOT NULL",
-                [],
-                |row| row.get::<_, u32>(0)
-            )
-            .unwrap(),
-        0
+    let saved = store::read_request(&fixture.state, id).await.unwrap();
+    assert_eq!(saved.request.status().as_str(), "GREEN");
+    assert!(
+        saved.claim.is_none(),
+        "submission releases the public claim"
     );
-    assert_eq!(
-        fixture
-            .database()
-            .query_row(
-                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
-                [],
-                |row| row.get::<_, u32>(0)
-            )
-            .unwrap(),
-        0
+    assert!(
+        artifactize_core::cache::list(&fixture.state, true)
+            .await
+            .unwrap()
+            .is_empty(),
+        "fingerprint=false must not publish reusable evidence"
     );
 }
 
@@ -412,23 +391,22 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
             Some("INPUT_CHANGED")
         );
         assert!(saved.requests[0].result().is_none());
-        assert_eq!(
-            fixture
-                .database()
-                .query_row(
-                    "SELECT count(*) FROM executions WHERE status='WAITING_HUMAN'",
-                    [],
-                    |row| row.get::<_, u32>(0)
-                )
-                .unwrap(),
-            0
-        );
         assert!(
-            receipts
-                .cached_execution(run.requests[0].key.as_deref().unwrap())
+            store::read_keyed_executions(&fixture.state, &[run.requests[0].key.clone().unwrap()],)
                 .await
                 .unwrap()
-                .is_none()
+                .is_empty(),
+            "the failed Human owner must not remain available for joining"
+        );
+        assert!(
+            artifactize_core::cache::show(
+                &fixture.state,
+                run.requests[0].key.as_deref().unwrap(),
+                false,
+            )
+            .await
+            .unwrap()
+            .is_empty()
         );
     }
 }
@@ -532,17 +510,11 @@ async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
     )
     .await
     .unwrap();
-    let context =
-        artifactize_core::runs::Context::discover(&fixture.repo, Some(&fixture.state)).unwrap();
-    let observed = artifactize_core::runs::wait(
-        &context,
-        &run.run.id,
-        Some(Duration::from_secs(30)),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(observed.state, artifactize_core::runs::State::Green);
+    let observed = owned_run::terminal(&fixture.state, &run.run.id).await;
+    assert_eq!(
+        observed.run.status(),
+        artifactize_core::types::RunStatus::Green
+    );
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
@@ -629,9 +601,10 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         .await
         .is_err()
     );
-    let settled = store::read_run(&fixture.state, &run.run.id).await.unwrap();
+    // The owned worker, not the observer, must save the follower's completed Run.
+    let settled = owned_run::terminal(&fixture.state, &run.run.id).await;
+    assert_eq!(settled.run.status().as_str(), "RED");
     assert_eq!(settled.requests[0].status().as_str(), "RED");
-    receipts.finish(&run.run, &run.requests).await.unwrap();
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
@@ -664,13 +637,13 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         completed.requests[0].execution_id.as_deref(),
         original["requests"][0]["executionId"].as_str()
     );
+    let history = artifactize_core::cache::list(&fixture.state, true)
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 1, "the joined review publishes one result");
     assert_eq!(
-        fixture
-            .database()
-            .query_row("SELECT count(*) FROM executions", [], |row| row
-                .get::<_, u32>(0))
-            .unwrap(),
-        1
+        history[0].execution_id,
+        completed.requests[0].execution_id.clone().unwrap()
     );
 }
 
@@ -702,18 +675,16 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let claim = human::claim(&receipts, &rid(owner), &"alice".parse().unwrap())
         .await
         .unwrap();
-    for (id, reviewer) in [(owner, "bob"), (follower.as_str(), "bob"), (owner, "")] {
-        match reviewer.parse() {
-            Ok(reviewer) => assert!(
-                human::unclaim(&receipts, &rid(id), &reviewer)
-                    .await
-                    .is_err()
-            ),
-            Err(_) => assert!(
-                reviewer.is_empty(),
-                "invalid reviewer rejected at the input edge"
-            ),
-        }
+    assert!(
+        "".parse::<artifactize_core::types::ReviewerId>().is_err(),
+        "an empty reviewer must be rejected at the input edge"
+    );
+    for id in [owner, follower.as_str()] {
+        assert!(
+            human::unclaim(&receipts, &rid(id), &"bob".parse().unwrap())
+                .await
+                .is_err()
+        );
     }
     // A follower forwards the release to its original request, like a claim.
     let released = human::unclaim(&receipts, &rid(follower), &"alice".parse().unwrap())
@@ -845,11 +816,15 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
         .await
         .is_err()
     );
-    let cached = receipts
-        .cached_execution(run.requests[0].key.as_deref().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
+    let cached = artifactize_core::cache::show(
+        &fixture.state,
+        run.requests[0].key.as_deref().unwrap(),
+        false,
+    )
+    .await
+    .unwrap()
+    .pop()
+    .unwrap();
     assert_eq!(cached.provenance.request_id, run.requests[0].id);
     assert_eq!(cached.status().as_str(), "GREEN");
 }
@@ -1014,15 +989,12 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         );
     }
     assert_eq!(
-        fixture
-            .database()
-            .query_row::<u32, _, _>(
-                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
-                [],
-                |row| row.get(0)
-            )
-            .unwrap(),
-        2
+        artifactize_core::cache::list(&fixture.state, true)
+            .await
+            .unwrap()
+            .len(),
+        2,
+        "the two distinct definitions publish independent review evidence"
     );
     let status = project::status(
         &fixture.repo,

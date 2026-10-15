@@ -5,7 +5,7 @@
   // screen's state as soon as it is submitted.
   import {
     call,
-    commands,
+    useIpc,
     message,
     type Provider,
     type Pushed,
@@ -17,6 +17,7 @@
   import { useCommands } from "../shell/commands.svelte";
 
   let { active }: { active: boolean } = $props();
+  const commands = useIpc();
   const s = new SettingsState();
   setSettingsState(s);
 
@@ -40,6 +41,7 @@
 
   async function remoteCall(run: () => Promise<RemoteStatus>, notice?: (status: RemoteStatus) => string) {
     const mine = ++s.remoteCalls;
+    s.remotePending += 1;
     s.remoteError = null;
     try {
       const status = await run();
@@ -48,6 +50,8 @@
       s.remoteNotice = notice ? notice(status) : s.remoteNotice;
     } catch (failure) {
       if (mine === s.remoteCalls) s.remoteError = message(failure);
+    } finally {
+      s.remotePending -= 1;
     }
   }
 
@@ -284,7 +288,7 @@
     {/if}
   </section>
 
-  <section aria-labelledby="remote-title">
+  <section aria-labelledby="remote-title" aria-busy={s.remotePending > 0 || s.working}>
     <h2 id="remote-title">Shared remote review store</h2>
     <p class="muted">Signs in, out and checks status as <code>artifactize remote</code> does; the token is checked with the store and saved with remote.json.</p>
     <dl class="facts" aria-label="Remote store">

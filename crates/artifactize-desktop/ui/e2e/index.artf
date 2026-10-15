@@ -84,8 +84,10 @@ instruction = "Run TypeScript eslint with no inline config over every test and h
 
 [evals.suite-passes]
 title = "The end-to-end suite passes on a headless display"
-profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "e2e"], timeout_ms = 900000 }
+profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "e2e"], timeout_ms = 1800000 }
 
 [evals.suite-passes.payload]
 instruction = """
-Run the end-to-end tests of {desktop-e2e} against the built app on a private Xvfb display."""
+Build the CLI and app from {cli}, {tui}, {core}, {tools} and {desktop}, then run the tests of \
+{desktop-e2e} against that owned candidate on private Xvfb displays. Each fixture owns its \
+resources while the Rust tests run concurrently."""

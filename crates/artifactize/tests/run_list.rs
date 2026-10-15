@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{
     collections::BTreeMap,
     fs,
@@ -64,6 +67,9 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     fs::create_dir(first.join("input")).unwrap();
     fs::create_dir(first.join("unselected")).unwrap();
     fs::create_dir(&second).unwrap();
+    // Own submissions before any command or observation can unwind.
+    let _first_runs = owned_run::RepoLease::new(&state, &first);
+    let _other_runs = owned_run::RepoLease::new(&state, &second);
     support::declaration::write(
         first.join("input/index.artf"),
         r#"{"name":"input","basis":true}"#,

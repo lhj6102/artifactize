@@ -8,7 +8,9 @@
   import { CurrentGraphState, setCurrentGraphState } from "./currentGraph.svelte";
   import { chord } from "../shell/keys";
 
-  const graph = new CurrentGraphState();
+  import { useIpc } from "../ipc/client";
+
+  const graph = new CurrentGraphState(useIpc());
   setCurrentGraphState(graph);
   onMount(() => void graph.refresh());
 

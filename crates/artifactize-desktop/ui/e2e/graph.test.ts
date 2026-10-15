@@ -160,10 +160,24 @@ describe("run graph of many Artifacts", () => {
           () => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
           "the evals",
         );
-        await browser.pause(400);
+        const zoomOut = await browser.$(".svelte-flow__controls-zoomout");
+        assert.ok(await zoomOut.isEnabled(), "the camera is zoomed in before Escape");
         await step("Escape", name(40));
-        await browser.pause(800);
-        assert.equal(await focused(), name(40), "focus held through the transition");
+        // This chain cannot fit even at minimum zoom. All 85 nodes may briefly mount
+        // during the camera move, but culling leaves only the visible portion afterwards.
+        // The disabled zoom-out control marks the actual zoom endpoint, not a quiet frame
+        // or an elapsed delay; the selected Artifact must still be in view and focused.
+        await eventually(async () => {
+          const visible = await browser.execute(() => {
+            const node = document.querySelector('[data-id="a:n040"].svelte-flow__node');
+            const box = node?.getBoundingClientRect();
+            const canvas = document.querySelector(".graph .canvas")?.getBoundingClientRect();
+            return !document.querySelector('[role="listbox"][aria-label="Evals"]') && document.activeElement === node &&
+              !!box && !!canvas && box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
+          });
+          return visible && !(await zoomOut.isEnabled());
+        }, "the zoomed-out graph with n040 visible and focused at the camera's endpoint");
+        assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /n040/, "selection held through the transition");
       }
     }
     // The tree's selection is the focused node: the breadcrumb names it.

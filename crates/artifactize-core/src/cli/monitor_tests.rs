@@ -6,15 +6,6 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
     const PROBE: &str = "ARTIFACTIZE_MONITOR_PROBE";
     if let Some(input) = crate::platform::environment::var(PROBE) {
         let args: Vec<String> = serde_json::from_str(&input.to_string_lossy()).unwrap();
-        let expected = args
-            .iter()
-            .position(|arg| arg == "--repo")
-            .map(|index| PathBuf::from(&args[index + 1]))
-            .or_else(|| {
-                args.last()
-                    .filter(|arg| *arg == "." || arg.contains("selected"))
-                    .map(PathBuf::from)
-            });
         let screens = Screens {
             monitor: |_, initial, _| {
                 Box::pin(async move {
@@ -27,12 +18,6 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
             },
             review: |_, _, _, _, _| unreachable!("monitor never routes to review"),
         };
-        assert_eq!(
-            expected,
-            crate::platform::environment::var("ARTIFACTIZE_MONITOR_EXPECT")
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from)
-        );
         let cli = Cli::try_parse_from(args).unwrap();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()

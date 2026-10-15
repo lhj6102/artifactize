@@ -475,7 +475,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         "--data={input}/nested/file",
         "{review}/source/nested/file",
         "{input}",
-        "$HOME",
+        "$ARTIFACTIZE_FIXTURE_VALUE",
         "literal;command",
         "\\{missing}",
         "{{missing}}",

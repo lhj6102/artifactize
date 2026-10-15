@@ -1,19 +1,86 @@
 //! Declared commands share lookup, preflight and literal argv across audiences.
 
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
-use std::{fs, path::PathBuf, process::Command, time::Duration};
+use std::{cell::RefCell, fs, path::PathBuf, process::Command, sync::Arc, time::Duration};
 
 use serde_json::{Value, json};
 
+// Bounds observe broken fixture handoff, never order execution or set a child lifetime.
+const LAUNCH_BOUND: Duration = Duration::from_secs(10);
+const LAUNCH_POLL: Duration = Duration::from_millis(10);
+
 struct Project {
-    _root: tempfile::TempDir,
+    launched: RefCell<Option<Launched>>,
     repo: PathBuf,
     state: PathBuf,
     path: std::ffi::OsString,
+    _root: Arc<tempfile::TempDir>,
 }
+
+impl Drop for Project {
+    fn drop(&mut self) {
+        // Detached launches are not Runs. Release both owners before temporary files,
+        // even when an assertion or CLI output parsing unwinds after the handoff.
+        drop(self.launched.get_mut().take());
+        owned_run::release_repo(&self.state, &self.repo);
+    }
+}
+
+/// Installed before invoking the CLI, when the detached child's PID is not yet known.
+struct Launched {
+    repo: PathBuf,
+    processes: owned_run::Processes,
+}
+
+impl Drop for Launched {
+    fn drop(&mut self) {
+        let deadline = std::time::Instant::now() + support::os::patience(LAUNCH_BOUND);
+        loop {
+            if let Some(pids) = fs::read(self.repo.join("launch-pids"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Vec<u32>>(&bytes).ok())
+                .filter(|pids| !pids.is_empty())
+            {
+                for pid in pids {
+                    self.processes.own(pid);
+                }
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                if !std::thread::panicking() {
+                    panic!("detached lookup probe did not publish its PID");
+                }
+                return;
+            }
+            // Poll only the handoff marker; no test behavior depends on this interval.
+            std::thread::sleep(LAUNCH_POLL);
+        }
+        let _ = fs::write(self.repo.join("launch-release"), "");
+        // The birth-identity field guard terminates and observes exit before returning.
+    }
+}
+
+// Publish complete markers, then hold the child until fixture release, not a timed exit.
+const ARGV_PROBE: &str = r"import json, os, pathlib, sys, time
+RELEASE_POLL = 0.01  # Observe only the release file; this delay orders no test behavior.
+if sys.argv[1:] == ['fingerprint']:
+    print('lookup-key')
+elif sys.argv[1:] == ['launch']:
+    for name, contents in [('launch-pids', json.dumps(LAUNCH_PIDS)), ('launched', 'launched')]:
+        pending = pathlib.Path(name + '.pending')
+        pending.write_text(contents)
+        pending.replace(name)
+    while not pathlib.Path('launch-release').exists():
+        time.sleep(RELEASE_POLL)
+else:
+    print(json.dumps(sys.argv[1:]))
+";
 
 impl Project {
     fn new() -> Self {
@@ -22,14 +89,45 @@ impl Project {
         let programs = root.path().join("programs with spaces");
         fs::create_dir(&repo).unwrap();
         fs::create_dir(&programs).unwrap();
-        fs::write(programs.join("argv.py"), "import json,pathlib,sys\nif sys.argv[1:] == ['fingerprint']:\n print('lookup-key')\nelif sys.argv[1:] == ['launch']:\n pathlib.Path('launched').write_text('launched')\nelse:\n print(json.dumps(sys.argv[1:]))\n").unwrap();
+        fs::write(
+            programs.join("argv.py"),
+            ARGV_PROBE.replace("LAUNCH_PIDS", support::os::launch_probe_pids()),
+        )
+        .unwrap();
         support::os::lookup_shim(&programs);
         Self {
+            launched: RefCell::new(None),
             state: root.path().join("state"),
             repo,
             path: support::os::prepend_path(&programs),
-            _root: root,
+            _root: Arc::new(root),
         }
+    }
+
+    fn launch(&self) -> Value {
+        // Install the owner before any spawn, status assertion or JSON parsing can fail.
+        {
+            let mut owner = self.launched.borrow_mut();
+            assert!(owner.is_none(), "one launch per lookup fixture");
+            *owner = Some(Launched {
+                repo: self.repo.clone(),
+                processes: owned_run::Processes::default(),
+            });
+        }
+        self.run(
+            &[
+                "tools",
+                "check",
+                "--execute",
+                "--artifact",
+                "test",
+                "--audience",
+                "human",
+                "--tool",
+                "launch",
+            ],
+            0,
+        )
     }
 
     fn declaration(&self, args: Value) {
@@ -101,28 +199,70 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
         let text = report["result"]["content"][0]["text"].as_str().unwrap();
         assert_eq!(serde_json::from_str::<Value>(text).unwrap(), args);
     }
-    let launched = project.run(
-        &[
-            "tools",
-            "check",
-            "--execute",
-            "--artifact",
-            "test",
-            "--audience",
-            "human",
-            "--tool",
-            "launch",
-        ],
-        0,
-    );
+    let launched = project.launch();
     assert_eq!(launched["result"]["content"][0]["launched"], true);
-    support::os::wait_until(Duration::from_secs(10), || {
-        project.repo.join("launched").exists()
+    support::os::wait_until(LAUNCH_BOUND, || {
+        fs::read_to_string(project.repo.join("launched"))
+            .is_ok_and(|contents| contents == "launched")
     });
     assert_eq!(
         fs::read_to_string(project.repo.join("launched")).unwrap(),
         "launched"
     );
+}
+
+#[test]
+fn lookup_launch_exits_before_temporary_files_on_normal_drop_and_assertion_unwind() {
+    for unwind in [false, true] {
+        let project = Project::new();
+        project.declaration(json!([]));
+        let launched = project.launch();
+        assert_eq!(launched["result"]["content"][0]["launched"], true);
+        support::os::wait_until(LAUNCH_BOUND, || {
+            fs::read_to_string(project.repo.join("launched"))
+                .is_ok_and(|contents| contents == "launched")
+        });
+        assert_eq!(
+            fs::read_to_string(project.repo.join("launched")).unwrap(),
+            "launched"
+        );
+        let pids: Vec<u32> =
+            serde_json::from_slice(&fs::read(project.repo.join("launch-pids")).unwrap()).unwrap();
+        assert!(!pids.is_empty(), "the probe reports its actual processes");
+        let identities: Vec<_> = pids
+            .into_iter()
+            .map(|pid| (pid, support::os::start_time(pid)))
+            .collect();
+        assert!(
+            identities
+                .iter()
+                .all(|&(pid, birth)| support::os::same_process_running(pid, birth))
+        );
+
+        // Retain only the files to observe their ordering independently of the process
+        // owner. The guard must discover/adopt the PID itself, including on unwind.
+        let root = Arc::clone(&project._root);
+        let root_path = root.path().to_owned();
+        let repo = project.repo.clone();
+        let result = std::panic::catch_unwind(move || {
+            let _project = project;
+            assert!(!unwind, "lookup launch fixture assertion unwind probe");
+        });
+        assert_eq!(result.is_err(), unwind);
+        assert!(root_path.is_dir(), "temporary files are still retained");
+        assert_eq!(
+            fs::read_to_string(repo.join("launched")).unwrap(),
+            "launched"
+        );
+        assert!(
+            identities
+                .iter()
+                .all(|&(pid, birth)| !support::os::same_process_running(pid, birth)),
+            "all detached lookup probe processes must exit before their files are removed"
+        );
+        drop(root);
+        assert!(!root_path.exists(), "fixture temporary files are removed");
+    }
 }
 
 // Only Windows runs `.cmd` shims, whose arguments Rust refuses when cmd would misparse them.

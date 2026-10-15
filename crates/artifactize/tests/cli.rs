@@ -22,6 +22,12 @@ struct Fixture {
     state: PathBuf,
 }
 
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
+}
+
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();

@@ -237,6 +237,21 @@ mod tests {
         )));
     }
 
+    // Only Windows has delete-sharing modes; Unix open handles do not block unlinking.
+    #[test]
+    fn delete_sharing_observation_never_removes_the_owned_file() {
+        let root = crate::test_os::tempdir();
+        let path = root.path().join("held-file");
+        std::fs::write(&path, "owned content").unwrap();
+        let holder = crate::test_os::hold_without_delete_sharing(&path);
+        crate::test_os::assert_delete_blocked(&path);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "owned content");
+        drop(holder);
+        // A regressed fixture must fail the assertion without destroying its evidence.
+        assert!(std::panic::catch_unwind(|| crate::test_os::assert_delete_blocked(&path)).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "owned content");
+    }
+
     #[tokio::test]
     async fn the_editor_runs_through_cmd_and_gets_the_file_as_one_word() {
         let directory = crate::test_os::tempdir();

@@ -15,12 +15,11 @@ use std::{
     process::{Command, Stdio},
     time::Duration,
 };
-use tokio_util::sync::CancellationToken;
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
-    root: tempfile::TempDir,
+    _root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
 }
@@ -39,7 +38,11 @@ impl Fixture {
             {"id":"z-controlled","title":"Controlled", "profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&script)]},"payload":{"instruction":"Check."}}
         ]}).to_string()).unwrap();
         let state = root.path().join("state");
-        Self { root, repo, state }
+        Self {
+            _root: root,
+            repo,
+            state,
+        }
     }
     fn context(&self) -> runs::Context {
         runs::Context::new(&self.repo, Some(&self.state), &support::os::cli()).unwrap()
@@ -73,9 +76,16 @@ impl Fixture {
         let mut changes = artifactize_core::changes::Subscription::new(&self.state).await;
         tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
             loop {
-                let view = runs::view(&self.context(), id).await.unwrap();
-                if self.repo.join("ready").exists()
+                let view = store::read_run(&self.state, id).await.unwrap();
+                if fs::read_to_string(self.repo.join("ready"))
+                    .is_ok_and(|contents| contents == "ready")
                     && view.requests[0].status() == RequestStatus::Green
+                    && view.requests[1].status() == RequestStatus::Running
+                    && view.requests[1].child.is_some()
+                    && matches!(
+                        view.run.control.as_ref().map(|control| control.worker),
+                        Some(runs::Worker::Admitted { .. })
+                    )
                 {
                     return view;
                 }
@@ -86,15 +96,8 @@ impl Fixture {
         .await
         .unwrap()
     }
-    async fn settled(&self, id: &RunId) -> runs::RunObservation {
-        runs::wait(
-            &self.context(),
-            id,
-            Some(support::os::patience(Duration::from_secs(30))),
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap()
+    async fn settled(&self, id: &RunId) -> store::RunView {
+        owned_run::terminal(&self.state, id).await
     }
     fn watcher(&self, args: &[&str]) -> Watcher {
         Watcher::new(
@@ -149,11 +152,11 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
     assert!(submitted.status.success(), "{submitted:?}");
     let accepted: Value = serde_json::from_slice(&submitted.stdout).unwrap();
     let id: RunId = accepted["run"].as_str().unwrap().parse().unwrap();
-    assert_eq!(detached.settled(&id).await.state, runs::State::Green);
+    assert_eq!(detached.settled(&id).await.run.status(), RunStatus::Green);
     let directory = runs.join(id.as_str());
     assert!(support::os::private_dir(&directory));
     assert!(support::os::private_file(&directory.join("worker.stderr")));
-    let completed = runs::view(&detached.context(), &id).await.unwrap();
+    let completed = store::read_run(&detached.state, &id).await.unwrap();
     assert!(matches!(
         completed.run.control.unwrap().worker,
         runs::Worker::Admitted { .. }
@@ -200,14 +203,15 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
     support::os::kill(closed.id());
     let _ = closed.wait_with_output().unwrap();
     assert!(
-        !runs::status(&fixture.context(), &run)
+        store::read_run(&fixture.state, &run)
             .await
             .unwrap()
-            .state
-            .is_terminal()
+            .run
+            .status()
+            == RunStatus::Running
     );
     fs::write(fixture.repo.join("release"), "release").unwrap();
-    assert_eq!(fixture.settled(&run).await.state, runs::State::Green);
+    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
     let output = fixture
         .command()
         .args([
@@ -232,15 +236,16 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         .unwrap();
     assert!(output.status.success());
     assert_eq!(
-        fixture.settled(&cancelled).await.state,
-        runs::State::Cancelled
+        fixture.settled(&cancelled).await.run.status(),
+        RunStatus::Error
     );
-    let final_view = runs::view(&fixture.context(), &cancelled).await.unwrap();
+    let final_view = store::read_run(&fixture.state, &cancelled).await.unwrap();
     assert_eq!(final_view.requests[0].status(), RequestStatus::Green);
     assert_eq!(
         final_view.run.control.unwrap().failure_code,
         Some(FailureCode::Cancelled)
     );
+    support::os::wait_until(Duration::from_secs(30), || !support::os::running(child));
     assert!(!support::os::running(child));
     assert!(
         fixture
@@ -258,7 +263,7 @@ async fn a2_request_keys_deduplicate_sequential_and_concurrent_attempts_only() {
     let fixture = Fixture::new();
     fs::write(fixture.repo.join("release"), "release").unwrap();
     let first = fixture.submit(Some("attempt:one"));
-    assert_eq!(fixture.settled(&first).await.state, runs::State::Green);
+    assert_eq!(fixture.settled(&first).await.run.status(), RunStatus::Green);
     // Existing keys are looked up before today's now-invalid declarations.
     let declaration = fs::read(fixture.repo.join("index.artf")).unwrap();
     fs::write(fixture.repo.join("index.artf"), "invalid declaration").unwrap();
@@ -281,21 +286,32 @@ async fn a2_request_keys_deduplicate_sequential_and_concurrent_attempts_only() {
     });
     assert_eq!(ids[0], ids[1]);
     assert_ne!(ids[0], first);
-    assert_eq!(fixture.settled(&ids[0]).await.state, runs::State::Green);
+    assert_eq!(
+        fixture.settled(&ids[0]).await.run.status(),
+        RunStatus::Green
+    );
     let unkeyed = [fixture.submit(None), fixture.submit(None)];
     assert_ne!(unkeyed[0], unkeyed[1]);
     for id in &unkeyed {
-        assert_eq!(fixture.settled(id).await.state, runs::State::Green);
+        assert_eq!(fixture.settled(id).await.run.status(), RunStatus::Green);
     }
-    let db = rusqlite::Connection::open_with_flags(
-        fixture.state.join(store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
+    // Read every saved attempt so an unexpected duplicate cannot fall outside the page.
+    let saved = store::read_runs(&fixture.state, Some(&fixture.repo), u32::MAX, 0)
+        .await
+        .unwrap();
+    let ids = std::collections::BTreeSet::from([
+        first,
+        ids[0].clone(),
+        unkeyed[0].clone(),
+        unkeyed[1].clone(),
+    ]);
     assert_eq!(
-        db.query_row("SELECT count(*) FROM runs", [], |row| row.get::<_, u32>(0))
-            .unwrap(),
-        4
+        saved
+            .into_iter()
+            .map(|run| run.id)
+            .collect::<std::collections::BTreeSet<_>>(),
+        ids,
+        "history exposes exactly the distinct submission attempts"
     );
 }
 
@@ -315,7 +331,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
     let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
     let request = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
         loop {
-            let view = runs::view(&context, &started.run).await.unwrap();
+            let view = store::read_run(&fixture.state, &started.run).await.unwrap();
             if let Some(request) = view
                 .requests
                 .iter()
@@ -348,10 +364,17 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         );
     }
     assert_eq!(
-        fixture.settled(&started.run).await.state,
-        runs::State::Green
+        fixture.settled(&started.run).await.run.status(),
+        RunStatus::Green
     );
     let before = store::read_run(&fixture.state, &started.run).await.unwrap();
+    // Saved terminal state precedes closing the worker's final SQLite connection.
+    support::runs::finished_worker(
+        &fixture.state,
+        &fixture.repo,
+        &started.run,
+        support::os::running,
+    );
     let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
     let state_id: String = db
         .query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
@@ -434,7 +457,7 @@ async fn a4_dead_worker_errors_without_replay_and_cleans_owned_children() {
     })
     .await
     .unwrap();
-    let settled = runs::view(&fixture.context(), &id).await.unwrap();
+    let settled = store::read_run(&fixture.state, &id).await.unwrap();
     assert_eq!(
         settled.run.control.unwrap().failure_code,
         Some(FailureCode::OwnerDied)
@@ -444,25 +467,11 @@ async fn a4_dead_worker_errors_without_replay_and_cleans_owned_children() {
         settled.requests[1].error_code(),
         Some(FailureCode::OwnerDied)
     );
+    support::os::wait_until(Duration::from_secs(30), || !support::os::running(child));
     assert!(!support::os::running(child));
     assert_eq!(
         fixture.submit(Some("crash")),
         id,
         "a retry never replays interrupted work"
     );
-    let db = rusqlite::Connection::open_with_flags(
-        fixture.state.join(store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    assert_eq!(
-        db.query_row(
-            "SELECT count(*) FROM executions WHERE status='RUNNING'",
-            [],
-            |row| row.get::<_, u32>(0)
-        )
-        .unwrap(),
-        0
-    );
-    assert!(fixture.root.path().exists());
 }

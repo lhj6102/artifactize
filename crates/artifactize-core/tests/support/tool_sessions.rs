@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const HARNESS: &str = r#"import json, os, pathlib, subprocess, sys, time
+pub const HARNESS: &str = r#"import json, pathlib, sys, time
 PATH_TEXT_FUNCTION
 mode, log = sys.argv[1], pathlib.Path(sys.argv[2])
 def wait(path):
@@ -17,39 +17,39 @@ def record(kind, data):
     pending.write_text(json.dumps(data))
     pending.replace(log / (kind + '-' + session.name))
 if mode == 'child':
-    held = hold_session_file(pathlib.Path(os.environ['ARTIFACTIZE_SESSION_DIR']) / ('held-' + sys.argv[3]))
-    (log / ('child-' + sys.argv[3])).write_text(str(os.getpid()))
+    held = hold_session_file(session_directory() / ('held-' + sys.argv[3]))
+    (log / ('child-' + sys.argv[3])).write_text(str(session_pid()))
     wait(log / 'release')
-    sys.exit(0)
+    exit_session(0)
 request = json.load(sys.stdin) if mode not in ['plain'] else None
-session = pathlib.Path(os.environ['ARTIFACTIZE_SESSION_DIR'])
+session = session_directory()
 if mode in ['start', 'unready', 'exit', 'stop', 'hang-stop', 'fail-stop', 'readonly-stop']:
     assert request['version'] == 1 and request['args'] == {}
     assert isinstance(request['context']['scope'], dict)
 if mode in ['start', 'unready', 'exit']:
-    child = subprocess.Popen([sys.executable, __file__, 'child', str(log), session.name])
+    child = launch_session_child(log, session.name)
     wait(log / ('child-' + session.name))
     (session / 'evidence').write_text('started first')
-    record('start', {'directory':path_text(session), 'pid':os.getpid(), 'child':child.pid, 'home':path_text(pathlib.Path.home())})
-    if mode == 'exit': sys.exit(1)
+    record('start', {'directory':path_text(session), 'pid':session_pid(), 'child':child.pid, 'home':session_home()})
+    if mode == 'exit': exit_session(1)
     if mode == 'start': print('ready', flush=True)
     wait(session / 'exit')
 elif mode in ['stop', 'hang-stop', 'fail-stop', 'readonly-stop']:
     child = None
     if mode == 'hang-stop':
-        child = subprocess.Popen([sys.executable, __file__, 'child', str(log), 'stop-' + session.name])
+        child = launch_session_child(log, 'stop-' + session.name)
         wait(log / ('child-stop-' + session.name))
-    record('stop', {'directory':path_text(session), 'home':path_text(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
+    record('stop', {'directory':path_text(session), 'home':session_home(), 'pid':session_pid(), 'child':child.pid if child else None})
     if mode == 'hang-stop': wait(log / 'release')
-    if mode == 'fail-stop': sys.exit(1)
+    if mode == 'fail-stop': exit_session(1)
     if mode == 'readonly-stop': deny_session_directory_writes(session)
 elif mode in ['act', 'plain', 'hold', 'hold-tree', 'ignore-term', 'freeze-cleanup', 'crash']:
     child = None
     if mode in ['hold-tree', 'ignore-term', 'freeze-cleanup']:
-        child = subprocess.Popen([sys.executable, __file__, 'child', str(log), 'call-' + session.name])
+        child = launch_session_child(log, 'call-' + session.name)
         wait(log / ('child-call-' + session.name))
     if mode in ['ignore-term', 'freeze-cleanup']: observe_session_interrupt(log, mode == 'freeze-cleanup')
-    record('call', {'directory':path_text(session), 'home':path_text(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
+    record('call', {'directory':path_text(session), 'home':session_home(), 'pid':session_pid(), 'child':child.pid if child else None})
     if mode in ['hold', 'hold-tree', 'ignore-term', 'freeze-cleanup']: wait(log / 'release')
     if mode == 'crash':
         (session / 'exit').write_text('')
@@ -64,7 +64,8 @@ elif mode in ['act', 'plain', 'hold', 'hold-tree', 'ignore-term', 'freeze-cleanu
 
 pub fn script() -> String {
     format!(
-        "{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}",
+        super::os::session_process_probe(),
         super::os::session_file_holder(),
         super::os::session_interrupt_observer(),
         super::os::session_directory_write_denial(),
@@ -74,6 +75,7 @@ pub fn script() -> String {
 
 pub fn views(log: &Path, start: &str, stop: &str, action: &str) -> Value {
     let command = super::os::python_program();
+    let log = super::os::path_text(log);
     let command = |mode: &str| json!({"command":command, "args":["harness.py", mode, log]});
     let mut tool = command(action);
     tool["description"] = json!("Operate the running app");

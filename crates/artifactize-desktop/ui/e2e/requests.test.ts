@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, createPagedRequests, type Fixture, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
-import { press, typeText } from "./keys.ts";
+import { afterRender, press, typeText } from "./keys.ts";
+import { checkpoint } from "./commands.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
   const end = Date.now() + ms;
@@ -61,13 +62,15 @@ describe("opening a request", () => {
     await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
     assert.ok(!(await browser.$("#field-reason").isExisting()), "no RED field in the GREEN form");
     await browser.$("#field-comment").setValue("GREEN draft stays");
-    await press(browser, ["Control", "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G preserves GREEN");
+    // An idempotent verdict leaves the same field visible: require the real chord's
+    // defaultPrevented flag after the app handler, not only that already-true field state.
+    await press(browser, ["Control", "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G preserves GREEN", { handled: true });
     assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
     assert.ok(!(await browser.$("#field-reason").isExisting()), "Ctrl+G kept the GREEN schema");
     await press(browser, ["Control", "r"], () => browser.$("#field-reason").isExisting(), "the RED form");
     assert.ok(!(await browser.$("#field-comment").isExisting()), "no GREEN field in the RED form");
     await browser.$("#field-reason").setValue("RED draft stays");
-    await press(browser, ["Control", "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R preserves RED");
+    await press(browser, ["Control", "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R preserves RED", { handled: true });
     assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
     assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");
     await press(browser, ["Control", "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
@@ -138,8 +141,9 @@ describe("a claim another reviewer holds", () => {
     await eventually(async () => (await text()).includes("claimed by bob"), "bob's claim shown");
     await press(browser, ["Enter"], () => human().isExisting(), "the Human review");
     await human().click();
-    await browser.keys(["c"]);
-    await eventually(async () => /claimed by bob|held by bob|bob/.test(await text()), "the refusal names bob");
+    await press(browser, ["c"], () => browser.execute(() =>
+      [...document.querySelectorAll('[aria-label="Human review"] .notice.error')].some((notice) => /bob/.test(notice.textContent ?? "")),
+    ), "this opened review's claim refusal names bob");
     assert.equal(signoff(fixture).claim?.reviewer, "bob", "the claim stays bob's");
     assert.doesNotMatch(await text(), /claimed by you/);
     assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
@@ -187,10 +191,20 @@ describe("a GREEN submission from the start", () => {
     assert.ok(await browser.$("#field-approved").isExisting(), "the schema's approved field");
     const comment = browser.$("#field-comment");
     await comment.click();
-    // Composition: shortcut letters and Esc typed meanwhile belong to the input method.
+    // Composition: shortcut letters, chords and Esc belong to the input method. Observe
+    // dispatch, not only a still-unchanged database while an accidental command is pending.
+    const writes = ["humanForm", "humanClaim", "humanRelease", "humanRun", "humanSubmit", "humanCancel", "humanJson"];
+    const before = (await checkpoint(browser)).activity;
     await browser.execute(() => document.activeElement?.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
     for (const key of ["g", "r", "q", "u", "c", "Escape"]) await composing(key);
-    await browser.pause(300);
+    await browser.execute(() => {
+      for (const key of ["g", "r", "u", "s", "e"]) {
+        document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, isComposing: true, bubbles: true }));
+      }
+    });
+    await afterRender(browser);
+    const after = (await checkpoint(browser)).activity;
+    for (const command of writes) assert.equal(after.commands[command]?.started ?? 0, before.commands[command]?.started ?? 0, `composition dispatches no ${command}`);
     assert.ok(await comment.isExisting(), "the form stays open");
     assert.equal(signoff(fixture).claim?.reviewer, "alice", "nothing was released");
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");

@@ -80,6 +80,7 @@ mod tests {
         for seconds in [0, 1, 10_000, u64::MAX] {
             let wire = seconds.to_string();
             let time: Timestamp = serde_json::from_str(&wire).unwrap();
+            assert_eq!(time.seconds(), seconds);
             assert_eq!(serde_json::to_string(&time).unwrap(), wire);
         }
         for wire in ["-1", "1.5", "\"100\"", "null"] {

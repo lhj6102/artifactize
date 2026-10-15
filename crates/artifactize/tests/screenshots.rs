@@ -9,12 +9,12 @@ mod support;
 const IHDR_CRC_BYTE: usize = 30;
 
 fn check(script: &Path, directory: &Path, code: i32, diagnostic: &str) {
-    let output = Command::new(support::os::python_program())
-        .arg("-I")
-        .arg(script)
-        .arg(directory)
-        .output()
-        .unwrap();
+    let output = support::os::run(
+        Command::new(support::os::python_program())
+            .arg("-I")
+            .arg(script)
+            .arg(directory),
+    );
     assert_eq!(output.status.code(), Some(code), "{output:?}");
     if code == 0 {
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();

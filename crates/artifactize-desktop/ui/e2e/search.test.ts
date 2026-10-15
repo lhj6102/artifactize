@@ -6,6 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { addRepository, create, type Fixture } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
+import { checkpoint, commandsRendered } from "./commands.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   const end = Date.now() + ms;
@@ -29,7 +30,19 @@ describe("review search", () => {
   const type = (text: string) => typeText(browser, text);
   const focused = (label: string) => () => browser.execute((name) => document.activeElement?.getAttribute("aria-label") === name, label);
   const holds = (text: string) => async () => (await query()) === text;
-  const readOnly = async () => (await browser.execute(() => document.body.innerText)).includes("· read-only");
+  /** Only an opened RecordDetail has a document; a list row or Preview cannot match. */
+  const record = () => browser.$('[role="document"]');
+  const detail = () => browser.execute(() => {
+    const opened = document.querySelector<HTMLElement>('[role="document"]');
+    const pane = opened?.closest("section.panel");
+    if (!opened || !pane) return null;
+    return {
+      title: pane.querySelector("header h2")?.textContent?.trim(),
+      fields: Object.fromEntries([...opened.querySelectorAll("dt")].map((key) => [key.textContent?.trim(), key.nextElementSibling?.textContent?.trim()])),
+      editable: !!opened.querySelector('input, textarea, select, [contenteditable="true"], [aria-label="Human review"]'),
+      close: !!pane.querySelector('button[title="Back to the list"]'),
+    };
+  });
   const suggestions = () =>
     browser.execute(() => [...document.querySelectorAll('[aria-label="Suggestions"] [role="option"]')].map((option) => option.textContent?.trim()));
 
@@ -52,6 +65,12 @@ describe("review search", () => {
     await eventually(async () => (await rows()).length === 1, "one waiting row");
     assert.match((await rows())[0], /release\/signoff/);
     assert.match(await query(), /^kind:human status:waiting_human repo:/);
+    await commandsRendered(browser);
+    const activity = (await checkpoint(browser)).activity;
+    assert.ok(activity.commands.reviewSearch?.started > 0, "the context-captured search dispatch is observed");
+    assert.ok(activity.commands.reviewSearch?.completed > 0, "normal search completion is observed");
+    assert.equal(activity.search?.query, await query());
+    assert.equal(activity.search?.completed, true);
   });
 
   // UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR
@@ -76,7 +95,7 @@ describe("review search", () => {
     await eventually(async () => (await suggestions()).includes("repo:"), "the repo key");
     const chosen = () =>
       browser.execute(() => document.querySelector('[aria-label="Suggestions"] [aria-selected="true"]')?.textContent?.trim() ?? null);
-    await press(browser, ["ArrowDown"], async () => (await chosen()) === "repo:", "the repo key chosen");
+    await press(browser, ["ArrowDown"], async () => (await chosen()) === "repo:", "the repo key chosen", { handled: true });
     await press(browser, ["Enter"], holds("kind:human repo:"), "the repo key taken");
     // A taken key offers the listed repositories' folders.
     await eventually(async () => (await suggestions()).includes("repo:other"), "the repository values");
@@ -110,12 +129,21 @@ describe("review search", () => {
     const listed = (await rows())[0];
     const requestId = /run-\S+/.exec(listed)?.[0];
     assert.ok(requestId, `the row names its request: ${listed}`);
-    await press(browser, ["Enter"], readOnly, "the read-only Detail");
-    // The opened Detail is of the listed request, not the preview of another.
-    const detail = await browser.execute(() => document.body.innerText);
-    assert.ok(detail.includes(requestId), "the Detail names the request");
-    assert.match(detail, /docs\/lint/);
-    assert.ok(!(await browser.$('[aria-label="Human review"]').isExisting()), "no Human review");
-    await press(browser, ["Escape"], async () => !(await readOnly()), "back on the list");
+    assert.equal(await record().isExisting(), false, "the read-only Preview is not an opened Detail");
+    await press(browser, ["Enter"], async () => {
+      const opened = await detail();
+      return opened?.title === "docs/lint · Docs build · read-only" && opened.close;
+    }, "the non-Human read-only Detail opened");
+    // Request identities belong to the opened document's folded Technical section.
+    const technical = () => record().$("button*=Technical");
+    await technical().click();
+    await eventually(async () => (await technical().getAttribute("aria-expanded")) === "true", "the opened Detail discloses its request identity");
+    const opened = await detail();
+    assert.ok(opened);
+    assert.equal(opened.fields.Request, requestId, "this opened Detail belongs to the exact listed request");
+    assert.equal(opened.title, "docs/lint · Docs build · read-only", "this Detail names the eval and its read-only state");
+    assert.equal(opened.editable, false, "this non-Human Detail has no review form or editing controls");
+    assert.ok(opened.close, "the opened Detail offers Back to the list");
+    await press(browser, ["Escape"], async () => !(await record().isExisting()) && await focused("Requests")(), "the opened Detail closed back to the list");
   });
 });

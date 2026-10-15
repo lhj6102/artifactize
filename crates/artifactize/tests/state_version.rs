@@ -1,5 +1,8 @@
 //! Unsupported schemas are refused; supported additive upgrades have their own Run seam.
 
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -118,10 +121,20 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
         fs::remove_dir_all(&state).unwrap();
     }
 
+    // Only the new real submissions have worker lifetimes; the old schemas are inert input.
+    let _lease = owned_run::RepoLease::new(&state, &repo);
     // A new state has the four tables, and works.
     let output = artifactize(root, &["verify", "--wait", "--all", "--json"]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
-    let db = Connection::open(&database).unwrap();
+    let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+    support::runs::finished_worker(
+        &state,
+        &repo,
+        &run["id"].as_str().unwrap().parse().unwrap(),
+        support::os::running,
+    );
+    let db =
+        Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),

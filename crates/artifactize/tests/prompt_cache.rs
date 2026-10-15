@@ -1,5 +1,8 @@
 //! One prompt-cache identity per Agent review, against loopback fakes.
 
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
@@ -11,6 +14,8 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 /// A workspace of Artifacts, each with one Agent eval whose result must list `covered`.
 struct Project {
+    // Fields drop in declaration order: release durable workers before their temporary state.
+    _runs: owned_run::RepoLease,
     _root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
@@ -45,6 +50,7 @@ impl Project {
             "refresh_token":"refresh","account_id":"account-1","expires_at":expires,"saved_at":1});
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
         Self {
+            _runs: owned_run::RepoLease::new(&state, &repo),
             _root: root,
             repo,
             state,

@@ -1,25 +1,35 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
 use std::{
-    collections::BTreeMap,
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
 
 use serde_json::{Value, json};
-use support::{
-    FakeProvider, openai,
-    os::{shell, true_program},
-};
+use support::{FakeProvider, openai, os::true_program};
 
 /// Checkouts of one project sharing a state directory, with a fake OpenAI provider
 /// that passes every Agent review.
 struct Fixture {
+    repos: RefCell<BTreeSet<PathBuf>>,
     root: tempfile::TempDir,
     provider: FakeProvider,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        for repo in self.repos.get_mut().iter() {
+            owned_run::release_repo(&self.root.path().join("state"), repo);
+        }
+    }
 }
 
 impl Fixture {
@@ -35,7 +45,11 @@ impl Fixture {
                 openai::usage(120, 30),
             )
         });
-        Self { root, provider }
+        Self {
+            root,
+            provider,
+            repos: RefCell::default(),
+        }
     }
 
     /// `versions` are the api, web, style, docs and brand contents; each one is its fingerprint.
@@ -45,8 +59,8 @@ impl Fixture {
         // web/tests is RED when its version says "broken".
         let web = json!({
             "kind":"runtime",
-            "command":shell(),
-            "args":["-c","! grep -q broken version"],
+            "command":support::os::python_program(),
+            "args":["-c","import pathlib; raise SystemExit(int('broken' in pathlib.Path('version').read_text()))"],
         });
         let agent = json!({
             "kind":"agent",
@@ -95,6 +109,7 @@ impl Fixture {
     }
 
     fn run(&self, repo: &Path, args: &[&str], code: i32) -> Output {
+        self.repos.borrow_mut().insert(repo.to_owned());
         let root = self.root.path();
         let output = Command::new(support::os::cli())
             .arg("--repo")
@@ -262,11 +277,15 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     let id = line(&text, "Run:").strip_prefix("Run: ").unwrap();
     let run = fixture.json(&merge, &["run", "show", id], 0);
     // style waits for web's new result, then reviews again because its key covers web.
-    let mut expected = predicted(&status);
-    assert_eq!(expected["style/contrast"], "wait");
-    expected.insert("style/contrast".into(), "execute".into());
-    assert_eq!(expected, taken(&run));
-    assert_eq!(taken(&run)["web/tests"], "execute");
+    let expected = BTreeMap::from([
+        ("api/tests".into(), "reuse".into()),
+        ("brand/signoff".into(), "reuse".into()),
+        ("docs/review".into(), "reuse".into()),
+        ("style/contrast".into(), "execute".into()),
+        ("web/tests".into(), "execute".into()),
+    ]);
+    assert_eq!(predicted(&status)["style/contrast"], "wait");
+    assert_eq!(taken(&run), expected);
     assert_eq!(run["executionsStarted"], 2);
     assert_eq!(run["summary"]["executed"], tally(2, 2, 0, 0));
     assert_eq!(run["summary"]["reused"], reused(3, 1, 1, 1));

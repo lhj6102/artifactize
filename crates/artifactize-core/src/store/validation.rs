@@ -42,72 +42,64 @@ pub(super) fn result(
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
+    use crate::store::Request;
+    use serde_json::{Value, json};
+
+    fn wire(status: &str) -> Value {
+        let request = crate::monitor::tests::request("app/check", status, json!({})).request;
+        serde_json::to_value(request).unwrap()
+    }
+
     #[test]
-    fn verdict_and_error_data_cannot_contradict_the_state() {
-        for status in ["GREEN", "RED"] {
-            assert!(result(status.parse().unwrap(), None, None, None).is_err());
+    fn saved_request_verdict_and_error_data_cannot_contradict_the_state() {
+        for (status, opposite) in [("GREEN", "RED"), ("RED", "GREEN")] {
+            let valid = wire(status);
+            assert!(serde_json::from_value::<Request>(valid.clone()).is_ok());
+            for (field, value) in [
+                ("result", Value::Null),
+                ("result", json!({"verdict":opposite})),
+                ("result", json!({"verdict":"ERROR"})),
+                ("error", json!("failed")),
+                ("errorCode", json!("SPAWN_FAILED")),
+            ] {
+                let mut invalid = valid.clone();
+                invalid[field] = value;
+                assert!(
+                    serde_json::from_value::<Request>(invalid).is_err(),
+                    "{status}: {field}"
+                );
+            }
+        }
+        let valid = wire("ERROR");
+        let mut coded = valid.clone();
+        coded["errorCode"] = json!("SPAWN_FAILED");
+        assert!(serde_json::from_value::<Request>(coded).is_ok());
+        for (field, value) in [
+            ("error", Value::Null),
+            ("result", json!({"verdict":"GREEN"})),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[field] = value;
             assert!(
-                result(
-                    status.parse().unwrap(),
-                    Some(&json!({"verdict":status}).try_into().unwrap()),
-                    None,
-                    None
-                )
-                .is_ok()
-            );
-            assert!(ExecutionResult::try_from(json!({"verdict":"ERROR"})).is_err());
-            let opposite = if status == "GREEN" { "RED" } else { "GREEN" };
-            assert!(
-                result(
-                    status.parse().unwrap(),
-                    Some(&json!({"verdict":opposite}).try_into().unwrap()),
-                    None,
-                    None
-                )
-                .is_err()
-            );
-            assert!(
-                result(
-                    status.parse().unwrap(),
-                    Some(&json!({"verdict":status}).try_into().unwrap()),
-                    Some("failed"),
-                    None
-                )
-                .is_err()
+                serde_json::from_value::<Request>(invalid).is_err(),
+                "ERROR: {field}"
             );
         }
-        assert!(
-            result(
-                RequestStatus::Error,
-                None,
-                Some("failed"),
-                Some("SPAWN_FAILED")
-            )
-            .is_ok()
-        );
-        assert!(
-            result(
-                RequestStatus::Error,
-                Some(&json!({"verdict":"GREEN"}).try_into().unwrap()),
-                Some("failed"),
-                None
-            )
-            .is_err()
-        );
-        assert!(result(RequestStatus::Error, None, None, None).is_err());
         for status in ["QUEUED", "RUNNING", "WAITING_HUMAN", "BLOCKED"] {
-            assert!(result(status.parse().unwrap(), None, None, None).is_ok());
-            assert!(
-                result(
-                    status.parse().unwrap(),
-                    Some(&json!({"verdict":"GREEN"}).try_into().unwrap()),
-                    None,
-                    None
-                )
-                .is_err()
-            );
+            let valid = wire(status);
+            assert!(serde_json::from_value::<Request>(valid.clone()).is_ok());
+            for (field, value) in [
+                ("result", json!({"verdict":"GREEN"})),
+                ("error", json!("failed")),
+                ("errorCode", json!("SPAWN_FAILED")),
+            ] {
+                let mut invalid = valid.clone();
+                invalid[field] = value;
+                assert!(
+                    serde_json::from_value::<Request>(invalid).is_err(),
+                    "{status}: {field}"
+                );
+            }
         }
     }
 }

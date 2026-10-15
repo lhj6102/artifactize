@@ -92,7 +92,10 @@ fn text_width(text: &str) -> u16 {
 
 impl Review {
     pub fn draw(&mut self, frame: &mut Frame) {
+        #[cfg(not(test))]
         let now = OffsetDateTime::now_utc();
+        #[cfg(test)]
+        let now = super::tests::now();
         // With Detail focused the component shows the status itself.
         let status = if self.focus == Focus::List {
             self.status_line()

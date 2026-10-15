@@ -1,6 +1,7 @@
 // Canonical request identity at the IPC boundary owns both screens' forms and drafts.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, expect, it } from "vitest";
+import { waitFor } from "@testing-library/svelte";
 import { AppState } from "../shell/app.svelte";
 import { greenForm, humanView, redForm } from "./fixtures";
 
@@ -35,8 +36,8 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
     // The screen may already hold this handle when its read discovers the alias.
     const held = app.review(second);
     await held.load();
-    expect(app.review("run-a-2")).toBe(opened);
-    expect(app.review("run-follower-2")).toBe(opened);
+    expect(app.reviews["run-a-2"]).toBe(opened);
+    expect(app.reviews["run-follower-2"]).toBe(opened);
     expect(held.form).toBe(originalForm);
     await held.form!.set("comment", { kind: "text", value: "through the alias" });
     expect(opened.form!.values.comment).toEqual({ kind: "text", value: "through the alias" });
@@ -62,13 +63,13 @@ it("converges when original and follower handles both exist before either read f
   const follower = app.review("run-follower-2");
   const originalRead = original.load();
   const followerRead = follower.load();
-  await Promise.resolve();
+  await waitFor(() => expect(Object.keys(answers)).toEqual(["run-a-2", "run-follower-2"]));
   answers["run-follower-2"]();
   await followerRead;
   answers["run-a-2"]();
   await originalRead;
   original.technical = true;
   expect(follower.technical).toBe(true);
-  expect(app.review("run-a-2")).toBe(original);
-  expect(app.review("run-follower-2")).toBe(original);
+  expect(app.reviews["run-a-2"]).toBe(original);
+  expect(app.reviews["run-follower-2"]).toBe(original);
 });

@@ -10,6 +10,7 @@ mod support;
 use support::runs::RecordOutput;
 
 use std::{
+    cell::RefCell,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
@@ -26,12 +27,23 @@ use serde_json::{Value, json};
 use support::{FakeProvider, openai};
 
 struct Fixture {
-    root: tempfile::TempDir,
     provider: FakeProvider,
+    repos: RefCell<Vec<PathBuf>>,
+    root: tempfile::TempDir,
     /// Reviews in flight at the provider, and the most at once.
     active: Arc<AtomicUsize>,
     most: Arc<AtomicUsize>,
     gate: support::Gate,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.gate.open();
+        let state = self.state();
+        for repo in self.repos.get_mut().iter() {
+            owned_run::release_repo(&state, repo);
+        }
+    }
 }
 
 impl Fixture {
@@ -60,6 +72,7 @@ impl Fixture {
         });
         Self {
             root,
+            repos: RefCell::default(),
             provider,
             active,
             most,
@@ -87,6 +100,7 @@ impl Fixture {
             )
             .unwrap();
         }
+        self.repos.borrow_mut().push(repo.clone());
         repo
     }
 
@@ -122,28 +136,32 @@ impl Fixture {
         Child::new(child, &self.state(), repo)
     }
 
-    fn database(&self) -> Connection {
+    fn stimulus(&self) -> Connection {
         Connection::open(self.state().join("state.sqlite")).unwrap()
     }
 
-    /// Slots held: RUNNING executions on a backend.
-    fn slots(&self) -> u32 {
+    fn observed(&self) -> Connection {
         Connection::open_with_flags(
             self.state().join("state.sqlite"),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .unwrap()
-        .query_row(
-            "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap()
+    }
+
+    /// Slots held: RUNNING executions on a backend.
+    fn slots(&self) -> u32 {
+        self.observed()
+            .query_row(
+                "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     /// Hold an openai slot with an execution of this live process (the test).
     fn hold(&self) {
-        self.database().execute(
+        self.stimulus().execute(
             "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) SELECT 'held',NULL,eval_def_hash,'RUNNING',?1,?2,'openai',json_set(data,'$.id','held','$.key',NULL,'$.status','RUNNING','$.result',NULL,'$.error',NULL,'$.errorCode',NULL,'$.completedAt',NULL,'$.ownerPid',?1,'$.ownerStartTime',?2) FROM executions LIMIT 1",
             rusqlite::params![std::process::id(), own_start_time() as i64],
         )
@@ -236,7 +254,7 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     fixture.limits(json!({"backends":{"openai":1}}));
     // A first Run creates the state database; then a live process (this test) holds the slot.
     finish(fixture.spawn(&repo, &[]), 0);
-    let db = fixture.database();
+    let db = fixture.observed();
     fixture.hold();
     let calls = fixture.provider.requests().len();
     let waiting = fixture.spawn(&repo, &["--force", "--max-executions", "1"]);
@@ -254,11 +272,13 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     assert_eq!(started, 0);
 
     // The holder "crashes": the execution of an owner that is gone ends, and frees its slot.
-    db.execute(
-        "UPDATE executions SET owner_start_time=0 WHERE id='held'",
-        [],
-    )
-    .unwrap();
+    fixture
+        .stimulus()
+        .execute(
+            "UPDATE executions SET owner_start_time=0 WHERE id='held'",
+            [],
+        )
+        .unwrap();
     let run = finish(waiting, 0);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][0]["status"], "GREEN");
@@ -361,7 +381,7 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
     .unwrap();
     fixture.limits(json!({"backends":{"openai":1}}));
     finish(fixture.spawn(&repo, &[]), 0);
-    let db = fixture.database();
+    let db = fixture.observed();
     fixture.hold();
     // With one job, the Agent review waits for its slot and the runtime eval still runs.
     let run = fixture.spawn(&repo, &["--force", "--jobs", "1"]);
@@ -375,7 +395,9 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
         .unwrap()
             == 1
     });
-    db.execute("UPDATE executions SET status='ERROR' WHERE id='held'", [])
+    fixture
+        .stimulus()
+        .execute("UPDATE executions SET status='ERROR' WHERE id='held'", [])
         .unwrap();
     let run = finish(run, 0);
     assert_eq!(run["executionsStarted"], 2);

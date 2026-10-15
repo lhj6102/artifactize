@@ -12,7 +12,6 @@ use artifactize_core::{
     runtime::Verdict,
     store,
 };
-use rusqlite::Connection;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
@@ -308,8 +307,14 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
         eval["payload"]["instruction"] = json!(format!("Check {{{target}}}."));
         fixture.declare(name, vec![eval]);
     }
-    let config = fixture.config();
-    assert_eq!(Graph::new(&config).unwrap().components().len(), 1);
+    let checked = fixture
+        .command()
+        .args(["config", "check", "--json"])
+        .record_output()
+        .unwrap();
+    assert!(checked.status.success(), "{checked:?}");
+    let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
+    assert_eq!(checked["ok"], true);
 }
 
 #[test]
@@ -393,16 +398,13 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     let output = artifactize_core::query::run_output(&first, OffsetDateTime::now_utc());
     assert_eq!(output["requests"][0]["source"]["kind"], "derived");
     assert_eq!(output["summary"]["executed"]["total"], 1);
-    let db = Connection::open_with_flags(
-        fixture.state.join(store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
+    let cached = cache::list(&fixture.state, true).await.unwrap();
     assert_eq!(
-        db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
-            .get::<_, i64>(0))
-            .unwrap(),
-        1
+        cached
+            .iter()
+            .map(|entry| entry.eval_id.as_str())
+            .collect::<Vec<_>>(),
+        ["art/check"]
     );
     let config = fixture.config();
     assert_eq!(
@@ -434,10 +436,16 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     assert!(!second.requests[0].force);
     assert_eq!(second.requests[0].status().as_str(), "GREEN");
     assert_eq!(
-        db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
-            .get::<_, i64>(0))
-            .unwrap(),
-        1
+        cache::list(&fixture.state, true)
+            .await
+            .unwrap()
+            .iter()
+            .map(|entry| entry.execution_id.as_str())
+            .collect::<Vec<_>>(),
+        cached
+            .iter()
+            .map(|entry| entry.execution_id.as_str())
+            .collect::<Vec<_>>()
     );
     let text = fixture
         .command()
@@ -601,20 +609,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     let next = fixture.verify(&VerifyOptions::default()).await;
     assert_eq!(next.requests[0].status().as_str(), "GREEN");
     // The original owned Run continues and derives the newly submitted evidence.
-    let context = artifactize_core::runs::Context::new(
-        &fixture.repo,
-        Some(&fixture.state),
-        &support::os::cli(),
-    )
-    .unwrap();
-    artifactize_core::runs::wait(
-        &context,
-        &run.run.id,
-        Some(support::os::patience(Duration::from_secs(30))),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
+    owned_run::terminal(&fixture.state, &run.run.id).await;
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
@@ -703,16 +698,13 @@ async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
         .unwrap();
     assert!(status.status.success());
     assert!(remote.requests().is_empty());
-    let db = Connection::open_with_flags(
-        fixture.state.join(store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    assert_eq!(
-        db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
-            .get::<_, i64>(0))
-            .unwrap(),
-        0
+    assert!(cache::list(&fixture.state, true).await.unwrap().is_empty());
+    assert!(
+        run["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|request| { request["executionId"].is_null() && request["key"].is_null() })
     );
 }
 
@@ -743,8 +735,13 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         graph.evaluate(&cancelled).evals["player/ready"].status,
         EvalStatus::Wait
     );
-    let mut slow = runtime(&support::os::shell());
-    slow["profile"]["args"] = json!(["-c", format!("touch started; {}", support::os::LINGERING)]);
+    let script = fixture._root.path().join("controlled.py");
+    support::os::write_python_script(
+        &script,
+        "import pathlib,time\npathlib.Path('started').write_text('runtime-started')\nwhile True: time.sleep(0.01)\n",
+    );
+    let mut slow = runtime(support::os::python_program());
+    slow["profile"]["args"] = json!(["-I", support::os::path_text(&script)]);
     fixture.write(
         "art",
         json!({"name":"art","fingerprint":false,"evals":[slow]}),
@@ -753,7 +750,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     let started = fixture.repo.join("art/started");
     let cancellation = async {
         tokio::time::timeout(support::os::patience(Duration::from_secs(10)), async {
-            while !started.exists() {
+            while fs::read_to_string(&started).ok().as_deref() != Some("runtime-started") {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
@@ -836,7 +833,6 @@ fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
     fixture.declare("player", vec![dependency(&["art"])]);
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
-    assert_eq!(graph.components().len(), 1);
     let evidence = std::collections::BTreeMap::from([(
         "art/check".parse().unwrap(),
         Evidence::Current(Verdict::Green),

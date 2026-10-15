@@ -90,7 +90,7 @@ fn image_blocks_normalize_all_formats_and_serialize_without_paths() {
             block.clone(),
             json!({"type":"image","data":encoded.trim_end_matches('='),"mimeType":mime}),
             json!({"type":"image","path":"nested/image.wrong-extension","mimeType":mime}),
-            json!({"type":"image","path":file,"mimeType":mime}),
+            json!({"type":"image","path":crate::test_os::path_text(&file),"mimeType":mime}),
         ] {
             let result = result::parse(
                 &serde_json::to_vec(&json!({"content":[source]})).unwrap(),
@@ -204,8 +204,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     fs::write(output.join("image"), bytes).unwrap();
     fs::write(directory.path().join("outside"), bytes).unwrap();
     fs::write(output.join("nested/image"), bytes).unwrap();
-    let outside = directory.path().join("outside");
-    let other = directory.path().join("output-other/image");
+    let outside = crate::test_os::path_text(&directory.path().join("outside"));
+    let other = crate::test_os::path_text(&directory.path().join("output-other/image"));
     let mut paths = vec![
         "../outside",
         "nested/../../outside",
@@ -215,8 +215,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
         "./image",
         "nested\\image",
         "missing",
-        outside.to_str().unwrap(),
-        other.to_str().unwrap(),
+        outside.as_str(),
+        other.as_str(),
     ];
     if symlink_file("image", output.join("link")).is_some() {
         paths.push("link");
@@ -232,13 +232,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     {
         paths.push("escape");
     }
-    // Only Unix has FIFOs.
-    // Unix-only special-file or filesystem permission behavior.
-    #[cfg(unix)]
-    {
-        crate::test_os::fifo(&output.join("fifo"));
-        paths.push("fifo");
-    }
+    let special_files = crate::test_os::special_files(&output);
+    paths.extend(special_files.paths().iter().copied());
     crate::test_os::link_dir(&output.join("nested"), &output.join("joined"));
     paths.push("joined/image");
     for path in paths {
@@ -248,17 +243,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     let symlinked = symlink_dir("old-output", &output).is_some();
     if symlinked {
         assert!(from_output(&output, "image", "image/png").is_err());
+        crate::test_os::remove_link_dir(&output);
     }
-    // A junction needs no privilege and redirects the output root just the same.
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        // Without the privilege to create the symlink above, there is nothing at the
-        // output root yet to remove.
-        if symlinked {
-            crate::test_os::remove_link_dir(&output);
-        }
-        crate::test_os::junction(&directory.path().join("old-output"), &output);
-        assert!(from_output(&output, "image", "image/png").is_err());
-    }
+    crate::test_os::link_dir(&directory.path().join("old-output"), &output);
+    assert!(from_output(&output, "image", "image/png").is_err());
 }

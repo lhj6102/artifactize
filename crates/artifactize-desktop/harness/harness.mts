@@ -9,8 +9,8 @@
 //   act       click an element, type text, or press a key; answers with the new snapshot
 //   cli       run the artifactize CLI against the app's repository and state, from another process
 //
-// Needs the normal app and CLI builds (cargo build -p artifactize -p artifactize-desktop, after
-// pnpm build in ui/): a review drives the prepared candidate and never rebuilds it.
+// Needs an explicit DESKTOP_TEST_CANDIDATE manifest prepared by ui/e2e/run.ts: a review
+// snapshots that candidate into its session, never searches shared targets or rebuilds it.
 import { createConnection, createServer, type Socket } from "node:net";
 import { spawnSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -19,6 +19,8 @@ import { createInterface } from "node:readline";
 import { cancelRuns, cli, create, type Fixture } from "../ui/e2e/fixture.ts";
 import { LAUNCH_TIMEOUT, startBuilt, type Session } from "../ui/e2e/driver.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
+import { cargoGate, cleanup, snapshotCandidate } from "../ui/e2e/build.ts";
+import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
 
 const SOCKET = "control.sock";
 const sessionDir = process.env.ARTIFACTIZE_SESSION_DIR;
@@ -33,12 +35,14 @@ type Request =
   | { op: "change-declaration" }
   | { op: "stop" };
 
-const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
+// WebDriver's element references, kept outside the page, retain identity across reorders.
+// A removed control is stale; its number must never target its replacement at the same index.
+const controls = new WeakMap<WebdriverIO.Browser, ReturnType<WebdriverIO.Browser["$"]>[]>();
 
 /** The window as text: its focus, every visible control with a number to act on, then its text. */
-async function snapshot(browser: WebdriverIO.Browser): Promise<string> {
-  return browser.execute(() => {
-    for (const old of document.querySelectorAll("[data-snap]")) old.removeAttribute("data-snap");
+export async function snapshot(browser: WebdriverIO.Browser): Promise<string> {
+  const shown = await browser.execute(() => {
+    const references: HTMLElement[] = [];
     const visible = (element: Element) => {
       const box = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -55,7 +59,7 @@ async function snapshot(browser: WebdriverIO.Browser): Promise<string> {
       if (!visible(element)) continue;
       const role = element.getAttribute("role") ?? element.tagName.toLowerCase();
       count += 1;
-      element.setAttribute("data-snap", String(count));
+      references.push(element as HTMLElement);
       const states = [
         ["selected", "aria-selected"],
         ["expanded", "aria-expanded"],
@@ -71,20 +75,16 @@ async function snapshot(browser: WebdriverIO.Browser): Promise<string> {
       if (typeof value === "string" && element.matches("input, textarea, select")) states.push(`value=${JSON.stringify(value)}`);
       lines.push(`[${count}] ${role} ${JSON.stringify(name(element))}${states.length ? ` (${states.join(", ")})` : ""}`);
     }
-    return `controls:\n${lines.join("\n")}\n\ntext:\n${document.body.innerText}`;
+    return { text: `controls:\n${lines.join("\n")}\n\ntext:\n${document.body.innerText}`, references };
   });
+  controls.set(browser, shown.references.map((reference) => browser.$(reference)));
+  return shown.text;
 }
 
-/** The snapshot once two reads in a row agree: WebKit renders asynchronously. */
-async function settled(browser: WebdriverIO.Browser): Promise<string> {
-  let last = await snapshot(browser);
-  for (let tries = 0; tries < 20; tries += 1) {
-    await pause(100);
-    const next = await snapshot(browser);
-    if (next === last) return next;
-    last = next;
-  }
-  return last;
+/** Native completion identifies the current search even before its debounce dispatches. */
+async function settled(browser: WebdriverIO.Browser, before?: Checkpoint): Promise<string> {
+  await commandsRendered(browser, before, LAUNCH_TIMEOUT);
+  return snapshot(browser);
 }
 
 /** A launch is ready when the fixture's actual entry-point content has rendered. */
@@ -96,9 +96,11 @@ async function rendered(browser: WebdriverIO.Browser, screen: "monitor" | "revie
   }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
 }
 
-async function target(browser: WebdriverIO.Browser, element: number) {
-  const found = await browser.$(`[data-snap="${element}"]`);
-  if (!(await found.isExisting())) throw new Error(`no element [${element}] in the last snapshot; take a new snapshot`);
+export async function target(browser: WebdriverIO.Browser, element: number) {
+  const found = controls.get(browser)?.[element - 1];
+  if (!Number.isInteger(element) || element < 1 || !found || !(await found.isExisting()) || !(await found.isDisplayed())) {
+    throw new Error(`no element [${element}] from the last snapshot remains visible; take a new snapshot`);
+  }
   return found;
 }
 
@@ -112,21 +114,22 @@ async function pressKey(browser: WebdriverIO.Browser, key: string): Promise<void
 
 async function handle(session: Session, fixture: Fixture, request: Request): Promise<unknown> {
   const { browser } = session;
+  const before = await checkpoint(browser);
   switch (request.op) {
     case "snapshot":
-      return { text: await settled(browser) };
+      return { text: await settled(browser, before) };
     case "click":
       await (await target(browser, request.element)).click();
-      return { text: await settled(browser) };
+      return { text: await settled(browser, before) };
     case "type":
       if (request.element !== undefined) await (await target(browser, request.element)).click();
       await typeText(browser, request.text);
-      return { text: await settled(browser) };
+      return { text: await settled(browser, before) };
     case "key":
       await pressKey(browser, request.key);
-      return { text: await settled(browser) };
+      return { text: await settled(browser, before) };
     case "cli": {
-      const done = spawnSync(cli, ["--repo", fixture.repo, "--state-dir", fixture.state, ...request.args], {
+      const done = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...request.args], {
         env: { ...process.env, USER: "alice", ARTIFACTIZE_REMOTE: "off" },
         encoding: "utf8",
         timeout: 60000,
@@ -138,42 +141,68 @@ async function handle(session: Session, fixture: Fixture, request: Request): Pro
   }
 }
 
+/** Close admission immediately, then release the latest owner after the active command settles. */
+export function commandStream(close: () => void, release: () => Promise<void>) {
+  let pending = Promise.resolve();
+  let ending: Promise<void> | undefined;
+  return {
+    run<T>(operation: () => Promise<T>): Promise<T> {
+      if (ending) return Promise.reject(new Error("the app session is stopping"));
+      const result = pending.then(() => {
+        if (ending) throw new Error("the app session is stopping");
+        return operation();
+      });
+      // A failed command must not prevent shutdown from releasing its replacement owner.
+      pending = result.then(() => {}, () => {});
+      return result;
+    },
+    end(): Promise<void> {
+      if (!ending) {
+        ending = pending.then(release);
+        close();
+      }
+      return ending;
+    },
+  };
+}
+
 async function start(): Promise<void> {
   if (!sessionDir) throw new Error("ARTIFACTIZE_SESSION_DIR is not set; run this as a tool session.");
   process.chdir(sessionDir);
-  const fixture = await create();
+  const candidate = snapshotCandidate(sessionDir);
+  let fixture: Fixture;
+  try { fixture = await create(); }
+  catch (error) { await cleanup(candidate.root); throw error; }
+  const exposed = new Map([[fixture.state, fixture]]);
+  const removeFixture = async () => {
+    for (const target of exposed.values()) cancelRuns(target);
+    rmSync(fixture.root, { recursive: true, force: true });
+    await cleanup(candidate.root);
+  };
   let session: Session | undefined;
   try {
     session = await startBuilt(fixture);
     await rendered(session.browser, "monitor");
   } catch (error) {
-    try { await session?.stop(); }
-    finally {
-      try { cancelRuns(fixture); }
-      finally { rmSync(fixture.root, { recursive: true, force: true }); }
-    }
+    await session?.stop();
+    await removeFixture();
     throw error;
   }
   let shown = { session, fixture };
   let edits = 0;
-  let ending: Promise<void> | undefined;
-  const end = () => ending ??= (async () => {
-    server.close();
-    try { await shown.session.stop(); }
-    finally {
-      try { cancelRuns(fixture); }
-      finally { rmSync(fixture.root, { recursive: true, force: true }); }
-    }
-  })();
-  // A window has one command stream: a concurrent snapshot cannot race a relaunch.
-  let pending = Promise.resolve();
+  // Signals and socket stop share admission closure and drain before reading shown.
+  const commands = commandStream(() => { server.close(); }, async () => {
+    await shown.session.stop();
+    await removeFixture();
+  });
+  const end = () => commands.end();
   const server = createServer((socket: Socket) => {
     const lines = createInterface({ input: socket });
     socket.once("close", () => lines.close());
     socket.once("error", () => lines.close());
     lines.once("line", (line) => {
       lines.close();
-      pending = pending.then(async () => {
+      void (async () => {
         let reply: unknown;
         try {
           const request = JSON.parse(line) as Request;
@@ -182,26 +211,29 @@ async function start(): Promise<void> {
             socket.end(JSON.stringify({ stopped: true }) + "\n", () => process.exit(0));
             return;
           }
-          if (request.op === "launch") {
-            await shown.session.stop();
-            const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, "graph-state") } : fixture;
-            const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
-            shown = { session: await startBuilt(target, ...args), fixture: target };
-            await rendered(shown.session.browser, request.screen);
-            reply = { text: await settled(shown.session.browser) };
-          } else if (request.op === "change-declaration") {
-            const path = join(fixture.repo, "docs", "index.artf");
-            const title = `Docs criterion revision ${++edits}`;
-            writeFileSync(path, readFileSync(path, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
-            reply = { text: `Changed docs/lint title to ${title}. The app has not been refreshed.` };
-          } else {
-            reply = await handle(shown.session, shown.fixture, request);
-          }
+          reply = await commands.run(async () => {
+            if (request.op === "launch") {
+              await shown.session.stop();
+              const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, "graph-state") } : fixture;
+              exposed.set(target.state, target);
+              const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
+              shown = { session: await startBuilt(target, ...args), fixture: target };
+              await rendered(shown.session.browser, request.screen);
+              return { text: await settled(shown.session.browser) };
+            } else if (request.op === "change-declaration") {
+              const path = join(fixture.repo, "docs", "index.artf");
+              const title = `Docs criterion revision ${++edits}`;
+              writeFileSync(path, readFileSync(path, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
+              return { text: `Changed docs/lint title to ${title}. The app has not been refreshed.` };
+            } else {
+              return handle(shown.session, shown.fixture, request);
+            }
+          });
         } catch (error) {
           reply = { error: error instanceof Error ? error.message : String(error) };
         }
         socket.end(JSON.stringify(reply) + "\n");
-      }).catch((error: Error) => { socket.destroy(error); });
+      })().catch((error: Error) => { socket.destroy(error); });
     });
   });
   for (const name of ["SIGTERM", "SIGINT"] as const) process.on(name, () => void end().then(
@@ -252,29 +284,33 @@ function content(text: string, error = false) {
   console.log(JSON.stringify({ isError: error || undefined, content: [{ type: "text", text }] }));
 }
 
-const mode = process.argv[2];
-if (mode === "start") {
-  await start();
-} else if (mode === "stop") {
-  await ask({ op: "stop" }).catch(() => ({}));
-} else {
-  const args = await input();
-  const request: Request =
-    mode === "snapshot"
-      ? { op: "snapshot" }
-      : mode === "cli"
-        ? { op: "cli", args: args.args as string[] }
-        : mode === "launch"
-          ? { op: "launch", screen: args.screen as "monitor" | "review" | "graph" }
-          : mode === "change-declaration"
-            ? { op: "change-declaration" }
-            : args.action === "click"
-              ? { op: "click", element: args.element as number }
-              : args.action === "type"
-                ? { op: "type", element: args.element as number | undefined, text: args.text as string }
-                : { op: "key", key: args.key as string };
-  const reply = await ask(request);
-  if (typeof reply.error === "string") content(reply.error, true);
-  else if (mode === "cli") content(`exit ${reply.exitCode}\n--- stdout\n${reply.stdout}\n--- stderr\n${reply.stderr}`, reply.exitCode !== 0);
-  else content(String(reply.text));
+if (import.meta.main) {
+  const mode = process.argv[2];
+  if (mode === "clippy" || mode === "test") {
+    await cargoGate(mode);
+  } else if (mode === "start") {
+    await start();
+  } else if (mode === "stop") {
+    await ask({ op: "stop" }).catch(() => ({}));
+  } else {
+    const args = await input();
+    const request: Request =
+      mode === "snapshot"
+        ? { op: "snapshot" }
+        : mode === "cli"
+          ? { op: "cli", args: args.args as string[] }
+          : mode === "launch"
+            ? { op: "launch", screen: args.screen as "monitor" | "review" | "graph" }
+            : mode === "change-declaration"
+              ? { op: "change-declaration" }
+              : args.action === "click"
+                ? { op: "click", element: args.element as number }
+                : args.action === "type"
+                  ? { op: "type", element: args.element as number | undefined, text: args.text as string }
+                  : { op: "key", key: args.key as string };
+    const reply = await ask(request);
+    if (typeof reply.error === "string") content(reply.error, true);
+    else if (mode === "cli") content(`exit ${reply.exitCode}\n--- stdout\n${reply.stdout}\n--- stderr\n${reply.stderr}`, reply.exitCode !== 0);
+    else content(String(reply.text));
+  }
 }

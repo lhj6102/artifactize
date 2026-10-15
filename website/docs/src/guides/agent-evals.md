@@ -459,11 +459,14 @@ a fake provider on this machine. The variable replaces the provider's API root:
 
 The fake streams its answer as `text/event-stream`, in the provider's wire format,
 for the requested model. For `openai`, one `response.completed` event is enough.
-This fake passes every review:
+This fake passes reviews whose GREEN schema accepts `{"verdict":"GREEN"}`.
+If your `pass_schema` requires other fields, include corresponding valid values in
+the fake's `text` response; otherwise validation triggers repair and, if still
+invalid, `INVALID_RESULT`.
 
 ```python
 #!/usr/bin/env python3
-"""A fake OpenAI Responses provider on loopback that passes every review."""
+"""A fake OpenAI Responses provider on loopback that returns a verdict-only GREEN response."""
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 

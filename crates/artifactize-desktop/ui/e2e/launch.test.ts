@@ -6,6 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { addRepository, addWorktrees, artifactize, create, type Fixture, requests } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
+import { checkpoint, commandsRendered } from "./commands.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   const end = Date.now() + ms;
@@ -200,7 +201,11 @@ describe("launching the Review screen for every repository", () => {
     const search = async (text: string, want: (shown: string[]) => boolean, what: string) => {
       await browser.$('[aria-label="Search requests"]').click();
       await browser.keys(["Control", "a"]);
+      const before = await checkpoint(browser);
       await browser.$('[aria-label="Search requests"]').setValue(text);
+      // Distinct queries can deliberately return identical rows (reviewer:, is:mine and
+      // request:). Those old rows cannot stand in for this query's completed search.
+      await commandsRendered(browser, before);
       await eventually(async () => want(await rows()), `${what} (shows ${JSON.stringify(await rows())})`);
     };
     await search("kind:human reviewer:alice", (shown) => shown.length === 1 && shown[0].includes(mine.id), "only alice's claimed request");

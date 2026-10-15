@@ -45,10 +45,13 @@ async fn explicit_environment_and_literal_argv_are_preserved() {
     assert_eq!(execute(env).await.stdout, b"ONLY_EXPLICIT=value\n");
     let result = execute(command(
         &support::os::printf_program(),
-        &["%s\n", "$(id); $HOME * a b", "{artifact}/path"],
+        &["%s\n", "$(id); $AUTHOR_VALUE * a b", "{artifact}/path"],
     ))
     .await;
-    assert_eq!(result.stdout, b"$(id); $HOME * a b\n{artifact}/path\n");
+    assert_eq!(
+        result.stdout,
+        b"$(id); $AUTHOR_VALUE * a b\n{artifact}/path\n"
+    );
 }
 
 #[tokio::test]
@@ -63,7 +66,7 @@ async fn registration_observes_inert_group_leader_before_exec() {
     let expected_cwd = scratch.0.clone();
     let (registered, identity) = oneshot::channel();
     let (release, held) = oneshot::channel();
-    let running = tokio::spawn(process::run(
+    let running = support::spawn(process::run(
         command,
         CancellationToken::new(),
         move |child| async move {
@@ -87,7 +90,7 @@ async fn registration_observes_inert_group_leader_before_exec() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap().trim(),
-        support::os::canonical(&expected_cwd).display().to_string()
+        support::os::path_text(&support::os::canonical(&expected_cwd))
     );
     assert_eq!(
         std::fs::read(scratch.0.join("started")).unwrap(),
@@ -118,7 +121,7 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     let mut command = command(&support::os::shell(), &["-c", "touch started"]);
     command.cwd = scratch.0.clone();
     let (registered, child) = oneshot::channel::<ChildIdentity>();
-    let running = tokio::spawn(process::run(
+    let running = support::spawn(process::run(
         command,
         CancellationToken::new(),
         |child| async move {
@@ -127,8 +130,7 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
         },
     ));
     let child = child.await.unwrap();
-    running.abort();
-    assert!(running.await.unwrap_err().is_cancelled());
+    drop(running);
     assert_gone(child.pid.get()).await;
     assert!(!scratch.0.join("started").exists());
 }
@@ -142,7 +144,7 @@ async fn registration_is_covered_by_the_deadline() {
     command.cwd = scratch.0.clone();
     command.timeout = Duration::from_secs(60);
     let (registered, pid) = oneshot::channel();
-    let running = tokio::spawn(process::run(
+    let running = support::spawn(process::run(
         command,
         CancellationToken::new(),
         |child: ChildIdentity| async move {
@@ -191,6 +193,156 @@ async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
     assert_eq!(result.stdout.len(), 128 * 1024);
     assert_eq!(result.stderr.len(), 128 * 1024);
     assert!(result.truncated);
+}
+
+#[tokio::test]
+async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
+    use artifactize_core::{
+        project::{VerifyOptions, selection::Selection},
+        runs::Worker,
+        types::RequestStatus,
+    };
+
+    for unwinding in [false, true] {
+        let root = support::os::tempdir();
+        let directory = root.path().to_owned();
+        let repo = root.path().join("repo");
+        let state = root.path().join("state");
+        std::fs::create_dir(&repo).unwrap();
+        std::fs::write(
+            repo.join("index.artf"),
+            "name = \"app\"\nfingerprint = {}\n[evals.review]\ntitle = \"Review\"\n\
+             profile = { kind = \"human\" }\n[evals.review.payload]\ninstruction = \"Inspect.\"\n",
+        )
+        .unwrap();
+        let fixture = support::runs::RepoLease::new(root, &state, &repo);
+        let run = support::runs::record(
+            &repo,
+            Some(&state),
+            &Selection::All,
+            &VerifyOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(run.requests[0].status(), RequestStatus::WaitingHuman);
+        let Worker::Admitted { owner } = run.run.control.unwrap().worker else {
+            panic!("the fixture worker was admitted");
+        };
+        assert!(support::os::same_process_running(
+            owner.pid.get(),
+            owner.start_time
+        ));
+        fixture.release().unwrap();
+        assert!(!support::os::same_process_running(
+            owner.pid.get(),
+            owner.start_time
+        ));
+        assert!(
+            repo.join("index.artf").is_file(),
+            "explicit release retains inputs"
+        );
+        assert!(fixture.path().is_dir());
+        assert_eq!(
+            artifactize_core::store::read_run(&state, &run.run.id)
+                .await
+                .unwrap()
+                .run
+                .status(),
+            artifactize_core::types::RunStatus::Error
+        );
+        // Explicit teardown must not disarm ownership of later submissions.
+        let later = support::runs::record(
+            &repo,
+            Some(&state),
+            &Selection::All,
+            &VerifyOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(later.requests[0].status(), RequestStatus::WaitingHuman);
+        assert_ne!(run.run.id, later.run.id);
+        let Worker::Admitted { owner } = later.run.control.unwrap().worker else {
+            panic!("the later fixture worker was admitted");
+        };
+        // Move ownership into the unwind boundary, so no fixture is reused after a panic.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fixture = fixture;
+            if unwinding {
+                panic!("scripted fixture unwind");
+            }
+            drop(fixture);
+        }));
+        if unwinding {
+            assert_eq!(
+                result.unwrap_err().downcast_ref::<&str>(),
+                Some(&"scripted fixture unwind")
+            );
+        } else {
+            result.unwrap();
+        }
+        assert!(!support::os::same_process_running(
+            owner.pid.get(),
+            owner.start_time
+        ));
+        assert!(
+            !directory.exists(),
+            "only released fixture state is removed"
+        );
+    }
+}
+
+#[test]
+fn failed_run_cleanup_retains_inputs_and_preserves_an_existing_panic() {
+    // This fixture deliberately contains no worker: its invalid SQLite input exercises
+    // retention on cleanup failure without leaving a process for this test to recover.
+    struct RetainedDirectory(PathBuf);
+    impl Drop for RetainedDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    for unwinding in [false, true] {
+        let root = support::os::tempdir();
+        let directory = root.path().to_owned();
+        let retained = RetainedDirectory(directory.clone());
+        let repo = root.path().join("repo");
+        let state = root.path().join("state");
+        std::fs::create_dir(&repo).unwrap();
+        std::fs::create_dir(&state).unwrap();
+        std::fs::write(repo.join("input"), "owned input").unwrap();
+        std::fs::write(state.join(artifactize_core::store::DATABASE), "not SQLite").unwrap();
+        let fixture = support::runs::RepoLease::new(root, &state, &repo);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fixture = fixture;
+            if unwinding {
+                panic!("scripted original panic");
+            }
+            drop(fixture);
+        }));
+        let panic = result.unwrap_err();
+        if unwinding {
+            assert_eq!(
+                panic.downcast_ref::<&str>(),
+                Some(&"scripted original panic")
+            );
+        } else {
+            assert!(
+                panic
+                    .downcast_ref::<String>()
+                    .unwrap()
+                    .starts_with("Fixture Run cleanup failed; inputs retained at ")
+            );
+        }
+        assert_eq!(std::fs::read(repo.join("input")).unwrap(), b"owned input");
+        drop(retained);
+        assert!(
+            !directory.exists(),
+            "the failure-test fixture also owns its retained files"
+        );
+    }
 }
 
 async fn assert_gone(pid: u32) {

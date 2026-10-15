@@ -5,7 +5,12 @@
 mod owned_run;
 use owned_run::{RunChild, Watcher};
 
+#[path = "support/order.rs"]
+mod order;
+
 use std::{
+    cell::RefCell,
+    collections::BTreeSet,
     fs,
     io::{BufRead, BufReader},
     net::TcpListener,
@@ -17,7 +22,8 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::{cat_program, shell, true_program};
+use sha2::{Digest, Sha256};
+use support::os::{cat_program, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -132,8 +138,7 @@ impl Server {
     }
 
     fn stop(&mut self) {
-        support::os::kill(self.child.id());
-        let _ = self.child.wait();
+        self.child.stop().unwrap();
     }
 }
 
@@ -145,16 +150,26 @@ impl Drop for Server {
 
 /// One machine: its own state directory, user name and remote token.
 struct Machine {
+    repos: RefCell<BTreeSet<PathBuf>>,
     state: PathBuf,
     user: &'static str,
     url: String,
     token: String,
 }
 
+impl Drop for Machine {
+    fn drop(&mut self) {
+        for repo in self.repos.get_mut().iter() {
+            owned_run::release_repo(&self.state, repo);
+        }
+    }
+}
+
 impl Machine {
     fn new(root: &Path, user: &'static str, url: &str, token: &str) -> Self {
         Self {
             state: root.join(format!("state-{user}")),
+            repos: RefCell::default(),
             user,
             url: url.into(),
             token: token.into(),
@@ -162,6 +177,7 @@ impl Machine {
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
+        self.repos.borrow_mut().insert(repo.to_owned());
         let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
@@ -190,25 +206,9 @@ impl Machine {
         serde_json::from_str(&stdout).unwrap()
     }
 
-    /// Keep cache metadata and its saved execution wire timestamp in agreement.
-    fn completed_at(&self, execution: &str, at: &str) {
-        let db = Connection::open(self.state.join("state.sqlite")).unwrap();
-        let data: String = db
-            .query_row(
-                "SELECT data FROM executions WHERE id=?",
-                [execution],
-                |row| row.get(0),
-            )
-            .unwrap();
-        let data = completion_fixture(&data, at);
-        assert_eq!(
-            db.execute(
-                "UPDATE executions SET completed_at=?,bytes=?,data=? WHERE id=?",
-                rusqlite::params![at, data.len() as i64, data, execution]
-            )
-            .unwrap(),
-            1
-        );
+    /// Seed ordering only after this Run's actual producer has closed SQLite.
+    fn completed_at(&self, repo: &Path, run: &Value, at: &str) {
+        order::completed_at(&self.state, repo, run, at);
     }
 
     /// Claim and submit the Human request that `run` recorded; returns stderr.
@@ -512,6 +512,8 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
         .spawn()
         .unwrap();
     let waiting = RunChild::new(waiting, &bob.state, &repo);
+    let saved = waiting.human_waiting();
+    assert_eq!(saved.requests[0].status().as_str(), "WAITING_HUMAN");
 
     // A token without the human scope keeps the sign-off local. Each signer's own verify
     // records the request and stops waiting at once.
@@ -659,8 +661,8 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
                         "title":"Check",
                         "profile":{
                             "kind":"runtime",
-                            "command":shell(),
-                            "args":["-c","test ! -e broken"],
+                            "command":support::os::python_program(),
+                            "args":support::os::python("import pathlib, sys; sys.exit(int(pathlib.Path('broken').exists()))"),
                         },
                         "payload":{"instruction":"Check."},
                     },
@@ -673,7 +675,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     let (repo_a, repo_b, repo_c) = (repo("a"), repo("b"), repo("c"));
     let first = alice.json(&repo_a, &["verify", "--wait", "--all"], 0);
     let alice_record = first["requests"][0]["executionId"].as_str().unwrap();
-    alice.completed_at(alice_record, FIRST);
+    alice.completed_at(&repo_a, &first, FIRST);
     server.completed_at(alice_record, FIRST);
     let key = first["requests"][0]["key"].as_str().unwrap().to_owned();
     assert_eq!(server.entries().len(), 1);
@@ -684,7 +686,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     fs::write(repo_b.join("broken"), "").unwrap();
     let forced = bob.json(&repo_b, &["verify", "--wait", "--all", "--force"], 1);
     let bob_record = forced["requests"][0]["executionId"].as_str().unwrap();
-    bob.completed_at(bob_record, SECOND);
+    bob.completed_at(&repo_b, &forced, SECOND);
     server.completed_at(bob_record, SECOND);
     assert_eq!(forced["requests"][0]["key"], key.as_str());
     let entries = server.entries();
@@ -729,7 +731,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
 
     // A newer local record beats an older store one: alice reviews again offline.
     let local = offline.json(&repo_a, &["verify", "--wait", "--all", "--force"], 0);
-    offline.completed_at(local["requests"][0]["executionId"].as_str().unwrap(), THIRD);
+    offline.completed_at(&repo_a, &local, THIRD);
     assert_eq!(server.entries().len(), 2);
     let status = alice.json(&repo_a, &["status"], 0);
     assert_eq!(status["evals"][0]["state"], "PASS");
@@ -870,8 +872,12 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
         assert_eq!(fetched[0].as_ref().unwrap().execution_paths, pins);
         serde_json::to_value(pins).unwrap()
     });
+    let expected: String = Sha256::digest(fs::read(repo.join("harness.py")).unwrap())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     for key in ["app_app.start", "app_app.stop"] {
-        assert_eq!(pins[key]["harness.py"].as_str().unwrap().len(), 64);
+        assert_eq!(pins[key]["harness.py"], expected);
     }
     let entries = server.entries();
     assert_eq!(entries.len(), 1);

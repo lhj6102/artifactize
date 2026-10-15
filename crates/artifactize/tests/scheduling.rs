@@ -2,12 +2,10 @@ use std::{
     fs,
     path::PathBuf,
     process::{Command, Stdio},
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
-use support::os::shell;
 use tempfile::TempDir;
 
 #[path = "support/run.rs"]
@@ -22,6 +20,12 @@ struct Fixture {
     _root: TempDir,
     repo: PathBuf,
     state: PathBuf,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
 }
 
 impl Fixture {
@@ -83,20 +87,37 @@ fn eval(id: &str, script: &str) -> Value {
         "title":"Check",
         "profile":{
             "kind":"runtime",
-            "command":shell(),
-            "args":["-c",script,"fixture",id],
-            "timeout_ms":10000,
+            "command":support::os::python_program(),
+            "args":["-c",script,id],
         },
         "payload":{"instruction":"Check."},
     })
 }
 
-fn wait_until(mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
-    while !condition() {
-        assert!(Instant::now() < deadline, "condition was not reached");
-        thread::sleep(Duration::from_millis(10));
+fn process_tree_eval(id: &str, record: &str) -> Value {
+    let mut check = eval(id, support::os::process_tree_probe());
+    check["profile"]["args"] = json!(["-c", support::os::process_tree_probe(), record]);
+    check
+}
+
+// PID records are ready only after their complete newline-terminated pair is saved.
+fn recorded_pids(path: &std::path::Path) -> Option<[u32; 2]> {
+    let text = fs::read_to_string(path).ok()?;
+    if !text.ends_with('\n') {
+        return None;
     }
+    let pids: Vec<u32> = text
+        .split_whitespace()
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    let pair: [u32; 2] = pids.try_into().ok()?;
+    pair.iter().all(|pid| *pid > 0).then_some(pair)
+}
+
+fn wait_until(condition: impl FnMut() -> bool) {
+    // Files and child exit are the barriers; shared polling only bounds a stalled fixture.
+    support::os::wait_until(Duration::from_secs(10), condition);
 }
 
 fn finish(mut child: Child, code: i32) -> Value {
@@ -117,18 +138,14 @@ async fn observed(
     id: &artifactize_core::types::RunId,
     ready: impl Fn(&artifactize_core::store::RunView) -> bool,
 ) -> artifactize_core::store::RunView {
-    let context = artifactize_core::runs::Context::new(
-        &fixture.repo,
-        Some(&fixture.state),
-        &support::os::cli(),
-    )
-    .unwrap();
     let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
     // A fixture observation watchdog, not an execution lifetime or timing assertion.
     const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
     tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
         loop {
-            let view = artifactize_core::runs::view(&context, id).await.unwrap();
+            let view = artifactize_core::store::read_run(&fixture.state, id)
+                .await
+                .unwrap();
             if ready(&view) {
                 return view;
             }
@@ -145,7 +162,7 @@ async fn observed(
 
 #[tokio::test]
 async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
-    let fixture = Fixture::new(vec![eval("slow", SLOW), eval("zz-over-budget", "true")]);
+    let fixture = Fixture::new(vec![eval("slow", SLOW), eval("zz-over-budget", "pass")]);
     let child = fixture.spawn(&["--jobs", "2", "--max-executions", "1"]);
     let id = child.run();
     let before = observed(&fixture, &id, |view| {
@@ -170,13 +187,14 @@ async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() 
         .to_string(),
     )
     .unwrap();
+    let _other_runs = owned_run::RepoLease::new(&fixture.state, &other);
     let output = Command::new(support::os::cli())
-        .args(["verify", "--wait", "--all"])
+        .args(["verify", "--wait", "--all", "--json"])
         .arg("--repo")
         .arg(&other)
         .arg("--state-dir")
         .arg(&fixture.state)
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     notifications.next_state().await;
@@ -197,7 +215,14 @@ async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() 
     assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
 }
 
-const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; printf 'end %s\n' \"$1\" >> events";
+const SLOW: &str = r#"import pathlib, sys, time
+with pathlib.Path('events').open('a', encoding='utf-8') as events:
+    events.write('start ' + sys.argv[1] + '\n')
+while not pathlib.Path('release').exists():
+    time.sleep(0.01)
+with pathlib.Path('events').open('a', encoding='utf-8') as events:
+    events.write('end ' + sys.argv[1] + '\n')
+"#;
 
 #[tokio::test]
 async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
@@ -208,6 +233,15 @@ async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
         wait_until(|| fixture.starts().len() >= jobs);
         let view = observed(&fixture, &child.run(), |view| {
             view.run.executions_started == jobs as u64
+                && view
+                    .requests
+                    .iter()
+                    .filter(|request| {
+                        request.status() == artifactize_core::types::RequestStatus::Running
+                            && request.child.is_some()
+                    })
+                    .count()
+                    == jobs
         })
         .await;
         assert_eq!(view.run.executions_started, jobs as u64);
@@ -243,8 +277,8 @@ async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
     }
 }
 
-#[test]
-fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() {
+#[tokio::test]
+async fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() {
     let fixture = Fixture::new(vec![]);
     support::declaration::write(
         fixture.repo.join("index.artf"),
@@ -254,17 +288,17 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
     for (name, script, instruction) in [
         (
             "a-dependent",
-            "test -e ../b-input/done; touch started",
+            "import pathlib; assert pathlib.Path('../b-input/done').exists(); pathlib.Path('started').touch()",
             "Check {b-input}.",
         ),
         (
             "b-input",
-            "while [ ! -e ../c-slow/started ]; do sleep 0.01; done; touch done",
+            "import pathlib,time\nwhile not pathlib.Path('../c-slow/started').exists(): time.sleep(0.01)\npathlib.Path('done').touch()",
             "Check.",
         ),
         (
             "c-slow",
-            "touch started; while [ ! -e release ]; do sleep 0.02; done",
+            "import pathlib,time\npathlib.Path('started').touch()\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)",
             "Check.",
         ),
     ] {
@@ -279,7 +313,14 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
         .unwrap();
     }
     let mut child = fixture.spawn(&["--jobs", "2"]);
+    // These deliberately empty markers are the script's complete start/done signals.
     wait_until(|| fixture.repo.join("a-dependent/started").exists());
+    observed(&fixture, &child.run(), |view| {
+        view.requests[0].status() == artifactize_core::types::RequestStatus::Green
+            && view.requests[1].status() == artifactize_core::types::RequestStatus::Green
+            && view.requests[2].status() == artifactize_core::types::RequestStatus::Running
+    })
+    .await;
     assert!(child.try_wait().unwrap().is_none());
     assert!(fixture.repo.join("c-slow/started").exists());
     fs::write(fixture.repo.join("c-slow/release"), "").unwrap();
@@ -294,7 +335,7 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
 fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
     let fixture = Fixture::new(
         (0..5)
-            .map(|id| eval(&format!("e{id}"), "printf 'start %s\n' \"$1\" >> events"))
+            .map(|id| eval(&format!("e{id}"), "import pathlib,sys\nwith pathlib.Path('events').open('a', encoding='utf-8') as events: events.write('start ' + sys.argv[1] + '\\n')"))
             .collect(),
     );
     let run = fixture.run(&["--jobs", "4", "--max-executions", "2"], 4);
@@ -339,42 +380,46 @@ fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
 
 #[test]
 fn preparation_failures_do_not_consume_a_start_and_finished_runs_at_the_cap_succeed() {
-    let mut invalid = eval("bad", "exit 0");
+    let mut invalid = eval("bad", "pass");
     invalid["profile"]["args"] = json!(["{test}/missing"]);
     let fixture = Fixture::new(vec![
         invalid,
-        eval("good", "printf 'start good\n' >> events"),
+        eval(
+            "good",
+            "import pathlib\nwith pathlib.Path('events').open('a', encoding='utf-8') as events: events.write('start good\\n')",
+        ),
     ]);
     let run = fixture.run(&["--max-executions", "1"], 2);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][0]["errorCode"], "PREPARATION_FAILED");
     assert!(run["requests"][0]["startedAt"].is_null());
     assert_eq!(run["requests"][1]["status"], "GREEN");
-    let fixture = Fixture::new(vec![eval("good", "exit 0")]);
+    let fixture = Fixture::new(vec![eval("good", "pass")]);
     assert_eq!(
         fixture.run(&["--max-executions", "1"], 0)["executionsStarted"],
         1
     );
 }
 
-#[test]
-fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
+#[tokio::test]
+async fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
     {
         let fixture = Fixture::new(
             (0..5)
-                .map(|id| {
-                    eval(
-                        &format!("e{id}"),
-                        &format!(
-                            "{} & printf '%s %s\n' \"$$\" \"$!\" > \"$1.pids\"; wait",
-                            support::os::LINGERING
-                        ),
-                    )
-                })
+                .map(|id| process_tree_eval(&format!("e{id}"), &format!("e{id}.pids")))
                 .collect(),
         );
         let child = fixture.spawn(&["--jobs", "3"]);
-        wait_until(|| (0..3).all(|id| fixture.repo.join(format!("e{id}.pids")).exists()));
+        wait_until(|| {
+            (0..3).all(|id| recorded_pids(&fixture.repo.join(format!("e{id}.pids"))).is_some())
+        });
+        observed(&fixture, &child.run(), |view| {
+            view.requests.iter().take(3).all(|request| {
+                request.status() == artifactize_core::types::RequestStatus::Running
+                    && request.child.is_some()
+            })
+        })
+        .await;
         support::runs::cancel_active(&fixture.state, &fixture.repo);
         let run = finish(child, 2);
         assert_eq!(run["status"], "ERROR");
@@ -385,14 +430,8 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
             assert!(request["result"].is_null());
         }
         for id in 0..3 {
-            for pid in fs::read_to_string(fixture.repo.join(format!("e{id}.pids")))
-                .unwrap()
-                .split_whitespace()
-            {
-                assert!(
-                    !support::os::running(pid.parse().unwrap()),
-                    "process {pid} still running"
-                );
+            for pid in recorded_pids(&fixture.repo.join(format!("e{id}.pids"))).unwrap() {
+                assert!(!support::os::running(pid), "process {pid} still running");
             }
         }
         assert!(!fixture.repo.join("e3.pids").exists());
@@ -402,46 +441,30 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
 #[tokio::test]
 async fn owned_run_drop_and_unwind_release_the_worker_and_groups_before_fixture_state() {
     for unwind in [false, true] {
-        let fixture = Fixture::new(vec![eval(
-            "controlled",
-            &format!(
-                "{} & printf '%s %s\\n' \"$$\" \"$!\" > pids; wait",
-                support::os::LINGERING
-            ),
-        )]);
+        let fixture = Fixture::new(vec![process_tree_eval("controlled", "pids")]);
         let child = fixture.spawn(&[]);
         let id = child.run();
         let watcher = child.id();
-        wait_until(|| {
-            fs::read_to_string(fixture.repo.join("pids"))
-                .is_ok_and(|text| text.split_whitespace().count() == 2)
-        });
+        wait_until(|| recorded_pids(&fixture.repo.join("pids")).is_some());
         let before = observed(&fixture, &id, |view| {
             view.requests[0].status() == artifactize_core::types::RequestStatus::Running
+                && view.requests[0].child.is_some()
         })
         .await;
         let artifactize_core::runs::Worker::Admitted { owner } = before.run.control.unwrap().worker
         else {
             panic!("controlled execution has an admitted worker");
         };
-        let pids: Vec<u32> = fs::read_to_string(fixture.repo.join("pids"))
-            .unwrap()
-            .split_whitespace()
-            .map(|pid| pid.parse().unwrap())
-            .collect();
+        let pids = recorded_pids(&fixture.repo.join("pids")).unwrap();
         // The move owns the guard on every exit, including assertion unwind.
         let result = std::panic::catch_unwind(move || {
             let _owned = child;
             assert!(!unwind, "fixture unwind probe");
         });
         assert_eq!(result.is_err(), unwind);
-        let context = artifactize_core::runs::Context::new(
-            &fixture.repo,
-            Some(&fixture.state),
-            &support::os::cli(),
-        )
-        .unwrap();
-        let after = artifactize_core::runs::view(&context, &id).await.unwrap();
+        let after = artifactize_core::store::read_run(&fixture.state, &id)
+            .await
+            .unwrap();
         assert_eq!(
             after.requests[0].error_code(),
             Some(artifactize_core::types::FailureCode::Cancelled)
@@ -482,7 +505,7 @@ fn run_guard_constructor_reaps_the_caller_if_setup_unwinds_before_announcement()
 
 #[test]
 fn invalid_limits_fail_without_creating_state() {
-    let fixture = Fixture::new(vec![eval("check", "exit 0")]);
+    let fixture = Fixture::new(vec![eval("check", "pass")]);
     for args in [
         ["--jobs", "0"],
         ["--jobs", "-1"],
@@ -505,7 +528,7 @@ fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
     for name in ["dependency", "consumer"] {
         let folder = fixture.repo.join(name);
         fs::create_dir(&folder).unwrap();
-        let mut check = eval("check", "touch ran");
+        let mut check = eval("check", "import pathlib; pathlib.Path('ran').touch()");
         if name == "consumer" {
             check["payload"]["instruction"] = json!("Check {dependency}.");
         }
@@ -523,17 +546,24 @@ fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
     assert!(fixture.repo.join("dependency/ran").exists());
 }
 
-#[test]
-fn cancellation_keeps_already_committed_evidence() {
+#[tokio::test]
+async fn cancellation_keeps_already_committed_evidence() {
     let fixture = Fixture::new(vec![
-        eval("completed", "exit 0"),
+        eval("completed", "pass"),
         eval(
             "running",
-            "touch started; while [ ! -e release ]; do sleep 0.02; done",
+            "import pathlib,time\npathlib.Path('started').touch()\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)",
         ),
     ]);
     let child = fixture.spawn(&["--jobs", "1"]);
+    // The empty start marker is intentional; saved request states are the cancellation barrier.
     wait_until(|| fixture.repo.join("started").exists());
+    observed(&fixture, &child.run(), |view| {
+        view.requests[0].status() == artifactize_core::types::RequestStatus::Green
+            && view.requests[1].status() == artifactize_core::types::RequestStatus::Running
+            && view.requests[1].child.is_some()
+    })
+    .await;
     support::runs::cancel_active(&fixture.state, &fixture.repo);
     let run = finish(child, 2);
     assert_eq!(run["requests"][0]["status"], "GREEN");

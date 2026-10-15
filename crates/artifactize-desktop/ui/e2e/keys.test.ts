@@ -50,6 +50,34 @@ describe("press", () => {
     assert.deepEqual(chord.sent, [["Control", "k"], ["Control", "k"]]);
   });
 
+  it("does not accept an already-true state when the action key was dropped", async () => {
+    const { page, sent } = double((key) => key === "g", () => {});
+    await assert.rejects(press(page, ["Control", "g"], () => true, "GREEN stays", { ...quick, tries: 2 }), /never reached the page in 2 tries/);
+    assert.equal(sent.length, 2, "modifier-only delivery cannot satisfy an idempotent action");
+  });
+
+  it("confirms the consumed chord before accepting an idempotent action", async () => {
+    const handled: string[] = [];
+    const { page, sent } = double((key, attempt) => key === "g" && attempt === 1, (key) => {
+      if (key === "g") handled.push("Control+g");
+    });
+    page.handled = async () => [...handled];
+    await press(page, ["Control", "g"], () => true, "GREEN stays", { ...quick, handled: true });
+    assert.deepEqual(sent, [["Control", "g"], ["Control", "g"]]);
+  });
+
+  it("rejects an unconsumed or wrong-modifier chord even when its state already holds", async () => {
+    for (const chord of [null, "r"]) {
+      const handled: string[] = [];
+      const { page, sent } = double(() => false, (key) => {
+        if (key === "r" && chord) handled.push(chord);
+      });
+      page.handled = async () => [...handled];
+      await assert.rejects(press(page, ["Control", "r"], () => true, "RED stays", { ...quick, handled: true }), /handled effect was not confirmed/);
+      assert.equal(sent.length, 1, "an arrived action is not resent to hide missing handling");
+    }
+  });
+
   it("gives up after its tries when the key never arrives", async () => {
     const { page, sent } = double(() => true, () => {});
     await assert.rejects(press(page, ["Enter"], () => false, "never", { ...quick, tries: 2 }), /never reached the page in 2 tries/);

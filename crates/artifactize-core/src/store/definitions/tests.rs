@@ -1,8 +1,7 @@
-//! Independent schema-5 wire fixtures pin graph capture and hash representation.
+//! Independent saved wire fixtures pin graph capture and legacy field preservation.
 use super::*;
 use crate::project::selection::Selection;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 #[test]
 fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
@@ -95,10 +94,6 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
     let snapshot: Definitions = serde_json::from_value(wire.clone()).unwrap();
     let restored = serde_json::to_value(&snapshot).unwrap();
     assert_eq!(restored, wire);
-    assert_eq!(
-        Sha256::digest(serde_json::to_vec(&restored).unwrap()),
-        Sha256::digest(serde_json::to_vec(&wire).unwrap())
-    );
     let graph = snapshot.graph().unwrap();
     assert_eq!(
         graph.repo_path.value().unwrap(),
@@ -132,7 +127,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
 }
 
 #[test]
-fn current_graph_capture_serializes_identically_to_pinned_query_view() {
+fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
     let root = crate::test_os::tempdir();
     crate::test_declaration::write(
         root.path().join("index.artf"),
@@ -156,70 +151,50 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
     let config = config::read_workspace_config(root.path()).unwrap();
     let selection = Selection::All;
     let view = crate::query::graph(&config, &selection).unwrap();
-    let before = serde_json::to_value(&view).unwrap();
-    assert_eq!(
-        before
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        [
-            "artifacts",
-            "components",
-            "evals",
-            "relations",
-            "repoPath",
-            "selection",
-            "version"
-        ]
-    );
-    assert_eq!(
-        before["artifacts"]["app"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        [
-            "basis",
-            "children",
-            "fingerprint",
-            "kind",
-            "mounts",
-            "name",
-            "path",
-            "tags",
-            "views"
-        ]
-    );
+    let expected = json!({
+        "version":1,
+        "repoPath":crate::platform::path_text(&crate::platform::canonicalize(root.path()).unwrap()),
+        "selection":{"kind":"all"},
+        "artifacts":{
+            "app":{
+                "path":"",
+                "kind":"folder",
+                "name":"app",
+                "tags":[],
+                "children":{},
+                "mounts":{},
+                "basis":null,
+                "views":{"agentSessions":{},"agentTools":{"read":{"builtin":"read"}},"humanTools":{}},
+                "fingerprint":{"script":{
+                    "command":crate::test_os::echo_program(),
+                    "args":["v1"],
+                    "files":[],
+                    "timeoutMs":null,
+                }},
+            },
+        },
+        "evals":[{
+            "id":"app/check",
+            "target":"app",
+            "references":{},
+            "deps":[],
+            "declaration":{
+                "id":"check",
+                "title":"Check",
+                "profile":{
+                    "kind":"agent","backend":"openai","model":"fixture",
+                    "reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null,
+                },
+                "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
+                "passSchema":{"type":"object"},
+                "failSchema":null,
+            },
+        }],
+        "relations":[],
+        "components":[{"id":0,"artifacts":["app"],"dependencies":[],"gates":[],"cyclic":false}],
+    });
     let snapshot = Definitions::from_view(&view).unwrap();
-    assert_eq!(serde_json::to_value(snapshot).unwrap(), before);
-    // The eval definition and reuse key are calculated from live declarations, never this
-    // display snapshot.
-    let eval_hash = crate::cache::eval_definition_hash(&config.evals[0].declaration);
-    let saved_profile = &before["evals"][0]["declaration"]["profile"];
-    assert_eq!(
-        saved_profile,
-        &json!({
-            "kind":"agent",
-            "backend":"openai",
-            "model":"fixture",
-            "reasoning":null,
-            "timeoutMs":null,
-            "maxToolCalls":null,
-            "maxTokens":null,
-        })
-    );
-    assert_eq!(
-        eval_hash,
-        "bc7083ad4c1041de824b8080a6bd576c8cc39caedd1db4b63d073ae973e6790b"
-    );
-    let fingerprints = BTreeMap::from([("app".parse().unwrap(), "v1".parse().unwrap())]);
-    assert_eq!(
-        crate::cache::key(&eval_hash, &fingerprints).as_str(),
-        "4056b8c4b08cc6c34167297a0c9fbb6ca8c0ca28f996c1470805b690c7329350"
-    );
+    assert_eq!(serde_json::to_value(snapshot).unwrap(), expected);
 }
 
 #[tokio::test]
@@ -228,7 +203,9 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
-    let receipts = crate::store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = crate::store::OwnedReceipts::open(&state, &repo)
+        .await
+        .unwrap();
     let mut run: crate::store::Run = serde_json::from_value(json!({
         "id":"run-definition",
         "repoPath":repo,

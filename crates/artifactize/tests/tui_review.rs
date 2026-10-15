@@ -25,6 +25,12 @@ struct Fixture {
 }
 
 /// The review-demo shape: a Human sign-off with `output` and `launch` tools, and a dependent.
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
+}
+
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();
@@ -129,6 +135,7 @@ impl Fixture {
                 .await
                 .unwrap();
             if let Some(view) = waiting.first() {
+                owned_run::human_waiting(&self.state, &view.request.run_id).await;
                 return view.request.id.clone();
             }
             assert!(Instant::now() < deadline, "Human request did not appear");
@@ -324,6 +331,42 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
         true
     );
     assert!(view.claim.is_none());
+}
+
+#[tokio::test]
+async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
+    for unwind in [false, true] {
+        let fixture = Fixture::new();
+        let root = fixture._root.path().to_owned();
+        let output = support::os::run(fixture.command().args(["verify", "--all", "--json"]));
+        assert!(output.status.success(), "{output:?}");
+        let accepted: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let run: artifactize_core::types::RunId =
+            accepted["run"].as_str().unwrap().parse().unwrap();
+        fixture.waiting().await;
+        let saved = store::read_run(&fixture.state, &run).await.unwrap();
+        assert_eq!(
+            saved.run.status(),
+            artifactize_core::types::RunStatus::Running
+        );
+        let artifactize_core::runs::Worker::Admitted { owner } = saved.run.control.unwrap().worker
+        else {
+            panic!("waiting Human Run has an admitted worker");
+        };
+        let result = std::panic::catch_unwind(move || {
+            let _owned = fixture;
+            assert!(!unwind, "submit-only fixture unwind probe");
+        });
+        assert_eq!(result.is_err(), unwind);
+        assert!(
+            !support::os::running(owner.pid.get()),
+            "Human worker exited"
+        );
+        assert!(
+            !root.exists(),
+            "worker cleanup precedes temporary state removal"
+        );
+    }
 }
 
 #[tokio::test]

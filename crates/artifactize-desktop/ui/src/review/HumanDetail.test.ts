@@ -126,6 +126,61 @@ describe("HumanDetail", () => {
     await waitFor(() => expect(document.activeElement).toBe(json));
   });
 
+  it.each(["typed field", "JSON field", "Submit button"])("keeps the completed result keyboard-accessible after submitting from the %s", async (from) => {
+    backend("review", () => ({
+      notice: { text: "Submitted GREEN for release/signoff", error: false },
+      view: humanView("completed", { result: '{"verdict":"GREEN","approved":true,"comment":"checked"}' }),
+      settled: "published",
+    }));
+    const user = userEvent.setup();
+    let left = 0;
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
+    const region = await screen.findByLabelText("Human review");
+    await screen.findByText("REVIEW (yours)");
+    await user.keyboard("g");
+    const comment = await screen.findByLabelText(/comment/);
+    await waitFor(() => expect(document.activeElement).toBe(comment));
+    await user.type(comment, "checked");
+    if (from === "JSON field") {
+      await user.keyboard("{Control>}e{/Control}");
+      const json = await screen.findByLabelText(/Owner fields \(JSON\)/);
+      await waitFor(() => expect(document.activeElement).toBe(json));
+    }
+    if (from === "Submit button") await user.click(screen.getByRole("button", { name: /Submit/ }));
+    else await user.keyboard("{Control>}s{/Control}");
+
+    await screen.findByText("Completed result");
+    expect(region.isConnected).toBe(true);
+    expect(screen.queryByLabelText(/comment/)).toBeNull();
+    expect(left).toBe(0);
+    // Use the real focus target, not a key dispatched directly to the Detail.
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(left).toBe(1));
+  });
+
+  it("does not steal focus moved outside the Detail while submission is running", async () => {
+    let finish!: (value: unknown) => void;
+    backend("review", () => new Promise((resolve) => (finish = resolve)));
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await screen.findByText("REVIEW (yours)");
+    await user.keyboard("g");
+    await screen.findByLabelText(/comment/);
+    await user.keyboard("{Control>}s{/Control}");
+    await screen.findByText(/Submitting GREEN/);
+    const elsewhere = document.createElement("button");
+    elsewhere.textContent = "Another screen";
+    document.body.append(elsewhere);
+    try {
+      await user.click(elsewhere);
+      finish({ notice: null, view: humanView("completed"), settled: "published" });
+      await screen.findByText("Completed result");
+      expect(document.activeElement).toBe(elsewhere);
+    } finally {
+      elsewhere.remove();
+    }
+  });
+
   it("Esc stops editing first, then leaves", async () => {
     backend("review");
     let left = 0;

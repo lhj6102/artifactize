@@ -205,7 +205,11 @@ mod tests {
     fn agent_sessions_default_and_validate() {
         assert_eq!(
             read("{}").unwrap().agent_sessions(),
-            AgentSessions::default()
+            AgentSessions {
+                enabled: true,
+                max_bytes: 1_073_741_824,
+                target_bytes: 805_306_368,
+            }
         );
         assert_eq!(
             read(r#"{"agentSessions":{"enabled":false}}"#)
@@ -213,7 +217,8 @@ mod tests {
                 .agent_sessions(),
             AgentSessions {
                 enabled: false,
-                ..AgentSessions::default()
+                max_bytes: 1_073_741_824,
+                target_bytes: 805_306_368,
             }
         );
         assert_eq!(

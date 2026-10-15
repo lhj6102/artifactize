@@ -6,19 +6,26 @@
 
 use artifactize_core::{runs, types::RunId};
 use std::{
+    collections::BTreeSet,
     io::{self, BufRead},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     process::{Child, Output},
     time::Duration,
 };
-use tokio_util::sync::CancellationToken;
 
 /// Own only the caller process. Disposing a `run show --wait` observer must not cancel its Run.
 pub struct Watcher(Option<Child>);
 impl Watcher {
     pub fn new(child: Child) -> Self {
         Self(Some(child))
+    }
+    /// Stop only an unreaped caller, never signal a PID after its cached exit.
+    pub fn stop(&mut self) -> io::Result<std::process::ExitStatus> {
+        if self.try_wait()?.is_none() {
+            self.kill()?;
+        }
+        self.wait()
     }
     pub fn wait_with_output(mut self) -> io::Result<Output> {
         // Retain the caller guard while draining both pipes, including I/O-error exits.
@@ -72,6 +79,45 @@ impl Drop for Watcher {
     }
 }
 
+/// Own detached tool leaders and descendants by birth identity. Each child is registered
+/// independently so a leader exiting cannot leave its leaderless descendants unowned.
+#[derive(Default)]
+pub struct Processes(BTreeSet<(u32, u64)>);
+impl Processes {
+    pub fn own(&mut self, pid: u32) {
+        if let Some(start) = crate::support::os::observed_start_time(pid) {
+            self.0.insert((pid, start));
+        }
+    }
+}
+impl Drop for Processes {
+    fn drop(&mut self) {
+        for &(pid, start) in &self.0 {
+            if crate::support::os::same_process_running(pid, start) {
+                crate::support::os::kill_tree(pid);
+                crate::support::os::kill(pid);
+            }
+        }
+        // Liveness polling observes release only; this interval orders no test behavior.
+        const RELEASE_BOUND: Duration = Duration::from_secs(30);
+        const RELEASE_POLL: Duration = Duration::from_millis(10);
+        let deadline = std::time::Instant::now() + crate::support::os::patience(RELEASE_BOUND);
+        while self
+            .0
+            .iter()
+            .any(|&(pid, start)| crate::support::os::same_process_running(pid, start))
+        {
+            if std::time::Instant::now() >= deadline {
+                if !std::thread::panicking() {
+                    panic!("owned detached fixture processes did not exit");
+                }
+                return;
+            }
+            std::thread::sleep(RELEASE_POLL);
+        }
+    }
+}
+
 /// Own the submitted Run in addition to its watcher, until the fixture releases both.
 pub struct RunChild {
     child: Watcher,
@@ -113,6 +159,21 @@ impl RunChild {
             .clone()
             .expect("valid submission announced its Run")
     }
+    /// The sync CLI fixture keeps the runtime/thread scoped to this read-only barrier.
+    pub fn human_waiting(&self) -> artifactize_core::store::RunView {
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    runtime.block_on(human_waiting(&self.state, &self.run()))
+                })
+                .join()
+                .unwrap()
+        })
+    }
     pub fn wait_with_output(mut self) -> io::Result<Output> {
         let child = std::mem::replace(&mut self.child, Watcher(None));
         let mut output = child.wait_with_output()?;
@@ -136,25 +197,7 @@ impl DerefMut for RunChild {
 impl Drop for RunChild {
     fn drop(&mut self) {
         let Some(run) = &self.run else { return };
-        let cleanup = std::thread::scope(|scope| {
-            scope
-                .spawn(|| {
-                    let runtime = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map_err(|error| error.to_string())?;
-                    runtime.block_on(async {
-                        let context = runs::Context::new(
-                            &self.repo,
-                            Some(&self.state),
-                            &crate::support::os::cli(),
-                        )?;
-                        release(&context, &self.state, run).await
-                    })
-                })
-                .join()
-        })
-        .unwrap_or_else(|_| Err("owned Run cleanup panicked".into()));
+        let cleanup = release_run(&self.state, &self.repo, run);
         // Reap the watcher even if Run cleanup fails; the field guard is also unwind-safe.
         if let Some(child) = &mut self.child.0 {
             if child.try_wait().ok().flatten().is_none() {
@@ -219,13 +262,15 @@ async fn release(context: &runs::Context, state: &Path, id: &RunId) -> Result<()
     const CLEANUP_BOUND: Duration = Duration::from_secs(30);
     tokio::time::timeout(crate::support::os::patience(CLEANUP_BOUND), async {
         let mut changes = artifactize_core::changes::Subscription::new(state).await;
-        if !runs::status(context, id).await?.state.is_terminal() {
+        let saved = artifactize_core::store::read_run(state, id).await?;
+        if saved.run.status() == artifactize_core::types::RunStatus::Running {
+            // This is an explicit fixture cleanup stimulus, never an observation barrier.
             runs::cancel(context, id).await?;
-            runs::wait(context, id, None, CancellationToken::new()).await?;
+            terminal(state, id).await;
         }
         // Terminal state is saved before the durable worker closes its last
         // connection. Its exact identity must also exit before TempDir drops.
-        let view = runs::view(context, id).await?;
+        let view = artifactize_core::store::read_run(state, id).await?;
         if let Some(control) = view.run.control {
             let owner = match control.worker {
                 runs::Worker::Starting { launcher } => Some(launcher),
@@ -233,7 +278,7 @@ async fn release(context: &runs::Context, state: &Path, id: &RunId) -> Result<()
                 runs::Worker::Legacy => None,
             };
             if let Some(owner) = owner {
-                while crate::support::os::running(owner.pid.get()) {
+                while crate::support::os::same_process_running(owner.pid.get(), owner.start_time) {
                     changes.next_reconciled().await;
                 }
             }
@@ -242,4 +287,107 @@ async fn release(context: &runs::Context, state: &Path, id: &RunId) -> Result<()
     })
     .await
     .map_err(|_| "owned Run cleanup timed out".to_owned())?
+}
+
+/// Observe the saved terminal state without reconciling, killing owners or rewriting audit.
+pub async fn terminal(state: &Path, id: &RunId) -> artifactize_core::store::RunView {
+    // Bound a broken fixture observation, not the Run's execution lifetime.
+    const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
+    let mut changes = artifactize_core::changes::Subscription::new(state).await;
+    tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
+        loop {
+            let view = artifactize_core::store::read_run(state, id).await.unwrap();
+            if view.run.status() != artifactize_core::types::RunStatus::Running {
+                return view;
+            }
+            changes.next_reconciled().await;
+        }
+    })
+    .await
+    .expect("saved terminal fixture state")
+}
+
+/// Observe a saved Human request only after its admitted worker has released scheduling.
+/// A request becoming WAITING_HUMAN does not itself establish this distinct Run state.
+pub async fn human_waiting(state: &Path, id: &RunId) -> artifactize_core::store::RunView {
+    const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
+    let mut changes = artifactize_core::changes::Subscription::new(state).await;
+    tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
+        loop {
+            let view = artifactize_core::store::read_run(state, id).await.unwrap();
+            if view.run.control.as_ref().is_some_and(|control| {
+                matches!(control.worker, runs::Worker::Admitted { .. })
+                    && control.activity == runs::Activity::Waiting
+            }) && view.requests.iter().any(|request| {
+                request.status() == artifactize_core::types::RequestStatus::WaitingHuman
+            }) {
+                return view;
+            }
+            changes.next_reconciled().await;
+        }
+    })
+    .await
+    .expect("saved waiting Human Run and admitted worker")
+}
+
+/// Ownership of every submission to a fixture repository, independent of its observers.
+pub struct RepoLease {
+    state: PathBuf,
+    repo: PathBuf,
+}
+impl RepoLease {
+    pub fn new(state: &Path, repo: &Path) -> Self {
+        Self {
+            state: state.to_owned(),
+            repo: repo.to_owned(),
+        }
+    }
+}
+impl Drop for RepoLease {
+    fn drop(&mut self) {
+        release_repo(&self.state, &self.repo);
+    }
+}
+
+/// Own just the real submission when the rest of a state is deliberately corrupted input.
+pub struct RunLease {
+    state: PathBuf,
+    repo: PathBuf,
+    run: RunId,
+}
+impl RunLease {
+    pub fn new(state: &Path, repo: &Path, run: RunId) -> Self {
+        Self {
+            state: state.to_owned(),
+            repo: repo.to_owned(),
+            run,
+        }
+    }
+}
+impl Drop for RunLease {
+    fn drop(&mut self) {
+        let cleanup = release_run(&self.state, &self.repo, &self.run);
+        if !std::thread::panicking() {
+            cleanup.expect("fixture releases its single owned Run");
+        }
+    }
+}
+
+fn release_run(state: &Path, repo: &Path, run: &RunId) -> Result<(), String> {
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|error| error.to_string())?;
+                runtime.block_on(async {
+                    let context =
+                        runs::Context::new(repo, Some(state), &crate::support::os::cli())?;
+                    release(&context, state, run).await
+                })
+            })
+            .join()
+    })
+    .unwrap_or_else(|_| Err("owned Run cleanup panicked".into()))
 }

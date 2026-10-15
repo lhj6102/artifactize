@@ -2,7 +2,7 @@
   // The Detail of the selected tree row: a peek that follows the selection, or the opened
   // Detail — sections and saved logs, an Agent transcript, or the shared Human Detail.
   import type { Attachment } from "svelte/attachments";
-  import { call, commands, message } from "../ipc/client";
+  import { call, useIpc, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import type { Review } from "../review/review.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detailPane.svelte";
@@ -41,6 +41,7 @@
     onopen: () => void;
     onback: () => void;
   } = $props();
+  const commands = useIpc();
   const d = new DetailPaneState();
   setDetailPaneState(d);
   const { browse } = getAppState();

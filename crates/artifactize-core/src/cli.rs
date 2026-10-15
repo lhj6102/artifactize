@@ -42,6 +42,9 @@ use crate::{
 /// Keep default Run history output readable; --limit/--offset expose older records.
 const DEFAULT_RUN_LIST_LIMIT: u32 = 50;
 
+/// Shells conventionally report an interrupt as 130; use the same status on every platform.
+const INTERRUPTED_EXIT: u8 = 130;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "artifactize",

@@ -6,6 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { verifyWaiting, create, type Fixture } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
+import { checkpoint, commandsRendered } from "./commands.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   const end = Date.now() + ms;
@@ -60,24 +61,22 @@ describe("monitor navigation", () => {
 
   // UX edges: E-REFRESH
   it("reads the state again with F5 and shows what changed on disk on the same screen", async () => {
-    // Count the app's own full reads of the snapshot, which the webview sends as `browse`.
-    await browser.execute(() => {
-      const page = window as unknown as { reads?: number };
-      page.reads = 0;
-      const fetched = window.fetch.bind(window);
-      window.fetch = (input, init) => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-        if (url.endsWith("/browse") && typeof init?.body === "string" && init.body.includes('"full":true')) page.reads = (page.reads ?? 0) + 1;
-        return fetched(input, init);
-      };
-    });
-    const reads = () => browser.execute(() => (window as unknown as { reads: number }).reads) as Promise<number>;
-    // A change on disk: another Run. F5 right away asks for a full read that shows it.
-    await verifyWaiting(fixture);
-    const before = await reads();
-    await press(browser, ["F5"], async () => (await reads()) > before, "a full read after F5");
-    await eventually(async () => /Runs \(3\)/i.test(await text()), "the refreshed third Run listed");
-    assert.match(await text(), /Monitor/, "on the same screen");
+    const rows = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')].map((row) => row.innerText));
+    const previous = await rows();
+    const id = await verifyWaiting(fixture);
+    assert.ok(previous.every((row) => !row.includes(id)), "this Run is a new disk change");
+    // A subscription may already have shown the Run. That alone cannot prove F5 worked:
+    // require its consumed key and a new completed native browse, not a dispatch counter.
+    await commandsRendered(browser);
+    const before = (await checkpoint(browser)).activity.commands.browse?.completed ?? 0;
+    await press(browser, ["F5"], async () => {
+      const browse = (await checkpoint(browser)).activity.commands.browse;
+      return !!browse && browse.completed > before && browse.pending === 0;
+    }, "the refresh's native read completed", { handled: true });
+    await commandsRendered(browser);
+    await eventually(async () => (await rows()).some((row) => row.includes(id)), "the exact refreshed Run rendered");
+    assert.equal((await rows()).length, 3, "the refreshed list contains all three Runs");
+    assert.equal(await browser.$('[role="tab"][data-state="active"]').getText(), "Monitor", "on the same screen");
   });
 
   // UX edges: E-MON-TREE-FOLD

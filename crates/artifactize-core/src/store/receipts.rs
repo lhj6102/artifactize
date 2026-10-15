@@ -529,6 +529,77 @@ pub struct Receipts {
     pub(super) connection: NotifyingConnection,
 }
 
+/// A test writer closes its SQLite worker before the caller's temporary state is removed.
+#[cfg(test)]
+pub(crate) struct OwnedReceipts(Receipts);
+
+#[cfg(test)]
+impl OwnedReceipts {
+    pub async fn open(state: &Path, repo: &Path) -> Result<Self, String> {
+        Receipts::open(state, repo).await.map(Self)
+    }
+}
+
+#[cfg(test)]
+impl std::ops::Deref for OwnedReceipts {
+    type Target = Receipts;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+impl Drop for OwnedReceipts {
+    fn drop(&mut self) {
+        let connection = self.0.connection.inner.clone();
+        // Drop can run on a current-thread Tokio test runtime, including during unwinding.
+        // A separate joined thread avoids nesting runtimes or detaching SQLite teardown.
+        let closed = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("create the test writer's teardown runtime")
+                .block_on(connection.close())
+        })
+        .join();
+        if !std::thread::panicking() {
+            closed
+                .expect("join the test writer's teardown")
+                .expect("close the test writer's SQLite connection");
+        }
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn owned_writer_closes_before_temp_state_removal_on_success_and_unwind() {
+        for unwind in [false, true] {
+            let root = crate::test_os::tempdir();
+            let state = root.path().join("state");
+            let repo = root.path().join("repo");
+            std::fs::create_dir(&repo).unwrap();
+            let writer = OwnedReceipts::open(&state, &repo).await.unwrap();
+            assert!(writer.state_id().await.is_ok());
+            // Even another writer handle cannot retain the worker after fixture teardown.
+            let retained = Receipts::clone(&writer);
+            if unwind {
+                let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                    let _writer = writer;
+                    panic!("fixture assertion failure");
+                }));
+                assert!(failed.is_err());
+            } else {
+                drop(writer);
+            }
+            let error = retained.state_id().await.unwrap_err();
+            assert_eq!(error, "ConnectionClosed");
+            root.close().unwrap();
+        }
+    }
+}
+
 /// Notify at the DB-worker completion boundary, even if the awaiting caller was cancelled.
 /// total_changes is conservative (rolled-back changes can invalidate harmlessly). Only a
 /// finished autocommit edge can publish; no event is an audit record or proof of success.

@@ -5,9 +5,8 @@ use owned_run::RunChild;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
+    process::{Command, Output},
+    time::Duration,
 };
 
 use rusqlite::Connection;
@@ -19,6 +18,9 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
+    // Release both explicitly selected and default-state Runs before TempDir teardown.
+    runs: Option<owned_run::RepoLease>,
+    home_runs: Option<owned_run::RepoLease>,
     _root: TempDir,
     repo: PathBuf,
     state: PathBuf,
@@ -32,12 +34,21 @@ impl Fixture {
         let base = support::os::canonical(root.path());
         let repo = base.join("repo");
         fs::create_dir(&repo).unwrap();
+        let state = base.join("receipts");
+        let home = base.join("home");
         Self {
+            runs: Some(owned_run::RepoLease::new(&state, &repo)),
+            home_runs: Some(owned_run::RepoLease::new(&home, &repo)),
             repo,
-            state: base.join("receipts"),
-            home: base.join("home"),
+            state,
+            home,
             _root: root,
         }
+    }
+
+    fn release(&mut self) {
+        drop(self.runs.take());
+        drop(self.home_runs.take());
     }
 
     fn command(&self) -> Command {
@@ -115,7 +126,7 @@ fn json_output(output: &Output) -> Value {
 
 #[test]
 fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
-    let fixture = Fixture::new();
+    let mut fixture = Fixture::new();
     support::copy_fixture("runtime", &fixture.repo);
     let output = fixture
         .command()
@@ -127,6 +138,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     assert_eq!(verified["status"], "ERROR");
     assert!(output.stdout.windows(6).any(|bytes| bytes == b"stdout"));
     assert!(!fixture.home.exists(), "--state-dir moves the whole state");
+    fixture.release();
     fs::remove_dir_all(&fixture.repo).unwrap();
     let output = Command::new(support::os::cli())
         .current_dir(fixture._root.path())
@@ -205,11 +217,22 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
             .unwrap(),
         "wal"
     );
+    let mut ids = requests
+        .iter()
+        .map(|request| request["evalId"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    ids.sort();
     assert_eq!(
-        database
-            .query_row::<i64, _, _>("SELECT count(*) FROM requests", [], |r| r.get(0))
-            .unwrap(),
-        7
+        ids,
+        [
+            "blocked/check",
+            "cycle-a/check",
+            "cycle-b/check",
+            "green/check",
+            "red/check",
+            "timeout/check",
+            "waiting/check"
+        ]
     );
 }
 
@@ -276,7 +299,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     let fixture = Fixture::new();
     fixture.runtime(
         &support::os::echo_program(),
-        &["$HOME", "a; echo injected", "a b"],
+        &[support::os::home_expression(), "a; echo injected", "a b"],
     );
     let alias = fixture._root.path().join("alias");
     support::os::link_dir(&fixture.repo, &alias);
@@ -291,7 +314,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     let first = json_output(&output);
     assert_eq!(
         first["requests"][0]["result"]["stdout"],
-        "$HOME a; echo injected a b\n"
+        format!("{} a; echo injected a b\n", support::os::home_expression())
     );
     let state = PathBuf::from(first["stateDir"].as_str().unwrap());
     assert_eq!(state, fixture.home);
@@ -411,18 +434,13 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     let reused = fixture.verify(&reuse_only, 0);
     assert_eq!(reused["status"], "GREEN");
     assert_eq!(reused["executionsStarted"], 0);
-    assert_eq!(fs::read_to_string(&marker).unwrap().lines().count(), 1);
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "run\n");
 }
 
 fn wait_for(mut child: RunChild) -> Output {
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
-    while child.try_wait().unwrap().is_none() {
-        if Instant::now() > deadline {
-            support::os::kill(child.id());
-            panic!("verify did not finish after cancellation");
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
+    support::os::wait_until(Duration::from_secs(10), || {
+        support::os::child_exited(&mut child)
+    });
     child.wait_with_output().unwrap()
 }
 
@@ -435,29 +453,39 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
         &support::os::shell(),
         &["-c", &script, "fixture", &support::os::path_text(&marker)],
     );
-    let child = fixture
-        .command()
-        .args(["verify", "--wait", "--all", "--json"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = support::os::start(
+        fixture
+            .command()
+            .args(["verify", "--wait", "--all", "--json"]),
+    );
     let child = RunChild::new(child, &fixture.state, &fixture.repo);
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
-    while !marker.exists() {
-        assert!(Instant::now() < deadline, "runtime did not start");
-        thread::sleep(Duration::from_millis(10));
-    }
-    let database = Connection::open(fixture.state.join(artifactize_core::store::DATABASE)).unwrap();
-    database
+    // A created marker may still be empty, and child registration is saved separately.
+    // Observe both exact states before asserting writer availability or cancelling.
+    let database = Connection::open_with_flags(
+        fixture.state.join(artifactize_core::store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    support::os::wait_until(Duration::from_secs(5), || {
+        let marker_ready = fs::read_to_string(&marker)
+            .ok()
+            .is_some_and(|contents| contents.trim().parse::<u32>().is_ok_and(|pid| pid > 0));
+        let child_saved = database
+            .query_row(
+                "SELECT json_extract(data,'$.child.pid') FROM requests WHERE run_id=?",
+                [child.run()],
+                |row| row.get::<_, Option<u32>>(0),
+            )
+            .is_ok_and(|pid| pid.is_some_and(|pid| pid > 0));
+        marker_ready && child_saved
+    });
+    // Acquiring a writer is the explicit probe under test, not the observation interface.
+    let writer = Connection::open(fixture.state.join(artifactize_core::store::DATABASE)).unwrap();
+    writer
         .busy_timeout(support::os::patience(Duration::from_millis(100)))
         .unwrap();
-    database.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
-    let saved: String = database
-        .query_row("SELECT data FROM requests", [], |r| r.get(0))
-        .unwrap();
-    let saved: Value = serde_json::from_str(&saved).unwrap();
-    assert!(saved["child"]["pid"].as_u64().unwrap() > 0);
+    writer.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
+    drop(writer);
     support::runs::cancel_active(&fixture.state, &fixture.repo);
     let output = wait_for(child);
     assert_eq!(output.status.code(), Some(2));
@@ -770,7 +798,7 @@ fn removed_gate_bypass_is_rejected_in_declarations_verify_and_status() {
         ["verify", "--all", "--ignore-gates"],
         ["status", "--all", "--ignore-gates"],
     ] {
-        let output = fixture.command().args(args).output().unwrap();
+        let output = support::os::run(fixture.command().args(args));
         assert_eq!(output.status.code(), Some(2));
         assert!(String::from_utf8_lossy(&output.stderr).contains("--ignore-gates"));
     }
@@ -781,11 +809,7 @@ fn removed_gate_bypass_is_rejected_in_declarations_verify_and_status() {
                 .to_string(),
         )
         .unwrap();
-        let output = fixture
-            .command()
-            .args(["config", "check"])
-            .output()
-            .unwrap();
+        let output = support::os::run(fixture.command().args(["config", "check"]));
         assert_eq!(output.status.code(), Some(2));
         assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field `review_policy`"));
     }
@@ -888,7 +912,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         ("openai", "OPENAI_API_KEY"),
         ("anthropic", "ANTHROPIC_API_KEY"),
     ] {
-        let fixture = Fixture::new();
+        let mut fixture = Fixture::new();
         fixture.runtime(&support::os::true_program(), &[]);
         let path = fixture.repo.join("index.artf");
         let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
@@ -923,6 +947,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         assert_eq!(run["requests"][0]["usage"], json!([]));
         assert!(run["requests"][0].get("toolCalls").is_none());
         assert!(run["requests"][0]["result"].is_null());
+        fixture.release();
         fs::remove_dir_all(&fixture.repo).unwrap();
         let shown = fixture
             .command()
@@ -981,11 +1006,7 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         if json {
             command.arg("--json");
         }
-        let child = command
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = support::os::start(&mut command);
         let child = RunChild::new(child, &fixture.state, &fixture.repo);
         let line = child.announcement();
         let id = line
@@ -995,14 +1016,19 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
             .map(|(id, _)| id)
             .unwrap_or_else(|| panic!("{line:?}"))
             .to_owned();
-        // The Run is saved and readable while its eval still runs.
-        let running = fixture
-            .command()
-            .args(["run", "show", &id])
-            .record_output()
+        // Inspect the saved Run without run-show's reconciliation changing live state.
+        let database = Connection::open_with_flags(
+            fixture.state.join(artifactize_core::store::DATABASE),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let saved: String = database
+            .query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0))
             .unwrap();
-        assert!(running.status.success());
-        assert_eq!(json_output(&running)["status"], "RUNNING");
+        let saved: artifactize_core::store::Run = serde_json::from_str(&saved).unwrap();
+        assert_eq!(saved.id.as_str(), id);
+        assert_eq!(saved.status(), artifactize_core::types::RunStatus::Running);
+        drop(database);
         fs::write(&release, "").unwrap();
         let announcement = line.to_owned();
         let output = wait_for(child);

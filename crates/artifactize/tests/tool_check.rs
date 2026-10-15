@@ -18,15 +18,12 @@ fn fixture(repo: &Path) {
     fs::create_dir_all(repo.join("a")).unwrap();
     fs::create_dir_all(repo.join("b")).unwrap();
     let tool = repo.join("a").join(TOOL);
-    support::os::write_script(
+    let (command, args) = support::os::python_script(
         &tool,
-        &format!(
-            "printf '%s|%s|%s' \"{}\" \"${{TOOL_CHECK_SECRET-unset}}\" \"$PWD\"\nprintf invoked > touched\n",
-            support::os::home_expression()
+        &support::os::portable_path_probe(
+            "import os,pathlib,sys\nPATH_TEXT_FUNCTION\nsys.stdout.write('|'.join([os.path.expanduser('~'), os.environ.get('TOOL_CHECK_SECRET', 'unset'), path_text(pathlib.Path.cwd())]))\npathlib.Path('touched').write_text('invoked')\n",
         ),
     );
-    support::os::make_executable(&tool);
-    let command = format!("./{TOOL}");
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});
     support::declaration::write(
         repo.join("a/index.artf"),
@@ -39,7 +36,7 @@ fn fixture(repo: &Path) {
                     "env":{
                         "description":"Environment",
                         "command":command,
-                        "args":[],
+                        "args":args,
                         "protocol":"plain",
                         "input_schema":{"type":"object","additionalProperties":false},
                     },
@@ -61,7 +58,7 @@ fn fixture(repo: &Path) {
                     },
                 },
                 "human_tools":{
-                    "env":{"description":"Environment","kind":"output","command":command,"args":[]},
+                    "env":{"description":"Environment","kind":"output","command":command,"args":args},
                 },
             },
             "evals":[
@@ -196,7 +193,17 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     let text = agent["result"]["content"][0]["text"].as_str().unwrap();
     // The Agent tool runs in the author's environment, as the Human tool does: the same home
     // and the same variables.
-    assert!(text.starts_with(support::os::human_tool_prefix()), "{text}");
+    let expected = format!(
+        "{}{}",
+        support::os::human_tool_prefix(),
+        support::os::path_text(&support::os::canonical(&repo.join("a")))
+    );
+    assert_eq!(text, expected);
+    assert_eq!(
+        fs::read_to_string(repo.join("a/touched")).unwrap(),
+        "invoked"
+    );
+    fs::remove_file(repo.join("a/touched")).unwrap();
     let human = parsed(
         &check(
             &repo,
@@ -213,11 +220,10 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         ),
         0,
     );
-    assert!(
-        human["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .starts_with(support::os::human_tool_prefix())
+    assert_eq!(human["result"]["content"][0]["text"], expected);
+    assert_eq!(
+        fs::read_to_string(repo.join("a/touched")).unwrap(),
+        "invoked"
     );
     let error = parsed(
         &check(

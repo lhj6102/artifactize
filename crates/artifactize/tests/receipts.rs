@@ -6,11 +6,37 @@ use artifactize_core::store::{
 };
 use rusqlite::Connection;
 
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
 use support::os::link_dir;
+
+/// Own the initializer across assertion failure or cancellation of its async test.
+struct Initializer {
+    commit: Option<mpsc::Sender<()>>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+impl Initializer {
+    fn finish(&mut self) -> thread::Result<()> {
+        if let Some(commit) = self.commit.take() {
+            // The thread may already have failed; joining still owns that failure.
+            let _ = commit.send(());
+        }
+        self.thread.take().map_or(Ok(()), |thread| thread.join())
+    }
+}
+impl Drop for Initializer {
+    fn drop(&mut self) {
+        let joined = self.finish();
+        if !thread::panicking() {
+            joined.expect("schema initializer releases SQLite before temporary state");
+        }
+    }
+}
 
 #[tokio::test]
 async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
@@ -22,8 +48,16 @@ async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
     assert!(!state.exists());
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     drop(receipts);
-    let db = Connection::open(state.join(DATABASE)).unwrap();
-    db.pragma_update(None, "user_version", 99).unwrap();
+    // Future schema metadata is an explicit input; observations have no write capability.
+    Connection::open(state.join(DATABASE))
+        .unwrap()
+        .pragma_update(None, "user_version", 99)
+        .unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let before = db
         .query_row::<i64, _, _>("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
         .unwrap();
@@ -130,27 +164,29 @@ async fn readers_observe_empty_state_until_schema_commits() {
     let (ready_tx, ready_rx) = mpsc::channel();
     let (commit_tx, commit_rx) = mpsc::channel();
     let path = state.join(DATABASE);
-    let initializer = thread::spawn(move || {
-        let mut db = Connection::open(path).unwrap();
-        db.pragma_update(None, "journal_mode", "WAL").unwrap();
-        let transaction = db
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .unwrap();
-        for sql in schema {
-            transaction.execute_batch(&sql).unwrap();
-        }
-        transaction
-            .pragma_update(None, "user_version", STATE_SCHEMA_VERSION)
-            .unwrap();
-        ready_tx.send(()).unwrap();
-        if commit_rx.recv().is_ok() {
-            transaction.commit().unwrap();
-        }
-    });
+    let mut initializer = Initializer {
+        commit: Some(commit_tx),
+        thread: Some(thread::spawn(move || {
+            let mut db = Connection::open(path).unwrap();
+            db.pragma_update(None, "journal_mode", "WAL").unwrap();
+            let transaction = db
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .unwrap();
+            for sql in schema {
+                transaction.execute_batch(&sql).unwrap();
+            }
+            transaction
+                .pragma_update(None, "user_version", STATE_SCHEMA_VERSION)
+                .unwrap();
+            ready_tx.send(()).unwrap();
+            if commit_rx.recv().is_ok() {
+                transaction.commit().unwrap();
+            }
+        })),
+    };
     ready_rx.recv().unwrap();
     assert_empty_reads(&state, &repo).await;
-    commit_tx.send(()).unwrap();
-    initializer.join().unwrap();
+    initializer.finish().unwrap();
     assert_empty_reads(&state, &repo).await;
     let db = Connection::open_with_flags(
         state.join(DATABASE),
@@ -181,6 +217,8 @@ async fn repositories_share_one_state_database() {
         )
         .unwrap();
     }
+    let _first_lease = owned_run::RepoLease::new(&state, &first);
+    let _second_lease = owned_run::RepoLease::new(&state, &second);
     let mut saved = Vec::new();
     for explicit in [false, true] {
         for repo in [&first, &second] {
@@ -303,6 +341,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     }
     assert!(!repo.join("state").exists());
     let state = root.path().join("state");
+    let _lease = owned_run::RepoLease::new(&state, &repo);
     fs::create_dir(&state).unwrap();
     link_dir(&repo, &state.join("runs"));
     let output = Command::new(support::os::cli())
@@ -368,7 +407,7 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
 }
 
 #[tokio::test]
-async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_writes_are_atomic() {
+async fn schema_five_profiles_survive_typed_reads_and_invalid_states_fail_at_parse_boundary() {
     use artifactize_core::store::RunView;
     use serde_json::json;
     let root = support::os::tempdir();
@@ -379,8 +418,8 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     // Literal schema-5 fixture: optional profile fields were serialized as null.
     let view: RunView = serde_json::from_value(json!({
         "id":"run-old",
-        "repoPath":repo,
-        "stateDir":state,
+        "repoPath":support::os::path_text(&repo),
+        "stateDir":support::os::path_text(&state),
         "status":"RUNNING",
         "createdAt":"2026-01-01T00:00:00Z",
         "completedAt":null,
@@ -424,7 +463,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
                 "createdAt":"2026-01-01T00:00:00Z",
                 "startedAt":null,
                 "completedAt":null,
-                "cwd":repo,
+                "cwd":support::os::path_text(&repo),
                 "runDir":null,
                 "argv":null,
                 "child":null,
@@ -440,9 +479,9 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
         .create_run(&view.run, &view.requests)
         .await
         .unwrap();
-    let before = serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap();
+    let saved = serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap();
     assert_eq!(
-        before["requests"][0]["profile"],
+        saved["requests"][0]["profile"],
         json!({
             "kind":"agent",
             "backend":"openai",
@@ -469,11 +508,13 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     let mut wire = serde_json::to_value(&view.run).unwrap();
     wire["status"] = json!("GREEN");
     assert!(serde_json::from_value::<artifactize_core::store::Run>(wire).is_err());
-    assert_eq!(
-        serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap(),
-        before
-    );
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    // Parsing is the observable rejection boundary. No write was attempted, so an
+    // unchanged database would not independently demonstrate atomic write behavior.
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
@@ -481,11 +522,13 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     );
     // Valid older writes still read unchanged; contradictory lifecycle fields are
     // corruption and fail only that record at the parse boundary.
-    db.execute(
-        "UPDATE requests SET status='GREEN',data=json_set(data,'$.status','GREEN')",
-        [],
-    )
-    .unwrap();
+    Connection::open(state.join(DATABASE))
+        .unwrap()
+        .execute(
+            "UPDATE requests SET status='GREEN',data=json_set(data,'$.status','GREEN')",
+            [],
+        )
+        .unwrap();
     let saved = read_run(&state, "run-old").await.unwrap();
     assert!(saved.requests.is_empty());
     assert_eq!(saved.unreadable[0].id, "run-old-1");

@@ -143,7 +143,7 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
         Some(1000),
     );
     let (registered, child) = oneshot::channel();
-    let running = tokio::spawn(runtime::execute(
+    let running = support::spawn(runtime::execute(
         command,
         CancellationToken::new(),
         |child| async move {
@@ -172,7 +172,7 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     // exec keeps the observed PID stable while the final long-lived command runs.
     let script = support::os::cancellation_script();
     let command = scratch.command(&support::os::shell(), &["-c", script], None);
-    let running = tokio::spawn(runtime::execute(
+    let running = support::spawn(runtime::execute(
         command,
         cancellation.clone(),
         |child| async move {
@@ -220,14 +220,14 @@ async fn literal_argv_is_preserved() {
     let result = completed(
         execute(scratch.command(
             &support::os::printf_program(),
-            &["%s\n", "$(id); $HOME * a b", "{artifact}/path"],
+            &["%s\n", "$(id); $AUTHOR_VALUE * a b", "{artifact}/path"],
             None,
         ))
         .await,
     );
     assert_eq!(
         result.output.stdout,
-        b"$(id); $HOME * a b\n{artifact}/path\n"
+        b"$(id); $AUTHOR_VALUE * a b\n{artifact}/path\n"
     );
 }
 
@@ -376,6 +376,9 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
 fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables() {
     // The probe's PATH has no compiler, so build the Windows stand-ins first.
     support::os::env_program();
+    let root = support::os::tempdir();
+    let author_home = root.path().join("author-home");
+    std::fs::create_dir(&author_home).unwrap();
     // Set the parent environment in another process, never mutate this test runner's env.
     let result = support::os::run_test(
         "environment_subprocess_probe",
@@ -384,7 +387,7 @@ fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables()
             ("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-the-command".into()),
             ("ARTIFACTIZE_REMOTE", "https://store.invalid".into()),
             ("AUTHOR_VARIABLE", "from-the-terminal".into()),
-            (support::os::home_env(), "/the-authors-home".into()),
+            (support::os::home_env(), author_home.into_os_string()),
             ("PATH", support::os::system_path()),
             ("LANG", "C".into()),
         ],
@@ -406,6 +409,8 @@ async fn environment_subprocess_probe() {
         support::os::environment_variable("ARTIFACTIZE_REMOTE_TOKEN").unwrap(),
         "azt_not-for-the-command"
     );
+    // Capture the controlled parent input before executing the product's child environment.
+    let author_home = support::os::environment_variable(support::os::home_env()).unwrap();
     let scratch = Scratch::new();
     let result = completed(execute(scratch.command(&support::os::env_program(), &[], None)).await);
     let output = String::from_utf8(result.output.stdout).unwrap();
@@ -425,7 +430,7 @@ async fn environment_subprocess_probe() {
     assert!(support::os::has_variable(
         &lines,
         support::os::home_env(),
-        "/the-authors-home"
+        author_home.to_str().unwrap()
     ));
     // Artifactize's credentials and settings stay out; only its per-run variables are set.
     for forbidden in [
@@ -507,7 +512,7 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
         Some(1000),
     );
     let marker = command.directory().join("output/grandchild");
-    let running = tokio::spawn(runtime::execute(
+    let running = support::spawn(runtime::execute(
         command,
         CancellationToken::new(),
         |_| async { Ok(()) },
@@ -527,7 +532,7 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
 
 /// The PID the lingering grandchild wrote to `marker`, once it has. The test yields rather
 /// than sleeps while it waits, so that a paused clock stands still.
-async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -> u32 {
+async fn grandchild(marker: &Path, running: &tokio_util::task::AbortOnDropHandle<Outcome>) -> u32 {
     let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
     loop {
         let written = std::fs::read_to_string(marker).ok();
@@ -580,7 +585,7 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     );
     let marker = command.directory().join("output/grandchild");
     let (registered, child) = oneshot::channel();
-    let running = tokio::spawn(runtime::execute(
+    let running = support::spawn(runtime::execute(
         command,
         CancellationToken::new(),
         |child| async move {
@@ -598,8 +603,7 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
         .trim()
         .parse()
         .unwrap();
-    running.abort();
-    assert!(running.await.unwrap_err().is_cancelled());
+    drop(running);
     assert_gone(child.pid.get()).await;
     assert_gone(pid).await;
 }
@@ -617,7 +621,7 @@ async fn deadline_is_not_reset_after_registration() {
     );
     let (registered, child) = oneshot::channel();
     let (release, held) = oneshot::channel();
-    let running = tokio::spawn(runtime::execute(
+    let running = support::spawn(runtime::execute(
         command,
         CancellationToken::new(),
         |child| async move {

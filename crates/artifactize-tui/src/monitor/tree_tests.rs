@@ -47,7 +47,7 @@ fn saved(
     requests: Vec<RequestView>,
 ) -> (RunView, Vec<RequestView>) {
     let mut run = json!({
-        "id":"run-1","repoPath":"/repo","stateDir":"/state",
+        "id":"run-1","repoPath":"repo","stateDir":"state",
         "status":if running { "RUNNING" } else { "RED" },
         "createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},
         "definitions":definitions,"validation":null
@@ -160,7 +160,7 @@ fn own_facts_come_before_dependencies() {
         "cli/follows-style",
         "GREEN",
         json!({"provenance":{"runId":"run-0","requestId":"run-0-x","evalId":"cli/follows-style",
-            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","repoPath":"/repo","completedAt":"2026-01-01T00:00:00Z"}}),
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","repoPath":"repo","completedAt":"2026-01-01T00:00:00Z"}}),
     );
     let (run, requests) = saved(
         definitions(&[(&["cli"], &[])], vec![runtime("cli/follows-style")]),
@@ -750,7 +750,9 @@ fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
 
 fn render(monitor: &mut Monitor, width: u16, height: u16) -> String {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, now()))
+        .unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
     let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());
@@ -796,7 +798,7 @@ fn wide(monitor: &mut Monitor) {
 
 #[test]
 fn upstream_rows_are_marked_counted_off_screen_and_reached_with_b() {
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = tests::monitor();
     wide(&mut monitor);
     // up-a/x runs, so the cursor starts there; up-b is all done and folded.
     assert_eq!(
@@ -918,7 +920,7 @@ fn a_dependency_eval_marks_a_peer_below_it() {
 
 #[test]
 fn refreshes_fold_done_artifacts_unless_the_user_toggled_them() {
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = tests::monitor();
     wide(&mut monitor);
     let opened = |monitor: &Monitor, id: &str| {
         monitor
@@ -1022,7 +1024,7 @@ fn compact_rows_keep_glyph_name_and_one_right_column() {
 
 fn reused() -> Value {
     json!({"provenance":{"runId":"run-0","requestId":"run-0-x","evalId":"cli/follows-style",
-        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","repoPath":"/repo","completedAt":"2026-01-01T00:00:00Z"}})
+        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","repoPath":"repo","completedAt":"2026-01-01T00:00:00Z"}})
 }
 
 #[test]
@@ -1136,7 +1138,7 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
 
 #[test]
 fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = tests::monitor();
     wide(&mut monitor);
     let opened = |monitor: &Monitor, id: &str| {
         monitor
@@ -1185,7 +1187,7 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
 
 #[test]
 fn frames_preserve_rendered_rows_and_refresh_updates_their_state() {
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = tests::monitor();
     wide(&mut monitor);
     let built = monitor.nodes();
     let first = render(&mut monitor, 200, 60);
@@ -1219,58 +1221,79 @@ fn frames_preserve_rendered_rows_and_refresh_updates_their_state() {
     assert!(!render(&mut monitor, 200, 60).contains("up-a"));
 }
 
-/// Thousands of Artifacts, each depending on its predecessor, build in one linear pass.
+/// Large independent wait chains retain their visible causes without quadratic model work.
 #[test]
-fn large_runs_build_without_quadratic_lookups() {
-    let count = 10_000;
-    let names: Vec<String> = (0..count).map(|index| format!("a{index:05}")).collect();
-    let components: Vec<(Vec<&str>, Vec<usize>)> = names
-        .iter()
-        .enumerate()
-        .map(|(index, name)| {
-            (
-                vec![name.as_str()],
-                index.checked_sub(1).into_iter().collect(),
-            )
-        })
-        .collect();
-    let components: Vec<(&[&str], &[usize])> = components
-        .iter()
-        .map(|(members, dependencies)| (members.as_slice(), dependencies.as_slice()))
-        .collect();
-    let definitions = definitions(
-        &components,
-        names
+fn long_wait_chains_preserve_output_with_bounded_model_work_growth() {
+    // Thousands of rows make the scaling check meaningful beyond fixed setup overhead.
+    const SMALL_CHAIN: usize = 5_000;
+    const LARGE_CHAIN: usize = 10_000;
+    // Doubling input may triple measured work: room for different derivation strategies,
+    // but not the fourfold growth of quadratic work. No per-Eval operation count is pinned.
+    const MAX_WORK_GROWTH: usize = 3;
+    let measure = |count, tail, expected_tail| {
+        let names: Vec<String> = (0..count).map(|index| format!("a{index:05}")).collect();
+        let components: Vec<(Vec<&str>, Vec<usize>)> = names
             .iter()
-            .map(|name| runtime(&format!("{name}/x")))
-            .collect(),
+            .enumerate()
+            .map(|(index, name)| {
+                (
+                    vec![name.as_str()],
+                    index.checked_sub(1).into_iter().collect(),
+                )
+            })
+            .collect();
+        let components: Vec<(&[&str], &[usize])> = components
+            .iter()
+            .map(|(members, dependencies)| (members.as_slice(), dependencies.as_slice()))
+            .collect();
+        let definitions = definitions(
+            &components,
+            names
+                .iter()
+                .map(|name| runtime(&format!("{name}/x")))
+                .collect(),
+        );
+        let requests = names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let status = match index {
+                    0..10 => "GREEN",
+                    10 => "RUNNING",
+                    _ => "QUEUED",
+                };
+                request(&format!("{name}/x"), status, json!({}))
+            })
+            .collect();
+        let (run, requests) = saved(definitions, true, requests);
+        let nodes = tree(&run, &requests, now());
+        assert_eq!(nodes.len(), count);
+        // Independently specified model output at both the running head and waiting tail.
+        assert_eq!(line(&nodes, tail), expected_tail);
+        assert_eq!(
+            line(&nodes, "e:a00011/x"),
+            "… x  waits for a00010 ◐ in progress"
+        );
+        model::derivation_count(&run, &requests)
+    };
+    let small_work = measure(
+        SMALL_CHAIN,
+        "e:a04999/x",
+        "… x  waits for a04998 … waiting (a04998 waits for a04997)",
     );
-    let requests = names
-        .iter()
-        .enumerate()
-        .map(|(index, name)| {
-            let status = match index {
-                0..10 => "GREEN",
-                10 => "RUNNING",
-                _ => "QUEUED",
-            };
-            request(&format!("{name}/x"), status, json!({}))
-        })
-        .collect();
-    let (run, requests) = saved(definitions, true, requests);
-    let nodes = tree(&run, &requests, now());
-    assert_eq!(nodes.len(), count);
-    // A wait chain: every row waits for a waiting Artifact, one level of cause each.
-    assert_eq!(
-        line(&nodes, "e:a09999/x"),
-        "… x  waits for a09998 … waiting (a09998 waits for a09997)"
+    let large_work = measure(
+        LARGE_CHAIN,
+        "e:a09999/x",
+        "… x  waits for a09998 … waiting (a09998 waits for a09997)",
     );
-    assert_eq!(
-        line(&nodes, "e:a00011/x"),
-        "… x  waits for a00010 ◐ in progress"
+    assert!(
+        small_work > 0 && large_work > 0,
+        "the model work probe records both inputs"
     );
-    // Each Eval has exactly one view and one readiness derivation, even on a long chain.
-    assert_eq!(model::derivation_count(&run, &requests), 20_000);
+    assert!(
+        large_work <= small_work * MAX_WORK_GROWTH,
+        "doubling the wait chain increased model work from {small_work} to {large_work}"
+    );
 }
 
 #[test]
@@ -1516,7 +1539,7 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
 
 #[tokio::test]
 async fn detail_shows_waits_for_as_a_section_with_pending_evals_behind_w() {
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = tests::monitor();
     wide(&mut monitor);
     monitor.tree.select(vec![
         "a:m1".parse::<crate::monitor::model::NodeId>().unwrap(),

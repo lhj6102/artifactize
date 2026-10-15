@@ -24,6 +24,7 @@ mod order;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -51,6 +52,13 @@ fn eval(id: &str, profile: Value, instruction: &str) -> Value {
 
 fn runtime(command: &str, args: &[&str]) -> Value {
     json!({"kind":"runtime","command":command,"args":args,"timeout_ms":20000})
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.alpha);
+        owned_run::release_repo(&self.state, &self.beta);
+    }
 }
 
 impl Fixture {
@@ -130,7 +138,12 @@ impl Fixture {
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let output = support::os::run(self.command(repo).args(args).arg("--json"));
+        let output = self
+            .command(repo)
+            .args(args)
+            .arg("--json")
+            .record_output()
+            .unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -166,10 +179,7 @@ impl Fixture {
     }
 
     async fn load(&self, id: &str) -> (RunView, Vec<RequestView>) {
-        (
-            store::read_run(&self.state, id).await.unwrap(),
-            store::read_requests(&self.state, Some(id)).await.unwrap(),
-        )
+        store::read_run_requests(&self.state, id).await.unwrap()
     }
 }
 
@@ -316,10 +326,16 @@ async fn live_verify_progress_and_runs_across_repositories() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    order::run_times(
+        &fixture.state,
+        live.as_str(),
+        "2000-01-03T00:00:00.000000000Z",
+        "2000-01-03T00:00:42.000000000Z",
+    );
     all.refresh().await;
     let done = screen(&mut all);
     assert!(
-        done.contains("✓ GREEN · SATISFIED at Run end · ✓2 · took"),
+        done.contains("✓ GREEN · SATISFIED at Run end · ✓2 · took 42s"),
         "{done}"
     );
     assert!(!done.contains("slow/wait  running"));
@@ -382,24 +398,16 @@ async fn saved_tree_details_without_repository_or_writes() {
 
     let now = OffsetDateTime::now_utc();
     let (view, requests) = fixture.load(&second).await;
-    let reused = view.requests.iter().filter(|request| {
-        let source = request.provenance.as_ref();
-        source.is_some_and(|source| source.request_id != request.id)
-    });
     let work = monitor::progress(&view, &requests, now).work;
-    assert!(
-        work.contains(&format!(
-            "executed {} · reused {}",
-            view.run.executions_started,
-            reused.count()
-        )),
-        "{work}"
-    );
+    // Alpha declares five evals; this second Run must reuse all five without execution.
+    assert_eq!(work, "executed 0 · reused 5 · derived 0");
     let nodes = monitor::tree(&view, &requests, now);
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
     let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
-    for (id, _) in view.run.definitions.graph().unwrap().artifacts() {
+    for id in [
+        "input", "checkout", "search", "cycle-a", "cycle-b", "red", "part",
+    ] {
         assert_eq!(
             all.iter()
                 .filter(|node| node.id.as_str() == format!("a:{id}"))
@@ -599,6 +607,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
+    let _lease = owned_run::RepoLease::new(&state, &repo);
     let flag = root.path().join("fail");
     let check = support::os::fails_while_present_program(root.path());
     let fingerprint = |name: &str| json!({"script":{"command":support::os::echo_program(),"args":[format!("{name}-v1")]}});
@@ -619,18 +628,18 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
             eval("y", runtime(&support::os::true_program(), &[]), "Check {b}.")]}),
     );
     let verify = |args: &[&str], code: i32| -> String {
-        let output = support::os::run(
-            Command::new(support::os::cli())
-                .env("PATH", support::os::path())
-                .arg("--repo")
-                .arg(&repo)
-                .arg("--state-dir")
-                .arg(&state)
-                .arg("verify")
-                .arg("--wait")
-                .args(args)
-                .arg("--json"),
-        );
+        let output = Command::new(support::os::cli())
+            .env("PATH", support::os::path())
+            .arg("--repo")
+            .arg(&repo)
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("verify")
+            .arg("--wait")
+            .args(args)
+            .arg("--json")
+            .record_output()
+            .unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -643,12 +652,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     };
     let load = |id: String| {
         let state = state.clone();
-        async move {
-            (
-                store::read_run(&state, &id).await.unwrap(),
-                store::read_requests(&state, Some(&id)).await.unwrap(),
-            )
-        }
+        async move { store::read_run_requests(&state, &id).await.unwrap() }
     };
     let now = OffsetDateTime::now_utc();
     verify(&["--all"], 0);

@@ -1,7 +1,7 @@
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     thread,
     time::{Duration, Instant},
 };
@@ -15,6 +15,9 @@ use owned_run::RunChild as Child;
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
+
+// The fields-file input boundary; the oversized fixture is one byte beyond it.
+const FIELDS_BYTES: usize = 256_000;
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -126,14 +129,65 @@ impl Fixture {
     }
 
     fn start(&self) -> Child {
-        let child = self
-            .command()
-            .args(["verify", "--wait", "--all", "--json"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child =
+            support::os::start(self.command().args(["verify", "--wait", "--all", "--json"]));
         Child::new(child, &self.state, &self.repo)
+    }
+
+    fn request_state(&self, run: &str, eval: &str, expected: &str) {
+        let run: artifactize_core::types::RunId = run.parse().unwrap();
+        thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    runtime.block_on(async {
+                        let mut changes =
+                            artifactize_core::changes::Subscription::new(&self.state).await;
+                        tokio::time::timeout(
+                            support::os::patience(Duration::from_secs(15)),
+                            async {
+                                loop {
+                                    let view = artifactize_core::store::read_run(&self.state, &run)
+                                        .await
+                                        .unwrap();
+                                    if view.requests.iter().any(|request| {
+                                        request.eval_id == eval
+                                            && request.status().as_str() == expected
+                                    }) {
+                                        return;
+                                    }
+                                    assert_eq!(view.run.status().as_str(), "RUNNING", "{view:?}");
+                                    changes.next_reconciled().await;
+                                }
+                            },
+                        )
+                        .await
+                        .expect("saved request reaches the asserted state");
+                    });
+                })
+                .join()
+                .unwrap();
+        });
+    }
+
+    fn finished(&self, id: &str) {
+        let id = id.parse().unwrap();
+        thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    runtime.block_on(owned_run::terminal(&self.state, &id));
+                })
+                .join()
+                .unwrap();
+        });
+        support::runs::finished_worker(&self.state, &self.repo, &id, support::os::running);
     }
 
     fn waiting(&self) -> Value {
@@ -165,15 +219,7 @@ fn parse(output: &Output) -> Value {
 }
 
 fn finish(mut child: Child, code: i32) -> Value {
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
-    while child.try_wait().unwrap().is_none() {
-        if Instant::now() > deadline {
-            support::os::kill(child.id());
-            child.wait().unwrap();
-            panic!("verify did not finish");
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
+    support::os::wait_child(&mut child, "verify");
     let output = child.wait_with_output().unwrap();
     assert_eq!(
         output.status.code(),
@@ -277,7 +323,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         );
     }
     let fields = fixture.root.path().join("fields.json");
-    fs::write(&fields, " ".repeat(256_001)).unwrap();
+    fs::write(&fields, " ".repeat(FIELDS_BYTES + 1)).unwrap();
     fixture.json(
         &[
             "request",
@@ -325,6 +371,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     assert_eq!(completed["summary"]["executorStarts"], 1);
     assert_eq!(completed["summary"]["counts"]["GREEN"], 2);
     assert!(completed["summary"].get("toolCalls").is_none());
+    fixture.finished(run["id"].as_str().unwrap());
     fs::remove_dir_all(&fixture.repo).unwrap();
     let shown = fixture
         .command()
@@ -410,20 +457,14 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
         .to_string(),
     )
     .unwrap();
-    let child = fixture
-        .command()
-        .args([
-            "verify",
-            "--wait",
-            "--all",
-            "--max-executions",
-            "2",
-            "--json",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = support::os::start(fixture.command().args([
+        "verify",
+        "--wait",
+        "--all",
+        "--max-executions",
+        "2",
+        "--json",
+    ]));
     let child = Child::new(child, &fixture.state, &fixture.repo);
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
@@ -432,6 +473,8 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
         fixture.json(&["run", "show", run_id], 0)["status"],
         "RUNNING"
     );
+    // The sibling's saved result, not merely Human admission, orders the submission.
+    fixture.request_state(run_id, "sibling/check", "GREEN");
     fixture.json(&["request", "claim", id, "--reviewer", "custom"], 0);
     fixture.json(
         &[
@@ -457,24 +500,16 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
             .iter()
             .all(|r| r["status"] == "GREEN")
     );
-    let db = rusqlite::Connection::open_with_flags(
-        fixture.state.join("state.sqlite"),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    assert_eq!(
-        db.query_row::<i64, _, _>("SELECT count(*) FROM runs", [], |r| r.get(0))
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        db.query_row::<i64, _, _>(
-            "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
-            [],
-            |r| r.get(0)
-        )
-        .unwrap(),
-        0
+    let runs = fixture.json(&["run", "list"], 0);
+    assert_eq!(runs.as_array().unwrap().len(), 1);
+    assert_eq!(runs[0]["id"], run_id);
+    assert_eq!(fixture.json(&["cache", "list", "--history"], 0), json!([]));
+    assert!(
+        completed["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|request| { request["key"].is_null() })
     );
 }
 
@@ -509,7 +544,7 @@ fn submission_leaves_human_claim_and_submission_available() {
 }
 
 #[test]
-fn wait_observes_red_and_fingerprint_errors_and_ctrl_c_stops_cleanly() {
+fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_cleanly() {
     let fixture = Fixture::new(false);
     let child = fixture.start();
     let waiting = fixture.waiting();

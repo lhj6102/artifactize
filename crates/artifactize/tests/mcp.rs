@@ -1,20 +1,39 @@
 //! B1: protocol/lifecycle and one table of CLI-equivalent inspect projections.
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
-use artifactize_core::{runs, types::RunId};
+use artifactize_core::{
+    runs, store,
+    types::{RunId, RunStatus},
+};
 use serde_json::{Value, json};
-use std::{fs, path::PathBuf, process::Stdio, time::Duration};
+use std::{fs, path::PathBuf, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout},
+    process::{ChildStdin, ChildStdout},
 };
-use tokio_util::sync::CancellationToken;
+
+// Independent public transport limits, not imports from the implementation under test.
+const RESPONSE_BYTES: usize = 64 * 1024;
+const PAGE_ENTRIES: usize = 20;
+const COMPACT_BYTES: usize = 2048;
+// Failure watchdogs only: readiness is always established by state or marker contents.
+const FIXTURE_BOUND: Duration = Duration::from_secs(30);
+const PROTOCOL_BOUND: Duration = Duration::from_secs(45);
 
 struct Project {
     _root: tempfile::TempDir,
     repo: PathBuf,
     state: PathBuf,
 }
+impl Drop for Project {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.state, &self.repo);
+    }
+}
+
 impl Project {
     fn new(evals: Value) -> Self {
         let root = support::os::tempdir();
@@ -45,35 +64,27 @@ impl Project {
     fn context(&self) -> runs::Context {
         runs::Context::new(&self.repo, Some(&self.state), &support::os::cli()).unwrap()
     }
-    async fn settled(&self, run: &RunId) -> runs::RunObservation {
-        runs::wait(
-            &self.context(),
-            run,
-            Some(support::os::patience(Duration::from_secs(30))),
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap()
+    async fn settled(&self, run: &RunId) -> store::RunView {
+        owned_run::terminal(&self.state, run).await
     }
-    async fn state(&self, run: &RunId, expected: artifactize_core::types::RequestStatus) {
+    async fn state(
+        &self,
+        run: &RunId,
+        eval: &str,
+        expected: artifactize_core::types::RequestStatus,
+    ) {
         let mut changes = artifactize_core::changes::Subscription::new(&self.state).await;
-        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+        tokio::time::timeout(support::os::patience(FIXTURE_BOUND), async {
             loop {
-                let view = runs::view(&self.context(), run).await.unwrap();
+                let view = store::read_run(&self.state, run).await.unwrap();
                 if view
                     .requests
                     .iter()
-                    .any(|request| request.status() == expected)
+                    .any(|request| request.eval_id == eval && request.status() == expected)
                 {
                     return;
                 }
-                assert!(
-                    !runs::status(&self.context(), run)
-                        .await
-                        .unwrap()
-                        .state
-                        .is_terminal()
-                );
+                assert!(view.run.status() == RunStatus::Running);
                 changes.next_reconciled().await;
             }
         })
@@ -81,26 +92,30 @@ impl Project {
         .unwrap();
     }
 }
+async fn marker(path: &std::path::Path, expected: &str) {
+    tokio::time::timeout(support::os::patience(FIXTURE_BOUND), async {
+        while fs::read_to_string(path).ok().as_deref() != Some(expected) {
+            // Poll contents rather than file existence: creation can precede the write.
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("controlled runtime saved its ready marker");
+}
+
 struct Client {
-    child: Child,
+    child: support::os::PipedTestChild,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
     id: u64,
     modern: bool,
 }
 impl Client {
-    async fn new(command: std::process::Command, version: &str) -> Self {
-        let mut command = tokio::process::Command::from(command);
-        let mut child = command
-            .arg("mcp")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let input = child.stdin.take().unwrap();
-        let output = BufReader::new(child.stdout.take().unwrap());
+    async fn new(mut command: std::process::Command, version: &str) -> Self {
+        command.arg("mcp");
+        let mut child = support::os::spawn_piped_test(command);
+        let input = child.take_stdin();
+        let output = BufReader::new(child.take_stdout());
         let mut client = Self {
             child,
             input,
@@ -146,14 +161,14 @@ impl Client {
     async fn response(&mut self, id: u64) -> Value {
         let mut line = String::new();
         tokio::time::timeout(
-            support::os::patience(Duration::from_secs(45)),
+            support::os::patience(PROTOCOL_BOUND),
             self.output.read_line(&mut line),
         )
         .await
         .unwrap()
         .unwrap();
         assert!(
-            line.len() <= 64 * 1024,
+            line.len() <= RESPONSE_BYTES,
             "bounded protocol result: {} bytes",
             line.len()
         );
@@ -212,7 +227,7 @@ impl Client {
         loop {
             let page = self.call(name, arguments.clone()).await;
             let entries = page["entries"].as_array().unwrap();
-            assert!(entries.len() <= 20);
+            assert!(entries.len() <= PAGE_ENTRIES);
             for entry in entries {
                 text.push_str(entry["text"].as_str().unwrap());
             }
@@ -225,11 +240,36 @@ impl Client {
     async fn close(mut self) {
         self.input.shutdown().await.unwrap();
         drop(self.input);
-        assert!(self.child.wait().await.unwrap().success());
+        let status = tokio::time::timeout(support::os::patience(FIXTURE_BOUND), self.child.wait())
+            .await
+            .expect("server exits after stdin closes")
+            .unwrap();
+        assert!(status.success());
     }
 }
 fn runtime(id: &str, command: impl AsRef<str>, args: Value) -> Value {
     json!({"id":id,"title":"Check","profile":{"kind":"runtime","command":command.as_ref(),"args":args},"payload":{"instruction":"Check."}})
+}
+
+#[tokio::test]
+async fn client_fixture_reaps_its_server_on_normal_drop_and_unwind() {
+    let project = Project::new(json!([]));
+    for unwind in [false, true] {
+        let client = Client::new(project.command(), "2026-07-28").await;
+        let pid = client.child.id();
+        let birth = support::os::start_time(pid);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _client = client;
+            if unwind {
+                panic!("fixture assertion unwind");
+            }
+        }));
+        assert_eq!(result.is_err(), unwind);
+        assert!(
+            !support::os::same_process_running(pid, birth),
+            "fixture-owned server remains alive"
+        );
+    }
 }
 
 #[tokio::test]
@@ -239,11 +279,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         .await
         .close()
         .await;
-    let malformed = project
-        .command()
-        .args(["--json", "mcp", "--unknown"])
-        .output()
-        .unwrap();
+    let malformed = support::os::run(project.command().args(["--json", "mcp", "--unknown"]));
     assert!(!malformed.status.success());
     assert!(
         malformed.stdout.is_empty(),
@@ -255,7 +291,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         &script,
         "import pathlib,time\npathlib.Path('ready').write_text('ready')\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)\n",
     );
-    let mut evals: Vec<_> = (0..21)
+    let mut evals: Vec<_> = (0..PAGE_ENTRIES + 1)
         .map(|n| {
             runtime(
                 &format!("check-{n:02}"),
@@ -267,7 +303,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     evals.push(runtime(
         "controlled",
         support::os::python_program(),
-        json!([script]),
+        json!(["-I", support::os::path_text(&script)]),
     ));
     support::declaration::write(
         project.repo.join("index.artf"),
@@ -276,7 +312,36 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     .unwrap();
     let mut client = Client::new(project.command(), "2026-07-28").await;
     let tools = client.rpc("tools/list", json!({})).await;
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 17);
+    let mut names: Vec<_> = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "cache_show",
+            "config_check",
+            "doctor",
+            "models",
+            "remote_status",
+            "request_list",
+            "request_show",
+            "run_list",
+            "run_show",
+            "session_show",
+            "status",
+            "tools_check",
+            "verify_cancel",
+            "verify_result",
+            "verify_start",
+            "verify_status",
+            "verify_wait",
+        ],
+        "the public surface exposes no credentials or Human sign-off actions"
+    );
     let start_schema = &tools["result"]["tools"]
         .as_array()
         .unwrap()
@@ -302,15 +367,24 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
             json!({"scope":{"kind":"all"},"request_key":"mcp-attempt"}),
         )
         .await;
-    assert!(serde_json::to_vec(&started).unwrap().len() < 2048);
+    assert!(serde_json::to_vec(&started).unwrap().len() < COMPACT_BYTES);
     let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
     assert_eq!(
-        runs::view(&project.context(), &run).await.unwrap().run.jobs,
+        store::read_run(&project.state, &run)
+            .await
+            .unwrap()
+            .run
+            .jobs,
         None
     );
     project
-        .state(&run, artifactize_core::types::RequestStatus::Running)
+        .state(
+            &run,
+            "app/controlled",
+            artifactize_core::types::RequestStatus::Running,
+        )
         .await;
+    marker(&project.repo.join("ready"), "ready").await;
     let bounded = client
         .call("verify_wait", json!({"run":run,"seconds":1}))
         .await;
@@ -326,11 +400,12 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     client.close().await;
     // The detached worker outlives the server; only the controlled input completes it.
     assert!(
-        !runs::status(&project.context(), &run)
+        store::read_run(&project.state, &run)
             .await
             .unwrap()
-            .state
-            .is_terminal()
+            .run
+            .status()
+            == RunStatus::Running
     );
     let mut legacy = Client::new(project.command(), "2024-11-05").await;
     assert_eq!(
@@ -341,9 +416,9 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
             .await["state"],
         "green"
     );
-    assert_eq!(project.settled(&run).await.state, runs::State::Green);
+    assert_eq!(project.settled(&run).await.run.status(), RunStatus::Green);
     let first = legacy.call("verify_result", json!({"run":run})).await;
-    assert_eq!(first["findings"].as_array().unwrap().len(), 20);
+    assert_eq!(first["findings"].as_array().unwrap().len(), PAGE_ENTRIES);
     let second = legacy
         .call(
             "verify_result",
@@ -353,6 +428,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     assert_eq!(second["findings"].as_array().unwrap().len(), 2);
     assert!(second["next_cursor"].is_null());
     fs::remove_file(project.repo.join("release")).unwrap();
+    fs::remove_file(project.repo.join("ready")).unwrap();
     evals.last_mut().unwrap()["payload"]["instruction"] = json!("A new controlled judgment.");
     support::declaration::write(
         project.repo.join("index.artf"),
@@ -364,18 +440,23 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         .await;
     let cancelled: RunId = cancelled["run"].as_str().unwrap().parse().unwrap();
     project
-        .state(&cancelled, artifactize_core::types::RequestStatus::Running)
+        .state(
+            &cancelled,
+            "app/controlled",
+            artifactize_core::types::RequestStatus::Running,
+        )
         .await;
+    marker(&project.repo.join("ready"), "ready").await;
     assert_eq!(
         legacy.call("verify_cancel", json!({"run":cancelled})).await["cancellation_requested"],
         true
     );
     assert_eq!(
-        project.settled(&cancelled).await.state,
-        runs::State::Cancelled
+        project.settled(&cancelled).await.run.status(),
+        RunStatus::Error
     );
     assert!(
-        runs::view(&project.context(), &cancelled)
+        store::read_run(&project.state, &cancelled)
             .await
             .unwrap()
             .requests
@@ -425,11 +506,11 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         } else {
             artifactize_core::types::RequestStatus::Running
         };
-        project.state(&run, expected).await;
+        project.state(&run, "app/review", expected).await;
         let observation = client
             .call("verify_wait", json!({"run":run,"seconds":1}))
             .await;
-        assert!(serde_json::to_vec(&observation).unwrap().len() < 2048);
+        assert!(serde_json::to_vec(&observation).unwrap().len() < COMPACT_BYTES);
         assert_eq!(
             observation["counts"][if kind == "human" {
                 "waiting"
@@ -442,7 +523,13 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         assert_eq!(requests.as_array().unwrap().len(), 1);
         assert_eq!(
             requests[0]["id"],
-            json!(runs::view(&project.context(), &run).await.unwrap().requests[0].id)
+            json!(
+                store::read_run(&project.state, &run)
+                    .await
+                    .unwrap()
+                    .requests[0]
+                    .id
+            )
         );
         let ended = client
             .wait_for_settlement(&run, async {
@@ -477,7 +564,11 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         .await;
     let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
     assert_eq!(
-        runs::view(&project.context(), &run).await.unwrap().run.jobs,
+        store::read_run(&project.state, &run)
+            .await
+            .unwrap()
+            .run
+            .jobs,
         Some(1)
     );
     assert_eq!(
@@ -495,7 +586,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         "SIGNOFFS_PENDING"
     );
     assert!(
-        runs::view(&project.context(), &run)
+        store::read_run(&project.state, &run)
             .await
             .unwrap()
             .run
@@ -534,7 +625,7 @@ async fn b1_read_tools_match_cli_json_table() {
         .await;
     let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
     project.settled(&run).await;
-    let view = runs::view(&project.context(), &run).await.unwrap();
+    let view = store::read_run(&project.state, &run).await.unwrap();
     let request = &view.requests[0];
     let key = request.key.as_ref().unwrap();
     let table = vec![
@@ -585,7 +676,73 @@ async fn b1_read_tools_match_cli_json_table() {
     ];
     for (name, arguments, args) in table {
         let actual = client.inspect(name, arguments).await;
-        let output = command().args(args).arg("--json").output().unwrap();
+        // Parity alone could let the shared serializer make both surfaces wrong.
+        // Each row also checks a fixture-authored semantic witness independently.
+        match name {
+            "status" => {
+                assert_eq!(actual["satisfied"], true);
+                assert_eq!(actual["selectedEvalIds"], json!(["app/review"]));
+            }
+            "config_check" => assert_eq!(actual, json!({"ok":true,"artifacts":1,"evals":1})),
+            "run_list" => {
+                assert_eq!(actual[0]["id"], json!(run));
+                assert_eq!(actual[0]["status"], "GREEN");
+            }
+            "run_show" => {
+                assert_eq!(actual["id"], json!(run));
+                assert_eq!(actual["status"], "GREEN");
+                assert_eq!(actual["requests"][0]["evalId"], "app/review");
+            }
+            "request_list" => {
+                assert_eq!(actual[0]["evalId"], "app/review");
+                assert_eq!(actual[0]["result"]["verdict"], "GREEN");
+            }
+            "request_show" => {
+                assert_eq!(actual["evalId"], "app/review");
+                assert_eq!(actual["result"]["verdict"], "GREEN");
+            }
+            "session_show" => {
+                assert!(
+                    actual["events"]
+                        .as_array()
+                        .is_some_and(|events| !events.is_empty())
+                );
+                assert!(actual["events"].to_string().contains("GREEN"));
+            }
+            "tools_check" => {
+                assert_eq!(actual["ok"], true);
+                assert_eq!(actual["scopes"][0]["evalId"], "app/review");
+            }
+            "doctor" => {
+                assert_eq!(
+                    actual["stateDir"],
+                    support::os::path_text(&support::os::canonical(&project.state))
+                );
+                assert!(
+                    actual["checks"]
+                        .as_array()
+                        .is_some_and(|checks| !checks.is_empty())
+                );
+            }
+            "models" => {
+                assert_eq!(actual["backend"], "openai");
+                assert_eq!(actual["models"][0]["slug"], "seam-model");
+            }
+            "remote_status" => assert_eq!(actual, json!({"configured":false})),
+            "cache_show" => {
+                assert_eq!(actual["status"], "GREEN");
+                assert_eq!(actual["provenance"]["evalId"], "app/review");
+                assert_eq!(actual["result"]["verdict"], "GREEN");
+            }
+            _ => unreachable!("every parity row has an independent witness"),
+        }
+        let output = support::os::run(command().args(args).arg("--json"));
+        // Disabled remote inspection is valid JSON but exits 1 on the CLI.
+        assert_eq!(
+            output.status.code(),
+            Some(if name == "remote_status" { 1 } else { 0 }),
+            "{name}: {output:?}"
+        );
         let expected: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
             actual,
@@ -601,17 +758,17 @@ fn host_smoke(host: &str) {
     let root = support::os::tempdir();
     let script =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../harness/hey-arti/host_smoke.py");
-    let output = std::process::Command::new(support::os::python_program())
-        .arg("-I")
-        .arg(script)
-        .arg("--host")
-        .arg(host)
-        .arg("--artifactize")
-        .arg(support::os::cli())
-        .arg("--output")
-        .arg(root.path().join("host"))
-        .output()
-        .unwrap();
+    let output = support::os::run(
+        std::process::Command::new(support::os::python_program())
+            .arg("-I")
+            .arg(script)
+            .arg("--host")
+            .arg(host)
+            .arg("--artifactize")
+            .arg(support::os::cli())
+            .arg("--output")
+            .arg(root.path().join("host")),
+    );
     assert!(
         output.status.success(),
         "{}{}",

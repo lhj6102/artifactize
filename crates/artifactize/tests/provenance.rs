@@ -4,15 +4,23 @@
 mod support;
 use support::runs::RecordOutput;
 
-use std::{fs, path::Path, process::Command};
+#[path = "support/run.rs"]
+mod owned_run;
+
+use std::{fs, process::Command};
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use support::{FakeProvider, openai, os::true_program};
 
 struct Fixture {
     root: tempfile::TempDir,
     provider: FakeProvider,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        owned_run::release_repo(&self.root.path().join("state"), &self.repo());
+    }
 }
 
 impl Fixture {
@@ -98,12 +106,9 @@ impl Fixture {
     }
 }
 
-fn sha256(path: &Path) -> String {
-    Sha256::digest(fs::read(path).unwrap())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
+// SHA-256 goldens for the declared simulator bytes, not the product hashing path.
+const SIM_V1: &str = "8f387c8d7d53fa5842be0705aff06bde5e6533013ed8292f6387e5130036807a";
+const SIM_V2: &str = "602c67156657ec7e875db6b0f4ae3674af1f68e16aef4d59fc3356c9ee0120e0";
 
 #[test]
 fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
@@ -113,7 +118,7 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
     let request = &first["requests"][0];
     assert_eq!(request["status"], "GREEN", "{request}");
     let pins = &request["provenance"]["executionPaths"]["sim_app"];
-    assert_eq!(pins["bin/sim"], sha256(&repo.join("bin/sim")));
+    assert_eq!(pins["bin/sim"], SIM_V1);
     let rules = pins["rules"].as_str().unwrap().to_owned();
     assert_eq!(rules.len(), 64);
     let key = request["key"].as_str().unwrap();
@@ -138,7 +143,7 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
     fs::write(repo.join("rules/nested/b.json"), "[1]").unwrap();
     let forced = fixture.json(&["verify", "--wait", "--all", "--force"], 0);
     let pins = &forced["requests"][0]["provenance"]["executionPaths"]["sim_app"];
-    assert_eq!(pins["bin/sim"], sha256(&repo.join("bin/sim")));
+    assert_eq!(pins["bin/sim"], SIM_V2);
     assert_ne!(pins["rules"], rules.as_str());
 
     // A pinned path that cannot be hashed fails the review before the Agent is called.

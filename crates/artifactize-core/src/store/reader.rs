@@ -64,8 +64,6 @@ pub(crate) struct Cache {
     audit: Audit,
     facts: super::catalog::Facts,
     selected: Option<Selected>,
-    #[cfg(test)]
-    pub decoded: usize,
 }
 #[derive(Default)]
 enum StateIdentity {
@@ -342,10 +340,6 @@ impl Cache {
                 Some((old, view)) if old == row => view,
                 _ => {
                     changed = true;
-                    #[cfg(test)]
-                    {
-                        self.decoded += 1;
-                    }
                     row.view_cached(&selected.index, &mut self.audit)
                 }
             };

@@ -8,7 +8,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import ReviewScreen from "./ReviewScreen.svelte";
 import { greenForm, humanView } from "./fixtures";
-import type { DetailView, LaunchView, Listed } from "../ipc/client";
+import type { DetailView, LaunchView, Listed, Opened } from "../ipc/client";
 
 const WAITING = "kind:human status:waiting_human";
 const launch: LaunchView = { mode: "review", state: "/state", reviewer: "alice", search: WAITING, request: null };
@@ -74,7 +74,7 @@ function backend(options: {
         case "review_detail":
           return payload.id === row.id ? { ...agentDetail, profile: "human", request: row.id } : agentDetail;
         case "transcript_open":
-          return { handle: 1, session: "s", unavailable: "No conversation was saved." };
+          return { kind: "unavailable", text: "No conversation was saved." } satisfies Opened;
         case "human_open":
           return humanView("review");
         case "human_form":
@@ -166,6 +166,7 @@ describe("ReviewScreen", () => {
     renderHosted(ReviewScreen, { launch: { ...launch, search: "kind:agent" }, active: true });
     await fireEvent.dblClick(await screen.findByText("app/agent"));
     await screen.findByText(/An Agent reads the input · read-only/);
+    await screen.findByText("No conversation was saved.");
     expect(screen.queryByLabelText("Human review")).toBeNull();
     await fireEvent.keyDown(screen.getByRole("document"), { key: "d" });
     await screen.findByText("Verdict");

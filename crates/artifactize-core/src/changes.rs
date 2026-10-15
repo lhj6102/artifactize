@@ -102,6 +102,9 @@ impl Dirty {
 struct Inbox {
     #[cfg(test)]
     registration: tokio::sync::watch::Sender<Option<crate::config::HubEpoch>>,
+    // A test can wait for received hints rather than confusing the hub's ACK with delivery.
+    #[cfg(test)]
+    received: tokio::sync::watch::Sender<Option<u64>>,
     dirty: Mutex<Dirty>,
     wake: Notify,
 }
@@ -110,6 +113,8 @@ impl Default for Inbox {
         Self {
             #[cfg(test)]
             registration: tokio::sync::watch::channel(None).0,
+            #[cfg(test)]
+            received: tokio::sync::watch::channel(None).0,
             dirty: Mutex::default(),
             wake: Notify::new(),
         }
@@ -464,6 +469,8 @@ async fn receive(
                 }
                 previous = Some(sequence);
                 inbox.add(change);
+                #[cfg(test)]
+                inbox.received.send_replace(Some(sequence));
             }
             _ => return Err(std::io::ErrorKind::InvalidData.into()),
         }

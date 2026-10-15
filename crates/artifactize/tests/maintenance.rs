@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{fs, path::Path, process::Command};
 
 use rusqlite::params;
@@ -74,6 +77,30 @@ fn runtime_run(state: &Path, repo: &Path) -> Value {
     )
 }
 
+/// Seed retention input only after the producer has released its saved Run and SQLite.
+fn run_completion(state: &Path, repo: &Path, run: &Value, at: &str) {
+    let id: artifactize_core::types::RunId = run["id"].as_str().unwrap().parse().unwrap();
+    support::runs::finished_worker(state, repo, &id, support::os::running);
+    let at: artifactize_core::types::Timestamp = at.parse().unwrap();
+    let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();
+    let saved: String = db
+        .query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0))
+        .unwrap();
+    let mut saved: artifactize_core::store::Run = serde_json::from_str(&saved).unwrap();
+    assert_eq!(saved.status(), artifactize_core::types::RunStatus::Green);
+    // Keep the Run's own chronology valid without depending on the producer's clock.
+    saved.created_at = at;
+    saved.state = artifactize_core::store::RunState::Green { at };
+    assert_eq!(
+        db.execute(
+            "UPDATE runs SET data=? WHERE id=?",
+            params![serde_json::to_string(&saved).unwrap(), id],
+        )
+        .unwrap(),
+        1
+    );
+}
+
 fn doctor(state: &Path, path: &Path) -> Command {
     let mut command = command(state);
     command
@@ -139,6 +166,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert!(!state.exists());
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 
+    let runs = owned_run::RepoLease::new(&state, &repo);
     let run = runtime_run(&state, &repo);
     let id = run["id"].as_str().unwrap().parse().unwrap();
     support::runs::finished_worker(&state, &repo, &id, support::os::running);
@@ -196,6 +224,8 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert_eq!(fs::read_dir(&auth).unwrap().count(), 1);
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
 
+    // No live fixture remains when schema corruption makes lifecycle reads invalid.
+    drop(runs);
     // A database written by a newer artifactize is a hard error and stays as it is.
     rusqlite::Connection::open(state.join("state.sqlite"))
         .unwrap()
@@ -279,18 +309,25 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let root = support::os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
+    let _runs = owned_run::RepoLease::new(&state, &repo);
     let finished = runtime_run(&state, &repo);
     let waiting = verify(&state, &repo, json!({"kind":"human"}), 0);
+    let _waiting = owned_run::RunLease::new(
+        &state,
+        &repo,
+        waiting["id"].as_str().unwrap().parse().unwrap(),
+    );
     let active = runtime_run(&state, &repo);
     let owned = runtime_run(&state, &repo);
     let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();
     let id = |run: &Value| run["id"].as_str().unwrap().to_owned();
     db.execute("UPDATE runs SET status='RUNNING' WHERE id=?", [id(&active)])
         .unwrap();
-    let start = support::os::start_time(std::process::id()) as i64;
+    let pid = support::os::current_pid();
+    let start = support::os::start_time(pid) as i64;
     db.execute(
         "UPDATE executions SET owner_pid=?,owner_start_time=? WHERE json_extract(data,'$.provenance.runId')=?",
-        params![std::process::id(), start, id(&owned)],
+        params![pid, start, id(&owned)],
     )
     .unwrap();
     drop(db);
@@ -307,13 +344,32 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     }
     let waiting_output = state.join("runs").join(id(&waiting)).join("output");
     fs::create_dir_all(&waiting_output).unwrap();
+    // Fixed fixtures lie well on either side of present-day prune cutoffs. Neither
+    // retention assertion depends on freshly executed Runs or clock resolution.
+    const RETAINED_COMPLETION: &str = "2999-01-01T00:00:00Z";
+    const EXPIRED_COMPLETION: &str = "2000-01-01T00:00:00Z";
+    run_completion(&state, &repo, &finished, RETAINED_COMPLETION);
     let before = fs::read(state.join("state.sqlite")).unwrap();
     let repo_before = fs::read(repo.join("index.artf")).unwrap();
     let dry = result(command(&state).args(["prune", "--dry-run"]), 0);
     assert_eq!(dry["removed"], json!([]));
-    // The two leftover tool folders and the finished Run's output; a command's temporary
-    // directory is already gone with its run.
-    assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 3);
+    // Assert the operator-visible candidates independently of prune's implementation.
+    let mut candidates = dry["wouldRemove"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|path| path.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    candidates.sort();
+    let mut expected = [
+        support::os::path_text(&run.join("tool-leftover")),
+        support::os::path_text(&run.join("tool-output-test")),
+        support::os::path_text(
+            &Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output"),
+        ),
+    ];
+    expected.sort();
+    assert_eq!(candidates, expected);
     assert!(
         dry["wouldRemove"]
             .as_array()
@@ -337,6 +393,12 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
             .unwrap()
             .contains(&json!(id(&finished)))
     );
+    assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
+    // This is a second explicit fixture stimulus, not a write made by prune. Establish
+    // a new preservation baseline and saved public audit before exercising deletion.
+    run_completion(&state, &repo, &finished, EXPIRED_COMPLETION);
+    let finished = result(command(&state).args(["run", "show", &id(&finished)]), 0);
+    let before = fs::read(state.join("state.sqlite")).unwrap();
     let removed = result(command(&state).args(["prune", "--older-than", "0s"]), 0);
     assert_eq!(removed["removed"], dry["wouldRemove"]);
     for path in removed["removed"].as_array().unwrap() {
@@ -353,8 +415,12 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
             .join("output")
             .is_dir()
     );
-    assert!(run.join("unknown/keep").exists());
-    assert!(run.join("runtime-extra/audit.json").exists());
+    for path in ["unknown/keep", "runtime-extra/audit.json"] {
+        assert_eq!(
+            fs::read_to_string(run.join(path)).unwrap(),
+            "keep audit, prune scratch"
+        );
+    }
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
     assert_eq!(fs::read(repo.join("index.artf")).unwrap(), repo_before);
     let shown = result(command(&state).args(["run", "show", &id(&finished)]), 0);
@@ -366,6 +432,7 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     let root = support::os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
+    let _runs = owned_run::RepoLease::new(&state, &repo);
     let finished = runtime_run(&state, &repo);
     let run = state.join("runs").join(finished["id"].as_str().unwrap());
     let output = Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output");
@@ -466,6 +533,7 @@ fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
         let root = support::os::tempdir();
         let state = root.path().join("state");
         let repo = root.path().join("reviewed");
+        let _runs = owned_run::RepoLease::new(&state, &repo);
         let finished = runtime_run(&state, &repo);
         let copy =
             Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output/copy");
@@ -485,7 +553,10 @@ fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
                 fs::read_to_string(copy.join("keep.txt")).unwrap(),
                 "owner content"
             );
-            assert!(copy.join(marker).exists());
+            assert_eq!(
+                fs::read_to_string(copy.join(marker)).unwrap(),
+                "workspace marker"
+            );
         }
     }
 }
@@ -579,6 +650,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
             .args(args);
         result(&mut command, code)
     };
+    let _runs = owned_run::RepoLease::new(&state, &repo);
     let run = invoke(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["status"], "GREEN");
     assert_eq!(
@@ -587,6 +659,8 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
     );
     // Noncached evidence satisfies its Run only; status correctly reports another review.
     assert_eq!(invoke(&["status"], 1)["evals"][0]["action"], "execute");
+    // The retention boundary is explicit rather than relying on a freshly completed clock.
+    run_completion(&state, &repo, &run, "2000-01-01T00:00:00Z");
     let dry = invoke(&["prune", "--dry-run", "--older-than", "0s"], 0);
     assert!(!dry["wouldRemove"].as_array().unwrap().is_empty());
     let removed = invoke(&["prune", "--older-than", "0s"], 0);

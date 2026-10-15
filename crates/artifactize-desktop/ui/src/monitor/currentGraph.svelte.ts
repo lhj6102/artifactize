@@ -1,13 +1,15 @@
 // Current project structure has one owner. Refresh explicitly reloads declarations, never
 // reads a historical Run or writes the state database.
 import { createContext } from "svelte";
-import { call, commands, message, type CurrentGraph } from "../ipc/client";
+import { call, commands, message, type Commands, type CurrentGraph } from "../ipc/client";
 import { layout } from "./layout";
 import type { Point } from "./graph";
 
 export const [getCurrentGraphState, setCurrentGraphState] = createContext<CurrentGraphState>();
 
 export class CurrentGraphState {
+  constructor(readonly ipc: Commands = commands) {}
+
   shown = $state.raw<{ view: CurrentGraph; positions: Map<string, Point> } | null>(null);
   error = $state<string | null>(null);
   selected = $state<string[]>([]);
@@ -20,7 +22,7 @@ export class CurrentGraphState {
     const read = ++this.#read;
     this.reading = true;
     try {
-      const view = await call(commands.currentGraph());
+      const view = await call(this.ipc.currentGraph());
       const positions = await layout(view.graph);
       if (read !== this.#read) return;
       this.shown = { view, positions };

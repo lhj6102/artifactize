@@ -61,7 +61,12 @@
 
   async function submit() {
     const settled = await review.submit();
-    if (settled) onsubmitted?.(settled);
+    if (!settled) return;
+    onsubmitted?.(settled);
+    await tick();
+    // Submission removes the focused form or Submit button. Keep Esc reachable, without
+    // taking focus back if the person moved to another control or screen while it ran.
+    if (active && h.root?.isConnected && document.activeElement === document.body) h.root.focus();
   }
 
   /** Esc: cancel the job, then stop editing, then leave. Stopping editing removes the

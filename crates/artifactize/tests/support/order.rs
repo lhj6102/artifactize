@@ -5,7 +5,56 @@
 )]
 
 use artifactize_core::{store, types};
-use std::path::Path;
+use std::{
+    path::Path,
+    time::{Duration, UNIX_EPOCH},
+};
+
+/// Pin a completed session's GC position, independent of filesystem clock resolution.
+pub fn session_written_at(path: &Path, seconds: u64) {
+    crate::support::os::set_modified(path, UNIX_EPOCH + Duration::from_secs(seconds));
+}
+
+/// Give a terminal Run a declared duration after its real producer has exited. Preserve its
+/// typed verdict/error and every request; only the two Run timestamps are fixture inputs.
+pub fn run_times(state: &Path, id: &str, created: &str, completed: &str) {
+    let id: types::RunId = id.parse().unwrap();
+    let created: types::Timestamp = created.parse().unwrap();
+    let completed: types::Timestamp = completed.parse().unwrap();
+    assert!(created <= completed, "fixture Run times are ordered");
+    let mut run: store::Run = {
+        let db = rusqlite::Connection::open_with_flags(
+            state.join(store::DATABASE),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let data: String = db
+            .query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0))
+            .unwrap();
+        serde_json::from_str(&data).unwrap()
+    };
+    crate::support::runs::finished_worker(state, &run.repo_path, &id, crate::support::os::running);
+    let at = match &mut run.state {
+        store::RunState::Running => panic!("fixture times require a terminal Run"),
+        store::RunState::SignoffsPending { at }
+        | store::RunState::Green { at }
+        | store::RunState::Red { at }
+        | store::RunState::Error { at, .. }
+        | store::RunState::Incomplete { at, .. } => at,
+    };
+    *at = completed;
+    run.created_at = created;
+    let data = serde_json::to_string(&run).unwrap();
+    let db = rusqlite::Connection::open(state.join(store::DATABASE)).unwrap();
+    assert_eq!(
+        db.execute(
+            "UPDATE runs SET data=? WHERE id=?",
+            rusqlite::params![data, id]
+        )
+        .unwrap(),
+        1,
+    );
+}
 
 /// Seed an execution's completion order after its producer has closed SQLite. Preserve the
 /// actual verdict and keep the history index, provenance and byte accounting consistent.
