@@ -1,7 +1,7 @@
 // One suite owns its build, the exact frontend input, and the executables every worker uses.
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, command, prepare, readCandidate, retain } from "./build.ts";
+import { cleanup, prepare, readCandidate, retain, runSuite } from "./build.ts";
 
 const mode = process.argv[2] ?? "suite";
 if (mode === "cleanup") {
@@ -15,7 +15,7 @@ if (mode === "cleanup") {
   } else if (mode === "suite") {
     try {
       const tests = readdirSync(import.meta.dirname).filter((name) => name.endsWith(".test.ts")).sort().map((name) => join(import.meta.dirname, name));
-      await command(candidate.root, process.execPath, ["--test", "--test-concurrency=1", ...tests], {
+      await runSuite(candidate.root, tests, {
         ...process.env, DESKTOP_TEST_CANDIDATE: candidate.manifest,
       });
     } finally { await cleanup(candidate.root); }

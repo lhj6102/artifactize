@@ -42,8 +42,19 @@ export function resourceRoot(): string {
   return root;
 }
 
-/** Run one owned group, including its children; stdout can be Cargo's artifact stream. */
-export async function command(root: string, program: string, args: string[], env: NodeJS.ProcessEnv, capture = false): Promise<string> {
+/** A suite ends with its test runner or its owner's cancellation, not a build watchdog. */
+export async function runSuite(root: string, tests: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  await execute(root, process.execPath, ["--test", "--test-concurrency=1", ...tests], env, "suite");
+}
+
+/** Each build operation owns its watchdog; stdout can be Cargo's artifact stream. */
+async function command(root: string, program: string, args: string[], env: NodeJS.ProcessEnv, capture = false): Promise<string> {
+  return execute(root, program, args, env, "build", capture);
+}
+
+/** Both lifetimes retain the same group ownership, signal handling and shutdown join. */
+async function execute(root: string, program: string, args: string[], env: NodeJS.ProcessEnv,
+  lifetime: "build" | "suite", capture = false): Promise<string> {
   const owned = Owned.spawn(program, args, {
     cwd: workspace, env: { ...env, TMPDIR: join(root, "tmp"), DESKTOP_TEST_RESOURCES: root },
     stdio: ["ignore", capture ? "pipe" : 2, "inherit"],
@@ -52,7 +63,7 @@ export async function command(root: string, program: string, args: string[], env
   owned.child.stdout?.on("data", (chunk) => { output += chunk; });
   let timedOut = false;
   const stop = () => { void owned.stop().catch((error: unknown) => console.error(error)); };
-  const timeout = setTimeout(() => { timedOut = true; stop(); }, BUILD_TIMEOUT);
+  const timeout = lifetime === "build" ? setTimeout(() => { timedOut = true; stop(); }, BUILD_TIMEOUT) : undefined;
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, stop);
   try {
     const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done, fail) => {

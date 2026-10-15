@@ -69,6 +69,26 @@ fn read(
         .unwrap()
 }
 #[tokio::test]
+async fn read_run_releases_database_before_return_on_success_and_errors() {
+    for id in ["run-0", "run-absent", ""] {
+        let (root, _repo, state, receipts) = fixture(1, 1).await;
+        drop(receipts);
+        let result = store::read_run(&state, id).await;
+        if id == "run-0" {
+            let saved = result.unwrap();
+            assert_eq!(saved.run.id.as_str(), id);
+            assert_eq!(saved.requests.len(), 1);
+        } else {
+            assert!(result.is_err(), "{id:?} must not identify a saved Run");
+        }
+        // No retry or runtime yield: returning the read must release the database.
+        fs::rename(state.join(DATABASE), state.join("released.sqlite")).unwrap();
+        fs::rename(state.join("released.sqlite"), state.join(DATABASE)).unwrap();
+        root.close().unwrap();
+    }
+}
+
+#[tokio::test]
 async fn snapshots_and_direct_lookups_return_only_the_selected_runs_requests() {
     for (runs, requests) in [(3, 4), (11, 13)] {
         let (_root, _repo, state, _receipts) = fixture(runs, requests).await;

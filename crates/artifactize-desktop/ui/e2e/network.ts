@@ -1,22 +1,31 @@
 // Linux WebKitGTK account fixtures own the provider, browser callback and app's network
 // together. Isolate only these tests, never Cargo builds or the person's fixed login port.
 import assert from "node:assert/strict";
-import { readlinkSync } from "node:fs";
+import { existsSync, readlinkSync } from "node:fs";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Owned } from "./owned.ts";
 
 const PARENT = "DESKTOP_TEST_PARENT_NETWORK";
+// Ubuntu Noble restricts direct userns creation but ships a policy for this LXC helper.
+// Select installed OS support once, never retry a failed setup through another interface.
+const userNamespace = existsSync("/usr/bin/lxc-usernsexec") ? "/usr/bin/lxc-usernsexec" : "/usr/bin/unshare";
 export const networkIdentity = () => readlinkSync("/proc/self/ns/net");
 
-/** This namespace disappears with its processes. No sudo, host network changes, feature
- * fallback or skipped cases: a machine refusing unprivileged user namespaces fails clearly. */
+/** This namespace disappears with its processes. Map only the calling non-root user,
+ * never host root or subordinate ranges; setup/security failures remain test failures. */
 export function networkProcess(program: string, args: string[]): Owned {
   if (process.platform !== "linux") throw new Error("private account networks require the Linux WebKitGTK fixture layer");
+  const uid = process.getuid!();
+  const gid = process.getgid!();
+  if (uid === 0 || gid === 0) throw new Error("private account networks must not map host root");
   const env: NodeJS.ProcessEnv = { ...process.env, [PARENT]: networkIdentity() };
   // This is a new explicit test runner, not the parent's Node test-file subprocess.
   delete env.NODE_TEST_CONTEXT;
-  return Owned.spawn("unshare", ["--user", "--map-root-user", "--net", "--", "sh", "-ec",
+  const setup = userNamespace === "/usr/bin/lxc-usernsexec"
+    ? ["-m", `u:0:${uid}:1`, "-m", `g:0:${gid}:1`, "--", "/usr/bin/unshare", "--net"]
+    : ["--user", "--map-root-user", "--net"];
+  return Owned.spawn(userNamespace, [...setup, "--", "sh", "-ec",
     'ip link set lo up; exec "$@"', "desktop-account-network", program, ...args], {
     env, stdio: ["pipe", "pipe", "pipe"],
   });

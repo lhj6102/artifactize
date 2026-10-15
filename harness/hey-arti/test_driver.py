@@ -276,8 +276,10 @@ except KeyboardInterrupt:
         observed = json.loads(report.read_text())
         self.assertEqual(observed["parent"], os.getpid())
         self.assertFalse(Path(observed["root"]).exists())
-        self.assertEqual([child.pid for child in children], [observed["child"]])
-        self.assertIsNotNone(children[0].poll(), "interrupted suite must join its owned child")
+        self.assertEqual(sum(child.pid == observed["child"] for child in children), 1)
+        # Native tree cleanup may launch its own child; every captured process must exit.
+        for child in children:
+            self.assertIsNotNone(child.poll(), f"interrupted suite must join owned child {child.pid}")
         self.assertIs(sys.argv, original_arguments)
 
     @unittest.skipUnless(hasattr(os, "pidfd_open"), "Linux descendant exit observation uses pidfd")

@@ -586,20 +586,20 @@ fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
     const RECORD: &str = "ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD";
     const PANIC: &str = "ARTIFACTIZE_TEST_CLI_DIRECTORY_PANIC";
     let root = support::os::tempdir();
-    for panicking in [false, true] {
-        let record = root.path().join(format!("candidate-{panicking}"));
+    for mode in ["success", "unwind", "exit"] {
+        let record = root.path().join(format!("candidate-{mode}"));
         let mut command = support::os::test_command(
             "owned_cli_exit_probe",
             &[
                 (RECORD, record.as_os_str().to_owned()),
-                (PANIC, panicking.to_string().into()),
+                (PANIC, mode.into()),
             ],
         );
         command.arg("--ignored");
         let output = support::os::finish(support::os::start(&mut command), "owned CLI exit");
         assert_eq!(
             output.status.success(),
-            !panicking,
+            mode != "unwind",
             "{}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
@@ -613,19 +613,30 @@ fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
 #[ignore = "launched by the owned CLI exit lifecycle test"]
 fn owned_cli_exit_probe() {
     let executable = support::os::cli();
+    assert!(
+        Command::new(&executable)
+            .arg("--version")
+            .status()
+            .unwrap()
+            .success(),
+        "the published private CLI is executable"
+    );
     fs::write(
         support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD").unwrap(),
         support::os::path_text(executable.parent().unwrap()),
     )
     .unwrap();
-    assert!(
-        support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_PANIC")
-            .unwrap()
-            .into_string()
-            .unwrap()
-            != "true",
-        "scripted test unwind"
-    );
+    match support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_PANIC")
+        .unwrap()
+        .into_string()
+        .unwrap()
+        .as_str()
+    {
+        "success" => {}
+        "unwind" => panic!("scripted test unwind"),
+        "exit" => std::process::exit(0),
+        mode => panic!("unknown CLI exit mode: {mode}"),
+    }
 }
 
 #[test]

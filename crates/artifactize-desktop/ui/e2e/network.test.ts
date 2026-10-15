@@ -1,7 +1,7 @@
 // Exercise the Linux OS seam without a WebView: independent fixtures can own the real
 // fixed callback port concurrently, and a child test failure remains a test failure.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -11,14 +11,17 @@ import { networkIdentity, networkProcess } from "./network.ts";
 
 const probe = `
 import { createServer } from "node:http";
-import { readlinkSync } from "node:fs";
+import { readFileSync, readlinkSync } from "node:fs";
 import { createInterface } from "node:readline";
 const id = process.argv[1];
 const server = createServer((request, response) => {
   response.end(id + ":" + request.url);
 });
 server.listen(1455, "127.0.0.1", () => console.log(JSON.stringify({
-  phase: "ready", network: readlinkSync("/proc/self/ns/net"), id,
+  phase: "ready", network: readlinkSync("/proc/self/ns/net"), user: readlinkSync("/proc/self/ns/user"), id,
+  uid: process.getuid(), gid: process.getgid(),
+  uidMap: readFileSync("/proc/self/uid_map", "utf8").trim().split(/\\s+/).map(Number),
+  gidMap: readFileSync("/proc/self/gid_map", "utf8").trim().split(/\\s+/).map(Number),
 })));
 const lines = createInterface({ input: process.stdin });
 lines.once("line", async () => {
@@ -31,6 +34,8 @@ lines.once("line", async () => {
 process.stdin.once("end", () => server.close());
 `;
 
+type Ready = { network: string; user: string; id: string; uid: number; gid: number; uidMap: number[]; gidMap: number[] };
+
 function observe(owner: Owned) {
   let output = "";
   let errors = "";
@@ -40,26 +45,28 @@ function observe(owner: Owned) {
     owner.child.once("error", fail);
     owner.child.once("close", (code) => done(code));
   });
-  // Attach immediately, including a fast unshare/IP setup failure before readiness.
+  // Attach immediately, including a fast namespace-helper/IP setup failure before readiness.
   void ended.catch(() => {});
   return { ended, output: () => output, errors: () => errors };
 }
 
 it("owns two distinct callback networks on port 1455 at once, without changing the host", async () => {
   const host = networkIdentity();
+  const hostUser = readlinkSync("/proc/self/ns/user");
+  const hostMaps = ["uid_map", "gid_map"].map((name) => readFileSync(`/proc/self/${name}`, "utf8"));
   const owners = ["first", "second"].map((id) => networkProcess(process.execPath, ["--input-type=module", "-e", probe, id]));
   const observed = owners.map(observe);
   try {
-    const ready = await Promise.all(owners.map((owner, index) => new Promise<{ network: string; id: string }>((done, fail) => {
+    const ready = await Promise.all(owners.map((owner, index) => new Promise<Ready>((done, fail) => {
       const lines = createInterface({ input: owner.child.stdout! });
       const deadline = setTimeout(() => finish(new Error(`callback network did not become ready: ${observed[index].errors()}`)), 5000);
-      function finish(error?: Error, value?: { network: string; id: string }) {
+      function finish(error?: Error, value?: Ready) {
         clearTimeout(deadline);
         lines.close();
         if (error) fail(error); else done(value!);
       }
       lines.once("line", (line) => {
-        try { finish(undefined, JSON.parse(line) as { network: string; id: string }); }
+        try { finish(undefined, JSON.parse(line) as Ready); }
         catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
       });
       void observed[index].ended.then((code) => finish(new Error(`callback network exited ${code}: ${observed[index].errors()}`)), fail);
@@ -67,6 +74,14 @@ it("owns two distinct callback networks on port 1455 at once, without changing t
     assert.notEqual(ready[0].network, host);
     assert.notEqual(ready[1].network, host);
     assert.notEqual(ready[0].network, ready[1].network);
+    assert.notEqual(ready[0].user, ready[1].user);
+    for (const child of ready) {
+      assert.notEqual(child.user, hostUser);
+      assert.equal(child.uid, 0);
+      assert.equal(child.gid, 0);
+      assert.deepEqual(child.uidMap, [0, process.getuid!(), 1]);
+      assert.deepEqual(child.gidMap, [0, process.getgid!(), 1]);
+    }
     // Both have already bound 1455 before either callback is sent.
     for (const owner of owners) owner.child.stdin!.write("callback\n");
     assert.deepEqual(await Promise.all(observed.map((seen) => seen.ended)), [0, 0]);
@@ -74,6 +89,8 @@ it("owns two distinct callback networks on port 1455 at once, without changing t
       assert.match(observed[index].output(), new RegExp(`${id}:/auth/callback`));
     }
     assert.equal(networkIdentity(), host);
+    assert.equal(readlinkSync("/proc/self/ns/user"), hostUser);
+    assert.deepEqual(["uid_map", "gid_map"].map((name) => readFileSync(`/proc/self/${name}`, "utf8")), hostMaps);
   } finally { await Promise.all(owners.map((owner) => owner.stop())); }
 });
 

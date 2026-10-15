@@ -153,7 +153,8 @@ function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
 }
 
 /** Submit every eval and observe the scheduler's waiting phase, not an elapsed sleep.
- * Registration precedes the baseline read, so a change during setup cannot be missed. */
+ * Filesystem events are hints, not commit acknowledgements: reconcile authoritative
+ * snapshots too, including one final read at the existing observation deadline. */
 export async function verifyWaiting(fixture: Fixture): Promise<string> {
   const submitted = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
     encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
@@ -162,12 +163,20 @@ export async function verifyWaiting(fixture: Fixture): Promise<string> {
   const { run } = JSON.parse(submitted.stdout) as { run: string };
   await new Promise<void>((done, fail) => {
     let finished = false;
+    let last = "no saved snapshot";
     const observed = watch(fixture.state, () => inspect());
-    const deadline = setTimeout(() => finish(new Error(`Run ${run} did not reach its Human boundary`)), 30000);
+    // A WAL write hint may precede visibility of its commit, or be coalesced while
+    // run show is reading. Missing that hint must not strand an already-waiting Run.
+    const reconcile = setInterval(inspect, 1000);
+    const deadline = setTimeout(() => {
+      inspect();
+      if (!finished) finish(new Error(`Run ${run} did not reach its Human boundary; last saved snapshot: ${last}`));
+    }, 30000);
     function finish(error?: Error) {
       if (finished) return;
       finished = true;
       clearTimeout(deadline);
+      clearInterval(reconcile);
       observed.close();
       if (error) fail(error);
       else done();
@@ -179,7 +188,9 @@ export async function verifyWaiting(fixture: Fixture): Promise<string> {
           encoding: "utf8", env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
         });
         const saved = JSON.parse(output) as { status: string; control: { activity: string }; requests: Saved[] };
-        if (saved.status !== "RUNNING") return finish(new Error(`Run ${run} ended ${saved.status} before its Human boundary`));
+        last = JSON.stringify({ status: saved.status, control: saved.control,
+          requests: saved.requests.map(({ id, evalId, status }) => ({ id, evalId, status })) });
+        if (saved.status !== "RUNNING") return finish(new Error(`Run ${run} ended ${saved.status} before its Human boundary; last saved snapshot: ${last}`));
         if (saved.control.activity === "waiting" && saved.requests.some((request) => request.status === "WAITING_HUMAN")) finish();
       } catch (error) {
         finish(error instanceof Error ? error : new Error(String(error)));

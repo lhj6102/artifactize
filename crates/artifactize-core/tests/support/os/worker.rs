@@ -106,6 +106,7 @@ impl Executable {
 // Unlike a leaked TempDir in a OnceLock, this owner also cleans up on libtest failure.
 static OWNED: Mutex<Option<Executable>> = Mutex::new(None);
 
+#[cfg(unix)]
 extern "C" fn cleanup() {
     let executable = OWNED
         .lock()
@@ -114,10 +115,119 @@ extern "C" fn cleanup() {
     drop(executable);
 }
 
-// Register with the executable's own CRT, including MSVC/MinGW and crt-static.
+/// Rust exits Windows processes with ExitProcess, bypassing the executable's CRT exit
+/// table. A separate owner waits on this exact live parent's native handle instead. It
+/// inherits stderr so a caller collecting the parent's output also observes cleanup before
+/// EOF. The ready handshake happens before any fixture path is published.
 #[cfg(windows)]
-unsafe extern "C" {
-    fn atexit(callback: extern "C" fn()) -> i32;
+pub fn cleanup_after_exit(directory: &Path) -> Result<(), String> {
+    use std::io::BufRead;
+    use windows_sys::Win32::{
+        Foundation::FILETIME,
+        System::Threading::{GetCurrentProcess, GetProcessTimes},
+    };
+
+    let mut creation = FILETIME::default();
+    let (mut exit, mut kernel, mut user) = (creation, creation, creation);
+    // SAFETY: the current-process pseudo-handle needs no closing; each out pointer is
+    // valid and the returned birth time is read only after a successful query.
+    if unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return Err(format!(
+            "Reading fixture owner identity: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    let birth = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+
+    const CLEANUP: &str = r#"
+import ctypes
+from ctypes import wintypes
+import shutil
+import sys
+
+kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+open_process = kernel.OpenProcess
+open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+open_process.restype = wintypes.HANDLE
+wait = kernel.WaitForSingleObject
+wait.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+wait.restype = wintypes.DWORD
+close = kernel.CloseHandle
+close.argtypes = [wintypes.HANDLE]
+close.restype = wintypes.BOOL
+times = kernel.GetProcessTimes
+times.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+times.restype = wintypes.BOOL
+SYNCHRONIZE = 0x00100000
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+INFINITE = 0xffffffff
+WAIT_OBJECT_0 = 0
+
+try:
+    parent = open_process(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, int(sys.argv[1]))
+    if not parent:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        creation, exit, kernel_time, user = [wintypes.FILETIME() for _ in range(4)]
+        if not times(parent, ctypes.byref(creation), ctypes.byref(exit), ctypes.byref(kernel_time), ctypes.byref(user)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        birth = (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+        if birth != int(sys.argv[2]):
+            raise RuntimeError('Fixture owner process identity changed before registration')
+        # Publish readiness only after pinning the exact parent identity. Its native
+        # handle cannot be retargeted by PID reuse, including after an abrupt exit.
+        print('READY', flush=True)
+        if wait(parent, INFINITE) != WAIT_OBJECT_0:
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        close(parent)
+    try:
+        shutil.rmtree(sys.argv[3])
+    except FileNotFoundError as error:
+        # Initialization can unwind after registration but before publication; its
+        # local TempDir then removes this exact root, not a missing file inside it.
+        if error.filename != sys.argv[3]:
+            raise
+except Exception:
+    print('Fixture exit cleanup failed; retained root: ' + sys.argv[3], file=sys.stderr)
+    raise
+"#;
+    let directory = fs::canonicalize(directory).map_err(|error| error.to_string())?;
+    let mut child = Command::new(python_program())
+        .args(["-I", "-c", CLEANUP])
+        .arg(std::process::id().to_string())
+        .arg(birth.to_string())
+        .arg(&directory)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|error| format!("Starting fixture exit cleanup: {error}"))?;
+    let mut ready = String::new();
+    let read = std::io::BufReader::new(child.stdout.take().expect("cleanup readiness pipe"))
+        .read_line(&mut ready);
+    if read.is_err() || ready.trim_end() != "READY" {
+        // No path was published. Reap the failed registration before its local owner
+        // removes the directory; never leave a half-registered cleanup process behind.
+        let _ = child.kill();
+        let status = child.wait();
+        return Err(format!(
+            "Fixture exit cleanup registration failed for {}: {read:?}, {ready:?}, {status:?}",
+            path_text(&directory)
+        ));
+    }
+    // Dropping Child closes only our process handle, not the cleanup process. The
+    // cleanup owns exactly this root after the native parent handle becomes signalled.
+    Ok(())
 }
 
 pub fn executable() -> Result<&'static Path, String> {
@@ -129,12 +239,12 @@ pub fn executable() -> Result<&'static Path, String> {
             // candidate after its fixtures have released their callers and durable workers.
             #[cfg(unix)]
             let registered = unsafe { libc::atexit(cleanup) };
-            // SAFETY: the same lifetime contract applies to the Windows CRT exit table.
-            #[cfg(windows)]
-            let registered = unsafe { atexit(cleanup) };
+            #[cfg(unix)]
             if registered != 0 {
                 return Err("Fixture executable exit cleanup could not be registered".into());
             }
+            #[cfg(windows)]
+            cleanup_after_exit(candidate.path().parent().expect("owned executable root"))?;
             let path = candidate.path().to_owned();
             *OWNED.lock().unwrap() = Some(candidate);
             Ok(path)

@@ -138,10 +138,11 @@ impl Inbox {
 }
 
 /// Register before reading the baseline. Dirties arriving during that read stay queued.
-/// Dropping the subscription stops its connection, probe and any hub it owns.
+/// Drop requests cancellation; await [`Self::close`] before removing the subscribed state.
 pub struct Subscription {
     inbox: Arc<Inbox>,
     cancel: CancellationToken,
+    task: tokio::task::JoinHandle<Result<(), String>>,
 }
 impl Subscription {
     pub async fn new(state: &Path) -> Self {
@@ -149,12 +150,22 @@ impl Subscription {
         let cancel = CancellationToken::new();
         let (ready, registered) = oneshot::channel();
         let state = state.to_path_buf();
-        tokio::spawn(watch(state, inbox.clone(), cancel.clone(), ready));
+        let task = tokio::spawn(watch(state, inbox.clone(), cancel.clone(), ready));
         // Keep cancellation ownership even if the caller abandons registration midway.
-        let subscription = Self { inbox, cancel };
+        let subscription = Self {
+            inbox,
+            cancel,
+            task,
+        };
         // An unavailable or unsafe endpoint degrades, never prevents a baseline read.
         let _ = registered.await;
         subscription
+    }
+    /// Stop this subscription and wait for its connection, hub and probe database to close.
+    /// Other subscriptions remain independent. Dropping this future still requests cancellation.
+    pub async fn close(mut self) -> Result<(), String> {
+        self.cancel.cancel();
+        crate::task::joined((&mut self.task).await).map_err(|error| error.to_string())?
     }
     /// Process-owner death has no database writer; reuse the subscription's reconciliation
     /// cadence when an observer also owns liveness reconciliation.
@@ -365,7 +376,7 @@ async fn watch(
     inbox: Arc<Inbox>,
     cancel: CancellationToken,
     ready: oneshot::Sender<()>,
-) {
+) -> Result<(), String> {
     let mut ready = Some(ready);
     let endpoint = Endpoint::new(&state).ok();
     let mut hub = None;
@@ -447,9 +458,10 @@ async fn watch(
         }
     }
     if let Some(task) = hub {
-        task.abort();
+        // Its child token is cancelled too; let serve join every client before releasing IPC.
         let _ = crate::task::joined(task.await);
     }
+    probe.close().await
 }
 async fn receive(
     mut stream: transport::Stream,

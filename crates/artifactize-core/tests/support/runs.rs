@@ -59,7 +59,7 @@ async fn admitted(
     cancellation: CancellationToken,
 ) -> Result<store::RunView, String> {
     let mut changes = artifactize_core::changes::Subscription::new(state).await;
-    tokio::time::timeout(ADMISSION_BOUND, async {
+    let result = tokio::time::timeout(ADMISSION_BOUND, async {
         loop {
             // Run status and requests come from one read-only transaction. The observer
             // must not reconcile a dead owner or finish/cancel the Run it is waiting for.
@@ -92,7 +92,10 @@ async fn admitted(
         }
     })
     .await
-    .map_err(|_| "Fixture admission barrier expired.".to_owned())?
+    .map_err(|_| "Fixture admission barrier expired.".to_owned())
+    .and_then(|result| result);
+    changes.close().await?;
+    result
 }
 /// Submit a fixture Run, then observe its saved admission state without reconciling it.
 pub async fn record(
@@ -194,8 +197,8 @@ impl Drop for RepoLease {
 
 async fn release_run(context: &runs::Context, state: &Path, id: &RunId) -> Result<(), String> {
     // A fixture watchdog bounds failed cleanup, never a verification execution lifetime.
-    tokio::time::timeout(ADMISSION_BOUND, async {
-        let mut changes = artifactize_core::changes::Subscription::new(state).await;
+    let mut changes = artifactize_core::changes::Subscription::new(state).await;
+    let result = tokio::time::timeout(ADMISSION_BOUND, async {
         if store::read_run(state, id).await?.run.status() == RunStatus::Running {
             // This is an explicit cleanup action, not part of an observation barrier.
             runs::cancel(context, id).await?;
@@ -210,7 +213,10 @@ async fn release_run(context: &runs::Context, state: &Path, id: &RunId) -> Resul
         }
     })
     .await
-    .map_err(|_| "Fixture Run cleanup expired.".to_owned())?
+    .map_err(|_| "Fixture Run cleanup expired.".to_owned())
+    .and_then(|result| result);
+    changes.close().await?;
+    result
 }
 
 /// Existing Human fixtures need a saved request, not a validation result. Submission stdout
@@ -271,7 +277,7 @@ impl RecordOutput for Command {
                         } else {
                             let mut changes =
                                 artifactize_core::changes::Subscription::new(&state).await;
-                            tokio::time::timeout(ADMISSION_BOUND, async {
+                            let result = tokio::time::timeout(ADMISSION_BOUND, async {
                                 let view = store::read_run(&state, &id).await?;
                                 terminal_worker_exited(
                                     &view,
@@ -281,7 +287,10 @@ impl RecordOutput for Command {
                                 .await
                             })
                             .await
-                            .map_err(|_| "Fixture worker exit barrier expired.".to_owned())??;
+                            .map_err(|_| "Fixture worker exit barrier expired.".to_owned())
+                            .and_then(|result| result);
+                            changes.close().await?;
+                            result?;
                             Ok(None)
                         }
                     })
@@ -362,7 +371,7 @@ pub fn finished_worker(
                     let runs::Worker::Admitted { owner } = view.run.control.unwrap().worker else {
                         panic!("fixture worker was admitted");
                     };
-                    tokio::time::timeout(ADMISSION_BOUND, async {
+                    let result = tokio::time::timeout(ADMISSION_BOUND, async {
                         while running(owner.pid.get())
                             && process_observation::same_process_running(
                                 owner.pid.get(),
@@ -375,8 +384,9 @@ pub fn finished_worker(
                             changes.next_reconciled().await;
                         }
                     })
-                    .await
-                    .expect("terminal fixture worker exits before the byte baseline");
+                    .await;
+                    changes.close().await.unwrap();
+                    result.expect("terminal fixture worker exits before the byte baseline");
                 });
             })
             .join()
@@ -401,7 +411,7 @@ pub fn worker_pid(state: &Path, repo: &Path) -> u32 {
                         .find(|run| run.status == artifactize_core::types::RunStatus::Running)
                         .expect("active Run");
                     let mut changes = artifactize_core::changes::Subscription::new(state).await;
-                    tokio::time::timeout(ADMISSION_BOUND, async {
+                    let result = tokio::time::timeout(ADMISSION_BOUND, async {
                         loop {
                             let view = store::read_run(state, &active.id).await.unwrap();
                             let control = view.run.control.unwrap();
@@ -419,8 +429,9 @@ pub fn worker_pid(state: &Path, repo: &Path) -> u32 {
                             changes.next_state().await;
                         }
                     })
-                    .await
-                    .unwrap()
+                    .await;
+                    changes.close().await.unwrap();
+                    result.unwrap()
                 })
             })
             .join()

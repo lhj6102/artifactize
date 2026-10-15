@@ -979,22 +979,17 @@ mod fixture {
         "pwd", "rm", "sleep", "test", "touch", "tr", "true",
     ];
     // Paths may be handed to several concurrent fixtures, so the test process owns this
-    // directory until exit. The registered cleanup drops its TempDir; nothing is kept.
+    // directory until exit. Unix drops its TempDir in atexit; Windows delegates removal
+    // to a child holding the parent's native process handle, since ExitProcess skips atexit.
     static OWNED: Mutex<Option<tempfile::TempDir>> = Mutex::new(None);
 
+    #[cfg(unix)]
     extern "C" fn cleanup() {
         let directory = OWNED
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
         drop(directory);
-    }
-
-    // Use the executable's CRT, selected by Rust for MSVC/MinGW and crt-static alike.
-    // Explicitly linking msvcrt can register with a different CRT's exit table.
-    #[cfg(windows)]
-    unsafe extern "C" {
-        fn atexit(callback: extern "C" fn()) -> i32;
     }
 
     /// Built once for this test process. The local TempDir cleans up an initialization
@@ -1036,10 +1031,11 @@ mod fixture {
             // only drops the directory owned by this test process after its fixtures end.
             #[cfg(unix)]
             let registered = unsafe { libc::atexit(cleanup) };
-            // SAFETY: the same lifetime/ownership contract applies to the Windows CRT.
-            #[cfg(windows)]
-            let registered = unsafe { atexit(cleanup) };
+            #[cfg(unix)]
             assert_eq!(registered, 0, "fixture exit cleanup is registered");
+            #[cfg(windows)]
+            super::worker::cleanup_after_exit(directory.path())
+                .expect("fixture exit cleanup is registered before publication");
             let path = directory.path().to_path_buf();
             *OWNED.lock().unwrap() = Some(directory);
             path
@@ -3233,17 +3229,17 @@ mod lifecycle_tests {
     #[test]
     fn stand_in_directory_is_removed_after_success_and_test_unwind() {
         let root = tempdir();
-        for panicking in [false, true] {
-            let record = root.path().join(format!("directory-{panicking}"));
+        for mode in ["success", "unwind", "exit"] {
+            let record = root.path().join(format!("directory-{mode}"));
             let mut command = Command::new(std::env::current_exe().unwrap());
             command
                 .args(["stand_in_directory_exit_probe", "--ignored", "--nocapture"])
                 .env(DIRECTORY_RECORD, &record)
-                .env(PANIC_PROBE, panicking.to_string());
+                .env(PANIC_PROBE, mode);
             let output = finish(start(&mut command), "stand-in directory exit probe");
             assert_eq!(
                 output.status.success(),
-                !panicking,
+                mode != "unwind",
                 "{}{}",
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
@@ -3265,10 +3261,13 @@ mod lifecycle_tests {
         let program = stand_in_bin("true");
         assert!(Command::new(&program).status().unwrap().success());
         fs::write(record, path_text(program.parent().unwrap())).unwrap();
-        assert!(
-            std::env::var(PANIC_PROBE).unwrap() != "true",
-            "scripted test unwind"
-        );
+        match std::env::var(PANIC_PROBE).unwrap().as_str() {
+            "success" => {}
+            "unwind" => panic!("scripted test unwind"),
+            // Bypass libtest and Rust stack destructors, as Windows ExitProcess does.
+            "exit" => std::process::exit(0),
+            mode => panic!("unknown fixture exit mode: {mode}"),
+        }
     }
 
     #[test]

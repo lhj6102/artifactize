@@ -115,6 +115,8 @@ async fn independent_states_deliver_only_their_own_session_hints() {
         next(&mut second_reader).await,
         Change::SessionInvalidated("second-state".parse().unwrap())
     );
+    first_reader.close().await.unwrap();
+    second_reader.close().await.unwrap();
 }
 #[tokio::test]
 async fn unsupported_wire_version_is_refused_before_registration() {
@@ -140,6 +142,7 @@ async fn unsupported_wire_version_is_refused_before_registration() {
             .unwrap()
             .is_err()
     );
+    subscriber.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -163,6 +166,8 @@ async fn disconnected_connections_do_not_stop_registered_subscribers() {
         Frame::Delivered
     ));
     assert_eq!(next(&mut subscriber).await, Change::StateInvalidated);
+    drop(writer);
+    subscriber.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -190,6 +195,7 @@ async fn registered_before_snapshot_preserves_racing_dirty() {
         next(&mut subscriber).await,
         Change::SessionInvalidated("racing-session".parse().unwrap())
     );
+    subscriber.close().await.unwrap();
 }
 #[tokio::test]
 async fn two_readers_observe_short_writer_and_hub_owner_exit_without_db_change() {
@@ -216,7 +222,55 @@ async fn two_readers_observe_short_writer_and_hub_owner_exit_without_db_change()
         next(&mut second).await,
         Change::SessionInvalidated("after-owner-exit".parse().unwrap())
     );
+    second.close().await.unwrap();
 }
+#[tokio::test]
+async fn closed_subscription_releases_database_and_files_before_returning() {
+    let state = temporary_state();
+    let database = state.path().join(crate::store::DATABASE);
+    let writer = rusqlite::Connection::open(&database).unwrap();
+    writer
+        .execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE fixture(value INTEGER);")
+        .unwrap();
+    let subscription = Subscription::new(state.path()).await;
+    writer.close().unwrap();
+    tokio::time::timeout(crate::test_os::patience(WAIT), subscription.close())
+        .await
+        .expect("subscription shutdown completes")
+        .unwrap();
+
+    // A detached SQLite reader can still retain WAL locks, even where unlinking is allowed.
+    // Do not await again between completed shutdown and reclaiming the actual state files.
+    let replacement = rusqlite::Connection::open(&database).unwrap();
+    replacement.busy_timeout(Duration::ZERO).unwrap();
+    replacement
+        .execute_batch(
+            "PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; INSERT INTO fixture VALUES(1); COMMIT;",
+        )
+        .unwrap();
+    replacement.close().unwrap();
+    std::fs::remove_dir_all(state.path()).unwrap();
+    assert!(
+        !state.path().exists(),
+        "closed state can be removed immediately"
+    );
+}
+
+#[tokio::test]
+async fn closing_one_reader_preserves_other_subscriptions() {
+    let state = temporary_state();
+    let mut owner = Subscription::new(state.path()).await;
+    registered(&mut owner).await;
+    let mut reader = Subscription::new(state.path()).await;
+    registered(&mut reader).await;
+    reader.close().await.unwrap();
+    let publisher = Publisher::new(state.path());
+    publisher.notify(Change::StateInvalidated);
+    drain().await;
+    assert_eq!(next(&mut owner).await, Change::StateInvalidated);
+    owner.close().await.unwrap();
+}
+
 #[tokio::test]
 async fn idle_probe_never_reloads_and_missed_commit_is_detected_on_persistent_connection() {
     let state = temporary_state();
@@ -235,6 +289,7 @@ async fn idle_probe_never_reloads_and_missed_commit_is_detected_on_persistent_co
     db.execute("INSERT INTO fixture VALUES(1)", []).unwrap();
     assert!(probe.changed().await);
     assert!(!probe.changed().await);
+    probe.close().await.unwrap();
 }
 #[tokio::test]
 async fn database_replacement_and_deletion_force_resync() {
@@ -260,6 +315,7 @@ async fn database_replacement_and_deletion_force_resync() {
     std::fs::remove_file(&database).unwrap();
     assert!(probe.changed().await);
     assert!(!probe.changed().await);
+    probe.close().await.unwrap();
 }
 #[test]
 fn unsafe_endpoint_directory_and_lock_are_refused_not_repaired() {
@@ -354,6 +410,7 @@ async fn committed_worker_notifies_even_after_awaiting_caller_is_cancelled() {
     );
     drop(db);
     inner.close().await.unwrap();
+    subscriber.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -382,6 +439,8 @@ async fn a_slow_subscriber_overflow_resyncs_then_accepts_fresh_hints() {
         next(&mut subscriber).await,
         Change::SessionInvalidated("after-overflow".parse().unwrap())
     );
+    drop(writer);
+    subscriber.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -414,6 +473,8 @@ async fn repeated_hints_coalesce_without_losing_later_changes() {
         next(&mut subscriber).await,
         Change::SessionInvalidated("fresh-session".parse().unwrap())
     );
+    drop(writer);
+    subscriber.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -431,6 +492,7 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
     // Refusal keeps requesting reconciliation; a successful idle open would return false.
     assert!(probe.changed().await);
     assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");
+    probe.close().await.unwrap();
 }
 
 // Child processes run this exact fixture test, never a provider, installed binary or default state.
@@ -478,6 +540,7 @@ async fn multiprocess_fixture() {
                 }
             }
         }
+        subscription.close().await.unwrap();
     }
 }
 async fn child(state: &Path, role: &str) -> (crate::test_os::TestChild, TcpStream) {
@@ -529,4 +592,5 @@ async fn multiprocess_two_readers_short_writer_and_crashed_hub() {
     drain().await;
     phase(&mut reader_control, 4).await;
     assert!(reader.wait().await.success());
+    replacement.close().await.unwrap();
 }

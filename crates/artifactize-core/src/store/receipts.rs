@@ -1011,43 +1011,50 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     )
     .await
     .map_err(|e| e.to_string())?;
-    let id: RunId = id.parse()?;
-    connection
-        .call(move |db| -> Result<RunView, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
-            let transaction = db.transaction()?;
-            if !schema_initialized(&transaction)? {
-                return Err(Error::Invalid("Run not found.".into()));
-            }
-            let saved: Option<(String, String)> = transaction
-                .query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| {
-                    Ok((row.get(0)?, row.get(1)?))
-                })
-                .optional()?;
-            let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
-            outside_workspace(Path::new(&repo), &state)
-                .map_err(|e| Error::Invalid(e.to_string()))?;
-            let run = super::unreadable::decode("run", &id, &data)
-                .map_err(|error| Error::Invalid(error.to_string()))?;
-            let requests = {
-                let mut statement = transaction
-                    .prepare("SELECT data FROM requests WHERE run_id=? ORDER BY ordinal")?;
-                statement
-                    .query_map([&id], |row| row.get::<_, String>(0))?
-                    .filter_map(|row| match row {
-                        Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
-                        Err(error) => Some(Err(Error::Sql(error))),
+    let result = async {
+        let id: RunId = id.parse()?;
+        connection
+            .call(move |db| -> Result<RunView, Error> {
+                db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+                let transaction = db.transaction()?;
+                if !schema_initialized(&transaction)? {
+                    return Err(Error::Invalid("Run not found.".into()));
+                }
+                let saved: Option<(String, String)> = transaction
+                    .query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| {
+                        Ok((row.get(0)?, row.get(1)?))
                     })
-                    .collect::<Result<Vec<Request>, Error>>()?
-            };
-            let unreadable = super::unreadable::in_run(&transaction, &id)?;
-            transaction.commit()?;
-            Ok(RunView {
-                run,
-                requests,
-                unreadable,
+                    .optional()?;
+                let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
+                outside_workspace(Path::new(&repo), &state)
+                    .map_err(|e| Error::Invalid(e.to_string()))?;
+                let run = super::unreadable::decode("run", &id, &data)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
+                let requests = {
+                    let mut statement = transaction
+                        .prepare("SELECT data FROM requests WHERE run_id=? ORDER BY ordinal")?;
+                    statement
+                        .query_map([&id], |row| row.get::<_, String>(0))?
+                        .filter_map(|row| match row {
+                            Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                            Err(error) => Some(Err(Error::Sql(error))),
+                        })
+                        .collect::<Result<Vec<Request>, Error>>()?
+                };
+                let unreadable = super::unreadable::in_run(&transaction, &id)?;
+                transaction.commit()?;
+                Ok(RunView {
+                    run,
+                    requests,
+                    unreadable,
+                })
             })
-        })
-        .await
-        .map_err(|e| e.to_string())
+            .await
+            .map_err(|e| e.to_string())
+    }
+    .await;
+    // A query result arrives before the DB worker drops its connection. Join the
+    // close on every return path so callers can immediately release the state files.
+    connection.close().await.map_err(|e| e.to_string())?;
+    result
 }

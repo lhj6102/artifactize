@@ -37,9 +37,10 @@ fn cli(state: &Path, args: &[&str]) -> Value {
 fn write_repo(repo: &Path, profile: Value) {
     fs::create_dir_all(repo).unwrap();
     fs::write(repo.join("fingerprint"), "remote-v1\n").unwrap();
+    // Declare the exact bytes: text-mode print translates newlines on Windows.
     support::os::write_python_script(
         &repo.join("check.py"),
-        "print('stdout-marker')\nprint('stderr-marker', file=sys.stderr)\n",
+        "sys.stdout.buffer.write(b'stdout-marker\\n')\nsys.stderr.buffer.write(b'stderr-marker\\n')\n",
     );
     support::declaration::write(
         repo.join("index.artf"),
