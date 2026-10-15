@@ -2,8 +2,9 @@
 // which observes saved terminal state, this boundary also waits for the actual workers.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { groupAlive, type Group } from "./owned.ts";
+import { environment } from "./environment.ts";
 
 export type Identity = { pid: number; start_time: number };
 
@@ -94,9 +95,13 @@ export async function finishFixture(program: string, root: string | undefined, s
   // First close the holder's admission and join in-flight UI/CLI work. A Run list
   // collected while it can still accept verify is not a complete shutdown snapshot.
   try { await stop(); } catch (error) { failures.push(error); }
-  try {
-    if (root && existsSync(root)) for (const state of states(root)) settleRuns(program, join(root, "repo"), state);
-  } catch (error) { failures.push(error); }
+  if (root && existsSync(root)) {
+    try {
+      for (const state of states(root)) {
+        try { settleRuns(program, join(root, "repo"), state); } catch (error) { failures.push(error); }
+      }
+    } catch (error) { failures.push(error); }
+  }
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, "fixture settlement and shutdown failed; preserve inputs");
   if (root) removeFixture(program, root);
@@ -106,7 +111,12 @@ export async function finishFixture(program: string, root: string | undefined, s
  * nested candidate retains all working files for its owner/lease to finish safely. */
 export function removeFixture(program: string, root: string): void {
   if (!existsSync(root)) return;
-  for (const state of states(root)) settleRuns(program, join(root, "repo"), state);
+  const failures: unknown[] = [];
+  for (const state of states(root)) {
+    try { settleRuns(program, join(root, "repo"), state); } catch (error) { failures.push(error); }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "fixture Run cleanup failed; preserve inputs");
   const session = join(root, "session");
   if (existsSync(session) && readdirSync(session).some((name) => name.startsWith("candidate-"))) {
     throw new Error(`owned executable snapshots still exist; preserve fixture ${root}`);
@@ -127,7 +137,7 @@ export function settleRuns(program: string, repo: string, state: string): void {
   if (!existsSync(join(state, "state.sqlite"))) return;
   const invoke = (...args: string[]) => {
     const result = spawnSync(program, ["--repo", repo, "--state-dir", state, ...args], {
-      encoding: "utf8", timeout: EXIT_BOUND, env: { ...process.env, ARTIFACTIZE_REMOTE: "off" },
+      encoding: "utf8", timeout: EXIT_BOUND, env: environment({ root: dirname(repo), repo, state }),
     });
     if (result.error) throw result.error;
     return result;
@@ -136,27 +146,33 @@ export function settleRuns(program: string, repo: string, state: string): void {
   if (listed.status !== 0) throw new Error(listed.stderr || "cannot list fixture Runs for cleanup");
   const runs = JSON.parse(listed.stdout) as { id: string; status: string }[];
   const owners = workers(state);
+  const failures: unknown[] = [];
   for (const { id, status } of runs) {
-    if (status === "RUNNING") {
-      const cancelled = invoke("run", "cancel", id);
-      if (cancelled.status !== 0) throw new Error(cancelled.stderr || `cannot cancel fixture Run ${id}`);
-    }
-    const shown = invoke("run", "show", id, "--wait", "--json");
-    // RED, ERROR and deferred Human outcomes have nonzero CLI exit codes, but still
-    // publish a terminal JSON view. A command failure or timeout is not terminal.
-    const saved = JSON.parse(shown.stdout) as { status: string; control?: { worker?: { owner?: Identity; launcher?: Identity } } };
-    if (![0, 1, 2, 4, 5].includes(shown.status ?? -1) || !["GREEN", "RED", "ERROR", "INCOMPLETE", "SIGNOFFS_PENDING"].includes(saved.status)) {
-      throw new Error(shown.stderr || `fixture Run ${id} did not settle`);
-    }
-    const worker = saved.control?.worker;
-    if (worker?.owner) owners.push(worker.owner);
-    if (worker?.launcher) owners.push(worker.launcher);
+    try {
+      if (status === "RUNNING") {
+        const cancelled = invoke("run", "cancel", id);
+        if (cancelled.status !== 0) throw new Error(cancelled.stderr || `cannot cancel fixture Run ${id}`);
+      }
+      const shown = invoke("run", "show", id, "--wait", "--json");
+      // RED, ERROR and deferred Human outcomes have nonzero CLI exit codes, but still
+      // publish a terminal JSON view. A command failure or timeout is not terminal.
+      const saved = JSON.parse(shown.stdout) as { status: string; control?: { worker?: { owner?: Identity; launcher?: Identity } } };
+      if (![0, 1, 2, 4, 5].includes(shown.status ?? -1) || !["GREEN", "RED", "ERROR", "INCOMPLETE", "SIGNOFFS_PENDING"].includes(saved.status)) {
+        throw new Error(shown.stderr || `fixture Run ${id} did not settle`);
+      }
+      const worker = saved.control?.worker;
+      if (worker?.owner) owners.push(worker.owner);
+      if (worker?.launcher) owners.push(worker.launcher);
+    } catch (error) { failures.push(error); }
   }
-  // A handoff could occur during the saved-state reads. Capture the final supervisor
-  // and executor identities too, then join every one before deleting state or binaries.
-  owners.push(...workers(state));
-  exited(owners);
-  // A recorded launcher can hand off after the first scan. It is now joined, so
-  // its accepted executor cannot still be only a pending spawn when we rescan.
-  exited(workers(state));
+  // One failed cancellation must not bypass the other Runs' teardown. Join every
+  // known handoff after those attempts, preserving inputs if any operation failed.
+  try {
+    owners.push(...workers(state));
+    exited(owners);
+    // Joined launchers cannot still have only a pending, unpublished executor.
+    exited(workers(state));
+  } catch (error) { failures.push(error); }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "Run settlement and worker join failed");
 }

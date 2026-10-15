@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { artifactize, create, type Fixture, signoff, slowTool } from "./fixture.ts";
-import { checkBuild, type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start, windowClosed } from "./driver.ts";
 import { afterRender, press } from "./keys.ts";
 import { checkpoint } from "./commands.ts";
 
@@ -321,17 +321,10 @@ describe("quitting the Monitor with a claim", () => {
       () => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')),
       "focus in the prompt again",
     );
-    // Releasing quits: the window, and with it the WebDriver session, may end mid-keystroke.
-    await browser.keys(["u"]).catch(() => {});
+    // Confirm the window's actual terminal state, never an arbitrary driver exception.
+    await browser.keys(["u"]).catch(async (error: unknown) => { if (!(await windowClosed(browser))) throw error; });
     await eventually(() => signoff(fixture).claim === null, "released on quit");
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");
-    await eventually(async () => {
-      try {
-        await browser.getTitle();
-        return false;
-      } catch {
-        return true;
-      }
-    }, "the window closed after releasing");
+    await eventually(() => windowClosed(browser), "the window closed after releasing, before fixture teardown");
   });
 });

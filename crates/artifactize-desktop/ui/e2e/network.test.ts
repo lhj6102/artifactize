@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { it } from "node:test";
-import { Owned } from "./owned.ts";
+import { Owned, withCleanup } from "./owned.ts";
 import { networkIdentity, networkProcess } from "./network.ts";
 
 const probe = `
@@ -56,7 +56,7 @@ it("owns two distinct callback networks on port 1455 at once, without changing t
   const hostMaps = ["uid_map", "gid_map"].map((name) => readFileSync(`/proc/self/${name}`, "utf8"));
   const owners = ["first", "second"].map((id) => networkProcess(process.execPath, ["--input-type=module", "-e", probe, id]));
   const observed = owners.map(observe);
-  try {
+  await withCleanup(async () => {
     const ready = await Promise.all(owners.map((owner, index) => new Promise<Ready>((done, fail) => {
       const lines = createInterface({ input: owner.child.stdout! });
       const deadline = setTimeout(() => finish(new Error(`callback network did not become ready: ${observed[index].errors()}`)), 5000);
@@ -91,7 +91,7 @@ it("owns two distinct callback networks on port 1455 at once, without changing t
     assert.equal(networkIdentity(), host);
     assert.equal(readlinkSync("/proc/self/ns/user"), hostUser);
     assert.deepEqual(["uid_map", "gid_map"].map((name) => readFileSync(`/proc/self/${name}`, "utf8")), hostMaps);
-  } finally { await Promise.all(owners.map((owner) => owner.stop())); }
+  }, ...owners.map((owner) => () => owner.stop()));
 });
 
 it("preserves the real case diagnostics and propagates a private test's failure", async () => {
@@ -107,13 +107,13 @@ networkTests(import.meta.url, () => {
   delete env.DESKTOP_TEST_PARENT_NETWORK;
   const owner = Owned.spawn(process.execPath, ["--test", file], { env, stdio: ["ignore", "pipe", "pipe"] });
   const seen = observe(owner);
-  try {
+  await withCleanup(async () => {
     assert.equal(await seen.ended, 1);
     assert.match(seen.output(), /the original private case/);
     assert.match(seen.output(), /the original private failure/);
     assert.match(seen.output(), /account journeys failed: 1/);
-  } finally {
+  }, async () => {
     await owner.stop();
     rmSync(root, { recursive: true, force: true });
-  }
+  });
 });

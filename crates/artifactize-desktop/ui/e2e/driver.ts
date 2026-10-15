@@ -7,7 +7,7 @@ import { delimiter, join } from "node:path";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
 import { remote } from "webdriverio";
 import { app, environment, type Fixture } from "./fixture.ts";
-import { removeFixture } from "./runs.ts";
+import { identity, removeFixture, running, type Identity } from "./runs.ts";
 import { readCandidate } from "./build.ts";
 import { Owned, registerGroup } from "./owned.ts";
 
@@ -37,6 +37,32 @@ export const LAUNCH_TIMEOUT = 60000;
 /** The suite has declared an immutable candidate; never rebuild or inspect a shared target. */
 export function checkBuild() {
   readCandidate();
+}
+
+const windows = new WeakMap<object, Identity>();
+
+/** Observe the established native app lifetime, without sending a command to a
+ * dead WebView/session. Only that exact process birth ending proves closure;
+ * unrelated transport failures and an unregistered browser cannot count as closed. */
+export async function windowClosed(browser: object): Promise<boolean> {
+  const owner = windows.get(browser);
+  if (!owner) throw new Error("window lifecycle requires an owned native app session");
+  return !running(owner);
+}
+
+function appOwner(group: number): Identity | null {
+  const executable = app();
+  for (const pid of readdirSync("/proc").filter((name) => /^\d+$/.test(name))) {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
+      if (Number(fields[2]) === group && readlinkSync(`/proc/${pid}/exe`) === executable) return identity(Number(pid));
+    } catch (error) {
+      if (["ENOENT", "ESRCH", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? "")) continue;
+      throw error;
+    }
+  }
+  return null;
 }
 
 export type Session = {
@@ -123,8 +149,7 @@ type Display = { env: Record<string, string>; server: Owned | null };
 /**
  * A private X display for the app on Linux, so a run never opens windows on the person's
  * desktop or takes its focus, locally as in CI: Xvfb picks a free display number and
- * reports it (-displayfd), and the session stops it. Elsewhere the app uses the display it
- * inherits.
+ * reports it (-displayfd), and the session stops it. This harness rejects other platforms.
  */
 async function display(): Promise<Display> {
   if (process.platform !== "linux") return { env: {}, server: null };
@@ -227,13 +252,14 @@ async function launch(fixture: Fixture, overrides: Record<string, string | undef
     registerGroup(fixture.root, driver.group);
     await until(async () => listening(port, driver.group) && listening(nativePort, driver.group), "this session's driver listeners");
     const browser = await connect(port, args, fixture);
+    const owner = appOwner(driver.group);
+    if (!owner || !running(owner)) throw new Error("the connected native app has no live owned process identity");
+    windows.set(browser, owner);
     let ending: Promise<void> | undefined;
-    const stop = () => ending ??= (async () => {
-      // Forcefully joining the native group also covers a window already closed by q.
-      // The WebDriver delete request is best effort, not the cleanup acknowledgement.
-      await browser.deleteSession().catch(() => {});
-      await end();
-    })();
+    // A dead WebView can leave DELETE session unanswered even when /status says
+    // No sessions. Native ownership joins the driver, app and stdio directly;
+    // cleanup must not queue another protocol request ahead of that release.
+    const stop = () => ending ??= end();
     return {
       browser,
       display: screen.env.DISPLAY ?? null,

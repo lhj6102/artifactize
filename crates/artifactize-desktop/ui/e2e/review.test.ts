@@ -2,9 +2,10 @@
 // with an unsubmitted claim (stay, then release and quit).
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { addRepository, artifactize, create, type Fixture, signoff } from "./fixture.ts";
+import { addRepository, artifactize, create, type Fixture, requests, signoff } from "./fixture.ts";
 import { press } from "./keys.ts";
-import { checkBuild, type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start, windowClosed } from "./driver.ts";
+import { commandsRendered } from "./commands.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   const end = Date.now() + ms;
@@ -54,13 +55,23 @@ describe("review", () => {
   it("opens the entered request ID rather than the selected request and claims it", async () => {
     await browser.$('[aria-label="Requests"] [aria-selected="true"]').waitForExist({ timeout: 15000 });
     const original = signoff(fixture).id;
-    const repo = await addRepository(fixture, "open-by-id");
-    const target = { ...fixture, repo };
-    const id = signoff(target).id;
-    assert.notEqual(id, original, "different repositories own independent reviews, not followers");
-    // Keep the original selected even if the live subscription added the newer request.
-    await browser.$(`//ul[@aria-label="Requests"]/li[contains(., "${original}")]`).click();
-    assert.ok((await browser.$('[aria-label="Requests"] [aria-selected="true"]').getText()).includes(original));
+    const before = new Set(requests(fixture).map((request) => request.id));
+    await addRepository(fixture, "open-by-id");
+    const added = requests(fixture).find((request) => request.evalId === "release/signoff" && !before.has(request.id));
+    assert.ok(added, "the other repository created its own sign-off");
+    const otherId = added.id;
+    assert.notEqual(otherId, original, "different repositories own independent reviews, not followers");
+    await eventually(() => browser.execute((ids) => {
+      const listed = [...document.querySelectorAll('[aria-label="Requests"] .mono')].map((cell) => cell.textContent);
+      return ids.every((id) => listed.includes(id));
+    }, [original, otherId]), "both independent requests are in this case's list");
+    await commandsRendered(browser);
+    // A live insertion may select either row. Read the actual selected identity rather
+    // than assuming the older request stayed selected. WebKit getText omits grid cells.
+    const selected = await browser.execute(() => document.querySelector('[aria-label="Requests"] [aria-selected="true"] .mono')?.textContent ?? "");
+    assert.ok([original, otherId].includes(selected));
+    const id = selected === original ? otherId : original;
+    assert.notEqual(id, selected, "the typed ID differs from the exact currently selected request");
     await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
     await browser.$('[aria-label="Request ID"]').setValue(id);
     await press(browser, ["Enter"], () => browser.$('[aria-label="Human review"]').isExisting(), "the entered review opened");
@@ -69,10 +80,14 @@ describe("review", () => {
     const openedId = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] dt')]
       .find((field) => field.textContent === "Request")?.nextElementSibling?.textContent ?? "");
     await eventually(async () => (await openedId()) === id, "Detail identifies exactly the entered request");
-    assert.notEqual(await openedId(), original);
+    assert.notEqual(await openedId(), selected);
     await eventually(async () => (await text()).includes("Unclaimed. c claims it for alice"), "the claim stage");
-    await press(browser, ["c"], () => signoff(target).claim?.reviewer === "alice", "the entered request claimed");
-    assert.equal(signoff(fixture).claim, null, "the previously selected request was not claimed");
+    await press(browser, ["c"], () => requests(fixture).find((request) => request.id === id)?.claim?.reviewer === "alice", "the entered request claimed");
+    // request list reaches every repository in this state: observe by exact identities,
+    // not by calling a first-signoff helper with another --repo path.
+    const previous = requests(fixture).find((request) => request.id === selected);
+    assert.ok(previous, "the previously selected request is still saved");
+    assert.equal(previous.claim, null, "the previously selected request was not claimed");
   });
 
   async function claimReview() {
@@ -152,19 +167,12 @@ describe("review", () => {
     await dialog.waitForExist({ reverse: true, timeout: 10000 });
 
     await prompted();
-    // Releasing quits: the window, and with it the WebDriver session, may end mid-keystroke.
-    await browser.keys(["u"]).catch(() => {});
+    // A disappearing window may end this keystroke's response, but a generic driver
+    // failure is not closure. The native helper only accepts a terminal window outcome.
+    await browser.keys(["u"]).catch(async (error: unknown) => { if (!(await windowClosed(browser))) throw error; });
     await eventually(() => signoff(fixture).claim === null, "released on quit");
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");
-    // And the window is gone: the driver's session can no longer answer.
-    await eventually(async () => {
-      try {
-        await browser.getTitle();
-        return false;
-      } catch {
-        return true;
-      }
-    }, "the window closed after releasing");
+    await eventually(() => windowClosed(browser), "the window closed after releasing, before fixture teardown");
   });
 });
 

@@ -33,6 +33,7 @@ console.log("suite joined");`;
       owner.once("error", fail);
       owner.once("close", (code, signal) => done({ code, signal }));
     });
+    const failures: unknown[] = [];
     try {
       assert.deepEqual(await closed, { code: fails ? 1 : 0, signal: null }, errors);
       assert.equal(readFileSync(marker, "utf8"), "work completed", "the child really completed before the runner's exit");
@@ -50,10 +51,13 @@ console.log("suite joined");`;
       } else assert.match(output, /suite joined/);
       assert.match(errors, /tests 1/);
       assert.match(errors, fails ? /fail 1/ : /pass 1/);
-    } finally {
+    } catch (error) { failures.push(error); }
+    try {
       if (owner.exitCode === null && owner.signalCode === null) owner.kill("SIGKILL");
       await closed;
-      await cleanup(root);
-    }
+    } catch (error) { failures.push(error); }
+    try { await cleanup(root); } catch (error) { failures.push(error); }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, "runner assertion and cleanup failed");
   });
 }

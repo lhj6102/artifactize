@@ -9,6 +9,8 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { readCandidate } from "./build.ts";
 import { identity, removeFixture, running, settleRuns } from "./runs.ts";
+import { environment, git } from "./environment.ts";
+export { environment } from "./environment.ts";
 
 /** The declared immutable candidates inherited from the owning suite or tool session. */
 export const cli = () => readCandidate().cli;
@@ -41,21 +43,6 @@ function newRoot(): string {
 }
 
 export type Fixture = { root: string; repo: string; state: string };
-
-/** Native fixture inputs never borrow the person's auth files, profiles or service
- * configuration. Keep executable lookup, but require scenarios to declare credentials
- * and endpoints explicitly. No process-wide environment is changed. */
-export function environment(fixture: Fixture): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const name of Object.keys(env)) {
-    if (name.startsWith("ARTIFACTIZE_") || name.endsWith("_API_KEY") || ["CLAUDE_CODE_OAUTH_TOKEN", "CODEX_HOME", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS"].includes(name)) delete env[name];
-  }
-  for (const [name, directory] of Object.entries({ HOME: "home", XDG_CONFIG_HOME: "config", XDG_DATA_HOME: "data", XDG_CACHE_HOME: "cache", XDG_RUNTIME_DIR: "runtime", TMPDIR: "tmp" })) {
-    env[name] = join(fixture.root, directory);
-    mkdirSync(env[name], { recursive: true, mode: 0o700 });
-  }
-  return { ...env, USER: "alice", ARTIFACTIZE_REMOTE: "off", DESKTOP_TEST_FIXTURE_ROOT: fixture.root };
-}
 
 /** A captured native lifetime, not a PID that can later name an unrelated process. */
 export function slowTool(fixture: Fixture): (() => boolean) | null {
@@ -142,10 +129,13 @@ export type Saved = {
 
 /** Remote status without blocking an external store served by the calling test. */
 export function remoteStatus(fixture: Fixture): Promise<{ code: number; stdout: string }> {
-  return new Promise((done) => {
+  return new Promise((done, fail) => {
     execFile(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "remote", "status", "--json"],
       { encoding: "utf8", env: { ...environment(fixture), ARTIFACTIZE_REMOTE: "" } },
-      (error, stdout) => done({ code: error ? Number(error.code ?? 1) : 0, stdout }));
+      (error, stdout) => {
+        if (error && typeof error.code !== "number") fail(error);
+        else done({ code: typeof error?.code === "number" ? error.code : 0, stdout });
+      });
   });
 }
 
@@ -156,6 +146,7 @@ export function requests(fixture: Fixture): Saved[] {
     ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],
     { encoding: "utf8", env: environment(fixture) },
   );
+  if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(result.stderr);
   return JSON.parse(result.stdout) as Saved[];
 }
@@ -183,7 +174,7 @@ function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
     writeFileSync(join(repo, name, "index.artf"), text);
   }
   writeFileSync(join(repo, "release", "notes.md"), notes);
-  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
+  git(repo, "init", "-q", "--initial-branch=master", repo);
 }
 
 /** Submit every eval and observe the scheduler's waiting phase, not an elapsed sleep.
@@ -193,6 +184,7 @@ export async function verifyWaiting(fixture: Fixture): Promise<string> {
   const submitted = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
     encoding: "utf8", env: environment(fixture),
   });
+  if (submitted.error) throw submitted.error;
   if (submitted.status !== 0) throw new Error(submitted.stderr || submitted.stdout || "verify submission failed");
   const { run } = JSON.parse(submitted.stdout) as { run: string };
   await new Promise<void>((done, fail) => {
@@ -290,7 +282,7 @@ export async function addSearchExamples(fixture: Fixture): Promise<{
   humanExample(repo, "amber", "check", "AmberOnly example", ["search:target"]);
   humanExample(repo, "blue", "check", "Blue example", ["search:other"]);
   humanExample(repo, "cyan", "check", "Cyan example", ["search:other"]);
-  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
+  git(repo, "init", "-q", "--initial-branch=master", repo);
   const target = { ...fixture, repo };
   const run = await verifyWaiting(target);
   const saved = requests(target).filter((request) => request.runId === run);
@@ -311,23 +303,50 @@ export async function addSearchExamples(fixture: Fixture): Promise<{
   };
 }
 
-/** Historical tree identity belongs to a Run, not today's declarations. The first
- * worker is fully joined before replacing its declaration with the next criterion. */
+function deferredHuman(fixture: Fixture): string {
+  const submitted = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
+    "verify", "--all", "--defer-human", "--wait", "--json"], { encoding: "utf8", env: environment(fixture) });
+  if (submitted.error) throw submitted.error;
+  if (submitted.status !== 5) throw new Error(submitted.stderr || submitted.stdout || "Human deferral did not complete");
+  const saved = JSON.parse(submitted.stdout) as { status: string; requests: Saved[] };
+  const run = saved.requests[0]?.runId;
+  if (saved.status !== "SIGNOFFS_PENDING" || !run || saved.requests.some((request) => request.runId !== run || request.status !== "DEFERRED")) {
+    throw new Error(`unexpected deferred Human result: ${submitted.stdout}`);
+  }
+  settleRuns(cli(), fixture.repo, fixture.state);
+  return run;
+}
+
+/** Historical tree identity belongs to a Run, not today's declarations. Every Run
+ * is terminal and its writer joined before replacement or controlled chronology. */
 export async function createNavigationFixture(): Promise<{
   fixture: Fixture; scopes: { repo: string[]; other: string[] }; runs: { id: string; eval: string }[];
 }> {
   const root = newRoot();
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   humanExample(fixture.repo, "subject", "first-criterion", "First navigation criterion");
-  execFileSync("git", ["init", "-q", "--initial-branch=master", fixture.repo]);
-  const first = await verifyWaiting(fixture);
-  settleRuns(cli(), fixture.repo, fixture.state);
+  git(fixture.repo, "init", "-q", "--initial-branch=master", fixture.repo);
+  const first = deferredHuman(fixture);
   humanExample(fixture.repo, "subject", "second-criterion", "Second navigation criterion");
-  const second = await verifyWaiting(fixture);
+  const second = deferredHuman(fixture);
   const other = { ...fixture, repo: join(root, "other") };
   humanExample(other.repo, "elsewhere", "other-criterion", "Other scope criterion");
-  execFileSync("git", ["init", "-q", "--initial-branch=master", other.repo]);
-  const third = await verifyWaiting(other);
+  git(other.repo, "init", "-q", "--initial-branch=master", other.repo);
+  const third = deferredHuman(other);
+  // All writers are joined. These explicit fixture times determine newest-first
+  // navigation independently of wall-clock resolution and scheduling.
+  const saved = requests(fixture);
+  const db = new DatabaseSync(join(fixture.state, "state.sqlite"));
+  try {
+    db.exec("PRAGMA busy_timeout=5000");
+    for (const [id, created] of [[first, "2000-01-01T00:00:00.000000000Z"],
+      [second, "2000-01-02T00:00:00.000000000Z"], [third, "2000-01-03T00:00:00.000000000Z"]]) {
+      db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, id);
+      for (const request of saved.filter((request) => request.runId === id)) {
+        db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
+      }
+    }
+  } finally { db.close(); }
   return { fixture, scopes: { repo: [first, second], other: [third] }, runs: [
     { id: first, eval: "first-criterion" }, { id: second, eval: "second-criterion" }, { id: third, eval: "other-criterion" },
   ] };
@@ -335,13 +354,12 @@ export async function createNavigationFixture(): Promise<{
 
 /** Real worktrees of the fixture's one Git repository, each with its own identified Run. */
 export async function addWorktrees(fixture: Fixture): Promise<string[]> {
-  execFileSync("git", ["-C", fixture.repo, "add", "."]);
-  execFileSync("git", ["-C", fixture.repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-    "commit", "-qm", "Fixture inputs"]);
+  git(fixture.repo, "-C", fixture.repo, "add", ".");
+  git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Fixture inputs");
   const runs: string[] = [];
   for (const name of ["scope-one", "scope-two"]) {
     const repo = join(fixture.root, name);
-    execFileSync("git", ["-C", fixture.repo, "worktree", "add", "-q", "-b", name, repo]);
+    git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", name, repo);
     writeFileSync(join(repo, "release", "notes.md"), `# Notes of ${name}\n- Distinct consumer inputs.\n`);
     runs.push(await verifyWaiting({ ...fixture, repo }));
   }
@@ -372,7 +390,7 @@ Check ${reference}."""
     mkdirSync(join(repo, name(index)), { recursive: true });
     writeFileSync(join(repo, name(index), "index.artf"), text);
   }
-  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
+  git(repo, "init", "-q", "--initial-branch=master", repo);
   const fixture = { root, repo, state };
   const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
@@ -387,6 +405,7 @@ export function createPagedRequests(): { fixture: Fixture; expected: string[] } 
     "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], {
     encoding: "utf8", env: environment(fixture),
   });
+  if (completed.error) throw completed.error;
   if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
   const newer = (JSON.parse(completed.stdout) as { requests: Saved[] }).requests;
   // --wait observes terminal publication, not worker exit. Join every writer before
@@ -458,7 +477,7 @@ Approve."""
 `,
   );
   artifact("later", "true", "[]", "Run after {gate}.");
-  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
+  git(repo, "init", "-q", "--initial-branch=master", repo);
   const fixture = { root, repo, state };
   // RED/ERROR are committed while the independent Human sign-off keeps the Run waiting.
   await verifyWaiting(fixture);
@@ -488,7 +507,7 @@ Check ${name}."""
     .join("");
   mkdirSync(join(repo, "app"), { recursive: true });
   writeFileSync(join(repo, "app", "index.artf"), `name = "app"\n${evals}`);
-  execFileSync("git", ["init", "-q", "--initial-branch=master", repo]);
+  git(repo, "init", "-q", "--initial-branch=master", repo);
   const fixture = { root, repo, state };
   const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { verifyWaiting, create, createNavigationFixture, createStates, type Fixture, requests } from "./fixture.ts";
-import { checkBuild, type Session, start } from "./driver.ts";
+import { checkBuild, type Session, start, windowClosed } from "./driver.ts";
 import { press } from "./keys.ts";
 import { checkpoint, commandsRendered } from "./commands.ts";
 
@@ -65,15 +65,39 @@ describe("monitor navigation", () => {
     const previous = await rows();
     const id = await verifyWaiting(fixture);
     assert.ok(previous.every((row) => !row.includes(id)), "this Run is a new disk change");
-    // A subscription may already have shown the Run. That alone cannot prove F5 worked:
-    // require its consumed key and a new completed native browse, not a dispatch counter.
+    // First cross the external change's subscription, then observe this F5 independently.
+    await eventually(async () => (await rows()).some((row) => row.includes(id)), "the external change has rendered");
     await commandsRendered(browser);
-    const before = (await checkpoint(browser)).activity.commands.browse?.completed ?? 0;
+    type RefreshRead = { before: number; pending: number; sequence: number; handled: boolean };
+    await browser.execute(() => {
+      const page = window as Window & { refreshRead?: RefreshRead };
+      const reads = new WeakMap<KeyboardEvent, RefreshRead>();
+      window.addEventListener("keydown", (event) => {
+        if (event.key !== "F5") return;
+        const before = window.artifactizeCommands.commands.browse;
+        reads.set(event, { before: before?.started ?? 0, pending: before?.pending ?? 0, sequence: 0, handled: false });
+      }, { capture: true });
+      // App's mounted window listener runs before this later bubble listener and dispatches
+      // browse synchronously. Neither listener changes the key, handlers or IPC. A queued
+      // subscription task cannot execute between these two phases of the same DOM event.
+      window.addEventListener("keydown", (event) => {
+        const read = reads.get(event);
+        if (!read) return;
+        read.sequence = window.artifactizeCommands.commands.browse?.started ?? 0;
+        read.handled = event.defaultPrevented;
+        page.refreshRead = read;
+      });
+    });
     await press(browser, ["F5"], async () => {
+      const read = await browser.execute(() => (window as Window & { refreshRead?: RefreshRead }).refreshRead ?? null);
+      if (!read?.handled || read.pending !== 0 || read.sequence <= read.before) return false;
       const browse = (await checkpoint(browser)).activity.commands.browse;
-      return !!browse && browse.completed > before && browse.pending === 0;
-    }, "the refresh's native read completed", { handled: true });
+      // No browse was in flight at the key's entry. All reads through this key's own
+      // sequence must finish; a later subscription completion alone cannot satisfy it.
+      return !!browse && browse.completed >= read.sequence && browse.pending === 0;
+    }, "this F5's dispatched native read completed", { handled: true });
     await commandsRendered(browser);
+    assert.equal(await browser.$('nav[aria-label="Breadcrumb"] [role="status"]').isExisting(), false, "the refresh completed without a native read error");
     await eventually(async () => (await rows()).some((row) => row.includes(id)), "the exact refreshed Run rendered");
     assert.equal((await rows()).length, previous.length + 1, "the refreshed list contains this case's newly submitted Run");
     assert.equal(await browser.$('[role="tab"][data-state="active"]').getText(), "Monitor", "on the same screen");
@@ -217,7 +241,7 @@ describe("moving between the panes", () => {
   const listbox = (name: string) => browser.$(`[role="listbox"][aria-label="${name}"]`);
   const runIds = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')]
     .map((row) => /run-\S+/.exec(row.innerText)?.[0] ?? "").sort());
-  const selectedRun = () => browser.$('[aria-label="Runs"] [aria-selected="true"]').getText();
+  const selectedRun = () => browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
   const chosen = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"]')]
     .findIndex((option) => option.getAttribute("aria-selected") === "true"));
 
@@ -250,14 +274,14 @@ describe("moving between the panes", () => {
   // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TREE
   it("switches identified Runs with the keyboard and replaces the Tree with each saved criterion", async () => {
     const [older, newer] = example.runs;
-    assert.ok((await selectedRun()).includes(newer.id), "newest first");
+    assert.equal(await selectedRun(), newer.id, "the explicitly newer fixture Run is selected first");
     await treeShows(newer);
     await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
-    await press(browser, ["ArrowDown"], async () => (await selectedRun()).includes(older.id), "the older identified Run selected");
+    await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id, "the older identified Run selected");
     await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the older Run's Tree focused");
     await treeShows(older);
     await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "back to Runs");
-    await press(browser, ["ArrowUp"], async () => (await selectedRun()).includes(newer.id), "the newer identified Run selected again");
+    await press(browser, ["ArrowUp"], async () => (await selectedRun()) === newer.id, "the newer identified Run selected again");
     await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the newer Run's Tree focused");
     await treeShows(newer);
   });
@@ -304,17 +328,9 @@ describe("quitting without a claim", () => {
   it("closes the window at once with q", async () => {
     const browser = session.browser;
     await browser.$('[role="tree"]').click();
-    // The window closes while the key is still being delivered.
-    await browser.keys(["q"]).catch(() => {});
-    // The window is gone: the driver's session can no longer answer.
-    await eventually(async () => {
-      try {
-        await browser.getTitle();
-        return false;
-      } catch {
-        return true;
-      }
-    }, "the window closed");
+    // The action's response may lose its window; unrelated WebDriver errors propagate.
+    await browser.keys(["q"]).catch(async (error: unknown) => { if (!(await windowClosed(browser))) throw error; });
+    await eventually(() => windowClosed(browser), "the window actually closed before fixture teardown");
   });
 });
 
@@ -334,14 +350,7 @@ describe("closing the window without a claim", () => {
   // UX edges: E-QUIT-CLEAN
   it("closes at once, asking nothing", async () => {
     const browser = session.browser;
-    await browser.closeWindow().catch(() => {});
-    await eventually(async () => {
-      try {
-        await browser.getTitle();
-        return false;
-      } catch {
-        return true;
-      }
-    }, "the window closed");
+    await browser.closeWindow().catch(async (error: unknown) => { if (!(await windowClosed(browser))) throw error; });
+    await eventually(() => windowClosed(browser), "the requested window is terminal before fixture teardown");
   });
 });

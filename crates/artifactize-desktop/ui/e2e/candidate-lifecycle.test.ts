@@ -7,7 +7,7 @@ import { createInterface } from "node:readline";
 import { describe, it } from "node:test";
 import { createGraph } from "./fixture.ts";
 import { checkBuild, LAUNCH_TIMEOUT } from "./driver.ts";
-import { groupAlive, Owned } from "./owned.ts";
+import { groupAlive, Owned, withCleanup } from "./owned.ts";
 import { snapshotsGone } from "./build.ts";
 import { running, startedWorkers, states } from "./runs.ts";
 
@@ -15,7 +15,11 @@ async function eventually(check: () => boolean, what: string) {
   // Includes the driver watchdog grace and the resource lease's durable-Run cleanup.
   await new Promise<void>((done, fail) => {
     const deadline = setTimeout(() => { clearInterval(poll); fail(new Error(`timed out: ${what}`)); }, 30000);
-    const inspect = () => { if (check()) { clearTimeout(deadline); clearInterval(poll); done(); } };
+    const inspect = () => {
+      try {
+        if (check()) { clearTimeout(deadline); clearInterval(poll); done(); }
+      } catch (error) { clearTimeout(deadline); clearInterval(poll); fail(error); }
+    };
     const poll = setInterval(inspect, 50);
     inspect();
   });
@@ -31,19 +35,22 @@ describe("an interrupted candidate owner", { skip: process.platform !== "linux" 
         env: { ...process.env, ARTIFACTIZE_SESSION_DIR: directory, ARTIFACTIZE_REMOTE: "off" }, stdio: ["ignore", "pipe", "inherit"],
       });
       let candidate: string | undefined;
-      try {
+      await withCleanup(async () => {
         await new Promise<void>((done, fail) => {
           const lines = createInterface({ input: owner.child.stdout! });
           const deadline = setTimeout(() => finish(new Error("candidate owner did not become ready")), LAUNCH_TIMEOUT);
           const exit = (code: number | null) => finish(new Error(`candidate owner exited ${code}`));
+          const failed = (error: Error) => finish(error);
           function finish(error?: Error) {
             clearTimeout(deadline);
             lines.close();
             owner.child.off("exit", exit);
+            owner.child.off("error", failed);
             if (error) fail(error); else done();
           }
           lines.once("line", (line) => line === "ready" ? finish() : finish(new Error(`unexpected readiness: ${line}`)));
           owner.child.once("exit", exit);
+          owner.child.once("error", failed);
         });
         const folders = readdirSync(directory).filter((name) => name.startsWith("candidate-"));
         assert.equal(folders.length, 1, "the session owns exactly one executable snapshot");
@@ -74,10 +81,7 @@ describe("an interrupted candidate owner", { skip: process.platform !== "linux" 
           assert.ok(owners.every((identity) => !running(identity)), "candidate removal follows every durable worker's actual exit");
           return true;
         }, "the session's snapshot and durable fixture state are removed");
-      } finally {
-        await owner.stop();
-        await snapshotsGone(directory);
-      }
+      }, () => owner.stop(), () => snapshotsGone(directory));
     });
   }
 });

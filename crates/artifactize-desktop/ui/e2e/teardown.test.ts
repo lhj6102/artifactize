@@ -8,7 +8,7 @@ import { createInterface } from "node:readline";
 import { describe, it } from "node:test";
 import { cli } from "./fixture.ts";
 import { finishFixture } from "./runs.ts";
-import { groupAlive } from "./owned.ts";
+import { groupAlive, withCleanup } from "./owned.ts";
 import { displayListening, displayLocked, LAUNCH_TIMEOUT } from "./driver.ts";
 
 type Held = { display: string | null; groups: number[]; root: string };
@@ -29,7 +29,11 @@ async function hold(): Promise<{ owner: ReturnType<typeof spawn>; held: Held; st
     await exited;
     lines.close();
     owner.stdout?.destroy();
-    if (held) for (const group of held.groups) await eventually(() => !groupAlive(group), `owned group ${group} gone`);
+    if (held) {
+      const observed = await Promise.allSettled(held.groups.map((group) => eventually(() => !groupAlive(group), `owned group ${group} gone`)));
+      const errors = observed.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+      if (errors.length) throw new AggregateError(errors, "session holder groups did not stop");
+    }
   });
   try {
     held = await new Promise<Held>((done, fail) => {
@@ -58,7 +62,8 @@ async function hold(): Promise<{ owner: ReturnType<typeof spawn>; held: Held; st
     lines.close();
     return { owner, held, stop };
   } catch (error) {
-    await stop();
+    try { await stop(); }
+    catch (shutdown) { throw new AggregateError([error, shutdown], "session holder setup and cleanup failed"); }
     throw error;
   }
 }
@@ -77,7 +82,7 @@ describe("an interrupted test process", { skip: process.platform !== "linux" && 
     it(`leaves nothing running after ${signal}`, async () => {
       const holder = await hold();
       const { owner, held } = holder;
-      try {
+      await withCleanup(async () => {
         assert.ok(held.display, "a private display");
         assert.equal(held.groups.length, 2, "the driver's group and Xvfb's");
         for (const group of held.groups) assert.ok(groupAlive(group), `group ${group} runs`);
@@ -86,9 +91,7 @@ describe("an interrupted test process", { skip: process.platform !== "linux" && 
         for (const group of held.groups) await eventually(() => !groupAlive(group), `group ${group} gone after ${signal}`);
         await eventually(() => !displayListening(held.display!), `display ${held.display} closed`);
         await eventually(() => !displayLocked(held.display!), `display ${held.display} unlocked`);
-      } finally {
-        await holder.stop();
-      }
+      }, () => holder.stop());
     });
   }
 });

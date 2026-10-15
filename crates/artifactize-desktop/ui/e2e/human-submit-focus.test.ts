@@ -6,6 +6,7 @@ import { it } from "node:test";
 import { create, signoff } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
+import { withCleanup } from "./owned.ts";
 
 for (const screen of ["Monitor graph", "Review"]) {
   // UX edges: E-HUMAN-GREEN E-HUMAN-SUBMIT E-HUMAN-ESC-DETAIL
@@ -13,7 +14,7 @@ for (const screen of ["Monitor graph", "Review"]) {
     checkBuild();
     const fixture = await create();
     let session: Session | undefined;
-    try {
+    await withCleanup(async () => {
       session = await start(fixture, ...(screen === "Review" ? ["review"] : []));
       const browser = session.browser;
       const human = () => browser.$('[aria-label="Human review"]');
@@ -53,20 +54,6 @@ for (const screen of ["Monitor graph", "Review"]) {
       if (process.env.HUMAN_FOCUS_EVIDENCE) {
         await browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${basename(fixture.root)}-${screen.replaceAll(" ", "-")}-closed.png`));
       }
-    } catch (error) {
-      if (session) {
-        const request = signoff(fixture);
-        console.log("Human submit failure", screen, { status: request.status, result: request.result }, await session.browser.execute(() => ({
-          text: document.body.innerText,
-          focused: { tag: document.activeElement?.tagName, id: document.activeElement?.id, label: document.activeElement?.getAttribute("aria-label") },
-        })));
-        if (process.env.HUMAN_FOCUS_EVIDENCE) {
-          await session.browser.saveScreenshot(join(process.env.HUMAN_FOCUS_EVIDENCE, `${basename(fixture.root)}-${screen.replaceAll(" ", "-")}-failure.png`));
-        }
-      }
-      throw error;
-    } finally {
-      await session?.dispose();
-    }
+    }, () => session?.dispose());
   });
 }

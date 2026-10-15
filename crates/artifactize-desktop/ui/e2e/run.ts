@@ -1,7 +1,7 @@
 // One suite owns its build, the exact frontend input, and the executables every worker uses.
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, prepare, readCandidate, retain, runSuite } from "./build.ts";
+import { cleanup, offerCandidate, prepare, readCandidate, runSuite } from "./build.ts";
 
 const mode = process.argv[2] ?? "suite";
 if (mode === "cleanup") {
@@ -9,9 +9,8 @@ if (mode === "cleanup") {
 } else {
   const candidate = await prepare();
   if (mode === "prepare") {
-    // The verification builder owns this declared input until its Run becomes terminal.
-    await retain(candidate.root);
-    console.log(candidate.manifest);
+    // The builder records its cleanup responsibility before sending the mandatory ACK.
+    await offerCandidate(candidate);
   } else if (mode === "suite") {
     try {
       const tests = readdirSync(import.meta.dirname).filter((name) => name.endsWith(".test.ts")).sort().map((name) => join(import.meta.dirname, name));

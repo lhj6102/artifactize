@@ -51,10 +51,33 @@ describe("launching the Monitor", () => {
     assert.ok(entries.some((entry) => entry.startsWith("ALL")), `ALL is listed: ${entries.join(" | ")}`);
     assert.ok(entries.some((entry) => entry.includes("other")), "the other repository is listed");
     assert.ok(entries.some((entry) => entry.includes("third")), "the third repository is listed");
-    // The selected repository's Run: its Artifacts with their verdicts.
-    const tree = await browser.$('[role="tree"]').getText();
-    for (const name of ["release", "ship", "docs"]) assert.match(tree, new RegExp(name));
-    assert.match(await text(), /WAITING_HUMAN — waiting for a Human submission/);
+    // Identify the saved Run before checking the verdicts of its own tree rows.
+    const selectedRun = await browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0]);
+    assert.equal(selectedRun, initialRun);
+    const docs = await browser.$('[role="treeitem"][data-path="a:docs"]');
+    await docs.click();
+    await press(browser, ["l"], async () => (await docs.getAttribute("aria-expanded")) === "true", "the completed docs eval unfolded");
+    const verdict = (path: string) => browser.execute((id) => {
+      const row = [...document.querySelectorAll('[role="treeitem"]')].find((entry) => entry.getAttribute("data-path") === id);
+      return {
+        glyph: row?.querySelector(".glyph")?.textContent?.trim(),
+        status: row?.querySelector(".status")?.textContent?.trim(),
+      };
+    }, path);
+    // This fixture has a waiting Human release, its waiting consumer and GREEN docs.
+    // The Artifact summaries and their individual evals must each display that state.
+    for (const [path, glyph, status] of [
+      ["a:release", "?", /in progress: signoff/],
+      ["a:release/e:release/signoff", "?", /Human sign-off · unclaimed/],
+      ["a:ship", "…", /waits for release/],
+      ["a:ship/e:ship/check", "…", /waits for release/],
+      ["a:docs", "✓", /^$/],
+      ["a:docs/e:docs/lint", "✓", /^GREEN(?: · reused)?$/],
+    ] as const) {
+      const shown = await verdict(path);
+      assert.equal(shown.glyph, glyph, `${path}'s verdict glyph in ${initialRun}`);
+      assert.match(shown.status ?? "missing row", status, `${path}'s own status in ${initialRun}`);
+    }
     // Another scope lists its own Runs.
     const runIds = () =>
       browser.execute(() =>

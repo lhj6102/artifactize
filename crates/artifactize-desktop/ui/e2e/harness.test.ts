@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { create, createGraph } from "./fixture.ts";
 import { checkBuild, LAUNCH_TIMEOUT, start, type Session } from "./driver.ts";
 import { commandStream, snapshot, target } from "../../harness/harness.mts";
-import { Owned } from "./owned.ts";
+import { Owned, withCleanup } from "./owned.ts";
 import { snapshotsGone } from "./build.ts";
 import { running, startedWorkers, states } from "./runs.ts";
 import { press } from "./keys.ts";
@@ -44,14 +44,11 @@ describe("desktop command stream lifecycle", () => {
       const queued = assert.rejects(commands.run(async () => { events.push("queued work"); }), /session is stopping/);
       const ending = commands.end();
       const completed = fails ? assert.rejects(launch, /replacement did not render/) : launch;
-      try {
+      await withCleanup(async () => {
         assert.equal(commands.end(), ending, "signal and socket stop join the same shutdown");
         assert.deepEqual(events, ["stopped original", "closed"], "admission closes without releasing the active launch's inputs");
         await assert.rejects(commands.run(async () => { events.push("new work"); }), /session is stopping/);
-      } finally {
-        replacement.resolve();
-        await Promise.all([completed, queued, ending]);
-      }
+      }, () => { replacement.resolve(); }, async () => { await completed; }, () => queued, () => ending);
       assert.deepEqual(events, ["stopped original", "closed", "stopped replacement", "removed inputs"]);
     });
   }
@@ -128,24 +125,23 @@ describe("desktop Agent session", () => {
       const lines = createInterface({ input: owner.child.stdout! });
       const deadline = setTimeout(() => finish(new Error("desktop Agent session did not become ready")), LAUNCH_TIMEOUT);
       const exited = (code: number | null) => finish(new Error(`desktop Agent session exited ${code} before ready`));
+      const failed = (error: Error) => finish(error);
       function finish(error?: Error) {
         clearTimeout(deadline);
         lines.close();
         owner.child.off("exit", exited);
+        owner.child.off("error", failed);
         if (error) fail(error);
         else done();
       }
       lines.once("line", (line) => line === "ready" ? finish() : finish(new Error(`unexpected readiness: ${line}`)));
       owner.child.once("exit", exited);
+      owner.child.once("error", failed);
     });
   });
   afterEach(async () => {
     if (!owner) return;
-    try { if (!stopped) call("stop"); }
-    finally {
-      await owner.stop();
-      await snapshotsGone(directory);
-    }
+    await withCleanup(() => { if (!stopped) call("stop"); }, () => owner.stop(), () => snapshotsGone(directory));
   });
 
   it("relaunches each real entry point and shows a changed declaration only after current-graph refresh", () => {

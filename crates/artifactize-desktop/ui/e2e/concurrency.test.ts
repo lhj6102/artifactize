@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { cargoGate, snapshotsGone } from "./build.ts";
 import { create, createGraph, verifyWaiting, type Fixture } from "./fixture.ts";
 import { checkBuild, LAUNCH_TIMEOUT, start, type Session } from "./driver.ts";
-import { Owned } from "./owned.ts";
+import { Owned, withCleanup } from "./owned.ts";
 
 describe("native Cargo and real desktop candidates", () => {
   const harness = resolve(import.meta.dirname, "../../harness/harness.mts");
@@ -28,15 +28,10 @@ describe("native Cargo and real desktop candidates", () => {
     await session.browser.waitUntil(() => session.browser.execute(() => document.querySelector('[role="tree"]')?.textContent?.includes("signoff") ?? false));
   });
   afterEach(async () => {
-    try {
-      if (owner) {
-        try { execFileSync(process.execPath, [harness, "stop"], { env, timeout: LAUNCH_TIMEOUT }); }
-        finally { await owner.stop(); await snapshotsGone(directory); }
-      }
-    } finally {
-      try { await session?.dispose(); }
-      finally { await native; }
-    }
+    await withCleanup(() => {
+      if (owner) execFileSync(process.execPath, [harness, "stop"], { env, timeout: LAUNCH_TIMEOUT });
+    }, () => owner?.stop(), async () => { if (directory) await snapshotsGone(directory); },
+    () => session?.dispose(), async () => { const error = await native; if (error) throw error; });
   });
 
   it("keeps Monitor and the Agent session usable across concurrent desktop cargo test and a relaunch", async () => {
@@ -50,14 +45,17 @@ describe("native Cargo and real desktop candidates", () => {
       const lines = createInterface({ input: owner!.child.stdout! });
       const deadline = setTimeout(() => finish(new Error("concurrent Agent session did not become ready")), LAUNCH_TIMEOUT);
       const exit = (code: number | null) => finish(new Error(`concurrent Agent session exited ${code}`));
+      const failed = (error: Error) => finish(error);
       function finish(error?: Error) {
         clearTimeout(deadline);
         lines.close();
         owner!.child.off("exit", exit);
+        owner!.child.off("error", failed);
         if (error) fail(error); else done();
       }
       lines.once("line", (line) => line === "ready" ? finish() : finish(new Error(`unexpected readiness: ${line}`)));
       owner!.child.once("exit", exit);
+      owner!.child.once("error", failed);
     });
     const snapshot = () => execFileSync(process.execPath, [harness, "snapshot"], {
       env, input: JSON.stringify({ args: {} }), encoding: "utf8", timeout: LAUNCH_TIMEOUT,

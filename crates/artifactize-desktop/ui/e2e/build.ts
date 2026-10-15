@@ -5,6 +5,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { acknowledge } from "./handoff.ts";
 import { groupAlive, Owned } from "./owned.ts";
 import { removeFixture } from "./runs.ts";
 
@@ -35,8 +36,8 @@ function lease(root: string) {
   leases.set(root, { child, closed });
 }
 
-/** Transfer a prepared candidate's lifetime explicitly to the verification builder. */
-export async function retain(root: string): Promise<void> {
+/** Disarm only after cleanup completes or the receiving owner actually accepts responsibility. */
+async function disarm(root: string): Promise<void> {
   const lease = leases.get(root);
   if (!lease) return;
   lease.child.ref();
@@ -44,6 +45,25 @@ export async function retain(root: string): Promise<void> {
   await lease.closed;
   lease.child.stdin?.destroy();
   leases.delete(root);
+}
+
+/** Offer a candidate while retaining its fallback until the builder explicitly accepts it. */
+export async function offerCandidate(candidate: Candidate): Promise<void> {
+  const controller = new AbortController();
+  const interrupted = () => controller.abort(new Error("candidate handoff was cancelled"));
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, interrupted);
+  try {
+    await acknowledge(candidate.manifest, process.stdin, process.stdout, controller.signal);
+    controller.signal.throwIfAborted();
+    await disarm(candidate.root);
+    controller.signal.throwIfAborted();
+  } catch (error) {
+    try { await cleanup(candidate.root); }
+    catch (shutdown) { throw new AggregateError([error, shutdown], "candidate handoff and cleanup failed"); }
+    throw error;
+  } finally {
+    for (const signal of ["SIGINT", "SIGTERM"] as const) process.off(signal, interrupted);
+  }
 }
 
 export function resourceRoot(): string {
@@ -203,16 +223,21 @@ export async function cleanup(root: string): Promise<void> {
   const fixtures = join(root, "fixtures");
   if (existsSync(join(root, "candidate.json")) && existsSync(fixtures)) {
     const candidate = readCandidate(join(root, "candidate.json"));
+    const failures: unknown[] = [];
     for (const name of readdirSync(fixtures)) {
       const fixture = join(fixtures, name);
-      // A harness nested below this fixture has its own lease and durable Runs.
-      await snapshotsGone(join(fixture, "session"));
-      removeFixture(candidate.cli, fixture);
+      try {
+        // A failed snapshot join forbids removing this fixture, but must not skip
+        // settlement of other independently owned fixtures.
+        await snapshotsGone(join(fixture, "session"));
+        removeFixture(candidate.cli, fixture);
+      } catch (error) { failures.push(error); }
     }
+    if (failures.length > 0) throw new AggregateError(failures, "candidate fixture cleanup failed; preserve inputs");
   }
   // A local fallback is still a user of these inputs until its real close. If this
   // cleanup belongs to the detached fallback itself, there is no local lease to join.
-  await retain(root);
+  await disarm(root);
   rmSync(root, { recursive: true, force: true });
 }
 
