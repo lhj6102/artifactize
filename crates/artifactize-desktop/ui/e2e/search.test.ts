@@ -73,7 +73,7 @@ describe("review search", () => {
     assert.equal(activity.search?.completed, true);
   });
 
-  // UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR
+  // J-REVIEW-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR E-REVIEW-SEARCH-LEAVE
   it("filters every repository's requests and takes suggestions for a partial key and value", async () => {
     await press(browser, ["/"], focused("Search requests"), "focus in the search");
     // Esc clears the query: every request of every repository.
@@ -106,6 +106,20 @@ describe("review search", () => {
       const shown = await rows();
       return shown.length === 1 && /release\/signoff/.test(shown[0]) && /other/.test(shown[0]);
     }, "the other repository's sign-off");
+
+    // Continue this same journey after accepting the completion: Esc first closes
+    // another offered suggestion without losing that query, then clears all terms,
+    // restores the complete request list, and finally returns focus to Requests.
+    await type("sta");
+    await eventually(async () => (await suggestions()).length > 0, "suggestions after the accepted repository");
+    const kept = await query();
+    await press(browser, ["Escape"], async () => (await suggestions()).length === 0, "the post-completion suggestions closed");
+    assert.equal(await query(), kept, "closing suggestions preserves the completed terms and partial input");
+    const beforeClear = await checkpoint(browser);
+    await press(browser, ["Escape"], holds(""), "the same journey's query cleared");
+    await commandsRendered(browser, beforeClear);
+    await eventually(async () => (await rows()).length === 3 * 3, "all three repositories' requests restored after clearing");
+    await press(browser, ["Escape"], focused("Requests"), "the empty search returns focus to Requests");
   });
 
   // UX edges: E-REVIEW-READONLY E-REVIEW-SEARCH-LEAVE

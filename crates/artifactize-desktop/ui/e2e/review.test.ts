@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { addRepository, artifactize, create, type Fixture, requests, signoff } from "./fixture.ts";
-import { press } from "./keys.ts";
+import { press, typeText } from "./keys.ts";
 import { checkBuild, type Session, start, windowClosed } from "./driver.ts";
 import { commandsRendered } from "./commands.ts";
 
@@ -211,13 +211,21 @@ describe("a GREEN submission on the Review screen", () => {
     const comment = await browser.$("#field-comment");
     await comment.waitForExist({ timeout: 10000 });
     await comment.click();
-    await browser.keys([..."looks good"]);
+    await typeText(browser, "looks good");
     await browser.keys(["Control", "s"]);
     await eventually(async () => signoff(fixture).status === "GREEN", "GREEN saved");
-    await eventually(async () => /completed result/i.test(await text()), "the completed result");
-    // The scheduler's terminal receipt, not a delay, crosses the completion broadcasts.
-    assert.equal(artifactize(fixture, "run", "show", signoff(fixture).runId, "--wait"), 0);
-    assert.ok(await human.isExisting(), "the completed Detail stays open");
-    assert.match(await text(), /completed result/i);
+    assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "looks good" });
+    const run = signoff(fixture).runId;
+    // Monitor stays mounted while Review is shown. Its exact Run row acknowledges the
+    // app's terminal subscription update without leaving this completed Review Detail.
+    await eventually(() => browser.execute((id) => {
+      const row = [...document.querySelectorAll('.monitor [aria-label="Runs"] [role="option"]')]
+        .find((entry) => entry.querySelector(".id")?.textContent?.split(/\s/)[0] === id);
+      return row?.querySelector(".status")?.textContent?.trim() === "GREEN";
+    }, run), "the app has rendered this Run's terminal GREEN update");
+    await commandsRendered(browser);
+    assert.ok(await human.isExisting(), "the completed Detail stays open after the terminal subscription update");
+    const completed = await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? "");
+    assert.match(completed, /completed result/i);
   });
 });

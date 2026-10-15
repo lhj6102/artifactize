@@ -5,10 +5,10 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { artifactize, create, type Fixture, signoff, slowTool } from "./fixture.ts";
+import { artifactize, create, createNavigationFixture, type Fixture, signoff, slowTool } from "./fixture.ts";
 import { checkBuild, type Session, start, windowClosed } from "./driver.ts";
 import { afterRender, press } from "./keys.ts";
-import { checkpoint } from "./commands.ts";
+import { checkpoint, commandsRendered } from "./commands.ts";
 
 /** Wait until `check` holds, polling the app; WebKit renders asynchronously. */
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -67,24 +67,6 @@ describe("monitor", () => {
     const activity = (await checkpoint(browser)).activity;
     assert.ok(activity.commands.launch?.completed > 0, "the window observes its normal launch completion");
     assert.ok(activity.commands.browse?.completed > 0, "the AppState Browse helper reports to the same owner");
-  });
-
-  // UX edges: E-MON-SCOPE-RUNS E-MON-RUNS-TREE E-MON-TREE-MOVE E-MON-TREE-DETAIL
-  it("navigates Scope → Runs → tree → Detail with the keyboard", async () => {
-    await browser.$('[aria-label="Scope"] [role="option"]').click();
-    await eventually(async () => (await text()).includes("all repositories"), "ALL selected");
-    await browser.keys(["Enter"]);
-    await browser.keys(["Enter"]);
-    await eventually(() => browser.$('[role="tree"]').isFocused(), "tree focus");
-    // Move to the docs Artifact and back to the sign-off.
-    await browser.keys(["j"]);
-    await eventually(async () => /ship|check/.test(await browser.$('[role="treeitem"][aria-selected="true"]').getText()), "moved down");
-    await browser.keys(["k"]);
-    await eventually(async () => /signoff/.test(await browser.$('[role="treeitem"][aria-selected="true"]').getText()), "back on signoff");
-    await browser.keys(["Enter"]);
-    await eventually(() => human().isExisting(), "Human Detail");
-    const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
-    assert.match(crumbs, /artifactize\s*›\s*all repositories\s*›\s*run-\S+\s*›\s*signoff/);
   });
 
   // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE E-HUMAN-CLAIM E-HUMAN-RELEASE E-MON-LIVE
@@ -245,8 +227,17 @@ describe("monitor", () => {
     await browser.keys(["Control", "s"]);
     await eventually(async () => signoff(fixture).status === "GREEN", "GREEN saved");
     assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: `${korean} (JSON)` });
-    await eventually(async () => /completed result/i.test(await text()), "completed Detail");
-    assert.match(await text(), /Submitted GREEN for release\/signoff/);
+    const run = signoff(fixture).runId;
+    await eventually(() => browser.execute((id) => {
+      const row = [...document.querySelectorAll('.monitor [aria-label="Runs"] [role="option"]')]
+        .find((entry) => entry.querySelector(".id")?.textContent?.split(/\s/)[0] === id);
+      return row?.querySelector(".status")?.textContent?.trim() === "GREEN";
+    }, run), "the app has rendered this Run's terminal GREEN update");
+    await commandsRendered(browser);
+    assert.ok(await human().isExisting(), "the completed Detail stays open after the terminal subscription update");
+    const completed = await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? "");
+    assert.match(completed, /completed result/i);
+    assert.match(completed, /Submitted GREEN for release\/signoff/);
   });
 
   // UX edges: E-MON-RESIZE
@@ -269,6 +260,68 @@ describe("monitor", () => {
       await browser.action("pointer", { id: "resize" }).up().perform();
     } finally { await browser.releaseActions(); }
     await eventually(async () => (await width()) > before + 60, "a wider Run tree");
+  });
+});
+
+describe("a continuous Monitor keyboard journey", () => {
+  let example: Awaited<ReturnType<typeof createNavigationFixture>>;
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const pane = (name: string) => browser.$(`[role="listbox"][aria-label="${name}"]`);
+  const selectedRun = () => browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
+  const selectedTree = () => browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("data-path");
+  const scopeIndex = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"]')]
+    .findIndex((row) => row.getAttribute("aria-selected") === "true"));
+
+  beforeEach(async () => {
+    checkBuild();
+    example = await createNavigationFixture();
+    session = await start(example.fixture);
+    browser = session.browser;
+    await eventually(() => pane("Runs").isFocused(), "the initial Runs pane focused");
+  });
+
+  afterEach(async () => { await session?.dispose(); });
+
+  // UX edges: E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TREE
+  // E-MON-TREE-MOVE E-MON-TREE-FOLD E-MON-TREE-DETAIL E-MON-DETAIL-BACK
+  // E-MON-TREE-TO-RUNS E-MON-RUNS-TO-SCOPE
+  it("walks Scope → another Run → tree movement and folds → Detail → Tree → Runs → Scope without a mouse", async () => {
+    const [older, newer] = example.runs;
+    await press(browser, ["ArrowLeft"], () => pane("Scope").isFocused(), "Scope focused");
+    const labels = await browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"] .label')]
+      .map((row) => row.textContent?.trim() ?? ""));
+    const repo = labels.indexOf("repo");
+    assert.ok(repo > 0, "this case's repository follows ALL");
+    while ((await scopeIndex()) < repo) {
+      const before = await scopeIndex();
+      await press(browser, ["ArrowDown"], async () => (await scopeIndex()) === before + 1, "the next scope selected");
+    }
+    assert.equal(await scopeIndex(), repo);
+    const runs = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Runs"] .id')]
+      .map((row) => row.textContent?.split(/\s/)[0] ?? "").sort());
+    await eventually(async () => JSON.stringify(await runs()) === JSON.stringify([...example.scopes.repo].sort()), "the selected repository's exact Runs");
+    await press(browser, ["Enter"], () => pane("Runs").isFocused(), "the repository's Runs focused");
+    assert.equal(await selectedRun(), newer.id);
+    await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id, "another identified Run selected");
+    await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "that Run's Tree focused");
+    const evalPath = `a:subject/e:subject/${older.eval}`;
+    await eventually(async () => (await selectedTree()) === evalPath, "the older Run's own criterion selected");
+    await press(browser, ["k"], async () => (await selectedTree()) === "a:subject", "the Artifact above its eval selected");
+    const expanded = () => browser.$('[role="treeitem"][data-path="a:subject"]').getAttribute("aria-expanded");
+    await press(browser, ["h"], async () => (await expanded()) === "false", "the Artifact folded");
+    await press(browser, ["l"], async () => (await expanded()) === "true", "the Artifact unfolded");
+    await press(browser, ["j"], async () => (await selectedTree()) === evalPath, "the identified eval selected again");
+    const human = () => browser.$('[aria-label="Human review"]');
+    await press(browser, ["Enter"], () => human().isExisting(), "the selected eval's Detail opened");
+    await eventually(() => browser.execute((name) => document.querySelector('[aria-label="Human review"] h3')?.textContent?.includes(`subject/${name}`) ?? false,
+      older.eval), "Detail has loaded the eval selected in this journey");
+    await press(browser, ["Escape"], async () => !(await human().isExisting()) && await browser.$('[role="tree"]').isFocused(), "back to Tree");
+    assert.equal(await selectedTree(), evalPath, "Tree selection survived the Detail");
+    await press(browser, ["Escape"], () => pane("Runs").isFocused(), "back to Runs");
+    assert.equal(await selectedRun(), older.id, "the same Run remains selected");
+    await press(browser, ["ArrowLeft"], () => pane("Scope").isFocused(), "back to Scope");
+    assert.equal(await scopeIndex(), repo, "the same repository scope remains selected");
   });
 });
 

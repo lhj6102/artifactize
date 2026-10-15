@@ -13,6 +13,20 @@ const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 export type Group = { group: number; start_time: number };
 
+/** Candidate-wide users retain their original birth, not a later reuse of the PGID. */
+export function registeredGroups(root: string): Group[] {
+  return readFileSync(join(root, "groups"), "utf8").trim().split("\n").filter(Boolean).map((line) => {
+    const value: unknown = JSON.parse(line);
+    if (!value || typeof value !== "object") throw new Error(`invalid registered group lifetime: ${line}`);
+    const { group, start_time } = value as Partial<Group>;
+    if (typeof group !== "number" || !Number.isSafeInteger(group) || group <= 0 ||
+        typeof start_time !== "number" || !Number.isSafeInteger(start_time) || start_time < 0) {
+      throw new Error(`invalid registered group lifetime: ${line}`);
+    }
+    return { group, start_time };
+  });
+}
+
 /** A leader birth mismatch means the numeric group belongs to a later lifetime. If the
  * original leader has exited, its remaining children still keep the group alive. */
 export function groupAlive(group: number, birth?: number): boolean {
@@ -131,7 +145,10 @@ export class Owned {
       (watchdog.stdin as unknown as { unref?: () => void } | null)?.unref?.();
       // Install ownership before registration can fail (for example a full disk).
       const resources = options.env?.DESKTOP_TEST_RESOURCES ?? process.env.DESKTOP_TEST_RESOURCES;
-      if (resources) appendFileSync(join(resources, "groups"), `${child.pid}\n`);
+      if (resources) {
+        if (birth === null && groupAlive(child.pid)) throw new Error(`cannot identify acquired process group ${child.pid}`);
+        if (birth !== null) appendFileSync(join(resources, "groups"), JSON.stringify({ group: child.pid, start_time: birth }) + "\n");
+      }
     } catch (error) { owned.#setupFailed(error); }
     return owned;
   }

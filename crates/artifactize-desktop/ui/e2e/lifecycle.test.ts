@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
 import { windowClosed } from "./driver.ts";
-import { groupAlive, Owned, withCleanup } from "./owned.ts";
+import { cleanup, resourceRoot } from "./build.ts";
+import { groupAlive, Owned, registeredGroups, withCleanup } from "./owned.ts";
 
 it("requires an owned app lifetime rather than treating a session response or error as closure", async () => {
   await assert.rejects(windowClosed({ getWindowHandles: async () => [] }), /requires an owned native app session/);
@@ -61,6 +62,27 @@ assert.ok(existsSync(${JSON.stringify(join(root, "other", ".git"))}));`;
     assert.equal(existsSync(index), false, "staging did not use the inherited index");
     assert.equal(existsSync(marker), false, "commit did not invoke inherited hooks or signing");
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("does not retain a candidate for an unrelated group's reuse of a registered number", async () => {
+  const foreign = mkdtempSync(join(tmpdir(), "artifactize-desktop-foreign-group-"));
+  writeFileSync(join(foreign, "groups"), "");
+  const owner = Owned.spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    env: { ...process.env, DESKTOP_TEST_RESOURCES: foreign }, stdio: ["ignore", "ignore", "ignore"],
+  });
+  const root = resourceRoot();
+  await withCleanup(async () => {
+    const [current] = registeredGroups(foreign);
+    assert.ok(groupAlive(current.group, current.start_time), "the independent owner is actually alive");
+    // Model a stale registry lifetime without requiring the OS to recycle a PID.
+    writeFileSync(join(root, "groups"), JSON.stringify({ group: current.group, start_time: current.start_time - 1 }) + "\n");
+    await cleanup(root);
+    assert.equal(existsSync(root), false, "a different birth is not an owned user of these inputs");
+    assert.ok(groupAlive(current.group, current.start_time), "cleanup leaves the unrelated evaluation untouched");
+  }, () => cleanup(root), async () => {
+    await owner.stop();
+    rmSync(foreign, { recursive: true, force: true });
+  });
 });
 
 it("joins an acquired process even when registering its group fails", async () => {

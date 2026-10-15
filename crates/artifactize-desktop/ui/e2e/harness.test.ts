@@ -1,16 +1,11 @@
 // The Agent session's launch and declaration tools drive the real app and real fixture bytes.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { create, createGraph } from "./fixture.ts";
-import { checkBuild, LAUNCH_TIMEOUT, start, type Session } from "./driver.ts";
+import { create } from "./fixture.ts";
+import { startAgent, type AgentSession } from "./agent.ts";
+import { checkBuild, start, type Session } from "./driver.ts";
 import { commandStream, snapshot, target } from "../../harness/harness.mts";
-import { Owned, withCleanup } from "./owned.ts";
-import { snapshotsGone } from "./build.ts";
-import { running, startedWorkers, states } from "./runs.ts";
+import { withCleanup } from "./owned.ts";
 import { press } from "./keys.ts";
 
 function deferred<T>() {
@@ -99,50 +94,10 @@ describe("desktop snapshot controls", () => {
 });
 
 describe("desktop Agent session", () => {
-  const harness = resolve(import.meta.dirname, "../../harness/harness.mts");
-  let owner: Owned;
-  let env: NodeJS.ProcessEnv;
-  let directory: string;
-  let stopped = false;
-  function call(mode: string, args: Record<string, unknown> = {}): string {
-    const output = execFileSync(process.execPath, [harness, mode], {
-      env, input: JSON.stringify({ args }), encoding: "utf8", timeout: mode === "launch" ? LAUNCH_TIMEOUT : 30000,
-    });
-    if (mode === "stop") { stopped = true; return output; }
-    const reply = JSON.parse(output) as { isError?: boolean; content: { text: string }[] };
-    assert.equal(reply.isError ?? false, false, output);
-    return reply.content.map((part) => part.text).join("\n");
-  }
-
-  beforeEach(async () => {
-    checkBuild();
-    stopped = false;
-    directory = join(createGraph().root, "session");
-    mkdirSync(directory);
-    env = { ...process.env, ARTIFACTIZE_SESSION_DIR: directory, ARTIFACTIZE_REMOTE: "off" };
-    owner = Owned.spawn(process.execPath, [harness, "start"], { env, stdio: ["ignore", "pipe", "inherit"] });
-    await new Promise<void>((done, fail) => {
-      const lines = createInterface({ input: owner.child.stdout! });
-      const deadline = setTimeout(() => finish(new Error("desktop Agent session did not become ready")), LAUNCH_TIMEOUT);
-      const exited = (code: number | null) => finish(new Error(`desktop Agent session exited ${code} before ready`));
-      const failed = (error: Error) => finish(error);
-      function finish(error?: Error) {
-        clearTimeout(deadline);
-        lines.close();
-        owner.child.off("exit", exited);
-        owner.child.off("error", failed);
-        if (error) fail(error);
-        else done();
-      }
-      lines.once("line", (line) => line === "ready" ? finish() : finish(new Error(`unexpected readiness: ${line}`)));
-      owner.child.once("exit", exited);
-      owner.child.once("error", failed);
-    });
-  });
-  afterEach(async () => {
-    if (!owner) return;
-    await withCleanup(() => { if (!stopped) call("stop"); }, () => owner.stop(), () => snapshotsGone(directory));
-  });
+  let agent: AgentSession | undefined;
+  const call = (operation: Parameters<AgentSession["call"]>[0], args: Record<string, unknown> = {}) => agent!.call(operation, args);
+  beforeEach(async () => { agent = undefined; agent = await startAgent(); });
+  afterEach(async () => { await agent?.stop(); });
 
   it("relaunches each real entry point and shows a changed declaration only after current-graph refresh", () => {
     assert.match(call("snapshot"), /signoff/);
@@ -181,17 +136,13 @@ describe("desktop Agent session", () => {
   it("settles workers from every exposed state before deleting the fixture", async () => {
     call("launch", { screen: "graph" });
     assert.match(call("cli", { args: ["verify", "--all", "--json"] }), /"run": "run-/);
-    const candidate = join(directory, readdirSync(directory).find((name) => name.startsWith("candidate-"))!);
-    const fixtures = join(candidate, "fixtures");
-    const root = join(fixtures, readdirSync(fixtures)[0]);
-    const exposed = states(root);
-    assert.equal(exposed.length, 2, "both Monitor state and graph-state exist");
-    const owners = await startedWorkers(exposed);
-    assert.ok(owners.some(running), "durable workers actually exist before stop");
+    const work = await agent!.observeWork();
+    assert.deepEqual(work.scopes, ["graph-state", "state"], "both exposed states exist");
+    assert.ok(work.workersActive, "durable work actually exists before stop");
     // Relaunching away from the graph must not lose its state ownership.
     call("launch", { screen: "monitor" });
-    call("stop");
-    assert.ok(owners.every((owner) => !running(owner)), "every observed worker exited");
-    assert.equal(existsSync(root), false, "only then are the working files removed");
+    await agent!.stop();
+    assert.ok(work.workersExited(), "every observed worker exited");
+    assert.equal(work.inputsRemoved(), true, "only then are the working files removed");
   });
 });

@@ -11,6 +11,13 @@ import { cleanup } from "./build.ts";
 import { exited, finishFixture, removeFixture, running, workers } from "./runs.ts";
 import { groupAlive, Owned, registerGroup } from "./owned.ts";
 
+/** Aggregation must retain the real failing CLI/cancellation cause, not merely a
+ * generic cleanup wrapper message. State and executable assertions below still apply. */
+function failedCleanup(error: unknown): boolean {
+  if (error instanceof AggregateError) return error.errors.length > 0 && error.errors.every(failedCleanup);
+  return error instanceof Error && (/cannot list fixture Runs|bad option/.test(error.message) || failedCleanup(error.cause));
+}
+
 describe("Linux durable worker exit", { skip: process.platform !== "linux" && "WebKitGTK's native fixture layer observes procfs birth identities" }, () => {
   it("distinguishes an actual worker, another birth identity and an exited worker", async () => {
     const root = mkdtempSync(join(tmpdir(), "artifactize-desktop-run-exit-"));
@@ -127,10 +134,9 @@ describe("Linux durable worker exit", { skip: process.platform !== "linux" && "W
       mkdirSync(state, { recursive: true });
       mkdirSync(join(root, "fixtures", "fixture-failure", "repo"));
       writeFileSync(join(state, "state.sqlite"), "owned state");
-      await assert.rejects(cleanup(root), /cannot list fixture Runs|bad option/);
+      await assert.rejects(cleanup(root), failedCleanup);
       let stopped = false;
-      await assert.rejects(finishFixture(cli, join(root, "fixtures", "fixture-failure"), async () => { stopped = true; }),
-        /cannot list fixture Runs|bad option/);
+      await assert.rejects(finishFixture(cli, join(root, "fixtures", "fixture-failure"), async () => { stopped = true; }), failedCleanup);
       assert.equal(stopped, true, "settlement failure still shuts down the holder on unwind");
       const stopError = new Error("native stop also failed");
       await assert.rejects(finishFixture(cli, join(root, "fixtures", "fixture-failure"), async () => { throw stopError; }),

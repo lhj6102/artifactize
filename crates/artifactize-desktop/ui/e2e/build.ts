@@ -1,12 +1,12 @@
 // Build inputs and executable candidates belong to one suite, not Cargo's shared binary names.
 // This Linux WebKitGTK native helper uses the same POSIX group/lease boundary as Owned.
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { type ChildProcess, spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acknowledge } from "./handoff.ts";
-import { groupAlive, Owned } from "./owned.ts";
+import { groupAlive, Owned, registeredGroups } from "./owned.ts";
 import { removeFixture } from "./runs.ts";
 
 export const workspace = resolve(import.meta.dirname, "../../../..");
@@ -17,31 +17,69 @@ const BUILD_TIMEOUT = 15 * 60 * 1000;
 const CLEANUP_TIMEOUT = 20000;
 
 export type Candidate = { root: string; cli: string; app: string; manifest: string };
-const leases = new Map<string, { child: ChildProcess; closed: Promise<void> }>();
+const leases = new Map<string, { child: ChildProcess; closed: Promise<void>; disarm: () => void; check: () => void }>();
 
-/** A pipe, unlike an exit hook, closes on SIGKILL too. Child watchdogs stop their groups;
- * this lease then settles durable Runs and removes the candidate after all groups are gone. */
+/** A pipe, unlike an exit hook, closes on SIGKILL too. Files, unlike parent-owned pipes,
+ * retain the fallback's diagnostics and result even when its original owner is gone. */
 function lease(root: string) {
-  const child = spawn("sh", ["-c", 'read _; "$0" "$1" cleanup "$2"', process.execPath,
-    fileURLToPath(new URL("./build.ts", import.meta.url)), root], { detached: true, stdio: ["pipe", "ignore", "ignore"] });
+  const output = process.env.ARTIFACTIZE_OUTPUT_DIR ?? tmpdir();
+  mkdirSync(output, { recursive: true });
+  const diagnostics = mkdtempSync(join(output, "desktop-e2e-cleanup-"));
+  console.error(`Desktop E2E cleanup diagnostics for ${root}: ${diagnostics}`);
+  const stdout = openSync(join(diagnostics, "stdout.log"), "a");
+  let child: ChildProcess;
+  try {
+    const stderr = openSync(join(diagnostics, "stderr.log"), "a");
+    try {
+      child = spawn("sh", ["-c", `read _
+"$0" "$1" cleanup "$2"
+result=$?
+printf '{"code":%s,"signal":null,"disarmed":false}\\n' "$result" > "$3/outcome.json"
+recorded=$?
+[ "$recorded" -eq 0 ] || exit "$recorded"
+exit "$result"`, process.execPath, fileURLToPath(new URL("./build.ts", import.meta.url)), root, diagnostics],
+      { detached: true, stdio: ["pipe", stdout, stderr] });
+    } finally { closeSync(stderr); }
+  } finally { closeSync(stdout); }
+  let disarmed = false;
+  let failure: Error | undefined;
   const closed = new Promise<void>((done, fail) => {
-    child.once("error", fail);
-    child.once("close", () => done());
+    child.once("error", (error) => { failure = error; });
+    child.once("close", (code, signal) => {
+      const failures: unknown[] = [];
+      if (failure) failures.push(failure);
+      if (!disarmed || signal !== "SIGKILL") failures.push(new Error(`candidate cleanup lease ended unexpectedly: ${code ?? signal}; diagnostics: ${diagnostics}`));
+      try { writeFileSync(join(diagnostics, "outcome.json"), JSON.stringify({ code, signal, disarmed }) + "\n"); }
+      catch (error) { failures.push(error); }
+      if (failures.length) {
+        failure = new AggregateError(failures, `candidate cleanup lease failed; diagnostics: ${diagnostics}`);
+        fail(failure);
+      } else done();
+    });
   });
-  // Install rejection observation immediately, while the creator retains the actual
-  // failure for the explicit release boundary below.
+  // Observe immediately without consuming the failure: active work and explicit
+  // release both await this same real close and retain the complete diagnostics.
   void closed.catch((error: unknown) => { console.error(`candidate lease failed for ${root}`, error); process.exitCode = 1; });
   child.unref();
   (child.stdin as unknown as { unref?: () => void } | null)?.unref?.();
-  leases.set(root, { child, closed });
+  leases.set(root, { child, closed,
+    check: () => { if (failure) throw failure; },
+    disarm: () => { disarmed = true; child.ref(); child.kill("SIGKILL"); },
+  });
+}
+
+/** A failed fallback closes admission and fails active work, not just a later exit hook. */
+async function withLease<T>(root: string, work: Promise<T>): Promise<T> {
+  const lease = leases.get(root);
+  if (!lease) return work;
+  return Promise.race([work, lease.closed.then(() => { throw new Error("candidate lease closed during owned work"); })]);
 }
 
 /** Disarm only after cleanup completes or the receiving owner actually accepts responsibility. */
 async function disarm(root: string): Promise<void> {
   const lease = leases.get(root);
   if (!lease) return;
-  lease.child.ref();
-  lease.child.kill("SIGKILL");
+  lease.disarm();
   await lease.closed;
   lease.child.stdin?.destroy();
   leases.delete(root);
@@ -53,11 +91,13 @@ export async function offerCandidate(candidate: Candidate): Promise<void> {
   const interrupted = () => controller.abort(new Error("candidate handoff was cancelled"));
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, interrupted);
   try {
-    await acknowledge(candidate.manifest, process.stdin, process.stdout, controller.signal);
+    leases.get(candidate.root)?.check();
+    await withLease(candidate.root, acknowledge(candidate.manifest, process.stdin, process.stdout, controller.signal));
     controller.signal.throwIfAborted();
     await disarm(candidate.root);
     controller.signal.throwIfAborted();
   } catch (error) {
+    controller.abort(error);
     try { await cleanup(candidate.root); }
     catch (shutdown) { throw new AggregateError([error, shutdown], "candidate handoff and cleanup failed"); }
     throw error;
@@ -95,6 +135,7 @@ async function command(root: string, program: string, args: string[], env: NodeJ
 /** Both lifetimes retain the same group ownership, signal handling and shutdown join. */
 async function execute(root: string, program: string, args: string[], env: NodeJS.ProcessEnv,
   lifetime: "build" | "suite", capture = false, diagnostics?: string): Promise<string> {
+  leases.get(root)?.check();
   const owned = Owned.spawn(program, args, {
     cwd: workspace, env: { ...env, TMPDIR: join(root, "tmp"), DESKTOP_TEST_RESOURCES: root },
     stdio: ["ignore", capture || diagnostics ? "pipe" : 2, diagnostics ? "pipe" : "inherit"],
@@ -114,10 +155,10 @@ async function execute(root: string, program: string, args: string[], env: NodeJ
   const timeout = lifetime === "build" ? setTimeout(() => { timedOut = true; stop(); }, BUILD_TIMEOUT) : undefined;
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, stop);
   try {
-    const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done, fail) => {
+    const result = await withLease(root, new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done, fail) => {
       owned.child.once("error", fail);
       owned.child.once("close", (code, signal) => done({ code, signal }));
-    });
+    }));
     if (cancelled || result.code !== 0) throw new Error(`${program} ${args.join(" ")} ${timedOut ? "timed out" : cancelled ? "was cancelled" : `exited ${result.code ?? result.signal}`}`);
   } catch (error) { failures.push(error); }
   clearTimeout(timeout);
@@ -212,9 +253,9 @@ export async function snapshotCandidate(directory: string): Promise<Candidate> {
 export async function cleanup(root: string): Promise<void> {
   const deadline = Date.now() + CLEANUP_TIMEOUT;
   while (existsSync(join(root, "groups"))) {
-    const alive = readFileSync(join(root, "groups"), "utf8").trim().split("\n").filter(Boolean).filter((group) => groupAlive(Number(group)));
+    const alive = registeredGroups(root).filter(({ group, start_time }) => groupAlive(group, start_time));
     if (alive.length === 0) break;
-    if (Date.now() >= deadline) throw new Error(`cannot remove desktop inputs while owned groups run: ${alive.join(", ")}`);
+    if (Date.now() >= deadline) throw new Error(`cannot remove desktop inputs while owned groups run: ${alive.map(({ group }) => group).join(", ")}`);
     await new Promise((done) => setTimeout(done, 50));
   }
   await childrenGone(join(root, "tmp"), "artifactize-desktop-build-");
