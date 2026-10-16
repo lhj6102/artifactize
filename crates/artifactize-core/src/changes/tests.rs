@@ -262,7 +262,7 @@ fn database_release_probe_tracks_idle_readers_among_unrelated_descriptors() {
     let database = root.path().join("database.sqlite");
     rusqlite::Connection::open(&database).unwrap();
     let alias = root.path().join("alias.sqlite");
-    fs::hard_link(&database, &alias).unwrap();
+    crate::test_os::hard_link(&database, &alias);
     let contents = fs::read(&database).unwrap();
     let unrelated = fs::File::create(root.path().join("unrelated")).unwrap();
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
