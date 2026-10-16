@@ -666,17 +666,20 @@ export async function releaseAccountBrowser(): Promise<void> {
   if (stopped.status !== 0 && stopped.status !== 128) throw new Error(`taskkill exited ${stopped.status}: ${stopped.stderr}`);
 }
 
-/** Give the scenario's own WebView the keyboard focus before it starts, on Windows. WebView2
- * gives no focus events to a page whose WebView does not hold the keyboard focus, and a test
- * app is not the foreground window while another one runs beside it. Keyboard focus belongs
- * to each app's own thread, so every instance takes it without taking anything from the others.
- * Other systems deliver focus events to a page in any window. */
+/** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
+ * gives no focus events to a page whose window is not it (focusing the WebView alone does not
+ * do it): an app beside another one missed its own focus changes. The foreground window is the
+ * one per-desktop resource every instance needs (E2E-ISOLATED), so Windows runs one app at a time. */
+export const appsAtOnce = WINDOWS ? 1 : 2;
+
+/** Give the scenario's app window the system focus before it starts, on Windows (see
+ * appsAtOnce); other systems deliver focus events to a page in any window. */
 export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<void> {
   if (!WINDOWS) return;
-  await browser.execute(() => (window as unknown as { __TAURI__: { webview: { getCurrentWebview(): { setFocus(): Promise<void> } } } })
-    .__TAURI__.webview.getCurrentWebview().setFocus());
+  await browser.execute(() => (window as unknown as { __TAURI__: { window: { getCurrentWindow(): { setFocus(): Promise<void> } } } })
+    .__TAURI__.window.getCurrentWindow().setFocus());
   await browser.waitUntil(() => browser.execute(() => document.hasFocus()),
-    { timeout: 15000, timeoutMsg: "setup failed: the app's WebView did not take the keyboard focus" });
+    { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
 }
 
 /** Unix desktop openers are declared fixture executables performing the real HTTP GET;
