@@ -201,7 +201,10 @@ export function copyFile(from: NativePath, to: NativePath): void {
 /** Remove a directory tree. Windows briefly keeps files of exited processes open, so
  * a busy file is retried a bounded number of times before the failure is reported. */
 export function removeTree(path: NativePath): void {
-  rmSync(path, { recursive: true, force: true, maxRetries: WINDOWS ? 10 : 0, retryDelay: 100 });
+  // A Windows app's WebView2 helper processes exit after the app and briefly keep the data
+  // folder that lives in its fixture; deletion retries with linearly growing pauses (up to a
+  // minute in all) while they finish. Elsewhere nothing outlives the joined process.
+  rmSync(path, { recursive: true, force: true, maxRetries: WINDOWS ? 30 : 0, retryDelay: 125 });
 }
 
 // ---------------------------------------------------------------------------------
@@ -636,6 +639,20 @@ export function assertHarnessPlatform(): void {
   if (!process.env.DISPLAY || !process.env.DBUS_SESSION_BUS_ADDRESS || process.env.GDK_BACKEND !== "x11" || process.env.WAYLAND_DISPLAY) {
     throw new Error("Linux desktop E2E requires the whole runner inside dbus-run-session -- xvfb-run -a, GDK_BACKEND=x11 and no WAYLAND_DISPLAY");
   }
+}
+
+/** Stop the system browser that Windows' default URL handler started for the account
+ * journey. It inherits the fixture's environment, so its profile lives in the fixture and
+ * it would hold the fixture until the machine ends; the suite runs on Windows only on a
+ * disposable runner (assertRunnerMachine), whose default browser is Edge. Unix openers are
+ * fixture programs that have already exited. */
+export async function releaseAccountBrowser(): Promise<void> {
+  if (!WINDOWS) return;
+  const root = variable("SystemRoot");
+  if (!root) throw new Error("SystemRoot is required to stop the Windows account browser");
+  const stopped = await runProgramAsync(join(root, "System32", "taskkill.exe") as NativePath, ["/IM", "msedge.exe", "/T", "/F"]);
+  // 128: no such process, the browser already exited.
+  if (stopped.status !== 0 && stopped.status !== 128) throw new Error(`taskkill exited ${stopped.status}: ${stopped.stderr}`);
 }
 
 /** Unix desktop openers are declared fixture executables performing the real HTTP GET;
