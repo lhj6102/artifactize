@@ -1,7 +1,6 @@
 // One spec execution, one independent scenario, one upstream-owned app capability.
 import { readFileSync } from "node:fs";
 import { selectedScenarios } from "./catalog.ts";
-import { observeWindow } from "./observation.ts";
 import type { Prepared } from "./scenario.ts";
 
 // These globals are injected by the configured WDIO Mocha adapter, not node:test.
@@ -17,7 +16,6 @@ const input = JSON.parse(readFileSync(context, "utf8")) as Prepared;
 
 describe(item.title, () => {
   it(item.id, async () => {
-    await observeWindow(browser);
     await item.run(browser, input);
   });
 });

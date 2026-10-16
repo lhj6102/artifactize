@@ -1,57 +1,56 @@
-import { createConnection } from "node:net";
+import { execFileSync } from "node:child_process";
 import { basename, join } from "node:path";
+import { readCandidate } from "./build.ts";
 import type { Fixture } from "./fixture.ts";
+import type { Identity } from "./runs.ts";
 
-const windows = new WeakMap<object, { hostname: string; port: number }>();
-
-/** Establish the actual embedded endpoint and live native window before a case acts.
- * The WebDriver server lives inside this app, not in an independently-lived driver.
- */
-export async function observeWindow(browser: WebdriverIO.Browser): Promise<void> {
-  const handles = await browser.getWindowHandles();
-  if (handles.length !== 1) throw new Error(`expected one native app window, found ${handles.length}`);
-  const { hostname = "127.0.0.1", port } = browser.options;
-  if (!port) throw new Error("the runner did not declare the embedded app endpoint");
-  await browser.status();
-  windows.set(browser, { hostname, port });
+/** Read only the identity this E2E app captured for itself, never discover a PID
+ * from a port, scan processes, or acquire ownership of the service's app. */
+async function identity(browser: WebdriverIO.Browser): Promise<Identity> {
+  const value: unknown = await browser.execute(() =>
+    (window as Window & { __ARTIFACTIZE_E2E_PROCESS__?: unknown }).__ARTIFACTIZE_E2E_PROCESS__);
+  if (!value || typeof value !== "object" || !("pid" in value) || !("start_time" in value)
+    || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid <= 0
+    || typeof value.start_time !== "string" || !/^\d+$/.test(value.start_time)) {
+    throw new Error("the test app did not expose its native birth identity");
+  }
+  return { pid: value.pid, start_time: value.start_time };
 }
 
-/** Read-only observation: only refusal at the established in-app server endpoint
- * means it ended. Timeouts, resets, HTTP failures and unrelated transport errors fail.
- * A vanished window is not sufficient: its app and embedded server can still be alive.
- */
-export async function windowClosed(browser: WebdriverIO.Browser): Promise<boolean> {
-  const owner = windows.get(browser);
-  if (!owner) throw new Error("the runner must observe the live app window before the scenario");
-  const listening = await new Promise<boolean>((done, fail) => {
-    const socket = createConnection({ host: owner.hostname, port: owner.port });
-    socket.setTimeout(2000);
-    socket.once("connect", () => { socket.destroy(); done(true); });
-    socket.once("timeout", () => { socket.destroy(); fail(new Error("the embedded app endpoint timed out")); });
-    socket.once("error", (error: NodeJS.ErrnoException) => {
-      if (error.code === "ECONNREFUSED") done(false);
-      else fail(error);
-    });
-  });
-  return !listening;
+/** The existing Rust observer reads the saved birth identity without signalling,
+ * launching, restarting or cleaning up the app. Observation failures are errors. */
+function nativeAlive(owner: Identity): boolean {
+  const value: unknown = JSON.parse(execFileSync(readCandidate().observer, ["alive"], {
+    input: JSON.stringify([owner]), encoding: "utf8", timeout: 5000,
+  }));
+  if (!Array.isArray(value) || value.length !== 1 || typeof value[0] !== "boolean") {
+    throw new Error("the Rust observer returned an invalid app-exit observation");
+  }
+  return value[0];
 }
 
-/** @wdio/runner endSession always DELETEs a session, but the embedded WebDriver
- * dies with the app. Only a journey expecting real app exit may retire this client
- * session after observing that exit. Remove this bookkeeping when upstream handles it.
- */
-export async function sessionEndedByApp(browser: WebdriverIO.Browser, quit: () => Promise<unknown>): Promise<void> {
-  if (await windowClosed(browser)) throw new Error("the app had already exited before its quit action");
+/** @wdio/runner always DELETEs its session, but the embedded server dies with the
+ * app. Only the quit helper reads native metadata. Retire this client session only
+ * after the same native process was observed alive before the action and exited
+ * afterward; a vanished window/listener or the service's later kill cannot pass it.
+ * The optional read-only predicate is the unit-test seam, never a runtime setting. */
+export async function sessionEndedByApp(
+  browser: WebdriverIO.Browser,
+  quit: () => Promise<unknown>,
+  observeAlive: (owner: Identity) => boolean | Promise<boolean> = nativeAlive,
+): Promise<void> {
+  const owner = await identity(browser);
+  if (!(await observeAlive(owner))) throw new Error("the app had already exited before its quit action");
   let actionFailure: unknown;
   try { await quit(); }
   catch (error) { actionFailure = error; }
   try {
-    await browser.waitUntil(() => windowClosed(browser), {
+    await browser.waitUntil(async () => !(await observeAlive(owner)), {
       timeout: 15000,
-      timeoutMsg: "the app did not exit after its quit action",
+      timeoutMsg: "the native app process did not exit after its quit action",
     });
   } catch (error) {
-    if (actionFailure !== undefined) throw new AggregateError([actionFailure, error], "the quit action and app-exit observation failed");
+    if (actionFailure !== undefined) throw new AggregateError([actionFailure, error], "the quit action and native app-exit observation failed");
     throw error;
   }
   if (!Reflect.set(browser, "sessionId", undefined)) throw new Error("the ended client session could not be retired");
