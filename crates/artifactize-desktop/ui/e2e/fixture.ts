@@ -40,7 +40,7 @@ tags = ["type:release"]
 fingerprint = { files = ["."] }
 
 [views.human_tools]
-notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", join("{artifactPath}", "notes.md"))} }
+notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", "{artifactPath}/notes.md")} }
 open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", join(root, "launched"))} }
 fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }
 slow = { description = "Wait until cancelled; serve the owned lifetime endpoint.", kind = "output", ${commandFields("slow", join(root, "slow.endpoint"))} }

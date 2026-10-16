@@ -1,4 +1,4 @@
-//! Immutable self-identity for the quit tests' read-only native exit observation.
+//! Read-only native self-identity and startup failures for E2E observations.
 //! This module and its webview metadata do not exist without the E2E feature.
 
 #[expect(
@@ -15,9 +15,10 @@ pub fn init<R: tauri::Runtime>() -> Result<tauri::plugin::TauriPlugin<R>, String
     let start_time = observation::observed_start_time(pid)
         .ok_or_else(|| "cannot observe the E2E app's native birth identity".to_owned())?;
     let identity = serde_json::json!({ "pid": pid, "start_time": start_time.to_string() });
+    let startup = include_str!("e2e_startup.js");
     Ok(tauri::plugin::Builder::new("e2e-observation")
         .js_init_script(format!(
-            "Object.defineProperty(window, '__ARTIFACTIZE_E2E_PROCESS__', {{ value: Object.freeze({identity}), writable: false, configurable: false }});"
+            "Object.defineProperty(window, '__ARTIFACTIZE_E2E_PROCESS__', {{ value: Object.freeze({identity}), writable: false, configurable: false }});\n{startup}"
         ))
         .build())
 }

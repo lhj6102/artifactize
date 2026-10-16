@@ -1,6 +1,7 @@
 // One spec execution, one independent scenario, one upstream-owned app capability.
 import { readFileSync } from "node:fs";
 import { selectedScenarios } from "./catalog.ts";
+import { failureEvidence } from "./diagnostics.ts";
 import type { Prepared } from "./scenario.ts";
 
 // These globals are injected by the configured WDIO Mocha adapter, not node:test.
@@ -16,6 +17,10 @@ const input = JSON.parse(readFileSync(context, "utf8")) as Prepared;
 
 describe(item.title, () => {
   it(item.id, async () => {
-    await item.run(browser, input);
+    try { await item.run(browser, input); }
+    catch (error) {
+      console.error(`Desktop E2E failure evidence (${item.id}): ${JSON.stringify(await failureEvidence(browser))}`);
+      throw error;
+    }
   });
 });
