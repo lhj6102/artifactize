@@ -16,6 +16,20 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
    * target before one WebDriver click, rather than clicking during that transition. */
   async function clickArtifact(name: string) {
     const selector = `.current .svelte-flow__node[data-id="a:${name}"]`;
+    // Where the node, the canvas and the camera were, read only when the node was no target.
+    const placed = () => browser.execute((selector) => {
+      const node = document.querySelector(selector);
+      const box = node?.getBoundingClientRect();
+      const canvas = node?.closest(".svelte-flow")?.getBoundingClientRect();
+      const hit = box && document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return {
+        window: [innerWidth, innerHeight],
+        node: box && [box.left, box.top, box.right, box.bottom].map(Math.round),
+        canvas: canvas && [canvas.left, canvas.top, canvas.right, canvas.bottom].map(Math.round),
+        camera: document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style"),
+        hit: hit ? `${hit.tagName}.${hit.getAttribute("class") ?? ""}` : null,
+      };
+    }, selector);
     await browser.waitUntil(() => browser.executeAsync<boolean, [string]>((selector, done) => {
       const node = document.querySelector(selector);
       if (!node) return done(false);
@@ -28,7 +42,9 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
           !!canvas && after.left >= canvas.left && after.right <= canvas.right && after.top >= canvas.top && after.bottom <= canvas.bottom &&
           hit?.closest(".svelte-flow__node") === node);
       });
-    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` });
+    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` }).catch(async (error: unknown) => {
+      throw new Error(`${name} is a stable, visible graph pointer target: ${JSON.stringify(await placed())}`, { cause: error });
+    });
     await browser.$(selector).click();
   }
 

@@ -268,8 +268,9 @@
     return () => onready?.(null);
   };
 
-  /** Expanding the structural text changes the canvas height. Keep the selected graph in
-   * view rather than clipping it below the new canvas; the Run view keeps its own camera. */
+  /** Expanding the structural text changes the canvas height. Keep the whole graph in view
+   * rather than clipping it below the new canvas; the Run view keeps its own camera. An open
+   * popup never narrows the camera to its Artifact: every node stays a target. */
   const structuralSize: Attachment<HTMLElement> = (canvas) => {
     if (!structural) return;
     let previous = "";
@@ -278,7 +279,7 @@
       if (width === 0 || height === 0) return;
       const size = `${width}:${height}`;
       if (previous && previous !== size) {
-        void fit({ id: popup ?? undefined, duration: 0, maxZoom: 1.6, padding: 0.6 });
+        void fit({ duration: 0, maxZoom: 1.6, padding: 0.6 });
       }
       previous = size;
     });

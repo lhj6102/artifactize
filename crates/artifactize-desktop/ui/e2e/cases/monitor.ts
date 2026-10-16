@@ -383,14 +383,43 @@ export const scenarios: Scenario[] = [
       // Paneforge installs its move listener in a post-press render effect. Keep the real
       // pointer held across that render boundary, rather than guessing how long it takes.
       const dividers = () => browser.$$(".monitor [data-pane-resizer]");
+      // What the page received, read only when a drag did not resize: the mouse events that
+      // reached it, where they landed, and the divider's and panes' geometry.
+      const watchMouse = () => browser.execute(() => {
+        const log: string[] = [];
+        (window as unknown as { resizeLog: string[] }).resizeLog = log;
+        for (const type of ["pointerdown", "mousedown", "mousemove", "mouseup", "mouseleave"]) {
+          document.addEventListener(type, (event) => {
+            const mouse = event as MouseEvent;
+            const target = event.target as Element | null;
+            log.push(`${type}@${mouse.clientX},${mouse.clientY}:${target?.tagName ?? "?"}.${target?.getAttribute("class") ?? ""}${target?.hasAttribute("data-pane-resizer") ? "[resizer]" : ""}`);
+          }, { capture: true });
+        }
+      });
+      const layout = (at: number) => browser.execute((index) => {
+        const resizer = document.querySelectorAll(".monitor [data-pane-resizer]")[index] as HTMLElement | undefined;
+        const box = resizer?.getBoundingClientRect();
+        return {
+          window: [innerWidth, innerHeight, devicePixelRatio],
+          resizer: box && [box.left, box.top, box.width, box.height],
+          state: resizer && [...resizer.attributes].map((attribute) => `${attribute.name}=${attribute.value}`),
+          panes: [...document.querySelectorAll<HTMLElement>(".monitor [data-pane]")].map((pane) => Math.round(pane.getBoundingClientRect().width)),
+          events: (window as unknown as { resizeLog?: string[] }).resizeLog?.slice(0, 20),
+        };
+      }, at);
       const drag = async (at: number, x: number, y: number, grown: () => Promise<boolean>, what: string) => {
+        await watchMouse();
         await browser.action("pointer", { id: "resize" }).move({ origin: (await dividers())[at] }).down().perform(true);
         try {
           await afterRender(browser);
           const pointer = browser.action("pointer", { id: "resize" });
           for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x, y });
           await pointer.perform(true);
-          await browser.waitUntil(grown, { timeout: 15000, timeoutMsg: `the dragged ${what}` });
+          try {
+            await browser.waitUntil(grown, { timeout: 15000, timeoutMsg: `the dragged ${what}` });
+          } catch (error) {
+            throw new Error(`the dragged ${what}: ${JSON.stringify(await layout(at))}`, { cause: error });
+          }
           await browser.action("pointer", { id: "resize" }).up().perform();
         } finally { await browser.releaseActions(); }
         await browser.waitUntil(grown, { timeout: 15000, timeoutMsg: `a larger ${what}` });
