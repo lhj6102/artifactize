@@ -6,7 +6,7 @@
   import type { Attachment } from "svelte/attachments";
   import type { BrowseView } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
-  import { MonitorState, setMonitorState, type Focus } from "./monitor.svelte";
+  import { MonitorState, setMonitorState, type Focus } from "./monitor-state.svelte";
   import { find } from "./tree.svelte";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";

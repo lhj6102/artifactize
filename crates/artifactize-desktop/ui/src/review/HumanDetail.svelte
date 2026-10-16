@@ -1,7 +1,7 @@
 <script lang="ts">
   // The one Human review component, shared by the monitor's Detail and the Review screen:
   // instruction first, then CLAIM → REVIEW with tools, output and the GREEN/RED fields.
-  import { HumanDetailState, setHumanDetailState } from "./humanDetail.svelte";
+  import { HumanDetailState, setHumanDetailState } from "./human-detail-state.svelte";
   import { onMount, tick } from "svelte";
   import { onStateChanged, type Settled } from "../ipc/client";
   import type { Review } from "./review.svelte";

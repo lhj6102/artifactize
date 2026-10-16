@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createGraph, type Fixture, savedRuns, verifyWaiting } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { graphAppearance, visibleColour } from "./graph-appearance.ts";
 
 function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
   const structure = () => browser.$(".current pre").getText();
@@ -50,6 +51,15 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
       nodes: ["docs", "release", "ship"].map((name) => ({ id: `a:${name}`, label: `${name}: current structure`, neutral: true })),
       edges: [{ id: "a:release>a:ship", neutral: true }],
     }, "the drawn declarations and relation are neutral, without Run verdict colors or status labels");
+    await browser.waitUntil(async () => {
+      const appearance = await graphAppearance(browser);
+      const nodes = Object.values(appearance.nodes);
+      const edges = Object.values(appearance.edges);
+      const neutral = nodes[0]?.dot ?? "";
+      return nodes.length === 3 && edges.length === 1 && visibleColour(neutral) &&
+        nodes.every((node) => node.painted && node.border === neutral && node.dot === neutral) &&
+        edges.every((edge) => edge.painted && edge.stroke === neutral);
+    }, { timeout: 15000, timeoutMsg: "current declarations and their relation are actually painted in one neutral colour, without verdict differentiation" });
     assert.deepEqual(savedRuns(fixture), [], "current graph does not create a saved Run, whether or not an empty database exists");
   }
   return { structure, expanded, clickArtifact, assertDeclarationsOnly };

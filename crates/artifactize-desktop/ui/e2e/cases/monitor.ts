@@ -50,7 +50,12 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
     await browser.$('[role="tree"]').click();
     await browser.$('//li[@role="treeitem"][@aria-level="2"][.//span[starts-with(normalize-space(.), "signoff")]]').click();
     await press(browser, ["Enter"], () => human().isExisting(), "this case's Human Detail");
-    await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
+    const id = signoff(fixture).id;
+    await browser.waitUntil(async () => (await human().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
+      timeout: 15000, timeoutMsg: "the default Human Detail identifies this case's exact waiting request without Technical",
+    });
+    assert.equal(await human().$(".instruction .text").getText(), "Read the release notes and approve them.", "the selected Human eval's default instruction");
+    assert.equal(await human().$("button*=Technical").getAttribute("aria-expanded"), "false", "request and instruction are visible before Technical");
     if (claim) {
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && (await text()).includes("REVIEW (yours)"), "this case's claim");
       assert.equal((await checkpoint(browser)).activity.commands.humanRun?.started ?? 0, 0, "this fresh session has dispatched no tool");
@@ -105,14 +110,13 @@ export const scenarios: Scenario[] = [
       const { text, human, openReview } = await monitorUI(browser, fixture);
       await openReview(false);
       const id = signoff(fixture).id;
+      const meta = () => human().$(".meta").getText();
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
-      await browser.waitUntil(async () => (await text()).includes("claimed by bob · read-only"), { timeout: 12000, timeoutMsg: "bob's claim" });
+      await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · WAITING_HUMAN · claimed by bob · read-only · waiting `) &&
+        !(await human().$("button*=Claim").isEnabled()), { timeout: 12000, timeoutMsg: "the opened Human Detail displays bob's exact claim and is read-only" });
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
-      await browser.waitUntil(
-        () => browser.execute(() => document.querySelector('[aria-label="Human review"][tabindex="0"]')
-          ?.textContent?.includes("Unclaimed. c claims it for alice") ?? false),
-        { timeout: 12000, timeoutMsg: "bob's release in the open Human Detail" },
-      );
+      await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `) &&
+        await human().$("button*=Claim").isEnabled(), { timeout: 12000, timeoutMsg: "bob's release is rendered in the same open Human Detail and Claim is offered again" });
 
       // A composing keystroke (an input method's) is never a shortcut.
       await human().click();

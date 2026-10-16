@@ -35,12 +35,33 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await text()).includes("Enter or click: open review"), { timeout: 15000, timeoutMsg: "the preview" });
       assert.equal(signoff(fixture).claim, null, "previewing claims nothing");
 
-      // Another process claims it: the list and the Preview both show the new claimant.
+      // Observe the selected request's list cell and Preview independently: text from one
+      // cannot stand in for the other when a subscription update has not reached both.
       const id = signoff(fixture).id;
+      const claimant = () => browser.execute((requestId) => {
+        const row = [...document.querySelectorAll('[aria-label="Requests"] [role="option"]')]
+          .find((entry) => entry.querySelector(".mono")?.textContent?.trim() === requestId);
+        const preview = document.querySelector('section.panel[aria-label="Preview"] .preview');
+        return {
+          selected: row?.getAttribute("aria-selected") === "true",
+          claim: row?.children[3]?.textContent?.trim(),
+          preview: preview?.querySelector(".meta")?.textContent?.trim() ?? "",
+        };
+      }, id);
+      await browser.waitUntil(async () => {
+        const shown = await claimant();
+        return shown.selected && shown.claim === "-" && shown.preview.startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `);
+      }, { timeout: 15000, timeoutMsg: "the identified request starts unclaimed in both its row and Preview" });
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
-      await browser.waitUntil(async () => (await text()).includes("claimed by bob · read-only"), { timeout: 15000, timeoutMsg: "the Preview's claim" });
+      await browser.waitUntil(async () => {
+        const shown = await claimant();
+        return shown.selected && shown.claim === "bob" && shown.preview.startsWith(`Request ${id} · WAITING_HUMAN · claimed by bob · read-only · waiting `);
+      }, { timeout: 15000, timeoutMsg: "the same selected row and Preview both display bob's claim" });
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
-      await browser.waitUntil(async () => (await text()).includes("WAITING_HUMAN · unclaimed"), { timeout: 15000, timeoutMsg: "the Preview's release" });
+      await browser.waitUntil(async () => {
+        const shown = await claimant();
+        return shown.selected && shown.claim === "-" && shown.preview.startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `);
+      }, { timeout: 15000, timeoutMsg: "bob's release is rendered in both the same row and Preview" });
     },
   ),
 
@@ -74,6 +95,9 @@ export const scenarios: Scenario[] = [
       await browser.$('[aria-label="Request ID"]').setValue(id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
       await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
+      await browser.waitUntil(async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
+        timeout: 15000, timeoutMsg: "the entered Human request's exact identity is visible by default, before Technical",
+      });
       const technical = () => browser.$('[aria-label="Human review"]').$("button*=Technical").getAttribute("aria-expanded");
       await press(browser, ["t"], async () => (await technical()) === "true", "the opened review's identity");
       const openedId = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] dt')]

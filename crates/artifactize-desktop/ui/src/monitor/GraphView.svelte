@@ -2,7 +2,7 @@
   // The laid-out Run graph and, once an Artifact is zoomed into, its evals as the tree shows
   // them. Nodes are focusable: arrows move between connected Artifacts, Enter or a click zooms
   // in, Esc zooms out. An eval selected here is the tree's selection, so Detail follows it.
-  import { GraphViewState, setGraphViewState } from "./graphView.svelte";
+  import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { SvelteFlow, Controls, MiniMap, useSvelteFlow, getViewportForBounds, type Edge, type Node } from "@xyflow/svelte";
   import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";

@@ -6,23 +6,7 @@ import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, signoff } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-
-function runGraph(browser: WebdriverIO.Browser) {
-  /** Each shown node's light and position, and each edge's light. */
-  const graph = () =>
-    browser.execute(() => ({
-      nodes: Object.fromEntries(
-        [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].map((node) => [
-          node.dataset.id,
-          { light: node.dataset.light, at: node.style.transform },
-        ]),
-      ),
-      edges: Object.fromEntries(
-        [...document.querySelectorAll<SVGElement>(".svelte-flow__edge")].map((edge) => [edge.dataset.id, edge.dataset.light]),
-      ),
-    }));
-  return { graph };
-}
+import { graphAppearance, graphHasColours } from "./graph-appearance.ts";
 
 function chainGraph(browser: WebdriverIO.Browser) {
   const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
@@ -66,19 +50,15 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
-      const { graph } = runGraph(browser);
+      const graph = () => graphAppearance(browser);
       await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
       await browser.$("button*=Graph").click();
-      await browser.waitUntil(async () => {
-        const { nodes, edges } = await graph();
-        return (
-          nodes["a:release"]?.light === "active" &&
-          nodes["a:ship"]?.light === "waiting" &&
-          nodes["a:docs"]?.light === "green" &&
-          edges["a:release>a:ship"] === "active"
-        );
-      }, { timeout: 15000, timeoutMsg: "release in progress, ship waiting, docs GREEN, the edge lit as release" });
-      const before = (await graph()).nodes;
+      await browser.waitUntil(async () => graphHasColours(await graph(), {
+        "a:release": "active", "a:ship": "waiting", "a:docs": "green",
+      }, { "a:release>a:ship": "active" }), {
+        timeout: 15000, timeoutMsg: "release, ship, docs and the relation are painted in their verdict's distinct Legend colours",
+      });
+      const before = await graph();
 
       // Zoom into release: its evals, the sign-off highlighted and focused.
       await browser.$('.svelte-flow__node[data-id="a:release"]').click();
@@ -94,14 +74,16 @@ export const scenarios: Scenario[] = [
         artifactize(fixture, "request", "submit", id, "--reviewer", "alice", "--verdict", "GREEN", "--fields", '{"approved":true,"comment":"ok"}'),
         0,
       );
-      await browser.waitUntil(async () => {
-        const { nodes, edges } = await graph();
-        return nodes["a:release"]?.light === "green" && edges["a:release>a:ship"] === "green";
-      }, { timeout: 15000, timeoutMsg: "release and its edge GREEN" });
+      await browser.waitUntil(async () => graphHasColours(await graph(), {
+        "a:release": "green", "a:docs": "green",
+      }, { "a:release>a:ship": "green" }), { timeout: 15000, timeoutMsg: "the submitted release's node border/dot and relation stroke are painted GREEN" });
       assert.equal(await evals.isFocused(), true, "a live graph update does not steal focus from the evals");
-      const after = (await graph()).nodes;
+      const after = await graph();
+      assert.notEqual(after.nodes["a:release"].border, before.nodes["a:release"].border, "the result changed the actual node border colour");
+      assert.notEqual(after.nodes["a:release"].dot, before.nodes["a:release"].dot, "the result changed the actual node verdict dot colour");
+      assert.notEqual(after.edges["a:release>a:ship"].stroke, before.edges["a:release>a:ship"].stroke, "the result changed the visible relation's actual stroke colour");
       for (const node of ["a:release", "a:ship", "a:docs"]) {
-        assert.equal(after[node].at, before[node].at, `${node} kept its place`);
+        assert.equal(after.nodes[node].at, before.nodes[node].at, `${node} kept its place`);
       }
 
       // The tree folded the completed Artifact; Enter still opens the highlighted sign-off's

@@ -5,7 +5,7 @@
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
   import GraphView from "./GraphView.svelte";
-  import { CurrentGraphState, setCurrentGraphState } from "./currentGraph.svelte";
+  import { CurrentGraphState, setCurrentGraphState } from "./current-graph-state.svelte";
   import { chord } from "../shell/keys";
 
   import { useIpc } from "../ipc/client";

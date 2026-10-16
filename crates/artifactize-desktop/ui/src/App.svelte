@@ -16,7 +16,7 @@
   import Badge from "./shell/Badge.svelte";
   import { useCommands } from "./shell/commands.svelte";
   import { chord, composing, plain } from "./shell/keys";
-  import { HELP } from "./shell/help";
+  import { HELP } from "./shell/shortcuts";
   import { AppState, setAppState } from "./shell/app.svelte";
 
   import { exposeActivity, setActivity } from "./ipc/activity.svelte";

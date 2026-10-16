@@ -1,7 +1,7 @@
 <script lang="ts">
   // The selected Run: its headline, what needs attention, and the Artifacts and evals as a tree
   // or as a graph of Artifacts (`v` switches; the tree is the fully keyboard-driven view).
-  import { RunPaneState, setRunPaneState } from "./runPane.svelte";
+  import { RunPaneState, setRunPaneState } from "./run-pane-state.svelte";
   import { ContextMenu } from "bits-ui";
   import { getAppState } from "../shell/app.svelte";
   import { type Tree, visible, find } from "./tree.svelte";

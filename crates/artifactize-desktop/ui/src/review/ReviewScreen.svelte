@@ -21,7 +21,7 @@
   import RecordDetail from "../monitor/RecordDetail.svelte";
   import Sections from "../monitor/Sections.svelte";
   import Panel from "../shell/Panel.svelte";
-  import { ReviewScreenState, setReviewScreenState } from "./reviewScreen.svelte";
+  import { ReviewScreenState, setReviewScreenState } from "./review-screen-state.svelte";
   import { scrollTo } from "../shell/attach";
   import { useCommands } from "../shell/commands.svelte";
   import { chord, plain } from "../shell/keys";

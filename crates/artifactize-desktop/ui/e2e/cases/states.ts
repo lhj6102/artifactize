@@ -6,15 +6,12 @@ import assert from "node:assert/strict";
 import { createStates, requests } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { graphAppearance, graphHasColours, type VerdictLight } from "./graph-appearance.ts";
 
 function verdictGraph(browser: WebdriverIO.Browser) {
   const text = () => browser.execute(() => document.body.innerText);
 
-  const lights = () =>
-    browser.execute(() => ({
-      nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].map((node) => [node.dataset.id, node.dataset.light])),
-      edges: Object.fromEntries([...document.querySelectorAll<SVGElement>(".svelte-flow__edge")].map((edge) => [edge.dataset.id, edge.dataset.light])),
-    }));
+  const lights = () => graphAppearance(browser);
 
   const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
 
@@ -72,17 +69,15 @@ export const scenarios: Scenario[] = [
         "a:fine": "green",
         "a:gate": "active",
         "a:later": "waiting",
-      };
-      // Each edge is lit as what its source passes on: RED, ERROR, or work in progress.
-      const expectedEdges = { "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active" };
-      await browser.waitUntil(async () => {
-        const graph = await lights();
-        return Object.entries(expectedNodes).every(([id, light]) => graph.nodes[id] === light) &&
-          Object.entries(expectedEdges).every(([id, light]) => graph.edges[id] === light);
-      }, { timeout: 15000, timeoutMsg: "the fixture's Artifacts and dependencies display their declared verdicts" });
+      } satisfies Record<string, VerdictLight>;
+      // Each edge is painted as what its source passes on: RED, ERROR, or work in progress.
+      const expectedEdges = { "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active" } satisfies Record<string, VerdictLight>;
+      await browser.waitUntil(async () => graphHasColours(await lights(), expectedNodes, expectedEdges), {
+        timeout: 15000, timeoutMsg: "every node border/dot and relation stroke matches its verdict's distinct visible Legend colour",
+      });
       const { nodes, edges } = await lights();
-      assert.deepEqual(nodes, expectedNodes);
-      assert.deepEqual(edges, expectedEdges);
+      assert.deepEqual(Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, node.light])), expectedNodes);
+      assert.deepEqual(Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, edge.light])), expectedEdges);
       const legend = await browser.$('[aria-label="Legend"]').getText();
       for (const word of ["GREEN", "RED", "ERROR", "blocked"]) assert.match(legend, new RegExp(word));
     },
@@ -167,14 +162,14 @@ export const scenarios: Scenario[] = [
       assert.match(shown, /Source\s+executed in this Run/, "where the result came from");
       assert.match(await field("Result"), new RegExp(`^verdict ${request.result.verdict}(?:\\n|$)`), "the selected eval's saved verdict");
       assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "Detail renders this eval's exact saved result");
-      // A per-Run TMPDIR can itself contain run-... and fixture-<digits>; only the
-      // actual request ID tests Technical disclosure, not a regex across any path.
-      assert.equal(shown.includes(request.id), false, "the request is part of the technical record");
+      assert.equal(await field("Request"), request.id, "the opened Detail identifies its exact saved request by default");
+      assert.equal(await field("Fingerprint"), "", "additional technical fields are folded initially");
       const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
-      await press(browser, ["t"], async () => (await technical()) === "true", "the technical record shown");
-      assert.equal((await text()).includes(request.id), true, "the technical record shows the exact request");
-      await press(browser, ["t"], async () => (await technical()) === "false", "the technical record hidden");
-      assert.equal((await text()).includes(request.id), false, "the exact request disappears again");
+      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "" && (await field("Key")) !== "", "the additional technical record is actually rendered");
+      assert.equal(await field("Request"), request.id, "showing additional technical fields preserves the default request");
+      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "" && (await field("Key")) === "", "the additional technical record is hidden");
+      assert.equal(await field("Request"), request.id, "hiding technical fields keeps the request visible");
+      assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "hiding technical fields keeps the completed result visible");
     },
   ),
 

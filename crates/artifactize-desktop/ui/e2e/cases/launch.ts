@@ -225,7 +225,7 @@ export const scenarios: Scenario[] = [
           const pane = document.querySelector('section.panel[aria-label="Preview"] .preview');
           return selected === wantedId && pane?.querySelector("h3")?.textContent?.trim() === title
             && pane.querySelector(".instruction")?.textContent?.trim() === instruction
-            && (pane.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`WAITING_HUMAN · ${claimant} · waiting `);
+            && (pane.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`Request ${wantedId} · WAITING_HUMAN · ${claimant} · waiting `);
         }, id, expected.title, expected.instruction, claim);
       };
       await waitFor(browser, () => loaded(idOf(top), "unclaimed"), "the first identified, loaded and unclaimed Preview");

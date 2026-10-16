@@ -17,17 +17,17 @@ async function prepareReview() {
   return { fixture, args: ["review"], data: {} };
 }
 
-function opening(browser: WebdriverIO.Browser) {
+function opening(browser: WebdriverIO.Browser, requestId: string) {
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
   const listed = () => browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
   const gone = async () => !(await human().isExisting());
-  const exists = () => browser.execute(() => {
+  const exists = () => browser.execute((id) => {
     const opened = document.querySelector('[aria-label="Human review"][tabindex="0"]');
     return opened?.querySelector("h3")?.textContent?.trim() === "release/signoff · A person approves the release"
       && opened.querySelector(".instruction .text")?.textContent?.trim() === "Read the release notes and approve them."
       && opened.querySelector(".stage")?.textContent?.trim() === "CLAIM"
-      && (opened.querySelector(".meta")?.textContent?.trim() ?? "").startsWith("WAITING_HUMAN · unclaimed · waiting ");
-  });
+      && (opened.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `);
+  }, requestId);
   return { human, listed, gone, exists };
 }
 
@@ -61,8 +61,8 @@ export const scenarios: Scenario[] = [
     "requests-open",
     "opens the selected Human review with Enter and leaves it with Esc",
     async () => prepareReview(),
-    async (browser) => {
-      const { listed, gone, exists } = opening(browser);
+    async (browser, { fixture }) => {
+      const { listed, gone, exists } = opening(browser, signoff(fixture).id);
       await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
       await waitFor(browser, () => browser.$('[aria-label="Requests"]').isFocused(), "focus on the list");
       await press(browser, ["Enter"], exists, "the Human review");
@@ -74,8 +74,8 @@ export const scenarios: Scenario[] = [
     "requests-tools",
     "opens it with the Tools focused from the palette",
     async () => prepareReview(),
-    async (browser) => {
-      const { listed, gone, exists } = opening(browser);
+    async (browser, { fixture }) => {
+      const { listed, gone, exists } = opening(browser, signoff(fixture).id);
       await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
       await press(browser, ["Control", "k"], () => browser.$('[aria-label="Command palette"][data-state="open"]').isExisting(), "the palette");
       await typeText(browser, "Tools focused");
@@ -89,8 +89,8 @@ export const scenarios: Scenario[] = [
     "requests-verdict-switch",
     "switches between the GREEN and the RED form while editing",
     async () => prepareReview(),
-    async (browser) => {
-      const { human, listed, exists } = opening(browser);
+    async (browser, { fixture }) => {
+      const { human, listed, exists } = opening(browser, signoff(fixture).id);
       await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
       await press(browser, ["Enter"], exists, "the Human review");
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
@@ -162,7 +162,7 @@ export const scenarios: Scenario[] = [
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => signoff(fixture).claim === null, "released");
       await waitFor(browser, async () =>
-        (await human().$(".meta").getText()).startsWith("WAITING_HUMAN · unclaimed · waiting ")
+        (await human().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `)
         && await human().$("button*=Claim").isEnabled(), "the loaded review shows the release and offers Claim again");
       await human().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed here after the release");
