@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, signoff } from "../fixture.ts";
 import { press } from "../keys.ts";
+import { breadcrumbNames } from "../breadcrumb.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
 
@@ -138,11 +139,11 @@ export const scenarios: Scenario[] = [
       }
 
       await press(browser, ["v"], on("a:ship"), "the selected ship Artifact focused in the graph");
-      assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /ship/);
+      await breadcrumbNames(browser, "ship");
       await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:ship", "ship still selected and the tree focused");
       await press(browser, ["v"], on("a:ship"), "ship focused after another switch to the graph");
       await press(browser, ["ArrowLeft"], on("a:release"), "release focused upstream without a mouse");
-      assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /release/);
+      await breadcrumbNames(browser, "release");
       await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:release", "release selected and the tree focused again");
       const next = await browser.execute(() => document.querySelector('[role="treeitem"][aria-selected="true"]')?.nextElementSibling?.getAttribute("data-path"));
       assert.ok(next, "release has a following visible row");
@@ -247,12 +248,11 @@ export const scenarios: Scenario[] = [
           // Escape returns to the whole graph with this Artifact in view; the UX
           // does not require a particular camera scale or a disabled zoom control.
           await step("Escape", name(40));
-          assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /n040/, "selection held through the transition");
+          await breadcrumbNames(browser, "n040");
         }
       }
       // The tree's selection is the focused node: the breadcrumb names it.
-      const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
-      assert.match(crumbs, /n084/);
+      await breadcrumbNames(browser, "n084");
       const last = await nodeView(name(84));
       assert.ok(last.whole && last.visible && last.focused, "the final Artifact is visible and focused in the whole graph");
       assert.ok(revealedBeyond, "arrow navigation brought an Artifact from beyond the viewport into view and focus");
