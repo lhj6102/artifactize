@@ -213,6 +213,8 @@ export const scenarios: Scenario[] = [
       assert.ok(first, "a real visible node can receive the pointer");
       console.log(`e2e graph: click visible node ${first}`);
       await browser.$(`.svelte-flow__node[data-id="${first}"]`).click();
+      // Escape before the click's zoom is shown would leave the Run pane instead.
+      await browser.$('[role="listbox"][aria-label="Evals"]').waitForExist({ timeout: 15000, timeoutMsg: "the clicked node zoomed in" });
       await press(browser, ["Escape"], async () => {
         const shown = await nodeView(first);
         return shown.whole && shown.focused && shown.visible;

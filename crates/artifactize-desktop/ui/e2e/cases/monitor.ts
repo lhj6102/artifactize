@@ -179,6 +179,14 @@ export const scenarios: Scenario[] = [
       const { toolOutput, selectTool, openReview } = await monitorUI(browser, fixture);
       await openReview();
       await selectTool("notes_release");
+      // What the click reached, for a run that does not start.
+      await browser.execute(() => {
+        const clicks: string[] = [];
+        (window as unknown as { clicks: string[] }).clicks = clicks;
+        const describe = (node: Element | null) => node ? `${node.tagName}${node.id ? `#${node.id}` : ""} ${node.textContent?.trim().slice(0, 30) ?? ""}` : "none";
+        window.addEventListener("pointerdown", (event) => clicks.push(`pointerdown ${describe(event.target as Element)}`), true);
+        window.addEventListener("click", (event) => clicks.push(`click ${describe(event.target as Element)}; focus ${describe(document.activeElement)}`), true);
+      });
       await browser.$('//li[@role="option"][.//span[text()="notes_release"]]').click();
       try {
         await browser.waitUntil(async () => {
@@ -187,7 +195,8 @@ export const scenarios: Scenario[] = [
         }, { timeout: 15000, timeoutMsg: "the selected tool's click alone produced its output" });
       } catch (error) {
         const commands = (await checkpoint(browser)).activity.commands.humanRun;
-        throw new Error(`the selected tool's click alone produced its output; tool commands ${JSON.stringify(commands)}, output ${JSON.stringify(await toolOutput())}`, { cause: error });
+        const clicks = await browser.execute(() => (window as unknown as { clicks?: string[] }).clicks ?? []);
+        throw new Error(`the selected tool's click alone produced its output; tool commands ${JSON.stringify(commands)}, output ${JSON.stringify(await toolOutput())}, events ${JSON.stringify(clicks)}`, { cause: error });
       }
       assert.equal((await checkpoint(browser)).activity.commands.humanRun?.started, 1, "the pointer activation dispatched exactly one tool command");
       assert.equal(signoff(fixture).status, "WAITING_HUMAN", "clicking a tool is not a verdict");
