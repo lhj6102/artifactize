@@ -1,5 +1,28 @@
-//! Non-mutating observations of fixture file handles.
-use std::{fs, io, path::Path};
+//! Non-mutating observations of fixture file handles and path aliases.
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
+
+/// Use a fixture directory's alternate case when the volume resolves it, otherwise
+/// retain its original spelling. The fixture creates only the original directory.
+pub fn case_alias_or_original(directory: &Path, alternate_name: &str) -> PathBuf {
+    assert!(
+        directory
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .eq_ignore_ascii_case(alternate_name),
+        "the fixture alias differs only in ASCII case"
+    );
+    let alias = directory.with_file_name(alternate_name);
+    if alias.try_exists().unwrap() {
+        alias
+    } else {
+        directory.to_owned()
+    }
+}
 
 /// Whether this process has released the SQLite file. This neither renames the file
 /// nor changes its contents; an open read-only SQLite connection must also be detected.
@@ -58,5 +81,31 @@ pub fn database_released(path: &Path) -> io::Result<bool> {
             Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION as i32) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_alias_updates_the_original_entry_without_renaming_it() {
+        let root = super::super::tempdir();
+        let directory = root.path().join("Secret");
+        fs::create_dir(&directory).unwrap();
+        let selected = case_alias_or_original(&directory, "secret");
+        let expected = if super::super::case_insensitive(root.path()) {
+            root.path().join("secret")
+        } else {
+            directory.clone()
+        };
+        assert_eq!(selected, expected);
+        fs::write(selected.join("key.txt"), "changed").unwrap();
+        assert_eq!(fs::read(directory.join("key.txt")).unwrap(), b"changed");
+        let names: Vec<_> = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [std::ffi::OsString::from("Secret")]);
     }
 }

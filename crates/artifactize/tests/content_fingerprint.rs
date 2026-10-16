@@ -567,12 +567,9 @@ fn an_ignore_rule_in_another_case_never_hides_a_change() {
         assert!(fixture.fresh_results(0).is_empty());
         // On a case-insensitive volume this write reaches the original entry through an
         // alias. The enumerated name, not the caller's spelling, still controls the matcher.
-        let path = if fixture.repo.join("app/secret").exists() {
-            "app/secret/key.txt"
-        } else {
-            "app/Secret/key.txt"
-        };
-        fixture.file(path, "v2");
+        let directory =
+            support::os::case_alias_or_original(&fixture.repo.join("app/Secret"), "secret");
+        fs::write(directory.join("key.txt"), "v2").unwrap();
         assert_eq!(fixture.fresh_results(0), ["app/check"]);
     }
 }

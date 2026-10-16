@@ -9,6 +9,11 @@ mod checkpoints;
 #[path = "os/files.rs"]
 mod files;
 
+/// Choose a fixture directory spelling supported by its volume.
+pub fn case_alias_or_original(directory: &Path, alternate_name: &str) -> std::path::PathBuf {
+    files::case_alias_or_original(directory, alternate_name)
+}
+
 /// Observe released SQLite handles without mutating the fixture's database or names.
 pub fn database_released(path: &std::path::Path) -> std::io::Result<bool> {
     files::database_released(path)
