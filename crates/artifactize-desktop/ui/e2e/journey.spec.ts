@@ -16,6 +16,14 @@ const input = readJson(asNativePath(context)) as Prepared;
 
 describe(item.title, () => {
   it(item.id, async () => {
-    await item.run(browser, input);
+    try {
+      await item.run(browser, input);
+    } catch (error) {
+      // CI keeps no screenshots: a failure carries what the window showed when it failed.
+      const shown = await browser.execute(() => document.body.innerText)
+        .catch((cause: unknown) => `(the window text could not be read: ${String(cause)})`);
+      if (error instanceof Error) error.message += `\n--- the window showed ---\n${shown.slice(0, 4000)}`;
+      throw error;
+    }
   });
 });
