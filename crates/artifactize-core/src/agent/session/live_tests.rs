@@ -241,7 +241,7 @@ fn truncate_replacement_same_size_and_gc_reset_even_when_paused() {
 fn links_fifo_permissions_and_directory_links_are_refused() {
     let (root, source) = fixture();
     let file = path(&source.state, "session").unwrap();
-    crate::test_os::set_mode(&file, 0o644);
+    crate::test_os::grant_everyone_read(&file);
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
