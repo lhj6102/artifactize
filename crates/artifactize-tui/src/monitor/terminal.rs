@@ -94,6 +94,10 @@ async fn watch(
     loop {
         match action {
             Action::Quit => return Ok(()),
+            Action::Resync => {
+                wanted.at_least(Wanted::Resynced);
+                tick.reset();
+            }
             Action::Refresh | Action::Review(review::Action::Refresh) => {
                 wanted.at_least(if std::mem::take(&mut monitor.navigation) {
                     Wanted::Changes

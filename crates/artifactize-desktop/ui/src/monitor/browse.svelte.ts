@@ -37,8 +37,9 @@ export class Browse {
     }
   }
 
-  /** A refresh (`r`, a change hint, a resync): one read in flight, later ones coalesce. */
-  refresh(resync = false): void {
+  /** Manual refresh drops all caches; state hints pass their explicit resync flag.
+   * One read is in flight, and later refreshes coalesce without losing a reset. */
+  refresh(resync = true): void {
     this.#dirty = true;
     this.#resync ||= resync;
     void this.#drain();

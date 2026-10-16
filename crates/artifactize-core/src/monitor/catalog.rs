@@ -76,6 +76,11 @@ pub struct Catalog {
     pub selected: Option<Scope>,
 }
 impl Catalog {
+    /// Rediscover Git metadata without losing the selected scope or worktree folds.
+    pub(super) fn reset_git(&mut self) {
+        self.identities.clear();
+        self.trees.clear();
+    }
     fn identity(&mut self, path: &Path) -> Identity {
         self.identities
             .entry(path.to_path_buf())
@@ -124,7 +129,7 @@ impl Catalog {
                 )
             })
     }
-    /// Cached old-path discovery runs once per workspace, not once per refresh.
+    /// Old-path discovery stays cached between resets, including database-only refreshes.
     pub fn update(&mut self, runs: &[CatalogRun], initial: Option<&Path>) {
         self.facts = std::sync::Arc::new(runs.to_vec());
         self.initial_path = initial.map(Path::to_path_buf);

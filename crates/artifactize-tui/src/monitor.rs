@@ -60,6 +60,7 @@ pub const PAGE: u32 = 100;
 pub enum Action {
     None,
     Refresh,
+    Resync,
     Quit,
     OpenDetail,
     Capture(bool),
@@ -679,7 +680,7 @@ impl Monitor {
             }
             KeyCode::Char('r') => {
                 self.navigation = false;
-                return Action::Refresh;
+                return Action::Resync;
             }
             KeyCode::Tab => {
                 self.focus = match self.focus {

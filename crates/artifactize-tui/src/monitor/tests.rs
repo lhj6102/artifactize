@@ -362,7 +362,7 @@ fn keys_page_older_runs_open_and_quit() {
     assert_eq!(monitor.open.as_deref(), Some("run-b"));
     assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
     assert_eq!(monitor.focus, Pane::Runs);
-    assert_eq!(monitor.key(key(KeyCode::Char('r'))), Action::Refresh);
+    assert_eq!(monitor.key(key(KeyCode::Char('r'))), Action::Resync);
     // Esc steps back one level and never quits, even on the first level.
     for pane in [Pane::Repositories, Pane::Repositories] {
         assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
