@@ -137,14 +137,8 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]')), { timeout: 15000, timeoutMsg: "focus back in the review" });
 
       // The window's own close requests, twice in a row: both wait for the prompt's answer.
-      await browser.execute(async () => {
-        const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: object) => Promise<unknown> } })
-          .__TAURI_INTERNALS__;
-        await Promise.all([
-          internals.invoke("plugin:window|close", { label: "main" }),
-          internals.invoke("plugin:window|close", { label: "main" }),
-        ]);
-      });
+      await browser.closeWindow();
+      await browser.closeWindow();
       await dialog.waitForExist({ timeout: 10000 });
       assert.equal(await browser.execute(() => document.title), "Artifactize", "the window stays");
       assert.equal(signoff(fixture).claim?.reviewer, "alice");

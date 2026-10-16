@@ -6,11 +6,16 @@ dirty: true, path_in_vcs: packages/tauri-plugin-webdriver. The crates.io archive
 not a claimed pristine checkout of that commit, is the original source here.
 The upstream MIT license is retained unchanged in LICENSE.
 
-Only src/platform/executor.rs differs from the published source:
+Of the upstream files, only src/platform/executor.rs and
+src/server/handlers/window.rs differ from the published source:
 - Map WebDriver U+E00E and U+E00F to PageUp/PageDown key, code and legacy keyCode.
 - Send pointerdown/pointerup PointerEvents before the existing compatibility
-  mousedown/mouseup events. Keep the existing single-click handling, pointer
-  move, lifecycle, endpoints and other behavior unchanged.
+  mousedown/mouseup events. Keep the existing single-click and pointer-move
+  handling unchanged.
+- Make Close Window request the normal Tauri window.close(), not destroy(),
+  so the application's CloseRequested handler may cancel or confirm it.
+  Service teardown does not use this endpoint; its process shutdown stays
+  unchanged. No other endpoint or lifecycle behavior is modified.
 
 This is a narrow primary-pointer input correction, not a claim of complete
 native/trusted input or full Pointer Events default-action parity.
