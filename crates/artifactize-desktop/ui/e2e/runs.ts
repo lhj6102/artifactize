@@ -1,10 +1,8 @@
 // Domain Run cleanup uses public cancellation/views and the shared Rust OS observer.
 // It never scans processes, signals workers, or controls the application lifecycle.
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { readCandidate } from "./build.ts";
 import { environment } from "./environment.ts";
+import { childDirectories, exists, nativePath, parentOf, removeTree, runProgram, runProgramOk, type NativePath } from "./platform.ts";
 
 export type Identity = { pid: number; start_time: string };
 type RunView = {
@@ -20,9 +18,8 @@ const TERMINAL = ["GREEN", "RED", "ERROR", "INCOMPLETE", "SIGNOFFS_PENDING"];
 const VIEW_CODES = [0, 1, 2, 4, 5];
 
 /** Discover only fixture-owned state databases, never processes or arbitrary paths. */
-export function states(root: string): string[] {
-  return readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory())
-    .map((entry) => join(root, entry.name)).filter((state) => existsSync(join(state, "state.sqlite")));
+export function states(root: NativePath): NativePath[] {
+  return childDirectories(root).filter((state) => exists(nativePath(state, "state.sqlite")));
 }
 
 function identities(view: RunView): Identity[] {
@@ -37,7 +34,7 @@ export function exited(owners: Identity[], bound = EXIT_BOUND, observer = readCa
   if (!observer) throw new Error("candidate does not declare the Rust process observer; preserve fixture inputs");
   const deadline = Date.now() + bound;
   for (;;) {
-    const saved: unknown = JSON.parse(execFileSync(observer, ["alive"], { input: JSON.stringify(owners), encoding: "utf8", timeout: EXIT_BOUND }));
+    const saved: unknown = JSON.parse(runProgramOk(observer, ["alive"], { input: JSON.stringify(owners), timeout: EXIT_BOUND }));
     if (!Array.isArray(saved) || saved.length !== owners.length || saved.some((alive) => typeof alive !== "boolean")) {
       throw new Error("Rust process observer returned invalid lifetime observations");
     }
@@ -47,15 +44,11 @@ export function exited(owners: Identity[], bound = EXIT_BOUND, observer = readCa
   }
 }
 
-export function settleRuns(program: string, repo: string, state: string, observer = readCandidate().observer): void {
-  if (!existsSync(join(state, "state.sqlite"))) return;
-  const invoke = (...args: string[]) => {
-    const result = spawnSync(program, ["--repo", repo, "--state-dir", state, ...args], {
-      encoding: "utf8", timeout: EXIT_BOUND, env: environment({ root: dirname(repo), repo, state }),
-    });
-    if (result.error) throw result.error;
-    return result;
-  };
+export function settleRuns(program: NativePath, repo: NativePath, state: NativePath, observer = readCandidate().observer): void {
+  if (!exists(nativePath(state, "state.sqlite"))) return;
+  const invoke = (...args: string[]) => runProgram(program, ["--repo", repo, "--state-dir", state, ...args], {
+    timeout: EXIT_BOUND, env: environment({ root: parentOf(repo), repo, state }),
+  });
   const listed = invoke("run", "list", "--all", "--limit", "4294967295", "--json");
   if (listed.status !== 0) throw new Error(listed.stderr || "cannot list fixture Runs for cleanup");
   const runs = JSON.parse(listed.stdout) as { id: string }[];
@@ -63,7 +56,7 @@ export function settleRuns(program: string, repo: string, state: string, observe
   const failures: unknown[] = [];
   const show = (id: string, wait = false): RunView => {
     const shown = invoke("run", "show", id, ...(wait ? ["--wait"] : []), "--json");
-    if (!VIEW_CODES.includes(shown.status ?? -1)) throw new Error(shown.stderr || `cannot observe fixture Run ${id}`);
+    if (!VIEW_CODES.includes(shown.status)) throw new Error(shown.stderr || `cannot observe fixture Run ${id}`);
     // Windows birth times are u64 FILETIMEs, beyond JavaScript's safe integer
     // range. Preserve decimal digits before parsing; only Rust converts them to u64.
     const exact = shown.stdout.replace(/"start_time"\s*:\s*(\d+)/g, '"start_time":"$1"');
@@ -88,13 +81,13 @@ export function settleRuns(program: string, repo: string, state: string, observe
 
 /** Call only after the runner/service has exited the app. This function owns domain
  * Runs and files, not native app admission, WebViews, drivers or service processes. */
-export function removeFixture(program: string, root: string, observer = readCandidate().observer): void {
-  if (!existsSync(root)) return;
+export function removeFixture(program: NativePath, root: NativePath, observer = readCandidate().observer): void {
+  if (!exists(root)) return;
   const failures: unknown[] = [];
   for (const state of states(root)) {
-    try { settleRuns(program, join(root, "repo"), state, observer); } catch (error) { failures.push(error); }
+    try { settleRuns(program, nativePath(root, "repo"), state, observer); } catch (error) { failures.push(error); }
   }
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, "fixture Run cleanup failed; preserve inputs");
-  rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeTree(root);
 }

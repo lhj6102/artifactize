@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:net";
 import { it } from "node:test";
+import { serveLoopback } from "./platform.ts";
 import { sessionEndedByApp } from "./observation.ts";
 import type { Identity } from "./runs.ts";
 
@@ -37,19 +37,13 @@ it("retires only the client session after the previously live native process exi
 });
 
 it("fails without retiring when the listener closes but native cleanup remains alive", async () => {
-  const server = createServer((socket) => socket.end());
-  await new Promise<void>((done, fail) => {
-    server.once("error", fail);
-    server.listen(0, "127.0.0.1", done);
-  });
-  const close = async () => {
-    if (server.listening) await new Promise<void>((done, fail) => server.close((error) => error ? fail(error) : done()));
-  };
+  const server = await serveLoopback();
+  const close = () => server.close();
   const { browser, alive } = app();
   try {
-    assert.equal(server.listening, true);
+    assert.equal(server.listening(), true);
     await assert.rejects(sessionEndedByApp(browser, close, alive), /the native app is still running/);
-    assert.equal(server.listening, false, "the embedded endpoint is already gone");
+    assert.equal(server.listening(), false, "the embedded endpoint is already gone");
     assert.equal(alive(owner), true, "native cleanup has not ended with its listener");
     assert.equal(browser.sessionId, "the-live-session", "service teardown cannot turn this failure into a passing quit");
   } finally {

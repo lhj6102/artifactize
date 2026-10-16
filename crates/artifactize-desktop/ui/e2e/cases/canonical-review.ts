@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { artifactize, create, requests, verifyWaiting } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { primaryModifier } from "../platform.ts";
 
 export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
   // UX edges: E-REVIEW-OPEN-ID E-HUMAN-ESC-FORM E-HUMAN-SWITCH
@@ -27,7 +28,7 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
       await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
 
       async function open(id: string) {
-        await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the request ID dialog");
+        await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the request ID dialog");
         await browser.$('[aria-label="Request ID"]').setValue(id);
         await browser.$('[role="dialog"] button[type="submit"]').click();
         await browser.waitUntil(

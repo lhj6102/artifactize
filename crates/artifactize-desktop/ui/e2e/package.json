@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint --no-inline-config ."
+    "lint": "eslint --no-inline-config . && tsc -p ."
   }
 }

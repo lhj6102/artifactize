@@ -7,6 +7,7 @@ import { press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
+import { primaryModifier } from "../platform.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -73,6 +74,13 @@ function review(browser: WebdriverIO.Browser) {
   return { rows, query, preview };
 }
 
+/** The native window's own title through Tauri's window API, not the page's document title. */
+async function nativeTitle(browser: WebdriverIO.Browser): Promise<string> {
+  type Tauri = { __TAURI__: { window: { getCurrentWindow(): { title(): Promise<string> } } } };
+  // WebDriver resolves the returned promise inside the page.
+  return await browser.execute(() => (window as unknown as Tauri).__TAURI__.window.getCurrentWindow().title()) as unknown as string;
+}
+
 export const scenarios: Scenario[] = [
   // UX edges: E-MON-SCOPE-MOVE E-MON-RUNS-MOVE
   scenario<{ initialRun: string; worktreeRuns: string[] }>(
@@ -83,6 +91,7 @@ export const scenarios: Scenario[] = [
       const { text, scopes } = monitor(browser);
       const { initialRun } = data;
       await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
+      assert.equal(await nativeTitle(browser), "Artifactize", "the native window opened on the Monitor is titled Artifactize");
       const entries = await scopes();
       assert.ok(entries.some((entry) => entry.startsWith("ALL")), `ALL is listed: ${entries.join(" | ")}`);
       assert.ok(entries.some((entry) => entry.includes("other")), "the other repository is listed");
@@ -163,9 +172,9 @@ export const scenarios: Scenario[] = [
       const { text, active, settingsShown } = monitor(browser);
       await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
       await browser.$('[role="tree"]').click();
-      await press(browser, ["Control", ","], settingsShown, "Settings shown");
-      await press(browser, ["Control", "2"], async () => (await active()) === "Review", "Review active");
-      await press(browser, ["Control", "1"], async () => (await active()) === "Monitor", "Monitor active");
+      await press(browser, [primaryModifier, ","], settingsShown, "Settings shown");
+      await press(browser, [primaryModifier, "2"], async () => (await active()) === "Review", "Review active");
+      await press(browser, [primaryModifier, "1"], async () => (await active()) === "Monitor", "Monitor active");
     },
   ),
   // UX edges: E-LAUNCH-MONITOR E-MON-SCOPE-MOVE
@@ -200,6 +209,7 @@ export const scenarios: Scenario[] = [
       const { rows, query } = review(browser);
       await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
       await waitFor(browser, async () => (await rows()).length === 3, "three waiting sign-offs");
+      assert.equal(await nativeTitle(browser), "Artifactize", "the native window opened on Review is titled Artifactize");
       assert.equal(await query(), "kind:human status:waiting_human");
       const listed = await rows();
       for (const repository of ["other", "third"]) assert.ok(listed.some((row) => row.includes(repository)), `${repository} is listed`);
@@ -231,12 +241,24 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => loaded(idOf(top), "unclaimed"), "the first identified, loaded and unclaimed Preview");
       const first = await preview();
       assert.match(first, /release\/signoff/);
+      // A Preview only shows the request: no claim, choice, field or submit control exists
+      // until the request is opened, so selecting it can neither claim nor edit nor submit.
+      const controls = () => browser.execute(() => {
+        const shown = document.querySelector('section.panel[aria-label="Preview"] .preview');
+        return {
+          shown: shown !== null,
+          controls: shown?.querySelectorAll('button, input, textarea, select, form, [contenteditable="true"]').length ?? -1,
+          review: document.querySelector('[aria-label="Human review"]') !== null,
+        };
+      });
+      assert.deepEqual(await controls(), { shown: true, controls: 0, review: false }, "the unclaimed Preview has no review controls");
       const pane = () => browser.$('section.panel[aria-label="Preview"]').getText();
       // The request below is claimed by someone else: its Preview says so, the first one's does not.
       assert.equal(artifactize(fixture, "request", "claim", idOf(below), "--reviewer", "bob"), 0);
       assert.doesNotMatch(await pane(), /claimed by bob/, "the first request's Preview");
       assert.match(await pane(), /unclaimed/);
       await press(browser, ["j"], () => loaded(idOf(below), "claimed by bob · read-only"), "the other identified request's loaded, read-only Preview");
+      assert.deepEqual(await controls(), { shown: true, controls: 0, review: false }, "the claimed Preview has no review controls");
       await press(browser, ["k"], () => loaded(idOf(top), "unclaimed"), "the first identified request's loaded, unclaimed Preview restored");
       const claims = Object.fromEntries(requests(fixture).map((request) => [request.id, request.claim?.reviewer ?? null]));
       assert.equal(claims[idOf(top)], null, "previewing claims nothing");
@@ -261,7 +283,7 @@ export const scenarios: Scenario[] = [
       await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
       const search = async (text: string, want: (shown: string[]) => boolean, what: string) => {
         await browser.$('[aria-label="Search requests"]').click();
-        await browser.keys(["Control", "a"]);
+        await browser.keys([primaryModifier, "a"]);
         const before = await checkpoint(browser);
         await browser.$('[aria-label="Search requests"]').setValue(text);
         // Distinct queries can deliberately return identical rows (reviewer:, is:mine and

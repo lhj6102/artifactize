@@ -6,11 +6,12 @@ import { press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { primaryModifier } from "../platform.ts";
 
 async function claimReview(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
   await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
-  await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+  await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
   const input = await browser.$('[aria-label="Request ID"]');
   await input.setValue(signoff(fixture).id);
   await browser.$('[role="dialog"] button[type="submit"]').click();
@@ -91,7 +92,7 @@ export const scenarios: Scenario[] = [
       assert.ok([original, otherId].includes(selected));
       const id = selected === original ? otherId : original;
       assert.notEqual(id, selected, "the typed ID differs from the exact currently selected request");
-      await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+      await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
       await browser.$('[aria-label="Request ID"]').setValue(id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
       await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
@@ -191,7 +192,7 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const text = () => browser.execute(() => document.body.innerText);
       await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
-      await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+      await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
       const input = await browser.$('[aria-label="Request ID"]');
       await input.setValue(signoff(fixture).id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
@@ -206,7 +207,7 @@ export const scenarios: Scenario[] = [
       await comment.waitForExist({ timeout: 10000 });
       await comment.click();
       await typeText(browser, "looks good");
-      await browser.keys(["Control", "s"]);
+      await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "looks good" });
       const run = signoff(fixture).runId;

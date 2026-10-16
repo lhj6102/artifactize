@@ -1,23 +1,5 @@
 name = "desktop-ui"
 
-# The lint and type check read the folder's configuration, the end-to-end tests and the
-# harness besides these files: a change to any of them is a change to the result.
-[fingerprint.script]
-command = "node"
-args = [
-  "{desktop}/fingerprint.mjs",
-  ".",
-  "{desktop}/ui/eslint.config.js",
-  "{desktop}/ui/lint",
-  "{desktop}/ui/package.json",
-  "{desktop}/ui/pnpm-lock.yaml",
-  "{desktop}/ui/tsconfig.json",
-  "{desktop}/ui/svelte.config.js",
-  "{desktop}/ui/vite.config.ts",
-  "{desktop}/ui/e2e",
-  "{desktop}/harness",
-]
-
 [views.agent_tools]
 list = { builtin = "list" }
 glob = { builtin = "glob" }
@@ -37,7 +19,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 instruction = """
 Read the checklist {frontend-style} with read_frontend_frontend-style and the TEST- rules of \
 {code-style} with read_style_code-style. Then review the Svelte and TypeScript \
-of {desktop-ui} (the generated bindings in ipc/bindings.ts are excluded; ipc/client.ts is not) against \
+of {desktop-ui}: its src folder (the generated bindings in src/ipc/bindings.ts are excluded; src/ipc/client.ts is not) and its build configuration, but not the end-to-end tests in e2e, against \
 every frontend item, and its tests and test helpers against every TEST- rule, using list_desktop-ui, \
 glob_desktop-ui, grep_desktop-ui and read_desktop-ui. The UI gets all \
 domain state and decisions from the library {core} through the IPC bindings: report any that it \
@@ -69,10 +51,10 @@ additionalProperties = false
 
 [evals.lint]
 title = "The mechanical frontend rules and the type check pass"
-profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "lint"], timeout_ms = 600000 }
+profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 600000 }
 
 [evals.lint.payload]
 instruction = """
 Run eslint (no inline config; Svelte recommended rules, prefer-writable-derived, \
 no-unnecessary-state-wrap, require-each-key, and a $effect without an // EFFECT: comment) over \
-{desktop-ui} and then svelte-check. The generated bindings are excluded."""
+the source and build configuration of {desktop-ui}, then svelte-check over the same files. The generated bindings and the end-to-end tests are excluded."""

@@ -1,9 +1,10 @@
 // Portable domain commands. The runner owns the app and every native service;
 // fixtures declare only programs that the real product executes.
-import { fileURLToPath } from "node:url";
+import { nodeProgram, portablePath, suitePath } from "./platform.ts";
 
-const command = process.execPath;
-const script = fileURLToPath(new URL("./domain-fixtures/command.mjs", import.meta.url));
+/** The program and script every declared fixture command runs, as declarations spell paths. */
+export const command = portablePath(nodeProgram);
+export const script = portablePath(suitePath("domain-fixtures", "command.ts"));
 
 export type Operation = "pass" | "fail" | "read" | "launch" | "slow" | "hold";
 

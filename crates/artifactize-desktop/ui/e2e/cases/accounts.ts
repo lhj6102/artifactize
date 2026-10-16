@@ -2,12 +2,12 @@
 // serializing otherwise independent capabilities. The system browser must GET
 // the displayed authorization URL; only the domain server records that evidence.
 import assert from "node:assert/strict";
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:http";
-import { createServer as createSocket } from "node:net";
-import { join } from "node:path";
 import { createOutside, environment } from "../fixture.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import {
+  appendText, closeServers, httpGet, nativePath, readText, requireFreeLoopbackPort, serveLoopbackHttp, writeText,
+  type HttpServer,
+} from "../platform.ts";
 
 /** An unsigned fixture access token naming the account returned by the auth server. */
 function token(): string {
@@ -15,35 +15,9 @@ function token(): string {
   return `${part({ alg: "RS256", typ: "JWT" })}.${part({ exp: 4102444800, "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e" } })}.signature`;
 }
 
-function listen(server: Server): Promise<string> {
-  return new Promise((done, fail) => {
-    server.once("error", fail);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", fail);
-      const address = server.address();
-      assert.ok(address && typeof address === "object");
-      done(`http://127.0.0.1:${address.port}`);
-    });
-  });
-}
-
-async function close(servers: Server[]): Promise<void> {
-  const results = await Promise.allSettled(servers.map((server) => new Promise<void>((done, fail) => {
-    server.closeAllConnections();
-    if (!server.listening) return done();
-    server.close((error) => error ? fail(error) : done());
-  })));
-  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
-  if (failures.length) throw new AggregateError(failures, "account fixture servers did not close");
-}
-
 /** This prerequisite is a failure, not a skip or a lock; the app binds it itself. */
-async function requireCallbackPort(): Promise<void> {
-  const socket = createSocket();
-  await new Promise<void>((done, fail) => {
-    socket.once("error", (cause) => fail(new Error("accounts requires free loopback callback port 1455", { cause })));
-    socket.listen(1455, "127.0.0.1", () => socket.close((error) => error ? fail(error) : done()));
-  });
+function requireCallbackPort(): Promise<void> {
+  return requireFreeLoopbackPort(1455, "accounts requires free loopback callback port 1455");
 }
 
 export const scenarios: Scenario[] = [
@@ -55,42 +29,44 @@ export const scenarios: Scenario[] = [
     async () => {
       await requireCallbackPort();
       const fixture = createOutside();
-      const authorizationLog = join(fixture.root, "auth-get-urls.jsonl");
-      writeFileSync(authorizationLog, "");
+      const authorizationLog = nativePath(fixture.root, "auth-get-urls.jsonl");
+      writeText(authorizationLog, "");
       let authUrl = "";
-      const auth = createServer((request, response) => {
-        request.resume();
-        if (request.method === "GET") appendFileSync(authorizationLog, `${JSON.stringify(`${authUrl}${request.url}`)}\n`);
-        if (request.url === "/oauth/token") {
-          response.writeHead(200, { "content-type": "application/json" });
-          response.end(JSON.stringify({ access_token: token(), refresh_token: "refresh-e2e", expires_in: 3600 }));
-        } else {
-          response.writeHead(200).end();
-        }
-      });
-      const provider = createServer((request, response) => {
-        request.resume();
-        const listed = request.url?.endsWith("/models");
-        response.writeHead(listed ? 200 : 404, { "content-type": "application/json" });
-        response.end(JSON.stringify(listed ? { object: "list", data: [{ id: "gpt-e2e", object: "model", created: 0, owned_by: "e2e" }] } : {}));
-      });
+      const servers: HttpServer[] = [];
       try {
-        authUrl = await listen(auth);
-        const providerUrl = await listen(provider);
+        const auth = await serveLoopbackHttp((request, response) => {
+          request.resume();
+          if (request.method === "GET") appendText(authorizationLog, `${JSON.stringify(`${authUrl}${request.url}`)}\n`);
+          if (request.url === "/oauth/token") {
+            response.writeHead(200, { "content-type": "application/json" });
+            response.end(JSON.stringify({ access_token: token(), refresh_token: "refresh-e2e", expires_in: 3600 }));
+          } else {
+            response.writeHead(200).end();
+          }
+        });
+        servers.push(auth);
+        authUrl = auth.url;
+        const provider = await serveLoopbackHttp((request, response) => {
+          request.resume();
+          const listed = request.url?.endsWith("/models");
+          response.writeHead(listed ? 200 : 404, { "content-type": "application/json" });
+          response.end(JSON.stringify(listed ? { object: "list", data: [{ id: "gpt-e2e", object: "model", created: 0, owned_by: "e2e" }] } : {}));
+        });
+        servers.push(provider);
         return {
           fixture,
           env: {
             ...environment(fixture),
             ARTIFACTIZE_CODEX_AUTH_URL: authUrl,
             ARTIFACTIZE_CODEX_AUTH_FILE: undefined,
-            ARTIFACTIZE_OPENAI_BASE_URL: `${providerUrl}/v1`,
+            ARTIFACTIZE_OPENAI_BASE_URL: `${provider.url}/v1`,
             OPENAI_API_KEY: "sk-e2e-accounts",
           },
           data: { authorizationLog },
-          release: () => close([auth, provider]),
+          release: () => closeServers(servers, "account fixture servers"),
         };
       } catch (error) {
-        try { await close([auth, provider]); }
+        try { await closeServers(servers, "account fixture servers"); }
         catch (cleanup) { throw new AggregateError([error, cleanup], "account preparation and cleanup failed"); }
         throw error;
       }
@@ -98,7 +74,7 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { authorizationLog } }) => {
       const status = () => browser.$('[data-testid="codex-status"]').getText();
       const text = () => browser.execute(() => document.body.innerText);
-      const visited = (): string[] => readFileSync(authorizationLog, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
+      const visited = (): string[] => readText(authorizationLog).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
 
       await browser.$("button=Settings").waitForExist({ timeout: 15000 });
       await browser.$("button=Settings").click();
@@ -149,8 +125,7 @@ export const scenarios: Scenario[] = [
 
       // A fresh signed-out state makes this callback, not the earlier paste, causal.
       const returnedState = await begin();
-      const reply = await fetch(`http://localhost:1455/auth/callback?code=e2e-return&state=${returnedState}`);
-      assert.equal(reply.status, 200);
+      assert.equal(await httpGet(`http://localhost:1455/auth/callback?code=e2e-return&state=${returnedState}`), 200);
       await signedIn();
       await signOut();
 

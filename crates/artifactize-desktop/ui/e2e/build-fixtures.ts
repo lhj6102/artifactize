@@ -1,23 +1,20 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
 import { readCandidate, type Candidate } from "./build.ts";
+import { childDirectories, exists, isLink, nameOf, nativePath, newDirectory, parentOf, type NativePath } from "./platform.ts";
 import { removeFixture } from "./runs.ts";
 import { slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 
-function fixturesRoot(): string { return join(readCandidate().root, "fixtures"); }
+function fixturesRoot(): NativePath { return nativePath(readCandidate().root, "fixtures"); }
 
-export function newRoot(): string {
-  const scratch = fixturesRoot();
-  mkdirSync(scratch, { recursive: true });
-  return mkdtempSync(join(scratch, "fixture-"));
+export function newRoot(): NativePath {
+  return newDirectory(fixturesRoot(), "fixture-");
 }
 
 /** Failed acquisition has no app owner yet, so it can settle its own domain work.
  * Preserve both the setup error and a failed cleanup, retaining inputs on failure. */
-export function prepareFixture<T>(setup: (root: string) => T, root = newRoot()): T {
+export function prepareFixture<T>(setup: (root: NativePath) => T, root = newRoot()): T {
   const failed = (error: unknown): never => {
     try { removeFixture(readCandidate().cli, root); }
     catch (cleanup) { throw new AggregateError([error, cleanup], "fixture setup and cleanup failed; preserve inputs"); }
@@ -30,23 +27,21 @@ export function prepareFixture<T>(setup: (root: string) => T, root = newRoot()):
 }
 
 /** Filesystem discovery crosses WDIO worker boundaries without global exit hooks. */
-export function createdRoots(): string[] {
+export function createdRoots(): NativePath[] {
   const scratch = fixturesRoot();
-  if (!existsSync(scratch)) return [];
-  return readdirSync(scratch, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("fixture-"))
-    .map((entry) => join(scratch, entry.name)).sort();
+  if (!exists(scratch)) return [];
+  return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
 }
 
-export async function releaseFixtures(roots: readonly string[] = createdRoots(), candidate: Candidate = readCandidate()): Promise<void> {
+export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): Promise<void> {
   const failures: unknown[] = [];
   for (const root of roots) {
-    if (!existsSync(root)) continue;
+    if (!exists(root)) continue;
     try {
-      if (dirname(root) !== join(candidate.root, "fixtures") || !basename(root).startsWith("fixture-") || lstatSync(root).isSymbolicLink()) {
+      if (parentOf(root) !== nativePath(candidate.root, "fixtures") || !nameOf(root).startsWith("fixture-") || isLink(root)) {
         throw new Error(`refuse cleanup outside candidate-owned fixture roots: ${root}`);
       }
-      const active = slowTool({ root, repo: join(root, "repo"), state: join(root, "state") });
+      const active = slowTool({ root, repo: nativePath(root, "repo"), state: nativePath(root, "state") });
       if (active) await observe(async () => !await active(), () => `tool still owns fixture ${root}; preserve inputs`);
       removeFixture(candidate.cli, root, candidate.observer);
     } catch (error) { failures.push(error); }

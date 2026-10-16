@@ -1,9 +1,8 @@
 // Declared portable programs used by real runtime evaluations and Human tools.
 import { randomUUID } from "node:crypto";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { absolutePath, readText, replaceText, serveLoopback, writeText } from "../platform.ts";
 
-const [operation, path] = process.argv.slice(2);
+const [operation, argument] = process.argv.slice(2);
 switch (operation) {
   case "pass":
     break;
@@ -11,10 +10,10 @@ switch (operation) {
     process.exitCode = 1;
     break;
   case "read":
-    process.stdout.write(readFileSync(path, "utf8"));
+    process.stdout.write(readText(absolutePath(argument)));
     break;
   case "launch":
-    writeFileSync(path, "launched");
+    writeText(absolutePath(argument), "launched");
     break;
   case "hold":
     // The product's declared runtime deadline, not an elapsed-time assertion,
@@ -25,14 +24,8 @@ switch (operation) {
     // The listening socket exists only for this process's actual lifetime. Observers
     // issue no command to it: a connection only reads the unique fixture identity.
     const token = randomUUID();
-    const server = createServer((socket) => socket.end(token));
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") throw new Error("tool did not acquire a TCP port");
-      const pending = `${path}.${token}`;
-      writeFileSync(pending, JSON.stringify({ port: address.port, token }));
-      renameSync(pending, path);
-    });
+    const server = await serveLoopback((socket) => socket.end(token));
+    replaceText(absolutePath(argument), JSON.stringify({ port: server.port, token }));
     break;
   }
   default:

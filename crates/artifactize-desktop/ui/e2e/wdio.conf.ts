@@ -1,22 +1,22 @@
 // The upstream embedded service is the sole native app/driver lifecycle owner.
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { environment, releaseFixtures } from "./fixture.ts";
-import { accountBrowserEnvironment, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment } from "./platform.ts";
+import {
+  accountBrowserEnvironment, asNativePath, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
+  makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
+  type Environment,
+} from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
 
 // Reject an unsafe OS session before any fixture or service is initialized.
 assertRunnerMachine();
 const candidate = readCandidate();
-const ids = JSON.parse(process.env.DESKTOP_TEST_BATCH ?? "[]") as string[];
+const ids = JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[];
 if (!ids.length) throw new Error("a WDIO invocation requires an explicit scenario batch");
 const selected = selectedScenarios(ids);
-const outputDir = process.env.DESKTOP_TEST_BATCH_OUTPUT;
-if (!outputDir) throw new Error("DESKTOP_TEST_BATCH_OUTPUT is required");
-mkdirSync(outputDir, { recursive: true });
+const outputDir = makeDirectory(asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each WDIO batch writes its own logs")));
 const prepared: Prepared[] = [];
 // WDIO wraps severe hook errors; retain the original for the matching runner owner.
 export let preparationFailure: unknown;
@@ -47,7 +47,7 @@ type Capability = {
 
 export const config = {
   runner: "local",
-  specs: [join(import.meta.dirname, "journey.spec.ts")],
+  specs: [suitePath("journey.spec.ts")],
   framework: "mocha",
   reporters: ["spec"],
   logLevel: "warn",
@@ -62,7 +62,7 @@ export const config = {
   capabilities: selected.map((item): Capability => ({
     browserName: "tauri",
     "artifactize:scenario": item.id,
-    "wdio:specs": [join(import.meta.dirname, "journey.spec.ts")],
+    "wdio:specs": [suitePath("journey.spec.ts")],
     "wdio:enforceWebDriverClassic": true,
   })),
   services: [["tauri", {
@@ -81,16 +81,15 @@ export const config = {
         const item = selected[index];
         const input = await item.prepare();
         prepared.push(input);
-        const context = join(outputDir, `${item.id}.json`);
+        const context = nativePath(outputDir, `${item.id}.json`);
         const args = ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])];
-        let env: NodeJS.ProcessEnv = {
+        let env: Environment = {
           ...environment(input.fixture), ...native, ...input.env,
           DESKTOP_TEST_SCENARIO: item.id, DESKTOP_TEST_FIXTURE_ROOT: input.fixture.root,
         };
-        if (item.id === "accounts") env = accountBrowserEnvironment(input.fixture, env);
-        const serialized = JSON.stringify({ fixture: input.fixture, args, env, data: input.data });
+        if (item.id === "accounts") env = accountBrowserEnvironment(input.fixture.root, env);
         // Release callbacks and native fixture handles never cross the worker boundary.
-        writeFileSync(context, serialized, { mode: 0o600 });
+        writeJson(context, { fixture: input.fixture, args, env, data: input.data }, { private: true });
         capabilities[index]["artifactize:context"] = context;
         capabilities[index]["wdio:tauriServiceOptions"] = {
           appArgs: args,
@@ -98,16 +97,15 @@ export const config = {
           embeddedPort: endpoints[index],
         };
       }
-      const ownerRoot = join(candidate.root, "runner-environment");
-      const owner = { root: ownerRoot, repo: join(ownerRoot, "repo"), state: join(ownerRoot, "state") };
+      const ownerRoot = nativePath(candidate.root, "runner-environment");
+      const owner = { root: ownerRoot, repo: nativePath(ownerRoot, "repo"), state: nativePath(ownerRoot, "state") };
       const safe = { ...environment(owner), ...native };
       // The service merges process.env before per-capability env: absent secrets and
       // explicitly unset per-case options must not reappear from the launcher.
       for (const input of prepared) for (const [name, value] of Object.entries(input.env ?? {})) {
         if (value === undefined) delete safe[name];
       }
-      for (const name of Object.keys(process.env)) if (!(name in safe)) delete process.env[name];
-      Object.assign(process.env, safe);
+      replaceEnvironment(safe);
     } catch (cause) {
       preparationFailure = cause;
       // WDIO logs and swallows ordinary launcher-hook failures. Its public severe
@@ -120,8 +118,8 @@ export const config = {
   beforeSession(_config: unknown, capabilities: Capability) {
     const context = capabilities["artifactize:context"];
     if (!context) throw new Error("scenario context was not prepared before the app launch");
-    process.env.DESKTOP_TEST_SCENARIO = capabilities["artifactize:scenario"];
-    process.env.DESKTOP_TEST_CONTEXT = context;
+    setVariable("DESKTOP_TEST_SCENARIO", capabilities["artifactize:scenario"]);
+    setVariable("DESKTOP_TEST_CONTEXT", context);
   },
   mochaOpts: { timeout: 120000 },
 };

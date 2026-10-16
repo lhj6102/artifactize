@@ -1,0 +1,5 @@
+{
+  "extends": "../ui/tsconfig.json",
+  "compilerOptions": { "types": ["node", "webdriverio"], "typeRoots": ["../ui/node_modules/@types", "../ui/node_modules"] },
+  "include": ["*.mts"]
+}

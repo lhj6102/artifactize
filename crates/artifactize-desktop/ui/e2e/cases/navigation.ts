@@ -2,12 +2,12 @@
 // jumping to what needs attention and to an upstream blocker, and stepping back out of a
 // Detail; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { join } from "node:path";
 import { verifyWaiting, create, createNavigationFixture, createStates, requests } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
+import { nativePath } from "../platform.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
 function monitorNavigation(browser: WebdriverIO.Browser) {
@@ -51,12 +51,28 @@ function paneNavigation(browser: WebdriverIO.Browser) {
     await artifact.waitForExist();
     await artifact.click();
     await press(browser, ["l"], async () => (await artifact.getAttribute("aria-expanded")) === "true", "the historical evals unfolded");
-    const names = () => browser.execute(() => [...document.querySelectorAll('[role="treeitem"][aria-level="2"] .name')]
-      .map((name) => name.firstChild?.textContent?.trim() ?? ""));
-    await browser.waitUntil(async () => (await names()).includes(run.eval), { timeout: 15000, timeoutMsg: `${run.id}'s criterion is in the Tree` });
-    assert.deepEqual(await names(), [run.eval], "the other Run's criterion is absent");
+    await browser.waitUntil(async () => (await tree()).evals.includes(run.eval), { timeout: 15000, timeoutMsg: `${run.id}'s criterion is in the Tree` });
+    assert.deepEqual((await tree()).evals, [run.eval], "the other Run's criterion is absent");
   }
-  return { listbox, runIds, selectedRun, chosen, treeShows };
+  /** The Run pane's title, which names the Run its Tree shows. */
+  const runTitle = () => browser.execute(() => [...document.querySelectorAll("section.panel h2")]
+    .map((title) => title.textContent?.trim() ?? "").find((title) => title.startsWith("Run ")) ?? "");
+
+  /** The Tree's current Artifact and its eval rows, read without moving the focus. */
+  const tree = () => browser.execute(() => ({
+    artifact: document.querySelector('[role="treeitem"][data-path="a:subject"]')?.getAttribute("aria-expanded") ?? null,
+    evals: [...document.querySelectorAll('[role="treeitem"][aria-level="2"] .name')].map((name) => name.firstChild?.textContent?.trim() ?? ""),
+  }));
+
+  /** Moving in Runs replaces the Tree with the newly selected Run while Runs keeps the focus. */
+  async function treeFollows(run: { id: string; eval: string }) {
+    const shown = await tree();
+    assert.equal(await runTitle(), `Run ${run.id}`, "the Run pane shows the selected Run");
+    assert.notEqual(shown.artifact, null, "the selected Run's Artifact is in the Tree");
+    assert.deepEqual(shown.evals, shown.artifact === "true" ? [run.eval] : [], "only the selected Run's criterion is in the Tree");
+    assert.ok(await listbox("Runs").isFocused(), "Runs keeps the focus while the Tree follows");
+  }
+  return { listbox, runIds, selectedRun, chosen, treeShows, runTitle, treeFollows };
 }
 
 export const scenarios: Scenario[] = [
@@ -123,8 +139,8 @@ export const scenarios: Scenario[] = [
       git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Refresh fixture inputs");
       const before = "before-refresh";
       const after = "after-refresh";
-      git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", before, join(fixture.root, before));
-      return { fixture, args: ["--repo", fixture.repo], data: { before, after, worktree: join(fixture.root, after) } };
+      git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", before, nativePath(fixture.root, before));
+      return { fixture, args: ["--repo", fixture.repo], data: { before, after, worktree: nativePath(fixture.root, after) } };
     },
     async (browser, { fixture, data }) => {
       const { text } = monitorNavigation(browser);
@@ -167,11 +183,15 @@ export const scenarios: Scenario[] = [
       await browser.$('[role="tree"]').click();
       await release.click();
       const expanded = async () => (await row(1, "release")).getAttribute("aria-expanded");
-      assert.equal(await expanded(), "true");
-      await press(browser, ["h"], async () => (await expanded()) === "false", "release folded by h");
-      await press(browser, ["l"], async () => (await expanded()) === "true", "release unfolded by l");
-      await press(browser, [" "], async () => (await expanded()) === "false", "release folded by Space");
-      await press(browser, [" "], async () => (await expanded()) === "true", "release unfolded by Space");
+      // The release Artifact's one eval row is what folding hides and unfolding restores.
+      const evalShown = async () => (await row(2, "signoff")).isDisplayed();
+      const folded = async () => (await expanded()) === "false" && !(await evalShown());
+      const unfolded = async () => (await expanded()) === "true" && await evalShown();
+      assert.ok(await unfolded(), "release starts unfolded with its eval row");
+      await press(browser, ["h"], folded, "release and its eval row folded by h");
+      await press(browser, ["l"], unfolded, "release and its eval row unfolded by l");
+      await press(browser, [" "], folded, "release and its eval row folded by Space");
+      await press(browser, [" "], unfolded, "release and its eval row unfolded by Space");
     },
   ),
 
@@ -326,18 +346,20 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: { scopes: example.scopes, runs: example.runs } };
     },
     async (browser, { data: example }) => {
-      const { listbox, runIds, selectedRun, treeShows } = paneNavigation(browser);
+      const { listbox, runIds, selectedRun, treeShows, runTitle, treeFollows } = paneNavigation(browser);
       await browser.waitUntil(async () => JSON.stringify(await runIds()) === JSON.stringify([...example.scopes.repo].sort()), { timeout: 15000, timeoutMsg: "the repository's exact Runs" });
       await browser.$('[role="tree"]').click();
       const [older, newer] = example.runs;
       assert.equal(await selectedRun(), newer.id, "the explicitly newer fixture Run is selected first");
       await treeShows(newer);
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
-      await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id, "the older identified Run selected");
+      await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id && (await runTitle()) === `Run ${older.id}`, "the older identified Run selected and shown");
+      await treeFollows(older);
       await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the older Run's Tree focused");
       await treeShows(older);
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "back to Runs");
-      await press(browser, ["ArrowUp"], async () => (await selectedRun()) === newer.id, "the newer identified Run selected again");
+      await press(browser, ["ArrowUp"], async () => (await selectedRun()) === newer.id && (await runTitle()) === `Run ${newer.id}`, "the newer identified Run selected and shown again");
+      await treeFollows(newer);
       await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the newer Run's Tree focused");
       await treeShows(newer);
     },
