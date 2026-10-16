@@ -10,10 +10,10 @@ const graph: RunGraph = {
   run: "run-a",
   nodes: ["base", "lib", "app", "site", "docs"].map((name) => ({ id: `a:${name}`, name, light: "waiting" })),
   edges: [
-    { source: "a:base", target: "a:app", light: "green", dependency: false },
-    { source: "a:lib", target: "a:app", light: "active", dependency: true },
-    { source: "a:app", target: "a:site", light: "waiting", dependency: false },
-    { source: "a:app", target: "a:docs", light: "waiting", dependency: false },
+    { source: "a:base", target: "a:app", light: "green" },
+    { source: "a:lib", target: "a:app", light: "active" },
+    { source: "a:app", target: "a:site", light: "waiting" },
+    { source: "a:app", target: "a:docs", light: "waiting" },
   ],
 };
 
@@ -60,7 +60,7 @@ describe("neighbor", () => {
     const lone: RunGraph = {
       run: "run-b",
       nodes: ["red", "down", "fine"].map((name) => ({ id: `a:${name}`, name, light: "green" })),
-      edges: [{ source: "a:red", target: "a:down", light: "green", dependency: false }],
+      edges: [{ source: "a:red", target: "a:down", light: "green" }],
     };
     const placed = new Map<string, Point>([
       ["a:fine", { x: 0, y: 0 }],

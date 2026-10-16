@@ -54,8 +54,6 @@ pub struct GraphEdge {
     pub source: crate::ids::NodeKey,
     pub target: crate::ids::NodeKey,
     pub light: Light,
-    /// A dependency eval of the target names the source and lights the edge.
-    pub dependency: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -93,7 +91,6 @@ pub fn run_graph(app: tauri::State<'_, App>, run: crate::ids::RunKey) -> Result<
                 source: id(&edge.from),
                 target: id(&edge.to),
                 light: edge.light.into(),
-                dependency: edge.dependency,
             })
             .collect(),
         run: run.into(),

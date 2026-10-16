@@ -105,10 +105,6 @@ or dependency in its execution reason. A READY Human eval instead gives the
 request-awaiting-claim-and-submission reason; forced, blocked and waiting evals
 use their respective execution, gate or wait reasons.
 
-Dependency evals have no reuse key. Their verdicts are derived from current required
-evidence on every `status` or Run, never read from cache or published to the team
-store. Their required executable evals still reuse in the usual way.
-
 ## Completed result reuse
 
 A successful end-of-review recheck adds the GREEN or RED result to its key's
@@ -144,9 +140,7 @@ results, the [pins of their tools' execution paths](../reference/agent-tools.md)
 alongside its own `requestedProfile`. Its own `usage` is null: a reused request spent
 nothing. Its `source`, `{"runId", "requestId", "kind"}`, names the request whose execution produced the
 result and whether it was a completed record (`cache`), a live execution the
-request waited for (`joined`) or a remote store record (`remote`). Dependency
-requests instead use `kind: "derived"`, with their own Run/request IDs; they are not
-reuse. `source` is null on a request that executed itself ([Runs](runs-and-status.md#verify-and-runs)). Runtime
+request waited for (`joined`) or a remote store record (`remote`). `source` is null on a request that executed itself ([Runs](runs-and-status.md#verify-and-runs)). Runtime
 usage is null, not an invented zero. A reused RED remains RED for gates and final
 obligations. Dependencies outside execution selection can supply cached evidence
 without running. Results remain readable after the source repository is deleted;
@@ -184,10 +178,10 @@ folder locations and repository paths are not identities. Extraction includes:
   digest.
 - Input → consumer relations: child ownership (names, not child folder paths),
   mounts (including aliases), instruction references, runtime argv references
-  (including eval ID, argv index and logical suffix), and dependency eval targets.
+  (including eval ID, argv index and logical suffix), and their input targets.
 - Qualified eval IDs, owning Artifact, titles, optional `gate` and evaluation criteria: default
   profile kind, the full `payload` including instruction and owner context,
-  `pass_schema`, `fail_schema`, runtime `command`/`args`, and dependency `depends_on`.
+  `pass_schema`, `fail_schema`, and runtime `command`/`args`.
 
 Excluded are evaluation execution options (backend, model, reasoning, all
 `timeout_ms` values including fingerprint-script timeouts, `max_tool_calls`,

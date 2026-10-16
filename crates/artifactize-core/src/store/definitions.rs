@@ -281,7 +281,7 @@ impl<'de> Deserialize<'de> for Relation {
         let names: &[&str] = match kind_name.as_str() {
             "child" => &["path"],
             "mount" => &["alias"],
-            "instruction" | "dependency" => &["evalId", "name"],
+            "instruction" => &["evalId", "name"],
             "argv" => &["evalId", "index", "name", "path"],
             _ => &[],
         };
@@ -327,12 +327,6 @@ pub enum RelationKind {
     Mount {
         #[serde(default, skip_serializing_if = "missing")]
         alias: Field<config::MountAlias>,
-    },
-    Dependency {
-        #[serde(rename = "evalId", default, skip_serializing_if = "missing")]
-        eval_id: Field<crate::types::EvalId>,
-        #[serde(default, skip_serializing_if = "missing")]
-        name: Field<config::ReferenceName>,
     },
     Instruction {
         #[serde(rename = "evalId")]

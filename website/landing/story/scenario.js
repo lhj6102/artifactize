@@ -90,7 +90,7 @@ const nodes = [
   { id: 'app-c', label: 'app · carol/cli', kind: 'repo' },
   ...carol.nodes,
   { id: 'store', label: 'Review store', kind: 'store', sub: 'artifactize server' },
-  { id: 'ci', label: 'CI', kind: 'ci', sub: 'read-only token' },
+  { id: 'ci', label: 'Checks', kind: 'ci', sub: 'reads saved reviews' },
 ];
 
 /** @type {StoryEval[]} */

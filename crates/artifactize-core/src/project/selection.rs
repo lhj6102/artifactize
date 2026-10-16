@@ -118,33 +118,7 @@ impl Selection {
     ) -> Result<Vec<&'a Eval>, String> {
         let selected = self.resolve(config)?;
         if !recursive {
-            let graph = Graph::new(config).map_err(|error| error.to_string())?;
-            let mut included = selected.evals;
-            let mut seen: BTreeSet<_> = included.iter().map(|eval| eval.id.as_str()).collect();
-            let mut index = 0;
-            while index < included.len() {
-                let eval = included[index];
-                if matches!(
-                    eval.declaration.profile(),
-                    crate::config::Profile::Dependency { .. }
-                ) {
-                    let roots: Vec<_> = eval.deps.iter().collect();
-                    let required: BTreeSet<_> = graph
-                        .dependency_closure(&roots)
-                        .map_err(|error| error.to_string())?
-                        .into_iter()
-                        .collect();
-                    for dependency in &config.evals {
-                        if required.contains(&dependency.target)
-                            && seen.insert(dependency.id.as_str())
-                        {
-                            included.push(dependency);
-                        }
-                    }
-                }
-                index += 1;
-            }
-            return Ok(included);
+            return Ok(selected.evals);
         }
         let graph = Graph::new(config).map_err(|error| error.to_string())?;
         let required: BTreeSet<_> = graph
@@ -195,16 +169,7 @@ pub fn select_profiles(
     let evals = selection.included_evals(&config, recursive)?;
     let included: BTreeMap<_, _> = evals.iter().map(|eval| (&eval.id, *eval)).collect();
     let mapping: Vec<(&EvalId, &ProfileVariantName)> = match profile {
-        ProfileSelection::Named(name) => evals
-            .iter()
-            .filter(|eval| {
-                !matches!(
-                    eval.declaration.profile(),
-                    crate::config::Profile::Dependency { .. }
-                )
-            })
-            .map(|eval| (&eval.id, name))
-            .collect(),
+        ProfileSelection::Named(name) => evals.iter().map(|eval| (&eval.id, name)).collect(),
         ProfileSelection::Evals(mapping) => mapping.iter().collect(),
     };
     let mut profiles = BTreeMap::new();
@@ -212,14 +177,6 @@ pub fn select_profiles(
         let eval = included.get(id).ok_or_else(|| {
             format!("Profile selection is outside the submitted Eval scope: {id}")
         })?;
-        if matches!(
-            eval.declaration.profile(),
-            crate::config::Profile::Dependency { .. }
-        ) {
-            return Err(format!(
-                "Dependency Eval {id} cannot select a profile variant."
-            ));
-        }
         let variant = eval
             .declaration
             .profile_variants()

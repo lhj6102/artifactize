@@ -31,7 +31,7 @@ TOML `index.artf`; omission of `fingerprint` uses artifactsum. To disable reuse,
 `fingerprint = false`. See [Declarations (.artf)](../reference/declarations.md) for snake_case keys and the JSON/output naming
 distinction.
 
-## Files and dependency readiness
+## Files and Eval dependencies
 
 A sidecar such as `hero.png.artf` declares the neighboring file as an independent
 Artifact. It requires a `name`, uses the same TOML schema as a folder and hashes
@@ -53,20 +53,11 @@ Each file hashes only itself. The mounted `house-style` Artifact covers the
 checker and banned words, so a shared change invalidates all three post keys.
 Its README shows how to make one post RED while the other two reuse.
 
-A dependency eval collects readiness from other Artifacts without a new review:
-
-```toml
-# player/index.artf
-name = "player"
-
-[evals.ready]
-title = "Movement and art are ready"
-profile = { kind = "dependency", depends_on = ["player-movement", "hero-art"] }
-```
-
-Once those Artifacts are declared, `artifactize verify player/ready` includes their required evals
-automatically. The result is GREEN only when required evidence is GREEN; status and
-monitor show unfulfilled requirements. See [Artifacts and evals](../concepts/artifacts-and-evals.md).
+A runtime Eval references its inputs directly in its instruction or arguments. For
+example, the application can run its E2E suite using `{e2e-tests}` while the test-code
+Artifact reviews its own style and feature coverage. Only that application Eval
+waits for the test-code reviews; unrelated application Evals remain runnable.
+See [Eval dependencies](../concepts/artifacts-and-evals.md#eval-dependencies).
 
 ## Agent tools and the Human flow
 

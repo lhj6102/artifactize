@@ -67,7 +67,7 @@
   <h2>Providers you configure</h2>
   <p>When you run an Agent eval, Artifactize sends its instructions, declared Artifact context and the project content returned through its declared read-only tools to the configured provider: OpenAI, Anthropic or ChatGPT/Codex through your sign-in. Agent follow-up messages and conversation context go to the same provider. Model-listing commands contact the selected provider; Codex sign-in, token refresh and sign-out contact OpenAI.</p>
   <p>That provider's own privacy policy governs the data it receives: <a href="https://openai.com/policies/privacy-policy/">OpenAI</a> or <a href="https://www.anthropic.com/legal/privacy">Anthropic</a>.</p>
-  <p>Runtime, Human and dependency evals do not call LLM providers. User-declared commands and tools are trusted local programs, not a network sandbox: they can communicate externally, and Human tools can open web URLs.</p>
+  <p>Runtime and Human evals do not call LLM providers. User-declared commands and tools are trusted local programs, not a network sandbox: they can communicate externally, and Human tools can open web URLs.</p>
 
   <h2>Your shared review server</h2>
   <p>If you run or connect to <code>artifactize server</code>, verdicts and review metadata are shared with that server, operated by you or your team. The default summary includes owner fields, fingerprints, declared profiles, reviewer/producer names and timestamps; choosing full sharing also sends captured output. See <a href="/docs/guides/team-review-store.html">shared review server details</a>.</p>

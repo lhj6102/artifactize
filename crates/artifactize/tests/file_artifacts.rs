@@ -676,7 +676,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
 }
 
 #[tokio::test]
-async fn dependency_evals_can_live_on_files_and_target_files() {
+async fn runtime_references_can_connect_files_and_folders() {
     let fixture = Fixture::new();
     fixture.write("input.txt", "input");
     fixture.declare("input.txt.artf", runtime("input", &["-c", "pass"]));
@@ -684,13 +684,13 @@ async fn dependency_evals_can_live_on_files_and_target_files() {
     fixture.declare("ready.txt.artf", json!({
         "name":"ready",
         "evals":[
-            {"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["input"]}},
+            {"id":"ready","title":"Ready","profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check {input}."}},
         ],
     }));
     fixture.declare("folder/index.artf", json!({
         "name":"folder",
         "evals":[
-            {"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["ready"]}},
+            {"id":"ready","title":"Ready","profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check {ready}."}},
         ],
     }));
     let run = fixture.json(&["verify", "--wait", "--all"], 0);
@@ -702,18 +702,18 @@ async fn dependency_evals_can_live_on_files_and_target_files() {
             .find(|request| request["evalId"] == id)
             .unwrap();
         assert_eq!(request["status"], "GREEN");
-        assert!(request["executionId"].is_null());
+        assert!(request["executionId"].is_string());
     }
     fixture.declare(
         "input.txt.artf",
         runtime("input", &["-c", "raise SystemExit(1)"]),
     );
     let run = fixture.json(&["verify", "--wait", "--all"], 1);
-    let blocked = run["requests"]
+    let blocked = run["validation"]["evals"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|request| request["evalId"] == "ready/ready")
+        .find(|request| request["id"] == "ready/ready")
         .unwrap();
     assert_ne!(blocked["status"], "GREEN");
     assert!(
@@ -1383,14 +1383,14 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
 }
 
 #[test]
-fn a_derived_file_eval_never_turns_green_after_its_target_was_deleted() {
+fn a_runtime_file_eval_never_runs_after_its_target_was_deleted() {
     let fixture = Fixture::new();
     fixture.write("ready.txt", "ready");
     fixture.declare("ready.txt.artf", json!({
         "name":"ready",
         "fingerprint":false,
         "evals":[
-            {"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["trigger"]}},
+            {"id":"ready","title":"Ready","profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check {trigger}."}},
         ],
     }));
     fixture.declare(

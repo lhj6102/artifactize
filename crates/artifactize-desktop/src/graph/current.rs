@@ -79,11 +79,6 @@ pub(super) fn project(structure: &Structure) -> CurrentGraph {
             source: id(source),
             target: id(target),
             light: Light::Waiting,
-            dependency: structure.relations.iter().any(|edge| {
-                &edge.source == source
-                    && &edge.target == target
-                    && matches!(edge.kind, graph_structure::Edge::Dependency { .. })
-            }),
         })
         .collect();
     let tree = structure

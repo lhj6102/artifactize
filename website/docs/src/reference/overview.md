@@ -14,7 +14,7 @@ covers setup.
 - [Completed result reuse](../concepts/fingerprints-and-reuse.md#completed-result-reuse)
 - [Cache limits](state-cache-limits.md#cache-limits)
 - [File Artifacts](declarations.md#file-artifacts)
-- [Dependency evals](declarations.md#dependency-evals)
+- [Eval dependencies](declarations.md#eval-dependencies)
 - [Scoped input library](declarations.md#scoped-input-library)
 - [Runtime execution library](declarations.md#runtime-execution-library)
 - [Agent backends](../guides/agent-evals.md#agent-backends)

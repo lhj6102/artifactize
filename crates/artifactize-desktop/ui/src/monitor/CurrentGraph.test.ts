@@ -47,7 +47,7 @@ it("shows the current extraction without a Run and reloads it through the shared
       fingerprint: `graph:revision-${revision}`,
       graph: {
         nodes: [{ id: "a:app", name: "app", light: "waiting" }, { id: "a:graph", name: "graph", light: "waiting" }],
-        edges: [{ source: "a:app", target: "a:graph", light: "waiting", dependency: false }],
+        edges: [{ source: "a:app", target: "a:graph", light: "waiting" }],
       },
       tree: [],
       structure: `app → graph; criteria revision ${revision}`,

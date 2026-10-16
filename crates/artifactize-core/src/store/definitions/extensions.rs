@@ -22,7 +22,6 @@ impl<'de> Deserialize<'de> for Profile {
                 "maxToolCalls",
                 "maxTokens",
             ],
-            Some("dependency") => &["kind", "dependsOn"],
             Some("runtime") => &["kind", "command", "args", "timeoutMs"],
             _ => &["kind"],
         };

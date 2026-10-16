@@ -182,8 +182,7 @@ request's force flag. Forced evals never read or join cached results or live
 executions; a forced GREEN or RED is added as the key's newest record, and
 published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
-Dependency evals are always derived, never forced. Speculation and deferral never waive
-their final requirements.
+Speculation and deferral never waive final requirements.
 
 There is no default eval-concurrency cap: every READY eval starts as soon as it is
 ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it
@@ -203,13 +202,12 @@ budget (unlimited when omitted); it is not an Artifact declaration field.
 The Run records an explicit `jobs` cap (the field is absent when unlimited),
 `fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
-later returns ERROR. Human waiting, claim and tool actions and dependency
-derivation consume no starts. Fingerprint preparation/rechecks, cache hits, and
+later returns ERROR. Human waiting, claim and tool actions consume no starts. Fingerprint preparation/rechecks, cache hits, and
 joined waiters
 consume none. Failures in initial executor preparation consume no start. Agent
 `execution_paths` pinning happens after a start is charged: a pinning failure still
 consumes that start and records ERROR/PREPARATION_FAILED without calling the model.
-Zero permits reuse, joining, Human reviews and dependency derivation; a budgeted waiter replacing a failed/dead owner uses
+Zero permits reuse, joining and Human reviews; a budgeted waiter replacing a failed/dead owner uses
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
@@ -231,7 +229,7 @@ not `--repo`.
 
 `verify ... --profile NAME` selects a complete declared `profile_variants` entry
 for every executable eval included by the selection and recursion policy before
-applying variants. Dependency evals are skipped; they have no variants. Explicit per-eval library mappings to a dependency eval are rejected.
+applying variants.
 Each executable eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
 Run, and source declarations are never rewritten. The library accepts
@@ -251,10 +249,8 @@ requested profile when a hit returns another one, and text output then adds
 
 ## Reuse only
 
-`verify --reuse-only KINDS` takes a comma-separated list of `runtime`, `agent`,
-`human` and `dependency`. Dependency evals still derive current evidence, even
-with `--reuse-only dependency`; they do not look up a cached verdict. An executable
-eval of a listed kind may only reuse a result: a completed record of its
+`verify --reuse-only KINDS` takes a comma-separated list of `runtime`, `agent`
+and `human`. An Eval of a listed kind may only reuse a result: a completed record of its
 reuse key in the local cache, or in the [review store](review-store.md) when one is
 configured. When there is none, the eval is not executed: no executor start, no
 provider call, no Human request, and no waiting, not even for a live execution of
@@ -277,29 +273,21 @@ RED or ERROR, as with an exhausted budget, and records the kinds as `reuseOnly`.
 
 ## Dependency selection and output
 
-`artifactize verify player/ready` is the same qualified eval selection as
-`--eval player/ready`. A selected dependency eval automatically includes its
-required dependency scope's evals, without `--recursive`. A file Artifact is
-selected by its declared name; it has no automatic relation to the surrounding
-folder Artifact.
+`artifactize verify app/e2e` selects the qualified Eval just like `--eval app/e2e`.
+Add `--recursive` to execute the Evals in the required dependency scope. Without
+it, input evidence must already be available. File Artifacts are selected by their
+declared names; a sidecar creates no automatic relation to the surrounding folder.
 
-Dependency requests are marked `(derived)` in text and
-`source.kind = "derived"` in JSON. `summary.derived` counts them separately from
-executed and reused work. Their `blocked_by` list (`blockedBy` in JSON requests,
-validation and status) lists unfulfilled Artifacts and qualified eval IDs. RED or
-BLOCKED requirements produce BLOCKED; missing, stale, ERROR, cancelled or waiting
-Human requirements produce WAIT_DEPENDENCY; fulfilled requirements produce GREEN.
-`status` uses the `derive` action. The monitor derives `waits for X` / `blocked by X`
-rows from the Run's saved evidence and current request states; Detail's `Waits for`
-section lists the upstream Artifacts and their completion state (`w` shows pending evals).
-Tags appear on Artifact entries in text/JSON graph and status, and in the monitor.
-JSON graph/status and saved definitions also carry `kind` (`file`, `folder` or `graph`)
-and the workspace-relative target `path`. Text graph/status mark file Artifacts
-and show their paths; the monitor shows `[file]` in the tree and the path in Detail.
+Only the Eval that references an input waits for its reviews. Its independent
+siblings remain runnable. Plain verify is dependency-first; `--speculate` changes
+scheduling, not approval. Actual Eval-cycle peers run independently of one another,
+retain their own verdicts, and still honor external gates. A failed cycle does not
+release downstream consumers. See [Eval dependencies](declarations.md#eval-dependencies).
 
-There is no execution, cache key, team-store lookup or publication for the derived
-eval itself. Executable requirements keep normal reuse and execution behavior.
-See [Dependency evals](declarations.md#dependency-evals).
+Status uses `execute`, `reuse`, `wait` and `blocked` actions. Requests, validation
+and status carry `blockedBy` qualified Eval IDs. The monitor groups gate Evals by
+Artifact under `Waits for`. Tags, file kinds and paths remain visible in graph,
+status and monitor output.
 
 ## Saved Run evidence and terminal views
 

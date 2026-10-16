@@ -8,11 +8,6 @@ nothing to reuse is [not executed](../reference/cli.md#reuse-only) and leaves th
 a developer's `verify` has produced it for the current key. Artifactsum enables
 reuse by default; `fingerprint = false` on a target or dependency disables it.
 
-Dependency evals still derive current readiness under `--reuse-only agent,human`; they run nothing
-and are never cached or fetched from the store themselves. A missing or waiting
-required review leaves them WAIT_DEPENDENCY; a required RED makes them BLOCKED.
-`--reuse-only dependency` does not prevent derivation.
-
 ## Keep deferred work out of the merge gate
 
 Developers may use `--defer-human` to finish machine work while a person is away,

@@ -67,9 +67,6 @@ args = ["harness/harness.mts", "change-declaration"]
 protocol = "json"
 input_schema = { type = "object", properties = {}, additionalProperties = false }
 
-[evals.ready]
-title = "The backend, the UI and the journeys are ready"
-profile = { kind = "dependency", depends_on = ["desktop-backend", "desktop-ui", "ux-features"] }
 
 [evals.lint]
 title = "The desktop-owned TypeScript automation harness lint passes"

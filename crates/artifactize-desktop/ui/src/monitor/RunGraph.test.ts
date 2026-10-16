@@ -50,7 +50,7 @@ function graph(release: Graph["nodes"][number]["light"], ship = "waiting" as con
       { id: "a:release", name: "release", light: release },
       { id: "a:ship", name: "ship", light: ship },
     ],
-    edges: [{ source: "a:release", target: "a:ship", light: release, dependency: false }],
+    edges: [{ source: "a:release", target: "a:ship", light: release }],
   };
 }
 
@@ -346,7 +346,7 @@ describe("RunGraph", () => {
         { id: "a:ship", name: "ship", light: "error" },
         { id: "a:docs", name: "docs", light: "blocked" },
       ],
-      edges: [{ source: "a:ship", target: "a:docs", light: "error", dependency: false }],
+      edges: [{ source: "a:ship", target: "a:docs", light: "error" }],
     }));
     await waitFor(() => expect(node("a:ship")).not.toBeNull());
     expect(node("a:release")?.getAttribute("aria-label")).toBe("release: RED");

@@ -1,7 +1,7 @@
 # Declarations (.artf)
 
 The exact rules for TOML declarations, folder and file Artifacts, fingerprints,
-dependency evals, scoped references and the runtime execution environment.
+Eval dependencies, scoped references and the runtime execution environment.
 [Artifacts and evals](../concepts/artifacts-and-evals.md) introduces them.
 
 ## Declaration validation
@@ -43,10 +43,10 @@ by ID, not by their position in the TOML source.
 | `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
 | `evals.<id>.title` | Required nonblank title |
 | `evals.<id>.gate` | Optional `"blocking"`; keeps a Human sign-off strict under `--defer-human`. Omission follows the request mode; no other values |
-| `evals.<id>.profile` | Required `runtime`, `agent`, `human` or `dependency` profile |
+| `evals.<id>.profile` | Required `runtime`, `agent` or `human` profile |
 | `evals.<id>.payload.instruction` | Required nonblank instruction for runtime, Agent and Human evals |
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals |
-| `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind; not allowed for dependency evals |
+| `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind |
 
 [Tool sessions](agent-tools.md#tool-sessions) own start, stop and bound-call
 processes for one review. Stop runs on normal release, panic and caller-runtime
@@ -60,7 +60,7 @@ finish terminating before their session files are removed.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
-`profile_variants`, `gate` and `depends_on`.
+`profile_variants` and `gate`.
 Unknown fields and camelCase spellings at these typed boundaries are rejected.
 JSON Schema keywords such as `additionalProperties`, `minLength` and `maxItems`
 keep their standard names. Owner-defined payload fields keep their chosen names.
@@ -98,7 +98,7 @@ anywhere, including payloads and schemas, because they have no JSON equivalent.
 Quote dates to use them as strings. Declaration errors name the `.artf` file,
 line and column when parsing or validating their contents, including syntax,
 deserialization, semantic validation and cross-Artifact reference errors. Field validation and unsupported-value errors
-also name the typed key path, such as `evals.ready.profile.depends_on`.
+also name the typed key path, such as `evals.check.profile.args`.
 
 `config check` validates without executing fingerprint scripts or hashing files.
 Use it after rewriting declarations. Legacy declaration and ignore files are not
@@ -148,7 +148,7 @@ profile = { kind = "human" }
 payload = { instruction = "Use the graph viewer to review the current structure." }
 ```
 
-It is an ordinary named Artifact: declare any runtime, Agent, Human or dependency
+It is an ordinary named Artifact: declare any runtime, Agent or Human
 evals and tools, and select it by name in `verify`, `status`, CI or `--reuse-only`.
 It has no default evals, child ownership or relations to other Artifacts. Explicit
 mounts and instruction/argv references work normally. Commands run from the
@@ -234,7 +234,7 @@ bypass. Old saved keys are ignored on read; no state migration is needed.
 `gate = "blocking"` is an optional eval field, not a profile or global setting.
 It preserves a Human eval's pending gate under `verify --defer-human`. Omission
 retains ordinary strict behavior in default Runs and permits deferral only when
-that request opts in. On runtime, Agent or dependency evals it has no additional
+that request opts in. On runtime or Agent evals it has no additional
 effect: only Human sign-offs can be deferred. Gate policy changes scheduling,
 not the judgment definition or its reuse key.
 
@@ -249,53 +249,19 @@ payload.instruction = "Approve the delivery before dependent work proceeds."
 See [verify modes](cli.md#verify-modes) and
 [deferred sign-offs](../guides/human-reviews.md#deferred-sign-offs).
 
-## Dependency evals
+## Eval dependencies
 
-```toml
-name = "player"
-mounts = { art = "hero-art" }
+`payload.instruction` references and runtime `profile.args` operands such as
+`{input}` or `{input}/path` create dependencies for that Eval only. Mount aliases
+resolve first; the input's Evals supply its review obligations. Mount/child
+visibility alone does not create an execution gate. Self-references identify the
+target and do not make an Eval wait for its own siblings.
 
-[evals.ready]
-title = "Movement and art are ready"
-profile = { kind = "dependency", depends_on = ["player-movement", "art"] }
-```
-
-`depends_on` is a list of 1–64 unique Artifact names or owner mount aliases. Names
-resolve as instruction references do. Unknown names, the declaring Artifact itself
-and duplicate resolved targets are rejected. Dependency evals cannot declare
-`payload`, `pass_schema`, `fail_schema` or `profile_variants`, even empty ones.
-Dependency-eval wait cycles fail configuration validation; ordinary Artifact SCCs
-retain their existing behavior.
-
-A dependency eval checks each listed Artifact's required evals. GREEN evidence
-for every requirement produces GREEN. RED or BLOCKED evidence produces BLOCKED;
-missing, stale, ERROR, cancelled or waiting Human evidence produces
-WAIT_DEPENDENCY in default Runs. With speculation, ERROR also blocks immediately;
-with deferral, a pending deferrable Human gate passes for execution and derived
-results remain PROVISIONAL until real sign-offs exist. A target without evals, including a basis Artifact, fulfills the
-dependency condition. Basis Artifacts cannot own evals. Ordinary final Run
-obligations, including upstream dependency scopes, are unchanged.
-
-The verdict is derived from current evidence, not executed or cached. There is no
-command, provider call, execution row, capacity slot, reuse key, cache record,
-team-store lookup or publication for the dependency eval itself. A dependency-only
-Run prepares no fingerprints solely for derivation, including script fingerprints;
-included runtime/Agent/Human reviews keep their normal fingerprint preparation.
-
-Selecting `verify player/ready` includes the dependency requirements' evals without
-`--recursive`. `--force` never forces the derived eval. `--reuse-only dependency`
-still derives it; `--reuse-only agent,human` constrains its requirements in the
-usual way. `--profile NAME` skips dependency evals and still validates the named
-variant on included executable evals; an explicit per-eval library profile
-selection for a dependency eval is rejected. Neither per-request mode waives its
-final requirements.
-
-`blocked_by` is an ordered flat list: each unfulfilled listed Artifact, followed
-by its non-GREEN qualified eval IDs. JSON requests, validation and status expose
-it as `blockedBy`; text status and monitor details show the same blockers. Requests
-have `source.kind = "derived"`, and Run summaries count them separately as
-`summary.derived`. Later evidence changes do not rewrite a historical request;
-a subsequent `status` or `verify` derives the new current verdict.
+Plain `verify` waits for input evidence; `--speculate` changes this scheduling
+policy without waiving final approval. Actual Eval-cycle peers bypass only their
+internal gates, retain individual verdicts, and must all pass before downstream
+consumers can proceed. See [Eval dependencies](../concepts/artifacts-and-evals.md#eval-dependencies)
+for the E2E ownership example and full model.
 
 ## Artifactsum
 
@@ -329,8 +295,8 @@ recorded `fingerprints` against current dependency fingerprints.
 ## Fingerprint scripts
 
 Before executing evals, `verify` computes fingerprints in their selected required
-dependency closure, including dependencies whose evals are not selected. Derived
-evals alone need no fingerprint preparation. Up to `--fingerprint-jobs N`
+dependency closure, including dependencies whose evals are not selected.
+Up to `--fingerprint-jobs N`
 fingerprints are computed at once (default: the CPUs available to the process),
 in `status` as in `verify`; the same bound covers end-of-review rechecks.
 Values are keyed by Artifact, not completion order. A failure reports the first

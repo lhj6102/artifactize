@@ -114,8 +114,7 @@ shared-execution followers), source execution and summary. The `definition` fiel
 joins the saved eval and its owning Artifact, including tags, from
 the Run; older Runs without saved definitions return null. These queries need no
 repository and run no owner code. `run show` and JSON verify include a Run summary:
-status counts, executed and reused requests by reviewer kind, a separate derived
-dependency count, wall time, actual
+status counts, executed and reused requests by reviewer kind, wall time, actual
 executor starts, attempts and usage reporting completeness. Run totals
 exclude reused source executions; the Run-level `usage.saved` sums their original
 counters. Reused requests keep source attribution and the raw per-provider attempts

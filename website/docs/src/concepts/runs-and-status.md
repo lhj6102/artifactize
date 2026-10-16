@@ -1,7 +1,7 @@
 # Runs, status and validation
 
 `verify` reviews the selected evals and records a Run; `status` predicts what
-the next `verify` will execute, reuse, derive or wait for, without running evals.
+the next `verify` will execute, reuse, wait for or block, without running evals.
 `status` may run declared fingerprint scripts.
 
 ## Verify and Runs
@@ -32,11 +32,9 @@ an individual eval selector starts with that eval. Both retain the full dependen
 closure as a final obligation. `--recursive` includes every eval in that closure,
 including other evals on the selected Artifact and cycle peers, in configuration
 order. `--all` already includes every eval and all no-eval Artifact obligations.
-Selecting a dependency eval also includes evals in its required dependency scope,
-without `--recursive`: `artifactize verify player/ready` is sufficient. A file Artifact selector selects its
-own evals, never the surrounding folder's.
 
-RED blocks downstream execution; missing/operational evidence waits. Cycle peers
+
+RED blocks downstream execution; missing/operational evidence waits. Eval-cycle peers
 have no internal gates. The per-request modes permit speculative execution or
 deferred sign-offs, but final validation always requires actual GREEN evidence or
 explicit `basis = true` throughout the required scope. Gate bypass
@@ -105,9 +103,7 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 ```
 
 `executed` counts the Run's own executions, including ERROR results and Human
-requests it recorded; `reused` counts cache, joined and remote results. Dependency
-requests count as neither. Their lines say `(derived)`, and a separate `Derived: N dependency evals (no execution).`
-line counts them (`summary.derived` in JSON). A reused result that another profile produced
+requests it recorded; `reused` counts cache, joined and remote results. A reused result that another profile produced
 (another variant, model or limit, none of which is in the reuse key) adds `profile NAME`
 to its line, and the summary then ends with `; N produced by another profile` (`summary.reused.otherProfile` in JSON).
 `Usage` (printed only when some usage was reported) separates counters spent in
@@ -126,8 +122,7 @@ whose execution produced the result for cache, joined and remote reuse:
 `kind` is `cache` for a completed record of the reuse key, `joined` for a
 live execution of the key that the request waited for (in another `verify`, or a
 sibling eval in the same Run), and `remote` for a record from the [remote review store](../reference/review-store.md#remote-review-store-client).
-Dependency requests instead have `kind: "derived"` and their own Run/request IDs. They have
-no execution and are not counted as reused. `run show`, `request show` and `request list --json`
+`run show`, `request show` and `request list --json`
 carry `source` too.
 
 `verify --wait --json` prints full saved results, including payloads, argv, stdout/stderr and
@@ -181,15 +176,14 @@ artifactize --repo PROJECT config check --json
 `status` accepts the same exclusive selectors as `verify`, defaulting to
 `--all`, and the same `--profile`, `--recursive` and `--force` policy
 options. It reports current Artifact/eval states, unmet final obligations, and
-`execute` / `reuse` / `derive` / `wait` / `blocked` actions. All evals
+`execute` / `reuse` / `wait` / `blocked` actions. All evals
 in the required closure are shown; `selected` and `included` distinguish explicit
-selection from included execution (recursive or automatic dependency requirements).
+selection from included execution (recursive dependencies).
 In JSON, each eval also shows what its [reuse key](fingerprints-and-reuse.md#the-reuse-key) is made of: `evalDefHash`, the
 target's `fingerprint`, `fingerprints` (each Artifact the eval depends on with its
 current fingerprint, or null without one) and the composed `key` (null when a
 fingerprint is disabled), the same values `verify` would key the Run with.
-Dependency evals have a null key and a `derive` action regardless of their
-current state. Action counts cover included evals only. Exit 0 means current
+Action counts cover included evals only. Exit 0 means current
 validation is satisfied; 1 means obligations remain; invalid input or state errors
 exit 2.
 
@@ -198,8 +192,7 @@ closure, using the same isolation, validation and `--fingerprint-jobs` bound as 
 Fingerprint failures exit 2; an old saved fingerprint is never substituted. It never
 runs tools or eval commands, creates Runs, reserves work, creates a missing database
 or updates cache access times. Fingerprint scripts use disposable output under the
-state directory, which may be created even when no database exists. A
-dependency-only derivation needs no fingerprint preparation. `config graph` and
+state directory, which may be created even when no database exists. `config graph` and
 `config check` remain fully static and never run owner code.
 
 A completed record for the eval's current reuse key yields PASS or RED and a
@@ -237,21 +230,16 @@ without a key, the execution reason names the target or dependency declaring
 a Human claim and submission", even without a key; blocked or waiting evals
 explain their gate or wait state instead.
 
-Dependency states are derived from current required evidence: all requirements GREEN
-gives GREEN (PASS in status); RED or BLOCKED gives BLOCKED; missing, stale, ERROR,
-cancelled or Human-waiting evidence gives WAIT_DEPENDENCY. An Artifact with no
-evals, including a basis Artifact, fulfills the listed condition. Basis Artifacts
-cannot own evals; final obligations still cover upstream dependencies. Gate bypass
-never changes the derived verdict. The `blocked_by` list (`blockedBy` in JSON) contains
-each unfulfilled resolved Artifact in lexicographic Artifact-name order, followed
-by that Artifact's non-GREEN qualified eval IDs in ID order. Mount aliases resolve
-to Artifact names before this ordering. Status reasons show those blockers. The monitor's one-row-
-per-eval tree says `waits for X` or `blocked by X`, with X's Artifact completion
-state. Detail lists the same Artifacts under `Waits for`, with pending evals (`w`).
+An Eval's own references define its gates. Required input Evals that are pending
+leave it WAIT_DEPENDENCY; RED/BLOCKED inputs block it. Evals inside the same
+Eval-level cycle keep their own real verdicts, while external gates hold the cycle
+and failed cycles do not release downstream consumers. An independent sibling
+Eval on the same Artifact is not gated by another sibling's references.
+`blockedBy` names unfulfilled qualified Eval IDs. Detail groups these gates by
+input Artifact under `Waits for`; `w` shows pending Evals.
 
-A later Human submission can settle a waiting Run's requirements. It does not
-rewrite a dependency request in a historical Run; a later `status` or `verify`
-derives new current evidence. `run show` keeps saved validation and requests.
+A later Human submission can settle a waiting Run. `run show` keeps its saved
+validation and requests.
 The monitor derives its tree from the saved definitions and evidence with request
 states as they stand now, including later Human submissions. Its headline keeps
 **SATISFIED / NOT SATISFIED at Run end**; a dim `*` marks rows whose derived state
@@ -261,7 +249,7 @@ changed since that end, not files changed. See [Monitor](../guides/human-reviews
 including cycle peers. Text lists Artifacts with tags and file-kind markers, evals, components and
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
-child/mount/instruction/argv/dependency relation metadata, cycle markers and
+child/mount/instruction/argv relation metadata, cycle markers and
 dependency-first strongly connected components (SCCs): groups of Artifacts that
 mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
 workspace-relative target `path`. Status also shows file kinds/paths; the monitor

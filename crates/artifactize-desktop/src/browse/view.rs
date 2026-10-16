@@ -157,7 +157,7 @@ pub struct TreeNode {
     pub tone: Tone,
     pub weight: Weight,
     pub name: String,
-    /// Dim markers after the name: `↻ peer`, `[file]`, `[dep]`.
+    /// Dim markers after the name: `↻ peer`, `[file]`.
     pub marks: String,
     pub text: Vec<Segment>,
     /// Elapsed time of an eval, `passed/total` of an Artifact.

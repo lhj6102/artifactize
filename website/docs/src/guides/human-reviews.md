@@ -21,10 +21,6 @@ dependency fingerprints. A later `verify` reuses the submitted result and runs i
 dependents. **`fingerprint = false` means no reuse** when declared by the target or any
 dependency: submission settles only that Run, and a later `verify` asks for a new
 Human review. Those dependents continue only in the Run that waits for it.
-Dependency evals wait with WAIT_DEPENDENCY while required Human evidence waits, then
-derive GREEN or BLOCKED from the submission. Later submissions never rewrite a
-historical derived request; a new `status` or `verify` derives current evidence.
-
 ```sh
 artifactize verify --all --wait
 # In another terminal, using the same state directory:
@@ -163,7 +159,7 @@ search for it literally (`"type:style"`):
 | `request:` | part of the request ID |
 | `reviewer:` | part of the claimant's name; unclaimed requests never match |
 | `tag:` | part of a tag of the eval's Artifact (`tags` in its declaration, as saved with the Run) |
-| `kind:` | the eval kind: `runtime`, `agent`, `human` or `dependency` |
+| `kind:` | the eval kind: `runtime`, `agent` or `human` |
 | `status:` | the request status, such as `waiting_human`, `green`, `red` or `error` |
 | `is:mine` | claimed by you (`$USER` or `--reviewer`) |
 | `is:claimed` | claimed by anyone |
@@ -343,7 +339,7 @@ a level. Widen the terminal when the focused pane needs more room.
   while running, then **SATISFIED / NOT SATISFIED at Run end**. Up to three attention
   lines show errors, waiting Humans and running evals, then `+N more`. Enter on the
   **Run** row opens validation and unmet obligations, counts, errors, waiting and
-  running work, timing, budgets, executed/reused/derived counts and full spent/saved
+  running work, timing, budgets, executed/reused counts and full spent/saved
   usage in Detail.
 
 Scope badges and the header share `!N ✗N ◐N ?N` attention counters. These cover the
@@ -359,7 +355,7 @@ path and tags are in Detail's Technical section. A basis Artifact is one row:
 
 | View state | Meaning |
 |---|---|
-| `✓` done | GREEN, executed, reused or derived |
+| `✓` done | GREEN, executed or reused |
 | `✗` / `!` failed | RED / ERROR |
 | `◐` / `?` / `·` in progress | Running, waiting for a Human (with claimant), awaiting admission, waiting for a backend slot or an explicit `--jobs` cap, or joining an execution |
 | `…` waits for X | A running Run waits for X's required evals to be GREEN |
@@ -372,13 +368,15 @@ upstream asks for a retry rather than blocking as RED does. A finished Run can
 still have an open Human request. These view states explain saved request states;
 they do not rename the states in JSON.
 
-Dependencies target **Artifacts**, not individual evals. A row shows at most two
+Each Eval references its own input Artifacts and waits for their required Evals.
+A row groups those gates into at most two
 unmet Artifacts, then `+N`, with each Artifact's completion state. When all targets
 are themselves waiting, it adds one level of cause, for example
 `waits for cli … waiting (cli waits for code-style)`. Cycle peers share `↻ peer`
-markers and do not wait for each other, unless a dependency eval's `depends_on`
-explicitly names a peer. Upstream comes first where the graph allows; cycle peers
-are ordered by name. Dependency evals carry `[dep]` and follow ordinary evals.
+markers. Actual Eval-cycle peers do not gate one another; an Artifact-level cycle
+marker does not make every sibling Eval a cycle peer. External gates still apply.
+Upstream comes first where the graph allows; Artifact cycle peers and Evals are
+ordered by name.
 
 All-done Artifacts fold automatically. Other Artifacts stay open unless you toggle
 them; refresh respects your choices. A new Run selects its first in-progress or
@@ -452,8 +450,6 @@ Detail depends on the eval kind:
   sections, or below them in a Detail narrower than 90 columns. Running,
   timeout/cancellation and remote summary-only results show logs as unavailable;
   there is no live-log recorder.
-- **Dependency:** the saved derived state and `blockedBy` requirements, marked
-  `derived (no execution)`. It has no claim, tools or verdict form.
 - **Human:** the same [Human Detail](#shared-human-detail) as standalone `review`,
   with explicit **CLAIM → REVIEW**, instruction first, folded Technical (`t`),
   instruction expansion (`i`), tools/output and GREEN/RED fields. `c` claims only

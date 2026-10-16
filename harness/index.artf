@@ -32,7 +32,3 @@ type = "object"
 properties.violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } }
 required = ["violations"]
 additionalProperties = false
-
-[evals.ready]
-title = "The canonical skill and actual harness builder judgments are ready"
-profile = { kind = "dependency", depends_on = ["hey-arti", "arti-harness"] }

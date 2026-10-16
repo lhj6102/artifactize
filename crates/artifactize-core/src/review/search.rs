@@ -12,7 +12,7 @@
 //! | `request:` | a substring of the request ID |
 //! | `reviewer:` | a substring of the claimant; unclaimed requests never match |
 //! | `tag:` | a substring of a tag of the eval's Artifact |
-//! | `kind:` | the eval kind exactly: `runtime`, `agent`, `human` or `dependency` |
+//! | `kind:` | the eval kind exactly: `runtime`, `agent` or `human` |
 //! | `status:` | the request status; `waiting_human` includes `deferred` sign-offs |
 //! | `is:` | `mine`, `claimed` or `unclaimed` (claims exist only on waiting Human requests) |
 //!

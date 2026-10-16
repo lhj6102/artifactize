@@ -134,8 +134,7 @@ reasoning, limits and profile variant) and an Agent result's `executionPaths` pi
 A token without `read` looks nothing up and one without `publish` publishes nothing,
 so a read-only CI token only reuses. Human sign-offs also need `human`; with any
 other token they stay local with a warning. Nothing is published for evals without a
-reuse key. Dependency evals have no key or store record and are derived locally
-from current required evidence, not looked up or published. `--force` never reads
+reuse key. `--force` never reads
 from the store, but a forced result is a new record
 and is published like any other, so it becomes the store's latest too (unless a
 newer one exists). `status` makes the same comparison with a read-only lookup,

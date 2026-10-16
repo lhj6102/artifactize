@@ -56,7 +56,7 @@
       {/if}
     {:else if section.name !== "technical" || technical}
       <dl>
-        <!-- A Detail can repeat a key (a dependency eval's two Source lines): key by position. -->
+        <!-- A Detail can repeat a key: key by position. -->
         {#each section.fields as field, at (at)}
           <dt>{field.key}</dt>
           <dd>{field.value}</dd>

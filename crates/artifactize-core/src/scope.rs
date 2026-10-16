@@ -39,11 +39,6 @@ pub enum RelationKind {
     Mount {
         alias: crate::config::MountAlias,
     },
-    Dependency {
-        #[serde(rename = "evalId")]
-        eval_id: crate::config::EvalId,
-        name: crate::config::ReferenceName,
-    },
     Instruction {
         #[serde(rename = "evalId")]
         eval_id: crate::config::EvalId,
@@ -519,39 +514,6 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         };
         let mut references = BTreeMap::new();
         let mut deps = BTreeSet::new();
-        if let Profile::Dependency { depends_on } = eval.declaration.profile() {
-            for name in depends_on {
-                let source = reference_target(
-                    config,
-                    &eval.target,
-                    &crate::config::ReferenceName::from(name),
-                )
-                .map_err(|failure| error(&["profile", "depends_on"], failure))?;
-                if source == &eval.target {
-                    return Err(error(
-                        &["profile", "depends_on"],
-                        ScopeError("Dependency Evals cannot depend on their own Artifact.".into()),
-                    ));
-                }
-                if !deps.insert(source.clone()) {
-                    return Err(error(
-                        &["profile", "depends_on"],
-                        ScopeError(
-                            "Dependency profile depends_on must resolve to unique Artifacts."
-                                .into(),
-                        ),
-                    ));
-                }
-                relations.push(Relation {
-                    source: source.clone(),
-                    target: eval.target.clone(),
-                    kind: RelationKind::Dependency {
-                        eval_id: eval.id.clone(),
-                        name: name.into(),
-                    },
-                });
-            }
-        }
         let instruction = eval
             .declaration
             .payload()

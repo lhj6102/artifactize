@@ -14,12 +14,11 @@ choose `--speculate` and `--defer-human` per verification request instead.
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
 `usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval
 has a `title` and a `profile` whose `kind` is `runtime`, `agent`,
-`human` or `dependency`. Runtime, Agent and Human evals require `payload.instruction` and
+or `human`. All evals require `payload.instruction` and
 may have `pass_schema`, `fail_schema` and `profile_variants`.
 
 A runtime eval's exit code is its verdict (0 is GREEN); an Agent or a Human returns
-GREEN or RED with owner fields. A dependency eval derives its state from other
-Artifacts without executing anything.
+GREEN or RED with owner fields. Dependencies come from each Eval’s own references.
 
 This is the `guide` Artifact of the [runtime-relations example](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), whose README explains children,
 mounts, `{artifact}` references and basis Artifacts:
@@ -78,40 +77,40 @@ declarations. By contrast, a subfolder's `index.artf` makes it a child of the ne
 Artifact folder above it. A file named `index` cannot have a sidecar: `index.artf`
 always declares the folder. `.artf` files are never Artifact targets.
 
-## Dependency evals
+## Eval dependencies
 
-Use a dependency eval to name a readiness condition over other Artifacts:
+A dependency belongs to the Eval that uses the input, not every Eval on its
+Artifact. A `{name}` reference in `payload.instruction` or a runtime `args` operand
+names an input Artifact; that Eval depends on the Evals judging the input.
+Mount aliases resolve to their named Artifacts. Mounts and children define visible
+material and fingerprint inputs; visibility alone does not gate sibling Evals.
+
+For example, application E2E execution belongs to the application:
 
 ```toml
-# player/index.artf
-name = "player"
+name = "app"
 
-[evals.ready]
-title = "Movement, art and audio are ready"
-profile = { kind = "dependency", depends_on = ["player-movement", "hero-art", "player-audio"] }
+[evals.e2e]
+title = "The application passes its end-to-end suite"
+profile = { kind = "runtime", command = "node", args = ["{e2e-tests}/run.mjs", "{app}"] }
+payload.instruction = "Run {e2e-tests} against {app}."
 ```
 
-`depends_on` lists 1–64 unique Artifact names or the declaring Artifact's mount
-aliases. Unknown targets, self-dependencies and aliases that resolve to duplicate
-targets are rejected. Dependency evals cannot declare `payload`, `pass_schema`,
-`fail_schema` or `profile_variants`; put any explanation in `title`.
+The `e2e-tests` Artifact evaluates the test code itself: its style and fidelity to
+the feature documents. It does not execute the application suite as a review of
+its own test code. An independent `app` style Eval does not wait for the test-code
+reviews unless its own instruction references them.
 
-The eval is GREEN when every listed Artifact's required evals are GREEN. A RED or
-BLOCKED required eval makes it BLOCKED. Missing, stale, ERROR, cancelled or
-Human-waiting evidence makes it WAIT_DEPENDENCY. A target with no evals, including a
-basis Artifact, fulfills this dependency condition. A basis cannot own evals. The
-dependency condition does not waive ordinary final Run obligations, including the
-targets' dependency scopes.
+All Evals can judge their own targets independently of their inputs' verdicts.
+Plain `verify` chooses dependency-first scheduling for efficiency: pending input
+reviews delay the consumer Eval; RED input reviews block it. `--speculate` lets
+work start before unresolved input gates, without approving missing requirements.
+Final GREEN still requires all required evidence, including upstream reviews.
 
-`artifactize verify player/ready` selects the qualified eval directly and includes the required dependency
-evals automatically, without `--recursive`. The dependency eval runs no command or
-model, takes no execution budget or backend slot, and has no reuse key, cache record
-or team-store result. Its verdict comes from current evidence. Speculation may
-execute machine work early; deferred Human evidence yields PROVISIONAL derived
-results, never full approval. Dependency-eval wait cycles are rejected; ordinary Artifact cycles
-retain their existing scheduling rules.
-
-[Runs, status and validation](runs-and-status.md) explains derived requests and unfulfilled dependency output.
+Cycles are condensed at the Eval level. Internal peers do not wait for each other,
+and an internal RED does not cancel a peer or replace its actual verdict with
+BLOCKED. External gates still apply to the entire cycle. Every internal result
+must pass before downstream consumers outside the cycle can proceed.
 
 ## The fingerprint field
 
@@ -130,8 +129,7 @@ Artifact folders; a file Artifact hashes its one target file.
 
 While the eval definition, Artifact kinds and all fingerprints in its key are
 unchanged, the prior
-GREEN or RED verdict is reused. See [Fingerprints and reuse](fingerprints-and-reuse.md). Dependency verdicts are derived
-again rather than reused.
+GREEN or RED verdict is reused. See [Fingerprints and reuse](fingerprints-and-reuse.md).
 
 ## Tags and validation
 
