@@ -7,6 +7,8 @@ use time::OffsetDateTime;
 // Structured MCP content is also mirrored in text for legacy clients. 8 KiB leaves
 // room for both representations, escaped quotes and protocol framing under 64 KiB.
 const PAGE_BYTES: usize = 8 * 1024;
+/// Stateless cursors encode exactly the revision, byte offset and observation clock.
+const CURSOR_FIELDS: usize = 3;
 
 /// Keep elapsed fields stable between pages without storing a result snapshot.
 /// Every continuation still hashes freshly read authoritative records.
@@ -18,7 +20,7 @@ pub(super) struct Cursor {
 impl FromStr for Cursor {
     type Err = String;
     fn from_str(value: &str) -> Result<Self, String> {
-        let mut fields = value.splitn(3, ':');
+        let mut fields = value.splitn(CURSOR_FIELDS, ':');
         let revision = fields
             .next()
             .ok_or("Invalid detail cursor revision.")?

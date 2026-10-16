@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 /// Leave room under the host's 45-second deadline for transport serialization.
 const MAX_WAIT_SECONDS: u64 = 40;
+/// Observe for half a minute by default, reserving extra host-deadline headroom for routine calls.
 const DEFAULT_WAIT_SECONDS: u64 = 30;
 /// Limit each Run-list query to the agreed maximum record group; offset selects older groups.
 const RUN_LIST_LIMIT: u32 = 20;
