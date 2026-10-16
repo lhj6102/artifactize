@@ -9,18 +9,37 @@ pub fn database_released(path: &Path) -> io::Result<bool> {
         use std::os::unix::fs::MetadataExt;
 
         let database = fs::metadata(path)?;
-        // Both Unix platforms expose this process's open descriptors here. Inspect
-        // their targets, not just SQLite locks (an idle reader need not hold a lock).
+        // Enumerate descriptor numbers, then inspect the descriptors themselves.
+        // Darwin's /dev/fd entries are not Linux-style links to the target files;
+        // stat on an entry can fail with EBADF. Neither probe opens or borrows an
+        // owned descriptor, nor relies on SQLite locks (an idle reader has none).
         for entry in fs::read_dir("/dev/fd")? {
-            match fs::metadata(entry?.path()) {
-                Ok(open) if open.dev() == database.dev() && open.ino() == database.ino() => {
-                    return Ok(false);
+            let descriptor = entry?
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<libc::c_int>().ok())
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "non-numeric descriptor entry")
+                })?;
+            let mut open = std::mem::MaybeUninit::<libc::stat>::uninit();
+            // SAFETY: fstat only observes the descriptor and writes to a valid out
+            // pointer. A concurrent close is reported as EBADF, not owned or closed here.
+            if unsafe { libc::fstat(descriptor, open.as_mut_ptr()) } == -1 {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() == Some(libc::EBADF) {
+                    // Descriptor enumeration is not a snapshot: another thread may
+                    // have closed this slot, or Darwin may list an unused slot.
+                    continue;
                 }
-                Ok(_) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    // A different thread may close a descriptor while it is enumerated.
-                }
-                Err(error) => return Err(error),
+                return Err(error);
+            }
+            // SAFETY: a successful fstat initialized the entire stat structure.
+            let open = unsafe { open.assume_init() };
+            // Darwin's dev_t is signed; Linux's is unsigned. Widen without truncation.
+            if i128::from(open.st_dev) == i128::from(database.dev())
+                && open.st_ino == database.ino()
+            {
+                return Ok(false);
             }
         }
         Ok(true)

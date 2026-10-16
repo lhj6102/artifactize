@@ -253,6 +253,54 @@ async fn subscribed_fixture_joins_shutdown_before_removing_namespace_on_success_
     }
 }
 
+#[test]
+fn database_release_probe_tracks_idle_readers_among_unrelated_descriptors() {
+    use crate::test_os::database_released;
+    use std::fs;
+
+    let root = crate::test_os::tempdir();
+    let database = root.path().join("database.sqlite");
+    rusqlite::Connection::open(&database).unwrap();
+    let alias = root.path().join("alias.sqlite");
+    fs::hard_link(&database, &alias).unwrap();
+    let contents = fs::read(&database).unwrap();
+    let unrelated = fs::File::create(root.path().join("unrelated")).unwrap();
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+
+    for path in [&database, &alias] {
+        assert!(database_released(&database).unwrap());
+        // Opening read-only without executing a statement holds no SQLite lock.
+        // A second name must still identify the held file, not a different database.
+        let reader =
+            rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        assert!(
+            !database_released(&database).unwrap(),
+            "an idle reader must be detected, including through a hard-link alias"
+        );
+        reader.close().unwrap();
+        assert!(database_released(&database).unwrap());
+        assert_eq!(fs::read(&database).unwrap(), contents);
+        assert!(alias.exists(), "observation must not rename database files");
+    }
+
+    drop(listener);
+    drop(unrelated);
+    root.close().unwrap();
+}
+
+#[test]
+fn database_release_probe_reports_missing_database() {
+    let root = crate::test_os::tempdir();
+    assert_eq!(
+        crate::test_os::database_released(&root.path().join("missing.sqlite"))
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::NotFound
+    );
+    root.close().unwrap();
+}
+
 #[tokio::test]
 async fn closed_subscription_releases_database_and_files_before_returning() {
     let state = temporary_state();
