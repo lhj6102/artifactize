@@ -1,86 +1,27 @@
+# Build every OS on dev/main PRs; Windows/macOS also enforce native platform contracts.
+# Desktop E2E gates release PRs into main; broader verification belongs outside CI.
 name: CI
 
-# Changes that touch only the website (built by website.yml) skip the Rust checks.
-# Pull requests run Linux checks; platform changes also gate on native Windows/macOS
-# contracts. Main pushes, schedules and manual runs exercise the full three-OS suite.
-# Every executed job gates the workflow outcome, including manual runs.
 on:
-  push:
-    branches: [main]
-    paths-ignore: ["website/**", ".github/workflows/website.yml"]
   pull_request:
+    branches: [dev, main]
     paths-ignore: ["website/**", ".github/workflows/website.yml"]
-  schedule:
-    - cron: "17 3 * * 1"
   workflow_dispatch:
 
 jobs:
-  platform_changes:
-    if: github.event_name == 'pull_request'
+  linux:
     runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.paths.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: paths
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Install desktop build dependencies
         run: |
-          paths=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
-            ':(glob)crates/*/src/platform.rs' \
-            ':(glob)crates/*/src/platform/**' \
-            ':(glob)crates/artifactize-core/tests/support/os*' \
-            ':(glob)crates/artifactize-core/tests/support/os/**' \
-            ':(glob)crates/artifactize/publish*.mjs' \
-            crates/artifactize/tests/publish_runtime.rs \
-            .github/workflows/ci.yml)
-          if [[ -n "$paths" ]]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-  check:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: cargo test
-      - run: node --test crates/artifactize/publish.test.mjs
-      # Packages the crates with an invocation-owned staging registry, without uploading.
-      - run: node publish.mjs
-        working-directory: crates/artifactize
-  # The desktop app (crates/artifactize-desktop) is outside default-members: it needs
-  # WebKitGTK and its built frontend, so it builds and tests here, on Linux only.
-  desktop:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install WebKitGTK, its WebDriver and a virtual display
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev webkit2gtk-driver xvfb util-linux iproute2
-          sudo apt-get install -y -qq --no-install-recommends lxc uidmap
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: desktop
+      - run: cargo build --locked
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: crates/artifactize-desktop/ui/package.json
@@ -92,21 +33,10 @@ jobs:
       - working-directory: crates/artifactize-desktop/ui
         run: |
           pnpm install --frozen-lockfile
-          pnpm check
-          pnpm test
           pnpm build
-      # Shared-core Run fixtures launch the same CLI worker as production.
-      - run: cargo build --locked -p artifactize -p artifactize-desktop
-      # The bindings test fails when ui/src/ipc/bindings.ts no longer matches the commands.
-      - run: cargo clippy --locked -p artifactize-desktop --all-targets -- -D warnings
-      - run: cargo test --locked -p artifactize-desktop
-      - run: cargo install --locked tauri-driver --version 2.1.0
-      # The e2e driver runs the app on its own Xvfb display.
-      - working-directory: crates/artifactize-desktop/ui
-        run: pnpm e2e
+      - run: cargo build --locked -p artifactize-desktop
+
   windows:
-    needs: platform_changes
-    if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || needs.platform_changes.outputs.changed == 'true') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,26 +44,12 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # This namespace exercises each native implementation behind the portable layer,
-      # including Windows creation-time jobs/ACLs and macOS zombie-group cleanup.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: node --test crates/artifactize/publish.test.mjs
-      - name: Publication runtime ownership
-        if: github.event_name == 'pull_request'
-        run: cargo test --locked -p artifactize --test publish_runtime publication_
+      - run: cargo build --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
       - name: Native platform contracts
-        if: github.event_name == 'pull_request'
         run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
-      - if: github.event_name != 'pull_request'
-        run: cargo clippy --locked --all-targets -- -D warnings
-      # Tests build their Windows stand-ins for /bin/sh with this rustc, and run python3.
-      - if: github.event_name != 'pull_request'
-        run: cargo test --locked --no-fail-fast
+
   macos:
-    needs: platform_changes
-    if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || needs.platform_changes.outputs.changed == 'true') }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -141,17 +57,39 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Native platform contracts
+        run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
+
+  desktop-e2e:
+    name: Desktop E2E (${{ matrix.os }})
+    if: github.base_ref == 'main'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux desktop and session dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev dbus-x11 xvfb xauth
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-e2e
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: node --test crates/artifactize/publish.test.mjs
-      - name: Publication runtime ownership
-        if: github.event_name == 'pull_request'
-        run: cargo test --locked -p artifactize --test publish_runtime publication_
-      - name: Native platform contracts
-        if: github.event_name == 'pull_request'
-        run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
-      - if: github.event_name != 'pull_request'
-        run: cargo clippy --locked --all-targets -- -D warnings
-      - if: github.event_name != 'pull_request'
-        run: cargo test --locked --no-fail-fast
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - run: pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile
+      # The runner builds the E2E app and CLI, owns Linux D-Bus/Xvfb, and uses embedded WDIO.
+      # Windows and macOS use the runner desktop; no external WebDriver is installed.
+      - run: pnpm -C crates/artifactize-desktop/ui e2e

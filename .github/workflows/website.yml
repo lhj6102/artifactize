@@ -1,3 +1,4 @@
+# Build the website and check links on relevant changes; deploy main to Cloudflare.
 name: Website
 
 on:
