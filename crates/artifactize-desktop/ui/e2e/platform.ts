@@ -198,13 +198,12 @@ export function copyFile(from: NativePath, to: NativePath): void {
   copyFileSync(from, to);
 }
 
-/** Remove a directory tree. Windows briefly keeps files of exited processes open, so
- * a busy file is retried a bounded number of times before the failure is reported. */
+/** Remove a directory tree. An app's web engine helper processes (WebView2, WebKitGTK's
+ * web and network processes) exit after the app, and until then they keep or still write
+ * the data folders that live in its fixture. Deletion retries with linearly growing pauses
+ * (up to a minute in all) while they finish; a tree still busy after that is reported. */
 export function removeTree(path: NativePath): void {
-  // A Windows app's WebView2 helper processes exit after the app and briefly keep the data
-  // folder that lives in its fixture; deletion retries with linearly growing pauses (up to a
-  // minute in all) while they finish. Elsewhere nothing outlives the joined process.
-  rmSync(path, { recursive: true, force: true, maxRetries: WINDOWS ? 30 : 0, retryDelay: 125 });
+  rmSync(path, { recursive: true, force: true, maxRetries: 30, retryDelay: 125 });
 }
 
 // ---------------------------------------------------------------------------------
