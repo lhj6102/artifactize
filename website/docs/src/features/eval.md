@@ -26,8 +26,9 @@ A fourth, non-executing kind, [dependency](artifact.md#dependency-evals), expres
 readiness over other Artifacts. It derives its state from evidence, never runs a
 reviewer and has no cached verdict of its own.
 
-Declare only real inputs. A `{library}` reference in the instruction or a declared
-operand makes that Artifact part of this eval's scope and reuse key. A mount gives
+Declare only real inputs. A `{library}` reference in the instruction or a Runtime
+command's declared operand makes that Artifact part of this eval's scope and reuse
+key. Tool operands never add inputs on their own. A mount gives
 an input a local alias. Checks that share an Artifact need not share all their
 inputs: each eval gets only the Artifacts its declaration references. See
 [Artifact](artifact.md) for declarations, mounts and the Artifact Graph.

@@ -29,10 +29,15 @@ An eval sees the tools of the Artifacts it actually references. Tool names becom
 
 Put a reusable tool beside its implementation and give it an Artifact declaration.
 For example, `tools/checker/index.artf` can declare the `checker` Artifact with a
-Python program `inspect.py` next to it:
+Python program `inspect.py` and its `tests/` folder next to it:
 
 ```toml
 name = "checker"
+
+[evals.tests]
+title = "The inspection tool handles the requirements and JSON protocol"
+profile = { kind = "runtime", command = "python3", args = ["-m", "unittest", "discover", "-s", "tests"] }
+payload.instruction = "Run the protocol and requirements tests of {checker}."
 
 [views.agent_tools.inspect]
 description = "Inspect the specification for {artifactName}."

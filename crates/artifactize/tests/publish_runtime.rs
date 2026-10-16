@@ -15,10 +15,11 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-const CRATES: [&str; 4] = [
+const CRATES: [&str; 5] = [
     "artifactize-tools",
     "artifactize-core",
     "artifactize-tui",
+    "artifactize-mcp",
     "artifactize",
 ];
 
