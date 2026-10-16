@@ -99,9 +99,12 @@ async function settled(browser: WebdriverIO.Browser, before?: Checkpoint): Promi
 /** A launch is ready when the fixture's actual entry-point content has rendered. */
 async function rendered(browser: WebdriverIO.Browser, screen: "monitor" | "review" | "graph") {
   await browser.waitUntil(() => browser.execute((entry) => {
-    if (entry === "graph") return !!document.querySelector('.svelte-flow__node[data-id="a:release"]');
-    const selector = entry === "review" ? '[aria-label="Requests"] [role="option"]' : '[role="treeitem"]';
-    return [...document.querySelectorAll(selector)].some((row) => row.textContent?.includes("signoff"));
+    if (entry === "review") {
+      return [...document.querySelectorAll('[aria-label="Requests"] [role="option"]')].some((row) => row.textContent?.includes("signoff"));
+    }
+    // The Monitor's Run graph and the current-graph tool both draw the fixture's release.
+    const shown = entry === "monitor" ? ".monitor" : ".current";
+    return !!document.querySelector(`${shown} .svelte-flow__node[data-id="a:release"]`);
   }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
 }
 
