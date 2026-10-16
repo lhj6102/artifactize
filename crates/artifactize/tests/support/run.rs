@@ -303,12 +303,14 @@ pub async fn terminal(state: &Path, id: &RunId) -> artifactize_core::store::RunV
     // Bound a broken fixture observation, not the Run's execution lifetime.
     const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
     let mut changes = artifactize_core::changes::Subscription::new(state).await;
+    let mut latest = None;
     let result = tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
         loop {
             let view = artifactize_core::store::read_run(state, id).await?;
             if view.run.status() != artifactize_core::types::RunStatus::Running {
                 return Ok::<_, String>(view);
             }
+            latest = Some(view);
             changes.next_reconciled().await;
         }
     })
@@ -318,7 +320,12 @@ pub async fn terminal(state: &Path, id: &RunId) -> artifactize_core::store::RunV
         .await
         .expect("close terminal fixture subscription");
     result
-        .expect("saved terminal fixture state")
+        .unwrap_or_else(|error| {
+            panic!(
+                "saved terminal fixture state: {error}; last saved Run/control/requests: {}",
+                serde_json::to_string(&latest).expect("serialize the observed fixture snapshot")
+            )
+        })
         .expect("read terminal fixture state")
 }
 
