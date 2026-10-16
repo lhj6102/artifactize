@@ -419,8 +419,20 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand>, s
 async function stopTree(child: ChildProcess): Promise<void> {
   if (child.pid === undefined) return;
   if (!WINDOWS) {
-    try { process.kill(-child.pid, "SIGKILL"); }
+    const group = -child.pid;
+    // A group exists while any member does: the signal is followed until none is left,
+    // so no descendant outlives the runner's fixture inputs.
+    const exists = () => {
+      try { process.kill(group, 0); return true; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; throw error; }
+    };
+    try { process.kill(group, "SIGKILL"); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    const deadline = Date.now() + 30000;
+    while (exists()) {
+      if (Date.now() > deadline) throw new Error(`fixture runner process group ${child.pid} outlived SIGKILL`);
+      await new Promise((done) => setTimeout(done, 50));
+    }
     return;
   }
   // Windows has no POSIX process groups; its declared OS tool owns the same tree.
