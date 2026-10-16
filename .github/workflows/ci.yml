@@ -1,5 +1,6 @@
 # Build every OS on dev/main PRs; Windows/macOS also enforce native platform contracts.
-# Desktop E2E gates release PRs into main; broader verification belongs outside CI.
+# Desktop E2E gates release PRs into main and only informs dev PRs, which may merge without
+# it; broader verification belongs outside CI.
 name: CI
 
 on:
@@ -64,7 +65,8 @@ jobs:
 
   desktop-e2e:
     name: Desktop E2E (${{ matrix.os }})
-    if: github.base_ref == 'main'
+    # A failure blocks only a release PR into main.
+    continue-on-error: ${{ github.base_ref != 'main' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
