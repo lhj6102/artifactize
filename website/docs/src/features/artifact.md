@@ -12,6 +12,11 @@ invalidate only reviews whose keys cover it. Child folders and mount aliases
 organize inputs, but sharing a repository alone does not make every Artifact a
 dependency of every check.
 
+These relations also create shared execution gates for the Artifact (or its cycle
+component). A reference in one eval can therefore delay another eval on that
+Artifact without becoming part of that other eval's reuse key. See
+[shared execution gates](run.md#shared-execution-gates) for an example.
+
 The graph itself can be reviewed: a nameless root `.artf` declares the Graph
 Artifact. Its fingerprint covers extracted criteria and labeled relations, not
 source bytes or execution tuning. Use it for a person's review of the project's
@@ -70,28 +75,13 @@ profile = { kind = "human" }
 payload.instruction = "Check {hero-art} against {style-guide}."
 ```
 
-The working directory is the containing folder, but built-in tools see only the
-file, its mounts and the referenced Artifacts, not unrelated sibling files.
-`{hero-art}` resolves to the file path and cannot have a `/path` suffix.
-`list .` uses a virtual root containing the filename and mounts; paths inside it
-are containing-folder-relative. Its default artifactsum hashes just that file.
-An explicit artifactsum `files` list may name only `hero.png`; `ignore`, even an
-empty list, is rejected. `fingerprint = {}` is not a file default: omit the field.
-The sidecar itself must be a regular file, so a directory named `bundle.artf`
-also fails discovery. Filenames containing `:` are rejected. `.artfignore` can
-exclude an individual sidecar as well as whole folders.
-
-A mount alias may shadow unrelated sibling entries, but not the target filename.
-File targets must remain regular, present and free of symlink traversal. They are
-validated at preparation/recheck, before reuse, at eval start/end and on every
-tool call, even with `fingerprint = false`. Invalid input is an operational error,
-not a RED review.
-
-A file Artifact is not a child or dependency of the surrounding folder Artifact. The
-folder's artifactsum still includes the target file and excludes all `*.artf`
-declarations. By contrast, a subfolder's `index.artf` makes it a child of the nearest
-Artifact folder above it. A file named `index` cannot have a sidecar: `index.artf`
-always declares the folder. `.artf` files are never Artifact targets.
+A file Artifact hashes its one target by default. Its working directory is the
+containing folder, but built-in tools see the file and its admitted scope, not
+unrelated siblings. The sidecar does not make it a child of the surrounding folder;
+that folder still hashes the target as part of its own files. A folder declared
+with `index.artf`, by contrast, is a child of the nearest Artifact folder above it.
+See the [file-Artifact reference](declarations.md#file-artifacts) for naming,
+fingerprint forms, virtual paths and invalid-target/revalidation rules.
 
 ## Dependency evals
 
@@ -106,47 +96,19 @@ title = "Movement, art and audio are ready"
 profile = { kind = "dependency", depends_on = ["player-movement", "hero-art", "player-audio"] }
 ```
 
-`depends_on` lists 1–64 unique Artifact names or the declaring Artifact's mount
-aliases. Unknown targets, self-dependencies and aliases that resolve to duplicate
-targets are rejected. Dependency evals cannot declare `payload`, `pass_schema`,
-`fail_schema` or `profile_variants`; put any explanation in `title`.
-
-The eval is GREEN when every listed Artifact's required evals are GREEN. A RED or
-BLOCKED required eval makes it BLOCKED. Missing, stale, ERROR, cancelled or
-Human-waiting evidence makes it WAIT_DEPENDENCY. A target with no evals, including a
-basis Artifact, fulfills this dependency condition. A basis cannot own evals. The
-dependency condition does not waive ordinary final Run obligations, including the
-targets' dependency scopes.
-
-`artifactize verify player/ready` selects the qualified eval directly and includes the required dependency
-evals automatically, without `--recursive`. The dependency eval runs no command or
-model, takes no execution budget or backend slot, and has no reuse key, cache record
-or team-store result. Its verdict comes from current evidence. Speculation may
-execute machine work early; deferred Human evidence yields PROVISIONAL derived
-results, never full approval. Dependency-eval wait cycles are rejected; ordinary Artifact cycles
-retain their existing scheduling rules.
-
-[Runs, status and validation](run.md) explains derived requests and unfulfilled dependency output.
+The listed Artifacts supply readiness evidence: all required GREEN means GREEN;
+a required RED or BLOCKED result blocks it; missing or pending evidence waits.
+`artifactize verify player/ready` selects it and includes the required evals,
+without needing `--recursive`. It runs no reviewer and caches no verdict. The
+[dependency-eval reference](declarations.md#dependency-evals) gives allowed fields,
+selection, cycle and provisional-result rules.
 
 ## The fingerprint field
 
-Omit `fingerprint` to use **artifactsum**, the built-in hash of the Artifact's own
-files, with the `artifactsum:` prefix. A folder hashes its own files and excludes child
-Artifact folders; a file Artifact hashes its one target file.
-
-- `fingerprint = { files = ["src"], ignore = ["*.log"] }` narrows artifactsum's
-  folder inputs. With an empty table, a folder's defaults apply. A file Artifact
-  can explicitly list only its target filename and cannot declare `ignore`.
-- `fingerprint = { script = { command = "/bin/sh", args = ["fingerprint.sh"] } }`
-  uses an owner-written [fingerprint script](declarations.md#fingerprint-scripts),
-  optionally with `files` (paths that must exist, never hashed) and `timeout_ms`.
-- `fingerprint = false` disables reuse for this Artifact and executable evals
-  whose keys would depend on it. `fingerprint = true` is rejected.
-
-While the eval definition, Artifact kinds and all fingerprints in its key are
-unchanged, the prior
-GREEN or RED verdict is reused. See [Fingerprints and reuse](fingerprint.md). Dependency verdicts are derived
-again rather than reused.
+Omit `fingerprint` for **artifactsum**, the built-in hash of the Artifact's own
+files. `fingerprint = false` disables reuse; a script can define another value.
+[Fingerprint](fingerprint.md) explains the forms, covered inputs and GREEN/RED
+result reuse. Dependency verdicts are derived again rather than reused.
 
 ## Tags and validation
 

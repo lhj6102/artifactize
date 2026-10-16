@@ -4,6 +4,23 @@
 the next `verify` will execute, reuse, derive or wait for, without running evals.
 `status` may run declared fingerprint scripts.
 
+## Shared execution gates
+
+Ordinary evals share the readiness gates of their **Artifact**, not just the
+inputs each eval explicitly names. Artifact relations are combined across its
+evals; mutually dependent Artifacts (a cycle) are treated as one component. Every eval in a directly required
+external component supplies a gate for the ordinary evals in the consumer
+component. Cycle peers do not gate one another internally.
+
+For example, `app` has `tests` and `review`, and only `app/review` references
+`{spec}`. The resulting app-to-spec relationship still gates execution of **both**
+ordinary app evals on spec's required evidence. It does not add spec to
+`app/tests`' reuse key merely because the other eval references it. A previously
+GREEN test can remain reusable while the Artifact as a whole waits for, or is
+blocked by, spec. Observation scope, reuse inputs and execution gates are distinct;
+[Eval](eval.md) and [Fingerprint](fingerprint.md#the-reuse-key) explain the first two.
+Dependency evals additionally derive their own explicit `depends_on` requirements.
+
 ## Verify and Runs
 
 `verify` requires exactly one selector: positional `ARTIFACT` or qualified

@@ -50,8 +50,9 @@ reviewer sees each tool as `<name>_<artifactId>`, as with
 
 Without `args`, an Agent tool takes the model's input; the input, result and limits of
 `read`, `list`, `glob`, `grep` and `view_image` are in
-[Agent tools](agent.md#agent-tools). With `args`, the tool takes no model input
-(except `section` with one argument) and returns text:
+[Agent tools](agent.md#agent-tools). Fixed `args` remove the model input, except
+`section` with one argument. Fixed Agent `list` returns a structured JSON content
+block; fixed `read`, `section` and `help` return text blocks:
 
 - **`read`** prints a UTF-8 file, at most 64 KiB; a longer file ends with
   `[output truncated]`. Binary and invalid UTF-8 files are refused.
@@ -75,6 +76,9 @@ Without `args`, an Agent tool takes the model's input; the input, result and lim
   never through a shell. Other URL schemes, such as `file:` or `mailto:`, are
   refused. The result only records that the application was
   started; the application belongs to the reviewer and keeps running.
+  On Linux, WSL and macOS, the opener itself must exit successfully within three
+  seconds: an unavailable opener, timeout or nonzero opener exit is a tool error.
+  This acknowledgement deadline is not a lifetime limit on the opened application.
 
 ### view_image
 
@@ -83,9 +87,11 @@ The path is a logical path inside its admitted Artifact scope, with the usual
 no-traversal and no-symlink checks. It reads a nonempty regular file and returns
 an embedded image block (`type`, base64 `data`, `mimeType`), not a printed filename.
 
-Format detection uses the bytes, not the extension. Supported formats are PNG,
-JPEG and WebP; GIF, BMP, animated PNG and unsupported/invalid byte formats are
-refused. The decoded image must be at most **4 MiB inclusive**. The
+Detection checks signatures and container framing, not the extension; it does not
+decode pixels or fully validate image contents. Supported signatures are PNG,
+JPEG and WebP; unsupported signatures, GIF/BMP and animated PNG are refused.
+The image-file bytes must be at most **4 MiB inclusive** after any base64 decoding,
+not a bound on decoded pixel memory. The
 [image-result contract](agent.md#image-results) explains normalization and the
 same MIME/size checks for command tools; only those command tools can name files
 in their private output directory.

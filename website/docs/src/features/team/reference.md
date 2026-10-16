@@ -25,6 +25,10 @@ put a TLS proxy or tunnel in front, because clients require HTTPS except on
 loopback. Token commands work on the same file while the server runs, and take
 effect immediately.
 
+Token names are bounded ASCII display labels, not secrets; the
+[CLI identity rules](../../cli/index.md#identity-arguments) give the syntax and
+pre-store validation.
+
 `token add` prints a random bearer token once; the store keeps only its SHA-256.
 Scopes are `read` (look up), `publish` (publish runtime and Agent records) and
 `human` (additionally publish Human sign-offs, together with `publish`). Give

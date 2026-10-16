@@ -57,8 +57,12 @@ with the actual nonzero total. Concatenating returned `text` values reproduces
 the source range without added line-number prefixes.
 
 Globs use `*` within a component and `**` across directories, relative to `path`.
-Grep uses Rust `regex` syntax; `glob` filters relative file paths (or the basename
-when `path` names a file). Hidden files are included; git ignore rules do not
+Glob and grep patterns (including grep's optional `glob`) must be nonempty and at
+most 4096 characters. Globs must be relative, with no leading slash,
+backslashes, colons, NUL, or empty/`.`/`..` path components. Grep uses Rust `regex`
+syntax, with a 2 MiB compiled-regex size ceiling; an empty, invalid or oversized
+regex is an error. `glob` filters relative file paths (or the basename when `path`
+names a file). Hidden files are included; git ignore rules do not
 filter results. Binary (NUL) and invalid UTF-8 files are skipped in their entirety.
 Search follows logical mounts without repeating a mount cycle. Bounds are 10,000
 traversed entries, 8 MiB per grep file, 64 MiB searched,
@@ -146,8 +150,10 @@ that output directory are refused. Artifactize reads and embeds the bytes before
 removing the invocation's output, so the returned result is self-contained base64,
 not a dangling local file path.
 
-Images must be nonempty PNG, JPEG or WebP, at most **4 MiB inclusive** of decoded
-bytes. The bytes, not the filename extension, identify the format, and must match
+Images must be nonempty PNG, JPEG or WebP, at most **4 MiB inclusive** of
+image-file bytes after base64 decoding, not decoded pixels. Detection checks
+signatures/container framing rather than full image validity. Those bytes, not
+the filename extension, identify the format and must match
 `image/png`, `image/jpeg` or `image/webp` respectively. Invalid base64, a MIME
 mismatch, unsupported formats such as GIF/BMP, and animated PNG are rejected.
 The overall normalized 8 MiB tool-result limit still applies after base64 encoding.

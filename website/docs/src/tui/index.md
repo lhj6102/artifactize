@@ -135,10 +135,14 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
 - **Form.** `g`/`r` opens the schema-backed GREEN/RED form directly; there is no
   verdict popup. A flat object with `const`, `boolean`, `string` (`minLength`,
   `maxLength`, `enum`), `integer` or `number` properties gets typed fields. `const`
-  fields are prefilled and fixed. Tab or ↑/↓ moves between fields, Space or ←/→
-  chooses, and typing edits. Other schemas (nested objects, arrays, composition,
-  `$ref`) open a JSON template inside the TUI. Enter inserts a JSON newline and
-  Tab indents; Enter never submits a flat form. Ctrl-S or Submit submits. A
+  fields are prefilled and fixed; `*` marks required fields. Blank optional fields
+  are omitted from submission. Optional booleans cycle through true, false and
+  unset; required booleans have only true/false. Tab or ↑/↓ moves between fields,
+  Space or ←/→ chooses, and typing edits. Other schemas (nested objects, arrays, composition,
+  `$ref`) open a JSON template inside the TUI. Both inline and external JSON
+  editors take **only owner fields**: omit `verdict`, which is inserted from the
+  selected GREEN/RED choice automatically; an explicit `verdict` field is rejected.
+  Enter inserts a JSON newline and Tab indents; Enter never submits a flat form. Ctrl-S or Submit submits. A
   validation error keeps the request waiting and shows the failing paths.
 - **Editing.** Ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and Tab belong to the
   fields, not navigation. A bracketed keyboard paste goes into the focused field as
@@ -233,6 +237,12 @@ Each eval has **one row**. Artifact rows summarize the eval rows shown now, with
 path and tags are in Detail's Technical section. A basis Artifact is one row:
 `◇ engine  basis`. There are no separate relation rows or always-on dependency lists.
 
+Artifact completion also enforces upstream gates, not just its eval rows' colors.
+An eval preserves its own reusable GREEN while its Artifact can show **done, but
+waits for X** or **done, but blocked by X**, with zero passed (for example `0/1`).
+All-GREEN eval rows therefore do not prove that the Artifact is ready for consumers; its
+required upstream evidence must also be satisfied.
+
 | View state | Meaning |
 |---|---|
 | `✓` done | GREEN, executed, reused or derived |
@@ -280,7 +290,7 @@ not rewritten by this view.
 | ← / Esc | Step back; Esc never quits |
 | Tab / Shift-Tab | Cycle Scope, Runs and the tree; inside Detail, switch sub-areas |
 | ↑/↓ or `j`/`k` | Select a row; inside Detail, scroll |
-| `?` | Show help; the next key closes it without another action |
+| `?` | Show help; an ordinary next key dismisses it without acting. Ctrl-C still quits and F2 still toggles mouse capture |
 | `!` | Next ERROR, RED or waiting Human eval in this Run, wrapping around |
 | `r` | Refresh with Scope, Runs or the tree focused; in an owned idle Human Detail it chooses RED, and it does not refresh read-only Detail |
 | `q` / Ctrl-C | `q` quits outside editing/work; Ctrl-C quits or first cancels a running Human tool |
@@ -318,10 +328,13 @@ Detail depends on the eval kind:
 
 - **Agent:** a live conversation, including a running review or the original local
   conversation behind reused evidence. ↑/PgUp pauses following so you can read;
-  End returns to the latest messages. Space or Enter toggles the visible tool
+  Home jumps to the start and End returns to the latest messages. Monitor also
+  offers Top, Bottom and Details buttons; Bottom resumes following. Space or Enter toggles the visible tool
   group in either UI, showing its names, targets and recorded states. Monitor
-  also toggles a group when you click its header. `d` opens the saved result and other details;
-  `d` or Esc returns to the conversation. Only public reasoning summaries appear,
+  also toggles a group when you click its header. `d` opens the saved result and
+  other details and returns to the transcript in either UI. Esc returns from
+  saved details to the transcript in Monitor, but leaves Detail for the list in
+  standalone Review. Only public reasoning summaries appear,
   when the provider supplies them; private reasoning stays hidden. Missing or
   remote conversations explain why they cannot be shown here. Use `session show
   --json` for the complete saved record. See the

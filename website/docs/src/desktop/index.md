@@ -24,8 +24,9 @@ requires `--repo` and reads current declarations. Invalid arguments exit 2.
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
 Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K or the palette
 button opens a searchable command palette; Enter runs a command and Esc closes it.
-`?` shows this screen's keys; Ctrl+R or F5 refreshes from disk. Drag the dividers to
-resize panes.
+`?` shows this screen's keys. Ctrl+R or F5 refreshes Monitor, or reloads current
+Graph declarations when Graph is open; it does not reload Review or Settings.
+Drag the dividers to resize panes.
 
 ## Monitor
 
@@ -103,7 +104,8 @@ and newer requests. Waiting followers open the original review, not another sign
 `repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`.
 `is:mine`, `is:claimed` and `is:unclaimed` filter Human claims. Suggestions complete
 keys and values. Esc closes suggestions, then clears the search, then returns to
-the list. An explicit `--repo` supplies the initial repository search term.
+the list. An explicit `--repo` supplies the initial repository search term. Use
+`r` in the Review list, or **Refresh the list** in the palette, to reload that list.
 
 ### Human sign-offs
 
@@ -150,6 +152,10 @@ this window still holds unsubmitted Human claims, choose **Stay** (Esc),
 held for this reviewer; it is not a verdict.
 
 ## Settings
+
+Settings reloads account/store information when shown. Reopen it or use the
+palette's **Refresh settings** command to reload it; Ctrl+R/F5 is Monitor/Graph
+refresh, not a settings reload.
 
 - **API keys:** reports whether OpenAI and Anthropic key environment variables
   are set, never their values. Set them in the app's launch environment.
