@@ -18,6 +18,8 @@ export type Page = {
   received: () => Promise<string[]>;
   /** Chords whose real DOM event was consumed by an app handler. */
   handled?: () => Promise<string[]>;
+  /** Read-only failure evidence: where the delivered action actually landed. */
+  diagnostics?: () => Promise<unknown>;
 };
 
 /** Keep the original event so defaultPrevented is observed after the handlers run. */
@@ -45,6 +47,16 @@ export function page(browser: WebdriverIO.Browser): Page {
     keys: (keys) => browser.keys(keys),
     received: async () => (await events(browser)).received,
     handled: async () => (await events(browser)).handled,
+    diagnostics: () => browser.execute(() => {
+      const describe = (target: EventTarget | null) => target instanceof Element
+        ? { tag: target.tagName, label: target.getAttribute("aria-label"), role: target.getAttribute("role"), id: target.id }
+        : null;
+      const log = (window as unknown as { keyEvents?: KeyboardEvent[] }).keyEvents ?? [];
+      return {
+        focused: describe(document.activeElement),
+        recent: log.slice(-5).map((event) => ({ key: event.key, prevented: event.defaultPrevented, target: describe(event.target) })),
+      };
+    }),
   };
 }
 
@@ -92,7 +104,8 @@ export async function press(
     if (await arrived()) {
       // The page has the action key: the app decides now, however long it takes.
       if (await within(confirmed, ms - wait)) return;
-      assert.fail(`timed out: ${what} (the page received ${name}${handled ? " but its handled effect was not confirmed" : ""})`);
+      const evidence = on.diagnostics ? `; ${JSON.stringify(await on.diagnostics())}` : "";
+      assert.fail(`timed out: ${what} (the page received ${name}${handled ? " but its handled effect was not confirmed" : ""})${evidence}`);
     }
     console.log(`e2e: ${name} never reached the page; sending it again (${what})`);
   }

@@ -37,12 +37,44 @@ describe("monitor", () => {
       text: output?.querySelector("pre")?.textContent ?? "",
     };
   });
+  /** Clicking a selected tool runs it, including when the pointer first focuses its list.
+   * Reach the list with real Tab keys, then select with arrows: only the later Enter runs. */
+  async function selectTool(name: string) {
+    const runsBefore = (await checkpoint(browser)).activity.commands.humanRun?.started ?? 0;
+    const tools = () => browser.$('[aria-label="Human tools"]');
+    const visited = new Set<string>();
+    while (!(await tools().isFocused())) {
+      const before = await browser.$(":focus").elementId;
+      assert.ok(!visited.has(before), "Tab reaches the Human tools without cycling");
+      visited.add(before);
+      await press(browser, ["Tab"], async () => (await browser.$(":focus").elementId) !== before, "the next control focused on the way to Tools");
+    }
+    const rows = await browser.execute(() => [...document.querySelectorAll('[aria-label="Human tools"] [role="option"] .name')]
+      .map((row) => row.textContent?.trim() ?? ""));
+    const target = rows.indexOf(name);
+    assert.ok(target >= 0, `this review declares ${name}`);
+    const selected = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human tools"] [role="option"]')]
+      .findIndex((row) => row.getAttribute("aria-selected") === "true"));
+    while ((await selected()) !== target) {
+      const before = await selected();
+      const direction = before < target ? 1 : -1;
+      await press(browser, [direction > 0 ? "ArrowDown" : "ArrowUp"], async () => (await selected()) === before + direction, "the next tool selected without running it");
+    }
+    await afterRender(browser);
+    assert.equal((await checkpoint(browser)).activity.commands.humanRun?.started ?? 0, runsBefore, "focusing and selecting Tools starts no tool command");
+  }
+
   async function openReview(claim = true) {
     await browser.$('//li[@role="treeitem"][@aria-level="2"][.//span[starts-with(normalize-space(.), "signoff")]]').click();
     await press(browser, ["Enter"], () => human().isExisting(), "this case's Human Detail");
     await eventually(async () => (await text()).includes("Unclaimed. c claims it for alice"), "the claim stage");
     if (claim) {
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && (await text()).includes("REVIEW (yours)"), "this case's claim");
+      assert.equal((await checkpoint(browser)).activity.commands.humanRun?.started ?? 0, 0, "this fresh session has dispatched no tool");
+      const initial = await toolOutput();
+      assert.equal(initial.title, "Output", "this case has no prior tool title");
+      assert.equal(initial.text, "", "this case has no prior tool output");
+      assert.equal(initial.noticeError, false, "this case's claim did not inherit a tool error");
     }
   }
 
@@ -123,9 +155,7 @@ describe("monitor", () => {
   // UX edges: E-HUMAN-TOOL
   it("runs an output tool and shows its output", async () => {
     await openReview();
-    const notes = await browser.$('//li[@role="option"][.//span[text()="notes_release"]]');
-    await notes.click();
-    await eventually(async () => (await notes.getAttribute("aria-selected")) === "true", "notes selected");
+    await selectTool("notes_release");
     assert.doesNotMatch((await toolOutput()).text, /Ready to ship\./, "this case has not produced the notes output yet");
     await press(browser, ["Enter"], async () => {
       const shown = await toolOutput();
@@ -143,14 +173,24 @@ describe("monitor", () => {
     assert.ok(await human().isExisting(), "the same Human Detail remains open");
   });
 
+  it("runs a selected tool with a click, without an Enter", async () => {
+    await openReview();
+    await selectTool("notes_release");
+    await browser.$('//li[@role="option"][.//span[text()="notes_release"]]').click();
+    await eventually(async () => {
+      const shown = await toolOutput();
+      return shown.title === "Output · notes_release" && shown.notice === "notes_release finished." && /Ready to ship\./.test(shown.text);
+    }, "the selected tool's click alone produced its output");
+    assert.equal((await checkpoint(browser)).activity.commands.humanRun?.started, 1, "the pointer activation dispatched exactly one tool command");
+    assert.equal(signoff(fixture).status, "WAITING_HUMAN", "clicking a tool is not a verdict");
+  });
+
   // UX edges: E-HUMAN-TOOL-LAUNCH
   it("runs a launch tool and says the application was opened", async () => {
     await openReview();
-    const open = await browser.$('//li[@role="option"][.//span[text()="open_release"]]');
-    await open.click();
-    await eventually(async () => (await open.getAttribute("aria-selected")) === "true", "open selected");
-    await browser.keys(["Enter"]);
-    await eventually(async () => /open_release (launched|started|opened)/i.test(await text()), "the launch notice");
+    await selectTool("open_release");
+    assert.equal(launched(fixture), false, "selection did not launch this case's application");
+    await press(browser, ["Enter"], async () => /open_release (launched|started|opened)/i.test(await text()), "the launch notice");
     // The application stand-in really ran.
     await eventually(() => launched(fixture), "the launched application");
   });
@@ -158,9 +198,7 @@ describe("monitor", () => {
   // UX edges: E-HUMAN-TOOL-FAIL
   it("shows the error of a tool that fails", async () => {
     await openReview();
-    const fail = await browser.$('//li[@role="option"][.//span[text()="fail_release"]]');
-    await fail.click();
-    await eventually(async () => (await fail.getAttribute("aria-selected")) === "true", "fail selected");
+    await selectTool("fail_release");
     const diagnostic = /Human tool exited unsuccessfully \([^)]*\b1\)\./;
     const before = await toolOutput();
     assert.doesNotMatch(before.text, diagnostic, "this case has not produced the failing tool's exit diagnostic yet");
@@ -187,11 +225,9 @@ describe("monitor", () => {
   // UX edges: E-HUMAN-ESC-CANCEL
   it("cancels a running tool with Esc", async () => {
     await openReview();
-    const slow = await browser.$('//li[@role="option"][.//span[text()="slow_release"]]');
-    await slow.click();
-    await eventually(async () => (await slow.getAttribute("aria-selected")) === "true", "slow selected");
-    await browser.keys(["Enter"]);
-    await eventually(async () => /Running slow_release/.test(await text()), "the tool running");
+    await selectTool("slow_release");
+    assert.equal(slowTool(fixture), null, "selection did not start this case's cancellable tool");
+    await press(browser, ["Enter"], async () => /Running slow_release/.test(await text()), "the tool running");
     await eventually(() => slowTool(fixture) !== null, "the owned tool process started");
     const alive = slowTool(fixture);
     assert.ok(alive && alive(), "the cancellation target is an actual running process");

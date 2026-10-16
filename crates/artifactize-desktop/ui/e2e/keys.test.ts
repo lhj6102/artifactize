@@ -46,7 +46,18 @@ describe("press", () => {
   it("fails without a resend when the page received a key the app ignored", async () => {
     // ArrowDown arrives and the app loses it; Enter is never part of this press.
     const { page, sent } = double(() => false, () => {});
-    await assert.rejects(press(page, ["ArrowDown"], () => false, "a suggestion chosen"), /the page received ArrowDown/);
+    let observed = 0;
+    page.diagnostics = async () => {
+      observed += 1;
+      return { focused: { label: "Search requests" }, recent: [{ key: "ArrowDown", prevented: false }] };
+    };
+    await assert.rejects(press(page, ["ArrowDown"], () => false, "a suggestion chosen"), (error: unknown) => {
+      assert.match(String(error), /the page received ArrowDown/);
+      assert.match(String(error), /"focused":\{"label":"Search requests"\}/);
+      assert.match(String(error), /"prevented":false/);
+      return true;
+    });
+    assert.equal(observed, 1, "the failed effect includes one read-only focus observation");
     assert.equal(sent.length, 1, "a delivered key is never sent again");
   });
 
