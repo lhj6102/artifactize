@@ -209,10 +209,18 @@ pub async fn status(
         return Err("Project preparation was cancelled.".into());
     }
     let evaluation = graph.evaluate(&evidence);
-    let deferred: BTreeSet<_> = store::read_waiting(&state, Some(&config.root)).await?
-        .into_iter().filter(|view| view.request.status() == crate::types::RequestStatus::Deferred)
-        .filter(|view| matches!(claim(&view.request.eval_id), Some(Claim::WaitHuman(id)) if Some(id) == view.request.execution_id.as_ref()))
-        .map(|view| view.request.eval_id).collect();
+    let deferred: BTreeSet<_> = store::read_waiting(&state, Some(&config.root))
+        .await?
+        .into_iter()
+        .filter(|view| view.request.status() == crate::types::RequestStatus::Deferred)
+        .filter(|view| {
+            matches!(
+                claim(&view.request.eval_id),
+                Some(Claim::WaitHuman(id)) if Some(id) == view.request.execution_id.as_ref()
+            )
+        })
+        .map(|view| view.request.eval_id)
+        .collect();
     let mut shown_evidence = evidence.clone();
     for id in &deferred {
         shown_evidence.insert(id.clone(), Evidence::Deferred);
