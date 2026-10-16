@@ -40,6 +40,10 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
     // Options, variants and views never enter extraction, including runtime variants.
     let excluded = APP
         .replace("['code']", "['changed-tag']")
+        .replace(
+            "title = 'Review app'",
+            "title = 'Review app'\nmutex = ['use-computer:display']",
+        )
         .replace("backend = 'openai'", "backend = 'codex'")
         .replace("model-one", "model-two")
         .replace("reasoning = 'high'", "reasoning = 'low'")

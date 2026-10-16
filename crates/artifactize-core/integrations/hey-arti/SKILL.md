@@ -109,6 +109,18 @@ success is exit zero; Agent/Human fields must satisfy the declared schema.
 An Agent profile requires an exact model ID appropriate to the team's configured
 backend. Use its existing authentication flow; do not put credentials in TOML.
 
+For runtime or Agent evals whose own command or tools use the machine, put
+`mutex = ["use-computer:display"]` beside `profile`, not on the Artifact. Tags
+are `use-computer` or colon-separated descendants whose segments match the ID
+syntax above; declare at most 64 unique tags. Equal and ancestor/descendant tags
+exclude each other across all Runs using the same machine state store; siblings
+and untagged evals remain concurrent. All tags are acquired together, and an eval
+waits without consuming its execution budget, job/backend slot or timeout. The
+wait identifies the holding eval and Run. Completion, cancellation, owner death
+or an ended Run frees the tags. There is no default, priority or ordering policy;
+Human and dependency evals cannot declare mutex tags. Changing mutex tags does
+not invalidate fingerprints or reuse keys.
+
 A downstream folder may derive readiness without a command or provider:
 
 ```toml

@@ -27,6 +27,7 @@ payload.instruction = "Run."
 
 [evals.a-agent]
 title = "Agent"
+mutex = ["use-computer:display"]
 profile = { kind = "agent", backend = "codex", model = "fixture", reasoning = "high", timeout_ms = 3000, max_tool_calls = 10, max_tokens = 1000 }
 profile_variants.careful = { kind = "agent", backend = "codex", model = "fixture", reasoning = "max", timeout_ms = 4000, max_tool_calls = 20, max_tokens = 2000 }
 payload = { instruction = "Inspect {input}.", ownerData = { camelCase = true, array = [1, 2] } }
@@ -65,6 +66,10 @@ fn every_declaration_feature_is_standard_toml_with_owner_data_untouched() {
         Profile::Runtime { .. }
     ));
     assert_eq!(declaration.evals[0].profile_variants().len(), 1);
+    assert_eq!(
+        serde_json::to_value(&declaration.evals[0].mutex).unwrap(),
+        json!(["use-computer:display"])
+    );
     assert_eq!(
         declaration.evals[0].payload().as_ref().unwrap().extra["ownerData"]["camelCase"],
         true

@@ -1,3 +1,5 @@
+mod mutex;
+
 use crate::types::{ExecutionStatus, Fingerprint, RequestId, ReuseKey, RunId};
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -15,6 +17,11 @@ pub enum Claim {
     BudgetExhausted,
     /// Every machine-wide slot of the execution's backend is held.
     Full,
+    /// A live execution holds an equal, ancestor or descendant mutex tag.
+    Mutex {
+        eval_id: crate::types::EvalId,
+        run_id: crate::types::RunId,
+    },
     Reuse(Box<Execution>),
     Wait(crate::types::ExecutionId),
     WaitHuman(crate::types::ExecutionId),
@@ -217,6 +224,8 @@ impl Execution {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionOptions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mutex: Vec<crate::config::MutexTag>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<crate::config::Backend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -661,8 +670,9 @@ impl Receipts {
     /// the key's latest record or waits for the key's live execution. Starting needs
     /// `allow_start` and, on a backend with a machine-wide limit, a free slot: the slots the
     /// backend's RUNNING executions hold are counted and this execution inserted RUNNING in
-    /// one write transaction. An unkeyed or forced execution without a limit is saved when it
-    /// completes.
+    /// one write transaction. Mutex tags are also checked and held in that transaction,
+    /// including for unkeyed and forced executions. An unkeyed or forced execution without
+    /// a limit or mutex tags is saved when it completes.
     pub async fn claim_execution(
         &self,
         execution: &Execution,
@@ -688,7 +698,7 @@ impl Receipts {
                     return Ok(Claim::BudgetExhausted);
                 }
                 let capacity = capacity.zip(execution.backend());
-                if key.is_none() && capacity.is_none() {
+                if key.is_none() && capacity.is_none() && execution.options.mutex.is_empty() {
                     return Ok(Claim::Owned);
                 }
                 let transaction =
@@ -706,6 +716,12 @@ impl Receipts {
                     return Ok(Claim::BudgetExhausted);
                 }
                 retire_unreadable(&transaction, key, capacity.as_ref().map(|(_, backend)| *backend))?;
+                if !execution.options.mutex.is_empty()
+                    && let Some(conflict) = mutex::conflict(&transaction, &execution)?
+                {
+                    transaction.commit()?;
+                    return Ok(conflict);
+                }
                 if let Some((capacity, backend)) = capacity {
                     if (capacity.stopped)() {
                         return Ok(Claim::BudgetExhausted);

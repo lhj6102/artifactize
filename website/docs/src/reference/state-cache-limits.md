@@ -195,7 +195,10 @@ such as `Waiting for a free codex slot: all 4 are in use on this machine
 it does not count against an explicit `--jobs` cap and consumes no
 `--max-executions` start, so runtime evals, Human requests and other backends
 keep running. When admitted, it counts against `--jobs` if given; without that
-cap, only the backend's available slots limit its reviews. Explicit `run cancel RUN_ID` ends
+cap, backend capacity imposes no other concurrency limit. Explicitly declared
+[eval mutex tags](declarations.md#eval-mutex-tags) independently delay conflicting
+runtime and Agent evals across the same shared state store, without holding a
+backend slot while they wait. Explicit `run cancel RUN_ID` ends
 its waiting requests with status ERROR and `errorCode = "CANCELLED"`, and its held slots are released. Interrupting
 `verify --wait` only stops observation; it does not cancel the Run.
 

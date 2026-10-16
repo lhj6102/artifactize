@@ -87,6 +87,7 @@ fail_schema = { type = "object", properties = { violations = { type = "array", m
 
 [evals.suite-passes]
 title = "The end-to-end suite passes on a headless display"
+mutex = ["use-computer"]
 profile = { kind = "runtime", command = "pnpm", args = ["-C", "ui", "e2e"], timeout_ms = 1800000 }
 
 [evals.suite-passes.payload]

@@ -136,7 +136,10 @@ pub(crate) async fn reserve(
                 profile: (eval.declaration.profile()).into(),
                 requested_profile: (eval.declaration.profile()).into(),
                 eval_def_hash: cache::eval_definition_hash(&eval.declaration),
-                options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref()),
+                options: ExecutionOptions {
+                    mutex: eval.declaration.mutex.clone(),
+                    ..ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref())
+                },
                 execution_id: None,
                 provenance: None,
                 usage: None,
