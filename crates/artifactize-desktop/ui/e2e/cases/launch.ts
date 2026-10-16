@@ -3,7 +3,7 @@
 // starts on the waiting sign-offs of every repository.
 import assert from "node:assert/strict";
 import { addRepository, addSearchExamples, addWorktrees, artifactize, create, requests } from "../fixture.ts";
-import { press } from "../keys.ts";
+import { fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
@@ -285,7 +285,7 @@ export const scenarios: Scenario[] = [
         await browser.$('[aria-label="Search requests"]').click();
         await browser.keys([primaryModifier, "a"]);
         const before = await checkpoint(browser);
-        await browser.$('[aria-label="Search requests"]').setValue(text);
+        await fill(browser, '[aria-label="Search requests"]', text);
         // Distinct queries can deliberately return identical rows (reviewer:, is:mine and
         // request:). Those old rows cannot stand in for this query's completed search.
         await commandsRendered(browser, before);

@@ -5,8 +5,9 @@
 import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, signoff } from "../fixture.ts";
 import { press } from "../keys.ts";
+import { breadcrumbNames } from "../breadcrumb.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { graphAppearance, graphHasColours } from "./graph-appearance.ts";
+import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
 
 function chainGraph(browser: WebdriverIO.Browser) {
   const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
@@ -53,12 +54,17 @@ export const scenarios: Scenario[] = [
       const graph = () => graphAppearance(browser);
       await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
       await browser.$("button*=Graph").click();
-      await browser.waitUntil(async () => graphHasColours(await graph(), {
-        "a:release": "active", "a:ship": "waiting", "a:docs": "green",
-      }, { "a:release>a:ship": "active" }), {
-        timeout: 15000, timeoutMsg: "release, ship, docs and the relation are painted in their verdict's distinct Legend colours",
-      });
-      const before = await graph();
+      // Each comparison uses the very drawing that met its wait: the graph may redraw again
+      // before a second reading.
+      let drawn: GraphAppearance | undefined;
+      await browser.waitUntil(async () => {
+        const shown = await graph();
+        if (!graphHasColours(shown, { "a:release": "active", "a:ship": "waiting", "a:docs": "green" }, { "a:release>a:ship": "active" })) return false;
+        drawn = shown;
+        return true;
+      }, { timeout: 15000, timeoutMsg: "release, ship, docs and the relation are painted in their verdict's distinct Legend colours" });
+      assert.ok(drawn);
+      const before = drawn;
 
       // Zoom into release: its evals, the sign-off highlighted and focused.
       await browser.$('.svelte-flow__node[data-id="a:release"]').click();
@@ -74,11 +80,16 @@ export const scenarios: Scenario[] = [
         artifactize(fixture, "request", "submit", id, "--reviewer", "alice", "--verdict", "GREEN", "--fields", '{"approved":true,"comment":"ok"}'),
         0,
       );
-      await browser.waitUntil(async () => graphHasColours(await graph(), {
-        "a:release": "green", "a:docs": "green",
-      }, { "a:release>a:ship": "green" }), { timeout: 15000, timeoutMsg: "the submitted release's node border/dot and relation stroke are painted GREEN" });
+      let recoloured: GraphAppearance | undefined;
+      await browser.waitUntil(async () => {
+        const shown = await graph();
+        if (!graphHasColours(shown, { "a:release": "green", "a:docs": "green" }, { "a:release>a:ship": "green" })) return false;
+        recoloured = shown;
+        return true;
+      }, { timeout: 15000, timeoutMsg: "the submitted release's node border/dot and relation stroke are painted GREEN" });
       assert.equal(await evals.isFocused(), true, "a live graph update does not steal focus from the evals");
-      const after = await graph();
+      assert.ok(recoloured);
+      const after = recoloured;
       assert.notEqual(after.nodes["a:release"].border, before.nodes["a:release"].border, "the result changed the actual node border colour");
       assert.notEqual(after.nodes["a:release"].dot, before.nodes["a:release"].dot, "the result changed the actual node verdict dot colour");
       assert.notEqual(after.edges["a:release>a:ship"].stroke, before.edges["a:release>a:ship"].stroke, "the result changed the visible relation's actual stroke colour");
@@ -128,11 +139,11 @@ export const scenarios: Scenario[] = [
       }
 
       await press(browser, ["v"], on("a:ship"), "the selected ship Artifact focused in the graph");
-      assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /ship/);
+      await breadcrumbNames(browser, "ship");
       await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:ship", "ship still selected and the tree focused");
       await press(browser, ["v"], on("a:ship"), "ship focused after another switch to the graph");
       await press(browser, ["ArrowLeft"], on("a:release"), "release focused upstream without a mouse");
-      assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /release/);
+      await breadcrumbNames(browser, "release");
       await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:release", "release selected and the tree focused again");
       const next = await browser.execute(() => document.querySelector('[role="treeitem"][aria-selected="true"]')?.nextElementSibling?.getAttribute("data-path"));
       assert.ok(next, "release has a following visible row");
@@ -203,6 +214,8 @@ export const scenarios: Scenario[] = [
       assert.ok(first, "a real visible node can receive the pointer");
       console.log(`e2e graph: click visible node ${first}`);
       await browser.$(`.svelte-flow__node[data-id="${first}"]`).click();
+      // Escape before the click's zoom is shown would leave the Run pane instead.
+      await browser.$('[role="listbox"][aria-label="Evals"]').waitForExist({ timeout: 15000, timeoutMsg: "the clicked node zoomed in" });
       await press(browser, ["Escape"], async () => {
         const shown = await nodeView(first);
         return shown.whole && shown.focused && shown.visible;
@@ -235,12 +248,11 @@ export const scenarios: Scenario[] = [
           // Escape returns to the whole graph with this Artifact in view; the UX
           // does not require a particular camera scale or a disabled zoom control.
           await step("Escape", name(40));
-          assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /n040/, "selection held through the transition");
+          await breadcrumbNames(browser, "n040");
         }
       }
       // The tree's selection is the focused node: the breadcrumb names it.
-      const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
-      assert.match(crumbs, /n084/);
+      await breadcrumbNames(browser, "n084");
       const last = await nodeView(name(84));
       assert.ok(last.whole && last.visible && last.focused, "the final Artifact is visible and focused in the whole graph");
       assert.ok(revealedBeyond, "arrow navigation brought an Artifact from beyond the viewport into view and focus");

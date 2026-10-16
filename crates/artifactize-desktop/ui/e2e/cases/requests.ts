@@ -3,8 +3,10 @@
 // page holds.
 import assert from "node:assert/strict";
 import { artifactize, create, createPagedRequests, signoff } from "../fixture.ts";
-import { afterRender, press, typeText } from "../keys.ts";
+import { afterRender, fill, press } from "../keys.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint } from "../commands.ts";
+import { reviewing } from "../human-review.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
@@ -79,7 +81,7 @@ export const scenarios: Scenario[] = [
       const { listed, gone, exists } = opening(browser, signoff(fixture).id);
       await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
       await press(browser, [primaryModifier, "k"], () => browser.$('[aria-label="Command palette"][data-state="open"]').isExisting(), "the palette");
-      await typeText(browser, "Tools focused");
+      await choosePaletteCommand(browser, "Tools focused", "Open the selected request with Tools focused");
       await press(browser, ["Enter"], exists, "the Human review");
       await waitFor(browser, () => browser.$('[aria-label="Human tools"]').isFocused(), "focus on the Tools");
       await press(browser, ["Escape"], gone, "back on the list");
@@ -96,10 +98,10 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Enter"], exists, "the Human review");
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
       await human().click();
-      await press(browser, ["c"], async () => (await browser.execute(() => document.body.innerText)).includes("claimed by you"), "claimed");
+      await press(browser, ["c"], async () => (await browser.execute(() => document.body.innerText)).includes("claimed by you") && await reviewing(browser), "claimed");
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       assert.ok(!(await browser.$("#field-reason").isExisting()), "no RED field in the GREEN form");
-      await browser.$("#field-comment").setValue("GREEN draft stays");
+      await fill(browser, "#field-comment", "GREEN draft stays");
       // An idempotent verdict leaves the same field visible: require the real chord's
       // defaultPrevented flag after the app handler, not only that already-true field state.
       await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G preserves GREEN", { handled: true });
@@ -107,7 +109,7 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.$("#field-reason").isExisting()), "Ctrl+G kept the GREEN schema");
       await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "no GREEN field in the RED form");
-      await browser.$("#field-reason").setValue("RED draft stays");
+      await fill(browser, "#field-reason", "RED draft stays");
       await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R preserves RED", { handled: true });
       assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");
@@ -185,7 +187,7 @@ export const scenarios: Scenario[] = [
       await human().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
       // The window shows the claim before a verdict can be chosen.
-      await waitFor(browser, async () => (await text()).includes("claimed by you"), "the claim shown");
+      await waitFor(browser, async () => (await text()).includes("claimed by you") && await reviewing(browser), "the claim shown");
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form of the pass schema");
       assert.ok(await browser.$("#field-approved").isExisting(), "the schema's approved field");
       const comment = browser.$("#field-comment");

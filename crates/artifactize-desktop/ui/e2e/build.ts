@@ -1,7 +1,7 @@
 // Immutable executable inputs. App/driver lifetimes belong exclusively to WDIO's Tauri service.
 import {
   absolutePath, asNativePath, childDirectories, copyFile, executableName, exists, inheritedEnvironment, isInside,
-  makeDirectory, nativePath, newDirectory, packageCommand, portablePath, readJson, removeTree, runStep, scratchDirectory,
+  makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, readJson, readText, removeTree, runStep, scratchDirectory,
   setVariable, suitePath, variable, writeJson, type Environment, type NativePath,
 } from "./platform.ts";
 
@@ -25,13 +25,27 @@ function cargoEnvironment(root: NativePath): Environment {
   };
 }
 
+/** The test app's windows keep rendering while another test's window covers them: a suite
+ * runs several apps at once, and a covered macOS WebView otherwise stops its frames, so a
+ * graph waiting for its layout never appears. Other systems ignore the policy. The merged
+ * config replaces the window list, so each declared window is copied with the policy. */
+function testWindows(): unknown[] {
+  const declared = JSON.parse(readText(nativePath(workspace, "crates", "artifactize-desktop", "tauri.conf.json"))) as {
+    app: { windows: Record<string, unknown>[] };
+  };
+  return declared.app.windows.map((window) => ({ ...window, backgroundThrottling: "disabled" }));
+}
+
 /** The e2e frontend is never written into ui/dist or borrowed from a previous build. */
 async function frontend(root: NativePath): Promise<Environment> {
   const dist = nativePath(root, "frontend");
   const env = cargoEnvironment(root);
   const frontend = packageCommand(["-C", ui, "build", "--mode", "e2e", "--outDir", dist]);
   await runStep(frontend.program, frontend.args, { env, cwd: workspace });
-  return { ...env, TAURI_CONFIG: JSON.stringify({ build: { frontendDist: portablePath(dist) }, app: { withGlobalTauri: true } }) };
+  const app = { withGlobalTauri: true, windows: testWindows() };
+  // frontendDist takes a URL or a folder. A URL makes the app browse it instead of embedding
+  // and serving the frontend, so the folder is given in a form that cannot be a URL.
+  return { ...env, TAURI_CONFIG: JSON.stringify({ build: { frontendDist: pathNotUrl(dist) }, app }) };
 }
 
 function save(root: NativePath, cli: NativePath, app: NativePath, observer: NativePath): Candidate {

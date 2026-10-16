@@ -5,8 +5,15 @@
 import assert from "node:assert/strict";
 import { createStates, requests } from "../fixture.ts";
 import { press } from "../keys.ts";
+import { breadcrumbNames } from "../breadcrumb.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type VerdictLight } from "./graph-appearance.ts";
+
+/** A clicked node zooms in. Escape then steps back out: it is pressed only once the zoom is
+ * shown, since before it Escape leaves the Run pane, and "zoomed out" would already hold. */
+async function zoomedIn(browser: WebdriverIO.Browser): Promise<void> {
+  await browser.$('[role="listbox"][aria-label="Evals"]').waitForExist({ timeout: 15000, timeoutMsg: "the clicked node zoomed in" });
+}
 
 function verdictGraph(browser: WebdriverIO.Browser) {
   const text = () => browser.execute(() => document.body.innerText);
@@ -41,6 +48,7 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await tree().isExisting()), "the graph replaces the tree");
       // The tree's list left with the switch; the graph's own node takes the keys.
       await browser.$(".svelte-flow__node").click();
+      await zoomedIn(browser);
       await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "zoomed out to a focused node");
       await press(browser, ["v"], () => tree().isExisting(), "the tree again");
       await tree().click();
@@ -51,7 +59,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-OPEN
   scenario<Record<string, never>>(
     "states-graph-lights",
-    "colours RED, ERROR, blocked and GREEN Artifacts and the edge between a RED one and its dependent",
+    "colours RED, ERROR, blocked, waiting and GREEN Artifacts and the edges each passes on to its dependent",
     async () => {
       const fixture = await createStates();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -69,9 +77,15 @@ export const scenarios: Scenario[] = [
         "a:fine": "green",
         "a:gate": "active",
         "a:later": "waiting",
+        "a:past": "blocked",
+        "a:beyond": "waiting",
       } satisfies Record<string, VerdictLight>;
-      // Each edge is painted as what its source passes on: RED, ERROR, or work in progress.
-      const expectedEdges = { "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active" } satisfies Record<string, VerdictLight>;
+      // Each edge is painted as what its source passes on: RED, ERROR, work in progress, a
+      // blocked or a waiting source.
+      const expectedEdges = {
+        "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active",
+        "a:down>a:past": "blocked", "a:later>a:beyond": "waiting",
+      } satisfies Record<string, VerdictLight>;
       await browser.waitUntil(async () => graphHasColours(await lights(), expectedNodes, expectedEdges), {
         timeout: 15000, timeoutMsg: "every node border/dot and relation stroke matches its verdict's distinct visible Legend colour",
       });
@@ -79,7 +93,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, node.light])), expectedNodes);
       assert.deepEqual(Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, edge.light])), expectedEdges);
       const legend = await browser.$('[aria-label="Legend"]').getText();
-      for (const word of ["GREEN", "RED", "ERROR", "blocked"]) assert.match(legend, new RegExp(word));
+      for (const word of ["GREEN", "RED", "ERROR", "blocked", "waiting"]) assert.match(legend, new RegExp(word));
     },
   ),
 
@@ -99,6 +113,7 @@ export const scenarios: Scenario[] = [
       const on = (id: string) => async () => (await focused()) === id;
       await browser.$('.svelte-flow__node[data-id="a:red"]').click();
       // A click zooms in; step back out to the whole graph with the node focused.
+      await zoomedIn(browser);
       await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "zoomed out");
       await browser.waitUntil(on("a:red"), { timeout: 15000, timeoutMsg: "focus on red" });
       // → the dependent, ← back upstream.
@@ -119,12 +134,12 @@ export const scenarios: Scenario[] = [
         .map((node) => node.id);
       assert.ok(order.length >= 2, "a column of at least two nodes");
       await browser.$(`.svelte-flow__node[data-id="${order[0]}"]`).click();
+      await zoomedIn(browser);
       await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "the first node in the column focused");
       await browser.waitUntil(on(order[0]), { timeout: 15000, timeoutMsg: `focus on ${order[0]}` });
       for (const next of order.slice(1)) {
         await press(browser, ["ArrowDown"], on(next), `focus on ${next}, below`);
-        const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
-        assert.ok(crumbs.includes(next.slice(2)), `the breadcrumb names ${next}: ${crumbs}`);
+        await breadcrumbNames(browser, next.slice(2));
       }
       await press(browser, ["ArrowUp"], on(order[order.length - 2]), `focus on ${order[order.length - 2]}, above`);
     },

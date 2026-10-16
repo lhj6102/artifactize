@@ -1,6 +1,6 @@
 {
   "identifier": "webdriver",
-  "description": "WebDriver integration for the E2E test build only.",
+  "description": "WebDriver integration, and the window focus the Windows suite takes, for the E2E test build only.",
   "windows": ["main"],
-  "permissions": ["wdio:default", "wdio-webdriver:default"]
+  "permissions": ["wdio:default", "wdio-webdriver:default", "core:window:allow-set-focus"]
 }

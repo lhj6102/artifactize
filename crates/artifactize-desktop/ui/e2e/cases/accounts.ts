@@ -3,6 +3,7 @@
 // the displayed authorization URL; only the domain server records that evidence.
 import assert from "node:assert/strict";
 import { createOutside, environment } from "../fixture.ts";
+import { fill } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import {
   appendText, closeServers, httpGet, nativePath, readText, requireFreeLoopbackPort, serveLoopbackHttp, writeText,
@@ -118,7 +119,7 @@ export const scenarios: Scenario[] = [
       await signedOut();
 
       const pastedState = await begin();
-      await browser.$("#codex-redirect").setValue(`http://localhost:1455/auth/callback?code=e2e-code&state=${pastedState}`);
+      await fill(browser, "#codex-redirect", `http://localhost:1455/auth/callback?code=e2e-code&state=${pastedState}`);
       await browser.$("button=Finish sign-in").click();
       await signedIn();
       await signOut();

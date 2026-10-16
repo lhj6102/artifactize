@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { verifyWaiting, addRepository, create, requests } from "../fixture.ts";
 import { press, typeText } from "../keys.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint, reviewRefreshed } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
@@ -70,7 +71,7 @@ function palette(browser: WebdriverIO.Browser) {
   const hidden = async () => !(await shown());
   /** Run the command labelled `label` from the open palette by typing and Enter. */
   const run = async (label: string) => {
-    await typeText(browser, label);
+    await choosePaletteCommand(browser, label);
     await press(browser, ["Enter"], hidden, `${label} selected and palette closed`);
   };
   const refresh = async (expected: ListedRequest[], selected: string) => {

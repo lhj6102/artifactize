@@ -21,6 +21,7 @@
 
   function run(id: string) {
     const command = commands.all.find((command) => command.id === id);
+    palette.search = "";
     open = false;
     // Let the dialog restore focus before the command moves it.
     queueMicrotask(() => command?.run());
@@ -40,7 +41,7 @@
   }
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root bind:open onOpenChange={(next) => !next && (palette.search = "")}>
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
     <Dialog.Content
@@ -55,7 +56,7 @@
     >
       <Dialog.Title class="sr-only">Command palette</Dialog.Title>
       <Command.Root loop bind:value={palette.selected}>
-        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={palette.input} onkeydown={keydown} />
+        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={palette.input} bind:value={palette.search} onkeydown={keydown} />
         <Command.List class="palette-list">
           <Command.Viewport>
             <Command.Empty class="palette-empty">No matching command.</Command.Empty>

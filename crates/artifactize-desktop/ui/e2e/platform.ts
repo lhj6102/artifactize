@@ -12,7 +12,7 @@ import {
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createConnection, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type { Socket as LoopbackSocket } from "node:net";
@@ -88,6 +88,13 @@ export function portablePath(path: NativePath): string {
  * (8.3) names and macOS `/var` aliases expanded, as the product canonicalizes paths. */
 export function canonicalPath(path: NativePath): NativePath {
   return realpathSync.native(path) as NativePath;
+}
+
+/** A folder for a tool setting that takes a URL or a path. A Windows drive path such as
+ * C:\x also parses as a URL with the scheme "c", so it is given in its namespaced form
+ * \\?\C:\x, which only a path can be; other systems' absolute paths are no URL. */
+export function pathNotUrl(path: NativePath): string {
+  return toNamespacedPath(path);
 }
 
 /** A file of the E2E suite itself. */
@@ -191,10 +198,12 @@ export function copyFile(from: NativePath, to: NativePath): void {
   copyFileSync(from, to);
 }
 
-/** Remove a directory tree. Windows briefly keeps files of exited processes open, so
- * a busy file is retried a bounded number of times before the failure is reported. */
+/** Remove a directory tree. An app's web engine helper processes (WebView2, WebKitGTK's
+ * web and network processes) exit after the app, and until then they keep or still write
+ * the data folders that live in its fixture. Deletion retries with linearly growing pauses
+ * (up to a minute in all) while they finish; a tree still busy after that is reported. */
 export function removeTree(path: NativePath): void {
-  rmSync(path, { recursive: true, force: true, maxRetries: WINDOWS ? 10 : 0, retryDelay: 100 });
+  rmSync(path, { recursive: true, force: true, maxRetries: 30, retryDelay: 125 });
 }
 
 // ---------------------------------------------------------------------------------
@@ -409,8 +418,20 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand>, s
 async function stopTree(child: ChildProcess): Promise<void> {
   if (child.pid === undefined) return;
   if (!WINDOWS) {
-    try { process.kill(-child.pid, "SIGKILL"); }
+    const group = -child.pid;
+    // A group exists while any member does: the signal is followed until none is left,
+    // so no descendant outlives the runner's fixture inputs.
+    const exists = () => {
+      try { process.kill(group, 0); return true; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; throw error; }
+    };
+    try { process.kill(group, "SIGKILL"); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    const deadline = Date.now() + 30000;
+    while (exists()) {
+      if (Date.now() > deadline) throw new Error(`fixture runner process group ${child.pid} outlived SIGKILL`);
+      await new Promise((done) => setTimeout(done, 50));
+    }
     return;
   }
   // Windows has no POSIX process groups; its declared OS tool owns the same tree.
@@ -629,6 +650,36 @@ export function assertHarnessPlatform(): void {
   if (!process.env.DISPLAY || !process.env.DBUS_SESSION_BUS_ADDRESS || process.env.GDK_BACKEND !== "x11" || process.env.WAYLAND_DISPLAY) {
     throw new Error("Linux desktop E2E requires the whole runner inside dbus-run-session -- xvfb-run -a, GDK_BACKEND=x11 and no WAYLAND_DISPLAY");
   }
+}
+
+/** Stop the system browser that Windows' default URL handler started for the account
+ * journey. It inherits the fixture's environment, so its profile lives in the fixture and
+ * it would hold the fixture until the machine ends; the suite runs on Windows only on a
+ * disposable runner (assertRunnerMachine), whose default browser is Edge. Unix openers are
+ * fixture programs that have already exited. */
+export async function releaseAccountBrowser(): Promise<void> {
+  if (!WINDOWS) return;
+  const root = variable("SystemRoot");
+  if (!root) throw new Error("SystemRoot is required to stop the Windows account browser");
+  const stopped = await runProgramAsync(join(root, "System32", "taskkill.exe") as NativePath, ["/IM", "msedge.exe", "/T", "/F"]);
+  // 128: no such process, the browser already exited.
+  if (stopped.status !== 0 && stopped.status !== 128) throw new Error(`taskkill exited ${stopped.status}: ${stopped.stderr}`);
+}
+
+/** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
+ * gives no focus events to a page whose window is not it (focusing the WebView alone does not
+ * do it): an app beside another one missed its own focus changes. The foreground window is the
+ * one per-desktop resource every instance needs (E2E-ISOLATED), so Windows runs one app at a time. */
+export const appsAtOnce = WINDOWS ? 1 : 2;
+
+/** Give the scenario's app window the system focus before it starts, on Windows (see
+ * appsAtOnce); other systems deliver focus events to a page in any window. */
+export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<void> {
+  if (!WINDOWS) return;
+  await browser.execute(() => (window as unknown as { __TAURI__: { window: { getCurrentWindow(): { setFocus(): Promise<void> } } } })
+    .__TAURI__.window.getCurrentWindow().setFocus());
+  await browser.waitUntil(() => browser.execute(() => document.hasFocus()),
+    { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
 }
 
 /** Unix desktop openers are declared fixture executables performing the real HTTP GET;

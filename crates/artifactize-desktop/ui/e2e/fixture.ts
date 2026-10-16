@@ -403,6 +403,9 @@ export async function createStates(): Promise<Fixture> {
   `,
     );
     artifact("later", "pass", "Run after {gate}.");
+    // What a blocked and a waiting Artifact pass on along their own relations.
+    artifact("past", "pass", "Run after {down}.");
+    artifact("beyond", "pass", "Run after {later}.");
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     // RED/ERROR are committed while the independent Human sign-off keeps the Run waiting.

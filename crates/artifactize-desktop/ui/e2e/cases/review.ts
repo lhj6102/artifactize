@@ -2,7 +2,8 @@
 // with an unsubmitted claim (stay, then release and quit).
 import assert from "node:assert/strict";
 import { addRepository, artifactize, create, type Fixture, requests, signoff } from "../fixture.ts";
-import { press, typeText } from "../keys.ts";
+import { reviewing } from "../human-review.ts";
+import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -12,12 +13,11 @@ async function claimReview(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
   await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
   await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
-  const input = await browser.$('[aria-label="Request ID"]');
-  await input.setValue(signoff(fixture).id);
+  await fill(browser, '[aria-label="Request ID"]', signoff(fixture).id);
   await browser.$('[role="dialog"] button[type="submit"]').click();
   await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
   await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
-  await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && (await text()).includes("REVIEW (yours)"), "this case's claim");
+  await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "this case's claim");
 }
 
 export const scenarios: Scenario[] = [
@@ -93,7 +93,7 @@ export const scenarios: Scenario[] = [
       const id = selected === original ? otherId : original;
       assert.notEqual(id, selected, "the typed ID differs from the exact currently selected request");
       await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
-      await browser.$('[aria-label="Request ID"]').setValue(id);
+      await fill(browser, '[aria-label="Request ID"]', id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
       await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
       await browser.waitUntil(async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
@@ -109,8 +109,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["c"], async () =>
         requests(fixture).find((request) => request.id === id)?.claim?.reviewer === "alice" &&
         (await openedId()) === id &&
-        await browser.execute(() => document.querySelector('[aria-label="Human review"][tabindex="0"]')
-          ?.textContent?.includes("REVIEW (yours)") ?? false), "the entered request's saved claim and rendered review");
+        await reviewing(browser, '[aria-label="Human review"][tabindex="0"]'), "the entered request's saved claim and rendered review");
       // request list reaches every repository in this state: observe by exact identities,
       // not by calling a first-signoff helper with another --repo path.
       const previous = requests(fixture).find((request) => request.id === selected);
@@ -125,9 +124,8 @@ export const scenarios: Scenario[] = [
     "leaves a field's form with Esc, then the Detail with the next Esc, keyboard only",
     async () => ({ fixture: await create(), args: ["review"], data: null }),
     async (browser, { fixture }) => {
-      const text = () => browser.execute(() => document.body.innerText);
       await claimReview(browser, fixture);
-      await browser.waitUntil(async () => (await text()).includes("REVIEW (yours)"), { timeout: 15000, timeoutMsg: "the review stage" });
+      await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
       await browser.keys(["g"]);
       await browser.waitUntil(() => browser.execute(() => document.activeElement?.id === "field-comment"), { timeout: 15000, timeoutMsg: "focus in the comment field" });
       await browser.keys(["Escape"]);
@@ -147,9 +145,8 @@ export const scenarios: Scenario[] = [
     "asks before quitting with the claim: Esc stays, u releases and quits",
     async () => ({ fixture: await create(), args: ["review"], data: null }),
     async (browser, { fixture }) => {
-      const text = () => browser.execute(() => document.body.innerText);
       await claimReview(browser, fixture);
-      await browser.waitUntil(async () => (await text()).includes("REVIEW (yours)"), { timeout: 15000, timeoutMsg: "the review stage" });
+      await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
       const dialog = await browser.$('[role="alertdialog"]');
       /** The prompt is open and holds focus, so its keys reach it. */
       const prompted = async () => {
@@ -193,15 +190,14 @@ export const scenarios: Scenario[] = [
       const text = () => browser.execute(() => document.body.innerText);
       await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
       await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
-      const input = await browser.$('[aria-label="Request ID"]');
-      await input.setValue(signoff(fixture).id);
+      await fill(browser, '[aria-label="Request ID"]', signoff(fixture).id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
       const human = await browser.$('[aria-label="Human review"]');
       await human.waitForExist({ timeout: 15000 });
       await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
       await browser.keys(["c"]);
       await browser.waitUntil(async () => signoff(fixture).claim?.reviewer === "alice", { timeout: 15000, timeoutMsg: "claimed" });
-      await browser.waitUntil(async () => (await text()).includes("REVIEW (yours)"), { timeout: 15000, timeoutMsg: "the review stage" });
+      await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
       await browser.keys(["g"]);
       const comment = await browser.$("#field-comment");
       await comment.waitForExist({ timeout: 10000 });

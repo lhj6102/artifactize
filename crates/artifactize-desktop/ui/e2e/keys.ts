@@ -125,6 +125,22 @@ export async function afterRender(browser: WebdriverIO.Browser): Promise<void> {
   });
 }
 
+/** Set the field `selector` names to `text` and wait until the field, found again, shows it.
+ * A form rebuilt since the field was last found has a new element with the same selector. */
+export async function fill(browser: WebdriverIO.Browser, selector: string, text: string): Promise<void> {
+  const shown = () => browser.execute((query) => {
+    const field = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(query);
+    const active = document.activeElement;
+    return { value: field?.value ?? null, focused: !!field && active === field, active: active ? `${active.tagName}#${active.id}` : null };
+  }, selector);
+  await browser.$(selector).setValue(text);
+  try {
+    await browser.waitUntil(async () => (await shown()).value === text, { timeout: 15000, timeoutMsg: `timed out: ${selector} shows ${JSON.stringify(text)}` });
+  } catch (error) {
+    throw new Error(`${selector} does not show ${JSON.stringify(text)}; it showed ${JSON.stringify(await shown())}`, { cause: error });
+  }
+}
+
 /** The focused field's value. */
 const value = (browser: WebdriverIO.Browser) =>
   browser.execute(() => (document.activeElement as HTMLInputElement | null)?.value ?? "");

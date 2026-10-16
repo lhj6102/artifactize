@@ -4,7 +4,7 @@ import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { environment, releaseFixtures } from "./fixture.ts";
 import {
-  accountBrowserEnvironment, asNativePath, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
+  accountBrowserEnvironment, asNativePath, releaseAccountBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
   makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
   type Environment,
 } from "./platform.ts";
@@ -87,7 +87,12 @@ export const config = {
           ...environment(input.fixture), ...native, ...input.env,
           DESKTOP_TEST_SCENARIO: item.id, DESKTOP_TEST_FIXTURE_ROOT: input.fixture.root,
         };
-        if (item.id === "accounts") env = accountBrowserEnvironment(input.fixture.root, env);
+        if (item.id === "accounts") {
+          env = accountBrowserEnvironment(input.fixture.root, env);
+          // Runs after the app has ended and before the fixture is deleted.
+          const release = input.release;
+          input.release = async () => { await releaseAccountBrowser(); await release?.(); };
+        }
         // Release callbacks and native fixture handles never cross the worker boundary.
         writeJson(context, { fixture: input.fixture, args, env, data: input.data }, { private: true });
         capabilities[index]["artifactize:context"] = context;
