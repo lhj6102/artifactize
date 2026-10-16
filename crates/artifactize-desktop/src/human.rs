@@ -297,7 +297,9 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
     if resolve {
         let commands = async {
             let (receipts, _) = artifactize_core::human::open(state, &view.request.id).await?;
-            artifactize_core::human::tool_commands(&receipts, &view.request.id).await
+            let result = artifactize_core::human::tool_commands(&receipts, &view.request.id).await;
+            let closed = receipts.close().await;
+            result.and_then(|commands| closed.map(|()| commands))
         }
         .await;
         app.human

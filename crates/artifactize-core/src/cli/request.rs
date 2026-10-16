@@ -107,21 +107,30 @@ pub(super) async fn execute(
         RequestCommand::Claim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (receipts, _) = human::open(state, &id).await?;
-            print_json(&human::claim(&receipts, &id, &reviewer).await?)?;
+            let result = human::claim(&receipts, &id, &reviewer).await;
+            let closed = receipts.close().await;
+            print_json(&result.and_then(|claim| closed.map(|()| claim))?)?;
         }
         RequestCommand::Unclaim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (receipts, _) = human::open(state, &id).await?;
-            print_json(&human::unclaim(&receipts, &id, &reviewer).await?)?;
+            let result = human::unclaim(&receipts, &id, &reviewer).await;
+            let closed = receipts.close().await;
+            print_json(&result.and_then(|claim| closed.map(|()| claim))?)?;
         }
         RequestCommand::Tool { id, tool, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (receipts, _) = human::open(state, &id).await?;
-            let (cancellation, listener) = cancellation_listener()?;
-            let result =
-                human::run_human_tool(&receipts, &id, &reviewer, &tool, cancellation).await;
-            listener.abort();
-            let result = result?;
+            let result = async {
+                let (cancellation, listener) = cancellation_listener()?;
+                let result =
+                    human::run_human_tool(&receipts, &id, &reviewer, &tool, cancellation).await;
+                listener.abort();
+                result
+            }
+            .await;
+            let closed = receipts.close().await;
+            let result = result.and_then(|result| closed.map(|()| result))?;
             if json {
                 print_json(&result)?;
             } else {
@@ -196,4 +205,50 @@ fn submission(
     }
     object.insert("verdict".into(), json!(verdict));
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn refused_human_actions_release_the_database_before_returning_the_error() {
+        let root = crate::test_os::tempdir();
+        let repo = root.path().join("repo");
+        let state = root.path().join("state");
+        std::fs::create_dir(&repo).unwrap();
+        let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+        let run: store::Run = serde_json::from_value(json!({
+            "id":"run-1", "repoPath":repo, "stateDir":state, "status":"GREEN",
+            "createdAt":"2026-01-01T00:00:00Z", "completedAt":"2026-01-01T00:00:01Z",
+            "selection":{"kind":"all"}, "validation":null, "definitions":null
+        }))
+        .unwrap();
+        let request =
+            crate::test_request::request("app/check", "GREEN", json!({"cwd":repo})).request;
+        let id = request.id.clone();
+        receipts.create_run(&run, &[request]).await.unwrap();
+        receipts.close().await.unwrap();
+        let reviewer = Some("alice".parse().unwrap());
+        for command in [
+            RequestCommand::Claim {
+                id: id.clone(),
+                reviewer: reviewer.clone(),
+            },
+            RequestCommand::Unclaim {
+                id: id.clone(),
+                reviewer: reviewer.clone(),
+            },
+            RequestCommand::Tool {
+                id,
+                reviewer,
+                tool: "inspect".parse().unwrap(),
+            },
+        ] {
+            let error = execute(&state, command, true).await.unwrap_err();
+            assert!(error.contains("not waiting for a Human review"), "{error}");
+            assert!(crate::test_os::database_released(&state.join(store::DATABASE)).unwrap());
+        }
+        root.close().unwrap();
+    }
 }
