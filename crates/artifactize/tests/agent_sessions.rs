@@ -13,8 +13,6 @@ mod support;
 use support::runs::RecordOutput;
 
 use std::{
-    cell::RefCell,
-    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
@@ -35,23 +33,14 @@ const FOLLOW_UP: &str = "Follow-up question from a person about the review above
 /// A workspace of one Artifact, `notes`, with one Agent eval whose result must list
 /// `covered`, and a content fingerprint.
 struct Project {
-    root: tempfile::TempDir,
+    root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
-    states: RefCell<BTreeSet<PathBuf>>,
-}
-
-impl Drop for Project {
-    fn drop(&mut self) {
-        for state in self.states.get_mut().iter() {
-            owned_run::release_repo(state, &self.repo);
-        }
-    }
 }
 
 impl Project {
     fn new(backend: &str) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         let folder = repo.join("notes");
         fs::create_dir_all(&folder).unwrap();
@@ -88,12 +77,7 @@ impl Project {
         let credentials = json!({"access_token":codex::jwt("account-1", expires),
             "refresh_token":"refresh","account_id":"account-1","expires_at":expires,"saved_at":1});
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
-        Self {
-            root,
-            repo,
-            state,
-            states: RefCell::default(),
-        }
+        Self { root, repo, state }
     }
 
     fn limits(&self, limits: Value) {
@@ -101,7 +85,7 @@ impl Project {
     }
 
     fn command(&self, provider: &FakeProvider, state: &Path, args: &[&str]) -> Command {
-        self.states.borrow_mut().insert(state.to_owned());
+        self.root.track(state, &self.repo);
         let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
@@ -762,38 +746,41 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
         .build()
         .unwrap();
     let session = runtime.block_on(async {
-        let mut changes = artifactize_core::changes::Subscription::new(&project.state).await;
-        tokio::time::timeout(support::os::patience(Duration::from_secs(20)), async {
-            loop {
-                let saved = artifactize_core::store::read_run(&project.state, &running.run())
-                    .await
-                    .unwrap();
-                if let Some(request) = saved.requests.iter().find(|request| {
-                    request.status() == artifactize_core::types::RequestStatus::Running
-                }) && let Some(session) = &request.session_id
-                {
-                    // Creating a JSONL filename is not the saved review header. The exact
-                    // RUNNING request and the complete header must both be observable.
-                    let header = fs::read_to_string(file(session.as_str()))
-                        .ok()
-                        .and_then(|text| {
-                            text.lines()
-                                .next()
-                                .and_then(|line| serde_json::from_str::<Value>(line).ok())
-                        });
-                    if header.is_some_and(|header| {
-                        header["kind"] == "review"
-                            && header["sessionId"] == session.as_str()
-                            && header["requestId"] == request.id.as_str()
-                    }) {
-                        break session.to_string();
+        owned_run::subscribed(&project.state, async |changes| {
+            tokio::time::timeout(support::os::patience(Duration::from_secs(20)), async {
+                loop {
+                    let saved = artifactize_core::store::read_run(&project.state, &running.run())
+                        .await
+                        .unwrap();
+                    if let Some(request) = saved.requests.iter().find(|request| {
+                        request.status() == artifactize_core::types::RequestStatus::Running
+                    }) && let Some(session) = &request.session_id
+                    {
+                        // Creating a JSONL filename is not the saved review header. The exact
+                        // RUNNING request and the complete header must both be observable.
+                        let header =
+                            fs::read_to_string(file(session.as_str()))
+                                .ok()
+                                .and_then(|text| {
+                                    text.lines()
+                                        .next()
+                                        .and_then(|line| serde_json::from_str::<Value>(line).ok())
+                                });
+                        if header.is_some_and(|header| {
+                            header["kind"] == "review"
+                                && header["sessionId"] == session.as_str()
+                                && header["requestId"] == request.id.as_str()
+                        }) {
+                            break session.to_string();
+                        }
                     }
+                    changes.next_reconciled().await;
                 }
-                changes.next_reconciled().await;
-            }
+            })
+            .await
+            .expect("running request and saved session header")
         })
         .await
-        .expect("running request and saved session header")
     });
     let pruned = project.json(&provider, &["prune"], 0);
     assert_eq!(pruned["removedSessions"], json!([&survivor]));
@@ -846,7 +833,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
 
 #[tokio::test]
 async fn a_reference_elsewhere_names_where_its_session_lives() {
-    use artifactize_core::{cache, remote::Record, store::Receipts};
+    use artifactize_core::{cache, remote::Record, store::OwnedReceipts};
 
     let project = Project::new("openai");
     let provider = FakeProvider::start(reply);
@@ -904,7 +891,7 @@ async fn a_reference_elsewhere_names_where_its_session_lives() {
         .producer = "alice@laptop".parse().unwrap();
     record.publisher = Some("alice".parse().unwrap());
     record.published_at = Some("2026-10-06T00:00:00Z".parse().unwrap());
-    let receipts = Receipts::open(&other, &project.repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&other, &project.repo).await.unwrap();
     receipts
         .mirror_execution(&record.mirror("https://reviews.example/").unwrap())
         .await

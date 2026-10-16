@@ -7,7 +7,7 @@ use artifactize_core::{
     cache, human,
     project::{VerifyOptions, selection::Selection},
     remote::Record,
-    store::Receipts,
+    store::OwnedReceipts,
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -84,14 +84,14 @@ async fn verify(repo: &Path, state: &Path) -> artifactize_core::store::RunView {
 
 #[tokio::test]
 async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     write_repo(
         &repo,
         json!({"kind":"runtime","command":support::os::python_program(),"args":["-I","check.py"]}),
     );
     let producer_state = root.path().join("producer");
-    let _producer_runs = owned_run::RepoLease::new(&producer_state, &repo);
+    root.track(&producer_state, &repo);
     let produced = verify(&repo, &producer_state).await;
     assert_eq!(produced.run.status().as_str(), "GREEN");
     let key = produced.requests[0].key.clone().unwrap();
@@ -154,8 +154,8 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     stored.publisher = Some("alice-laptop".parse().unwrap());
     stored.published_at = Some("2026-10-04T00:00:00Z".parse().unwrap());
     let consumer_state = root.path().join("consumer");
-    let _consumer_runs = owned_run::RepoLease::new(&consumer_state, &repo);
-    let receipts = Receipts::open(&consumer_state, &repo).await.unwrap();
+    root.track(&consumer_state, &repo);
+    let receipts = OwnedReceipts::open(&consumer_state, &repo).await.unwrap();
     let mirror = stored.mirror("https://reviews.example/").unwrap();
     let mirrored = receipts.mirror_execution(&mirror).await.unwrap().unwrap();
     assert_eq!(mirrored.id.as_str(), format!("remote-{}", execution.id));
@@ -209,14 +209,14 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
 
 #[tokio::test]
 async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     write_repo(
         &repo,
         json!({"kind":"runtime","command":true_program(),"args":[]}),
     );
     let producer_state = root.path().join("producer");
-    let _producer_runs = owned_run::RepoLease::new(&producer_state, &repo);
+    root.track(&producer_state, &repo);
     let produced = verify(&repo, &producer_state).await;
     let key = produced.requests[0].key.as_ref().unwrap();
     let original = cache::show(&producer_state, key, false)
@@ -240,8 +240,8 @@ async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
             assert_eq!(mirror.id.as_str(), format!("remote-{}", source.id));
             assert_eq!(mirror.id.len(), bytes + "remote-".len());
             let state = root.path().join(format!("consumer-{bytes}-{full}"));
-            let _runs = owned_run::RepoLease::new(&state, &repo);
-            let receipts = Receipts::open(&state, &repo).await.unwrap();
+            root.track(&state, &repo);
+            let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
             receipts.mirror_execution(&mirror).await.unwrap().unwrap();
             assert!(receipts.mirror_execution(&mirror).await.unwrap().is_none());
             let saved = cache::show(&state, key, false)
@@ -274,7 +274,9 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     assert_eq!(execution.id.len(), 207);
     let state = support::os::tempdir();
     let repo = support::os::tempdir();
-    Receipts::open(state.path(), repo.path()).await.unwrap();
+    OwnedReceipts::open(state.path(), repo.path())
+        .await
+        .unwrap();
     let db = Connection::open(state.path().join("state.sqlite")).unwrap();
     db.execute(
         "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) VALUES(?1,?2,?3,'GREEN',0,0,?4,?5,?4,?6)",
@@ -303,15 +305,15 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
 
 #[tokio::test]
 async fn human_summary_keeps_owner_fields_and_the_reviewer() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     write_repo(&repo, json!({"kind":"human"}));
     let state = root.path().join("state");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     let waiting = verify(&repo, &state).await;
     let request = &waiting.requests[0];
     assert_eq!(request.status().as_str(), "WAITING_HUMAN");
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     human::claim(&receipts, &request.id, &"alice".parse().unwrap())
         .await
         .unwrap();
@@ -347,7 +349,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         config::{Profile, read_workspace_config},
         store::{Execution, ExecutionOptions, Producer, Provenance},
     };
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let declared = json!({
         "kind":"agent",
@@ -372,7 +374,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     // The record the `fast` variant produced elsewhere, keyed like this repository's eval.
     let config = read_workspace_config(&repo).unwrap();
     let state = root.path().join("state");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     let fingerprints = cache::prepare(
         &config,
         [&config.artifacts["app"].name],
@@ -431,7 +433,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     assert_eq!(record.options.model.as_deref(), Some("model-b"));
     record.publisher = Some("bob-laptop".parse().unwrap());
     record.published_at = Some("2026-10-04T00:00:02Z".parse().unwrap());
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     receipts
         .mirror_execution(&record.mirror("https://reviews.example/").unwrap())
         .await

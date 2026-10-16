@@ -20,20 +20,14 @@ use support::runs::RecordOutput;
 const FIELDS_BYTES: usize = 256_000;
 
 struct Fixture {
-    root: tempfile::TempDir,
+    root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new(fingerprint: bool) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         let child = repo.join("child");
         fs::create_dir_all(&child).unwrap();
@@ -89,11 +83,9 @@ impl Fixture {
         }
         fs::write(child.join("fingerprint"), "review-v1\n").unwrap();
         support::declaration::write(child.join("index.artf"), declaration.to_string()).unwrap();
-        Self {
-            repo,
-            state: root.path().join("state"),
-            root,
-        }
+        let state = root.path().join("state");
+        root.track(&state, &repo);
+        Self { repo, state, root }
     }
 
     fn command(&self) -> Command {
@@ -144,28 +136,34 @@ impl Fixture {
                         .build()
                         .unwrap();
                     runtime.block_on(async {
-                        let mut changes =
-                            artifactize_core::changes::Subscription::new(&self.state).await;
-                        tokio::time::timeout(
-                            support::os::patience(Duration::from_secs(15)),
-                            async {
-                                loop {
-                                    let view = artifactize_core::store::read_run(&self.state, &run)
-                                        .await
-                                        .unwrap();
-                                    if view.requests.iter().any(|request| {
-                                        request.eval_id == eval
-                                            && request.status().as_str() == expected
-                                    }) {
-                                        return;
+                        owned_run::subscribed(&self.state, async |changes| {
+                            tokio::time::timeout(
+                                support::os::patience(Duration::from_secs(15)),
+                                async {
+                                    loop {
+                                        let view =
+                                            artifactize_core::store::read_run(&self.state, &run)
+                                                .await
+                                                .unwrap();
+                                        if view.requests.iter().any(|request| {
+                                            request.eval_id == eval
+                                                && request.status().as_str() == expected
+                                        }) {
+                                            return;
+                                        }
+                                        assert_eq!(
+                                            view.run.status().as_str(),
+                                            "RUNNING",
+                                            "{view:?}"
+                                        );
+                                        changes.next_reconciled().await;
                                     }
-                                    assert_eq!(view.run.status().as_str(), "RUNNING", "{view:?}");
-                                    changes.next_reconciled().await;
-                                }
-                            },
-                        )
-                        .await
-                        .expect("saved request reaches the asserted state");
+                                },
+                            )
+                            .await
+                            .expect("saved request reaches the asserted state");
+                        })
+                        .await;
                     });
                 })
                 .join()

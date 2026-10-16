@@ -1,6 +1,4 @@
 use std::{
-    cell::RefCell,
-    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
@@ -15,7 +13,6 @@ use artifactize_core::{
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{cat_program, echo_program, false_program, shell, true_program};
-use tempfile::TempDir;
 
 #[path = "support/order.rs"]
 mod order;
@@ -33,26 +30,15 @@ const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
 
 struct Fixture {
     agent_endpoint: Option<String>,
-    repos: RefCell<BTreeSet<PathBuf>>,
-    root: TempDir,
+    root: owned_run::Root,
     state: PathBuf,
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        // Cover every submission, including terminal non-JSON callers and early unwind.
-        for repo in self.repos.get_mut().iter() {
-            owned_run::release_repo(&self.state, repo);
-        }
-    }
 }
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         Self {
             agent_endpoint: None,
-            repos: RefCell::default(),
             state: root.path().join("state"),
             root,
         }
@@ -99,7 +85,7 @@ impl Fixture {
     }
 
     fn command(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        self.repos.borrow_mut().insert(repo.to_owned());
+        self.root.track(&self.state, repo);
         let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(repo)
@@ -122,7 +108,7 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        self.repos.borrow_mut().insert(repo.to_owned());
+        self.root.track(&self.state, repo);
         let child = support::os::new_group(&mut Command::new(support::os::cli()))
             .arg("--repo")
             .arg(repo)
@@ -144,6 +130,7 @@ impl Fixture {
     }
 
     fn context(&self, repo: &Path) -> runs::Context {
+        self.root.track(&self.state, repo);
         runs::Context::new(repo, Some(&self.state), &support::os::cli()).unwrap()
     }
 
@@ -155,25 +142,27 @@ impl Fixture {
         id: &RunId,
         ready: impl Fn(&store::Request) -> bool,
     ) -> store::Request {
-        let mut changes = artifactize_core::changes::Subscription::new(&self.state).await;
-        let mut last = None;
-        tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
-            loop {
-                let view = store::read_run(&self.state, id).await.unwrap();
-                assert_eq!(view.run.repo_path, support::os::canonical(repo));
-                let request = &view.requests[0];
-                if ready(request) {
-                    return request.clone();
+        owned_run::subscribed(&self.state, async |changes| {
+            let mut last = None;
+            tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
+                loop {
+                    let view = store::read_run(&self.state, id).await.unwrap();
+                    assert_eq!(view.run.repo_path, support::os::canonical(repo));
+                    let request = &view.requests[0];
+                    if ready(request) {
+                        return request.clone();
+                    }
+                    assert_eq!(view.run.status(), RunStatus::Running, "{view:?}");
+                    last = Some(view);
+                    changes.next_reconciled().await;
                 }
-                assert_eq!(view.run.status(), RunStatus::Running, "{view:?}");
-                last = Some(view);
-                changes.next_reconciled().await;
-            }
+            })
+            .await
+            .unwrap_or_else(|error| {
+                panic!("cache ownership relation for {id} was not reached: {error}; {last:?}")
+            })
         })
         .await
-        .unwrap_or_else(|error| {
-            panic!("cache ownership relation for {id} was not reached: {error}; {last:?}")
-        })
     }
 
     async fn completed(&self, repo: &Path, id: &RunId, child: Child, code: i32) -> Value {
@@ -1749,7 +1738,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
 
 #[tokio::test]
 async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained() {
-    use artifactize_core::store::{Execution, Receipts, Request};
+    use artifactize_core::store::{Execution, OwnedReceipts as Receipts, Request};
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");

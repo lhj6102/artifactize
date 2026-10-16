@@ -50,6 +50,119 @@ async fn verify(repo: &Path, state: &Path) -> store::RunView {
 }
 
 #[tokio::test]
+async fn owned_root_releases_every_repository_before_removal_on_return_and_unwind() {
+    for unwind in [false, true] {
+        let root = owned_run::Root::from(support::os::tempdir());
+        let directory = root.path().to_owned();
+        let state = root.path().join("state");
+        let mut owners = Vec::new();
+        for name in ["first", "second"] {
+            let repo = root.path().join(name);
+            fs::create_dir(&repo).unwrap();
+            fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+            root.track(&state, &repo);
+            let saved = support::runs::record(
+                &repo,
+                Some(&state),
+                &Selection::All,
+                &VerifyOptions::default(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            let control = saved.run.control.unwrap();
+            let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
+                panic!("fixture worker was admitted");
+            };
+            owners.push(owner);
+            owners.extend(control.supervisor);
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let root = root;
+            assert!(!unwind, "fixture assertion failure");
+            drop(root);
+        }));
+        if unwind {
+            assert_eq!(
+                result.unwrap_err().downcast_ref::<&str>(),
+                Some(&"fixture assertion failure")
+            );
+        } else {
+            result.unwrap();
+        }
+        assert!(
+            owners
+                .into_iter()
+                .all(|owner| !support::os::same_process_running(owner.pid.get(), owner.start_time))
+        );
+        assert!(
+            !directory.exists(),
+            "only released fixture inputs are removed"
+        );
+    }
+}
+
+#[tokio::test]
+async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_scopes() {
+    for unwind in [false, true] {
+        let parent = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir_in(parent.path(), "fixture-"));
+        let directory = root.path().to_owned();
+        let broken = root.path().join("a-broken-state");
+        let state = root.path().join("z-active-state");
+        let repo = root.path().join("repo");
+        fs::create_dir(&broken).unwrap();
+        fs::create_dir(&repo).unwrap();
+        fs::write(broken.join(DATABASE), "not SQLite").unwrap();
+        fs::write(repo.join("input"), "owned input").unwrap();
+        fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+        root.track(&broken, &repo);
+        root.track(&state, &repo);
+        let saved = support::runs::record(
+            &repo,
+            Some(&state),
+            &Selection::All,
+            &VerifyOptions::default(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let control = saved.run.control.unwrap();
+        let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
+            panic!("fixture worker was admitted");
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let root = root;
+            assert!(!unwind, "original fixture panic");
+            drop(root);
+        }));
+        let panic = result.unwrap_err();
+        if unwind {
+            assert_eq!(
+                panic.downcast_ref::<&str>(),
+                Some(&"original fixture panic")
+            );
+        } else {
+            assert!(
+                panic
+                    .downcast_ref::<String>()
+                    .unwrap()
+                    .starts_with("Fixture Run cleanup failed; inputs retained at ")
+            );
+        }
+        for owner in std::iter::once(owner).chain(control.supervisor) {
+            assert!(!support::os::same_process_running(
+                owner.pid.get(),
+                owner.start_time
+            ));
+        }
+        assert_eq!(fs::read(repo.join("input")).unwrap(), b"owned input");
+        assert!(directory.exists(), "failed cleanup retains inputs");
+        parent.close().unwrap();
+    }
+}
+
+#[tokio::test]
 async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");

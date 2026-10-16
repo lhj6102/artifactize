@@ -11,7 +11,7 @@ use std::{
 use artifactize_core::{
     human,
     project::{self, VerifyOptions, selection::Selection},
-    store::{self, Receipts, RunView},
+    store::{self, OwnedReceipts, RunView},
 };
 use serde_json::{Value, json};
 use support::os::{cat_program, false_program, true_program};
@@ -22,26 +22,22 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new(fingerprint: bool) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         write_human(&repo, fingerprint);
+        let state = root.path().join("state");
+        root.track(&state, &repo);
         Self {
             repo,
-            state: root.path().join("state"),
+            state,
             _root: root,
         }
     }
@@ -62,8 +58,8 @@ impl Fixture {
         .unwrap()
     }
 
-    async fn receipts(&self) -> Receipts {
-        Receipts::open(&self.state, &self.repo).await.unwrap()
+    async fn receipts(&self) -> OwnedReceipts {
+        OwnedReceipts::open(&self.state, &self.repo).await.unwrap()
     }
 
     fn cli_verify(&self) -> Value {

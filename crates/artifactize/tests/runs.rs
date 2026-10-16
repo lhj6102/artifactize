@@ -19,7 +19,7 @@ use std::{
 mod support;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
@@ -38,6 +38,8 @@ impl Fixture {
             {"id":"z-controlled","title":"Controlled", "profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&script)]},"payload":{"instruction":"Check."}}
         ]}).to_string()).unwrap();
         let state = root.path().join("state");
+        let root = owned_run::Root::from(root);
+        root.track(&state, &repo);
         Self {
             _root: root,
             repo,
@@ -73,28 +75,30 @@ impl Fixture {
         accepted["run"].as_str().unwrap().parse().unwrap()
     }
     async fn controlled(&self, id: &RunId) -> store::RunView {
-        let mut changes = artifactize_core::changes::Subscription::new(&self.state).await;
-        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
-            loop {
-                let view = store::read_run(&self.state, id).await.unwrap();
-                if fs::read_to_string(self.repo.join("ready"))
-                    .is_ok_and(|contents| contents == "ready")
-                    && view.requests[0].status() == RequestStatus::Green
-                    && view.requests[1].status() == RequestStatus::Running
-                    && view.requests[1].child.is_some()
-                    && matches!(
-                        view.run.control.as_ref().map(|control| control.worker),
-                        Some(runs::Worker::Admitted { .. })
-                    )
-                {
-                    return view;
+        owned_run::subscribed(&self.state, async |changes| {
+            tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+                loop {
+                    let view = store::read_run(&self.state, id).await.unwrap();
+                    if fs::read_to_string(self.repo.join("ready"))
+                        .is_ok_and(|contents| contents == "ready")
+                        && view.requests[0].status() == RequestStatus::Green
+                        && view.requests[1].status() == RequestStatus::Running
+                        && view.requests[1].child.is_some()
+                        && matches!(
+                            view.run.control.as_ref().map(|control| control.worker),
+                            Some(runs::Worker::Admitted { .. })
+                        )
+                    {
+                        return view;
+                    }
+                    assert_eq!(view.run.status(), RunStatus::Running);
+                    changes.next_reconciled().await;
                 }
-                assert_eq!(view.run.status(), RunStatus::Running);
-                changes.next_reconciled().await;
-            }
+            })
+            .await
+            .unwrap()
         })
         .await
-        .unwrap()
     }
     async fn settled(&self, id: &RunId) -> store::RunView {
         owned_run::terminal(&self.state, id).await
@@ -108,12 +112,6 @@ impl Fixture {
                 .spawn()
                 .unwrap(),
         )
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
     }
 }
 
@@ -328,22 +326,24 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
     let started = runs::start(&context, &Selection::All, &VerifyOptions::default(), None)
         .await
         .unwrap();
-    let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
-    let request = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
-        loop {
-            let view = store::read_run(&fixture.state, &started.run).await.unwrap();
-            if let Some(request) = view
-                .requests
-                .iter()
-                .find(|request| request.status() == RequestStatus::WaitingHuman)
-            {
-                break request.id.clone();
+    let request = owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+            loop {
+                let view = store::read_run(&fixture.state, &started.run).await.unwrap();
+                if let Some(request) = view
+                    .requests
+                    .iter()
+                    .find(|request| request.status() == RequestStatus::WaitingHuman)
+                {
+                    break request.id.clone();
+                }
+                changes.next_state().await;
             }
-            changes.next_state().await;
-        }
+        })
+        .await
+        .unwrap()
     })
-    .await
-    .unwrap();
+    .await;
     for args in [
         vec!["request", "claim", request.as_str(), "--reviewer", "tester"],
         vec![
@@ -409,7 +409,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
             .all(|request| request["status"] == "GREEN")
     );
     for _ in 0..2 {
-        store::Receipts::open(&fixture.state, &fixture.repo)
+        store::OwnedReceipts::open(&fixture.state, &fixture.repo)
             .await
             .unwrap();
     }
@@ -441,22 +441,24 @@ async fn a4_dead_worker_errors_without_replay_and_cleans_owned_children() {
         panic!("admitted worker");
     };
     let child = active.requests[1].child.as_ref().unwrap().pid.get();
-    let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
-    support::os::kill(owner.pid.get());
-    // Only stored reads: no runs::status/view observer performs recovery on this path.
-    // The independent supervisor must settle the dead executor itself.
-    tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
-        loop {
-            let saved = store::read_run(&fixture.state, &id).await.unwrap();
-            if saved.run.status() != RunStatus::Running {
-                assert_eq!(saved.run.status(), RunStatus::Error);
-                break;
+    owned_run::subscribed(&fixture.state, async |changes| {
+        support::os::kill(owner.pid.get());
+        // Only stored reads: no runs::status/view observer performs recovery on this path.
+        // The independent supervisor must settle the dead executor itself.
+        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+            loop {
+                let saved = store::read_run(&fixture.state, &id).await.unwrap();
+                if saved.run.status() != RunStatus::Running {
+                    assert_eq!(saved.run.status(), RunStatus::Error);
+                    break;
+                }
+                changes.next_reconciled().await;
             }
-            changes.next_reconciled().await;
-        }
+        })
+        .await
+        .unwrap();
     })
-    .await
-    .unwrap();
+    .await;
     let settled = store::read_run(&fixture.state, &id).await.unwrap();
     assert_eq!(
         settled.run.control.unwrap().failure_code,

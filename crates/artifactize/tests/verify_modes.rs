@@ -3,9 +3,8 @@
 mod owned_run;
 
 use artifactize_core::{
-    changes::Subscription,
     human,
-    store::{self, Receipts, RunView},
+    store::{self, OwnedReceipts as Receipts, RunView},
     types::{RequestStatus, RunId, RunStatus},
 };
 use serde_json::{Value, json};
@@ -25,17 +24,11 @@ use tokio_util::sync::CancellationToken;
 mod support;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
     script: PathBuf,
 }
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();
@@ -46,9 +39,12 @@ impl Fixture {
             &script,
             "import pathlib, sys, time\nname = sys.argv[1]\npathlib.Path(name + '-ready').write_text('ready')\nwhile not pathlib.Path(name + '-release').exists(): time.sleep(0.01)\nsys.exit(int(pathlib.Path(name + '-release').read_text()))\n",
         );
+        let state = root.path().join("state");
+        let root = owned_run::Root::from(root);
+        root.track(&state, &repo);
         Self {
             repo,
-            state: root.path().join("state"),
+            state,
             script,
             _root: root,
         }
@@ -93,38 +89,41 @@ impl Fixture {
             .unwrap()
     }
     async fn until(&self, id: &RunId, predicate: impl Fn(&RunView) -> bool) -> RunView {
-        let mut changes = Subscription::new(&self.state).await;
-        let result = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
-            loop {
+        owned_run::subscribed(&self.state, async |changes| {
+            let result =
+                tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+                    loop {
+                        let view = store::read_run(&self.state, id).await.unwrap();
+                        if predicate(&view) {
+                            return view;
+                        }
+                        assert_eq!(
+                            view.run.status(),
+                            RunStatus::Running,
+                            "{}",
+                            serde_json::to_string_pretty(&view).unwrap()
+                        );
+                        changes.next_reconciled().await;
+                    }
+                })
+                .await;
+            if result.is_err() {
                 let view = store::read_run(&self.state, id).await.unwrap();
-                if predicate(&view) {
-                    return view;
-                }
-                assert_eq!(
-                    view.run.status(),
-                    RunStatus::Running,
-                    "{}",
-                    serde_json::to_string_pretty(&view).unwrap()
+                panic!(
+                    "observable state not reached: {}\n{}",
+                    serde_json::to_string_pretty(&view).unwrap(),
+                    fs::read_to_string(
+                        self.state
+                            .join("runs")
+                            .join(id.as_str())
+                            .join("worker.stderr")
+                    )
+                    .unwrap_or_default()
                 );
-                changes.next_reconciled().await;
             }
+            result.unwrap()
         })
-        .await;
-        if result.is_err() {
-            let view = store::read_run(&self.state, id).await.unwrap();
-            panic!(
-                "observable state not reached: {}\n{}",
-                serde_json::to_string_pretty(&view).unwrap(),
-                fs::read_to_string(
-                    self.state
-                        .join("runs")
-                        .join(id.as_str())
-                        .join("worker.stderr")
-                )
-                .unwrap_or_default()
-            );
-        }
-        result.unwrap()
+        .await
     }
     async fn settled(&self, id: &RunId) -> RunView {
         owned_run::terminal(&self.state, id).await

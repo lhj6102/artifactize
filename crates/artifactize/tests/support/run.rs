@@ -4,7 +4,12 @@
     reason = "each CLI test binary uses a different fixture seam"
 )]
 
-use artifactize_core::{runs, types::RunId};
+#[path = "root.rs"]
+mod root;
+pub type Root = root::Root;
+
+use artifactize_core::{changes::Subscription, runs, types::RunId};
+use futures_util::FutureExt;
 use std::{
     collections::BTreeSet,
     io::{self, BufRead},
@@ -13,6 +18,28 @@ use std::{
     process::{Child, Output},
     time::Duration,
 };
+
+/// Register before observing and join watch/hub/SQLite shutdown before returning a value,
+/// an error or an assertion panic. Watchdogs belong inside the observation scope too.
+pub async fn subscribed<T>(state: &Path, observe: impl AsyncFnOnce(&mut Subscription) -> T) -> T {
+    let mut changes = Subscription::new(state).await;
+    let result = std::panic::AssertUnwindSafe(async { observe(&mut changes).await })
+        .catch_unwind()
+        .await;
+    let closed = changes.close().await;
+    match result {
+        Ok(value) => {
+            closed.expect("join the fixture subscription's shutdown");
+            value
+        }
+        Err(panic) => {
+            if let Err(error) = closed {
+                eprintln!("Fixture subscription shutdown failed: {error}");
+            }
+            std::panic::resume_unwind(panic)
+        }
+    }
+}
 
 /// Own only the caller process. Disposing a `run show --wait` observer must not cancel its Run.
 pub struct Watcher(Option<Child>);
@@ -214,10 +241,17 @@ impl Drop for RunChild {
 /// Release only Runs in this fixture's repository/state, independently of any observers.
 /// Submit-only fixtures own execution here; dropping an individual watcher still does not.
 pub fn release_repo(state: &Path, repo: &Path) {
-    if !state.join(artifactize_core::store::DATABASE).is_file() {
-        return;
+    let cleanup = release_repo_result(state, repo);
+    if !std::thread::panicking() {
+        cleanup.expect("fixture releases all its submitted Runs before state");
     }
-    let cleanup = std::thread::scope(|scope| {
+}
+
+pub(super) fn release_repo_result(state: &Path, repo: &Path) -> Result<(), String> {
+    if !state.join(artifactize_core::store::DATABASE).is_file() {
+        return Ok(());
+    }
+    std::thread::scope(|scope| {
         scope
             .spawn(|| {
                 let runtime = tokio::runtime::Builder::new_current_thread()
@@ -251,111 +285,107 @@ pub fn release_repo(state: &Path, repo: &Path) {
             })
             .join()
     })
-    .unwrap_or_else(|_| Err("fixture repository cleanup panicked".into()));
-    if !std::thread::panicking() {
-        cleanup.expect("fixture releases all its submitted Runs before state");
-    }
+    .unwrap_or_else(|_| Err("fixture repository cleanup panicked".into()))
 }
 
 async fn release(context: &runs::Context, state: &Path, id: &RunId) -> Result<(), String> {
     // A watchdog bounds broken fixture cleanup, never the execution's lifetime.
     const CLEANUP_BOUND: Duration = Duration::from_secs(30);
-    let mut changes = artifactize_core::changes::Subscription::new(state).await;
-    let result = tokio::time::timeout(crate::support::os::patience(CLEANUP_BOUND), async {
-        let saved = artifactize_core::store::read_run(state, id).await?;
-        if saved.run.status() == artifactize_core::types::RunStatus::Running {
-            // This is an explicit fixture cleanup stimulus, never an observation barrier.
-            runs::cancel(context, id).await?;
-            loop {
-                let saved = artifactize_core::store::read_run(state, id).await?;
-                if saved.run.status() != artifactize_core::types::RunStatus::Running {
-                    break;
-                }
-                changes.next_reconciled().await;
-            }
-        }
-        // Terminal state is saved before the durable worker closes its last
-        // connection. Its exact identity must also exit before TempDir drops.
-        let view = artifactize_core::store::read_run(state, id).await?;
-        if let Some(control) = view.run.control {
-            let owner = match control.worker {
-                runs::Worker::Starting { launcher } => Some(launcher),
-                runs::Worker::Admitted { owner } => Some(owner),
-                runs::Worker::Legacy => None,
-            };
-            for owner in owner.into_iter().chain(control.supervisor) {
-                while crate::support::os::same_process_running(owner.pid.get(), owner.start_time) {
+    subscribed(state, async |changes| {
+        let result = tokio::time::timeout(crate::support::os::patience(CLEANUP_BOUND), async {
+            let saved = artifactize_core::store::read_run(state, id).await?;
+            if saved.run.status() == artifactize_core::types::RunStatus::Running {
+                // This is an explicit fixture cleanup stimulus, never an observation barrier.
+                runs::cancel(context, id).await?;
+                loop {
+                    let saved = artifactize_core::store::read_run(state, id).await?;
+                    if saved.run.status() != artifactize_core::types::RunStatus::Running {
+                        break;
+                    }
                     changes.next_reconciled().await;
                 }
             }
-        }
-        Ok::<_, String>(())
+            // Terminal state is saved before the durable worker closes its last
+            // connection. Its exact identity must also exit before TempDir drops.
+            let view = artifactize_core::store::read_run(state, id).await?;
+            if let Some(control) = view.run.control {
+                let owner = match control.worker {
+                    runs::Worker::Starting { launcher } => Some(launcher),
+                    runs::Worker::Admitted { owner } => Some(owner),
+                    runs::Worker::Legacy => None,
+                };
+                for owner in owner.into_iter().chain(control.supervisor) {
+                    while crate::support::os::same_process_running(
+                        owner.pid.get(),
+                        owner.start_time,
+                    ) {
+                        changes.next_reconciled().await;
+                    }
+                }
+            }
+            Ok::<_, String>(())
+        })
+        .await;
+        result.map_err(|_| "owned Run cleanup timed out".to_owned())?
     })
-    .await;
-    // Drop requests cancellation but does not join the probe's SQLite worker. Close it
-    // even after cleanup errors/timeouts, before this fixture's runtime and state disappear.
-    changes.close().await?;
-    result.map_err(|_| "owned Run cleanup timed out".to_owned())?
+    .await
 }
 
 /// Observe the saved terminal state without reconciling, killing owners or rewriting audit.
 pub async fn terminal(state: &Path, id: &RunId) -> artifactize_core::store::RunView {
     // Bound a broken fixture observation, not the Run's execution lifetime.
     const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
-    let mut changes = artifactize_core::changes::Subscription::new(state).await;
-    let mut latest = None;
-    let result = tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
-        loop {
-            let view = artifactize_core::store::read_run(state, id).await?;
-            if view.run.status() != artifactize_core::types::RunStatus::Running {
-                return Ok::<_, String>(view);
+    subscribed(state, async |changes| {
+        let mut latest = None;
+        let result = tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
+            loop {
+                let view = artifactize_core::store::read_run(state, id).await?;
+                if view.run.status() != artifactize_core::types::RunStatus::Running {
+                    return Ok::<_, String>(view);
+                }
+                latest = Some(view);
+                changes.next_reconciled().await;
             }
-            latest = Some(view);
-            changes.next_reconciled().await;
-        }
-    })
-    .await;
-    changes
-        .close()
-        .await
-        .expect("close terminal fixture subscription");
-    result
-        .unwrap_or_else(|error| {
-            panic!(
-                "saved terminal fixture state: {error}; last saved Run/control/requests: {}",
-                serde_json::to_string(&latest).expect("serialize the observed fixture snapshot")
-            )
         })
-        .expect("read terminal fixture state")
+        .await;
+        result
+            .unwrap_or_else(|error| {
+                panic!(
+                    "saved terminal fixture state: {error}; last saved Run/control/requests: {}",
+                    serde_json::to_string(&latest)
+                        .expect("serialize the observed fixture snapshot")
+                )
+            })
+            .expect("read terminal fixture state")
+    })
+    .await
 }
 
 /// Observe a saved Human request only after its admitted worker has released scheduling.
 /// A request becoming WAITING_HUMAN does not itself establish this distinct Run state.
 pub async fn human_waiting(state: &Path, id: &RunId) -> artifactize_core::store::RunView {
     const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
-    let mut changes = artifactize_core::changes::Subscription::new(state).await;
-    let result = tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
-        loop {
-            let view = artifactize_core::store::read_run(state, id).await?;
-            if view.run.control.as_ref().is_some_and(|control| {
-                matches!(control.worker, runs::Worker::Admitted { .. })
-                    && control.activity == runs::Activity::Waiting
-            }) && view.requests.iter().any(|request| {
-                request.status() == artifactize_core::types::RequestStatus::WaitingHuman
-            }) {
-                return Ok::<_, String>(view);
+    subscribed(state, async |changes| {
+        let result = tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
+            loop {
+                let view = artifactize_core::store::read_run(state, id).await?;
+                if view.run.control.as_ref().is_some_and(|control| {
+                    matches!(control.worker, runs::Worker::Admitted { .. })
+                        && control.activity == runs::Activity::Waiting
+                }) && view.requests.iter().any(|request| {
+                    request.status() == artifactize_core::types::RequestStatus::WaitingHuman
+                }) {
+                    return Ok::<_, String>(view);
+                }
+                changes.next_reconciled().await;
             }
-            changes.next_reconciled().await;
-        }
+        })
+        .await;
+        result
+            .expect("saved waiting Human Run and admitted worker")
+            .expect("read waiting fixture state")
     })
-    .await;
-    changes
-        .close()
-        .await
-        .expect("close waiting fixture subscription");
-    result
-        .expect("saved waiting Human Run and admitted worker")
-        .expect("read waiting fixture state")
+    .await
 }
 
 /// Ownership of every submission to a fixture repository, independent of its observers.
@@ -418,4 +448,61 @@ fn release_run(state: &Path, repo: &Path, run: &RunId) -> Result<(), String> {
             .join()
     })
     .unwrap_or_else(|_| Err("owned Run cleanup panicked".into()))
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+
+    #[derive(Clone, Copy)]
+    enum Exit {
+        Success,
+        Error,
+        Watchdog,
+        Panic,
+    }
+
+    #[tokio::test]
+    async fn subscription_releases_sqlite_before_return_error_watchdog_and_panic() {
+        for exit in [Exit::Success, Exit::Error, Exit::Watchdog, Exit::Panic] {
+            let root = crate::support::os::tempdir();
+            let state = root.path().join("state");
+            let repo = root.path().join("repo");
+            std::fs::create_dir(&repo).unwrap();
+            let writer = artifactize_core::store::OwnedReceipts::open(&state, &repo)
+                .await
+                .unwrap();
+            drop(writer);
+            let database = state.join(artifactize_core::store::DATABASE);
+            let result = std::panic::AssertUnwindSafe(subscribed(&state, async |_changes| {
+                assert!(
+                    !crate::support::os::database_released(&database).unwrap(),
+                    "the registered subscription owns a real SQLite reader"
+                );
+                match exit {
+                    Exit::Success => Ok(()),
+                    Exit::Error => Err("fixture observation error"),
+                    Exit::Watchdog => {
+                        tokio::time::timeout(Duration::ZERO, std::future::pending::<()>())
+                            .await
+                            .map_err(|_| "fixture watchdog")
+                    }
+                    Exit::Panic => panic!("fixture observation assertion"),
+                }
+            }))
+            .catch_unwind()
+            .await;
+            match exit {
+                Exit::Success => assert_eq!(result.unwrap(), Ok(())),
+                Exit::Error => assert_eq!(result.unwrap(), Err("fixture observation error")),
+                Exit::Watchdog => assert_eq!(result.unwrap(), Err("fixture watchdog")),
+                Exit::Panic => assert!(result.is_err()),
+            }
+            assert!(
+                crate::support::os::database_released(&database).unwrap(),
+                "the observation joins its SQLite worker before returning"
+            );
+            root.close().expect("remove the released fixture state");
+        }
+    }
 }

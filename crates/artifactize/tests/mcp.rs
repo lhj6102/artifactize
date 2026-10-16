@@ -24,16 +24,10 @@ const FIXTURE_BOUND: Duration = Duration::from_secs(30);
 const PROTOCOL_BOUND: Duration = Duration::from_secs(45);
 
 struct Project {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
-impl Drop for Project {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Project {
     fn new(evals: Value) -> Self {
         let root = support::os::tempdir();
@@ -45,9 +39,12 @@ impl Project {
             json!({"name":"app","fingerprint":{"files":["content.txt"]},"evals":evals}).to_string(),
         )
         .unwrap();
+        let state = root.path().join("state");
+        let root = owned_run::Root::from(root);
+        root.track(&state, &repo);
         Self {
             repo,
-            state: root.path().join("state"),
+            state,
             _root: root,
         }
     }
@@ -73,23 +70,25 @@ impl Project {
         eval: &str,
         expected: artifactize_core::types::RequestStatus,
     ) {
-        let mut changes = artifactize_core::changes::Subscription::new(&self.state).await;
-        tokio::time::timeout(support::os::patience(FIXTURE_BOUND), async {
-            loop {
-                let view = store::read_run(&self.state, run).await.unwrap();
-                if view
-                    .requests
-                    .iter()
-                    .any(|request| request.eval_id == eval && request.status() == expected)
-                {
-                    return;
+        owned_run::subscribed(&self.state, async |changes| {
+            tokio::time::timeout(support::os::patience(FIXTURE_BOUND), async {
+                loop {
+                    let view = store::read_run(&self.state, run).await.unwrap();
+                    if view
+                        .requests
+                        .iter()
+                        .any(|request| request.eval_id == eval && request.status() == expected)
+                    {
+                        return;
+                    }
+                    assert!(view.run.status() == RunStatus::Running);
+                    changes.next_reconciled().await;
                 }
-                assert!(view.run.status() == RunStatus::Running);
-                changes.next_reconciled().await;
-            }
+            })
+            .await
+            .unwrap();
         })
-        .await
-        .unwrap();
+        .await;
     }
 }
 async fn marker(path: &std::path::Path, expected: &str) {

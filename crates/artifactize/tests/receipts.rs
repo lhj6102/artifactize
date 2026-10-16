@@ -1,8 +1,8 @@
 use std::{fs, process::Command, sync::mpsc, thread};
 
 use artifactize_core::store::{
-    DATABASE, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions, read_latest_requests,
-    read_request, read_requests, read_run, read_runs,
+    DATABASE, OwnedReceipts, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions,
+    read_latest_requests, read_request, read_requests, read_run, read_runs,
 };
 use rusqlite::Connection;
 
@@ -40,13 +40,13 @@ impl Drop for Initializer {
 
 #[tokio::test]
 async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     assert!(read_run(&state, "missing").await.is_err());
     assert!(!state.exists());
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     drop(receipts);
     // Future schema metadata is an explicit input; observations have no write capability.
     Connection::open(state.join(DATABASE))
@@ -137,12 +137,12 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
 
 #[tokio::test]
 async fn readers_observe_empty_state_until_schema_commits() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let template = root.path().join("template");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let receipts = Receipts::open(&template, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&template, &repo).await.unwrap();
     let db = Connection::open_with_flags(
         template.join(DATABASE),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -202,7 +202,7 @@ async fn readers_observe_empty_state_until_schema_commits() {
 
 #[tokio::test]
 async fn repositories_share_one_state_database() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     // The long, plain paths artifactize records, whatever form TEMP takes.
     let base = support::os::canonical(root.path());
     let first = base.join("first");
@@ -217,8 +217,8 @@ async fn repositories_share_one_state_database() {
         )
         .unwrap();
     }
-    let _first_lease = owned_run::RepoLease::new(&state, &first);
-    let _second_lease = owned_run::RepoLease::new(&state, &second);
+    root.track(&state, &first);
+    root.track(&state, &second);
     let mut saved = Vec::new();
     for explicit in [false, true] {
         for repo in [&first, &second] {
@@ -283,11 +283,11 @@ async fn repositories_share_one_state_database() {
 
 #[tokio::test]
 async fn schema_allows_only_one_active_execution_per_key() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let _receipts = Receipts::open(&state, &repo).await.unwrap();
+    let _receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     let db = Connection::open(state.join(DATABASE)).unwrap();
     let insert = "INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?, ?, 'hash', 1, 1, ?, '{}')";
     db.execute(insert, ["first", "shared", "RUNNING"]).unwrap();
@@ -310,7 +310,7 @@ async fn schema_allows_only_one_active_execution_per_key() {
 
 #[test]
 fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), r#"{"name":"basis","basis":true}"#)
@@ -341,7 +341,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     }
     assert!(!repo.join("state").exists());
     let state = root.path().join("state");
-    let _lease = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     fs::create_dir(&state).unwrap();
     link_dir(&repo, &state.join("runs"));
     let output = Command::new(support::os::cli())
@@ -376,7 +376,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
 
 #[tokio::test]
 async fn sqlite_files_cannot_redirect_writes_through_links() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -410,11 +410,11 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
 async fn schema_five_profiles_survive_typed_reads_and_invalid_states_fail_at_parse_boundary() {
     use artifactize_core::store::RunView;
     use serde_json::json;
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     // Literal schema-5 fixture: optional profile fields were serialized as null.
     let view: RunView = serde_json::from_value(json!({
         "id":"run-old",
