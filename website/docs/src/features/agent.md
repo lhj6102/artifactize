@@ -51,9 +51,19 @@ Return only one JSON object matching the schema.
 ```
 
 If the repaired output is still invalid, the review is ERROR, and the saved error
-keeps only the error code, never the model's output. `max_tokens` and `max_tool_calls` are
-enforced client-side before further tools execute; neither becomes a provider
-request parameter.
+keeps only the error code, never the model's output. See the
+[owner-result schema contract](declarations.md#owner-result-schemas) for allowed
+fields, reserved names and defaults.
+
+`max_tokens` and `max_tool_calls` are optional client-side budgets; omission leaves
+each unlimited. Neither is sent as a provider request parameter. The token budget
+adds each successful response's reported `total_tokens`, including reported cache
+usage, across the whole review. Missing totals count as zero for enforcement.
+The check happens **after** a response and fails only when the cumulative total
+exceeds the limit: it can overshoot and is not a hard generation or spending cap.
+The tool budget counts attempted calls before invocation, including calls that
+later fail, not just successful tools. Exceeding either stops further work with
+`PROVIDER_BUDGET_EXCEEDED`.
 
 The rig adapter, retries, tool results and usage counters are in
 [Agent backends](#agent-backends).

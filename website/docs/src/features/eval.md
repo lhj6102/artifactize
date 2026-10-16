@@ -18,8 +18,9 @@ while its [inputs and criteria](fingerprint.md#the-reuse-key) still match.
 
 Write the review criteria in `payload.instruction`. For Agent and Human evals,
 `pass_schema` and `fail_schema` describe the owner's result fields; artifactize
-adds the verdict. Runtime evals use their command's exit status instead of owner
-schemas. Named `profile_variants` let a caller select an alternative execution
+adds the verdict. See [Owner-result schemas](declarations.md#owner-result-schemas)
+for the closed envelope, reserved names and the verdict-only default. Runtime
+evals use their command's exit status instead of owner schemas. Named `profile_variants` let a caller select an alternative execution
 profile without editing the judgment; see [Declarations](declarations.md).
 
 A fourth, non-executing kind, [dependency](artifact.md#dependency-evals), expresses

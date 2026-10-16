@@ -63,8 +63,9 @@ filter results. Binary (NUL) and invalid UTF-8 files are skipped in their entire
 Search follows logical mounts without repeating a mount cycle. Bounds are 10,000
 traversed entries, 8 MiB per grep file, 64 MiB searched,
 and 512 KiB per JSON result. Search limits or skipped oversized files set
-`truncated: true`; narrow the path/pattern to continue. Listing a directory with
-more than 10,000 entries returns an error. Listing can page early at the result
+`truncated: true`; narrow the path/pattern to continue. Separately, encountering
+any one directory with more than 10,000 entries fails `list`, `glob` or `grep`
+with an error, not a truncated search result. Listing can page early at the result
 byte cap. Built-in arguments use the same bounded JSON Schema admission as commands.
 
 The `json` protocol receives exactly one request on stdin:
@@ -115,6 +116,7 @@ do not increment the counter. Pins are provenance, not part of the
 changes, cover it in a fingerprint.
 Successful stdout is one JSON object with 1–32 content blocks:
 `{"content":[{"type":"text","text":"..."},{"type":"json","data":{}}]}`.
+Image blocks are described [below](#image-results).
 Text is at most 64 KiB per block; compact JSON data at most 512 KiB per block;
 the normalized result at most 8 MiB. Both process streams are bounded at 16 MiB.
 An optional `isError` boolean is accepted. Exit-0 authored errors must have
@@ -123,6 +125,34 @@ exactly one nonblank text block, such as
 These reach the reviewer unchanged. Nonzero exit, crash, malformed/truncated
 JSON, and process failures yield generic errors; stderr is never forwarded.
 There are no observation receipts.
+
+### Image results
+
+A JSON command can return an image block with `mimeType` and **exactly one** of
+`data` (standard base64 bytes) or `path` (an output file):
+
+```json
+{"content":[{"type":"image","mimeType":"image/png","data":"<base64-encoded PNG bytes>"}]}
+```
+
+```json
+{"content":[{"type":"image","mimeType":"image/png","path":"screenshots/board.png"}]}
+```
+
+Write the second form's file below the request's `context.outputDir`. A relative
+path starts there; an absolute path is accepted only when it is still below that
+directory. Traversal, symlinks in any component, special files and files outside
+that output directory are refused. Artifactize reads and embeds the bytes before
+removing the invocation's output, so the returned result is self-contained base64,
+not a dangling local file path.
+
+Images must be nonempty PNG, JPEG or WebP, at most **4 MiB inclusive** of decoded
+bytes. The bytes, not the filename extension, identify the format, and must match
+`image/png`, `image/jpeg` or `image/webp` respectively. Invalid base64, a MIME
+mismatch, unsupported formats such as GIF/BMP, and animated PNG are rejected.
+The overall normalized 8 MiB tool-result limit still applies after base64 encoding.
+[`view_image`](builtin.md#view_image) returns the same embedded image form and
+uses the same byte/format limits, but reads its file from admitted Artifact scope.
 
 For `plain`, only top-level declared `input_schema.properties` can appear as argv
 placeholders. Whole-token `{query}` and embedded `--query={query}` both work.

@@ -48,15 +48,9 @@ by ID, not by their position in the TOML source.
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals |
 | `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind; not allowed for dependency evals |
 
-[Tool sessions](tools/agent.md#tool-sessions) own start, stop and bound-call
-processes for one review. Stop runs on normal release, panic and caller-runtime
-shutdown; abrupt owner death instead uses identity-checked crash recovery before
-the next session starts, including when the exited owner is an unreaped zombie.
-Retirement errors do not skip stop or bound-call cleanup, and unconfirmed process
-cleanup keeps its journals instead of deleting them. A released supervisor lease
-makes failed cleanup recoverable even while the owner process remains alive. There
-are no declaration options for these lifetimes or cleanup bounds. Job descendants
-finish terminating before their session files are removed.
+[Tool sessions](tools/agent.md#tool-sessions) keep a harness alive for one review.
+Artifactize owns their start, stop, cleanup and crash recovery; declarations expose
+no lifecycle or cleanup-timing options. The linked reference gives the full contract.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
@@ -120,6 +114,39 @@ own project generator and commit its `.artf` output. Older fields such as
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
 option is also rejected.
+
+## Owner-result schemas
+
+Agent and Human results contain a `verdict` plus the owner's fields. Declare only
+those owner fields in `pass_schema` (GREEN) and `fail_schema` (RED); artifactize
+supplies `verdict`. For example, the `summary` schema above accepts
+`{"verdict":"GREEN","summary":"All requirements are covered."}` from an Agent.
+A Human supplies just `{"summary":"All requirements are covered."}` as their form
+fields, with GREEN selected separately.
+
+The result envelope is deliberately narrower than a general JSON Schema:
+
+- `type`, when present, must be `"object"`. `additionalProperties`, when present,
+  must be `false`; artifactize forces both object type and closed properties in
+  the final envelope even when omitted.
+- Every permitted top-level owner field must appear explicitly in `properties`.
+  Neither `patternProperties` nor `$ref` can admit an undeclared top-level field.
+- Top-level `allOf`, `anyOf`, `oneOf` and `not` are rejected. Compose schemas
+  inside an owner field instead; nested objects, arrays and local references are
+  supported by the schema validator.
+- Reserved names cannot be declared or required: `verdict`, `reference`,
+  `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`,
+  `stderr`, `durationMs` and `exitCode`. Audit and execution data live outside
+  owner fields.
+- Omitting one verdict's schema permits **no owner fields** for that verdict:
+  an Agent returns only `{"verdict":"GREEN"}` or `{"verdict":"RED"}`, and the
+  Human form fields are `{}`. An empty object schema has the same closed envelope.
+
+Schemas are limited to 8 MiB. An Agent's raw final response is limited to 1 MiB;
+the normalized result is limited to 256000 UTF-16 code units. Invalid final
+responses get one bounded repair attempt, not silent field removal. The
+[Human submission interface](../cli/index.md#command-reference) separately bounds
+its input and reports validation errors without settling the request.
 
 ## Graph Artifact
 

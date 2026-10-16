@@ -48,7 +48,7 @@ to that program, not artifactize.
 | `tools help PROGRAM [SUBCOMMAND...]` | trailing arguments passed to PROGRAM before `--help` | text | 0 success, 1 tool error, 2 usage |
 | `tools open TARGET` | — | opens default application | 0 success, 1 tool error, 2 usage |
 | `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | text or JSON | 0 |
-| `logout codex` | revokes and removes artifactize's stored tokens; leaves read-only auth files alone | text or JSON | 0 |
+| `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | text or JSON | 0 after local sign-out |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
 | `remote logout` | | text or JSON | 0 |
 | `remote status` | | text or JSON | 0 signed in, 1 not |
@@ -69,10 +69,22 @@ cancelled, 4 INCOMPLETE, 5 SIGNOFFS_PENDING (only sign-offs remain, not approval
 Ctrl-C stops a watcher with exit 130; closing it never cancels the Run. `run show --wait` follows a RUNNING
 Run until it finishes; when its own timeout expires first it prints the current
 Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
-(unknown, repeated, conflicting or missing options and values) and operational
+(unknown, repeated nonrepeatable, conflicting or missing options and values) and operational
 errors: text on stderr, or `{"error":"..."}` on stdout with `--json` (except
 `mcp`, whose stdout remains protocol-only). There is no
 `plan`, `history` or `--full`.
+
+List options `--reuse-only` and `server token add --scopes` may be repeated;
+their comma-separated values accumulate across occurrences. This does not apply
+to the common `--repo`, `--state-dir` and `--json` options, which are accepted once.
+`run show --timeout-ms` requires an integer from 1 through 2147483647 milliseconds;
+a value outside that range is a usage error (exit 2).
+
+`logout codex` returning 0 confirms local sign-out, not necessarily server-side
+revocation. Revocation is best-effort: if it cannot be confirmed, the command warns
+on stderr and its JSON result includes `"revoked":false` (true when confirmed).
+Local tokens are still removed; a read-only external auth file is never changed.
+
 
 Run/request ID arguments (including `request list --run` and `review REQUEST_ID`)
 are validated before reading state: 1–200 ASCII letters, digits, `-`, `_` or `.`,

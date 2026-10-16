@@ -8,23 +8,57 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
-From the repository root, with state kept apart from your real state:
+Keep this tour's reviews apart from your normal state. In a POSIX shell (for
+example Bash or zsh), the first line below creates a fresh temporary folder with
+`mktemp -d` and tells artifactize to keep its state there. `export` also passes that
+setting to commands launched from this terminal. Then enter the example and check
+its declarations:
 
 ```sh
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)
 cd examples/runtime-relations
-artifactize config check    # static validation; runs no owner code
-artifactize status          # exit 1: two evals would execute, guide/terms waits for them
-artifactize config graph    # Artifacts, evals and child/mount/reference relations
-artifactize verify --all --wait    # three GREEN results, exit 0; prints "Run: RUN_ID"
-artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, fingerprint
-artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
-artifactize status          # exit 0: every eval shows "PASS — reuse"
+artifactize config check
+artifactize status
+artifactize config graph
 ```
 
-In PowerShell, set the state directory with
-`$env:ARTIFACTIZE_STATE_HOME = (New-Item -ItemType Directory (Join-Path $env:TEMP (New-Guid))).FullName`
-instead; the `artifactize` commands are the same.
+In PowerShell, replace the first line with
+`$env:ARTIFACTIZE_STATE_HOME = (New-Item -ItemType Directory (Join-Path $env:TEMP (New-Guid))).FullName`.
+This creates a uniquely named folder under Windows' temporary directory and saves
+its path in the same setting. The `artifactize` commands are unchanged.
+
+`config check` validates the declarations without running project programs.
+`status` predicts two checks would execute and a third waits for their evidence;
+its exit code is 1 because the project is not yet satisfied. `config graph` shows
+the pieces and their input relationships. Now run all three checks and wait for
+the results:
+
+```sh
+artifactize verify --all --wait
+```
+
+All three results should be GREEN, with exit code 0 (success). The output names
+the saved Run, with an identifier such as `run-Abc123`. Replace `RUN_ID` in the
+next command with **your printed identifier**, not those literal words:
+
+```sh
+artifactize run show RUN_ID
+```
+
+This prints the saved Run as JSON, a structured text record. `argv` is the list
+of arguments passed to a program; `stdout` is the text that program printed.
+The record also includes fingerprints identifying the reviewed inputs.
+
+Run the same checks again:
+
+```sh
+artifactize verify --all --wait
+artifactize status
+```
+
+Nothing executes this time: all three results are reused. Both commands exit 0,
+and status identifies the reusable results. Keep this terminal open so later
+steps use the same temporary state directory.
 
 The [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) also shows how to make a check RED. Each folder declares itself in
 TOML `index.artf`; omission of `fingerprint` uses artifactsum. To disable reuse, set
@@ -74,6 +108,8 @@ Both terminals must use the same temporary state directory. Before starting the
 waiting command below, print the first terminal's value with
 `echo "$ARTIFACTIZE_STATE_HOME"` (PowerShell: `$env:ARTIFACTIZE_STATE_HOME`).
 In the second terminal, replace `STATE_DIRECTORY` below with that printed path.
+Use the new Run ID from the waiting command for `RUN_ID`; replace `REQUEST_ID`
+with the waiting request identifier printed by `request list`.
 For PowerShell, use `$env:ARTIFACTIZE_STATE_HOME = "STATE_DIRECTORY"` instead of
 `export`. Then open the same example directory.
 
@@ -123,28 +159,11 @@ For Human claims, tools and verdict forms, see
 
 ## Team review store (optional)
 
-To share verdicts across machines and CI, run `artifactize server` on one host and
-give each machine a token:
-
-```sh
-artifactize --state-dir /srv/artifactize server token add alice-laptop --scopes read,publish,human
-artifactize --state-dir /srv/artifactize server token add ci --scopes read
-artifactize --state-dir /srv/artifactize server run   # loopback; put a TLS proxy or tunnel in front
-```
-
-On each machine:
-
-```sh
-artifactize remote login https://reviews.example/     # paste the token; input is hidden when the terminal supports it
-artifactize remote status
-```
-
-`verify` then reuses verdicts from the store and publishes its own. CI needs
-only `ARTIFACTIZE_REMOTE` and a read-only `ARTIFACTIZE_REMOTE_TOKEN`. If the
-store is unreachable, `verify` warns once and reviews locally. `doctor` checks
-the remote configuration offline. See
-[Team review store](../features/team/index.md) and the
-[team walkthrough](../features/team/walkthrough.md).
+A team review store shares reusable verdicts across machines and CI. Each machine
+signs in with a token, a secret that grants its allowed actions; CI should receive
+read-only access so it cannot create an approval. The [team guide](../features/team/index.md)
+and [walkthrough](../features/team/walkthrough.md) cover server setup, tokens and
+trying the same review from a second machine.
 
 ## Next steps
 

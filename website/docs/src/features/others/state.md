@@ -102,6 +102,22 @@ subprocess or async suspension. Completed results with a reuse key are shared
 within this database; cross-process claims and polling waiters prevent duplicate
 execution for the same key.
 
+## Unreadable records
+
+An individual saved record can be unreadable even when the database and its other
+records are valid. Artifactize skips that record as review evidence rather than
+inventing a verdict. Invalid requests are excluded from Run-list request counts;
+a Run with damaged requests can still open, while an unreadable Run record is
+marked unreadable rather than treated as a normal saved Run.
+
+Status and Run listings expose `unreadable` diagnostics with the record's `kind`,
+`id` and `reason`; evidence readers also print an `Unreadable ...` diagnostic on
+stderr. Valid records remain accessible. Preserve the state for diagnosis and
+start a new verification when fresh evidence is needed; missing counts do not
+mean the damaged reviews passed. This is different from a database-open or
+unsupported-schema failure, which can prevent the command from reading state at
+all. `doctor` checks that database/schema readiness; it is not a record-repair tool.
+
 ## Cache inspection
 
 ```sh
@@ -199,21 +215,10 @@ cap, only the backend's available slots limit its reviews. Explicit `run cancel 
 its waiting requests with status ERROR and `errorCode = "CANCELLED"`, and its held slots are released. Interrupting
 `verify --wait` only stops observation; it does not cancel the Run.
 
-Tool-session directories live under `$STATE/tool-sessions/`, separately from saved
-conversations. They retain admission records for start, stop and bound invocation
-processes until those groups have been cleaned. Removal is conditional on confirmed
-process cleanup, not merely on the supervisor returning. Before the next tool session
-starts, exited-owner state (zombies included), or state whose supervisor lease has
-been released after failed cleanup, is swept using saved process identities on Unix;
-Windows Jobs
-terminate with their owner and pending file sharing dispositions are given a bounded
-wait. Normal release, panic and caller-runtime shutdown run stop and await process
-cleanup before removing the directory. Retirement errors still attempt stop and
-join bound calls; unconfirmed termination or failed removal retains recoverable
-state and reports an error. An active lease protects another concurrent session;
-a released lease permits recovery even while the owner process is alive. Sweep
-failures refuse startup without erasing the journals. Abrupt process death cannot
-run stop.
+Tool-session state lives under `$STATE/tool-sessions/`, separately from saved
+Agent conversations. Artifactize removes it after confirmed cleanup and retains
+unconfirmed state for recovery. See the [tool-session lifecycle](../tools/agent.md#tool-sessions)
+for the single detailed start, stop and crash-recovery contract.
 
 ## Agent sessions
 

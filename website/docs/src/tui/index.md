@@ -70,11 +70,12 @@ The breadcrumb is `artifactize review › search › eval`. ↑/↓ or `j`/`k` s
 list stays there, never quits. The standalone UI has no `?` help overlay or `!` attention
 navigation; those keys belong to the monitor.
 
-The mouse works as in the monitor and is captured by default: a click selects a
-list row and a click on the selected row opens it, clicks in Detail act like the
-monitor's (below), and the wheel scrolls. F2 turns capture off for terminal text
-selection; the header then shows `mouse off · F2`. Bracketed paste works either
-way.
+Mouse capture is on by default: click a list row to select it, then click it again
+to open it; the wheel scrolls the list. **Human** Detail has the same mouse
+interactions as Monitor. Standalone Review's non-Human Detail is keyboard-only:
+its transcript groups and content do not respond to clicks or the wheel. F2 turns
+capture off for terminal text selection; the header shows `mouse off · F2`.
+Bracketed paste works either way.
 
 ### Shared Human Detail
 
@@ -108,6 +109,7 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
 | `u` | Release your claim without a verdict |
 | Ctrl-G / Ctrl-R | Choose or switch verdict while editing |
 | Ctrl-S | Submit the chosen form |
+| PgUp / PgDn | Scroll the focused fields or completed-result viewport; Tab/arrows still select fields |
 | Ctrl-U | Release while editing |
 | Tab / Shift-Tab | Switch Tools and Fields; in edited Fields, Tab moves fields or indents JSON and Shift-Tab switches to Tools |
 | `i` / `t` | Expand the instruction / toggle Technical, while not editing |
@@ -142,7 +144,9 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   fields, not navigation. A bracketed keyboard paste goes into the focused field as
   one edit, in standalone `review` as in the monitor. Ctrl-G/Ctrl-R switches
   verdicts, keeping separate drafts.
-  Editing and tool work lock focus moves outside Detail. Esc closes
+  Editing and tool work normally lock focus moves outside Detail. Monitor's Close
+  button is an exception: when idle it returns directly to the tree with the form
+  retained; while busy it cancels the work first. Esc closes
   one thing at a time: cancel a job, then stop editing with its
   draft kept, then leave Detail. The same verdict reopens the draft. Refresh and
   leaving/reopening the same request keep drafts; opening a different request in
@@ -278,14 +282,16 @@ not rewritten by this view.
 | ↑/↓ or `j`/`k` | Select a row; inside Detail, scroll |
 | `?` | Show help; the next key closes it without another action |
 | `!` | Next ERROR, RED or waiting Human eval in this Run, wrapping around |
-| `r` | Refresh outside a Human form |
+| `r` | Refresh with Scope, Runs or the tree focused; in an owned idle Human Detail it chooses RED, and it does not refresh read-only Detail |
 | `q` / Ctrl-C | `q` quits outside editing/work; Ctrl-C quits or first cancels a running Human tool |
 | F2 | Toggle mouse capture for terminal text selection |
 
 From Detail, `!` opens the next attention item's Detail. Human actions work only
 with Detail focused; ordinary letters are field input while editing. Review work
-and editing lock focus moves to other panes. Esc cancels work first, then stops
-form editing with the draft kept, then leaves Detail.
+and editing normally lock focus moves to other panes. Esc cancels work first, then
+stops form editing with the draft kept, then leaves Detail. The Monitor Close
+button instead leaves idle Detail immediately, retaining its form; during work
+it cancels that work first.
 
 Click focuses and selects. Double-click opens a tree row's Detail; clicking the
 peek opens it Full. In a Human Detail, a click on the selected tool runs it. The wheel scrolls the pane under the pointer without moving
@@ -312,8 +318,9 @@ Detail depends on the eval kind:
 
 - **Agent:** a live conversation, including a running review or the original local
   conversation behind reused evidence. ↑/PgUp pauses following so you can read;
-  End returns to the latest messages. Expand a tool group to see its names,
-  targets and recorded states. `d` opens the saved result and other details;
+  End returns to the latest messages. Space or Enter toggles the visible tool
+  group in either UI, showing its names, targets and recorded states. Monitor
+  also toggles a group when you click its header. `d` opens the saved result and other details;
   `d` or Esc returns to the conversation. Only public reasoning summaries appear,
   when the provider supplies them; private reasoning stays hidden. Missing or
   remote conversations explain why they cannot be shown here. Use `session show

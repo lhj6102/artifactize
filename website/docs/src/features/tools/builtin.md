@@ -76,6 +76,20 @@ Without `args`, an Agent tool takes the model's input; the input, result and lim
   refused. The result only records that the application was
   started; the application belongs to the reviewer and keeps running.
 
+### view_image
+
+`view_image` is an Agent-only tool with required model input `{"path":"board.png"}`.
+The path is a logical path inside its admitted Artifact scope, with the usual
+no-traversal and no-symlink checks. It reads a nonempty regular file and returns
+an embedded image block (`type`, base64 `data`, `mimeType`), not a printed filename.
+
+Format detection uses the bytes, not the extension. Supported formats are PNG,
+JPEG and WebP; GIF, BMP, animated PNG and unsupported/invalid byte formats are
+refused. The decoded image must be at most **4 MiB inclusive**. The
+[image-result contract](agent.md#image-results) explains normalization and the
+same MIME/size checks for command tools; only those command tools can name files
+in their private output directory.
+
 ### Current project graph
 
 Declare `builtin = "graph", args = []` on any Artifact; no graph Artifact is
