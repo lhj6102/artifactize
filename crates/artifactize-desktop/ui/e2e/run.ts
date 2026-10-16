@@ -2,7 +2,7 @@
 import { inspect } from "node:util";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
-  absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
+  absolutePath, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
   nodeProgram, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
 } from "./platform.ts";
 
@@ -11,7 +11,7 @@ const ui = absolutePath(suitePath(), "..");
 // Embedded service launches every capability during onPrepare. Bounding the number
 // supplied to one Launcher, rather than scheduling app lifetimes ourselves, bounds
 // simultaneous WebViews and workers on ordinary CI machines.
-const CAPABILITIES_PER_INVOCATION = appsAtOnce;
+const CAPABILITIES_PER_INVOCATION = 2;
 let interrupted = false;
 
 function execute(program: string, args: string[], env: Environment): Promise<number> {
