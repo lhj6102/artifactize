@@ -96,7 +96,7 @@ async fn catalog_is_global_and_scope_filter_precedes_more_than_one_page() {
     let beta = base.join("beta");
     fs::create_dir_all(&alpha).unwrap();
     fs::create_dir_all(&beta).unwrap();
-    let receipts = store::Receipts::open(&state, &alpha).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &alpha).await.unwrap();
     receipts
         .create_run(
             &saved_run("run-old-beta", &beta, &state, Default::default()),
@@ -181,7 +181,9 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
     let state = root.path().join("state");
     let identity = crate::repository::identify(&workspace);
     assert_eq!(identity.worktree_path.as_deref(), Some(repo.as_path()));
-    let receipts = store::Receipts::open(&state, &workspace).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &workspace)
+        .await
+        .unwrap();
     receipts
         .create_run(
             &saved_run("run-modern", &workspace, &state, identity.clone()),
@@ -435,7 +437,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     view.request.session.as_mut().unwrap().state = receipts.state_id().await.unwrap();
     use crate::agent::session::{
         document::Position,
@@ -503,7 +505,7 @@ async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     for n in 0..100 {
         let mut run = saved_run(&format!("run-{n}"), &repo, &state, Default::default());
         run.definitions =
@@ -542,7 +544,7 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let mut run = saved_run("run-1", &repo, &state, Default::default());
     run.state = store::RunState::Running;
     let mut request = super::tests::request(
@@ -1012,7 +1014,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     .await
     .unwrap();
     let id = run.requests[0].id.clone();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let reviewer = "alice".parse().unwrap();
     crate::human::claim(&receipts, &id, &reviewer)
         .await

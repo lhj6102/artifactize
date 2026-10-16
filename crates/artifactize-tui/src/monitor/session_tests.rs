@@ -585,7 +585,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
         "stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z",
         "selection":{"kind":"all"},"validation":null}))

@@ -574,6 +574,22 @@ mod ownership_tests {
     use super::*;
 
     #[tokio::test]
+    async fn explicit_writer_close_releases_sqlite_before_return_and_closes_clones() {
+        let root = crate::test_os::tempdir();
+        let state = root.path().join("state");
+        let repo = root.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        let writer = Receipts::open(&state, &repo).await.unwrap();
+        let retained = writer.clone();
+        let database = state.join(DATABASE);
+        assert!(!crate::test_os::database_released(&database).unwrap());
+        writer.close().await.unwrap();
+        assert!(crate::test_os::database_released(&database).unwrap());
+        assert_eq!(retained.state_id().await.unwrap_err(), "ConnectionClosed");
+        root.close().unwrap();
+    }
+
+    #[tokio::test]
     async fn owned_writer_closes_before_temp_state_removal_on_success_and_unwind() {
         for unwind in [false, true] {
             let root = crate::test_os::tempdir();
@@ -639,6 +655,12 @@ impl NotifyingConnection {
 }
 
 impl Receipts {
+    /// Close the shared SQLite connection before releasing its state files. Any cloned
+    /// receipts also become closed; call this only after all operations on them finish.
+    pub async fn close(self) -> Result<(), String> {
+        self.connection.finish(Ok(())).await
+    }
+
     pub async fn open(state: &Path, repo: &Path) -> Result<Self, String> {
         let state = prepare_directory(state, repo).map_err(|e| e.to_string())?;
         check_files(&state)?;

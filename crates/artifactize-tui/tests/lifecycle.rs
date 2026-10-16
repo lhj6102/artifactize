@@ -29,7 +29,7 @@ async fn verify_at(
     .unwrap();
     // The Monitor's initial selection must not depend on verify speed or clock resolution.
     view.run.created_at = created_at.parse().unwrap();
-    store::Receipts::open(state, repo)
+    store::OwnedReceipts::open(state, repo)
         .await
         .unwrap()
         .save_run(&view.run)

@@ -1,18 +1,18 @@
 use super::*;
 use crate::{
     monitor::{Action, Pane},
-    store::{Receipts, Run},
+    store::{OwnedReceipts, Run},
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
 use std::fs;
 
-async fn fixture(count: usize) -> (tempfile::TempDir, Receipts, Monitor) {
+async fn fixture(count: usize) -> (tempfile::TempDir, OwnedReceipts, Monitor) {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     for n in 0..count {
         let saved = json!({
             "id":format!("run-{n}"),"repoPath":repo,"stateDir":state,"status":"GREEN",

@@ -239,7 +239,9 @@ impl Job {
             Job::Claim { id } => {
                 let result = async {
                     let (receipts, _) = human::open(&state, &id).await?;
-                    human::claim(&receipts, &id, &reviewer).await
+                    let result = human::claim(&receipts, &id, &reviewer).await;
+                    let closed = receipts.close().await;
+                    result.and_then(|claim| closed.map(|()| claim))
                 }
                 .await;
                 Outcome::Claimed { result }
@@ -251,10 +253,15 @@ impl Job {
             } => {
                 let result = async {
                     let (receipts, _) = human::open(&state, &id).await?;
-                    if first {
-                        claimed = Some(human::claim(&receipts, &id, &reviewer).await?);
+                    let result = async {
+                        if first {
+                            claimed = Some(human::claim(&receipts, &id, &reviewer).await?);
+                        }
+                        human::run_human_tool(&receipts, &id, &reviewer, &tool, cancel).await
                     }
-                    human::run_human_tool(&receipts, &id, &reviewer, &tool, cancel).await
+                    .await;
+                    let closed = receipts.close().await;
+                    result.and_then(|result| closed.map(|()| result))
                 }
                 .await;
                 Outcome::Ran {
@@ -271,7 +278,9 @@ impl Job {
                 let result = async {
                     if first {
                         let (receipts, _) = human::open(&state, &id).await?;
-                        claimed = Some(human::claim(&receipts, &id, &reviewer).await?);
+                        let result = human::claim(&receipts, &id, &reviewer).await;
+                        let closed = receipts.close().await;
+                        claimed = Some(result.and_then(|claim| closed.map(|()| claim))?);
                     }
                     human::submit_and_publish(&state, &id, &reviewer, &result.to_json(), cancel)
                         .await
@@ -309,7 +318,9 @@ impl Job {
                             return Ok(());
                         }
                         let (receipts, _) = human::open(&state, id).await?;
-                        human::unclaim(&receipts, id, &reviewer).await.map(drop)
+                        let result = human::unclaim(&receipts, id, &reviewer).await.map(drop);
+                        let closed = receipts.close().await;
+                        result.and(closed)
                     };
                     if let Err(error) = release.await {
                         failed.push((id.clone(), error));

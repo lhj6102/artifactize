@@ -28,7 +28,7 @@ fn request(run: &str, eval: &str, status: &str, profile: serde_json::Value) -> s
 }
 
 async fn run(state: &Path, repo: &Path, id: &str, requests: &[store::Request]) {
-    let receipts = store::Receipts::open(state, repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(state, repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({"id":id,"repoPath":repo,"stateDir":state,
         "status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},
         "validation":null}))
@@ -86,7 +86,7 @@ async fn fixture() -> Fixture {
     )
     .await;
     // The Agent review's saved conversation, as the reviewer records it.
-    let receipts = store::Receipts::open(&state, &alpha).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &alpha).await.unwrap();
     let saving = Saving {
         state: state.clone(),
         state_id: receipts.state_id().await.unwrap(),

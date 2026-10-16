@@ -17,7 +17,7 @@ async fn live_session_pty_fixture() {
     let repo = root.join("repo");
     let state = root.join("state");
     fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({
         "id":"fixture-run",
         "repoPath":repo,

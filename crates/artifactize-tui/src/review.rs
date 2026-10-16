@@ -380,7 +380,9 @@ impl Review {
         }
         let commands = async {
             let (receipts, _) = human::open(&self.state, &id).await?;
-            human::tool_commands(&receipts, &id).await
+            let result = human::tool_commands(&receipts, &id).await;
+            let closed = receipts.close().await;
+            result.and_then(|commands| closed.map(|()| commands))
         }
         .await;
         // A request that cannot be resolved shows its tools as declared.

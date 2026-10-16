@@ -96,6 +96,71 @@ async fn perform(review: &mut Review, control: Control) -> Outcome {
 }
 
 #[tokio::test]
+async fn refused_review_jobs_release_database_before_returning() {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&repo).unwrap();
+    let view = crate::monitor::tests::request(
+        "app/check",
+        "GREEN",
+        json!({"profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"cwd":repo}),
+    );
+    let run: store::Run = serde_json::from_value(json!({
+        "id":view.request.run_id,"repoPath":repo,"stateDir":state,"status":"GREEN",
+        "createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z",
+        "selection":{"kind":"all"},"validation":null
+    }))
+    .unwrap();
+    let id = view.request.id.clone();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
+    receipts.create_run(&run, &[view.request]).await.unwrap();
+    drop(receipts);
+    let reviewer: crate::types::ReviewerId = "alice".parse().unwrap();
+    let result = Submission::try_from(json!({"verdict":"GREEN"})).unwrap();
+    for job in [
+        Job::Claim { id: id.clone() },
+        Job::Run {
+            id: id.clone(),
+            tool: "inspect_app".parse().unwrap(),
+            claim: false,
+        },
+        Job::Run {
+            id: id.clone(),
+            tool: "inspect_app".parse().unwrap(),
+            claim: true,
+        },
+        Job::Submit {
+            id: id.clone(),
+            result: result.clone(),
+            claim: false,
+        },
+        Job::Submit {
+            id: id.clone(),
+            result,
+            claim: true,
+        },
+    ] {
+        let outcome = job
+            .run(state.clone(), reviewer.clone(), CancellationToken::new())
+            .await;
+        assert!(
+            matches!(
+                outcome,
+                Outcome::Claimed { result: Err(_) }
+                    | Outcome::Ran { result: Err(_), .. }
+                    | Outcome::Submitted { result: Err(_), .. }
+            ),
+            "a settled request rejects the action: {outcome:?}"
+        );
+        // No worker process or retained fixture writer exists, so this checks the
+        // action's exact return boundary without a retry, yield or cleanup barrier.
+        assert!(crate::test_os::database_released(&state.join(store::DATABASE)).unwrap());
+    }
+    root.close().unwrap();
+}
+
+#[tokio::test]
 async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
     let (_root, repo, state) = fixture();
     let first = waiting(&repo, &state).await;
@@ -230,7 +295,7 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
         },
         "qrg한글"
     );
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     human::unclaim(&receipts, &view.request.id, &"alice".parse().unwrap())
         .await
         .unwrap();
@@ -399,7 +464,7 @@ async fn a_run_after_an_outside_release_neither_claims_nor_runs() {
     review.refresh().await;
     // Another terminal releases the claim before this review has refreshed: the job checks
     // ownership atomically, so the stale view neither claims nor runs.
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     human::unclaim(&receipts, &id, &"alice".parse().unwrap())
         .await
         .unwrap();
