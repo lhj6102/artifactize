@@ -409,7 +409,10 @@ export const scenarios: Scenario[] = [
       }, at);
       const drag = async (at: number, x: number, y: number, grown: () => Promise<boolean>, what: string) => {
         await watchMouse();
-        await browser.action("pointer", { id: "resize" }).move({ origin: (await dividers())[at] }).down().perform(true);
+        // Press 2px past the line, over the pane after it: the grab zone reaches over both
+        // neighbours, and that pane paints its own layers (the graph's canvas) there.
+        await browser.action("pointer", { id: "resize" })
+          .move({ origin: (await dividers())[at], x: x === 0 ? 0 : 2, y: y === 0 ? 0 : 2 }).down().perform(true);
         try {
           await afterRender(browser);
           const pointer = browser.action("pointer", { id: "resize" });

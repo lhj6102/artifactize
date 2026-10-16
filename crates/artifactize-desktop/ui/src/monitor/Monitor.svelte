@@ -296,8 +296,11 @@
   :global(.columns) {
     min-height: 0;
   }
+  /* The graph's own layers (canvas, popup, Summary, Detail) stack inside the stage, so none
+   * of them covers the divider's grab zone on the graph's side. */
   .stage {
     position: relative;
+    isolation: isolate;
     height: 100%;
     min-height: 0;
   }
