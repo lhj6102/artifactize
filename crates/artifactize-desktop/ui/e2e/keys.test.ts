@@ -2,7 +2,7 @@
 // and is never sent again, also when a later key would have made the check pass; a dropped
 // key (or a chord's dropped action key) is sent again; several keys are several presses.
 import assert from "node:assert/strict";
-import { beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { type Page, press } from "./keys.ts";
 
 /** A page whose driver drops the keys `drop` says, and an app that reacts as `react` says. */
@@ -19,25 +19,13 @@ function double(drop: (key: string, sent: number) => boolean, react: (key: strin
       }
     },
     received: async () => [...log],
+    // Delivery and reaction in this double are synchronous; expiry is an explicit false.
+    until: async (check) => check(),
   };
   return { page, sent };
 }
 
 describe("press", () => {
-  beforeEach((context) => {
-    assert.ok("mock" in context, "each press case owns its clock");
-    const { mock } = context;
-    mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
-    const schedule = globalThis.setTimeout;
-    // Every requested wait expires on the controlled clock, never the wall clock.
-    // Promise continuations still run normally, including delivery and effect checks.
-    mock.method(globalThis, "setTimeout", (...args: Parameters<typeof setTimeout>) => {
-      const timer = schedule(...args);
-      mock.timers.tick(args[1] ?? 1);
-      return timer;
-    });
-  });
-
   it("refuses several action keys in one press, which could hide one the app lost", async () => {
     const { page } = double(() => false, () => {});
     await assert.rejects(press(page, ["ArrowDown", "Enter"], () => true, "two keys"), /one action at a time/);

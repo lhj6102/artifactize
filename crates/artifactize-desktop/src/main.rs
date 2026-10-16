@@ -11,8 +11,12 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(USAGE_ERROR);
         }
     };
-    let result =
-        artifactize_desktop::app(tauri::Builder::default(), launch).run(tauri::generate_context!());
+    let builder = tauri::Builder::default();
+    #[cfg(feature = "e2e")]
+    let builder = builder
+        .plugin(tauri_plugin_wdio::init())
+        .plugin(tauri_plugin_wdio_webdriver::init());
+    let result = artifactize_desktop::app(builder, launch).run(tauri::generate_context!());
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

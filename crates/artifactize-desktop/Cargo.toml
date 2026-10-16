@@ -14,6 +14,12 @@ publish = false
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+e2e = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver", "dep:libc", "dep:windows-sys"]
+
+[[bin]]
+name = "artifactize-e2e-observe"
+path = "src/e2e_observe.rs"
+required-features = ["e2e"]
 
 [dependencies]
 artifactize-core = { path = "../artifactize-core" }
@@ -25,6 +31,8 @@ specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 specta-typescript = "=0.0.12"
 tauri = { version = "2.12", features = [] }
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+tauri-plugin-wdio = { version = "1.5.0", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1.5.0", optional = true }
 thiserror = "2"
 time = "0.3"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
@@ -37,6 +45,12 @@ sha2 = "0.11"
 toml = "1.1.8"
 tauri = { version = "2.12", features = ["test"] }
 tempfile = "3.27"
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", optional = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2"

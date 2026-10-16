@@ -1,0 +1,6 @@
+{
+  "identifier": "webdriver",
+  "description": "WebDriver integration for the E2E test build only.",
+  "windows": ["main"],
+  "permissions": ["wdio:default", "wdio-webdriver:default"]
+}

@@ -5,5 +5,8 @@ examples/
 website/demo/
 harness/hey-arti/fixtures/
 
+# Third-party test-only provider source is not an Artifact to evaluate.
+crates/artifactize-desktop/vendor/
+
 # Build output, including the end-to-end fixtures the desktop tests leave there.
 /target/

@@ -97,63 +97,22 @@ required = ["violations"]
 additionalProperties = false
 
 [evals.follows-e2e-rules]
-title = "The real-app E2E tests are isolated, causally observed and complete"
+title = "The real-app E2E tests follow Tauri's WebDriver approach and are isolated, causal and complete"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-e2e-rules.payload]
 instruction = """
-Review all tests, fixture helpers and execution/cleanup code owned by {desktop-e2e}, using \
-list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and read_desktop-e2e. These are this \
-Artifact's E2E-writing rules, not a request for new product features or a new test framework:
+Review all specs, fixtures, runner configuration and build/run code owned by {desktop-e2e}, using list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and read_desktop-e2e. These are this Artifact's E2E-writing rules. Their reference is Tauri's WebDriver guide (https://v2.tauri.app/develop/tests/webdriver/) and the WebdriverIO Tauri service docs (https://webdriver.io/docs/desktop-testing/tauri/).
 
-- E2E-INDEPENDENT: each case is valid on its own and does not rely on the order, success or \
-  leftovers of another case. Independently launched suites and other evals must not interfere \
-  with it. A suite may own an immutable built candidate, but mutable app/test state is scoped \
-  to its actual owner, not accidentally shared between cases or evaluations.
-- E2E-ISOLATED-RESOURCES: identify every mutable external resource the scenario uses, including \
-  app/session state, repository and state directories, credentials/environment inputs, display \
-  and input focus, IPC endpoints and callback ports. Keep unrelated tests and the user's live \
-  environment untouched. Fixed-name or fixed-port resources require a real isolation boundary \
-  for the participating processes; choosing a unique test label alone is not isolation. \
-  Declared immutable inputs may be shared. Do not serialize all evals or add a global lock \
-  merely to hide cross-test interference.
-- E2E-COMPLETE-LIFETIME: ownership starts when acquisition or launch is requested, including \
-  pending detached handoffs, and lasts until every owned operation and process has completed \
-  or another owner has actually accepted responsibility. Close admission before shutdown; \
-  settle in-flight work and drain output before releasing its resources. Normal return, test \
-  failure, cancellation and startup failure obey the same ownership contract. A verdict, \
-  cancellation request, launcher exit or published PID alone is not a cleanup acknowledgement. \
-  Never delete a fixture or executable snapshot while its users can still be alive; preserve \
-  inputs and report cleanup failures rather than swallowing them in finally.
-- E2E-REAL-APP: drive the actual built app through its real UI and public command/IPC routes. \
-  Fixtures may control declared external services and scenario inputs, but must not replace \
-  the product behavior being evaluated. Observing the app must not alter its DOM behavior, \
-  handlers, IPC dispatch or production decisions to obtain a passing result.
-- E2E-CAUSAL-OUTCOMES: tie an assertion to the action performed in that case and its observable \
-  completed outcome. Dispatch counts, pre-existing matching text, a merely accepted command, \
-  arbitrary sleeps and a transient render are not substitutes for the resulting transition. \
-  A read-only activity probe must also be shown to observe a real successful operation, so \
-  an unwired always-zero probe cannot prove that a forbidden action did not happen. Assert \
-  user-visible semantics, not exact mounted counts or private implementation steps.
-- E2E-PORTABLE-BOUNDARY: keep native OS setup and teardown in designated shared OS helpers. \
-  Other test code uses their portable API rather than independently handling native paths, \
-  process identities, signals, permissions or environment lookup. Platform-specific harnesses \
-  state their required capabilities; setup failures remain explicit failures, not skipped \
-  coverage, silent success or modifications to host security policy. The actual process doing \
-  the work must run inside the declared fixture boundary, not just its launcher.
-- E2E-RUNNER-COMPLETION: the runner remains alive and owns the suite until its real exit and \
-  cleanup are observed. Do not rely on an incidental timer, inherited handle or unrelated \
-  activity to keep an awaited operation alive. Preserve setup/test/cleanup errors and return \
-  an exit status reflecting the actual outcome; incomplete or cancelled execution is not PASS.
+- E2E-WDIO-SERVICE: the suite runs on the WebdriverIO test runner with @wdio/tauri-service and the embedded WebDriver provider (tauri-plugin-wdio-webdriver), the same provider on Linux, Windows and macOS. The runner and service own app launch, WebDriver provisioning and shutdown, with capability-specific endpoints declared only in runner configuration. Specs and helpers do not spawn or kill the app or a WebDriver server, and do not wrap or re-wire the service's launcher lifecycle. When a journey's expected outcome is the app quitting, the spec observes the real exit and then marks that WebDriver session ended through one shared helper; this is the only session bookkeeping specs may do. On headless Linux, the whole runner runs under dbus-run-session and xvfb-run -a with X11, never on the user's desktop. Runner configuration is the only place where platforms differ; specs contain no OS branches.
+- E2E-TEST-BUILD-ONLY: the WebdriverIO plugins (their Rust crates, capability permissions and the frontend import) are compiled in only for the E2E test build, selected by one Cargo feature and the matching frontend build. The release app, its default capabilities and its frontend bundle contain none of them.
+- E2E-REAL-APP: drive the built test app through its real UI. Do not mock Tauri commands or intercept invoke, and do not use browser.tauri.execute to perform actions or change state; IPC mocking belongs in the component tests. Fixtures may control declared external inputs (repository contents, agent or backend stand-ins, network services), not the product behavior under test.
+- E2E-ISOLATED: each spec is valid on its own and in any order by establishing its starting state through the real UI and declared external inputs. An embedded app instance and its mutable fixture belong to one capability; specs of that capability may share the service-owned app lifetime, not rely on another spec's actions or leftovers. Separate capabilities/instances may run in parallel with disjoint repository/state directories, environment inputs and endpoints. The user's live environment stays untouched. A product-fixed resource that cannot be given per instance (such as a fixed callback port) is used by one capability only, declared in the runner configuration. Do not add global locks or serialization to hide interference.
+- E2E-OWNED-FIXTURES: fixtures are created by setup scoped to their owning app instance/capability and released by the matching owning teardown only after the runner and service have ended that app instance. Teardown may run after the WebdriverIO runner returns; worker/session hooks must not delete fixtures still used by the launcher-owned app. Setup and cleanup failures fail the run; they are not swallowed.
+- E2E-CAUSAL-OUTCOMES: tie each assertion to the action performed in that case and its observable completed outcome. Wait with WebdriverIO's waitFor*/waitUntil on the user-visible result; fixed sleeps, dispatch counts, pre-existing matching text, a merely accepted command and a transient render are not substitutes. A read-only probe that a forbidden action did not happen must also be shown to observe a real successful one. Assert user-visible semantics, not mounted counts or private implementation steps.
+- E2E-EXPLICIT-FAILURE: a missing platform prerequisite, a setup failure, a cancelled or incomplete run is a failure, never skipped coverage or a passing exit.
 
-Judge these execution/isolation contracts, not journey completeness or general code style, \
-which have separate evals. Report concrete violations with a plausible action/interleaving \
-and affected resource, not hypothetical cheating or demands to test every possible permutation. \
-Require only the observable seams needed to establish these contracts; do not pin private \
-counts or prescribe a particular class, algorithm or additional configuration knob. Submit \
-GREEN when none of these rules is clearly violated. Otherwise submit RED with up to 20 \
-violations, most important first, each with the E2E rule id (item), a path:line and failure \
-scenario (where), and one sentence on what to change.
+Judge these contracts, not journey completeness or general code style, which have separate evals. Report concrete violations with a plausible action or interleaving and the affected resource, not hypothetical cheating or demands to test every permutation. Do not prescribe a particular class, algorithm or configuration knob. Submit GREEN when none of these rules is clearly violated. Otherwise submit RED with up to 20 violations, most important first, each with the E2E rule id (item), a path:line and failure scenario (where), and one sentence on what to change.
 """
 
 [evals.follows-e2e-rules.pass_schema]
@@ -189,6 +148,4 @@ profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "e2e"], time
 
 [evals.suite-passes.payload]
 instruction = """
-Build the CLI and app from {cli}, {tui}, {core}, {tools} and {desktop}, then run the tests of \
-{desktop-e2e} against that owned candidate on private Xvfb displays. Each fixture owns its \
-resources while the Rust tests run concurrently."""
+Build the E2E test app (the test-only Cargo feature and its frontend build) and the CLI from {cli}, {tui}, {core}, {tools} and {desktop} into build output this run owns, then run the WebdriverIO suite of {desktop-e2e} against it on a headless display."""

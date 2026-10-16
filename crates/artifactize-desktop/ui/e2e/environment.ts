@@ -1,31 +1,45 @@
-// Linux fixture environment and Git execution: one native boundary shared by setup,
-// the real app, and durable-worker cleanup. These inputs never modify the caller.
+// One fixture-local environment shared by setup, the real app and its executed tools.
+// Construct a copy: no fixture ever modifies the runner's or the person's environment.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, parse } from "node:path";
 import type { Fixture } from "./fixture.ts";
 
-/** Native fixture inputs never borrow the person's auth files, profiles or service
- * configuration. Keep executable lookup, but require scenarios to declare credentials
- * and endpoints explicitly. No process-wide environment is changed. */
 export function environment(fixture: Fixture): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of Object.keys(env)) {
-    if (name.startsWith("ARTIFACTIZE_") || name.endsWith("_API_KEY") || ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"].includes(name.toUpperCase()) || ["CLAUDE_CODE_OAUTH_TOKEN", "CODEX_HOME", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS"].includes(name)) delete env[name];
+    const key = name.toUpperCase();
+    if (key.startsWith("ARTIFACTIZE_") || key.startsWith("GIT_")
+      || /(?:^|_)(?:API_KEY|ACCESS_KEY|PRIVATE_KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS)(?:_|$)/.test(key)
+      || ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSH_ASKPASS", "SSH_AUTH_SOCK", "SSH_AGENT_PID",
+        "CODEX_HOME", "CLAUDE_CONFIG_DIR", "CLOUDSDK_CONFIG", "KUBECONFIG", "DOCKER_CONFIG", "NPM_CONFIG_USERCONFIG",
+        "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "GOOGLE_APPLICATION_CREDENTIALS", "AZURE_CONFIG_DIR"].includes(key)) delete env[name];
   }
-  for (const [name, directory] of Object.entries({ HOME: "home", XDG_CONFIG_HOME: "config", XDG_DATA_HOME: "data", XDG_CACHE_HOME: "cache", XDG_RUNTIME_DIR: "runtime", TMPDIR: "tmp" })) {
+  const directories = {
+    HOME: "home", USERPROFILE: "home", APPDATA: "appdata", LOCALAPPDATA: "localappdata",
+    XDG_CONFIG_HOME: "config", XDG_DATA_HOME: "data", XDG_STATE_HOME: "user-state", XDG_CACHE_HOME: "cache",
+    XDG_RUNTIME_DIR: "runtime", TMPDIR: "tmp", TEMP: "tmp", TMP: "tmp", GNUPGHOME: "gnupg",
+  };
+  for (const [name, directory] of Object.entries(directories)) {
+    // Remove case-insensitive aliases too: Windows environment names are insensitive.
+    for (const inherited of Object.keys(env)) if (inherited.toUpperCase() === name) delete env[inherited];
     env[name] = join(fixture.root, directory);
     mkdirSync(env[name], { recursive: true, mode: 0o700 });
   }
-  return gitEnvironment(fixture.root, { ...env, USER: "alice", ARTIFACTIZE_REMOTE: "off", DESKTOP_TEST_FIXTURE_ROOT: fixture.root });
+  const home = join(fixture.root, "home");
+  const drive = parse(home).root.replace(/[\\/]$/, "");
+  for (const name of Object.keys(env)) {
+    if (["HOMEDRIVE", "HOMEPATH", "USER", "USERNAME", "LOGNAME"].includes(name.toUpperCase())) delete env[name];
+  }
+  return gitEnvironment(fixture.root, {
+    ...env, HOMEDRIVE: drive, HOMEPATH: home.slice(drive.length), USER: "alice", USERNAME: "alice", LOGNAME: "alice",
+    ARTIFACTIZE_REMOTE: "off", DESKTOP_TEST_FIXTURE_ROOT: fixture.root,
+  });
 }
 
-/** Git and the real app's Git reads share this fixture's configuration, never the
- * caller's repository/index routes, global includes, hooks, signing or credentials. */
-function gitEnvironment(root: string, inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env = { ...inherited };
-  for (const name of Object.keys(env)) if (name.toUpperCase().startsWith("GIT_")) delete env[name];
-  delete env.SSH_ASKPASS;
+/** Fixture Git never reads the caller's repository/index routes, global includes,
+ * templates, hooks, signing settings or credential helpers. */
+function gitEnvironment(root: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const directory = join(root, "git");
   const hooks = join(directory, "hooks");
   const templates = join(directory, "templates");
@@ -39,8 +53,6 @@ function gitEnvironment(root: string, inherited: NodeJS.ProcessEnv): NodeJS.Proc
   return { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: config, GIT_TERMINAL_PROMPT: "0" };
 }
 
-/** All fixture Git writes cross one native boundary with fixture-local inputs. */
 export function git(repo: string, ...args: string[]): void {
   execFileSync("git", args, { cwd: dirname(repo), env: environment({ root: dirname(repo), repo, state: join(dirname(repo), "state") }) });
 }
-

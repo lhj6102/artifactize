@@ -1,28 +1,31 @@
 // The desktop app as an Agent tool session (declared in ../index.artf).
-//
-//   start     runs the real app headless on its own display, on fixture state made by the real
-//             CLI, through the e2e driver (which owns Xvfb, tauri-driver and the app); prints
-//             one ready line and stays alive, serving the bound tools on a socket in
-//             $ARTIFACTIZE_SESSION_DIR
-//   stop      ends the app and removes what start made
-//   snapshot  what the window shows, as text
-//   act       click an element, type text, or press a key; answers with the new snapshot
-//   cli       run the artifactize CLI against the app's repository and state, from another process
-//
-// Needs an explicit DESKTOP_TEST_CANDIDATE manifest prepared by ui/e2e/run.ts: a review
-// snapshots that candidate into its session, never searches shared targets or rebuilds it.
+// start wraps the whole harness in the platform's standard headless environment;
+// serve delegates app provisioning, launch and shutdown to @wdio/tauri-service.
+// Tools communicate over loopback TCP, using the private session directory's token.
+// An explicit DESKTOP_TEST_CANDIDATE is snapshotted once, never found or rebuilt.
 import { createConnection, createServer, type Socket } from "node:net";
-import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { cli, create, environment, type Fixture } from "../ui/e2e/fixture.ts";
-import { LAUNCH_TIMEOUT, startBuilt, type Session } from "../ui/e2e/driver.ts";
+import { fileURLToPath } from "node:url";
+import { create, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
+import { assertHarnessPlatform, embeddedPorts, harnessEnvironment, runnerCommand } from "../ui/e2e/platform.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
-import { cargoGate, cleanup, snapshotCandidate } from "../ui/e2e/build.ts";
+import { cargoGate, cleanup, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
 
-const SOCKET = "control.sock";
+// Resolve the public package entry from the frontend which declares this dependency.
+const service = createRequire(new URL("../ui/package.json", import.meta.url))("@wdio/tauri-service") as
+  typeof import("../ui/node_modules/@wdio/tauri-service");
+const { startWdioSession, createTauriCapabilities, cleanupWdioSession } = service;
+const LAUNCH_TIMEOUT = 60000;
+const REQUEST_TIMEOUT = 45 * 60000; // Includes the standalone API's bounded startup retries.
+const ENDPOINT = "control.json";
+type Session = { browser: WebdriverIO.Browser; stop: () => Promise<void> };
+type Endpoint = { port: number; token: string };
 const sessionDir = process.env.ARTIFACTIZE_SESSION_DIR;
 
 type Request =
@@ -37,12 +40,15 @@ type Request =
 
 // WebDriver's element references, kept outside the page, retain identity across reorders.
 // A removed control is stale; its number must never target its replacement at the same index.
-const controls = new WeakMap<WebdriverIO.Browser, ReturnType<WebdriverIO.Browser["$"]>[]>();
+const controls = new WeakMap<WebdriverIO.Browser, WebdriverIO.Element[]>();
+const CONTROL_SELECTOR = "a, button, input, textarea, select, summary, [role], [tabindex], [aria-label]";
 
 /** The window as text: its focus, every visible control with a number to act on, then its text. */
 export async function snapshot(browser: WebdriverIO.Browser): Promise<string> {
-  const shown = await browser.execute(() => {
-    const references: HTMLElement[] = [];
+  // Embedded WebDriver accepts element arguments but does not serialize DOM-node returns.
+  const candidates = await browser.$$(CONTROL_SELECTOR).getElements();
+  const shown = await browser.execute((references: HTMLElement[]) => {
+    const indices: number[] = [];
     const visible = (element: Element) => {
       const box = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -54,12 +60,12 @@ export async function snapshot(browser: WebdriverIO.Browser): Promise<string> {
       "";
     const lines: string[] = [];
     let count = 0;
-    const controls = "a, button, input, textarea, select, summary, [role], [tabindex], [aria-label]";
-    for (const element of document.querySelectorAll(controls)) {
+    for (const [index, element] of references.entries()) {
+      if (!element.isConnected) throw new Error("snapshot control became stale; take a new snapshot");
       if (!visible(element)) continue;
       const role = element.getAttribute("role") ?? element.tagName.toLowerCase();
       count += 1;
-      references.push(element as HTMLElement);
+      indices.push(index);
       const states = [
         ["selected", "aria-selected"],
         ["expanded", "aria-expanded"],
@@ -75,9 +81,12 @@ export async function snapshot(browser: WebdriverIO.Browser): Promise<string> {
       if (typeof value === "string" && element.matches("input, textarea, select")) states.push(`value=${JSON.stringify(value)}`);
       lines.push(`[${count}] ${role} ${JSON.stringify(name(element))}${states.length ? ` (${states.join(", ")})` : ""}`);
     }
-    return { text: `controls:\n${lines.join("\n")}\n\ntext:\n${document.body.innerText}`, references };
-  });
-  controls.set(browser, shown.references.map((reference) => browser.$(reference)));
+    return { text: `controls:\n${lines.join("\n")}\n\ntext:\n${document.body.innerText}`, indices };
+  }, candidates as unknown as HTMLElement[]);
+  // ID-only selectors cannot refetch by DOM position and retarget a replacement control.
+  controls.set(browser, await Promise.all(shown.indices.map((index) => browser.$({
+    "element-6066-11e4-a52e-4f735466cecf": candidates[index].elementId,
+  }).getElement())));
   return shown.text;
 }
 
@@ -112,7 +121,35 @@ async function pressKey(browser: WebdriverIO.Browser, key: string): Promise<void
   await press(browser, keys, async () => (await seen.received()).length > before, `key ${key}`, { wait: 1000 });
 }
 
-async function handle(session: Session, fixture: Fixture, request: Request): Promise<unknown> {
+/** The service merges process.env into the app environment, so sanitize that source too. */
+async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Record<string, string>, args: string[] = []): Promise<Session> {
+  const env = { ...environment(fixture), ...platformEnv };
+  for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
+  for (const [name, value] of Object.entries(env)) if (value !== undefined) process.env[name] = value;
+  const capabilities = createTauriCapabilities(candidate.app, {
+    appArgs: [...args, "--state-dir", fixture.state, "--reviewer", "alice"],
+    driverProvider: "embedded",
+    startTimeout: LAUNCH_TIMEOUT,
+    commandTimeout: LAUNCH_TIMEOUT,
+    logLevel: "error",
+  });
+  capabilities["wdio:enforceWebDriverClassic"] = true;
+  const [embeddedPort] = await embeddedPorts(1);
+  const serviceOptions = {
+    ...capabilities["wdio:tauriServiceOptions"],
+    embeddedPort,
+    logDir: join(candidate.root, "logs"),
+  };
+  capabilities["wdio:tauriServiceOptions"] = serviceOptions;
+  const browser = await startWdioSession(capabilities);
+  // Commands must fail within one attempt rather than replaying actions after transport loss.
+  browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
+  browser.options.connectionRetryCount = 0;
+  let ending: Promise<void> | undefined;
+  return { browser, stop: () => ending ??= cleanupWdioSession(browser) };
+}
+
+async function handle(candidate: Candidate, session: Session, fixture: Fixture, request: Request): Promise<unknown> {
   const { browser } = session;
   const before = await checkpoint(browser);
   switch (request.op) {
@@ -129,11 +166,12 @@ async function handle(session: Session, fixture: Fixture, request: Request): Pro
       await pressKey(browser, request.key);
       return { text: await settled(browser, before) };
     case "cli": {
-      const done = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...request.args], {
+      const done = spawnSync(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, ...request.args], {
         env: environment(fixture),
         encoding: "utf8",
         timeout: 60000,
       });
+      if (done.error) throw done.error;
       return { exitCode: done.status, stdout: done.stdout, stderr: done.stderr };
     }
     default:
@@ -178,33 +216,65 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The Agent protocol treats stdout's first line as readiness, never a driver log. */
+export function forwardReadiness(source: NodeJS.ReadableStream, output: NodeJS.WritableStream, diagnostics: NodeJS.WritableStream) {
+  let ready = false;
+  const lines = createInterface({ input: source });
+  lines.on("line", (line) => {
+    if (line === "ready" && !ready) {
+      ready = true;
+      output.write("ready\n");
+    } else diagnostics.write(line + "\n");
+  });
+  return lines;
+}
+
+/** Standard wrappers own the display and bus for the entire service host process. */
 async function start(): Promise<void> {
+  const command = runnerCommand([fileURLToPath(import.meta.url), "serve"]);
+  const child = spawn(command.program, command.args, { env: command.env, stdio: ["inherit", "pipe", "inherit"] });
+  forwardReadiness(child.stdout!, process.stdout, process.stderr);
+  await new Promise<void>((done, fail) => {
+    child.once("error", fail);
+    child.once("close", (code, signal) => {
+      if (code === 0) done();
+      else fail(new Error(`desktop harness exited ${signal ?? code}`));
+    });
+  });
+}
+
+async function serve(): Promise<void> {
   if (!sessionDir) throw new Error("ARTIFACTIZE_SESSION_DIR is not set; run this as a tool session.");
+  assertHarnessPlatform();
+  const platformEnv = harnessEnvironment();
   process.chdir(sessionDir);
   const candidate = await snapshotCandidate(sessionDir);
-  let fixture: Fixture;
-  try { fixture = await create(); }
-  catch (error) { return throwAfterCleanup(error, () => cleanup(candidate.root)); }
   let shown: { session: Session; fixture: Fixture } | undefined;
-  // Do not remove inputs if shutdown fails; cleanup joins every registered native group
-  // and durable Run, including states exposed by earlier graph launches.
+  // Service cleanup completes before public Run settlement or input deletion.
   const release = async () => {
     await shown?.session.stop();
     shown = undefined;
+    await releaseFixtures();
     await cleanup(candidate.root);
+    rmSync(join(sessionDir, ENDPOINT), { force: true });
   };
+  let fixture: Fixture;
   try {
-    const session = await startBuilt(fixture);
+    fixture = await create();
+    const session = await launch(candidate, fixture, platformEnv);
     shown = { session, fixture };
     await rendered(session.browser, "monitor");
   } catch (error) {
     return throwAfterCleanup(error, release);
   }
   let edits = 0;
+  let graphLaunches = 0;
   // Signals and socket stop share admission closure and drain before reading shown.
   const commands = commandStream(() => { server.close(); }, release);
   const end = () => commands.end();
+  const token = randomBytes(32).toString("hex");
   const server = createServer((socket: Socket) => {
+    socket.setTimeout(REQUEST_TIMEOUT, () => socket.destroy(new Error("desktop tool request timed out")));
     const lines = createInterface({ input: socket });
     socket.once("close", () => lines.close());
     socket.once("error", () => lines.close());
@@ -213,7 +283,9 @@ async function start(): Promise<void> {
       void (async () => {
         let reply: unknown;
         try {
-          const request = JSON.parse(line) as Request;
+          const envelope = JSON.parse(line) as { token: string; request: Request };
+          if (envelope.token !== token) throw new Error("invalid desktop session token");
+          const request = envelope.request;
           if (request.op === "stop") {
             await end();
             socket.end(JSON.stringify({ stopped: true }) + "\n", () => process.exit(0));
@@ -221,11 +293,12 @@ async function start(): Promise<void> {
           }
           reply = await commands.run(async () => {
             if (request.op === "launch") {
+              if (!["monitor", "review", "graph"].includes(request.screen)) throw new Error("unknown desktop launch screen");
               await shown?.session.stop();
               shown = undefined;
-              const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, "graph-state") } : fixture;
+              const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
               const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
-              const session = await startBuilt(target, ...args);
+              const session = await launch(candidate, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.
               shown = { session, fixture: target };
               try {
@@ -244,7 +317,7 @@ async function start(): Promise<void> {
               return { text: `Changed docs/lint title to ${title}. The app has not been refreshed.` };
             } else {
               if (!shown) throw new Error("no app session is running; launch an entry point first");
-              return handle(shown.session, shown.fixture, request);
+              return handle(candidate, shown.session, shown.fixture, request);
             }
           });
         } catch (error) {
@@ -261,8 +334,11 @@ async function start(): Promise<void> {
   try {
     await new Promise<void>((done, fail) => {
       server.once("error", fail);
-      server.listen(SOCKET, () => { server.off("error", fail); done(); });
+      server.listen(0, "127.0.0.1", () => { server.off("error", fail); done(); });
     });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("desktop control server has no TCP endpoint");
+    writeFileSync(join(sessionDir, ENDPOINT), JSON.stringify({ port: address.port, token } satisfies Endpoint), { mode: 0o600, flag: "wx" });
     console.log("ready");
     // The listening server owns the lifetime; no unowned keep-alive timer is needed.
   } catch (error) {
@@ -270,12 +346,16 @@ async function start(): Promise<void> {
   }
 }
 
-/** One request to the running session; the socket is relative to its directory. */
+/** One request to this session's loopback endpoint on every supported socket platform. */
 function ask(request: Request): Promise<Record<string, unknown>> {
   if (!sessionDir) throw new Error("ARTIFACTIZE_SESSION_DIR is not set; run this as a tool session.");
-  process.chdir(sessionDir);
+  const endpoint = JSON.parse(readFileSync(join(sessionDir, ENDPOINT), "utf8")) as Endpoint;
+  if (!Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65535 || typeof endpoint.token !== "string") {
+    throw new Error("invalid desktop session endpoint");
+  }
   return new Promise((done, fail) => {
-    const socket = createConnection(SOCKET);
+    const socket = createConnection({ host: "127.0.0.1", port: endpoint.port });
+    socket.setTimeout(REQUEST_TIMEOUT, () => socket.destroy(new Error("desktop tool request timed out")));
     let text = "";
     socket.on("data", (chunk) => (text += chunk));
     socket.once("error", fail);
@@ -286,7 +366,7 @@ function ask(request: Request): Promise<Record<string, unknown>> {
         fail(new Error("the app session ended without answering"));
       }
     });
-    socket.write(JSON.stringify(request) + "\n");
+    socket.write(JSON.stringify({ token: endpoint.token, request }) + "\n");
   });
 }
 
@@ -307,6 +387,8 @@ if (import.meta.main) {
     await cargoGate(mode);
   } else if (mode === "start") {
     await start();
+  } else if (mode === "serve") {
+    await serve();
   } else if (mode === "stop") {
     const reply = await ask({ op: "stop" });
     if (typeof reply.error === "string") throw new Error(reply.error);
