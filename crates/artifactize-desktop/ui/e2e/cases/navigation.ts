@@ -2,9 +2,10 @@
 // jumping to what needs attention and to an upstream blocker, and stepping back out of a
 // Detail; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { verifyWaiting, create, createNavigationFixture, createStates, requests } from "../fixture.ts";
+import { git } from "../environment.ts";
 import { press } from "../keys.ts";
-import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
@@ -72,9 +73,23 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
       await browser.$('[role="tree"]').click();
       await press(browser, ["?"], helpOpen, "the keys dialog");
-      const shown = await text();
-      assert.match(shown, /Keyboard shortcuts/);
-      assert.match(shown, /Upstream blocker/, "the Monitor's own keys are listed");
+      const dialog = browser.$('[role="dialog"]');
+      assert.match(await dialog.getText(), /Keyboard shortcuts/);
+      const shortcuts = await browser.execute(() => [...document.querySelectorAll('[role="dialog"] dt')].map((key) => ({
+        keys: key.textContent?.trim() ?? "",
+        action: key.nextElementSibling?.textContent?.trim() ?? "",
+      })));
+      const expected: [RegExp, RegExp][] = [
+        [/(?:^|[\s/])b(?:$|[\s/])/, /Upstream blocker/],
+        [/h\s*\/\s*l/, /Fold\s*\/\s*unfold/],
+        [/^!$/, /Next ERROR, RED or waiting Human eval/],
+        [/^v$/, /Switch.*tree and graph/],
+        [/\bF5\b/, /^Refresh$/],
+      ];
+      for (const [keys, action] of expected) {
+        assert.ok(shortcuts.some((entry) => keys.test(entry.keys) && action.test(entry.action)),
+          `the Monitor Help pairs ${keys} with ${action}: ${JSON.stringify(shortcuts)}`);
+      }
       await press(browser, ["Escape"], async () => !(await helpOpen()), "the keys dialog closed");
     },
   ),
@@ -99,55 +114,40 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX edges: E-REFRESH
-  scenario<Record<string, never>>(
+  scenario<{ before: string; after: string; worktree: string }>(
     "navigation-refresh",
-    "reads the state again with F5 and shows what changed on disk on the same screen",
+    "reloads external Git worktree metadata with F5 on the same Monitor screen",
     async () => {
       const fixture = await create();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
+      git(fixture.repo, "-C", fixture.repo, "add", ".");
+      git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Refresh fixture inputs");
+      const before = "before-refresh";
+      const after = "after-refresh";
+      git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", before, join(fixture.root, before));
+      return { fixture, args: ["--repo", fixture.repo], data: { before, after, worktree: join(fixture.root, after) } };
     },
-    async (browser, { fixture }) => {
+    async (browser, { fixture, data }) => {
       const { text } = monitorNavigation(browser);
+      const { runIds } = paneNavigation(browser);
+      const labels = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"] .label')]
+        .map((label) => label.textContent?.trim() ?? ""));
       await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      const rows = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')].map((row) => row.innerText));
-      const previous = await rows();
-      const id = await verifyWaiting(fixture);
-      assert.ok(previous.every((row) => !row.includes(id)), "this Run is a new disk change");
-      // First cross the external change's subscription, then observe this F5 independently.
-      await browser.waitUntil(async () => (await rows()).some((row) => row.includes(id)), { timeout: 15000, timeoutMsg: "the external change has rendered" });
-      await commandsRendered(browser);
-      type RefreshRead = { before: number; pending: number; sequence: number; handled: boolean };
-      await browser.execute(() => {
-        const page = window as Window & { refreshRead?: RefreshRead };
-        const reads = new WeakMap<KeyboardEvent, RefreshRead>();
-        window.addEventListener("keydown", (event) => {
-          if (event.key !== "F5") return;
-          const before = window.artifactizeCommands.commands.browse;
-          reads.set(event, { before: before?.started ?? 0, pending: before?.pending ?? 0, sequence: 0, handled: false });
-        }, { capture: true });
-        // App's mounted window listener runs before this later bubble listener and dispatches
-        // browse synchronously. Neither listener changes the key, handlers or IPC. A queued
-        // subscription task cannot execute between these two phases of the same DOM event.
-        window.addEventListener("keydown", (event) => {
-          const read = reads.get(event);
-          if (!read) return;
-          read.sequence = window.artifactizeCommands.commands.browse?.started ?? 0;
-          read.handled = event.defaultPrevented;
-          page.refreshRead = read;
-        });
-      });
-      await press(browser, ["F5"], async () => {
-        const read = await browser.execute(() => (window as Window & { refreshRead?: RefreshRead }).refreshRead ?? null);
-        if (!read?.handled || read.pending !== 0 || read.sequence <= read.before) return false;
-        const browse = (await checkpoint(browser)).activity.commands.browse;
-        // No browse was in flight at the key's entry. All reads through this key's own
-        // sequence must finish; a later subscription completion alone cannot satisfy it.
-        return !!browse && browse.completed >= read.sequence && browse.pending === 0;
-      }, "this F5's dispatched native read completed", { handled: true });
-      await commandsRendered(browser);
+      const previousRuns = await runIds();
+      assert.ok(previousRuns.length > 0, "the fixture's saved Run is visible before the Git-only change");
+      // Open the existing without-Runs group first, so F5 itself must reveal the
+      // new worktree's actual identity, not merely change a collapsed group's count.
+      await browser.$('[aria-label="Scope"] [role="option"].fold').click();
+      await browser.waitUntil(async () => (await labels()).includes(data.before), { timeout: 15000, timeoutMsg: "the existing empty worktree is shown" });
+      assert.equal((await labels()).includes(data.after), false, "the new worktree does not exist in the initial Scope view");
+      // This is only an external Git input: no verify, state write or subscription hint.
+      git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", data.after, data.worktree);
+      assert.equal((await labels()).includes(data.after), false, "the open Monitor has not reloaded the newly created worktree");
+      await press(browser, ["F5"], async () => (await labels()).includes(data.after), "F5 shows the new Git worktree in Scope", { handled: true });
+      const refreshed = await labels();
+      assert.ok(refreshed.includes(data.before), "refresh preserves the expanded group and its existing worktree");
+      assert.ok(refreshed.includes(data.after), "refresh displays the exact worktree created by this case");
+      assert.deepEqual(await runIds(), previousRuns, "the Git-only change created no Run and keeps the selected scope's saved Runs");
       assert.equal(await browser.$('nav[aria-label="Breadcrumb"] [role="status"]').isExisting(), false, "the refresh completed without a native read error");
-      await browser.waitUntil(async () => (await rows()).some((row) => row.includes(id)), { timeout: 15000, timeoutMsg: "the exact refreshed Run rendered" });
-      assert.equal((await rows()).length, previous.length + 1, "the refreshed list contains this case's newly submitted Run");
       assert.equal(await browser.$('[role="tab"][data-state="active"]').getText(), "Monitor", "on the same screen");
     },
   ),

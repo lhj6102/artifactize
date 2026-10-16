@@ -2,7 +2,7 @@ import { createConnection } from "node:net";
 import { basename, join } from "node:path";
 import type { Fixture } from "./fixture.ts";
 
-const windows = new WeakMap<object, { hostname: string; port: number; handle: string }>();
+const windows = new WeakMap<object, { hostname: string; port: number }>();
 
 /** Establish the actual embedded endpoint and live native window before a case acts.
  * The WebDriver server lives inside this app, not in an independently-lived driver.
@@ -13,12 +13,12 @@ export async function observeWindow(browser: WebdriverIO.Browser): Promise<void>
   const { hostname = "127.0.0.1", port } = browser.options;
   if (!port) throw new Error("the runner did not declare the embedded app endpoint");
   await browser.status();
-  windows.set(browser, { hostname, port, handle: handles[0] });
+  windows.set(browser, { hostname, port });
 }
 
 /** Read-only observation: only refusal at the established in-app server endpoint
  * means it ended. Timeouts, resets, HTTP failures and unrelated transport errors fail.
- * A responsive server must report that this exact native window is no longer present.
+ * A vanished window is not sufficient: its app and embedded server can still be alive.
  */
 export async function windowClosed(browser: WebdriverIO.Browser): Promise<boolean> {
   const owner = windows.get(browser);
@@ -33,8 +33,7 @@ export async function windowClosed(browser: WebdriverIO.Browser): Promise<boolea
       else fail(error);
     });
   });
-  if (!listening) return true;
-  return !(await browser.getWindowHandles()).includes(owner.handle);
+  return !listening;
 }
 
 /** @wdio/runner endSession always DELETEs a session, but the embedded WebDriver

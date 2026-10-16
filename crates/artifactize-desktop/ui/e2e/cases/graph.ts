@@ -26,9 +26,18 @@ function runGraph(browser: WebdriverIO.Browser) {
 
 function chainGraph(browser: WebdriverIO.Browser) {
   const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
-
-  const mounted = () => browser.execute(() => document.querySelectorAll(".svelte-flow__node").length);
-  return { focused, mounted };
+  const nodeView = (id: string) => browser.execute((want) => {
+    const node = document.querySelector<HTMLElement>(`.graph .svelte-flow__node[data-id="${want}"]`);
+    const box = node?.getBoundingClientRect();
+    const canvas = document.querySelector(".graph .canvas")?.getBoundingClientRect();
+    return {
+      focused: !!node && document.activeElement === node,
+      visible: !!box && !!canvas && box.width > 0 && box.height > 0 &&
+        box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom,
+      whole: !document.querySelector('.graph [role="listbox"][aria-label="Evals"]') && !document.querySelector(".graph.split"),
+    };
+  }, id);
+  return { focused, nodeView };
 }
 
 function evalGraph(browser: WebdriverIO.Browser) {
@@ -181,14 +190,17 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      const { focused, mounted } = chainGraph(browser);
+      const { focused, nodeView } = chainGraph(browser);
+      const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
       await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), { timeout: 30000, timeoutMsg: "the Run tree" });
       await browser.$("button*=Graph").click();
-      await browser.waitUntil(async () => (await mounted()) > 0, { timeout: 30000, timeoutMsg: "the graph" });
-      // Zoom in until only part of the chain is drawn.
+      await browser.$(".graph .svelte-flow__node").waitForDisplayed({ timeout: 30000 });
+      // Make the chain extend beyond the visible canvas, independently of whether the
+      // renderer keeps offscreen nodes mounted.
       const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
-      await browser.waitUntil(async () => (await mounted()) < 85, { timeout: 15000, timeoutMsg: "nodes outside the view are not drawn" });
+      await browser.waitUntil(async () => !(await nodeView(name(0))).visible || !(await nodeView(name(84))).visible,
+        { timeout: 15000, timeoutMsg: "the chain extends beyond the graph viewport" });
       // Culling mounts a margin outside the canvas too. A mounted node (such as n039
       // at the left edge) is not necessarily a pointer target: choose a wholly visible,
       // hit-testable node through read-only geometry, then use the real WebDriver click.
@@ -210,10 +222,21 @@ export const scenarios: Scenario[] = [
       assert.ok(first, "a real visible node can receive the pointer");
       console.log(`e2e graph: click visible node ${first}`);
       await browser.$(`.svelte-flow__node[data-id="${first}"]`).click();
-      await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "the selected graph node");
-      const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
-      /** Press `key` and wait for focus on `want`. */
-      const step = (key: string, want: string) => press(browser, [key], async () => (await focused()) === want, `focus on ${want}`);
+      await press(browser, ["Escape"], async () => {
+        const shown = await nodeView(first);
+        return shown.whole && shown.focused && shown.visible;
+      }, "the whole graph with its selected Artifact visible and focused");
+      let revealedBeyond = false;
+      /** Each arrow must bring its target into the viewport as well as moving focus.
+       * A missing/offscreen target before that key is the actual beyond-view boundary. */
+      const step = async (key: string, want: string) => {
+        const before = await nodeView(want);
+        await press(browser, [key], async () => {
+          const shown = await nodeView(want);
+          return shown.whole && shown.focused && shown.visible;
+        }, `${want} selected, visible and focused in the whole graph`);
+        if (key.startsWith("Arrow") && !before.visible) revealedBeyond = true;
+      };
       // Back to the start of the chain, then along all of it.
       let at = Number(((await focused()) ?? "").slice(3));
       while (at > 0) await step("ArrowLeft", name((at -= 1)));
@@ -228,42 +251,18 @@ export const scenarios: Scenario[] = [
             () => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
             "the evals",
           );
-          const zoomOut = await browser.$(".svelte-flow__controls-zoomout");
-          await zoomOut.waitForEnabled({ timeout: 15000, timeoutMsg: "the camera actually zoomed in before Escape" });
+          // Escape returns to the whole graph with this Artifact in view; the UX
+          // does not require a particular camera scale or a disabled zoom control.
           await step("Escape", name(40));
-          // This chain cannot fit even at minimum zoom. All 85 nodes may briefly mount
-          // during the camera move, but culling leaves only the visible portion afterwards.
-          // The disabled zoom-out control marks the actual zoom endpoint, not a quiet frame
-          // or an elapsed delay; the selected Artifact must still be in view and focused.
-          let endpoint: unknown;
-          await browser.waitUntil(async () => {
-            const shown = await browser.execute(() => {
-              const node = document.querySelector('[data-id="a:n040"].svelte-flow__node');
-              const box = node?.getBoundingClientRect();
-              const canvas = document.querySelector(".graph .canvas")?.getBoundingClientRect();
-              return {
-                evals: !!document.querySelector('[role="listbox"][aria-label="Evals"]'),
-                focused: document.activeElement === node,
-                visible: !!box && !!canvas && box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom,
-                active: { tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute("aria-label"), node: document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") },
-                node: box?.toJSON(), canvas: canvas?.toJSON(),
-                viewport: document.querySelector<HTMLElement>(".graph .svelte-flow__viewport")?.style.transform,
-              };
-            });
-            const enabled = await zoomOut.isEnabled();
-            endpoint = { ...shown, zoomOutEnabled: enabled };
-            return !shown.evals && shown.focused && shown.visible && !enabled;
-          }, { timeout: 15000, timeoutMsg: "the zoomed-out graph with n040 visible and focused at the camera's endpoint" }).catch((error: unknown) => {
-            assert.fail(`timed out: the zoomed-out graph with n040 visible and focused at the camera's endpoint; ${JSON.stringify(endpoint)}; ${String(error)}`);
-          });
-          console.log(`e2e graph endpoint: ${JSON.stringify(endpoint)}`);
           assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /n040/, "selection held through the transition");
         }
       }
       // The tree's selection is the focused node: the breadcrumb names it.
       const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
       assert.match(crumbs, /n084/);
-      assert.ok((await mounted()) < 85, "still drawing only part of the chain");
+      const last = await nodeView(name(84));
+      assert.ok(last.whole && last.visible && last.focused, "the final Artifact is visible and focused in the whole graph");
+      assert.ok(revealedBeyond, "arrow navigation brought an Artifact from beyond the viewport into view and focus");
     },
   ),
 
