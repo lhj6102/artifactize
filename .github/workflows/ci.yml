@@ -54,8 +54,13 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      # Packages the crate and builds the package as crates.io would, without uploading.
-      - run: cargo publish --dry-run --locked -p artifactize-core -p artifactize-tools -p artifactize-tui -p artifactize
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test crates/artifactize/publish.test.mjs
+      # Packages the crates with an invocation-owned staging registry, without uploading.
+      - run: node publish.mjs
+        working-directory: crates/artifactize
   # The desktop app (crates/artifactize-desktop) is outside default-members: it needs
   # WebKitGTK and its built frontend, so it builds and tests here, on Linux only.
   desktop:
