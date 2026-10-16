@@ -666,6 +666,21 @@ export async function releaseAccountBrowser(): Promise<void> {
   if (stopped.status !== 0 && stopped.status !== 128) throw new Error(`taskkill exited ${stopped.status}: ${stopped.stderr}`);
 }
 
+/** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
+ * gives no focus events to a page whose window is not it: an app beside another one missed
+ * its own focus changes (a focused pane, a focused tool list). Windows runs one app at a time. */
+export const appsAtOnce = WINDOWS ? 1 : 2;
+
+/** Give the scenario's app window the system focus before it starts, on Windows (see
+ * appsAtOnce); other systems deliver focus events to a page in any window. */
+export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<void> {
+  if (!WINDOWS) return;
+  await browser.execute(() => (window as unknown as { __TAURI__: { window: { getCurrentWindow(): { setFocus(): Promise<void> } } } })
+    .__TAURI__.window.getCurrentWindow().setFocus());
+  await browser.waitUntil(() => browser.execute(() => document.hasFocus()),
+    { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
+}
+
 /** Unix desktop openers are declared fixture executables performing the real HTTP GET;
  * the account server, not this program, records the exact displayed address reached. */
 export function accountBrowserEnvironment(root: NativePath, env: Environment): Environment {
