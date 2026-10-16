@@ -114,7 +114,7 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
     )
     .unwrap();
     let mut command = runtime::Command::prepare(
-        "node".into(),
+        support::os::node_program().into(),
         vec![helper.into_os_string()],
         &workspace,
         &root.path().join("runs"),

@@ -112,6 +112,11 @@ release. Another person's claim prevents your actions. Claims are cooperative
 reviewer locks, not authenticated accounts; only the claimant can run tools or
 submit. See [Human](../features/human.md) for shared lifecycle and deferred sign-offs.
 
+The instruction comes first. `i` or its expand/fold button changes how much is
+shown; Ctrl+PgUp/PgDn scrolls long criteria from any sub-area. `t` toggles the
+Human request's Technical record. Tab or a click moves to Tools; Ctrl+U releases
+your claim even while editing.
+
 In Tools, ↑/↓ or `j`/`k` selects an action and previews its resolved command,
 description or reason it cannot run. A click focuses and selects a tool. **Enter,
 or a second click on the selected tool while Tools is focused, runs it immediately**.
@@ -127,6 +132,9 @@ controls. Ctrl+G/Ctrl+R switches verdicts; Ctrl+S submits, never plain Enter.
 Schema errors identify the failing path and leave the form correctable. Input-method
 composition, including Korean, belongs to the text field and never fires shortcuts.
 Esc cancels active work, then leaves the form, then leaves Detail.
+Leaving a form keeps its verdict's draft; reopening it restores that draft, and
+GREEN and RED keep separate drafts. Monitor and Review share the same request's
+review state within this app session, rather than creating independent forms.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.
@@ -151,6 +159,7 @@ held for this reviewer; it is not a verdict.
   External-file and refused-storage modes disable sign-in here; sign-out is
   available only for artifactize's own stored account. Browser sign-in can be
   cancelled, and a redirect URL can be pasted when the browser cannot return.
+  Sign-out removes local tokens and warns when server revocation cannot be confirmed.
 - **Models:** lists model IDs offered by the chosen backend.
 - **Review store:** signs in with URL, token and sharing level, displays status,
   pushes results (or a dry run) and signs out. **Summary** excludes argv, captured
