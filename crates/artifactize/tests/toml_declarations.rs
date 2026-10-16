@@ -5,13 +5,13 @@ use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 const FEATURES: &str = r#"
 name = "app"
 tags = ["type:code", "한글"]
 mounts = { input = "source" }
 fingerprint = { script = { command = "hash", args = ["{input}"], files = ["rules"], timeout_ms = 1000 } }
-review_policy = { dependency_gates = "ignore" }
 
 [views.agent_tools]
 read = { builtin = "read", description = "Read {artifactName}" }
@@ -90,8 +90,6 @@ fn every_declaration_feature_is_standard_toml_with_owner_data_untouched() {
 #[test]
 fn declaration_names_are_snake_case_at_every_typed_boundary() {
     for (snake, camel) in [
-        ("review_policy", "reviewPolicy"),
-        ("dependency_gates", "dependencyGates"),
         ("agent_tools", "agentTools"),
         ("human_tools", "humanTools"),
         ("input_schema", "inputSchema"),
@@ -289,47 +287,49 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
         .arg("--repo")
         .arg(root.path())
         .args(["config", "graph", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
-        wire
-    );
+    let cli: Value = serde_json::from_slice(&output.stdout).unwrap();
     let saved = artifactize_core::store::definitions::Definitions::from_view(&view).unwrap();
-    assert_eq!(serde_json::to_value(saved).unwrap(), wire);
-    let artifact = &wire["artifacts"]["app"];
-    assert!(artifact.get("reviewPolicy").is_some() && artifact.get("review_policy").is_none());
-    assert_eq!(artifact["reviewPolicy"]["dependencyGates"], "ignore");
-    assert_eq!(artifact["fingerprint"]["script"]["timeoutMs"], 1000);
-    let tool = &artifact["views"]["agentTools"]["inspect"];
-    assert_eq!(tool["inputSchema"]["additionalProperties"], false);
-    assert_eq!(tool["executionPaths"], json!(["bin/inspect"]));
-    assert_eq!(tool["timeoutMs"], 1000);
-    assert!(artifact["views"].get("humanTools").is_some());
-    let eval = &wire["evals"][0]["declaration"];
-    for (camel, snake) in [
-        ("profileVariants", "profile_variants"),
-        ("passSchema", "pass_schema"),
-        ("failSchema", "fail_schema"),
-    ] {
-        assert!(
-            eval.get(camel).is_some() && eval.get(snake).is_none(),
-            "{eval}"
-        );
+    let saved = serde_json::to_value(saved).unwrap();
+    // Every public representation is checked against the declaration's independent values,
+    // not against another representation produced by the same serializer.
+    for wire in [&wire, &cli, &saved] {
+        let artifact = &wire["artifacts"]["app"];
+        assert!(artifact.get("reviewPolicy").is_none());
+        assert_eq!(artifact["fingerprint"]["script"]["timeoutMs"], 1000);
+        let tool = &artifact["views"]["agentTools"]["inspect"];
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        assert_eq!(tool["executionPaths"], json!(["bin/inspect"]));
+        assert_eq!(tool["timeoutMs"], 1000);
+        assert!(artifact["views"].get("humanTools").is_some());
+        let eval = &wire["evals"][0]["declaration"];
+        for (camel, snake) in [
+            ("profileVariants", "profile_variants"),
+            ("passSchema", "pass_schema"),
+            ("failSchema", "fail_schema"),
+        ] {
+            assert!(
+                eval.get(camel).is_some() && eval.get(snake).is_none(),
+                "{eval}"
+            );
+        }
+        assert_eq!(eval["id"], "a-agent");
+        assert_eq!(eval["profile"]["timeoutMs"], 3000);
+        assert_eq!(eval["profile"]["maxToolCalls"], 10);
+        assert_eq!(eval["profile"]["maxTokens"], 1000);
     }
-    assert_eq!(eval["id"], "a-agent");
-    assert_eq!(eval["profile"]["timeoutMs"], 3000);
-    assert_eq!(eval["profile"]["maxToolCalls"], 10);
-    assert_eq!(eval["profile"]["maxTokens"], 1000);
     let stored = artifactize_core::config::StoredProfile::from(declaration.evals[0].profile());
     let value = serde_json::to_value(stored).unwrap();
-    assert_eq!(value["timeoutMs"], 3000);
+    let expected = json!({"kind":"agent","backend":"codex","model":"fixture",
+        "reasoning":"high","timeoutMs":3000,"maxToolCalls":10,"maxTokens":1000});
+    assert_eq!(value, expected);
     assert_eq!(
-        serde_json::from_value::<artifactize_core::config::StoredProfile>(value.clone())
+        serde_json::from_value::<artifactize_core::config::StoredProfile>(value)
             .map(|profile| serde_json::to_value(profile).unwrap())
             .unwrap(),
-        value
+        expected
     );
 }
 
@@ -412,21 +412,20 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
     )
     .unwrap();
     let wire = serde_json::to_value(&view).unwrap();
-    assert_eq!(wire["evals"][0]["declaration"]["profile"], expected);
-    assert!(wire["evals"][0]["declaration"].get("payload").is_none());
     let saved = artifactize_core::store::definitions::Definitions::from_view(&view).unwrap();
-    assert_eq!(serde_json::to_value(saved).unwrap(), wire);
+    let saved = serde_json::to_value(saved).unwrap();
     let output = std::process::Command::new(support::os::cli())
         .arg("--repo")
         .arg(root.path())
         .args(["config", "graph", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
-        wire
-    );
+    let cli: Value = serde_json::from_slice(&output.stdout).unwrap();
+    for wire in [&wire, &saved, &cli] {
+        assert_eq!(wire["evals"][0]["declaration"]["profile"], expected);
+        assert!(wire["evals"][0]["declaration"].get("payload").is_none());
+    }
 }
 
 #[test]
@@ -444,7 +443,7 @@ fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
             .arg("--repo")
             .arg(root.path())
             .args(["config", "graph", "--json"])
-            .output()
+            .record_output()
             .unwrap()
     };
     let ignored = run_graph();

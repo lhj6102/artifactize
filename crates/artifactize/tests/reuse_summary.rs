@@ -1,5 +1,9 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     collections::BTreeMap,
@@ -9,21 +13,18 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::{
-    FakeProvider, openai,
-    os::{shell, true_program},
-};
+use support::{FakeProvider, openai, os::true_program};
 
 /// Checkouts of one project sharing a state directory, with a fake OpenAI provider
 /// that passes every Agent review.
 struct Fixture {
-    root: tempfile::TempDir,
+    root: owned_run::Root,
     provider: FakeProvider,
 }
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         fs::create_dir(root.path().join("home")).unwrap();
         let provider = FakeProvider::start(|request| {
             assert_eq!(request.path, "/v1/responses");
@@ -44,8 +45,8 @@ impl Fixture {
         // web/tests is RED when its version says "broken".
         let web = json!({
             "kind":"runtime",
-            "command":shell(),
-            "args":["-c","! grep -q broken version"],
+            "command":support::os::python_program(),
+            "args":["-c","import pathlib; raise SystemExit(int('broken' in pathlib.Path('version').read_text()))"],
         });
         let agent = json!({
             "kind":"agent",
@@ -94,6 +95,7 @@ impl Fixture {
     }
 
     fn run(&self, repo: &Path, args: &[&str], code: i32) -> Output {
+        self.root.track(&self.root.path().join("state"), repo);
         let root = self.root.path();
         let output = Command::new(support::os::cli())
             .arg("--repo")
@@ -105,7 +107,7 @@ impl Fixture {
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -191,7 +193,7 @@ fn reused(total: u64, runtime: u64, agent: u64, human: u64) -> Value {
 }
 
 /// A verify that records the Human request and stops waiting for it at once (exit 3).
-const RECORD: [&str; 4] = ["verify", "--all", "--timeout-ms", "1"];
+const RECORD: [&str; 2] = ["verify", "--all"];
 
 fn line<'a>(text: &'a str, prefix: &str) -> &'a str {
     text.lines()
@@ -206,7 +208,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     let fixture = Fixture::new();
     // Branch A changes api; its first Run executes everything and waits for the Human.
     let a = fixture.checkout("a", ["a", "base", "base", "base", "base"]);
-    let first = fixture.json(&a, &RECORD, 3);
+    let first = fixture.json(&a, &RECORD, 0);
     assert_eq!(first["summary"]["executed"], tally(5, 3, 1, 1));
     assert_eq!(first["summary"]["reused"], reused(0, 0, 0, 0));
     assert_eq!(first["usage"]["saved"], json!({}));
@@ -215,7 +217,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     // Branch B changes api and web, so docs and style review again; the Human signoff of the
     // unchanged docs and style is reused.
     let b = fixture.checkout("b", ["b", "b", "base", "base", "base"]);
-    let second = fixture.json(&b, &["verify", "--all"], 0);
+    let second = fixture.json(&b, &["verify", "--wait", "--all"], 0);
     assert_eq!(second["summary"]["executed"], tally(4, 3, 1, 0));
     assert_eq!(second["summary"]["reused"], reused(1, 0, 0, 1));
     let review = request(&second, "docs/review");
@@ -257,15 +259,19 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
         "Verify actions: will execute 1, will reuse 3, wait 1, blocked 0"
     );
 
-    let text = fixture.text(&merge, &["verify", "--all"], 0);
+    let text = fixture.text(&merge, &["verify", "--wait", "--all"], 0);
     let id = line(&text, "Run:").strip_prefix("Run: ").unwrap();
     let run = fixture.json(&merge, &["run", "show", id], 0);
     // style waits for web's new result, then reviews again because its key covers web.
-    let mut expected = predicted(&status);
-    assert_eq!(expected["style/contrast"], "wait");
-    expected.insert("style/contrast".into(), "execute".into());
-    assert_eq!(expected, taken(&run));
-    assert_eq!(taken(&run)["web/tests"], "execute");
+    let expected = BTreeMap::from([
+        ("api/tests".into(), "reuse".into()),
+        ("brand/signoff".into(), "reuse".into()),
+        ("docs/review".into(), "reuse".into()),
+        ("style/contrast".into(), "execute".into()),
+        ("web/tests".into(), "execute".into()),
+    ]);
+    assert_eq!(predicted(&status)["style/contrast"], "wait");
+    assert_eq!(taken(&run), expected);
     assert_eq!(run["executionsStarted"], 2);
     assert_eq!(run["summary"]["executed"], tally(2, 2, 0, 0));
     assert_eq!(run["summary"]["reused"], reused(3, 1, 1, 1));
@@ -307,7 +313,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
 fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
     let fixture = Fixture::new();
     let base = fixture.checkout("base", ["base"; 5]);
-    let first = fixture.json(&base, &RECORD, 3);
+    let first = fixture.json(&base, &RECORD, 0);
     fixture.sign(&base, &first);
 
     // web turns RED. style names web, so its key changes; brand names style and docs, whose
@@ -317,14 +323,14 @@ fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
     let status = fixture.json(&red, &["status"], 1);
     assert_eq!(predicted(&status)["style/contrast"], "wait");
     for executed in [1, 0] {
-        let run = fixture.json(&red, &["verify", "--all"], 1);
+        let run = fixture.json(&red, &["verify", "--wait", "--all"], 1);
         assert_eq!(run["summary"]["executed"]["total"], executed);
         assert_eq!(request(&run, "web/tests")["status"], "RED");
         assert_eq!(taken(&run)["style/contrast"], "blocked");
         assert_eq!(taken(&run)["brand/signoff"], "reuse");
     }
     let status = fixture.json(&red, &["status"], 1);
-    let run = fixture.json(&red, &["verify", "--all"], 1);
+    let run = fixture.json(&red, &["verify", "--wait", "--all"], 1);
     assert_eq!(predicted(&status), taken(&run), "{status}");
     // verify attaches cached results behind a blocked gate, so status says reuse, not blocked.
     let row = |eval: &str| {
@@ -369,7 +375,7 @@ fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
 fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
     let fixture = Fixture::new();
     let repo = fixture.checkout("base", ["base"; 5]);
-    let first = fixture.json(&repo, &RECORD, 3);
+    let first = fixture.json(&repo, &RECORD, 0);
     let review = request(&first, "docs/review").clone();
     assert_eq!(review["status"], "GREEN");
     let calls = fixture.provider.requests().len();
@@ -396,7 +402,11 @@ fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
             .contains("produced by profile openai fake-exact-model high"),
         "{docs}"
     );
-    let text = fixture.text(&repo, &RECORD, 3);
+    let text = fixture.text(
+        &repo,
+        &["verify", "--all", "--wait", "--reuse-only", "human"],
+        4,
+    );
     assert!(
         line(&text, "docs/review").ends_with(&format!(
             "]: GREEN (reused from {}, profile openai fake-exact-model high)",
@@ -421,7 +431,7 @@ fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
 #[test]
 fn reuse_only_runs_tests_and_takes_reviews_only_from_the_cache() {
     let fixture = Fixture::new();
-    let ci = ["verify", "--all", "--reuse-only", "agent,human"];
+    let ci = ["verify", "--wait", "--all", "--reuse-only", "agent,human"];
     // Nothing is cached: the runtime evals execute, the Agent review is not executed, and the
     // sign-off that names it waits behind it. No model or person is asked.
     let base = fixture.checkout("base", ["base"; 5]);
@@ -460,7 +470,7 @@ fn reuse_only_runs_tests_and_takes_reviews_only_from_the_cache() {
     assert!(line(&text, "Reason:").contains("not executed (--reuse-only)"));
 
     // A local verify produces the review and the sign-off; CI then reuses every result.
-    let local = fixture.json(&base, &RECORD, 3);
+    let local = fixture.json(&base, &RECORD, 0);
     fixture.sign(&base, &local);
     assert_eq!(fixture.provider.requests().len(), 1);
     let cached = fixture.json(&base, &ci, 0);

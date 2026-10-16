@@ -26,7 +26,7 @@ use artifactize_core::{
     review::{self, Job, Outcome},
     store::{self, RequestView},
     tools::human::CommandLine,
-    types::{RequestId, RequestStatus},
+    types::RequestId,
 };
 use serde::Serialize;
 use specta::Type;
@@ -219,7 +219,7 @@ fn view(
     now: OffsetDateTime,
 ) -> HumanView {
     let request = &view.request;
-    let settled = request.status() != RequestStatus::WaitingHuman;
+    let settled = !request.status().is_human_wait();
     let claim = view.claim.as_ref().map(|claim| Claimant {
         reviewer: claim.reviewer.to_string(),
         mine: claim.reviewer.as_str() == reviewer,
@@ -278,7 +278,7 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
     let view = store::read_request(state, id)
         .await
         .map_err(Failure::Read)?;
-    let view = if view.request.status() == RequestStatus::WaitingHuman {
+    let view = if view.request.status().is_human_wait() {
         store::read_original(state, &view)
             .await
             .map_err(Failure::Read)?
@@ -286,7 +286,7 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
         view
     };
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
-    let resolve = view.request.status() == RequestStatus::WaitingHuman
+    let resolve = view.request.status().is_human_wait()
         && view.request.human_definition.is_some()
         && !app
             .human
@@ -297,7 +297,9 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
     if resolve {
         let commands = async {
             let (receipts, _) = artifactize_core::human::open(state, &view.request.id).await?;
-            artifactize_core::human::tool_commands(&receipts, &view.request.id).await
+            let result = artifactize_core::human::tool_commands(&receipts, &view.request.id).await;
+            let closed = receipts.close().await;
+            result.and_then(|commands| closed.map(|()| commands))
         }
         .await;
         app.human
@@ -544,14 +546,14 @@ pub async fn human_submit(
     let id = id.into_inner();
     guard(&app, &id, review::review_refusal).await?;
     let request = opened(&app, &id)?;
-    let verdict = draft.verdict.into();
-    let result = form::result(&request.request, draft)?;
+    let result = form::result(&request.request, draft)?
+        .try_into()
+        .map_err(Failure::Invalid)?;
     let outcome = run_job(
         &app,
         job,
         Job::Submit {
             id: id.clone(),
-            verdict,
             result,
             claim: false,
         },

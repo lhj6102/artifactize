@@ -2,6 +2,8 @@
 //! The first subscriber temporarily hosts a hub; there is no daemon and writers never elect one.
 mod probe;
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
 mod tests;
 mod transport;
 
@@ -102,6 +104,9 @@ impl Dirty {
 struct Inbox {
     #[cfg(test)]
     registration: tokio::sync::watch::Sender<Option<crate::config::HubEpoch>>,
+    // A test can wait for received hints rather than confusing the hub's ACK with delivery.
+    #[cfg(test)]
+    received: tokio::sync::watch::Sender<Option<u64>>,
     dirty: Mutex<Dirty>,
     wake: Notify,
 }
@@ -110,6 +115,8 @@ impl Default for Inbox {
         Self {
             #[cfg(test)]
             registration: tokio::sync::watch::channel(None).0,
+            #[cfg(test)]
+            received: tokio::sync::watch::channel(None).0,
             dirty: Mutex::default(),
             wake: Notify::new(),
         }
@@ -133,10 +140,11 @@ impl Inbox {
 }
 
 /// Register before reading the baseline. Dirties arriving during that read stay queued.
-/// Dropping the subscription stops its connection, probe and any hub it owns.
+/// Drop requests cancellation; await [`Self::close`] before removing the subscribed state.
 pub struct Subscription {
     inbox: Arc<Inbox>,
     cancel: CancellationToken,
+    task: tokio::task::JoinHandle<Result<(), String>>,
 }
 impl Subscription {
     pub async fn new(state: &Path) -> Self {
@@ -144,12 +152,29 @@ impl Subscription {
         let cancel = CancellationToken::new();
         let (ready, registered) = oneshot::channel();
         let state = state.to_path_buf();
-        tokio::spawn(watch(state, inbox.clone(), cancel.clone(), ready));
+        let task = tokio::spawn(watch(state, inbox.clone(), cancel.clone(), ready));
         // Keep cancellation ownership even if the caller abandons registration midway.
-        let subscription = Self { inbox, cancel };
+        let subscription = Self {
+            inbox,
+            cancel,
+            task,
+        };
         // An unavailable or unsafe endpoint degrades, never prevents a baseline read.
         let _ = registered.await;
         subscription
+    }
+    /// Stop this subscription and wait for its connection, hub and probe database to close.
+    /// Other subscriptions remain independent. Dropping this future still requests cancellation.
+    pub async fn close(mut self) -> Result<(), String> {
+        self.cancel.cancel();
+        crate::task::joined((&mut self.task).await).map_err(|error| error.to_string())?
+    }
+    /// Process-owner death has no database writer; reuse the subscription's reconciliation
+    /// cadence when an observer also owns liveness reconciliation.
+    pub async fn next_reconciled(&mut self) -> Change {
+        tokio::time::timeout(RECONCILE, self.next_state())
+            .await
+            .unwrap_or(Change::Resync)
     }
     pub async fn next(&mut self) -> Change {
         self.inbox.next().await
@@ -181,6 +206,9 @@ struct Publishing {
     pending: Mutex<Outbox>,
     wake: Notify,
     drained: Notify,
+    // Fixture barriers must distinguish an actual hub ACK from best-effort timeout.
+    #[cfg(test)]
+    delivery_error: Mutex<Option<String>>,
 }
 /// Cloneable synchronous producer, also safe to invoke on the SQLite worker thread.
 #[derive(Clone, Default)]
@@ -208,6 +236,8 @@ impl Publisher {
             pending: Mutex::new(Outbox::default()),
             wake: Notify::new(),
             drained: Notify::new(),
+            #[cfg(test)]
+            delivery_error: Mutex::default(),
         });
         publishers.insert(
             publisher.endpoint.identity.clone(),
@@ -342,7 +372,11 @@ async fn publish(publisher: Arc<Publishing>) {
             }
             Ok::<_, std::io::Error>(())
         };
-        let _ = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
+        let _delivery = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
+        #[cfg(test)]
+        if !matches!(&_delivery, Ok(Ok(()))) {
+            *publisher.delivery_error.lock().unwrap() = Some(format!("{_delivery:?}"));
+        }
         publisher.pending.lock().unwrap().delivered = target;
         publisher.drained.notify_one();
     }
@@ -353,7 +387,7 @@ async fn watch(
     inbox: Arc<Inbox>,
     cancel: CancellationToken,
     ready: oneshot::Sender<()>,
-) {
+) -> Result<(), String> {
     let mut ready = Some(ready);
     let endpoint = Endpoint::new(&state).ok();
     let mut hub = None;
@@ -435,9 +469,10 @@ async fn watch(
         }
     }
     if let Some(task) = hub {
-        task.abort();
+        // Its child token is cancelled too; let serve join every client before releasing IPC.
         let _ = crate::task::joined(task.await);
     }
+    probe.close().await
 }
 async fn receive(
     mut stream: transport::Stream,
@@ -457,6 +492,8 @@ async fn receive(
                 }
                 previous = Some(sequence);
                 inbox.add(change);
+                #[cfg(test)]
+                inbox.received.send_replace(Some(sequence));
             }
             _ => return Err(std::io::ErrorKind::InvalidData.into()),
         }

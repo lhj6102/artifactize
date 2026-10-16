@@ -36,7 +36,8 @@ const INITIALIZATION_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 /// - `state_meta`: named values of the state itself: `id`, a random UUID made when the
 ///   database is created, which identifies the state in Agent session references.
 const SCHEMA: &str =
-    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, request_key TEXT);
+    CREATE UNIQUE INDEX run_request_key ON runs(repo,request_key) WHERE request_key IS NOT NULL;
     CREATE TABLE requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT, data TEXT NOT NULL, UNIQUE(run_id, eval_id), UNIQUE(run_id, ordinal));
     CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL);
     CREATE TABLE state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -46,8 +47,8 @@ const SCHEMA: &str =
     CREATE INDEX definition_history ON executions(eval_def_hash, completed_at);
     CREATE INDEX running_backend ON executions(backend) WHERE status='RUNNING';";
 
-/// Why a state written by an earlier artifactize is refused: no version migrates.
-pub const EARLIER_STATE: &str = "This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.";
+/// Versions before the supported additive upgrade boundary are refused.
+pub const EARLIER_STATE: &str = "This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). Only schema 6 and later supported versions can be upgraded.";
 
 /// Why a state database of schema `version`, neither this one nor uninitialized, is refused.
 pub fn schema_error(version: u32) -> String {
@@ -79,14 +80,16 @@ pub struct Run {
     pub repository: crate::repository::Identity,
     pub state_dir: PathBuf,
     pub state: super::RunState,
+    pub modes: crate::runs::RunModes,
+    pub control: Option<crate::runs::Control>,
+    pub request_key: Option<crate::types::RequestKey>,
     pub created_at: Timestamp,
     pub selection: crate::project::selection::Selection,
     pub profile: Option<crate::project::selection::ProfileSelection>,
     pub definitions: super::definitions::Definitions,
     pub recursive: bool,
     pub force: bool,
-    pub ignore_gates: bool,
-    pub jobs: usize,
+    pub jobs: Option<usize>,
     /// Fingerprints computed at once; absent in Runs saved before 0.5.
     pub fingerprint_jobs: Option<usize>,
     pub max_executions: Option<u64>,
@@ -114,6 +117,12 @@ pub(crate) struct RunWire {
     pub repository: crate::repository::Identity,
     #[serde(with = "crate::platform::path_serde")]
     pub state_dir: PathBuf,
+    #[serde(default, skip_serializing_if = "crate::runs::RunModes::is_default")]
+    pub modes: crate::runs::RunModes,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<crate::runs::Control>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_key: Option<crate::types::RequestKey>,
     pub status: RunStatus,
     pub created_at: Timestamp,
     pub completed_at: Option<Timestamp>,
@@ -126,10 +135,8 @@ pub(crate) struct RunWire {
     pub recursive: bool,
     #[serde(default)]
     pub force: bool,
-    #[serde(default)]
-    pub ignore_gates: bool,
-    #[serde(default = "default_jobs")]
-    pub jobs: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jobs: Option<usize>,
     /// Fingerprints computed at once; absent in Runs saved before 0.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fingerprint_jobs: Option<usize>,
@@ -161,6 +168,9 @@ impl TryFrom<RunWire> for Run {
         let state = super::RunState::from_parts(wire.status, wire.completed_at, wire.error)?;
         Ok(Self {
             state,
+            modes: wire.modes,
+            control: wire.control,
+            request_key: wire.request_key,
             id: wire.id,
             repo_path: wire.repo_path,
             repository: wire.repository,
@@ -171,7 +181,6 @@ impl TryFrom<RunWire> for Run {
             definitions: wire.definitions,
             recursive: wire.recursive,
             force: wire.force,
-            ignore_gates: wire.ignore_gates,
             jobs: wire.jobs,
             fingerprint_jobs: wire.fingerprint_jobs,
             max_executions: wire.max_executions,
@@ -188,6 +197,9 @@ impl TryFrom<RunWire> for Run {
 impl From<Run> for RunWire {
     fn from(record: Run) -> Self {
         Self {
+            modes: record.modes.clone(),
+            control: record.control.clone(),
+            request_key: record.request_key.clone(),
             status: record.status(),
             completed_at: record.completed_at(),
             error: record.error().map(str::to_owned),
@@ -201,7 +213,6 @@ impl From<Run> for RunWire {
             definitions: record.definitions,
             recursive: record.recursive,
             force: record.force,
-            ignore_gates: record.ignore_gates,
             jobs: record.jobs,
             fingerprint_jobs: record.fingerprint_jobs,
             max_executions: record.max_executions,
@@ -237,10 +248,6 @@ pub struct StoppedBackend {
     pub eval_id: crate::types::EvalId,
     pub request_id: RequestId,
     pub error: String,
-}
-
-fn default_jobs() -> usize {
-    crate::project::DEFAULT_JOBS
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -522,6 +529,115 @@ pub struct Receipts {
     pub(super) connection: NotifyingConnection,
 }
 
+/// A test writer closes its SQLite worker before the caller's temporary state is removed.
+#[cfg(any(test, feature = "test-support"))]
+pub struct OwnedReceipts(Receipts);
+
+#[cfg(any(test, feature = "test-support"))]
+impl OwnedReceipts {
+    pub async fn open(state: &Path, repo: &Path) -> Result<Self, String> {
+        Receipts::open(state, repo).await.map(Self)
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl std::ops::Deref for OwnedReceipts {
+    type Target = Receipts;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for OwnedReceipts {
+    fn drop(&mut self) {
+        let connection = self.0.connection.inner.clone();
+        // Drop can run on a current-thread Tokio test runtime, including during unwinding.
+        // A separate joined thread avoids nesting runtimes or detaching SQLite teardown.
+        let closed = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("create the test writer's teardown runtime")
+                .block_on(connection.close())
+        })
+        .join();
+        if !std::thread::panicking() {
+            closed
+                .expect("join the test writer's teardown")
+                .expect("close the test writer's SQLite connection");
+        }
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn failed_writer_initialization_releases_sqlite_before_returning_the_schema_error() {
+        let root = crate::test_os::tempdir();
+        let state = root.path().join("state");
+        let repo = root.path().join("repo");
+        std::fs::create_dir(&state).unwrap();
+        std::fs::create_dir(&repo).unwrap();
+        let database = state.join(DATABASE);
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute_batch("CREATE TABLE unrelated(value TEXT)")
+            .unwrap();
+        drop(connection);
+        let error = match OwnedReceipts::open(&state, &repo).await {
+            Ok(_) => panic!("an unversioned nonempty database is not our schema"),
+            Err(error) => error,
+        };
+        assert!(error.contains(&schema_error(0)), "{error}");
+        assert!(crate::test_os::database_released(&database).unwrap());
+        root.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_writer_close_releases_sqlite_before_return_and_closes_clones() {
+        let root = crate::test_os::tempdir();
+        let state = root.path().join("state");
+        let repo = root.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        let writer = OwnedReceipts::open(&state, &repo).await.unwrap();
+        let retained = Receipts::clone(&writer);
+        let database = state.join(DATABASE);
+        assert!(!crate::test_os::database_released(&database).unwrap());
+        Receipts::clone(&writer).close().await.unwrap();
+        assert!(crate::test_os::database_released(&database).unwrap());
+        assert_eq!(retained.state_id().await.unwrap_err(), "ConnectionClosed");
+        root.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn owned_writer_closes_before_temp_state_removal_on_success_and_unwind() {
+        for unwind in [false, true] {
+            let root = crate::test_os::tempdir();
+            let state = root.path().join("state");
+            let repo = root.path().join("repo");
+            std::fs::create_dir(&repo).unwrap();
+            let writer = OwnedReceipts::open(&state, &repo).await.unwrap();
+            assert!(writer.state_id().await.is_ok());
+            // Even another writer handle cannot retain the worker after fixture teardown.
+            let retained = Receipts::clone(&writer);
+            if unwind {
+                let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                    let _writer = writer;
+                    panic!("fixture assertion failure");
+                }));
+                assert!(failed.is_err());
+            } else {
+                drop(writer);
+            }
+            let error = retained.state_id().await.unwrap_err();
+            assert_eq!(error, "ConnectionClosed");
+            root.close().unwrap();
+        }
+    }
+}
+
 /// Notify at the DB-worker completion boundary, even if the awaiting caller was cancelled.
 /// total_changes is conservative (rolled-back changes can invalidate harmlessly). Only a
 /// finished autocommit edge can publish; no event is an audit record or proof of success.
@@ -531,6 +647,9 @@ pub(crate) struct NotifyingConnection {
     publisher: crate::changes::Publisher,
 }
 impl NotifyingConnection {
+    pub(super) async fn finish<T>(self, result: Result<T, String>) -> Result<T, String> {
+        super::connection::finish(self.inner, result).await
+    }
     pub(crate) fn new(inner: Connection, state: &Path) -> Self {
         Self {
             inner,
@@ -558,16 +677,22 @@ impl NotifyingConnection {
 }
 
 impl Receipts {
+    /// Close the shared SQLite connection before releasing its state files. Any cloned
+    /// receipts also become closed; call this only after all operations on them finish.
+    pub async fn close(self) -> Result<(), String> {
+        self.connection.finish(Ok(())).await
+    }
+
     pub async fn open(state: &Path, repo: &Path) -> Result<Self, String> {
         let state = prepare_directory(state, repo).map_err(|e| e.to_string())?;
         check_files(&state)?;
+        let state_id: crate::types::StateId = crate::agent::uuid()?.parse()?;
         let connection = Connection::open(state.join(DATABASE))
             .await
             .map_err(|e| e.to_string())?;
         let connection = NotifyingConnection::new(connection, &state);
         // WAL initialization retries share the database contention budget.
         let deadline = tokio::time::Instant::now() + super::SQLITE_BUSY_TIMEOUT;
-        let state_id: crate::types::StateId = crate::agent::uuid()?.parse()?;
         loop {
             let state_id = state_id.clone();
             let initialized = connection
@@ -576,7 +701,10 @@ impl Receipts {
                     db.pragma_update(None, "foreign_keys", true)?;
                     let version: u32 =
                         db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-                    if version != 0 && version != STATE_SCHEMA_VERSION {
+                    if version != 0
+                        && !(super::migrations::FIRST_VERSION..=STATE_SCHEMA_VERSION)
+                            .contains(&version)
+                    {
                         return Err(Error::Invalid(schema_error(version)));
                     }
                     db.pragma_update(None, "journal_mode", "WAL")?;
@@ -584,6 +712,7 @@ impl Receipts {
                         db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                     // Publish the schema, the state's id and the version together; readers see
                     // an empty snapshot until commit.
+                    super::migrations::apply(&transaction)?;
                     if !schema_initialized(&transaction)? {
                         transaction.execute_batch(SCHEMA)?;
                         transaction.execute(
@@ -607,7 +736,7 @@ impl Receipts {
                     // Concurrent first opens can race when enabling WAL despite busy_timeout.
                     tokio::time::sleep(INITIALIZATION_RETRY_INTERVAL).await;
                 }
-                Err(error) => return Err(error.to_string()),
+                Err(error) => return connection.finish(Err(error.to_string())).await,
             }
         }
         Ok(Self { connection })
@@ -639,12 +768,13 @@ impl Receipts {
             .call(move |db| -> Result<(), Error> {
                 let transaction = db.transaction()?;
                 transaction.execute(
-                    "INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)",
+                    "INSERT INTO runs(id,repo,status,data,request_key) VALUES (?,?,?,?,?)",
                     params![
                         run.id,
                         crate::platform::path_text(&run.repo_path),
                         run.status(),
-                        serde_json::to_string(&run)?
+                        serde_json::to_string(&run)?,
+                        run.request_key
                     ],
                 )?;
                 for (ordinal, request) in requests.iter().enumerate() {
@@ -679,10 +809,10 @@ impl Receipts {
         let run = run.clone();
         self.connection
             .call(move |db| -> Result<(), Error> {
-                db.execute(
-                    "UPDATE runs SET status=?,data=? WHERE id=?",
-                    params![run.status(), serde_json::to_string(&run)?, run.id],
-                )?;
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                super::run_control::save(&transaction, run)?;
+                transaction.commit()?;
                 Ok(())
             })
             .await
@@ -694,18 +824,16 @@ impl Receipts {
         let requests = requests.to_vec();
         self.connection
             .call(move |db| -> Result<(), Error> {
-                let transaction = db.transaction()?;
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 for request in requests {
                     // A concurrent submission may already have settled this saved request.
-                    if request.status() == crate::types::RequestStatus::WaitingHuman {
+                    if request.status().is_human_wait() {
                         continue;
                     }
-                    update_request(&transaction, &request)?;
+                    transaction.execute("UPDATE requests SET status=?,data=?,execution_id=? WHERE id=? AND status NOT IN ('GREEN','RED','ERROR')", params![request.status(),serde_json::to_string(&request)?,request.execution_id,request.id])?;
                 }
-                transaction.execute(
-                    "UPDATE runs SET status=?,data=? WHERE id=?",
-                    params![run.status(), serde_json::to_string(&run)?, run.id],
-                )?;
+                super::run_control::save(&transaction, run)?;
                 transaction.commit()?;
                 Ok(())
             })
@@ -749,6 +877,7 @@ pub(super) fn schema_initialized(transaction: &rusqlite::Transaction<'_>) -> Res
 /// Reject non-regular state files and a database of another schema before any read or write.
 pub(super) fn check_files(state: &Path) -> Result<(), String> {
     match state_schema(state)? {
+        Some(6) => super::migrations::open_existing(state),
         Some(version) if version != 0 && version != STATE_SCHEMA_VERSION => {
             Err(schema_error(version))
         }
@@ -773,7 +902,12 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
         db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
-    read().map(Some).map_err(|e| e.to_string())
+    let version = read().map_err(|e| e.to_string())?;
+    if version == super::migrations::FIRST_VERSION {
+        super::migrations::open_existing(&state)?;
+        return read().map(Some).map_err(|e| e.to_string());
+    }
+    Ok(Some(version))
 }
 
 /// The state's stable id, read without creating anything; `None` until a command that writes
@@ -866,7 +1000,7 @@ pub async fn read_latest_requests(
     .await
     .map_err(|e| e.to_string())?;
     let repo = repo.to_path_buf();
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -911,7 +1045,8 @@ pub async fn read_latest_requests(
             Ok(latest)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 /// Existing store only: no discovery, schema creation, or execution.
@@ -924,43 +1059,49 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     )
     .await
     .map_err(|e| e.to_string())?;
-    let id: RunId = id.parse()?;
-    connection
-        .call(move |db| -> Result<RunView, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
-            let transaction = db.transaction()?;
-            if !schema_initialized(&transaction)? {
-                return Err(Error::Invalid("Run not found.".into()));
-            }
-            let saved: Option<(String, String)> = transaction
-                .query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| {
-                    Ok((row.get(0)?, row.get(1)?))
-                })
-                .optional()?;
-            let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
-            outside_workspace(Path::new(&repo), &state)
-                .map_err(|e| Error::Invalid(e.to_string()))?;
-            let run = super::unreadable::decode("run", &id, &data)
-                .map_err(|error| Error::Invalid(error.to_string()))?;
-            let requests = {
-                let mut statement = transaction
-                    .prepare("SELECT data FROM requests WHERE run_id=? ORDER BY ordinal")?;
-                statement
-                    .query_map([&id], |row| row.get::<_, String>(0))?
-                    .filter_map(|row| match row {
-                        Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
-                        Err(error) => Some(Err(Error::Sql(error))),
+    let result = async {
+        let id: RunId = id.parse()?;
+        connection
+            .call(move |db| -> Result<RunView, Error> {
+                db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+                let transaction = db.transaction()?;
+                if !schema_initialized(&transaction)? {
+                    return Err(Error::Invalid("Run not found.".into()));
+                }
+                let saved: Option<(String, String)> = transaction
+                    .query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| {
+                        Ok((row.get(0)?, row.get(1)?))
                     })
-                    .collect::<Result<Vec<Request>, Error>>()?
-            };
-            let unreadable = super::unreadable::in_run(&transaction, &id)?;
-            transaction.commit()?;
-            Ok(RunView {
-                run,
-                requests,
-                unreadable,
+                    .optional()?;
+                let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
+                outside_workspace(Path::new(&repo), &state)
+                    .map_err(|e| Error::Invalid(e.to_string()))?;
+                let run = super::unreadable::decode("run", &id, &data)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
+                let requests = {
+                    let mut statement = transaction
+                        .prepare("SELECT data FROM requests WHERE run_id=? ORDER BY ordinal")?;
+                    statement
+                        .query_map([&id], |row| row.get::<_, String>(0))?
+                        .filter_map(|row| match row {
+                            Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                            Err(error) => Some(Err(Error::Sql(error))),
+                        })
+                        .collect::<Result<Vec<Request>, Error>>()?
+                };
+                let unreadable = super::unreadable::in_run(&transaction, &id)?;
+                transaction.commit()?;
+                Ok(RunView {
+                    run,
+                    requests,
+                    unreadable,
+                })
             })
-        })
-        .await
-        .map_err(|e| e.to_string())
+            .await
+            .map_err(|e| e.to_string())
+    }
+    .await;
+    // A query result arrives before the DB worker drops its connection. Join the
+    // close on every return path so callers can immediately release the state files.
+    super::connection::finish(connection, result).await
 }

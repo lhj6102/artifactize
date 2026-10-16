@@ -391,3 +391,12 @@ fn prepare(
     let input = serde_json::json!({"version": super::JSON_TOOL_INPUT_VERSION, "context": invocation.context, "args": {}}).to_string().into_bytes();
     Ok((command.into_process(), input))
 }
+
+/// Recover abandoned session journals through their existing identity-checked allocation sweep.
+pub(crate) fn recover(state: &Path) -> io::Result<()> {
+    let root = state.join("tool-sessions");
+    if root.is_dir() {
+        let _ = allocate(&root)?;
+    }
+    Ok(())
+}

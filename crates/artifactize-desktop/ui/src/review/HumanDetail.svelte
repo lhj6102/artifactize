@@ -1,7 +1,7 @@
 <script lang="ts">
   // The one Human review component, shared by the monitor's Detail and the Review screen:
   // instruction first, then CLAIM → REVIEW with tools, output and the GREEN/RED fields.
-  import { HumanDetailState, setHumanDetailState } from "./humanDetail.svelte";
+  import { HumanDetailState, setHumanDetailState } from "./human-detail-state.svelte";
   import { onMount, tick } from "svelte";
   import { onStateChanged, type Settled } from "../ipc/client";
   import type { Review } from "./review.svelte";
@@ -61,7 +61,12 @@
 
   async function submit() {
     const settled = await review.submit();
-    if (settled) onsubmitted?.(settled);
+    if (!settled) return;
+    onsubmitted?.(settled);
+    await tick();
+    // Submission removes the focused form or Submit button. Keep Esc reachable, without
+    // taking focus back if the person moved to another control or screen while it ran.
+    if (active && h.root?.isConnected && document.activeElement === document.body) h.root.focus();
   }
 
   /** Esc: cancel the job, then stop editing, then leave. Stopping editing removes the

@@ -25,6 +25,13 @@ impl Probe {
     pub fn new(state: PathBuf) -> Self {
         Self { state, open: None }
     }
+    pub async fn close(&mut self) -> Result<(), String> {
+        if let Some(open) = self.open.take() {
+            // Connection's Drop only queues work; explicit close observes SQLite releasing files.
+            crate::store::connection::close(open.connection).await?;
+        }
+        Ok(())
+    }
     pub async fn changed(&mut self) -> bool {
         // Errors request a safe read retry at low frequency, never a hot loop.
         self.check().await.unwrap_or(true)
@@ -35,10 +42,12 @@ impl Probe {
         let file = match platform::open_no_follow(File::options().read(true), &path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(self.open.take().is_some());
+                let changed = self.open.is_some();
+                self.close().await?;
+                return Ok(changed);
             }
             Err(error) => {
-                self.open = None;
+                self.close().await?;
                 return Err(error.to_string());
             }
         };
@@ -59,21 +68,32 @@ impl Probe {
             open.version = version;
             return Ok(changed);
         }
+        self.close().await?;
         let connection = open(&path).await?;
-        // Do not retain a connection if its pathname was replaced while opening it.
-        let check = platform::open_no_follow(File::options().read(true), &path)
-            .map_err(|error| error.to_string())?;
-        if identity(&check)? != current {
-            self.open = None;
-            return Ok(true);
+        let baseline = async {
+            // Do not retain a connection if its pathname was replaced while opening it.
+            let check = platform::open_no_follow(File::options().read(true), &path)
+                .map_err(|error| error.to_string())?;
+            if identity(&check)? != current {
+                return Ok(None);
+            }
+            data_version(&connection).await.map(Some)
         }
-        let version = data_version(&connection).await?;
-        self.open = Some(Open {
-            file,
-            identity: current,
-            connection,
-            version,
-        });
+        .await;
+        match baseline {
+            Ok(Some(version)) => {
+                self.open = Some(Open {
+                    file,
+                    identity: current,
+                    connection,
+                    version,
+                });
+            }
+            other => {
+                crate::store::connection::close(connection).await?;
+                other?;
+            }
+        }
         Ok(true)
     }
 }
@@ -84,10 +104,13 @@ async fn open(path: &Path) -> Result<Connection, String> {
     )
     .await
     .map_err(|error| error.to_string())?;
-    connection
+    if let Err(error) = connection
         .call(|db| db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT))
         .await
-        .map_err(|error| error.to_string())?;
+    {
+        crate::store::connection::close(connection).await?;
+        return Err(error.to_string());
+    }
     Ok(connection)
 }
 async fn data_version(connection: &Connection) -> Result<i64, String> {

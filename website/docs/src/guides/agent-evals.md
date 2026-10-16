@@ -120,18 +120,13 @@ protocol = "json"
 
 The start command receives the usual JSON envelope and `ARTIFACTIZE_SESSION_DIR`,
 prints one line when ready, and stays running. Bound tools and stop use the same
-session directory and the author's environment. Cleanup cancels in-flight calls, runs stop and reaps owned
-process groups/Jobs before the result is published, for GREEN and RED alike.
-Dropped reviews, panics and caller-runtime shutdown also release the session.
-Abrupt process death cannot run stop: the next session start recovers abandoned
-state and, on Unix, identity-checks every recorded start, stop and bound-call group.
-Exited zombie owners do not prevent recovery. Retirement errors still run mandatory
-cleanup; unconfirmed termination keeps admission records and reports an error rather
-than a verdict. Released supervisor leases also permit recovery of failed cleanup
-while the caller process is still alive.
-Windows Jobs terminate with their owner, and normal cleanup waits for descendants
-before removing their files. These are tool sessions, not the saved conversations
-below; commands remain trusted and can deliberately detach from cleanup.
+session directory and the author's environment. Artifactize stops the session and
+cleans up owned processes after a review, including failed or interrupted reviews.
+If cleanup cannot be confirmed, it reports an error and retains recovery records;
+a later session start can recover abandoned work. Commands are trusted programs
+and can deliberately detach beyond that cleanup. Tool sessions are not the saved
+conversations below. See the [tool session reference](../reference/agent-tools.md#tool-sessions)
+for cleanup and crash-recovery details.
 
 ## Agent backends
 
@@ -139,13 +134,11 @@ below; commands remain trusted and can deliberately detach from cleanup.
 `reasoning`. `models` output uses the JSON envelope described under
 [Local diagnostics and maintenance](../reference/state-cache-limits.md#doctor-models-and-prune).
 
-The rig-core 0.43.0 adapter uses streaming OpenAI Responses with `store:false`,
-encrypted reasoning replay and parallel tool calls disabled, or Anthropic Messages.
-The latter requires a per-turn output cap (16384 tokens), separate from the review
-budget. One review deadline (default 240 seconds) covers all turns, retries and tools.
-Truncated or incomplete responses are ERROR, even if they contain a JSON verdict.
-Nested HTTP retries and redirects are disabled; artifactize retries turns itself, as
-described next.
+Agent reviews stream the model's answer as it is produced. One review deadline
+(default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
+responses are ERROR, even if they contain a JSON verdict. Artifactize handles
+retries as described below; the [provider transport reference](../reference/state-cache-limits.md#provider-transport)
+covers API settings and replay behavior.
 
 ### Retries and error codes
 
@@ -162,7 +155,7 @@ is paid for twice. Each attempt is saved in `usage` with its counters, `error` a
 ### Prompt caching
 
 Each Agent review gets a random session id, saved on its request as `sessionId`
-(`verify --json`, `run show`, `request show`). Every request of the review, its turns,
+(`verify --wait --json`, `run show`, `request show`). Every request of the review, its turns,
 retries and repair turn, sends it as `prompt_cache_key` on `openai` and `codex`, and
 `codex` also as the `session-id` header. The provider can then serve the conversation
 prefix that each turn replays from its prompt cache. Every review, including a forced
@@ -180,12 +173,15 @@ A failed Agent review records one of these `errorCode` values:
 | `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` reaches the deadline | yes |
 | `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes, before output |
 | `TIMEOUT` | The review's `timeout_ms` deadline | no |
-| `CANCELLED` | Ctrl-C or a cancelled Run | no |
+| `CANCELLED` | Explicit Run cancellation (`run cancel` or MCP `verify_cancel`) | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
+
+Ctrl-C interrupts a `verify --wait` watcher, not the Agent reviews it observes;
+the Run continues. Explicit cancellation requests stop the Run's owned work.
 
 ### Stopping a backend
 
@@ -196,7 +192,7 @@ names the failure. A review waiting for a free slot of that backend
 ([backend capacity](../reference/state-cache-limits.md#backend-capacity)) stops waiting
 the same way, and a stopped backend takes no slot. Reviews that were already running
 finish, results that can be reused are still reused, and other backends carry on. The Run lists the stop under
-`stoppedBackends` (in `verify --json` and `run show`), and `verify` prints it:
+`stoppedBackends` (in `verify --wait --json` and `run show`), and `verify` prints it:
 
 ```text
 Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not started.
@@ -246,7 +242,7 @@ Saving never fails a review: a write error is reported on stderr and the review 
 on without it.
 
 **The reference.** A request whose conversation was saved carries `session` in
-`verify --json`, `run show` and `request show`:
+`verify --wait --json`, `run show` and `request show`:
 
 ```json
 "session": {
@@ -355,31 +351,12 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
 
-- The follow-up uses the review's backend, model and reasoning and its `sessionId`, so
-  `openai` and `codex` send the same `prompt_cache_key` (and `codex` the same
-  `session-id` header) and hit the review's prompt cache.
-- The eval's Agent tools are offered again, resolved against the current files of the
-  Run's repository (or `--repo`). When an Artifact the review's key covered has
-  another fingerprint now, the header says `files changed since this review`, and the
-  model is told so.
-- The answer is free text, with no verdict schema, and each follow-up gets the
-  profile's `maxToolCalls`, `maxTokens` and `timeoutMs` budgets afresh
-  (saved JSON field names). Your message is
-  sent as one new user turn that frames it as a follow-up, not a new review: `Follow-up
-  question from a person about the review above. This is not a new review: the verdict
-  stays as recorded, and the instruction to return one JSON object applied only to the
-  review. Answer in plain text, not JSON. You may use the tools again.`, then
-  `Question:` and your message. The review's system prompt says the same from the
-  start: the review returns one JSON verdict, and a later follow-up question is
-  answered in plain text. It and the saved history are sent unchanged, so the cached
-  prefix still matches. Conversations saved by artifactize before this lack that
-  sentence in their system prompt, and their follow-ups rely on the framing alone. `session show` prints your message
-  as you wrote it, and `--json` keeps both.
-- The message and the answer, tool calls included, are appended to the session, so
-  repeated sends continue one thread. Sends to one session take turns: a second
-  `session send` waits for the first and then continues after its answer.
-- The recorded verdict, result, usage and reuse never change. A request that is still
-  running cannot be followed up yet.
+A follow-up continues the saved conversation with the same model and current
+project tools. Its answer is plain text; it does not change the recorded verdict,
+result or reuse. The header warns when reviewed inputs have changed. Each question
+gets fresh profile budgets, and questions to one session run in order. See the
+[follow-up replay reference](../reference/state-cache-limits.md#follow-up-replay)
+for caching, stored messages and compatibility details.
 
 A reference to another machine or state fails with where it lives, for example
 `Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
@@ -412,7 +389,7 @@ does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
 artifactize login codex     # sign in to ChatGPT in the browser
 artifactize models codex    # the account's Codex models
 # Declare backend = "codex", model = "gpt-6-luna", reasoning = "max", then:
-artifactize verify --all
+artifactize verify --all --wait
 artifactize logout codex    # revoke and delete artifactize's tokens
 ```
 
@@ -482,11 +459,14 @@ a fake provider on this machine. The variable replaces the provider's API root:
 
 The fake streams its answer as `text/event-stream`, in the provider's wire format,
 for the requested model. For `openai`, one `response.completed` event is enough.
-This fake passes every review:
+This fake passes reviews whose GREEN schema accepts `{"verdict":"GREEN"}`.
+If your `pass_schema` requires other fields, include corresponding valid values in
+the fake's `text` response; otherwise validation triggers repair and, if still
+invalid, `INVALID_RESULT`.
 
 ```python
 #!/usr/bin/env python3
-"""A fake OpenAI Responses provider on loopback that passes every review."""
+"""A fake OpenAI Responses provider on loopback that returns a verdict-only GREEN response."""
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -518,7 +498,7 @@ HTTPServer(("127.0.0.1", 8080), Fake).serve_forever()
 ```sh
 python3 fake_openai.py &
 export ARTIFACTIZE_OPENAI_BASE_URL=http://127.0.0.1:8080/v1 OPENAI_API_KEY=dummy
-ARTIFACTIZE_REMOTE=off artifactize --state-dir "$(mktemp -d)" verify --all
+ARTIFACTIZE_REMOTE=off artifactize --state-dir "$(mktemp -d)" verify --all --wait
 ```
 
 To exercise a tool, answer the first request with a `function_call` output item

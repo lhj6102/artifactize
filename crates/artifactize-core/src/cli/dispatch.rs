@@ -19,13 +19,40 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         state_dir: cli.state_dir,
         json: cli.json,
     };
+    let executor = matches!(cli.command, Some(Command::VerifyExecution { .. }));
     match cli.command {
+        Some(Command::Mcp) => {
+            let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
+            let runs = crate::runs::Context::new(
+                &repo,
+                context.state_dir.as_deref(),
+                &std::env::current_exe().map_err(|e| e.to_string())?,
+            )?;
+            crate::mcp::serve(runs).await?;
+            Ok(0)
+        }
         None => {
             Cli::command()
                 .write_help(&mut io::stdout().lock())
                 .map_err(|error| error.to_string())?;
             Ok(0)
         }
+        Some(Command::VerifyWorker { run_id }) | Some(Command::VerifyExecution { run_id }) => {
+            let runs = crate::runs::Context::new(
+                context.repo.as_deref().unwrap_or(std::path::Path::new(".")),
+                context.state_dir.as_deref(),
+                &std::env::current_exe().map_err(|e| e.to_string())?,
+            )?;
+            if executor {
+                crate::runs::execute(&runs, &run_id).await?;
+            } else {
+                crate::runs::supervise(&runs, &run_id).await?;
+            }
+            Ok(0)
+        }
+        Some(Command::Run {
+            command: RunCommand::Cancel { run_id },
+        }) => run::cancel(context, run_id).await,
         Some(Command::Tools {
             command: ToolsCommand::Check(options),
         }) => maintenance::tools(context, options).await,
@@ -49,17 +76,25 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             policy,
             jobs,
             max_executions,
-            timeout_ms,
+            wait,
+            request_key,
             reuse_only,
+            speculate,
+            defer_human,
         }) => {
             workflow::verify(
                 context,
                 selection,
                 policy,
                 workflow::VerifyLimits {
+                    modes: crate::runs::RunModes {
+                        speculate,
+                        defer_human,
+                    },
                     jobs,
                     max_executions,
-                    timeout_ms,
+                    wait,
+                    request_key,
                     reuse_only,
                 },
             )
@@ -88,7 +123,9 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                     timeout_ms,
                 },
         }) => run::show(context, run_id, wait, timeout_ms).await,
-        Some(Command::Monitor { all }) => interactive::monitor(context, all, screens).await,
+        Some(Command::Monitor { all, path }) => {
+            interactive::monitor(context, all, path, screens).await
+        }
         Some(Command::Review {
             request,
             all,

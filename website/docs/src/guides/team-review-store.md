@@ -16,15 +16,49 @@ artifactize --state-dir /srv/artifactize server token add ci --scopes read
 artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 ```
 
-`token add` prints each token once. `server run` binds loopback by default. Put a TLS
-reverse proxy or a tunnel in front, because clients require HTTPS except on
-loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server and its clients
+`token add` prints each token once; keep it private. `server run` listens on
+**loopback** (`127.0.0.1`): only programs on that same computer can connect directly.
+To let teammates connect without sending tokens over an unencrypted network, use
+[the secure connection setup below](#connect-teammates-securely).
+Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server and its clients
 together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
 Human sign-offs included, needs one new review. Dependency evals have no store
 records: each client derives them from current required evidence. See [Review store server](../reference/review-store.md#review-store-server) for
 the full reference.
 
-**Clients.** Each machine signs in once. The token is read from stdin, never from
+## Connect teammates securely
+
+A **TLS reverse proxy** is a server in front of the store that accepts encrypted
+HTTPS connections and forwards them locally. A **tunnel** carries a connection
+through another encrypted connection instead. Here is a complete SSH tunnel setup
+for a teammate who already has an SSH account on the store's host:
+
+1. Leave `artifactize server run` running on that host, as above.
+2. On the teammate's computer, open a terminal and replace `you@reviews-host` with
+   their SSH account and the host's name:
+
+   ```sh
+   ssh -N -L 127.0.0.1:18417:127.0.0.1:8417 you@reviews-host
+   ```
+
+   Keep this terminal open. `-N` starts no remote command; `-L` forwards local port
+   18417 to the store's port 8417 through SSH. The local end is also restricted to
+   this computer, and SSH encrypts the connection between the computers.
+3. In another terminal on the teammate's computer, sign in through that tunnel:
+
+   ```sh
+   artifactize remote login http://127.0.0.1:18417/   # enter this machine's token
+   artifactize remote status
+   ```
+
+Plain HTTP is allowed here because the address is local; network traffic travels
+inside encrypted SSH. Do not expose the store's plain-HTTP port directly to the
+network. Without a tunnel, clients require an HTTPS address served by a TLS reverse
+proxy. Follow SSH's normal host verification and authentication; do not bypass it.
+
+## Sign in and share results
+
+Each machine signs in once. The token is read from stdin, never from
 command arguments. Interactive input is hidden when the terminal supports it. On
 Windows, if hiding input fails, the CLI warns before reading the token visibly;
 on Linux and macOS, that failure aborts login. Piped input is read without changing
@@ -52,7 +86,7 @@ See [Remote review store client](../reference/review-store.md#remote-review-stor
 - the schema-validated owner fields (for runtime evals, only the exit code,
   duration and truncation flag);
 - the reuse key, the Eval definition hash and the fingerprint of each Artifact
-  the key covers, including each covered Artifact's `folder`/`file` kind
+  the key covers, including each covered Artifact's `folder`/`file`/`graph` kind
   (`artifactKinds` in the record);
 - the profile, its execution options (backend, model, reasoning, limits, variant),
   usage counters and an Agent result's workspace-relative `executionPaths` pins;

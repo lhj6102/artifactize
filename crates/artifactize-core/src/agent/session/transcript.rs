@@ -469,9 +469,9 @@ impl Transcript {
             Kind::End(end) => {
                 self.stopped(&mut dirty);
                 if let Some(result) = end.result() {
-                    let result = result.to_json();
-                    let digest = crate::types::Sha256Bytes::of(result.to_string().as_bytes());
-                    let text = result_text(&result);
+                    let digest =
+                        crate::types::Sha256Bytes::of(result.to_json().to_string().as_bytes());
+                    let text = result_text(result);
                     if let Some((id, candidate)) = self.result_candidate.take()
                         && candidate == digest
                     {
@@ -615,7 +615,7 @@ fn failure_reason(result: &ToolResult) -> String {
 
 /// Owner result fields are meaningful data, not provider transport. Render them recursively
 /// as labels and text instead of JSON syntax; unknown owner fields remain visible too.
-fn result_text(result: &serde_json::Value) -> String {
+fn result_text(result: &crate::agent::verdict::ValidatedResult) -> String {
     fn field(label: &str, value: &serde_json::Value, indent: usize, lines: &mut Vec<String>) {
         let prefix = "  ".repeat(indent);
         match value {
@@ -647,19 +647,9 @@ fn result_text(result: &serde_json::Value) -> String {
             value => lines.push(format!("{prefix}{label}: {value}")),
         }
     }
-    let mut lines = Vec::new();
-    if let Some(verdict) = result.get("verdict").and_then(serde_json::Value::as_str) {
-        lines.push(format!("Verdict: {}", header(verdict)));
-    }
-    match result {
-        serde_json::Value::Object(fields) => {
-            for (name, value) in fields {
-                if name != "verdict" {
-                    field(name, value, 0, &mut lines);
-                }
-            }
-        }
-        other => field("Result", other, 0, &mut lines),
+    let mut lines = vec![format!("Verdict: {}", header(result.verdict.as_str()))];
+    for (name, value) in &result.fields {
+        field(name, value, 0, &mut lines);
     }
     lines.join("\n")
 }

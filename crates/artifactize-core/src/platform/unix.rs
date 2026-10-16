@@ -20,8 +20,8 @@ pub(crate) use tempfile::TempDir as PrivateTempDir;
 use tokio::signal::unix::{SignalKind, signal};
 
 pub(crate) use process::{
-    Child, kill_saved_group, process_start_time, running_process_start_time, spawn_detached,
-    spawn_gated,
+    Child, kill_saved_group, kill_saved_session, process_start_time, running_process_start_time,
+    spawn_detached, spawn_gated, spawn_run,
 };
 
 /// No Windows-style pending sharing disposition survives group cleanup.

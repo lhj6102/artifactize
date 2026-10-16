@@ -5,7 +5,15 @@ fn main() {
     // rebuilds on any added, removed or changed file.
     println!("cargo:rerun-if-changed=ui/dist");
     windowless_release();
-    tauri_build::build();
+    println!("cargo:rerun-if-changed=capabilities");
+    println!("cargo:rerun-if-changed=capabilities-e2e");
+    let pattern = if std::env::var_os("CARGO_FEATURE_E2E").is_some() {
+        "capabilities*/*.json"
+    } else {
+        "capabilities/*.json"
+    };
+    tauri_build::try_build(tauri_build::Attributes::new().capabilities_path_pattern(pattern))
+        .expect("desktop capabilities must build");
 }
 
 /// The release app has no console window on Windows. That is a property of how the program is

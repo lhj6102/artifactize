@@ -1,7 +1,11 @@
 //! One prompt-cache identity per Agent review, against loopback fakes.
 
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
@@ -10,14 +14,15 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 /// A workspace of Artifacts, each with one Agent eval whose result must list `covered`.
 struct Project {
-    _root: tempfile::TempDir,
+    // Retain inputs if releasing any durable worker fails, including on assertion unwind.
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Project {
     fn new(evals: &[(&str, &str)]) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         for (name, backend) in evals {
             let folder = repo.join(name);
@@ -43,6 +48,7 @@ impl Project {
         let credentials = json!({"access_token":codex::jwt("account-1", expires),
             "refresh_token":"refresh","account_id":"account-1","expires_at":expires,"saved_at":1});
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
+        root.track(&state, &repo);
         Self {
             _root: root,
             repo,
@@ -66,7 +72,7 @@ impl Project {
             .env("ARTIFACTIZE_CODEX_BASE_URL", provider.codex_base())
             .env("ARTIFACTIZE_CODEX_AUTH_URL", &provider.url)
             .env_remove("ARTIFACTIZE_CODEX_AUTH_FILE")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -151,7 +157,7 @@ fn every_request_of_a_review_shares_the_saved_session_id() {
             }
             reply(request)
         });
-        let run = project.json(&provider, &["verify", "--all"], 0);
+        let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
         let review = &run["requests"][0];
         assert_eq!(review["status"], "GREEN", "{run}");
         assert_eq!(
@@ -203,7 +209,7 @@ fn each_review_has_its_own_session_id() {
         ("d", "anthropic"),
     ]);
     let provider = FakeProvider::start(reply);
-    let run = project.json(&provider, &["verify", "--all"], 0);
+    let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
     let sessions: Vec<_> = run["requests"]
         .as_array()
         .unwrap()
@@ -253,7 +259,7 @@ fn each_review_has_its_own_session_id() {
     }
 
     // A forced re-review starts a new session.
-    let rerun = project.json(&provider, &["verify", "--all", "--force"], 0);
+    let rerun = project.json(&provider, &["verify", "--wait", "--all", "--force"], 0);
     let rerun = rerun["requests"].as_array().unwrap();
     for review in rerun {
         assert!(!sessions.contains(&review["sessionId"].as_str().unwrap().to_owned()));

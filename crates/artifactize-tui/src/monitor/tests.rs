@@ -9,11 +9,18 @@ use super::model::Status;
 use super::*;
 use crate::store::HumanClaim;
 
-fn now() -> OffsetDateTime {
+pub(super) fn now() -> OffsetDateTime {
     OffsetDateTime::parse("2026-01-01T00:01:05Z", &Rfc3339).unwrap()
 }
 
 pub(crate) use crate::test_request::request;
+
+/// An isolated state path remains owned even when opening a synthetic request reads evidence.
+pub(super) fn monitor() -> (tempfile::TempDir, Monitor) {
+    let root = crate::test_os::tempdir();
+    let monitor = Monitor::new(root.path().join("state"), None);
+    (root, monitor)
+}
 
 fn eval(id: &str, deps: &[&str]) -> Value {
     json!({
@@ -31,7 +38,7 @@ fn eval(id: &str, deps: &[&str]) -> Value {
 fn run(definitions: Value) -> RunView {
     RunView {
         run: serde_json::from_value(json!({
-            "id":"run-1","repoPath":"/repo","stateDir":"/state","status":"RUNNING",
+            "id":"run-1","repoPath":"repo","stateDir":"state","status":"RUNNING",
             "createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},
             "definitions":definitions,"validation":null,"maxExecutions":5,"executionsStarted":2
         }))
@@ -144,7 +151,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
         progress.errors,
         [("p2/check".into(), "[SPAWN] spawn failed".into())]
     );
-    assert_eq!(progress.budget, "executions 2/5 · jobs 4");
+    assert_eq!(progress.budget, "executions 2/5 · jobs unlimited");
     assert_eq!(progress.work, "executed 0 · reused 0 · derived 0");
     assert_eq!(
         progress.counts.iter().map(|(_, n)| n).sum::<u64>(),
@@ -263,7 +270,9 @@ fn live_progress_tree_and_details_are_pure_projections() {
 #[test]
 fn run_rows_and_durations() {
     assert_eq!(
-        [5, 65, 3_700, 90_000, -3].map(duration),
+        [5, 65, 3_700, 90_000, -3]
+            .map(time::Duration::seconds)
+            .map(duration),
         ["5s", "1m 05s", "1h 01m", "1d 1h", "0s"]
     );
     let mut finished = summary("run-b", 0);
@@ -280,7 +289,7 @@ pub(super) fn summary(id: &str, green: u64) -> RunSummary {
     RunSummary {
         unreadable: Vec::new(),
         id: id.parse().unwrap(),
-        repo_path: "/repo".into(),
+        repo_path: "repo".into(),
         created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         completed_at: None,
         status: crate::types::RunStatus::Red,
@@ -296,7 +305,7 @@ fn screen(monitor: &mut Monitor) -> String {
 }
 
 pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
-    sized_at(monitor, width, height, OffsetDateTime::now_utc())
+    sized_at(monitor, width, height, now())
 }
 
 /// `sized`, with ages and elapsed times measured at `now`.
@@ -332,7 +341,7 @@ async fn refresh_errors_keep_last_known_data() {
 #[test]
 fn keys_page_older_runs_open_and_quit() {
     let key = |code| KeyEvent::from(code);
-    let mut monitor = Monitor::new("/state".into(), None);
+    let (_monitor_root, mut monitor) = monitor();
     monitor.limit = 2;
     monitor.set_runs(vec![summary("run-a", 1), summary("run-b", 1)]);
     assert_eq!(monitor.key(key(KeyCode::Char('j'))), Action::Refresh);
@@ -353,7 +362,7 @@ fn keys_page_older_runs_open_and_quit() {
     assert_eq!(monitor.open.as_deref(), Some("run-b"));
     assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
     assert_eq!(monitor.focus, Pane::Runs);
-    assert_eq!(monitor.key(key(KeyCode::Char('r'))), Action::Refresh);
+    assert_eq!(monitor.key(key(KeyCode::Char('r'))), Action::Resync);
     // Esc steps back one level and never quits, even on the first level.
     for pane in [Pane::Repositories, Pane::Repositories] {
         assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
@@ -381,7 +390,7 @@ async fn artifact_details_display_saved_tags_and_tolerate_untagged_snapshots() {
             None
         );
     }
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, Vec::new());
     monitor.tree.select(vec![
@@ -401,7 +410,7 @@ async fn artifact_details_display_saved_tags_and_tolerate_untagged_snapshots() {
 #[test]
 fn run_screen_renders_progress_tree_and_detail() {
     let (view, requests) = live();
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor.focus = Pane::Artifacts;
@@ -455,7 +464,7 @@ fn heavy() -> (RunView, Vec<RequestView>) {
             .request;
         request.provenance = Some(
             serde_json::from_value(
-                json!({"repoPath":"/repo","runId":"run-1","requestId":request.id,
+                json!({"repoPath":"repo","runId":"run-1","requestId":request.id,
                 "evalId":eval,"evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","completedAt":"2026-01-01T00:00:04Z"}),
             )
             .unwrap(),
@@ -481,7 +490,7 @@ fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_deta
     );
     for (width, height) in [(160, 45), (100, 30), (80, 24)] {
         for focus in [Pane::Runs, Pane::Artifacts] {
-            let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+            let (_monitor_root, mut monitor) = monitor();
             monitor.open = Some("run-1".parse().unwrap());
             let (view, requests) = heavy();
             monitor.set_run(view, requests);
@@ -517,13 +526,16 @@ fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_deta
                 );
             }
             // Counter names and budgets belong to the Run detail.
-            for absent in ["cacheReadTokens", "executions 2/5", "jobs 4"] {
+            for absent in ["cacheReadTokens", "executions 2/5", "jobs unlimited"] {
                 assert!(!text.contains(absent), "{width}x{height}: {absent}\n{text}");
             }
         }
     }
     let detail = detail(&view, &requests, &Target::Run, now());
-    assert_eq!(detail.field("Budget"), Some("executions 2/5 · jobs 4"));
+    assert_eq!(
+        detail.field("Budget"),
+        Some("executions 2/5 · jobs unlimited")
+    );
     assert_eq!(
         detail.field("Work"),
         Some("executed 2 · reused 0 · derived 0")
@@ -557,7 +569,7 @@ fn more_than_three_attention_items_fold_into_more() {
         ["ERROR", "ERROR", "ERROR"]
     );
     assert_eq!(strip.more, 2);
-    let mut monitor = Monitor::new("/state".into(), None);
+    let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor.focus = Pane::Artifacts;
@@ -573,7 +585,7 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
         "RED",
         json!({"result":{"verdict":"RED","reason":"two mismatches\nsecond line","findings":[1,2]}}),
     ));
-    let mut monitor = Monitor::new("/state".into(), None);
+    let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor.focus = Pane::Artifacts;
@@ -624,10 +636,10 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
 
 #[test]
 fn header_names_the_selected_scope_and_counts_attention_globally() {
-    let mut monitor = Monitor::new("/state".into(), None);
+    let (_monitor_root, mut monitor) = monitor();
     monitor.catalog.update(
         &[crate::store::CatalogRun {
-            repo_path: "/work/alpha".into(),
+            repo_path: "work/alpha".into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,
             red: 2,
@@ -640,8 +652,8 @@ fn header_names_the_selected_scope_and_counts_attention_globally() {
     assert!(text.contains("artifactize › all repositories"), "{text}");
     assert!(text.contains("!1 ✗2 ◐1"), "{text}");
     monitor.scope = Scope::Worktree(
-        Repository::Workspace("/work/alpha".into()),
-        "/work/alpha".into(),
+        Repository::Workspace("work/alpha".into()),
+        "work/alpha".into(),
     );
     let text = sized(&mut monitor, 120, 20);
     let header = text.lines().next().unwrap();
@@ -705,7 +717,7 @@ fn breadcrumb_shortens_earlier_segments_then_drops_the_program_name() {
 
 #[test]
 fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
-    let mut monitor = Monitor::new("/state".into(), None);
+    let (_monitor_root, mut monitor) = monitor();
     let mut finished = summary("run-done", 3);
     finished.completed_at = Some("2026-01-01T00:00:42Z".parse().unwrap());
     monitor.set_runs(vec![summary("run-a", 2), finished]);
@@ -714,19 +726,17 @@ fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
     assert!(text.contains("✗ RED run-a "), "{text}");
     assert!(text.contains("✗1 ✓2"), "{text}");
     assert!(text.contains("took 42s"), "{text}");
-    let age = run_rows(&monitor.runs, at)[1].age.clone();
-    let age = age.split(' ').next().unwrap();
     let text = sized_at(&mut monitor, 54, 20, at);
     // A 22-column Full Runs pane between two 16-column sides keeps glyph, id and age;
     // the status word and counts go first.
-    assert!(text.contains(&format!("✗ run-done {age}")), "{text}");
+    assert!(text.contains("✗ run-done 1m"), "{text}");
     assert!(!text.contains("RED") && !text.contains("✓3"), "{text}");
 }
 
 #[test]
 fn review_key_hands_off_only_waiting_human_requests() {
     let (view, requests) = live();
-    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let (_monitor_root, mut monitor) = monitor();
     let review = KeyEvent::from(KeyCode::Char('o'));
     assert_eq!(monitor.key(review), Action::None, "no Run is open");
     monitor.open = Some("run-1".parse().unwrap());
@@ -758,7 +768,7 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
             view.request.state = crate::store::RequestState::failed(
                 long.clone(),
                 view.request.error_code(),
-                crate::types::Timestamp::now(),
+                "2026-01-01T00:01:00Z".parse().unwrap(),
             );
         }
         if view.request.eval_id == "app/check" {
@@ -768,10 +778,10 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
             .unwrap();
         }
     }
-    let mut monitor = Monitor::new("/state".into(), None);
+    let (_monitor_root, mut monitor) = monitor();
     monitor.catalog.update(
         &[crate::store::CatalogRun {
-            repo_path: format!("/work/{long}").into(),
+            repo_path: format!("work/{long}").into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,
             red: 0,
@@ -781,15 +791,39 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
         None,
     );
     let mut row = summary("run-1", 1);
-    row.repo_path = format!("/work/{long}").into();
+    row.repo_path = format!("work/{long}").into();
     monitor.set_runs(vec![row]);
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     for focus in [Pane::Repositories, Pane::Runs, Pane::Artifacts] {
         monitor.focus = focus;
         for (width, height) in [(160, 30), (100, 24), (80, 24)] {
-            // Long labels, headlines and tree rows stay inside their assigned panes.
-            assert!(!sized(&mut monitor, width, height).is_empty());
+            let text = sized(&mut monitor, width, height);
+            // Independent pane boundaries: long user text must not overwrite the borders
+            // that keep the neighbouring Scope/Run/Detail readable.
+            let side = match width {
+                160 => 36,
+                100 => 28,
+                80 => 16,
+                _ => unreachable!(),
+            };
+            let boundaries = match focus {
+                Pane::Repositories => vec![0, width - side - 1, width - side, width - 1],
+                Pane::Runs | Pane::Artifacts => {
+                    vec![0, side - 1, side, width - side - 1, width - side, width - 1]
+                }
+                Pane::Detail => unreachable!(),
+            };
+            for row in text.lines().skip(2).take(usize::from(height - 4)) {
+                let cells: Vec<_> = row.chars().collect();
+                for &column in &boundaries {
+                    assert_eq!(
+                        cells[usize::from(column)],
+                        '│',
+                        "{width}x{height} {focus:?} border at {column}\n{text}"
+                    );
+                }
+            }
         }
     }
     monitor.focus = Pane::Artifacts;
@@ -820,7 +854,7 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
             view.request.state = crate::store::RequestState::failed(
                 messy.into(),
                 view.request.error_code(),
-                crate::types::Timestamp::now(),
+                "2026-01-01T00:01:00Z".parse().unwrap(),
             );
         }
         if view.request.eval_id == "app/check" {
@@ -830,8 +864,8 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
             .unwrap();
         }
     }
-    let mut monitor = Monitor::new("/state".into(), None);
-    let path = "/work/line\nbreak\tname";
+    let (_monitor_root, mut monitor) = monitor();
+    let path = "work/line\nbreak\tname";
     monitor.catalog.update(
         &[crate::store::CatalogRun {
             repo_path: path.into(),
@@ -887,7 +921,7 @@ fn short_terminals_keep_every_attention_line_or_count_the_rest() {
     for height in [15, 18] {
         for focus in [Pane::Runs, Pane::Artifacts] {
             let (view, requests) = live();
-            let mut monitor = Monitor::new("/state".into(), None);
+            let (_monitor_root, mut monitor) = monitor();
             monitor.open = Some("run-1".parse().unwrap());
             monitor.set_run(view, requests);
             monitor.focus = focus;
@@ -909,11 +943,23 @@ fn short_terminals_keep_every_attention_line_or_count_the_rest() {
     for eval in ["x/one", "x/two"] {
         requests.push(request(eval, "ERROR", json!({"error":"boom"})));
     }
-    let mut monitor = Monitor::new("/state".into(), None);
+    let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor.focus = Pane::Artifacts;
     let text = sized(&mut monitor, 160, 12);
     assert!(text.contains("+3 more · Enter on the Run node"), "{text}");
     assert_eq!(text.matches("  boom").count(), 1, "{text}");
+}
+
+#[test]
+fn run_budget_shows_only_explicit_jobs_as_a_cap() {
+    let (mut view, requests) = live();
+    assert!(
+        progress(&view, &requests, now())
+            .budget
+            .ends_with("jobs unlimited")
+    );
+    view.run.jobs = Some(2);
+    assert!(progress(&view, &requests, now()).budget.ends_with("jobs 2"));
 }

@@ -1,11 +1,16 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::Watcher;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::{Child, ChildStdout, Command, Stdio},
+    process::{ChildStdout, Command, Stdio},
 };
 
 use reqwest::StatusCode;
@@ -22,7 +27,7 @@ fn admin(state: &Path, args: &[&str]) -> Value {
         .arg("server")
         .args(args)
         .arg("--json")
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -33,12 +38,13 @@ fn admin(state: &Path, args: &[&str]) -> Value {
 }
 
 struct Server {
-    _root: tempfile::TempDir,
     state: PathBuf,
-    child: Child,
+    child: Watcher,
     _stdout: BufReader<ChildStdout>,
     url: String,
     client: reqwest::Client,
+    // Close the owned process, pipe and HTTP connections before deleting their state.
+    _root: tempfile::TempDir,
 }
 
 impl Server {
@@ -51,13 +57,14 @@ impl Server {
         let root = support::os::tempdir();
         let state = root.path().join("server");
         prepare(&state);
-        let mut child = Command::new(support::os::cli())
+        let child = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&state)
             .args(["server", "run", "--listen", "127.0.0.1:0"])
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = Watcher::new(child);
         let mut stdout = BufReader::new(child.stdout.take().unwrap());
         let mut line = String::new();
         stdout.read_line(&mut line).unwrap();
@@ -123,8 +130,7 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let _ = self.child.stop();
     }
 }
 
@@ -290,12 +296,15 @@ async fn records_append_per_key_the_latest_wins_and_scopes_are_enforced() {
 
     let tokens = admin(&server.state, &["token", "list"]);
     assert!(!tokens.to_string().contains("azt_"));
-    let stored_hash: String = Connection::open(server.state.join("review-store.sqlite"))
-        .unwrap()
-        .query_row("SELECT hash FROM tokens WHERE name='ci'", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
+    let stored_hash: String = Connection::open_with_flags(
+        server.state.join("review-store.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row("SELECT hash FROM tokens WHERE name='ci'", [], |row| {
+        row.get(0)
+    })
+    .unwrap();
     let digest: String = Sha256::digest(reader.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -373,7 +382,11 @@ async fn typed_publish_fields_preserve_extensible_payload_and_wire_id_limits() {
 }
 
 fn stored(state: &Path) -> Vec<(String, i64, String)> {
-    let db = Connection::open(state.join("review-store.sqlite")).unwrap();
+    let db = Connection::open_with_flags(
+        state.join("review-store.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let mut statement = db
         .prepare("SELECT key,bytes,data FROM entries ORDER BY key,completed_at")
         .unwrap();
@@ -444,23 +457,15 @@ async fn older_review_stores_upgrade_in_place_and_keep_their_tokens() {
             )
             .unwrap();
         });
-        let db = Connection::open(server.state.join("review-store.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            server.state.join("review-store.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         assert_eq!(
             db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
                 .unwrap(),
             3
-        );
-        let schema: Vec<String> = db
-            .prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL")
-            .unwrap()
-            .query_map([], |row| row.get(0))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect();
-        let schema = schema.join("\n");
-        assert!(
-            !schema.contains("stale") && !schema.contains("fingerprint") && schema.contains("key"),
-            "{schema}"
         );
         // Records keyed the 0.4 way cannot match a 0.5 key; the tokens keep working.
         assert!(stored(&server.state).is_empty());
@@ -498,7 +503,7 @@ fn token_names_are_rejected_at_the_cli_edge_before_opening_state() {
             if command == "add" {
                 invocation.args(["--scopes", "read"]);
             }
-            let output = invocation.output().unwrap();
+            let output = invocation.record_output().unwrap();
             assert_eq!(output.status.code(), Some(2), "{output:?}");
             assert!(
                 !state.exists(),

@@ -130,7 +130,8 @@ pub(crate) fn builtin_args(
     tool: &crate::config::HumanBuiltinTool,
 ) -> Result<(crate::config::ArtifactName, Vec<String>), ScopeError> {
     let mut args: Vec<String> = tool.args.iter().map(ToString::to_string).collect();
-    if tool.builtin == crate::config::Builtin::Help
+    if tool.builtin == crate::config::Builtin::Graph
+        || tool.builtin == crate::config::Builtin::Help
         || tool.builtin == crate::config::Builtin::Open
             && matches!(&tool.args[0], Argument::Literal(text) if artifactize_tools::builtin::is_url(text))
     {

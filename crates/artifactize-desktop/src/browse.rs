@@ -3,6 +3,7 @@
 mod view;
 
 pub use view::{BrowseView, RepositoryKey, ScopeKey};
+pub(crate) use view::{NodeKind, TreeNode};
 
 use crate::{App, Failure};
 use artifactize_core::{

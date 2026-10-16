@@ -32,10 +32,9 @@ What it demonstrates:
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with only
   `PATH` and `LANG` inherited.
-- **Content fingerprint and reuse.** Each Artifact declares the built-in content
-  fingerprint, `fingerprint = {}`, which hashes the Artifact's own files (child
-  folders, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded).
-  `guide` spells out the default, `files = ["."]`. An eval's reuse key adds the
+- **Content fingerprint and reuse.** Each Artifact omits `fingerprint`, so it uses the
+  built-in content fingerprint, artifactsum, which hashes the Artifact's own files (child
+  folders, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded). An eval's reuse key adds the
   fingerprints of the Artifacts it depends on: `guide/terms` depends on `intro` and
   `usage` (children) and `glossary` (the mount, also named as `{terms}`). That is
   why the `glossary` basis participates in reuse too. The default fingerprint is
@@ -47,8 +46,7 @@ What it demonstrates:
 
 ## Run it
 
-You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/getting-started/install.html):
-`cargo install artifactize --locked`), plus `python3` and `grep`.
+You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/getting-started/install.html)), plus `python3` and `grep`.
 
 ```sh
 cd examples/runtime-relations

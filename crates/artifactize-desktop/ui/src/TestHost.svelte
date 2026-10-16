@@ -4,9 +4,13 @@
   import { AppState, setAppState } from "./shell/app.svelte";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let { child, props = {} }: { child: Component<any>; props?: Record<string, unknown> } = $props();
-  setAppState(new AppState());
+  let { child, childProps = {} }: { child: Component<any>; childProps?: Record<string, unknown> } = $props();
+  import { setActivity } from "./ipc/activity.svelte";
+
+  const app = new AppState();
+  setAppState(app);
+  setActivity(app.activity);
   const Child = $derived(child);
 </script>
 
-<Child {...props} />
+<Child {...childProps} />

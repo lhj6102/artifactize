@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -8,31 +11,33 @@ use std::{
 use artifactize_core::{
     human,
     project::{self, VerifyOptions, selection::Selection},
-    store::{self, Receipts, RunView},
+    store::{self, OwnedReceipts, RunView},
 };
-use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{cat_program, false_program, true_program};
 use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Fixture {
     fn new(fingerprint: bool) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         write_human(&repo, fingerprint);
+        let state = root.path().join("state");
+        root.track(&state, &repo);
         Self {
             repo,
-            state: root.path().join("state"),
+            state,
             _root: root,
         }
     }
@@ -40,7 +45,7 @@ impl Fixture {
     async fn verify(&self, options: VerifyOptions) -> RunView {
         tokio::time::timeout(
             Duration::from_secs(10),
-            project::verify(
+            support::runs::record(
                 &self.repo,
                 Some(&self.state),
                 &Selection::All,
@@ -53,12 +58,8 @@ impl Fixture {
         .unwrap()
     }
 
-    async fn receipts(&self) -> Receipts {
-        Receipts::open(&self.state, &self.repo).await.unwrap()
-    }
-
-    fn database(&self) -> Connection {
-        Connection::open(self.state.join(store::DATABASE)).unwrap()
+    async fn receipts(&self) -> OwnedReceipts {
+        OwnedReceipts::open(&self.state, &self.repo).await.unwrap()
     }
 
     fn cli_verify(&self) -> Value {
@@ -67,13 +68,13 @@ impl Fixture {
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
-            .args(["verify", "--all", "--timeout-ms", "1", "--json"])
-            .output()
+            .args(["verify", "--all", "--json"])
+            .record_output()
             .unwrap();
-        // The Human wait times out at once; the request stays open for submission.
+        // Submission returns at once; the request stays open for the person.
         assert_eq!(
             output.status.code(),
-            Some(3),
+            Some(0),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -131,7 +132,6 @@ fn write_human(path: &Path, fingerprint: bool) {
 /// Options that record Human requests and return at once instead of waiting for them.
 fn returning() -> VerifyOptions {
     VerifyOptions {
-        wait_timeout: Duration::from_millis(1),
         ..Default::default()
     }
 }
@@ -150,7 +150,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
     let fixture = Fixture::new(true);
     let run = fixture.cli_verify();
     let id = run["requests"][0]["id"].as_str().unwrap();
-    assert_eq!(run["status"], "INCOMPLETE");
+    assert_eq!(run["status"], "RUNNING");
     assert_eq!(run["requests"][0]["status"], "WAITING_HUMAN");
     assert_eq!(run["executionsStarted"], 0);
     let receipts = fixture.receipts().await;
@@ -329,27 +329,18 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         .await
         .is_err()
     );
-    assert_eq!(
-        fixture
-            .database()
-            .query_row(
-                "SELECT count(*) FROM requests WHERE claimed_by IS NOT NULL",
-                [],
-                |row| row.get::<_, u32>(0)
-            )
-            .unwrap(),
-        0
+    let saved = store::read_request(&fixture.state, id).await.unwrap();
+    assert_eq!(saved.request.status().as_str(), "GREEN");
+    assert!(
+        saved.claim.is_none(),
+        "submission releases the public claim"
     );
-    assert_eq!(
-        fixture
-            .database()
-            .query_row(
-                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
-                [],
-                |row| row.get::<_, u32>(0)
-            )
-            .unwrap(),
-        0
+    assert!(
+        artifactize_core::cache::list(&fixture.state, true)
+            .await
+            .unwrap()
+            .is_empty(),
+        "fingerprint=false must not publish reusable evidence"
     );
 }
 
@@ -396,23 +387,22 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
             Some("INPUT_CHANGED")
         );
         assert!(saved.requests[0].result().is_none());
-        assert_eq!(
-            fixture
-                .database()
-                .query_row(
-                    "SELECT count(*) FROM executions WHERE status='WAITING_HUMAN'",
-                    [],
-                    |row| row.get::<_, u32>(0)
-                )
-                .unwrap(),
-            0
-        );
         assert!(
-            receipts
-                .cached_execution(run.requests[0].key.as_deref().unwrap())
+            store::read_keyed_executions(&fixture.state, &[run.requests[0].key.clone().unwrap()],)
                 .await
                 .unwrap()
-                .is_none()
+                .is_empty(),
+            "the failed Human owner must not remain available for joining"
+        );
+        assert!(
+            artifactize_core::cache::show(
+                &fixture.state,
+                run.requests[0].key.as_deref().unwrap(),
+                false,
+            )
+            .await
+            .unwrap()
+            .is_empty()
         );
     }
 }
@@ -468,7 +458,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
 }
 
 #[tokio::test]
-async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
+async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);
     support::declaration::write(
@@ -488,7 +478,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     )
     .unwrap();
     let run = fixture.verify(returning()).await;
-    assert_eq!(run.run.status().as_str(), "INCOMPLETE");
+    assert_eq!(run.run.status().as_str(), "RUNNING");
     let waiting = run
         .requests
         .iter()
@@ -516,9 +506,22 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     )
     .await
     .unwrap();
+    let observed = owned_run::terminal(&fixture.state, &run.run.id).await;
+    assert_eq!(
+        observed.run.status(),
+        artifactize_core::types::RunStatus::Green
+    );
+    assert_eq!(
+        store::read_run(&fixture.state, &run.run.id)
+            .await
+            .unwrap()
+            .run
+            .executions_started,
+        1
+    );
     let complete = fixture.verify(returning()).await;
     assert_eq!(complete.run.status().as_str(), "GREEN");
-    assert_eq!(complete.run.executions_started, 1);
+    assert_eq!(complete.run.executions_started, 0);
     assert!(
         complete
             .requests
@@ -531,8 +534,11 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
 async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     let fixture = Fixture::new(true);
     let original = fixture.cli_verify();
-    let other = Fixture::new(true);
-    let run = project::verify(
+    let mut other = Fixture::new(true);
+    // The follower owns its Run in the shared state before its own repository drops.
+    other.state = fixture.state.clone();
+    other._root.track(&other.state, &other.repo);
+    let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
@@ -592,9 +598,10 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         .await
         .is_err()
     );
-    let settled = store::read_run(&fixture.state, &run.run.id).await.unwrap();
+    // The owned worker, not the observer, must save the follower's completed Run.
+    let settled = owned_run::terminal(&fixture.state, &run.run.id).await;
+    assert_eq!(settled.run.status().as_str(), "RED");
     assert_eq!(settled.requests[0].status().as_str(), "RED");
-    receipts.finish(&run.run, &run.requests).await.unwrap();
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
@@ -605,7 +612,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         "RED"
     );
     fs::write(other.repo.join("fingerprint"), "human-v1\n").unwrap();
-    let completed = project::verify(
+    let completed = support::runs::record(
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
@@ -627,13 +634,13 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         completed.requests[0].execution_id.as_deref(),
         original["requests"][0]["executionId"].as_str()
     );
+    let history = artifactize_core::cache::list(&fixture.state, true)
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 1, "the joined review publishes one result");
     assert_eq!(
-        fixture
-            .database()
-            .query_row("SELECT count(*) FROM executions", [], |row| row
-                .get::<_, u32>(0))
-            .unwrap(),
-        1
+        history[0].execution_id,
+        completed.requests[0].execution_id.clone().unwrap()
     );
 }
 
@@ -642,8 +649,11 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let fixture = Fixture::new(true);
     let original = fixture.cli_verify();
     let owner = original["requests"][0]["id"].as_str().unwrap();
-    let other = Fixture::new(true);
-    let run = project::verify(
+    let mut other = Fixture::new(true);
+    // The follower owns its Run in the shared state before its own repository drops.
+    other.state = fixture.state.clone();
+    other._root.track(&other.state, &other.repo);
+    let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
@@ -663,18 +673,16 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let claim = human::claim(&receipts, &rid(owner), &"alice".parse().unwrap())
         .await
         .unwrap();
-    for (id, reviewer) in [(owner, "bob"), (follower.as_str(), "bob"), (owner, "")] {
-        match reviewer.parse() {
-            Ok(reviewer) => assert!(
-                human::unclaim(&receipts, &rid(id), &reviewer)
-                    .await
-                    .is_err()
-            ),
-            Err(_) => assert!(
-                reviewer.is_empty(),
-                "invalid reviewer rejected at the input edge"
-            ),
-        }
+    assert!(
+        "".parse::<artifactize_core::types::ReviewerId>().is_err(),
+        "an empty reviewer must be rejected at the input edge"
+    );
+    for id in [owner, follower.as_str()] {
+        assert!(
+            human::unclaim(&receipts, &rid(id), &"bob".parse().unwrap())
+                .await
+                .is_err()
+        );
     }
     // A follower forwards the release to its original request, like a claim.
     let released = human::unclaim(&receipts, &rid(follower), &"alice".parse().unwrap())
@@ -806,11 +814,15 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
         .await
         .is_err()
     );
-    let cached = receipts
-        .cached_execution(run.requests[0].key.as_deref().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
+    let cached = artifactize_core::cache::show(
+        &fixture.state,
+        run.requests[0].key.as_deref().unwrap(),
+        false,
+    )
+    .await
+    .unwrap()
+    .pop()
+    .unwrap();
     assert_eq!(cached.provenance.request_id, run.requests[0].id);
     assert_eq!(cached.status().as_str(), "GREEN");
 }
@@ -975,15 +987,12 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         );
     }
     assert_eq!(
-        fixture
-            .database()
-            .query_row::<u32, _, _>(
-                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
-                [],
-                |row| row.get(0)
-            )
-            .unwrap(),
-        2
+        artifactize_core::cache::list(&fixture.state, true)
+            .await
+            .unwrap()
+            .len(),
+        2,
+        "the two distinct definitions publish independent review evidence"
     );
     let status = project::status(
         &fixture.repo,

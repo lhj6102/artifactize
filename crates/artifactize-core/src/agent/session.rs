@@ -652,8 +652,9 @@ mod tests {
         ] {
             assert_eq!(SessionRef::parse(text), None, "{text}");
         }
-        assert!(path(Path::new("/state"), "..").is_err());
-        assert!(path(Path::new("/state"), "a/b").is_err());
+        let root = crate::test_os::tempdir();
+        assert!(path(root.path(), "..").is_err());
+        assert!(path(root.path(), "a/b").is_err());
     }
 
     #[test]
@@ -739,15 +740,17 @@ mod tests {
         std::fs::create_dir(&state).unwrap();
         std::fs::write(directory(&state), "not a directory").unwrap();
         let reference = reference();
-        let mut recorder = Recorder {
-            state: Recording::Pending(Box::new(Pending {
-                path: path(&state, &reference.session_id).unwrap(),
-                reference: reference.clone(),
-                eval_id: None,
-                target: None,
-            })),
-            ..Recorder::off(&reference.session_id)
+        let request = crate::monitor::tests::request(
+            "app/check",
+            "RUNNING",
+            json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"}}),
+        );
+        let saving = Saving {
+            state: state.clone(),
+            state_id: reference.state,
+            producer: reference.producer,
         };
+        let mut recorder = Recorder::new(Some(&saving), &request.request, &reference.session_id);
         recorder.start(Header {
             backend: Some(crate::config::Backend::Openai),
             ..Header::default()

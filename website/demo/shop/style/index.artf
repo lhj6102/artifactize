@@ -1,5 +1,4 @@
 name = "style"
-fingerprint = {}
 
 [evals.tokens]
 title = "Every color token is a hex color"

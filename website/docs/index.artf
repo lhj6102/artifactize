@@ -9,7 +9,7 @@ read = { builtin = "read" }
 
 [evals.matches-cli]
 title = "The documentation matches the CLI"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 8000000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-cli.payload]
 instruction = """
@@ -17,7 +17,9 @@ Check that the mdBook documentation in {docs} (src/, starting from src/SUMMARY.m
 of {core}. Compare what the docs state about commands, flags, defaults, exit codes, output, \
 index.artf fields, tool declarations and state behavior with the code, using list_docs, glob_docs, \
 grep_docs and read_docs for the docs and list_core, glob_core, grep_core and read_core for the code \
-(start from src/cli.rs and src/config.rs). Tool paths are relative to each Artifact, for example \
+(start from src/cli.rs, src/mcp.rs and src/config.rs). Also compare guides/hey-arti.md with the canonical \
+Artifactizer skill {hey-arti}, using read_hey-arti; verify MCP-first guidance and Human/lifecycle \
+boundaries agree without claiming plugin distribution. Tool paths are relative to each Artifact, for example \
 src/reference/cli.md in docs. Submit GREEN when no statement clearly contradicts the code or \
 describes something the code no longer has. Otherwise submit RED with up to 20 mismatches, the most \
 misleading first, each with the doc path:line, the code path:line and one sentence on how to fix the \
@@ -45,4 +47,56 @@ properties.doc = { type = "string", minLength = 1 }
 properties.code = { type = "string", minLength = 1 }
 properties.fix = { type = "string", minLength = 1 }
 required = ["doc", "code", "fix"]
+additionalProperties = false
+
+[evals.follows-rules]
+title = "The documentation has one discoverable installation home"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.follows-rules.profile_variants]
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+
+[evals.follows-rules.payload]
+instruction = """
+Review the mdBook documentation {docs} in src/, starting from src/SUMMARY.md, using list_docs,
+glob_docs, grep_docs and read_docs. These are this Artifact's self-evaluation criteria:
+- D-INSTALL-ONE-PAGE: Within the docs, artifactize installation instructions exist only in
+  src/getting-started/install.md. Every other docs page links to it instead of repeating
+  installation commands or channel-specific installation steps.
+- D-INSTALL-FIND-METHODS: That install page lets a reader find the default installation method
+  for their operating system and the alternatives: other commands, package managers, the
+  install scripts and building from source.
+- D-CONCISE-FEATURES: Explain the product's features concisely; unnecessary repetition and
+  long-winded explanation fail this criterion.
+- D-PLAIN-DOCS: A reader who is not already an expert can understand the guide. Explain
+  necessary terms and commands in plain language rather than assuming professional expertise.
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
+20 violations, most important first, each with the item id, a documentation path:line and one
+sentence on what to change in the documentation.
+"""
+
+[evals.follows-rules.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-rules.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.follows-rules.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.follows-rules.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.where = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["item", "where", "change"]
 additionalProperties = false

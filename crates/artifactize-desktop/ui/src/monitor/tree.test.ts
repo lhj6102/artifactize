@@ -80,9 +80,11 @@ describe("Tree", () => {
     const state = new Tree();
     state.sync("run-a", tree());
     state.select(["a:ship"]);
-    expect(state.nextAttention(tree())).toBe(true);
+    const moved = state.nextAttention(tree());
+    expect(moved).toBe(true);
     expect(state.selected).toEqual(["a:release", "e:release/signoff"]);
     const calm = tree().map((top) => ({ ...top, children: top.children.map((child) => ({ ...child, urgent: false })) }));
-    expect(state.nextAttention(calm)).toBe(false);
+    const stayed = state.nextAttention(calm);
+    expect(stayed).toBe(false);
   });
 });

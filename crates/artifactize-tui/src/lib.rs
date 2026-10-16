@@ -1,8 +1,12 @@
 //! The terminal screens of artifactize: the Monitor and the Human review. Every fact and
 //! operation they show comes from `artifactize-core`; this crate draws and reads keys.
 
+mod jobs;
 pub mod monitor;
 pub mod review;
+
+/// Two blank columns separate the header breadcrumb from its right-aligned status.
+pub(crate) const HEADER_GAP: usize = 2;
 
 // The core modules the screens use, under the paths their code has always named.
 pub(crate) use artifactize_core::{
@@ -46,3 +50,8 @@ mod test_session_files;
 )]
 #[path = "../../artifactize-core/tests/support/declaration.rs"]
 mod test_declaration;
+
+#[cfg(test)]
+#[path = "../../artifactize-core/tests/support/runs.rs"]
+#[expect(dead_code, reason = "unit fixtures only record Human requests")]
+mod test_runs;

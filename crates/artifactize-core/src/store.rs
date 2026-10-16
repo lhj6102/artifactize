@@ -4,12 +4,14 @@ use std::path::{Path, PathBuf};
 
 use crate::{platform, workspace::canonical_target};
 
+mod blocked;
 pub mod definitions;
 mod executions;
 pub(crate) mod history;
 mod human;
 pub use human::HumanClaim;
 mod catalog;
+pub(crate) mod connection;
 pub mod prune;
 pub(crate) mod receipts;
 mod result;
@@ -19,9 +21,14 @@ mod unreadable;
 mod validation;
 pub use unreadable::{Unreadable, read_unreadable};
 mod lifecycle;
-pub use lifecycle::{ExecutionState, PendingRequest, RequestState, RunState};
+pub(crate) mod migrations;
+pub(crate) mod run_control;
+pub use lifecycle::{ExecutionState, GreenResult, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
-pub use snapshots::{ArtifactValidation, Blocker, ChildIdentity, HumanDefinition, Validation};
+pub use snapshots::{
+    ArtifactValidation, Blocker, ChildIdentity, EvalValidation, HumanDefinition, Validation,
+    ValidationSnapshot,
+};
 mod wait_timeout;
 pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
@@ -31,6 +38,8 @@ pub use executions::{
     Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,
     read_keyed_executions, read_latest_cached,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use receipts::OwnedReceipts;
 pub(crate) use receipts::regular_files as check_probe_files;
 pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
@@ -38,8 +47,8 @@ pub use receipts::{
 };
 pub(crate) use requests::read_request_repo;
 pub use requests::{
-    RequestView, read_original, read_request, read_request_batch, read_requests, read_run_requests,
-    read_session_request, read_waiting, read_waiting_originals,
+    RequestView, read_original, read_request, read_request_batch, read_requests, read_requests_in,
+    read_run_requests, read_session_request, read_waiting, read_waiting_originals,
 };
 
 /// Let concurrent readers/writers finish short SQLite transactions without an
@@ -85,55 +94,31 @@ pub(crate) fn retry_transient_access<T>(
 
 #[cfg(test)]
 mod retry_tests {
-    use std::cell::Cell;
+    use std::{cell::Cell, io};
 
     #[test]
-    fn retry_succeeds_within_bound_gives_up_past_it_and_never_retries_a_non_transient_error() {
+    fn file_probe_returns_success_and_permanent_errors_without_backoff() {
         let calls = Cell::new(0);
-        let waits = Cell::new(0);
-        let result = super::retry(
+        let result = super::retry_transient_access(
             || {
                 calls.set(calls.get() + 1);
-                if calls.get() <= 2 {
-                    Err::<u32, _>("transient")
-                } else {
-                    Ok(calls.get())
-                }
+                Ok(7)
             },
-            |error: &&str| *error == "transient",
-            || waits.set(waits.get() + 1),
+            || panic!("successful probes need no backoff"),
         );
-        assert_eq!(result, Ok(3));
-        assert_eq!(calls.get(), 3);
-        assert_eq!(waits.get(), 2);
-
-        let calls = Cell::new(0);
-        let waits = Cell::new(0);
-        let result = super::retry(
-            || {
-                calls.set(calls.get() + 1);
-                Err::<(), _>("transient")
-            },
-            |error: &&str| *error == "transient",
-            || waits.set(waits.get() + 1),
-        );
-        assert_eq!(result, Err("transient"));
-        assert_eq!(calls.get(), super::TRANSIENT_ACCESS_RETRIES);
-        assert_eq!(waits.get(), 4);
-
-        let calls = Cell::new(0);
-        let waits = Cell::new(0);
-        let result = super::retry(
-            || {
-                calls.set(calls.get() + 1);
-                Err::<(), _>("permanent")
-            },
-            |error: &&str| *error == "transient",
-            || waits.set(waits.get() + 1),
-        );
-        assert_eq!(result, Err("permanent"));
+        assert_eq!(result.unwrap(), 7);
         assert_eq!(calls.get(), 1);
-        assert_eq!(waits.get(), 0);
+
+        let calls = Cell::new(0);
+        let result = super::retry_transient_access(
+            || {
+                calls.set(calls.get() + 1);
+                Err::<(), _>(io::Error::other("permanent probe failure"))
+            },
+            || panic!("permanent errors cannot be retried"),
+        );
+        assert_eq!(result.unwrap_err().to_string(), "permanent probe failure");
+        assert_eq!(calls.get(), 1);
     }
 }
 
@@ -146,9 +131,9 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     canonical_target(&path).map_err(|e| e.to_string())
 }
 
-/// SQLite `user_version`; dependency requests and derived verdicts require schema 6.
+/// SQLite `user_version`; caller attempt keys extend Runs additively in schema 7.
 /// Earlier state is not migrated.
-pub const STATE_SCHEMA_VERSION: u32 = 6;
+pub const STATE_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set {}", state_home_variables())]

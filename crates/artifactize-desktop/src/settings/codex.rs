@@ -359,9 +359,8 @@ mod tests {
                         callback: true,
                     });
                 }
-                let _ = pasted.await;
-                std::future::pending::<()>().await;
-                Ok(())
+                // The fixture completes when its public paste boundary receives a value.
+                pasted.await.map(|_| ()).map_err(|_| "paste closed".into())
             })
         };
         (go, launch)
@@ -389,16 +388,17 @@ mod tests {
             poll_once(&mut start).await.is_none(),
             "waiting for its prompt"
         );
-        assert!(
-            sign_ins.current().is_some(),
-            "in progress before its prompt"
-        );
         sign_ins.cancel();
         // The prompt would come now; the stopped sign-in never shows it.
         let _ = go.send(());
-        assert_eq!(start.await.unwrap_err(), Failure::Account(CANCELLED.into()));
-        assert!(sign_ins.current().is_none());
-        assert!(sign_ins.paste("http://localhost:1455/".into()).is_err());
+        assert_eq!(
+            start.await.unwrap_err(),
+            Failure::Account("Codex sign-in was cancelled.".into())
+        );
+        assert_eq!(
+            sign_ins.paste("http://localhost:1455/".into()).unwrap_err(),
+            Failure::Missing("No Codex sign-in is waiting for a URL.".into())
+        );
     }
 
     /// A newer start while an older one waits for its prompt stops the older: it reads as
@@ -413,14 +413,19 @@ mod tests {
         let mut second = Box::pin(sign_ins.start(newer));
         assert!(poll_once(&mut second).await.is_none());
         let _ = older_go.send(());
-        assert_eq!(first.await.unwrap_err(), Failure::Account(CANCELLED.into()));
+        assert_eq!(
+            first.await.unwrap_err(),
+            Failure::Account("Codex sign-in was cancelled.".into())
+        );
         let _ = newer_go.send(());
         let (id, prompt) = second.await.unwrap();
+        assert_eq!(prompt.url, "http://127.0.0.1:9/oauth/authorize");
         assert!(prompt.callback);
-        assert!(sign_ins.is_current(id));
         sign_ins
             .paste("http://localhost:1455/auth/callback?code=c&state=s".into())
             .unwrap();
+        assert_eq!(sign_ins.take(id).unwrap().await.unwrap(), Ok(()));
+        sign_ins.finish(id);
     }
 
     /// A sign-in that never ends by itself.
@@ -456,12 +461,16 @@ mod tests {
             .unwrap();
         let task = sign_ins.take(newer).unwrap();
         task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
         // A late waiter of the older one reads it as cancelled and takes nothing.
         assert_eq!(
             sign_ins.take(older).unwrap_err(),
-            Failure::Account(CANCELLED.into())
+            Failure::Account("Codex sign-in was cancelled.".into())
         );
         sign_ins.finish(newer);
-        assert!(sign_ins.current().is_none());
+        assert_eq!(
+            sign_ins.take(newer).unwrap_err(),
+            Failure::Account("Codex sign-in was cancelled.".into())
+        );
     }
 }

@@ -1,8 +1,10 @@
+# Main PRs and manual rehearsals validate release packaging and installers.
+# Tag releases reuse these builds through workflow_call without publishing here.
 name: Binaries
 
 # release.yml calls each platform separately: Linux gates the release; Windows and
-# macOS run alongside and never delay it before v1. Packaging/installer PRs and
-# manual rehearsals build every target, retain archives and exercise the installers.
+# macOS run alongside and never delay it before v1. Main PRs and manual rehearsals
+# build every target, retain archives and exercise the installers.
 # Each binaries-<target> artifact holds a tarball (Windows: zip) with BOTH commands
 # and its SHA-256. Distribution channels consume the same archive names.
 on:
@@ -28,18 +30,7 @@ on:
         options: [all, linux, windows, macos]
         default: all
   pull_request:
-    paths:
-      - ".github/workflows/binaries.yml"
-      - ".github/workflows/release.yml"
-      - ".github/scripts/**"
-      - ".github/packaging/**"
-      - "assets/brand/apple-touch-icon.png"
-      - "crates/artifactize/Cargo.toml"
-      - "crates/artifactize-core/Cargo.toml"
-      - "crates/artifactize-tools/Cargo.toml"
-      - "crates/artifactize-tui/Cargo.toml"
-      - "website/landing/install.sh"
-      - "website/landing/install.ps1"
+    branches: [main]
 
 permissions:
   contents: read

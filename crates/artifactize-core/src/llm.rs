@@ -272,11 +272,16 @@ impl Client {
         } else if status == Some(429) || any(&["rate_limit", "rate limit"]) {
             Code::RateLimit
         } else if error.is_retryable()
+            || matches!(self, Self::Openai(..) | Self::Codex(_)) && codex::overloaded(error)
             || status.is_some_and(|status| status >= 500)
             || (status.is_none()
                 && matches!(
                     report.code.as_deref(),
-                    Some("overloaded_error" | "server_error" | "api_error")
+                    // Codex reports overloads inside a successful HTTP stream, without
+                    // an HTTP error status; it is the same retryable provider failure.
+                    Some(
+                        "overloaded_error" | "server_is_overloaded" | "server_error" | "api_error"
+                    )
                 ))
         {
             Code::Transient

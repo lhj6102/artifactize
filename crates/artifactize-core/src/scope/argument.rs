@@ -54,6 +54,12 @@ impl LogicalTarget {
     }
 }
 
+impl Serialize for LogicalTarget {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl AsRef<std::path::Path> for LogicalTarget {
     fn as_ref(&self) -> &std::path::Path {
         std::path::Path::new(self.as_str())
@@ -221,6 +227,9 @@ mod tests {
         }
         let root: LogicalTarget = "".parse().unwrap();
         assert_eq!(root, LogicalTarget::Root);
+        assert_eq!(serde_json::to_value(root).unwrap(), "");
+        let suffix: LogicalTarget = "folder/file".parse().unwrap();
+        assert_eq!(serde_json::to_value(suffix).unwrap(), "folder/file");
         for invalid in ["", ".", "../outside", "a//b", "a/../b", "a\\b", "a\0b"] {
             assert!(invalid.parse::<LogicalSuffix>().is_err(), "{invalid:?}");
         }

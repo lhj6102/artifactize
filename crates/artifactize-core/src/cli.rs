@@ -8,6 +8,8 @@ mod dispatch;
 mod identity_tests;
 mod interactive;
 mod maintenance;
+#[cfg(test)]
+mod monitor_tests;
 mod remote;
 mod render;
 mod run;
@@ -25,7 +27,10 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand, error::ErrorKind};
+use clap::{
+    Args, Parser, Subcommand,
+    error::{ContextKind, ErrorKind},
+};
 use serde_json::json;
 
 use crate::{
@@ -36,6 +41,9 @@ use crate::{
 
 /// Keep default Run history output readable; --limit/--offset expose older records.
 const DEFAULT_RUN_LIST_LIMIT: u32 = 50;
+
+/// Shells conventionally report an interrupt as 130; use the same status on every platform.
+const INTERRUPTED_EXIT: u8 = 130;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -64,6 +72,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Serve bounded verification and inspection tools over MCP stdio.
+    Mcp,
+    #[command(name = "__verify", hide = true)]
+    VerifyWorker { run_id: RunId },
+    #[command(name = "__execute", hide = true)]
+    VerifyExecution { run_id: RunId },
     /// Run scoped tools or check declared review tools.
     #[command(disable_help_subcommand = true, version)]
     Tools {
@@ -101,7 +115,7 @@ pub enum Command {
         #[command(subcommand)]
         provider: ModelProvider,
     },
-    /// Execute selected evals in the foreground.
+    /// Submit selected evals; use --wait to observe the validation outcome.
     #[command(group(clap::ArgGroup::new("required_selection")
         .args(["artifact", "eval", "evals", "artifacts", "evals_file", "artifacts_file", "all"])
         .required(true)))]
@@ -110,28 +124,32 @@ pub enum Command {
         selection: SelectionArgs,
         #[command(flatten)]
         policy: PolicyArgs,
-        /// Maximum concurrent evals, including fingerprint waiters.
+        /// Opt-in maximum concurrent evals, including fingerprint waiters; otherwise unlimited.
         #[arg(
             long,
             value_name = "N",
-            default_value_t = crate::project::DEFAULT_JOBS as u32,
             value_parser = clap::value_parser!(u32).range(1..)
         )]
-        jobs: u32,
+        jobs: Option<u32>,
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,
-        /// How long to wait for Human results; does not cancel pending requests (default 600000).
-        #[arg(
-            long,
-            value_name = "MS",
-            value_parser = timeout_duration
-        )]
-        timeout_ms: Option<std::time::Duration>,
+        /// Observe until the Run ends; interrupting stops watching, not execution.
+        #[arg(long)]
+        wait: bool,
+        /// Retry-safe caller attempt key (1–128 ASCII letters/digits/._:-).
+        #[arg(long, value_name = "KEY")]
+        request_key: Option<crate::types::RequestKey>,
         /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is
         /// not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
         reuse_only: Vec<ProfileKind>,
+        /// Start reviews before unresolved dependency gates; cancel blocked work.
+        #[arg(long)]
+        speculate: bool,
+        /// Run past pending sign-offs and finish with SIGNOFFS_PENDING (exit 5).
+        #[arg(long)]
+        defer_human: bool,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.
     Status {
@@ -172,11 +190,13 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Browse repositories/worktrees, Runs and eval details; initial selection is the current
-    /// worktree.
+    /// Browse Runs; starts on ALL regardless of cwd. Paths select only the initial repository.
     Monitor {
-        /// Initially select ALL repositories; every scope remains accessible in the UI.
-        #[arg(long)]
+        /// Initial repository/worktree; all scopes remain accessible in the UI.
+        #[arg(value_name = "PATH", conflicts_with = "repo")]
+        path: Option<PathBuf>,
+        /// Initially select ALL repositories (the default).
+        #[arg(long, conflicts_with_all = ["path", "repo"])]
         all: bool,
     },
     /// Search saved requests and claim, run tools for and submit Human reviews in a terminal
@@ -263,9 +283,6 @@ pub struct PolicyArgs {
     /// Force explicitly selected Evals only; dependency gates still apply.
     #[arg(long)]
     force: bool,
-    /// Bypass execution gates, never final validation obligations.
-    #[arg(long)]
-    ignore_gates: bool,
     /// Fingerprints to compute at once (default: the available CPUs).
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     fingerprint_jobs: Option<u32>,
@@ -277,7 +294,6 @@ impl PolicyArgs {
             profile: self.profile.map(ProfileSelection::Named),
             recursive: self.recursive,
             force: self.force,
-            ignore_gates: self.ignore_gates.then_some(true),
             fingerprint_jobs: self.fingerprint_jobs.map(|jobs| jobs as usize),
             ..Default::default()
         }
@@ -323,6 +339,8 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
+    /// Request cancellation; committed results are kept and cleanup settles asynchronously.
+    Cancel { run_id: RunId },
     /// List saved Runs, newest first; defaults to the current repository.
     List {
         /// Explicitly restrict results to --repo (the default).
@@ -467,7 +485,18 @@ pub fn run(screens: Screens) -> ExitCode {
         .take_while(|arg| *arg != "--")
         .filter_map(|arg| arg.to_str())
         .collect();
-    let json = options.contains(&"--json");
+    let mcp = matches!(
+        &parsed,
+        Ok(Cli {
+            command: Some(Command::Mcp),
+            ..
+        })
+    ) || parsed
+        .as_ref()
+        .err()
+        .and_then(|error| error.get(ContextKind::Usage))
+        .is_some_and(|usage| usage.to_string().starts_with("Usage: artifactize mcp"));
+    let json = options.contains(&"--json") && !mcp;
     if let Some(name) = repeated_global(&options) {
         return failure(&format!("{name} cannot be used multiple times."), json);
     }

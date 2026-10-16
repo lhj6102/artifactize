@@ -1,6 +1,6 @@
 # CI
 
-Run `artifactize verify --all --reuse-only agent,human` as a CI step: tests run, while reviews must come from the cache or
+Run `artifactize verify --all --wait --reuse-only agent,human` as a CI step: tests run, while reviews must come from the cache or
 the team store, so CI never calls a model or waits for a person. It exits 0 only
 when every selected eval is GREEN, so RED (1), ERROR (2) and INCOMPLETE (4) fail the
 job; the [command reference](../reference/cli.md#command-reference) lists every exit code. An Agent review or Human sign-off with
@@ -13,12 +13,22 @@ and are never cached or fetched from the store themselves. A missing or waiting
 required review leaves them WAIT_DEPENDENCY; a required RED makes them BLOCKED.
 `--reuse-only dependency` does not prevent derivation.
 
+## Keep deferred work out of the merge gate
+
+Developers may use `--defer-human` to finish machine work while a person is away,
+optionally with `--speculate`. SIGNOFFS_PENDING (exit 5), DEFERRED sign-offs and
+PROVISIONAL machine results are not approval. Keep CI's
+`--reuse-only agent,human` gate: missing sign-offs are not executed, leave
+INCOMPLETE, and cannot be counted as passing even if `--defer-human` is supplied.
+Once a person submits GREEN, CI reuses unchanged machine evidence and the
+sign-off. RED blocks dependents. Do not treat plain verify acceptance as CI success.
+
 ## Reuse verdicts from the team store
 
 **CI.** Configure CI through the environment only:
 
 ```yaml
-- run: artifactize verify --all --reuse-only agent,human
+- run: artifactize verify --all --wait --reuse-only agent,human
   env:
     ARTIFACTIZE_REMOTE: https://reviews.example/
     ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}

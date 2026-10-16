@@ -2,7 +2,7 @@
 
 use std::{
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use clap::Subcommand;
@@ -10,15 +10,15 @@ use rig_core::message::{AssistantContent, Message, ToolResultContent, UserConten
 use serde_json::json;
 
 use super::{cancellation_listener, print_json};
+use crate::inspect::session::{Located, locate};
 use crate::{
     agent::{
         self,
-        session::{self, Conversation, Recorder, SessionRef, Summary},
+        session::{self, Conversation, Recorder, Summary},
     },
     cache,
     config::read_workspace_config,
-    store::{self, Producer, RequestView},
-    workspace,
+    store, workspace,
 };
 
 #[derive(Debug, Subcommand)]
@@ -51,34 +51,24 @@ pub(super) async fn execute(
 ) -> Result<u8, String> {
     match command {
         SessionCommand::Show { reference, summary } => {
-            let located = locate(state, &reference).await?;
-            let conversation = located.load()?;
-            if summary {
-                let summary = Summary::new(&conversation);
-                if json {
-                    let mut value = json!(summary);
-                    value["reference"] = json!(located.reference.as_ref().map(ToString::to_string));
-                    value["sessionId"] = json!(located.id);
-                    value["requestId"] = json!(located.request.request.id);
-                    print_json(&value)?;
-                } else {
-                    show_summary(&located, &summary).map_err(|e| e.to_string())?;
-                }
-            } else if json {
-                print_json(&json!({
-                    "reference": located.reference.as_ref().map(ToString::to_string),
-                    "file": crate::platform::path_text(&conversation.path),
-                    "events": conversation.wire_events,
-                }))?;
+            if json {
+                print_json(&crate::inspect::session::show(state, &reference, summary).await?)?;
             } else {
-                show(&located, &conversation).map_err(|e| e.to_string())?;
+                let located = locate(state, &reference).await?;
+                let conversation = located.load()?;
+                if summary {
+                    show_summary(&located, &Summary::new(&conversation))
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    show(&located, &conversation).map_err(|e| e.to_string())?;
+                }
             }
         }
         SessionCommand::Send { reference, message } => {
             let located = locate(state, &reference).await?;
             if matches!(
-                located.request.request.status().as_str(),
-                "QUEUED" | "RUNNING"
+                located.request.request.status(),
+                crate::types::RequestStatus::Queued | crate::types::RequestStatus::Running
             ) {
                 return Err(format!(
                     "Request {} is still running; send a follow-up once its review has finished.",
@@ -131,112 +121,6 @@ pub(super) async fn execute(
         }
     }
     Ok(0)
-}
-
-/// The review whose conversation a reference names, in this state.
-struct Located {
-    /// The request whose Agent review ran as the session.
-    request: RequestView,
-    /// The request the reference named, when it reused that review's result.
-    reused_by: Option<crate::types::RequestId>,
-    id: crate::types::SessionId,
-    /// Set once the conversation was saved; absent when saving was off.
-    reference: Option<SessionRef>,
-    path: PathBuf,
-}
-
-impl Located {
-    /// The saved conversation, or why there is none.
-    fn load(&self) -> Result<Conversation, String> {
-        Conversation::load(&self.path)?.ok_or_else(|| {
-            let request = &self.request.request.id;
-            if self.reference.is_some() {
-                format!(
-                    "Session {} of request {request} was removed by the session GC (limits.json agentSessions).",
-                    self.id
-                )
-            } else {
-                format!(
-                    "Session {} of request {request} was not saved: saving was off (limits.json agentSessions.enabled), or the review never started.",
-                    self.id
-                )
-            }
-        })
-    }
-}
-
-/// Fail unless `reference` names this machine's producer and this state.
-fn here(state: &Path, reference: &SessionRef) -> Result<(), String> {
-    let producer = Producer::current().name;
-    let state_id = store::read_state_id(state)?;
-    if reference.producer == producer
-        && Some(reference.state.as_str()) == state_id.as_ref().map(crate::types::StateId::as_str)
-    {
-        return Ok(());
-    }
-    Err(format!(
-        "Session {} lives in {}'s state {}; this is {producer}'s state {}. Read or continue it there.",
-        reference.session_id,
-        reference.producer,
-        reference.state,
-        state_id.as_deref().unwrap_or("(not created yet)")
-    ))
-}
-
-/// Resolve a full reference, a request id or a session id to its review's request.
-async fn locate(state: &Path, text: &str) -> Result<Located, String> {
-    let mut view = if let Some(reference) = SessionRef::parse(text) {
-        here(state, &reference)?;
-        let view = store::read_request(state, &reference.request_id)
-            .await
-            .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
-        if view.request.session_id.as_ref() != Some(&reference.session_id) {
-            return Err(format!(
-                "Request {} did not run session {}.",
-                reference.request_id, reference.session_id
-            ));
-        }
-        view
-    } else {
-        match store::read_request(state, text).await {
-            Ok(view) => view,
-            Err(_) => store::read_session_request(state, text)
-                .await?
-                .ok_or_else(|| {
-                    format!(
-                        "No Agent request or session {text} in this state ({}).",
-                        crate::platform::path_text(state)
-                    )
-                })?,
-        }
-    };
-    let mut reused_by = None;
-    if view.request.session_id.is_none() {
-        // A reused result names the review that produced it, which may live elsewhere.
-        let Some(reference) = view.request.session.clone() else {
-            return Err(format!(
-                "Request {} ran no Agent review and names no saved conversation.",
-                view.request.id
-            ));
-        };
-        here(state, &reference)?;
-        reused_by = Some(view.request.id.clone());
-        view = store::read_request(state, &reference.request_id)
-            .await
-            .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
-    }
-    let id = view
-        .request
-        .session_id
-        .clone()
-        .ok_or_else(|| format!("Request {} ran no Agent review.", view.request.id))?;
-    Ok(Located {
-        path: session::path(state, &id)?,
-        reference: view.request.session.clone(),
-        reused_by,
-        id,
-        request: view,
-    })
 }
 
 struct Sent {

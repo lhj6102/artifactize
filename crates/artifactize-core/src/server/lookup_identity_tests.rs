@@ -1,77 +1,156 @@
-//! The frozen old envelope and HTTP checks define status/message precedence independently.
+//! Literal HTTP outcomes pin lookup shape and validation precedence without a second parser.
 use super::*;
 
+/// The HTTP contract accepts 1000 keys, pinned independently of the parser limit.
+const HTTP_KEY_LIMIT: usize = 1000;
+
 #[test]
-fn typed_keys_keep_previous_http_status_messages_for_all_shapes_and_validation_orders() {
+fn typed_keys_keep_http_status_messages_for_all_shapes_and_validation_orders() {
     let hash = "a".repeat(64);
-    let many = vec!["malformed"; MAX_LOOKUP_KEYS + 1];
+    let many = vec!["malformed"; HTTP_KEY_LIMIT + 1];
+    let shape_error = "Expected {\"keys\":[KEY,...]}.";
+    let key_error = "Keys are lowercase SHA-256 reuse keys.";
+    let upgrade = "This review store holds artifactize 0.5 reuse keys (store schema 3); upgrade this client to artifactize 0.5 or later.";
     let shapes = [
-        json!({"keys":[hash.clone(),hash.clone()]}),
-        json!({"keys":many}),
-        json!({"keys":["bad",{}]}),
-        json!({"keys":[null,"bad",{}],"extra":true}),
-        json!({"keys":["bad"]}),
-        json!({"keys":["A".repeat(64)]}),
-        json!({"keys":["g".repeat(64)]}),
-        json!({"keys":["a".repeat(63)]}),
-        json!({"keys":["a".repeat(65)]}),
-        json!({"keys":[null]}),
-        json!({"keys":[1]}),
-        json!({"keys":[false]}),
-        json!({"keys":[[hash.clone()]]}),
-        json!({"keys":null}),
-        json!({}),
-        json!([["bad"]]),
-        json!([[{}]]),
-        json!([[hash.clone()], []]),
-        json!({"keys":[{}],"extra":1}),
-        json!({"keys":[hash.clone()],"extra":1}),
+        (
+            json!({"keys":many}),
+            StatusCode::BAD_REQUEST,
+            "At most 1000 keys per lookup.",
+        ),
+        (json!({"keys":["bad",{}]}), StatusCode::GONE, upgrade),
+        (
+            json!({"keys":[null,"bad",{}],"extra":true}),
+            StatusCode::GONE,
+            upgrade,
+        ),
+        (json!({"keys":["bad"]}), StatusCode::BAD_REQUEST, key_error),
+        (
+            json!({"keys":["A".repeat(64)]}),
+            StatusCode::BAD_REQUEST,
+            key_error,
+        ),
+        (
+            json!({"keys":["g".repeat(64)]}),
+            StatusCode::BAD_REQUEST,
+            key_error,
+        ),
+        (
+            json!({"keys":["a".repeat(63)]}),
+            StatusCode::BAD_REQUEST,
+            key_error,
+        ),
+        (
+            json!({"keys":["a".repeat(65)]}),
+            StatusCode::BAD_REQUEST,
+            key_error,
+        ),
+        (json!({"keys":[null]}), StatusCode::BAD_REQUEST, shape_error),
+        (json!({"keys":[1]}), StatusCode::BAD_REQUEST, shape_error),
+        (
+            json!({"keys":[false]}),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
+        (
+            json!({"keys":[[hash.clone()]]}),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
+        (json!({"keys":null}), StatusCode::BAD_REQUEST, shape_error),
+        (json!({}), StatusCode::BAD_REQUEST, shape_error),
+        (json!([["bad"]]), StatusCode::BAD_REQUEST, key_error),
+        (json!([[{}]]), StatusCode::BAD_REQUEST, shape_error),
+        (
+            json!([[hash.clone()], []]),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
+        (json!({"keys":[{}],"extra":1}), StatusCode::GONE, upgrade),
+        (
+            json!({"keys":[hash.clone()],"extra":1}),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
     ];
     let mut fixtures = shapes
         .into_iter()
-        .map(|shape| shape.to_string())
+        .map(|(shape, status, message)| (shape.to_string(), status, message))
         .collect::<Vec<_>>();
     fixtures.extend([
-        format!(r#"{{"keys":[{{}}],"keys":["{hash}"]}}"#),
-        format!(r#"{{"keys":["{hash}"],"keys":[{{}}]}}"#),
-        r#"{"keys":[{}],"keys":[null]}"#.into(),
-        r#"{"keys":null,"keys":["bad"]}"#.into(),
-        r#"{"keys":["bad"],"keys":null}"#.into(),
-        r#"{"keys":[{}],"extra":1e400}"#.into(),
-        "null".into(),
-        "17".into(),
-        "true".into(),
-        "\"string\"".into(),
-        r#"{"keys":["bad",]}"#.into(),
+        (
+            format!(r#"{{"keys":["{hash}"],"keys":[{{}}]}}"#),
+            StatusCode::GONE,
+            upgrade,
+        ),
+        (
+            r#"{"keys":[{}],"keys":[null]}"#.into(),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
+        (
+            r#"{"keys":null,"keys":["bad"]}"#.into(),
+            StatusCode::BAD_REQUEST,
+            key_error,
+        ),
+        (
+            r#"{"keys":["bad"],"keys":null}"#.into(),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
+        (
+            r#"{"keys":[{}],"extra":1e400}"#.into(),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
+        ("null".into(), StatusCode::BAD_REQUEST, shape_error),
+        ("17".into(), StatusCode::BAD_REQUEST, shape_error),
+        ("true".into(), StatusCode::BAD_REQUEST, shape_error),
+        ("\"string\"".into(), StatusCode::BAD_REQUEST, shape_error),
+        (
+            r#"{"keys":["bad",]}"#.into(),
+            StatusCode::BAD_REQUEST,
+            shape_error,
+        ),
     ]);
-    let mut over_count_legacy = vec![json!("bad"); MAX_LOOKUP_KEYS + 1];
+    let mut over_count_legacy = vec![json!("bad"); HTTP_KEY_LIMIT + 1];
     over_count_legacy.push(json!({}));
-    fixtures.push(json!({"keys":over_count_legacy}).to_string());
-    let mut over_count_invalid = vec![json!("bad"); MAX_LOOKUP_KEYS + 1];
+    fixtures.push((
+        json!({"keys":over_count_legacy}).to_string(),
+        StatusCode::GONE,
+        upgrade,
+    ));
+    let mut over_count_invalid = vec![json!("bad"); HTTP_KEY_LIMIT + 1];
     over_count_invalid.push(Value::Null);
-    fixtures.push(json!({"keys":over_count_invalid}).to_string());
-    for body in fixtures {
-        let expected = super::lookup_tests::previous_lookup(body.as_bytes());
-        let actual = parse_lookup(body.as_bytes())
-            .map(|lookup| {
-                lookup
-                    .keys
-                    .into_iter()
-                    .map(String::from)
-                    .collect::<Vec<_>>()
-            })
-            .map_err(|error| (error.0, error.1));
-        assert_eq!(actual, expected, "{body}");
+    fixtures.push((
+        json!({"keys":over_count_invalid}).to_string(),
+        StatusCode::BAD_REQUEST,
+        shape_error,
+    ));
+    for (body, status, message) in fixtures {
+        let error = parse_lookup(body.as_bytes()).err().unwrap();
+        assert_eq!(error.0, status, "{body}");
+        assert_eq!(error.1, message, "{body}");
     }
+    // Duplicate map fields keep the final field, including an earlier legacy object array.
+    let body = format!(r#"{{"keys":[{{}}],"keys":["{hash}"]}}"#);
+    let lookup = parse_lookup(body.as_bytes()).ok().unwrap();
+    assert_eq!(
+        lookup
+            .keys
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>(),
+        [hash]
+    );
 }
 
 #[test]
 fn valid_duplicate_keys_and_max_count_remain_typed_without_deduplication() {
     let hash = "a".repeat(64);
-    let keys = vec![hash.clone(); MAX_LOOKUP_KEYS];
+    let keys = vec![hash.clone(); HTTP_KEY_LIMIT];
     let lookup = parse_lookup(json!({"keys":keys}).to_string().as_bytes())
         .ok()
         .unwrap();
-    assert_eq!(lookup.keys.len(), MAX_LOOKUP_KEYS);
+    assert_eq!(lookup.keys.len(), HTTP_KEY_LIMIT);
     assert!(lookup.keys.iter().all(|key| key.as_str() == hash));
 }

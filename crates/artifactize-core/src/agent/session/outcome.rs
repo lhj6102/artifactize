@@ -150,26 +150,37 @@ mod tests {
     use super::*;
     #[test]
     fn original_success_error_and_empty_envelopes_round_trip() {
-        for wire in [
-            serde_json::json!({}),
-            serde_json::json!({"result":{"verdict":"GREEN"}}),
-            serde_json::json!({"errorCode":"TIMEOUT","error":"timed out"}),
+        use crate::agent::error::Code;
+        use serde_json::json;
+
+        let empty: End = serde_json::from_value(json!({})).unwrap();
+        assert!(matches!(empty, End::Empty));
+        let completed: End = serde_json::from_value(json!({"result":{"verdict":"GREEN"}})).unwrap();
+        assert_eq!(completed.result().unwrap().verdict.as_str(), "GREEN");
+        let failed: End =
+            serde_json::from_value(json!({"errorCode":"TIMEOUT","error":"timed out"})).unwrap();
+        assert_eq!(failed.failure(), Some((Some(Code::Timeout), "timed out")));
+        for (end, expected) in [
+            (empty, json!({})),
+            (completed, json!({"result":{"verdict":"GREEN"}})),
+            (failed, json!({"errorCode":"TIMEOUT","error":"timed out"})),
         ] {
-            assert_eq!(
-                serde_json::to_value(serde_json::from_value::<End>(wire.clone()).unwrap()).unwrap(),
-                wire
-            );
+            assert_eq!(serde_json::to_value(end).unwrap(), expected);
         }
-        for wire in [
-            serde_json::json!({}),
-            serde_json::json!({"text":"answer"}),
-            serde_json::json!({"errorCode":"TIMEOUT","error":"timed out"}),
+
+        let empty: Answer = serde_json::from_value(json!({})).unwrap();
+        assert!(matches!(empty, Answer::Empty));
+        let completed: Answer = serde_json::from_value(json!({"text":"answer"})).unwrap();
+        assert_eq!(completed.text(), Some("answer"));
+        let failed: Answer =
+            serde_json::from_value(json!({"errorCode":"TIMEOUT","error":"timed out"})).unwrap();
+        assert_eq!(failed.failure(), Some((Some(Code::Timeout), "timed out")));
+        for (answer, expected) in [
+            (empty, json!({})),
+            (completed, json!({"text":"answer"})),
+            (failed, json!({"errorCode":"TIMEOUT","error":"timed out"})),
         ] {
-            assert_eq!(
-                serde_json::to_value(serde_json::from_value::<Answer>(wire.clone()).unwrap())
-                    .unwrap(),
-                wire
-            );
+            assert_eq!(serde_json::to_value(answer).unwrap(), expected);
         }
         assert!(
             serde_json::from_value::<Answer>(serde_json::json!({"text":"answer","error":"failed"}))

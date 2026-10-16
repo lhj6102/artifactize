@@ -6,9 +6,9 @@ use serde_json::json;
 fn press(monitor: &mut Monitor, code: KeyCode) -> Action {
     monitor.key(KeyEvent::from(code))
 }
-fn populated() -> Monitor {
+fn populated() -> (tempfile::TempDir, Monitor) {
     let (run, requests) = tests::live();
-    let mut monitor = Monitor::new("/fixture-state".into(), None);
+    let (_monitor_root, mut monitor) = tests::monitor();
     monitor.set_run(run, requests);
     monitor.tree.select(vec![
         "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
@@ -16,14 +16,14 @@ fn populated() -> Monitor {
     // Tree key navigation uses paths from its most recently drawn frame.
     ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40))
         .unwrap()
-        .draw(|frame| monitor.draw(frame))
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
         .unwrap();
-    monitor
+    (_monitor_root, monitor)
 }
 
 #[test]
 fn main_arrows_move_both_directions_without_wrapping_or_changing_tree() {
-    let mut monitor = populated();
+    let (_monitor_root, mut monitor) = populated();
     monitor.focus = Pane::Repositories;
     let selected = monitor.tree.selected().to_vec();
     let opened = monitor.tree.opened().clone();
@@ -51,7 +51,7 @@ fn main_arrows_move_both_directions_without_wrapping_or_changing_tree() {
 
 #[test]
 fn tree_h_l_and_space_still_expand_and_collapse() {
-    let mut monitor = populated();
+    let (_monitor_root, mut monitor) = populated();
     monitor.focus = Pane::Artifacts;
     let artifact = vec!["a:p2".parse::<crate::monitor::model::NodeId>().unwrap()];
     press(&mut monitor, KeyCode::Char('h'));
@@ -68,7 +68,7 @@ fn tree_h_l_and_space_still_expand_and_collapse() {
 
 #[tokio::test]
 async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
-    let mut monitor = populated();
+    let (_monitor_root, mut monitor) = populated();
     monitor.focus = Pane::Artifacts;
     monitor.open_detail().await;
     assert_eq!(monitor.focus, Pane::Detail);
@@ -97,7 +97,7 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
         claimed_at: "2026-01-01T00:00:00Z".parse().unwrap(),
     });
     let mut review = review::Review::new(
-        "/fixture-state".into(),
+        monitor.state.clone(),
         None,
         "alice".parse().unwrap(),
         Some(view.request.id.clone()),
@@ -134,7 +134,7 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
 
 #[test]
 fn claim_key_is_inert_outside_detail_and_esc_never_quits() {
-    let mut monitor = populated();
+    let (_monitor_root, mut monitor) = populated();
     for pane in [Pane::Repositories, Pane::Runs, Pane::Artifacts] {
         monitor.focus = pane;
         assert_eq!(press(&mut monitor, KeyCode::Char('c')), Action::None);
@@ -149,7 +149,7 @@ fn claim_key_is_inert_outside_detail_and_esc_never_quits() {
 
 #[test]
 fn help_overlay_opens_with_question_mark_and_any_key_closes_it() {
-    let mut monitor = populated();
+    let (_monitor_root, mut monitor) = populated();
     monitor.focus = Pane::Runs;
     press(&mut monitor, KeyCode::Char('?'));
     assert!(monitor.help);
@@ -164,7 +164,7 @@ fn help_overlay_opens_with_question_mark_and_any_key_closes_it() {
 
 #[test]
 fn bang_cycles_attention_evals_in_tree_order_and_focuses_the_tree() {
-    let mut monitor = populated();
+    let (_monitor_root, mut monitor) = populated();
     monitor.focus = Pane::Repositories;
     let mut seen = Vec::new();
     for _ in 0..3 {
@@ -184,7 +184,7 @@ fn bang_cycles_attention_evals_in_tree_order_and_focuses_the_tree() {
     assert!(monitor.tree.opened().contains(&vec![
         "a:app".parse::<crate::monitor::model::NodeId>().unwrap()
     ]));
-    let mut idle = Monitor::new("/fixture-state".into(), None);
+    let (_idle_root, mut idle) = tests::monitor();
     press(&mut idle, KeyCode::Char('!'));
     assert!(idle.notice.as_deref().unwrap().contains("Open a Run"));
 }

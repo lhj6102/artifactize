@@ -258,7 +258,10 @@ pub(crate) fn valid_hash(value: &str) -> bool {
 #[cfg(test)]
 #[test]
 fn sha256_hash_wire_format_keeps_exact_width_and_lowercase() {
-    assert!(valid_hash(&"a".repeat(crate::types::SHA256_HEX_BYTES)));
+    // SHA-256's published wire width is independent of the implementation's limit.
+    assert!(valid_hash(
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ));
     for hash in [
         "a".repeat(63),
         "a".repeat(65),

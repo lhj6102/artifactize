@@ -1,10 +1,14 @@
 //! Embedded review exercises the same lifecycle jobs without invoking an editor or provider.
 use super::*;
-use crate::project::{self, VerifyOptions, selection::Selection};
+use crate::project::{VerifyOptions, selection::Selection};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::json;
 
-fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
+/// Read one ordinary page of the small loopback request before deliberately rejecting
+/// publication; the fixture needs a bounded request prefix, not the whole request body.
+const REJECTION_READ_BYTES: usize = 4096;
+
+fn fixture() -> (crate::test_runs::RepoLease, PathBuf, PathBuf) {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -48,15 +52,15 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         .to_string(),
     )
     .unwrap();
-    (root, repo, state)
+    let lease = crate::test_runs::RepoLease::new(root, &state, &repo);
+    (lease, repo, state)
 }
 async fn waiting(repo: &std::path::Path, state: &std::path::Path) -> RequestView {
-    let run = project::verify(
+    let run = crate::test_runs::record(
         repo,
         Some(state),
         &Selection::All,
         &VerifyOptions {
-            wait_timeout: Duration::from_millis(1),
             ..Default::default()
         },
         CancellationToken::new(),
@@ -89,6 +93,71 @@ async fn perform(review: &mut Review, control: Control) -> Outcome {
         panic!("expected lifecycle job");
     };
     review.start(job).await
+}
+
+#[tokio::test]
+async fn refused_review_jobs_release_database_before_returning() {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&repo).unwrap();
+    let view = crate::monitor::tests::request(
+        "app/check",
+        "GREEN",
+        json!({"profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"cwd":repo}),
+    );
+    let run: store::Run = serde_json::from_value(json!({
+        "id":view.request.run_id,"repoPath":repo,"stateDir":state,"status":"GREEN",
+        "createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z",
+        "selection":{"kind":"all"},"validation":null
+    }))
+    .unwrap();
+    let id = view.request.id.clone();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
+    receipts.create_run(&run, &[view.request]).await.unwrap();
+    drop(receipts);
+    let reviewer: crate::types::ReviewerId = "alice".parse().unwrap();
+    let result = Submission::try_from(json!({"verdict":"GREEN"})).unwrap();
+    for job in [
+        Job::Claim { id: id.clone() },
+        Job::Run {
+            id: id.clone(),
+            tool: "inspect_app".parse().unwrap(),
+            claim: false,
+        },
+        Job::Run {
+            id: id.clone(),
+            tool: "inspect_app".parse().unwrap(),
+            claim: true,
+        },
+        Job::Submit {
+            id: id.clone(),
+            result: result.clone(),
+            claim: false,
+        },
+        Job::Submit {
+            id: id.clone(),
+            result,
+            claim: true,
+        },
+    ] {
+        let outcome = job
+            .run(state.clone(), reviewer.clone(), CancellationToken::new())
+            .await;
+        assert!(
+            matches!(
+                outcome,
+                Outcome::Claimed { result: Err(_) }
+                    | Outcome::Ran { result: Err(_), .. }
+                    | Outcome::Submitted { result: Err(_), .. }
+            ),
+            "a settled request rejects the action: {outcome:?}"
+        );
+        // No worker process or retained fixture writer exists, so this checks the
+        // action's exact return boundary without a retry, yield or cleanup barrier.
+        assert!(crate::test_os::database_released(&state.join(store::DATABASE)).unwrap());
+    }
+    root.close().unwrap();
 }
 
 #[tokio::test]
@@ -226,7 +295,7 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
         },
         "qrg한글"
     );
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     human::unclaim(&receipts, &view.request.id, &"alice".parse().unwrap())
         .await
         .unwrap();
@@ -284,10 +353,12 @@ async fn remote_failure_after_local_submit_leaves_completed_modal_not_resubmissi
         &credentials.join("remote-token.json"),
         json!({"url":url,"token":"fixture-token-never-real"}).to_string(),
     );
-    let server = tokio::spawn(async move {
+    // JoinSet aborts its owned connection task even when an assertion unwinds this fixture.
+    let mut server = tokio::task::JoinSet::new();
+    server.spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (mut connection, _) = listener.accept().await.unwrap();
-        let mut buffer = [0; 4096];
+        let mut buffer = [0; REJECTION_READ_BYTES];
         let _ = connection.read(&mut buffer).await.unwrap();
         connection
             .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -307,7 +378,7 @@ async fn remote_failure_after_local_submit_leaves_completed_modal_not_resubmissi
     review.finish_single(outcome);
     assert!(review.settled());
     assert_eq!(review.control(Control::Submit), Action::None);
-    server.await.unwrap();
+    server.join_next().await.unwrap().unwrap();
 }
 
 #[tokio::test]
@@ -393,7 +464,7 @@ async fn a_run_after_an_outside_release_neither_claims_nor_runs() {
     review.refresh().await;
     // Another terminal releases the claim before this review has refreshed: the job checks
     // ownership atomically, so the stale view neither claims nor runs.
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     human::unclaim(&receipts, &id, &"alice".parse().unwrap())
         .await
         .unwrap();
@@ -465,8 +536,41 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
 #[tokio::test]
 async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     let (_root, repo, state) = fixture();
-    let view = waiting(&repo, &state).await;
-    let id = view.request.id.clone();
+    let declaration = repo.join("index.artf");
+    let mut contents = std::fs::read_to_string(&declaration).unwrap();
+    contents.push_str(
+        r#"
+[evals.held]
+title = "A second review"
+profile = { kind = "human" }
+[evals.held.payload]
+instruction = "Keep this independent review claimed."
+"#,
+    );
+    std::fs::write(declaration, contents).unwrap();
+    let run = crate::test_runs::record(
+        &repo,
+        Some(&state),
+        &Selection::All,
+        &VerifyOptions::default(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let id = run
+        .requests
+        .iter()
+        .find(|request| request.eval_id.as_str() == "signoff/review")
+        .unwrap()
+        .id
+        .clone();
+    let held = run
+        .requests
+        .iter()
+        .find(|request| request.eval_id.as_str() == "signoff/held")
+        .unwrap()
+        .id
+        .clone();
     let mut review = Review::new(
         state.clone(),
         None,
@@ -480,7 +584,17 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     let outcome = review.start(job).await;
     review.finish(outcome);
     review.refresh().await;
-    // Another terminal settles it; this session still holds the claim it took on a second one.
+    // Claim the second saved request through the same session's real lifecycle job.
+    review.open = Some(held.clone());
+    review.refresh().await;
+    let Action::Start(job) = review.key(KeyEvent::from(KeyCode::Char('c'))) else {
+        panic!("second claim job");
+    };
+    let outcome = review.start(job).await;
+    review.finish(outcome);
+    review.open = Some(id.clone());
+    review.refresh().await;
+    // Another terminal settles the first; this session still holds its second claim.
     human::submit_and_publish(
         &state,
         &id,
@@ -492,7 +606,13 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     .unwrap();
     review.refresh().await;
     assert!(review.settled());
-    review.taken.push("run-held-1".parse().unwrap());
+    assert!(review.taken.contains(&held));
+    let claim = store::read_request(&state, &held)
+        .await
+        .unwrap()
+        .claim
+        .unwrap();
+    assert_eq!(claim.reviewer.as_str(), "alice");
     assert_eq!(
         review.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
         Action::None
@@ -547,25 +667,54 @@ fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
             },
         })),
     );
-    let area = ratatui::layout::Rect::new(5, 4, 22, 20);
-    let hits = view::field_hits(area, &form, 0);
-    assert!(hits[0].0.height > 1);
-    let first = hits[0].0;
-    assert_eq!(
-        hits.iter()
-            .find(
-                |(rect, _)| rect.contains(ratatui::layout::Position::new(first.x + 1, first.y + 1))
-            )
-            .unwrap()
-            .1,
-        0
-    );
-    assert_eq!(hits[1].0.y, hits[0].0.bottom());
-    let scrolled = view::field_hits(area, &form, 2);
-    assert_eq!(scrolled[0].1, 0);
-    assert_eq!(scrolled[0].0.y, area.y + 1);
-    let resized = view::field_hits(ratatui::layout::Rect::new(5, 4, 100, 20), &form, 0);
-    assert_eq!(resized[0].0.height, 1);
+    for (width, scroll) in [(22, 0), (22, 2), (100, 0)] {
+        let area = ratatui::layout::Rect::new(5, 4, width, 20);
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(
+            area.right() + 1,
+            area.bottom() + 1,
+        ))
+        .unwrap();
+        terminal
+            .draw(|frame| view::draw_inline_form(frame, area, &form, scroll, true))
+            .unwrap();
+        let hits = view::field_hits(area, &form, scroll);
+        let buffer = terminal.backend().buffer();
+        let mut field = 0;
+        let mut rows = [0; 3];
+        // Derive the expected target from the visible field labels, not hit rectangles.
+        // A wrapped continuation belongs to the last rendered label; scroll=2 begins
+        // inside a's long hint, which is still visible before the b and c labels.
+        for y in area.y + 1..area.bottom() - 1 {
+            let text: String = (area.x + 1..area.right() - 1)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect();
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            if text.starts_with("b:") {
+                field = 1;
+            } else if text.starts_with("c:") {
+                field = 2;
+            }
+            let actual = hits
+                .iter()
+                .find(|(rect, _)| rect.contains(ratatui::layout::Position::new(area.x + 1, y)))
+                .map(|(_, index)| *index);
+            assert_eq!(
+                actual,
+                Some(field),
+                "{width}, scroll {scroll}, row {y}: {text}"
+            );
+            rows[field] += 1;
+        }
+        assert!(rows.iter().all(|count| *count > 0), "{rows:?}");
+        if width == 22 {
+            assert!(rows[0] > 1, "the visible hint actually wraps: {rows:?}");
+        } else {
+            assert_eq!(rows[0], 1, "the wider rendering fits the hint on one row");
+        }
+    }
 }
 
 #[test]
@@ -674,7 +823,7 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
 
 /// The owner's file Artifact sign-off: a FILE Artifact whose launch tool opens the file, and a
 /// GREEN schema whose only required property is a `const` without `type`.
-fn file_signoff() -> (tempfile::TempDir, PathBuf, PathBuf) {
+fn file_signoff() -> (crate::test_runs::RepoLease, PathBuf, PathBuf) {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -710,7 +859,8 @@ additionalProperties = false
 "#
     );
     std::fs::write(brand.join("artifactize-icon.svg.artf"), declaration).unwrap();
-    (root, repo, state)
+    let lease = crate::test_runs::RepoLease::new(root, &state, &repo);
+    (lease, repo, state)
 }
 
 fn drawn(review: &mut Review) -> String {

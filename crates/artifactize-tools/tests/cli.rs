@@ -1,5 +1,7 @@
 #[path = "support/os.rs"]
 mod os;
+#[path = "support/process.rs"]
+mod process;
 
 fn tools() -> std::process::Command {
     os::tools(env!("CARGO_BIN_EXE_artifactize-tools"))
@@ -30,14 +32,33 @@ fn subcommands_share_scoped_files_and_exit_codes() {
         text(call(root.path(), &["section", "notes.md", "First"])),
         "# First\nalpha\n## Child\nchild\n"
     );
-    for args in [
-        vec!["list", "."],
-        vec!["glob", "*.md"],
-        vec!["grep", "alpha"],
+    for (args, expected) in [
+        (
+            vec!["list", "."],
+            serde_json::json!({
+                "artifactId":"cwd", "path":"",
+                "entries":[{"kind":"file", "name":"notes.md", "path":"notes.md"}],
+                "totalEntries":1, "truncated":false, "nextOffset":null,
+            }),
+        ),
+        (
+            vec!["glob", "*.md"],
+            serde_json::json!({"path":"", "files":["notes.md"], "truncated":false}),
+        ),
+        (
+            vec!["grep", "alpha"],
+            serde_json::json!({
+                "path":"", "matches":[{"path":"notes.md", "line":2, "text":"alpha"}],
+                "truncated":false,
+            }),
+        ),
     ] {
         let output = text(call(root.path(), &args));
-        let _: serde_json::Value = serde_json::from_str(&output).unwrap();
-        assert!(output.contains("notes.md"));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&output).unwrap(),
+            expected,
+            "{args:?}"
+        );
     }
     let missing = call(root.path(), &["section", "notes.md", "Absent"]);
     assert_eq!(missing.status.code(), Some(1));
@@ -79,7 +100,7 @@ fn symlink_inputs_are_not_followed() {
 }
 
 #[test]
-fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
+fn help_resolves_path_and_enforces_output_bounds() {
     let root = os::tempdir();
     os::help_program(root.path());
     let run = |arg| {
@@ -94,25 +115,25 @@ fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
     let large = run("large");
     assert_eq!(large.status.code(), Some(1));
     assert!(String::from_utf8(large.stderr).unwrap().contains("64 KiB"));
-    let wait = run("wait");
-    assert_eq!(wait.status.code(), Some(1));
+}
+
+#[tokio::test]
+async fn help_timeout_ends_the_program_and_the_children_it_starts_at_once() {
+    let root = os::tempdir();
+    let result = process::timeout_tree(root.path()).await;
     assert!(
-        String::from_utf8(wait.stderr)
-            .unwrap()
-            .contains("timed out")
+        matches!(
+            result,
+            Err(artifactize_tools::launch::LaunchError::TimedOut)
+        ),
+        "{result:?}"
     );
 }
 
-#[test]
-fn help_timeout_ends_the_program_and_the_children_it_starts_at_once() {
+#[tokio::test]
+async fn help_tree_fixture_cleans_up_when_its_caller_unwinds() {
     let root = os::tempdir();
-    let output = os::timeout_tree(env!("CARGO_BIN_EXE_artifactize-tools"), root.path());
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
-    assert!(
-        String::from_utf8(output.stderr)
-            .unwrap()
-            .contains("timed out")
-    );
+    process::unwind_tree(root.path()).await;
 }
 
 // Windows opens through ShellExecute, which runs no program a test can stand in for.

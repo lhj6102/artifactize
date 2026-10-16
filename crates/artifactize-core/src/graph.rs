@@ -253,14 +253,15 @@ impl<'a> Graph<'a> {
     /// Evaluate the whole graph. Evidence freshness is supplied by the caller;
     /// absent entries are unreviewed, and unrelated entries are ignored.
     pub fn evaluate(&self, evidence: &BTreeMap<EvalId, Evidence>) -> Evaluation<'_> {
-        self.evaluate_with_policy(evidence, false)
+        self.evaluate_for_run(evidence, false)
     }
 
-    /// Gate bypass changes readiness, never the required final obligations.
-    pub fn evaluate_with_policy(
+    /// Speculation turns operational failures into immediate blockers, without changing
+    /// the default read/verification policy of waiting for replacement GREEN evidence.
+    pub(crate) fn evaluate_for_run(
         &self,
         evidence: &BTreeMap<EvalId, Evidence>,
-        ignore_gates: bool,
+        errors_block: bool,
     ) -> Evaluation<'_> {
         let mut evals: BTreeMap<EvalId, EvalEvaluation<'_>> = BTreeMap::new();
         for component in &self.components {
@@ -268,13 +269,13 @@ impl<'a> Graph<'a> {
                 .gates
                 .iter()
                 .copied()
-                .filter(|id| !ignore_gates && evals[id.as_str()].status != EvalStatus::Green)
+                .filter(|id| !evals[id.as_str()].status.passes_gate())
                 .collect();
             let readiness = if unmet_gates.iter().any(|id| {
                 matches!(
                     evals[id.as_str()].status,
                     EvalStatus::Red | EvalStatus::Blocked
-                )
+                ) || (errors_block && evals[id.as_str()].status == EvalStatus::Error)
             }) {
                 Readiness::Blocked
             } else if unmet_gates.is_empty() {
@@ -313,7 +314,7 @@ impl<'a> Graph<'a> {
                         .iter()
                         .flat_map(|target| &self.artifacts[target.as_str()].evals)
                         .copied()
-                        .filter(|id| evals[id.as_str()].status != EvalStatus::Green)
+                        .filter(|id| !evals[id.as_str()].status.passes_gate())
                         .collect();
                     let mut blocked_by = Vec::new();
                     for target in targets {
@@ -321,7 +322,7 @@ impl<'a> Graph<'a> {
                             .evals
                             .iter()
                             .copied()
-                            .filter(|id| evals[id.as_str()].status != EvalStatus::Green)
+                            .filter(|id| !evals[id.as_str()].status.passes_gate())
                             .collect();
                         if !pending.is_empty() {
                             blocked_by.push(BlockedReference::Artifact(target));
@@ -332,7 +333,7 @@ impl<'a> Graph<'a> {
                         matches!(
                             evals[id.as_str()].status,
                             EvalStatus::Red | EvalStatus::Blocked
-                        )
+                        ) || (errors_block && evals[id.as_str()].status == EvalStatus::Error)
                     }) {
                         Readiness::Blocked
                     } else if unmet.is_empty() {
@@ -344,6 +345,22 @@ impl<'a> Graph<'a> {
                         id.clone(),
                         EvalEvaluation {
                             status: match readiness {
+                                Readiness::Ready
+                                    if unmet.is_empty()
+                                        && targets
+                                            .iter()
+                                            .flat_map(|target| {
+                                                &self.artifacts[target.as_str()].evals
+                                            })
+                                            .any(|id| {
+                                                matches!(
+                                                    evals[id.as_str()].status,
+                                                    EvalStatus::Deferred | EvalStatus::Provisional
+                                                )
+                                            }) =>
+                                {
+                                    EvalStatus::Provisional
+                                }
                                 Readiness::Ready => EvalStatus::Green,
                                 Readiness::Blocked => EvalStatus::Blocked,
                                 Readiness::Wait => EvalStatus::Wait,
@@ -357,11 +374,25 @@ impl<'a> Graph<'a> {
                     );
                     continue;
                 }
+                let provisional = component.gates.iter().any(|id| {
+                    matches!(
+                        evals[id.as_str()].status,
+                        EvalStatus::Deferred | EvalStatus::Provisional
+                    )
+                });
                 let evidence = evidence.get(id.as_str()).copied();
                 let status = match readiness {
                     Readiness::Blocked => EvalStatus::Blocked,
-                    Readiness::Wait => EvalStatus::Wait,
+                    Readiness::Wait => match evidence {
+                        Some(Evidence::Current(Verdict::Red)) if errors_block => EvalStatus::Red,
+                        Some(Evidence::OperationalError) if errors_block => EvalStatus::Error,
+                        _ => EvalStatus::Wait,
+                    },
                     Readiness::Ready => match evidence {
+                        Some(Evidence::Deferred) => EvalStatus::Deferred,
+                        Some(Evidence::Current(Verdict::Green)) if provisional => {
+                            EvalStatus::Provisional
+                        }
                         Some(Evidence::Current(Verdict::Green)) => EvalStatus::Green,
                         Some(Evidence::Current(Verdict::Red)) => EvalStatus::Red,
                         Some(Evidence::OperationalError) => EvalStatus::Error,
@@ -424,6 +455,8 @@ impl<'a> Graph<'a> {
                         (EvalStatus::Red, ArtifactStatus::Red),
                         (EvalStatus::Blocked, ArtifactStatus::Blocked),
                         (EvalStatus::Wait, ArtifactStatus::Wait),
+                        (EvalStatus::Deferred, ArtifactStatus::Deferred),
+                        (EvalStatus::Provisional, ArtifactStatus::Provisional),
                         (EvalStatus::Stale, ArtifactStatus::Stale),
                         (EvalStatus::Unreviewed, ArtifactStatus::Unreviewed),
                     ]
@@ -478,6 +511,19 @@ impl<'a> Graph<'a> {
         }
     }
 
+    pub(crate) fn gates(&self, id: &EvalId) -> Vec<&'a EvalId> {
+        if let Some(targets) = self.derived.get(id) {
+            targets
+                .iter()
+                .flat_map(|target| self.artifacts[target.as_str()].evals.iter().copied())
+                .collect()
+        } else {
+            self.components[self.artifacts[self.evals[id].as_str()].component.index()]
+                .gates
+                .clone()
+        }
+    }
+
     pub fn eval_target(&self, id: &str) -> Option<&'a ArtifactName> {
         self.evals.get(id).copied()
     }
@@ -488,6 +534,7 @@ impl<'a> Graph<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidence {
     Current(Verdict),
+    Deferred,
     OperationalError,
     Stale,
 }
@@ -501,6 +548,8 @@ pub enum Readiness {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvalStatus {
+    Deferred,
+    Provisional,
     Green,
     Red,
     Error,
@@ -542,6 +591,12 @@ impl std::fmt::Display for BlockedReference<'_> {
     }
 }
 
+impl EvalStatus {
+    pub fn passes_gate(self) -> bool {
+        matches!(self, Self::Green | Self::Deferred | Self::Provisional)
+    }
+}
+
 impl EvalEvaluation<'_> {
     /// Operational errors require an explicit retry, not automatic redispatch.
     pub fn can_execute(&self) -> bool {
@@ -553,6 +608,8 @@ impl EvalEvaluation<'_> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtifactStatus {
+    Deferred,
+    Provisional,
     Basis,
     Green,
     Incomplete,
@@ -562,6 +619,24 @@ pub enum ArtifactStatus {
     Wait,
     Stale,
     Unreviewed,
+}
+
+impl From<ArtifactStatus> for crate::types::ArtifactValidationStatus {
+    fn from(status: ArtifactStatus) -> Self {
+        match status {
+            ArtifactStatus::Deferred => Self::Deferred,
+            ArtifactStatus::Provisional => Self::Provisional,
+            ArtifactStatus::Basis => Self::Basis,
+            ArtifactStatus::Green => Self::Green,
+            ArtifactStatus::Incomplete => Self::Incomplete,
+            ArtifactStatus::Error => Self::Error,
+            ArtifactStatus::Red => Self::Red,
+            ArtifactStatus::Blocked => Self::Blocked,
+            ArtifactStatus::Wait => Self::Wait,
+            ArtifactStatus::Stale => Self::Stale,
+            ArtifactStatus::Unreviewed => Self::Unreviewed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

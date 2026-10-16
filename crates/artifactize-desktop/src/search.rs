@@ -86,7 +86,7 @@ fn row(view: &RequestView, entry: &Entry, now: OffsetDateTime) -> Listed {
             (Some(reviewer), false) => reviewer.clone(),
         },
         mine: entry.mine,
-        age: monitor::duration((now - request.created_at.time()).whole_seconds()),
+        age: monitor::duration(now - request.created_at.time()),
         repository: entry.repository.clone(),
     }
 }

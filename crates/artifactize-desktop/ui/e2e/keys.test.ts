@@ -19,40 +19,79 @@ function double(drop: (key: string, sent: number) => boolean, react: (key: strin
       }
     },
     received: async () => [...log],
+    // Delivery and reaction in this double are synchronous; expiry is an explicit false.
+    until: async (check) => check(),
   };
   return { page, sent };
 }
 
-const quick = { wait: 30, ms: 120 };
-
 describe("press", () => {
   it("refuses several action keys in one press, which could hide one the app lost", async () => {
     const { page } = double(() => false, () => {});
-    await assert.rejects(press(page, ["ArrowDown", "Enter"], () => true, "two keys", quick), /one action at a time/);
+    await assert.rejects(press(page, ["ArrowDown", "Enter"], () => true, "two keys"), /one action at a time/);
   });
 
   it("fails without a resend when the page received a key the app ignored", async () => {
     // ArrowDown arrives and the app loses it; Enter is never part of this press.
     const { page, sent } = double(() => false, () => {});
-    await assert.rejects(press(page, ["ArrowDown"], () => false, "a suggestion chosen", quick), /the page received ArrowDown/);
+    let observed = 0;
+    page.diagnostics = async () => {
+      observed += 1;
+      return { focused: { label: "Search requests" }, recent: [{ key: "ArrowDown", prevented: false }] };
+    };
+    await assert.rejects(press(page, ["ArrowDown"], () => false, "a suggestion chosen"), (error: unknown) => {
+      assert.match(String(error), /the page received ArrowDown/);
+      assert.match(String(error), /"focused":\{"label":"Search requests"\}/);
+      assert.match(String(error), /"prevented":false/);
+      return true;
+    });
+    assert.equal(observed, 1, "the failed effect includes one read-only focus observation");
     assert.equal(sent.length, 1, "a delivered key is never sent again");
   });
 
   it("sends a dropped key again, and a chord whose action key was dropped", async () => {
     let downs = 0;
     const first = double((_, sent) => sent === 1, () => (downs += 1));
-    await press(first.page, ["ArrowDown"], () => downs === 1, "moved", quick);
+    await press(first.page, ["ArrowDown"], () => downs === 1, "moved");
     assert.equal(first.sent.length, 2);
     // Control arrives but k is dropped: the chord is sent again; then k arrives.
     let open = false;
     const chord = double((key, sent) => key === "k" && sent === 1, (key) => key === "k" && (open = true));
-    await press(chord.page, ["Control", "k"], () => open, "palette open", quick);
+    await press(chord.page, ["Control", "k"], () => open, "palette open");
     assert.deepEqual(chord.sent, [["Control", "k"], ["Control", "k"]]);
+  });
+
+  it("does not accept an already-true state when the action key was dropped", async () => {
+    const { page, sent } = double((key) => key === "g", () => {});
+    await assert.rejects(press(page, ["Control", "g"], () => true, "GREEN stays", { tries: 2 }), /never reached the page in 2 tries/);
+    assert.equal(sent.length, 2, "modifier-only delivery cannot satisfy an idempotent action");
+  });
+
+  it("confirms the consumed chord before accepting an idempotent action", async () => {
+    const handled: string[] = [];
+    const { page, sent } = double((key, attempt) => key === "g" && attempt === 1, (key) => {
+      if (key === "g") handled.push("Control+g");
+    });
+    page.handled = async () => [...handled];
+    await press(page, ["Control", "g"], () => true, "GREEN stays", { handled: true });
+    assert.deepEqual(sent, [["Control", "g"], ["Control", "g"]]);
+  });
+
+  it("rejects an unconsumed or wrong-modifier chord even when its state already holds", async () => {
+    for (const chord of [null, "r"]) {
+      const handled: string[] = [];
+      const { page, sent } = double(() => false, (key) => {
+        if (key === "r" && chord) handled.push(chord);
+      });
+      page.handled = async () => [...handled];
+      await assert.rejects(press(page, ["Control", "r"], () => true, "RED stays", { handled: true }), /handled effect was not confirmed/);
+      assert.equal(sent.length, 1, "an arrived action is not resent to hide missing handling");
+    }
   });
 
   it("gives up after its tries when the key never arrives", async () => {
     const { page, sent } = double(() => true, () => {});
-    await assert.rejects(press(page, ["Enter"], () => false, "never", { ...quick, tries: 2 }), /never reached the page in 2 tries/);
+    await assert.rejects(press(page, ["Enter"], () => false, "never", { tries: 2 }), /never reached the page in 2 tries/);
     assert.equal(sent.length, 2);
   });
 });

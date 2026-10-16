@@ -3,15 +3,23 @@
 use super::{Context, Screens, cancellation_listener};
 use std::path::PathBuf;
 
-pub(super) async fn monitor(context: Context, all: bool, screens: Screens) -> Result<u8, String> {
+pub(super) async fn monitor(
+    context: Context,
+    all: bool,
+    path: Option<PathBuf>,
+    screens: Screens,
+) -> Result<u8, String> {
     if context.json {
         return Err("monitor is an interactive terminal UI; --json is not supported.".into());
     }
-    if all && context.repo.is_some() {
+    if path.is_some() && context.repo.is_some() {
+        return Err("monitor accepts PATH or --repo, not both.".into());
+    }
+    if all && (context.repo.is_some() || path.is_some()) {
         return Err("monitor accepts --repo or --all, not both.".into());
     }
     let state = crate::store::state_dir(context.state_dir.as_deref())?;
-    let repo = (!all).then(|| context.repo.unwrap_or_else(|| PathBuf::from(".")));
+    let repo = path.or(context.repo);
     let (cancellation, listener) = cancellation_listener()?;
     let result = (screens.monitor)(state, repo, cancellation).await;
     listener.abort();

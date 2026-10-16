@@ -17,11 +17,23 @@ as soon as they build.
 
 - Linux (x86_64 or aarch64), macOS (Apple silicon or Intel) or Windows (x64). WSL 2
   runs the Linux build.
-- `python3` and `grep` on `PATH` for the example projects. Projects run their declared
+- The example projects use `python3` to run Python checks and `grep` to search text.
+  Both commands must be available in your terminal. Projects run their declared
   commands as given on every OS; see [Operating systems](../reference/platforms.md).
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime, Human and dependency evals
   need none.
+
+`PATH` is the list of directories your terminal searches for commands. Before
+starting the examples, check that it can find their required tools:
+
+```sh
+python3 --version
+grep --help
+```
+
+These should print a Python version and grep's help. If either command is not
+found, install that tool or add its directory to `PATH` before continuing.
 
 Only `cargo install` needs a Rust toolchain: Rust 1.95 or later, from
 [rustup](https://rustup.rs), and a C compiler (SQLite is built from source).
@@ -30,6 +42,15 @@ Only `cargo install` needs a Rust toolchain: Rust 1.95 or later, from
 
 Pick your OS. Install from one channel only; the Store uses the `artifactize tools`
 facade, while other channels also install the standalone tools command.
+
+Start with the default for your OS, or choose an alternative below:
+
+| OS | Default | Alternatives |
+|---|---|---|
+| Linux | [Install script](#linux) | [Cargo binaries](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| macOS | [Homebrew](#macos) | [Install script](#macos), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| Windows | [winget](#windows) | [Microsoft Store or PowerShell script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+
 
 ### Linux
 
@@ -52,39 +73,11 @@ curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_VERSION=0.5.2 sh    
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/bin" sh   # this directory
 ```
 
-With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), fetch the same
-prebuilt binaries into `~/.cargo/bin`:
-
-```sh
-cargo binstall artifactize artifactize-tools
-```
-
-Or build the latest stable release from crates.io:
-
-```sh
-cargo install artifactize artifactize-tools --locked
-cargo install artifactize@<version> artifactize-tools@<version> --locked   # a particular release
-```
-
-`--locked` builds with the dependency versions the release was tested with. The
-binaries go to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs them
-under `DIR/bin` instead. Both cargo commands work on macOS and Windows too.
-
-To build from source, install from a checkout; its `rust-toolchain.toml` selects
-stable Rust. The example projects and the [Quick start](quick-start.md) use a
-checkout too:
-
-```sh
-git clone https://github.com/lhj6102/artifactize
-cd artifactize
-cargo install --path crates/artifactize --locked
-cargo install --path crates/artifactize-tools --locked
-```
-
-Releases take their version from their tag, so a build from a checkout reports the
-placeholder version `0.0.0-dev`.
-
 ### macOS
+
+[Homebrew](https://brew.sh/) is a macOS package manager: it installs and updates
+command-line tools for you. If `brew` is not available in your terminal, follow
+[Homebrew's setup instructions](https://docs.brew.sh/Installation) first. Then run:
 
 ```sh
 brew install lhj6102/tap/artifactize
@@ -156,6 +149,42 @@ its own state. Built-in `open` and `login codex` use the distribution's `xdg-ope
 never a Windows program; see
 [Opening files and the browser](../reference/platforms.md#opening-files-and-the-browser).
 
+### Cargo (all platforms)
+
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), fetch the same
+prebuilt binaries into `~/.cargo/bin`:
+
+```sh
+cargo binstall artifactize artifactize-tools
+```
+
+Or build the latest stable release from crates.io:
+
+```sh
+cargo install artifactize artifactize-tools --locked
+cargo install artifactize@<version> artifactize-tools@<version> --locked   # a particular release
+```
+
+`--locked` builds with the dependency versions the release was tested with. The
+binaries go to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs them
+under `DIR/bin` instead. Both cargo commands work on macOS and Windows too.
+
+### Build from source (all platforms)
+
+To build from source, install from a checkout; its `rust-toolchain.toml` selects
+stable Rust. The example projects and the [Quick start](quick-start.md) use a
+checkout too:
+
+```sh
+git clone https://github.com/lhj6102/artifactize
+cd artifactize
+cargo install --path crates/artifactize --locked
+cargo install --path crates/artifactize-tools --locked
+```
+
+Releases take their version from their tag, so a build from a checkout reports the
+placeholder version `0.0.0-dev`.
+
 ## Update
 
 | Installed with | Update |
@@ -170,6 +199,24 @@ never a Windows program; see
 The install scripts and cargo get a release as soon as it is published. Homebrew,
 winget and the Store follow stable releases only; winget and the Store can lag
 behind while the update is reviewed. Updating keeps your state.
+
+### Upgrading from 0.11
+
+State schema 6 is upgraded additively to 7 on first use. Existing Runs, cache records
+and Human approvals are preserved. An older 0.11 binary cannot open the upgraded
+state; keep a backup before switching versions.
+
+`artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
+Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal
+or interrupting a watcher leaves the Run running; `artifactize run cancel RUN_ID`
+is the explicit cancellation action. The foreground Human deadline and
+`verify --timeout-ms` are removed. `--request-key` makes retries return the same Run.
+
+Gate bypass (`--ignore-gates` and `review_policy`) is removed. Per-request
+`--speculate` and `--defer-human` replace it, both off by default; deferred sign-offs
+end with `SIGNOFFS_PENDING` and `--wait` exit 5. See [Runs and status](../concepts/runs-and-status.md).
+Plain `artifactize monitor` starts on ALL; `monitor .`, a positional path or `--repo`
+selects that repository initially.
 
 ### Upgrading to 0.9
 
@@ -186,38 +233,10 @@ a team review store or with a script fingerprint. The first full `verify` review
 every executable eval once, Human sign-offs included. Dependency evals derive
 current evidence without execution. See [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 
-The monitor replaces eval modals with Scope → Runs → Run tree → Detail. Panes
-keep both immediate neighbours at every width, except at the ends of the
-drill-down. Each side pane is 16 columns below 100, 28 at 100–139, and 36 at 140
-or more; the focused Full pane fills the remaining width. Extremely small
-terminals clip the side panes rather than dropping a level.
-Each eval has one row, with `waits for X` / `blocked by X` and upstream navigation
-(`b` / Backspace). The headline keeps validation **at Run end**; a dim `*` marks
-rows changed since then. Esc steps back and never quits; `q` quits outside editing
-and Ctrl-C quits or cancels a running Human tool first. `?` shows help and `!` finds
-the next attention item. See
-[Monitor](../guides/human-reviews.md#monitor).
-
-Standalone `artifactize review` now uses the same Human Detail and keys as the
-monitor. Press `c` to claim explicitly; running a tool or submitting no longer
-claims for you. Removed keys and behavior:
-
-- `s` no longer opens a verdict popup. `g`/`r` opens the GREEN/RED form directly;
-  Ctrl-G/Ctrl-R switches verdicts while editing.
-- Enter no longer submits a flat form; Ctrl-S submits. Nested schemas open inline
-  JSON, where Enter inserts a newline.
-- `e` in a JSON form is text, not an editor shortcut. Ctrl-E opens `$EDITOR` in
-  standalone `review` only; monitor stays in the TUI.
-- `t` no longer runs a tool; it toggles Technical outside editing. Tab focuses
-  Tools, ↑/↓ or `j`/`k` selects a tool and Enter runs it after claim, with no
-  confirmation step.
-- Esc on the waiting list no longer quits. Esc cancels work, then
-  stops editing with the draft kept, then leaves Detail. `q` outside editing or
-  Ctrl-C quits; standalone `review` offers `k` to keep or `u` to release this
-  session's unsubmitted claims.
-
-`i` expands the instruction while not editing. See
-[Shared Human Detail](../guides/human-reviews.md#shared-human-detail).
+Monitor now opens an eval's Detail in its pane rather than a modal. Standalone
+Review shares that Human Detail: claims are explicit, and tools and submission
+never claim for you. The verdict forms, submit keys and editor shortcut changed;
+see [Human reviews and Monitor](../guides/human-reviews.md) for the current controls.
 
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command, and adds `codex` for ChatGPT plan

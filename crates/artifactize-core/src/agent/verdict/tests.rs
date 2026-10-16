@@ -191,9 +191,21 @@ fn repair_detail_names_bounded_failing_paths_of_json_results() {
         schema.repair_detail(text, error)
     };
     // Unparseable or envelope errors have no paths to name.
-    for text in ["prose", "```json\n{}\n```", r#"{"verdict":"BLUE"}"#] {
-        let detail = repair(text);
-        assert_eq!(detail, schema.parse(text).unwrap_err(), "{text}");
+    for (text, expected) in [
+        (
+            "prose",
+            "not_json: return exactly one JSON object, without prose or code fences",
+        ),
+        (
+            "```json\n{}\n```",
+            "not_json: return exactly one JSON object, without prose or code fences",
+        ),
+        (
+            r#"{"verdict":"BLUE"}"#,
+            "schema_mismatch: verdict must be GREEN or RED",
+        ),
+    ] {
+        assert_eq!(repair(text), expected, "{text}");
     }
     let detail = repair(r#"{"verdict":"GREEN","covered":["X1"],"notes":"far too long notes"}"#);
     let lines: Vec<_> = detail.lines().collect();

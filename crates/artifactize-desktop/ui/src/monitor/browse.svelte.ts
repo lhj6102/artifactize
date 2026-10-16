@@ -1,11 +1,13 @@
 // The monitor's snapshot as the frontend holds it. The backend reads the database; this only
 // asks for views, coalesces change hints and drops responses that arrive out of order.
-import { call, commands, message } from "../ipc/client";
+import { call, commands, message, type Commands } from "../ipc/client";
 import type { BrowseView, Navigate, RepositoryKey } from "../ipc/client";
 
 const still: Navigate = { scope: null, run: null, paging: null, full: false, resync: false };
 
 export class Browse {
+  constructor(readonly ipc: Commands = commands) {}
+
   view = $state.raw<BrowseView | null>(null);
   error = $state<string | null>(null);
   /** The backend snapshot's revision: views derived from it (Detail) read again when it grows. */
@@ -28,15 +30,16 @@ export class Browse {
   /** Navigate and read: selection changes reuse the cached catalog, refreshes read it. */
   async navigate(step: Partial<Navigate>): Promise<void> {
     try {
-      this.#show(await call(commands.browse({ ...still, ...step })));
+      this.#show(await call(this.ipc.browse({ ...still, ...step })));
       this.error = null;
     } catch (error) {
       this.error = message(error);
     }
   }
 
-  /** A refresh (`r`, a change hint, a resync): one read in flight, later ones coalesce. */
-  refresh(resync = false): void {
+  /** Manual refresh drops all caches; state hints pass their explicit resync flag.
+   * One read is in flight, and later refreshes coalesce without losing a reset. */
+  refresh(resync = true): void {
     this.#dirty = true;
     this.#resync ||= resync;
     void this.#drain();
@@ -59,13 +62,13 @@ export class Browse {
 
   /** Fold or unfold a worktree group of the scope list: the library answers with the snapshot. */
   async toggleWorktrees(fold: RepositoryKey): Promise<void> {
-    this.#show(await commands.toggleWorktrees(fold));
+    this.#show(await this.ipc.toggleWorktrees(fold));
   }
 
   /** Redraw ages and elapsed times from the backend's snapshot; nothing is read. */
   async redraw(): Promise<void> {
     if (!this.view) return;
-    this.#show(await commands.redraw());
+    this.#show(await this.ipc.redraw());
   }
 
   /** Responses may arrive in any order; one older than the shown snapshot is dropped. A

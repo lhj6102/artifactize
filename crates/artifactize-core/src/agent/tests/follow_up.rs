@@ -204,7 +204,11 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
         );
         assert_eq!(
             saved.wire_events.last().unwrap()["errorCode"],
-            error.code.as_str()
+            if cancel {
+                "CANCELLED"
+            } else {
+                "AUTHENTICATION"
+            }
         );
         assert_eq!(http.requests().len(), usize::from(!cancel));
         let deliveries = saved

@@ -2,6 +2,7 @@
 // take one, Esc closes it, then clears the query, then leaves; compositions are left alone.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 import SearchField from "./SearchField.svelte";
 import type { Completion } from "../ipc/client";
 
@@ -20,10 +21,11 @@ function complete(query: string): Promise<Completion> {
 
 function setup(value = "") {
   const onleave = vi.fn();
-  render(SearchField, { value, complete, onleave });
+  const completion = vi.fn(complete);
+  render(SearchField, { value, complete: completion, onleave });
   const field = screen.getByLabelText<HTMLInputElement>("Search requests");
   field.focus();
-  return { field, onleave };
+  return { field, onleave, completion };
 }
 
 async function type(field: HTMLInputElement, value: string) {
@@ -76,9 +78,10 @@ describe("SearchField", () => {
 
 describe("SearchField after a space", () => {
   it("offers keys for an empty term only when asked with ↓", async () => {
-    const { field } = setup();
+    const { field, completion } = setup();
     await type(field, "kind:human ");
-    await new Promise((done) => setTimeout(done, 0));
+    await completion.mock.results[0].value;
+    await tick();
     expect(screen.queryByRole("listbox")).toBeNull();
     await fireEvent.keyDown(field, { key: "ArrowDown" });
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(4));

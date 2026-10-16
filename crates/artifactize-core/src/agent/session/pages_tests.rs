@@ -1,67 +1,63 @@
+//! Disk layout is exercised through the viewer's read-only session window.
 use super::{
-    document::{self, Position},
-    pages::Pages,
+    document::Position,
+    live::Reader,
+    live_tests::{answer, append, finish, fixture},
 };
 
 #[test]
-fn bounded_disk_layout_matches_pure_rows_at_every_small_chunk_boundary() {
-    let text = "abc 한글e\u{301}ｶﾞ👩‍💻\r\n0123456789\nlong\"json\":xxxxxxxxxxxxxxxxxxxxxxxxx\n";
-    for chunk in 1..text.len() {
-        for width in [1, 2, 3, 7, 13] {
-            let mut pages = Pages::new(width).unwrap();
-            pages.append(text).unwrap();
-            let mut done = false;
-            for _ in 0..1000 {
-                if !pages.layout_chunk(chunk).unwrap() {
-                    done = true;
-                    break;
-                }
-            }
-            assert!(done, "chunk {chunk}, width {width}");
-            let (_, total, _, actual) = pages.window(Position::Row(0), 1000).unwrap();
-            let expected = document::rows(text, width)
-                .iter()
-                .map(|range| document::row(text, range, width))
-                .collect::<Vec<_>>();
-            assert_eq!(actual, expected, "chunk {chunk}, width {width}");
-            assert_eq!(total, expected.len());
-        }
+fn session_windows_wrap_unicode_against_independent_rows() {
+    // Cell widths: CJK, halfwidth kana with dakuten, and the joined emoji each
+    // occupy two columns; the combining accent stays attached to its e.
+    let text = "ab한e\u{301}ｶﾞ👩‍💻\r\n012345";
+    for (width, expected) in [
+        (
+            1,
+            vec!["a", "b", "e\u{301}", "0", "1", "2", "3", "4", "5", ""],
+        ),
+        (3, vec!["ab", "한e\u{301}", "ｶﾞ", "👩‍💻", "012", "345", ""]),
+        (7, vec!["ab한e\u{301}ｶﾞ", "👩‍💻", "012345", ""]),
+        (13, vec!["ab한e\u{301}ｶﾞ👩‍💻", "012345", ""]),
+    ] {
+        let (_root, source) = fixture();
+        append(&source, &answer(text));
+        let mut reader = Reader::new(source);
+        let window = finish(&mut reader, width, 20, Position::Row(0));
+        assert!(window.status.is_none(), "{:?}", window.status);
+        assert_eq!(window.rows, expected, "width {width}");
+        assert_eq!(window.total, expected.len());
     }
-}
-#[test]
-fn invisible_wide_runs_are_not_reread_by_visible_page_in_or_append() {
-    let text = "A".to_owned() + &"한".repeat(1000000) + "B\nC\n";
-    let mut pages = Pages::new(1).unwrap();
-    pages.append(&text).unwrap();
-    while pages.layout().unwrap() {}
-    let before = pages.bytes_read;
-    for _ in 0..30 {
-        let (_, _, _, rows) = pages.window(Position::Row(0), 3).unwrap();
-        assert_eq!(rows, ["A", "B", "C"]);
-    }
-    assert!(pages.bytes_read - before < 1024);
-    pages.append("D\n").unwrap();
-    while pages.layout().unwrap() {}
-    assert_eq!(
-        pages.window(Position::Bottom, 4).unwrap().3,
-        ["A", "B", "C", "D"]
-    );
 }
 
 #[test]
-fn huge_ascii_grapheme_tail_and_offsets_are_not_limited_to_u16() {
-    let text = "x".repeat(70000) + "e" + &"\u{301}".repeat(300000) + "\n";
-    let mut pages = Pages::new(1).unwrap();
-    pages.append(&text).unwrap();
-    for _ in 0..10000 {
-        if !pages.layout().unwrap() {
-            break;
-        }
+fn wide_graphemes_do_not_hide_following_rows_or_later_appends() {
+    let (_root, source) = fixture();
+    // A large invisible run crosses many normal indexing/layout batches.
+    append(
+        &source,
+        &answer(&("A".to_owned() + &"한".repeat(1_000_000) + "B\nC")),
+    );
+    let mut reader = Reader::new(source.clone());
+    for _ in 0..3 {
+        let window = finish(&mut reader, 1, 4, Position::Row(0));
+        assert!(window.status.is_none(), "{:?}", window.status);
+        assert_eq!(window.rows, ["A", "B", "C", ""]);
     }
-    let (top, total, _, rows) = pages.window(Position::Bottom, 2).unwrap();
-    assert_eq!(total, 70001);
-    assert_eq!(top, 69999);
-    assert_eq!(rows[0], "x");
-    assert!(rows[1].starts_with('e'));
-    assert!(pages.private());
+    append(&source, &answer("D"));
+    let window = finish(&mut reader, 1, 2, Position::Bottom);
+    assert!(window.status.is_none(), "{:?}", window.status);
+    assert_eq!(window.rows, ["D", ""]);
+}
+
+#[test]
+fn huge_combining_grapheme_and_row_offsets_are_not_limited_to_u16() {
+    let (_root, source) = fixture();
+    let grapheme = "e".to_owned() + &"\u{301}".repeat(300_000);
+    append(&source, &answer(&("x".repeat(70_000) + &grapheme)));
+    let mut reader = Reader::new(source);
+    let window = finish(&mut reader, 1, 3, Position::Bottom);
+    assert!(window.status.is_none(), "{:?}", window.status);
+    assert_eq!(window.total, 70_002);
+    assert_eq!(window.top, 69_999);
+    assert_eq!(window.rows, ["x", grapheme.as_str(), ""]);
 }

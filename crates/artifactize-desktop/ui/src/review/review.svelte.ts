@@ -3,7 +3,7 @@
 // is whatever the backend last read.
 import { SvelteMap } from "svelte/reactivity";
 import type { Jobs } from "../ipc/jobs.svelte";
-import { CommandError, call, commands, message } from "../ipc/client";
+import { CommandError, call, commands, message, type Commands } from "../ipc/client";
 import type {
   Acted,
   Draft,
@@ -39,7 +39,7 @@ export class FormDraft {
   /** Counts edits: only the newest answer replaces the draft. */
   #edits = 0;
 
-  constructor(id: string, view: FormView) {
+  constructor(id: string, view: FormView, readonly ipc: Commands = commands) {
     this.id = id;
     this.verdict = view.verdict;
     this.fields = view.fields;
@@ -62,13 +62,13 @@ export class FormDraft {
   /** Set field `name`. */
   async set(name: string, value: FieldValue): Promise<void> {
     this.values = { ...this.values, [name]: value };
-    await this.#ask((draft) => call(commands.humanEditField(this.id, draft, name, value)));
+    await this.#ask((draft) => call(this.ipc.humanEditField(this.id, draft, name, value)));
   }
 
   /** Replace the owner-fields JSON text. */
   async setJson(text: string): Promise<void> {
     this.json = text;
-    await this.#ask((draft) => call(commands.humanEditJson(this.id, draft, text)));
+    await this.#ask((draft) => call(this.ipc.humanEditJson(this.id, draft, text)));
   }
 
   async #ask(edit: (draft: Draft) => Promise<Draft>): Promise<void> {
@@ -88,12 +88,12 @@ export class FormDraft {
 
 type Busy = { label: string; job: number; since: number };
 
-export class Review {
-  /** The request every action goes to; a follower's ID becomes its original's once read. */
+/** One canonical request owns these facts. Alias handles adopt this same instance,
+ * never copy its forms, drafts or running work. It is shared through AppState. */
+class ReviewState {
   id = $state("");
   view = $state.raw<HumanView | null>(null);
   area = $state<Area>("fields");
-  /** The instruction takes most of the body (`i`); focus alone never resizes the Detail. */
   expanded = $state(false);
   technical = $state(false);
   tool = $state(0);
@@ -101,11 +101,34 @@ export class Review {
   busy = $state<Busy | null>(null);
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);
-  /** Each verdict's draft as the library last answered it; choosing the verdict again hands it
-   * back, and the library says whether the recorded schema still takes it. */
-  #drafts = new SvelteMap<Verdict, Draft>();
-  /** Counts verdict choices: a form that arrives after a newer choice is not shown. */
-  #choice = 0;
+  readonly drafts = new SvelteMap<Verdict, Draft>();
+  choice = 0;
+
+  constructor(id: string) { this.id = id; }
+}
+
+export class Review {
+  #state = $state.raw(new ReviewState(""));
+  get id(): string { return this.#state.id; }
+  set id(value: string) { this.#state.id = value; }
+  get view(): HumanView | null { return this.#state.view; }
+  set view(value: HumanView | null) { this.#state.view = value; }
+  get area(): Area { return this.#state.area; }
+  set area(value: Area) { this.#state.area = value; }
+  get expanded(): boolean { return this.#state.expanded; }
+  set expanded(value: boolean) { this.#state.expanded = value; }
+  get technical(): boolean { return this.#state.technical; }
+  set technical(value: boolean) { this.#state.technical = value; }
+  get tool(): number { return this.#state.tool; }
+  set tool(value: number) { this.#state.tool = value; }
+  get output(): Output | null { return this.#state.output; }
+  set output(value: Output | null) { this.#state.output = value; }
+  get busy(): Busy | null { return this.#state.busy; }
+  set busy(value: Busy | null) { this.#state.busy = value; }
+  get notice(): Notice | null { return this.#state.notice; }
+  set notice(value: Notice | null) { this.#state.notice = value; }
+  get form(): FormDraft | null { return this.#state.form; }
+  set form(value: FormDraft | null) { this.#state.form = value; }
 
   readonly settled = $derived(this.view?.stage === "completed");
   readonly owned = $derived(this.view?.stage === "review");
@@ -114,22 +137,26 @@ export class Review {
   readonly editing = $derived(this.form !== null && !this.settled);
 
   readonly #jobs: Jobs;
+  readonly #intern: ((id: string, review: Review) => Review) | undefined;
 
-  constructor(id: string, jobs: Jobs) {
-    this.id = id;
+  constructor(id: string, jobs: Jobs, intern?: (id: string, review: Review) => Review, readonly ipc: Commands = commands) {
+    this.#state.id = id;
     this.#jobs = jobs;
+    this.#intern = intern;
   }
 
   /** Read the request (or, without `reload`, redraw its waiting time from the last read). */
   async load(reload = true): Promise<void> {
     try {
-      this.#show(await call(commands.humanOpen(this.id, reload)));
+      this.#show(await call(this.ipc.humanOpen(this.id, reload)));
     } catch (error) {
       this.notice = { text: message(error), error: true };
     }
   }
 
   #show(view: HumanView): void {
+    const canonical = this.#intern?.(view.id, this) ?? this;
+    if (canonical !== this) this.#state = canonical.#state;
     this.view = view;
     this.id = view.id;
     this.tool = Math.min(this.tool, Math.max(view.tools.length - 1, 0));
@@ -149,7 +176,7 @@ export class Review {
     try {
       return await work(job);
     } finally {
-      this.busy = null;
+      if (this.busy?.job === job) this.busy = null;
     }
   }
 
@@ -158,7 +185,7 @@ export class Review {
     if (this.busy || this.settled) return;
     try {
       const acted = await this.#job("Claiming the review", (job) =>
-        call(commands.humanClaim(this.id, job)),
+        call(this.ipc.humanClaim(this.id, job)),
       );
       if (acted) this.#acted(acted);
     } catch (error) {
@@ -170,7 +197,7 @@ export class Review {
     if (this.busy || this.settled) return;
     try {
       const acted = await this.#job("Releasing the claim", (job) =>
-        call(commands.humanRelease([this.id], job)),
+        call(this.ipc.humanRelease([this.id], job)),
       );
       if (acted) this.#acted(acted);
     } catch (error) {
@@ -182,26 +209,27 @@ export class Review {
   async choose(verdict: Verdict): Promise<void> {
     if (this.busy || this.settled) return;
     this.area = "fields";
-    const choice = ++this.#choice;
+    const state = this.#state;
+    const choice = ++state.choice;
     if (this.form?.verdict === verdict) return;
     let draft: FormDraft;
     try {
-      draft = new FormDraft(this.id, await call(commands.humanForm(this.id, verdict, this.#drafts.get(verdict) ?? null)));
+      draft = new FormDraft(this.id, await call(this.ipc.humanForm(this.id, verdict, this.#state.drafts.get(verdict) ?? null)), this.ipc);
     } catch (error) {
-      if (choice === this.#choice) this.notice = { text: message(error), error: true };
+      if (state === this.#state && choice === state.choice) this.notice = { text: message(error), error: true };
       return;
     }
     // Another verdict was chosen, or editing stopped, while this form was on its way.
-    if (choice !== this.#choice) return;
-    this.#drafts.delete(verdict);
-    if (this.form) this.#drafts.set(this.form.verdict, this.form.draft());
+    if (state !== this.#state || choice !== state.choice) return;
+    this.#state.drafts.delete(verdict);
+    if (this.form) this.#state.drafts.set(this.form.verdict, this.form.draft());
     this.form = draft;
   }
 
   /** Leave the form with its draft kept; the same verdict reopens it. */
   stopEditing(): void {
-    this.#choice += 1;
-    if (this.form) this.#drafts.set(this.form.verdict, this.form.draft());
+    this.#state.choice += 1;
+    if (this.form) this.#state.drafts.set(this.form.verdict, this.form.draft());
     this.form = null;
   }
 
@@ -214,7 +242,7 @@ export class Review {
     try {
       for (;;) {
         const draft = form.draft();
-        const json = await call(commands.humanJson(this.id, draft));
+        const json = await call(this.ipc.humanJson(this.id, draft));
         if (this.form !== form || form.json !== null) return;
         if (JSON.stringify(form.draft()) === JSON.stringify(draft)) {
           form.adoptJson(json);
@@ -237,12 +265,12 @@ export class Review {
     }
     try {
       const submitted = await this.#job(`Submitting ${form.verdict}`, (job) =>
-        call(commands.humanSubmit(this.id, form.draft(), job)),
+        call(this.ipc.humanSubmit(this.id, form.draft(), job)),
       );
       if (!submitted) return null;
       form.error = null;
       this.form = null;
-      this.#drafts.clear();
+      this.#state.drafts.clear();
       this.output = null;
       this.#acted(submitted);
       return submitted.settled;
@@ -267,7 +295,7 @@ export class Review {
     this.tool = index;
     try {
       const ran = await this.#job(`Running ${tool.name}`, (job) =>
-        call(commands.humanRun(this.id, tool.name, job)),
+        call(this.ipc.humanRun(this.id, tool.name, job)),
       );
       if (!ran) return;
       this.output = ran.output;
@@ -280,7 +308,7 @@ export class Review {
   }
 
   cancel(): void {
-    if (this.busy) void commands.humanCancel(this.busy.job);
+    if (this.busy) void this.ipc.humanCancel(this.busy.job);
   }
 
   /** Esc closes one thing at a time: the job, then the form; `true` means leave the Detail. */

@@ -1,0 +1,33 @@
+name = "platform"
+
+[views.agent_tools]
+
+[views.agent_tools.read_platform]
+description = "Print the platform checklist DEV-PLATFORM.md of {artifactName}."
+builtin = "read"
+args = ["DEV-PLATFORM.md"]
+
+[views.human_tools]
+open = { description = "Open DEV-PLATFORM.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+
+[evals.approved]
+title = "The owner approves the checklist as the platform standard"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open DEV-PLATFORM.md of {platform} with the open tool. Submit GREEN with approved: true when every item \
+is one the codebase should follow; otherwise submit RED and list the items to change."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false

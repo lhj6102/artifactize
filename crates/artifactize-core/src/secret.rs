@@ -48,11 +48,15 @@ mod tests {
             format!("{head}\u{1b}[0m{tail}"),
             // At the clipping boundary: the piece before the clip is enough.
             format!("{}{TOKEN}", "x".repeat(295)),
-            format!("{}{}", "x".repeat(299), &TOKEN[..PIECE]),
+            format!("{}{}", "x".repeat(299), &TOKEN[..8]),
             // Only a piece of it.
             format!("unknown field `{}`", &TOKEN[20..30]),
         ] {
-            assert_eq!(server_text(&text, &[TOKEN], 300), WITHHELD, "{text:?}");
+            assert_eq!(
+                server_text(&text, &[TOKEN], 300),
+                "[withheld: it contained part of the credential sent]",
+                "{text:?}"
+            );
         }
     }
 
@@ -66,6 +70,9 @@ mod tests {
         // Seven characters of it are not a piece.
         assert_eq!(server_text(&TOKEN[..7], &[TOKEN], 300), &TOKEN[..7]);
         assert_eq!(server_text("plain", &[], 300), "plain");
-        assert_eq!(server_text("ab", &["ab"], 300), WITHHELD);
+        assert_eq!(
+            server_text("ab", &["ab"], 300),
+            "[withheld: it contained part of the credential sent]"
+        );
     }
 }

@@ -51,6 +51,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             human::human_submit,
             human::human_release,
             graph::run_graph,
+            graph::current::current_graph,
             search::review_search,
             search::review_complete,
             search::review_detail,

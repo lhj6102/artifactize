@@ -2,8 +2,8 @@
   // Ctrl+K (⌘K): every action that is possible now, searchable, with its shortcut.
   import { Command, Dialog } from "bits-ui";
   import { getAppState } from "./app.svelte";
-  import { label } from "./keys";
-  import { PaletteState, setPaletteState } from "./palette.svelte";
+  import { composing, label } from "./keys";
+  import { PaletteState, setPaletteState } from "./palette-state.svelte";
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
   const { commands } = getAppState();
@@ -21,13 +21,27 @@
 
   function run(id: string) {
     const command = commands.all.find((command) => command.id === id);
+    palette.search = "";
     open = false;
     // Let the dialog restore focus before the command moves it.
     queueMicrotask(() => command?.run());
   }
+
+  function keydown(event: KeyboardEvent) {
+    if (event.key !== "Enter" || composing(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const input = palette.input;
+    const query = input?.value;
+    // Filtering and selection publish across microtasks. Activate at the next render
+    // boundary, when a just-typed query's public selection has reached the options.
+    requestAnimationFrame(() => {
+      if (open && palette.input === input && input?.value === query && palette.selected) run(palette.selected);
+    });
+  }
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root bind:open onOpenChange={(next) => !next && (palette.search = "")}>
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
     <Dialog.Content
@@ -38,10 +52,11 @@
         event.preventDefault();
         palette.input?.focus();
       }}
+      onCloseAutoFocus={() => (palette.selected = "")}
     >
       <Dialog.Title class="sr-only">Command palette</Dialog.Title>
-      <Command.Root loop>
-        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={palette.input} />
+      <Command.Root loop bind:value={palette.selected}>
+        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={palette.input} bind:value={palette.search} onkeydown={keydown} />
         <Command.List class="palette-list">
           <Command.Viewport>
             <Command.Empty class="palette-empty">No matching command.</Command.Empty>

@@ -1,8 +1,8 @@
 <script lang="ts">
   // Quitting with claims this window took and did not submit: keep or release them.
-  import { LeaveDialogState, setLeaveDialogState } from "./leaveDialog.svelte";
+  import { LeaveDialogState, setLeaveDialogState } from "./leave-dialog-state.svelte";
   import { AlertDialog } from "bits-ui";
-  import { commands, call, message } from "../ipc/client";
+  import { useIpc, call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { composing } from "../shell/keys";
 
@@ -11,6 +11,7 @@
     onstay,
     onleave,
   }: { taken: string[] | null; onstay: () => void; onleave: () => void } = $props();
+  const commands = useIpc();
   const l = new LeaveDialogState();
   setLeaveDialogState(l);
   const app = getAppState();

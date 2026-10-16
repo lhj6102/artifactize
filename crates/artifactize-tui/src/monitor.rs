@@ -60,6 +60,7 @@ pub const PAGE: u32 = 100;
 pub enum Action {
     None,
     Refresh,
+    Resync,
     Quit,
     OpenDetail,
     Capture(bool),
@@ -345,7 +346,7 @@ impl Monitor {
     }
     pub fn waiting(&self) -> Option<&str> {
         let view = self.selected_request()?;
-        (view.request.status() == RequestStatus::WaitingHuman).then_some(view.request.id.as_str())
+        (view.request.status().is_human_wait()).then_some(view.request.id.as_str())
     }
     fn select_scope(&mut self, index: usize) -> Action {
         let Some(row) = self.catalog.rows.get(index) else {
@@ -420,7 +421,7 @@ impl Monitor {
         };
         if let Some(view) = view {
             if view.request.profile.kind() == ProfileKind::Human {
-                let resolved = if view.request.status() == RequestStatus::WaitingHuman {
+                let resolved = if view.request.status().is_human_wait() {
                     evidence::original(&self.state, &view).await
                 } else {
                     Ok(view)
@@ -679,7 +680,7 @@ impl Monitor {
             }
             KeyCode::Char('r') => {
                 self.navigation = false;
-                return Action::Refresh;
+                return Action::Resync;
             }
             KeyCode::Tab => {
                 self.focus = match self.focus {

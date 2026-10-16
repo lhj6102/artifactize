@@ -25,11 +25,11 @@ notes = { description = "Print the review notes of {artifactName}.", builtin = "
 
 [evals.review]
 title = "The specification covers every requirement"
-profile = { kind = "agent", backend = "openai", model = "YOUR_OPENAI_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20, max_tokens = 200000 }
+profile = { kind = "agent", backend = "openai", model = "YOUR_OPENAI_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
 
 [evals.review.profile_variants]
-anthropic = { kind = "agent", backend = "anthropic", model = "YOUR_ANTHROPIC_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20, max_tokens = 200000 }
-codex = { kind = "agent", backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20, max_tokens = 200000 }
+anthropic = { kind = "agent", backend = "anthropic", model = "YOUR_ANTHROPIC_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
+codex = { kind = "agent", backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
 
 [evals.review.payload]
 instruction = """

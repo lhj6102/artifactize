@@ -19,6 +19,18 @@ impl DiscoveryEntry {
 
 /// Discover regular markers in deterministic path order, without following directory links.
 pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
+    read(repo, FileTargets::Required)
+}
+/// A declaration guard must not mistake a changed data file for a changed declaration.
+/// Preparation and per-Eval rechecks validate actual file targets separately.
+pub(crate) fn read_workspace_declarations(repo: &Path) -> Result<RepoConfig, ConfigError> {
+    read(repo, FileTargets::DeclarationsOnly)
+}
+enum FileTargets {
+    Required,
+    DeclarationsOnly,
+}
+fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
     let mut config = RepoConfig {
@@ -81,13 +93,6 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
             let declaration =
                 parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
-            if !relative.as_os_str().is_empty() && declaration.review_policy.is_some() {
-                return Err(ConfigError::declaration(
-                    &file,
-                    &["review_policy"],
-                    "review_policy belongs only to the repository root index.artf.",
-                ));
-            }
             let name = declaration.name.clone();
             if let Some(parent) = &owner {
                 let parent = config.artifacts.get_mut(parent).unwrap();
@@ -123,7 +128,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             }
         }
         for marker in &entries {
-            if ignored.matched(marker.path(), false).is_ignore() {
+            if marker.file_name() != ".artf" && ignored.matched(marker.path(), false).is_ignore() {
                 continue;
             }
             let filename = marker.file_name();
@@ -149,7 +154,37 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     "File Artifact declaration must be a regular file.",
                 ));
             }
-            if target.is_empty() || target.ends_with(".artf") {
+            if target.is_empty() {
+                if !relative.as_os_str().is_empty() {
+                    return Err(ConfigError::new(
+                        &file,
+                        "The graph Artifact .artf belongs only at the repository root.",
+                    ));
+                }
+                let source =
+                    read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+                let table: toml::Table =
+                    toml::from_str(&source).map_err(|error| ConfigError::new(&file, error))?;
+                if table.contains_key("fingerprint") {
+                    return Err(ConfigError::declaration(
+                        &file,
+                        &["fingerprint"],
+                        "The graph Artifact cannot declare fingerprint.",
+                    ));
+                }
+                let mut declaration =
+                    parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
+                declaration.fingerprint = Some(Fingerprint::Graph);
+                insert_artifact(
+                    &mut config,
+                    PathBuf::new(),
+                    ArtifactKind::Graph,
+                    declaration,
+                    &file,
+                )?;
+                continue;
+            }
+            if target.ends_with(".artf") {
                 return Err(ConfigError::new(
                     &file,
                     "File Artifact target must not be a declaration (.artf).",
@@ -162,37 +197,31 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     "File Artifact target name must not contain ':'; scoped tool paths do not support colons.",
                 ));
             }
-            let kind = crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target)).map_err(
-                |error| {
-                    ConfigError::new(
+            if matches!(targets, FileTargets::Required) {
+                let kind = crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target))
+                    .map_err(|error| {
+                        ConfigError::new(
+                            &file,
+                            if error.kind() == std::io::ErrorKind::NotFound {
+                                format!("File Artifact target {target} is missing.")
+                            } else {
+                                format!("Cannot inspect File Artifact target {target}: {error}.")
+                            },
+                        )
+                    })?;
+                if kind != crate::platform::FileKind::File {
+                    return Err(ConfigError::new(
                         &file,
-                        if error.kind() == std::io::ErrorKind::NotFound {
-                            format!("File Artifact target {target} is missing.")
-                        } else {
-                            format!("Cannot inspect File Artifact target {target}: {error}.")
-                        },
-                    )
-                },
-            )?;
-            if kind != crate::platform::FileKind::File {
-                return Err(ConfigError::new(
-                    &file,
-                    format!(
-                        "File Artifact target {target} must be a regular file, not a symlink, directory or special file."
-                    ),
-                ));
+                        format!(
+                            "File Artifact target {target} must be a regular file, not a symlink, directory or special file."
+                        ),
+                    ));
+                }
             }
             let source =
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
             let mut declaration =
                 parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
-            if declaration.review_policy.is_some() {
-                return Err(ConfigError::declaration(
-                    &file,
-                    &["review_policy"],
-                    "review_policy belongs only to the repository root index.artf.",
-                ));
-            }
             let value = toml::de::DeTable::parse(&source)
                 .map_err(|error| ConfigError::new(&file, error))?;
             if value.get_ref().get("fingerprint").is_none() {
@@ -268,7 +297,6 @@ fn insert_artifact(
         mounts,
         basis,
         fingerprint,
-        review_policy,
     } = declaration;
     if config.artifacts.contains_key(&name) {
         return Err(ConfigError::declaration(
@@ -301,7 +329,6 @@ fn insert_artifact(
             mounts,
             basis,
             fingerprint,
-            review_policy,
         },
     );
     Ok(())

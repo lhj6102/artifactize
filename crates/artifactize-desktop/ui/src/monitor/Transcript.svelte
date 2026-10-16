@@ -1,11 +1,11 @@
 <script lang="ts">
   // An Agent request's live transcript. The backend's session reader lays it out in the
   // columns and rows this monospace pane fits; scrolling asks for another window.
-  import { TranscriptState, setTranscriptState } from "./transcript.svelte";
+  import { TranscriptState, setTranscriptState } from "./transcript-state.svelte";
   import { onDestroy, onMount } from "svelte";
   import {
     call,
-    commands,
+    useIpc,
     message,
     onSessionChanged,
     onStateChanged,
@@ -15,6 +15,7 @@
   import { plain } from "../shell/keys";
 
   let { id, peek = false }: { id: string; peek?: boolean } = $props();
+  const commands = useIpc();
   const t = new TranscriptState();
   setTranscriptState(t);
 

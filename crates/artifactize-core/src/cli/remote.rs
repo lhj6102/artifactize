@@ -103,7 +103,7 @@ pub(super) async fn execute(
         RemoteCommand::Status => {
             let Some(status) = remote::status(state, repo).await? else {
                 if json {
-                    print_json(&json!({"configured": false}))?;
+                    print_json(&crate::inspect::remote_output(None))?;
                 } else {
                     writeln!(out, "No remote review store is configured.")
                         .map_err(|e| e.to_string())?;
@@ -111,9 +111,7 @@ pub(super) async fn execute(
                 return Ok(1);
             };
             if json {
-                let mut value = json!(status);
-                value["configured"] = json!(true);
-                print_json(&value)?;
+                print_json(&crate::inspect::remote_output(Some(&status)))?;
             } else {
                 writeln!(
                     out,

@@ -1,9 +1,18 @@
 // The frontend's only door to the backend: typed commands that throw a typed failure, and
 // event subscriptions that always clean up.
 import type { Failure } from "./bindings";
-import { events } from "./bindings";
+import { commands as bindings, events } from "./bindings";
+import { getActivity, observeCommands } from "./activity.svelte";
 
 export * from "./bindings";
+
+export const commands = bindings;
+export type Commands = typeof commands;
+
+/** Capture the window owner during component initialization, not inside async callbacks. */
+export function useIpc(): Commands {
+  return observeCommands(bindings, getActivity());
+}
 
 /** A command failure, narrowed on `failure.kind`. */
 export class CommandError extends Error {

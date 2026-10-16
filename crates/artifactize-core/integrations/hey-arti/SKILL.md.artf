@@ -1,0 +1,22 @@
+name = "hey-arti"
+tags = ["type:skill"]
+
+[views.agent_tools]
+read = { builtin = "read" }
+
+[evals.correct]
+title = "The Artifactizer skill matches declarations, Run lifecycle and Human authority"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+payload.instruction = """
+Review the canonical skill {hey-arti} using read_hey-arti and compare it with {core}
+and {docs}. Check current .artf/TOML syntax, default artifactsum, real consumer
+coverage and reuse distinctions, tool scopes and artifactize-owned sessions,
+MCP-first validation and durable Run observation, optional caller request_key,
+submit-only CLI versus --wait/explicit cancellation, per-request speculation and
+Human deferral defaults, read-only CI, and yielding without Human impersonation
+or keep-alive tricks. The skill structures reviews, not the builder's application.
+Submit GREEN only when the guidance is correct and portable; otherwise RED with
+concrete skill path:line findings. Plugin distribution is not claimed here.
+"""
+pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 } }, required = ["findings"], additionalProperties = false }

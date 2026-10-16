@@ -1,58 +1,53 @@
-//! All finite readiness statuses preserve their exact JSON/text and report severity.
+//! Readiness status wire forms and the public report's aggregate severity.
 use super::*;
 use serde_json::json;
 
 #[test]
-fn readiness_check_status_wire_display_and_severity_are_pinned() {
-    for (status, wire, ready) in [
-        (CheckStatus::Pass, "PASS", true),
-        (CheckStatus::Warn, "WARN", true),
-        (CheckStatus::Fail, "FAIL", false),
+fn readiness_check_status_wire_and_display_are_pinned() {
+    for (status, wire) in [
+        (CheckStatus::Pass, "PASS"),
+        (CheckStatus::Warn, "WARN"),
+        (CheckStatus::Fail, "FAIL"),
     ] {
         assert_eq!(status.to_string(), wire);
-        assert_eq!(serde_json::to_value(status).unwrap(), json!(wire));
-        let mut report = DoctorReport {
-            ok: true,
-            state_dir: "/fixture-state".into(),
-            checks: Vec::new(),
-        };
-        report.add(
-            "fixture",
+        let check = Check {
+            name: "fixture",
             status,
-            "pinned message",
-            Details::State { writable: true },
-        );
-        assert_eq!(report.ok, ready);
+            message: "pinned message".into(),
+            details: Details::State { writable: true },
+        };
         assert_eq!(
-            serde_json::to_value(&report.checks).unwrap(),
-            json!([
-                {
-                    "name":"fixture",
-                    "status":wire,
-                    "message":"pinned message",
-                    "details":{"writable":true},
-                },
-            ])
+            serde_json::to_value(check).unwrap(),
+            json!({
+                "name":"fixture",
+                "status":wire,
+                "message":"pinned message",
+                "details":{"writable":true},
+            })
         );
     }
-    let mut report = DoctorReport {
-        ok: true,
-        state_dir: "/fixture-state".into(),
-        checks: Vec::new(),
-    };
-    for status in [
-        CheckStatus::Pass,
-        CheckStatus::Warn,
-        CheckStatus::Fail,
-        CheckStatus::Pass,
-        CheckStatus::Warn,
-    ] {
-        report.add("fixture", status, "", Details::None);
+}
+
+#[tokio::test]
+async fn later_ready_checks_do_not_erase_a_configuration_failure() {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    fs::write(repo.join(crate::config::CONFIG_FILE), "name = [").unwrap();
+    let report = doctor(Some(&state), Some(&repo)).await.unwrap();
+    assert!(!report.ok);
+    assert_eq!(report.checks[0].name, "config");
+    assert_eq!(report.checks[0].status, CheckStatus::Fail);
+    for name in ["state", "schema"] {
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.name == name)
+            .unwrap();
+        assert_eq!(check.status, CheckStatus::Pass, "{name}");
     }
-    assert!(
-        !report.ok,
-        "later warnings/pass cannot erase an earlier failure"
-    );
+    assert!(!state.join(store::DATABASE).exists());
 }
 
 #[test]

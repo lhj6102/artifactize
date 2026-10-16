@@ -1,5 +1,9 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use artifactize_core::{cache, config::read_workspace_config, tools};
 use serde_json::{Value, json};
@@ -9,6 +13,9 @@ use std::{
     process::{Command, Output},
 };
 use tokio_util::sync::CancellationToken;
+
+// Text tools expose at most 64 KiB; the CLI adds one trailing newline.
+const TEXT_BYTES: usize = 64 * 1024;
 
 fn declaration(repo: &Path, agent: Value, human: Value) {
     fs::create_dir_all(repo.join("a")).unwrap();
@@ -31,8 +38,8 @@ fn command(repo: &Path, state: &Path) -> Command {
         .arg(repo)
         .arg("--state-dir")
         .arg(state)
-        .env("ARTIFACTIZE_REMOTE", "off")
-        .env("USER", "reviewer");
+        .env("ARTIFACTIZE_REMOTE", "off");
+    support::os::sign_in_as(&mut command, "reviewer");
     command
 }
 fn parsed(output: Output, code: i32) -> Value {
@@ -42,9 +49,10 @@ fn parsed(output: Output, code: i32) -> Value {
 
 #[test]
 fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
+    root.track(&state, &repo);
     declaration(
         &repo,
         json!({
@@ -63,7 +71,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
     );
     let output = command(&repo, &state)
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     for (audience, invalid) in [
@@ -102,7 +110,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
         ),
         (
             "human_tools",
-            json!({"builtin":"open","args":["file:///etc/passwd"]}),
+            json!({"builtin":"open","args":["file:///outside"]}),
         ),
     ] {
         let mut value = json!({"name":"a","views":{}});
@@ -110,7 +118,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
         support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
         let output = command(&repo, &state)
             .args(["config", "check", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         let report = parsed(output, 2);
         let error = report["error"].as_str().unwrap();
@@ -215,9 +223,10 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
 
 #[test]
 fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
+    root.track(&state, &repo);
     declaration(&repo, json!({}), json!({}));
     if support::os::symlink_file(repo.join("a/notes.md"), repo.join("a/link.md")).is_none() {
         return;
@@ -229,7 +238,7 @@ fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
         let report = parsed(
             command(&repo, &state)
                 .args(["config", "check", "--json"])
-                .output()
+                .record_output()
                 .unwrap(),
             2,
         );
@@ -320,9 +329,19 @@ fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
 
 #[test]
 fn request_tools_execute_builtins_in_process_with_bounded_text() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
+    root.track(&state, &repo);
+    fs::create_dir_all(repo.join("a")).unwrap();
+    let (help, args) = support::os::python_script(
+        &repo.join("a/help-stub"),
+        "import sys\nprint('human help: ' + ' '.join(sys.argv[1:]))\n",
+    );
+    let help_args: Vec<_> = std::iter::once(json!(help))
+        .chain(args)
+        .chain([json!("sub")])
+        .collect();
     declaration(
         &repo,
         json!({}),
@@ -331,25 +350,22 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
             "section":{"builtin":"section","args":["{artifactPath}/notes.md","First"]},
             "list":{"builtin":"list","args":["{artifactPath}"]},
             "large":{"builtin":"read","args":["large.txt"]},
-            "help":{"builtin":"help","args":["./help-stub","sub"]}
+            "help":{"builtin":"help","args":help_args}
         }),
     );
     fs::write(repo.join("a/large.txt"), "x".repeat(80_000)).unwrap();
-    let stub = repo.join("a/help-stub");
-    support::os::write_script(&stub, "printf 'human help: %s\\n' \"$*\"\n");
-    support::os::make_executable(&stub);
     let run = parsed(
         command(&repo, &state)
-            .args(["verify", "--all", "--timeout-ms", "1", "--json"])
-            .output()
+            .args(["verify", "--all", "--json"])
+            .record_output()
             .unwrap(),
-        3,
+        0,
     );
     let id = run["requests"][0]["id"].as_str().unwrap();
     parsed(
         command(&repo, &state)
             .args(["request", "claim", id, "--json"])
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -362,12 +378,12 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     ] {
         let output = command(&repo, &state)
             .args(["request", "tool", id, name])
-            .output()
+            .record_output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(text.contains(expected), "{text}");
-        assert!(text.len() <= 64 * 1024 + 1, "{}", text.len());
+        assert!(text.len() <= TEXT_BYTES + 1, "{}", text.len());
         if name == "section_a" {
             assert!(!text.contains("# Next"));
         }
@@ -378,9 +394,10 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
 #[cfg(unix)]
 #[test]
 fn request_open_hands_one_target_to_the_shared_opener() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
+    root.track(&state, &repo);
     declaration(
         &repo,
         json!({}),
@@ -391,16 +408,16 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     support::os::recording_program(&bin, support::os::OPENER);
     let run = parsed(
         command(&repo, &state)
-            .args(["verify", "--all", "--timeout-ms", "1", "--json"])
-            .output()
+            .args(["verify", "--all", "--json"])
+            .record_output()
             .unwrap(),
-        3,
+        0,
     );
     let id = run["requests"][0]["id"].as_str().unwrap();
     parsed(
         command(&repo, &state)
             .args(["request", "claim", id, "--json"])
-            .output()
+            .record_output()
             .unwrap(),
         0,
     );
@@ -409,7 +426,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
         .env("PATH", bin)
         .env(support::os::RECORD, &record)
         .args(["request", "tool", id, "open_a", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     let result = parsed(output, 0);
     assert_eq!(result["content"][0]["launched"], true);
@@ -417,7 +434,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
         fs::read_to_string(record).unwrap(),
         format!(
             "1\n{}\n",
-            fs::canonicalize(repo.join("a/notes.md")).unwrap().display()
+            support::os::path_text(&support::os::canonical(&repo.join("a/notes.md")))
         )
     );
 }
@@ -479,7 +496,7 @@ fn human_builtin_arguments_parse_at_the_declaration_edge_and_keep_saved_bytes() 
     for invalid in [
         "{bad.name}",
         "{unclosed",
-        "${HOME}",
+        "${UNEXPANDED}",
         "{artifactPath}/extra{brace}",
         "prefix{artifactPath}",
     ] {

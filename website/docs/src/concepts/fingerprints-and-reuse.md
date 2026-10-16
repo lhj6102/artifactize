@@ -6,9 +6,12 @@ depends on are unchanged, so review cost follows the size of a change.
 
 ## Fingerprints
 
-Every Artifact uses **artifactsum** by default. Omit `fingerprint` to hash its own
-files, or choose a script. A fingerprint adds no tool declarations or other
-Artifact's value; dependencies enter through the [reuse key](#the-reuse-key).
+Folder and file Artifacts use **artifactsum** by default. Omit `fingerprint` to
+hash their own files, or choose a script. The root graph Artifact always uses the
+[structural graph fingerprint](#graph-fingerprint); it cannot declare `fingerprint`
+to override or disable that value. For folder and file Artifacts, the configurable
+forms below add no tool declarations or other Artifact's value; dependencies enter
+through the [reuse key](#the-reuse-key).
 
 - Omission uses artifactsum: `artifactsum:` plus SHA-256 over the Artifact's
   own input paths and bytes. `fingerprint = {}` also works for folders. A folder hashes its own files;
@@ -69,19 +72,23 @@ script can read a file of any Artifact it names in its args. The key is
 hash(Eval definition hash, sorted (Artifact name, kind, fingerprint) of each covered Artifact)
 ```
 
-Artifact names and kinds (`folder` or `file`) are part of the key, for the
+Artifact names and kinds (`folder`, `file` or `graph`) are part of the key, for the
 target and every covered dependency. A change from folder to file never reuses
 the former result, even if a script emits the same fingerprint. Physical paths
 are never key inputs, so copies with matching names, kinds and fingerprints reuse.
-Different Artifact names never share a result. The **Eval definition hash** is lowercase
-SHA-256 of canonical JSON with recursively sorted keys over the eval strategy:
+Changing a covered Artifact's name changes the key. Differently named targets can
+still share a result when their evaluation criteria and complete covered Artifact
+maps match: the key does not separately identify which covered Artifact is the target.
+For example, two Artifacts that mount each other can share results from identical evals.
+The **Eval definition hash** is lowercase SHA-256 of canonical JSON with recursively
+sorted keys over the **evaluation criteria**:
 
 - the eval kind (runtime, agent or human);
 - `payload`, including the instruction;
 - `pass_schema` and `fail_schema`;
 - for runtime evals, the command and args.
 
-Execution options are not part of the key: an Agent's backend, model, reasoning,
+**Evaluation execution options** are not part of the key: an Agent's backend, model, reasoning,
 `timeout_ms`, `max_tool_calls` and `max_tokens`, a runtime `timeout_ms`, and the selected
 profile variant. Neither are the eval id and title, tags, repository paths, unused
 profile variants, or tool declarations (`views`): a tool is a way of viewing an
@@ -89,8 +96,10 @@ Artifact, so changing only a tool's description or schema does not review again.
 make a tool change matter, include the relevant files in the fingerprint.
 
 An executable eval has a key only when its target and every Artifact it depends on
-have a fingerprint. Omission supplies artifactsum, including for basis Artifacts. If
-any declares `fingerprint = false`, the eval has no reuse: every `verify` reviews it
+have a fingerprint. Omission supplies artifactsum for folder and file Artifacts,
+including basis Artifacts of those kinds; graph Artifacts always supply their
+structural graph fingerprint. If a folder or file Artifact declares
+`fingerprint = false`, the eval has no reuse: every `verify` reviews it
 again. For an unforced READY Runtime/Agent eval, `status` names the disabled target
 or dependency in its execution reason. A READY Human eval instead gives the
 request-awaiting-claim-and-submission reason; forced, blocked and waiting evals
@@ -119,7 +128,7 @@ JSON/state field names, not snake_case declaration keys:
 - `producer` (`user@host` and artifactize version), the Human `reviewer`, and for
   a remote record its `origin` with the publisher;
 - `completedAt`, `fingerprints` (each Artifact the key covers), `artifactKinds`
-  (the same names mapped to `folder` or `file`) and `key`. The kind map is an
+  (the same names mapped to `folder`, `file` or `graph`) and `key`. The kind map is an
   additive execution/team-store field, not a declaration option.
 
 Before accepting reuse, artifactize validates admitted file targets again:
@@ -156,22 +165,40 @@ results still satisfy their own Run and keep their execution.
 
 ## Upgrading to 0.9
 
-0.9 uses TOML `.artf` declarations: `index.artf` for folders and `<file>.artf` for
-files. Declaration keys become snake_case and evals become `[evals.<id>]` tables. The
-ignore file becomes `.artfignore`. JSON output, state fields and JSON Schema keywords
-do not change spelling. There is no converter; have an agent rewrite and commit the
-declarations, then run `artifactize config check`.
+For declaration, state-directory and terminal changes, see
+[Install: Upgrading to 0.9](../getting-started/install.md#upgrading-to-09).
+Reuse-key v2 matches no pre-0.9 result, including script fingerprints and team
+review store records. The first full `verify` therefore reviews every executable
+eval once, Human sign-offs included; later Runs reuse normally.
 
-Families are removed. Projects that want templates generate `.artf` declarations
-with their own generator and commit them.
+## Graph fingerprint
 
-State schema 6 starts a new state; earlier schemas are refused, not migrated. Set
-`ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new directory, or move the old state away. Reuse-key
-v2 matches no earlier result, including a script fingerprint's result and records in
-a team review store. The first full `verify` reviews every executable eval once,
-Human sign-offs included. Dependency evals have no execution; they derive their
-current verdicts. Later Runs reuse normally. See [State](../reference/state-cache-limits.md#state).
+The root [`.artf` graph Artifact](../reference/declarations.md#graph-artifact)
+uses `graph:<sha256>`, computed from one canonical, name-based extraction of the
+whole project's current declarations. Objects and relations are sorted; child
+folder locations and repository paths are not identities. Extraction includes:
 
-The monitor and standalone `review` also share a redesigned Human Detail and an
-explicit `c` claim. See [Install: Upgrading to 0.9](../getting-started/install.md#upgrading-to-09)
-for the terminal layout and removed standalone keys.
+- Artifact names and kinds, `basis`, and fingerprint coverage: artifactsum `files`
+  and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
+  The graph Artifact has a graph-coverage marker, not its own recursively embedded
+  digest.
+- Input → consumer relations: child ownership (names, not child folder paths),
+  mounts (including aliases), instruction references, runtime argv references
+  (including eval ID, argv index and logical suffix), and dependency eval targets.
+- Qualified eval IDs, owning Artifact, titles, optional `gate` and evaluation criteria: default
+  profile kind, the full `payload` including instruction and owner context,
+  `pass_schema`, `fail_schema`, runtime `command`/`args`, and dependency `depends_on`.
+
+Excluded are evaluation execution options (backend, model, reasoning, all
+`timeout_ms` values including fingerprint-script timeouts, `max_tool_calls`,
+`max_tokens`, `profile_variants`), all tool views and sessions, tags, repository
+paths and source file contents. Declared coverage paths and scoped argument
+suffixes remain meaningful; a relocation that preserves those logical declarations
+and ownership does not change the graph fingerprint. Execution options are still
+saved in ordinary state records.
+
+This is only a fingerprint algorithm. Existing reuse keys, Runs, status and review
+flows decide whether to reuse or review again. The graph is evaluated against
+current state, never a stored diff or structural history. A graph eval title
+change invalidates its graph fingerprint even though titles are excluded from the
+ordinary Eval definition hash. Both built-in `graph` tools use this same extraction.

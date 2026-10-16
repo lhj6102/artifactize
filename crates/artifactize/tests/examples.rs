@@ -1,6 +1,10 @@
 //! The example projects run offline from the built binary, as their READMEs describe.
 //! Commands run from each example folder with an isolated state home; no Agent eval runs.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild;
+
 use std::{
     collections::BTreeMap,
     fs,
@@ -11,10 +15,10 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn example(name: &str) -> PathBuf {
     support::os::canonical(
@@ -24,28 +28,37 @@ fn example(name: &str) -> PathBuf {
     )
 }
 
-struct Session(TempDir);
+struct Session {
+    root: owned_run::Root,
+}
 
 impl Session {
     fn new() -> Self {
-        Self(support::os::tempdir())
+        Self {
+            root: owned_run::Root::from(support::os::tempdir()),
+        }
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
+        self.root.track(&self.root.path().join("state"), repo);
         let mut command = Command::new(support::os::cli());
         command
             // Runtime evals name `grep` and declared tools name `python3` for PATH to find.
             .env("PATH", support::os::path())
             .current_dir(repo)
             .args(args)
-            .env("ARTIFACTIZE_STATE_HOME", self.0.path().join("state"))
+            .env("ARTIFACTIZE_STATE_HOME", self.root.path().join("state"))
             .env_remove("OPENAI_API_KEY")
             .env_remove("ANTHROPIC_API_KEY");
         command
     }
 
     fn output(&self, repo: &Path, args: &[&str], code: i32) -> Output {
-        expect(self.command(repo, args).output().unwrap(), args, code)
+        expect(
+            self.command(repo, args).record_output().unwrap(),
+            args,
+            code,
+        )
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
@@ -54,7 +67,7 @@ impl Session {
 
     /// A private copy for edits that turn an example RED.
     fn copy(&self, name: &str) -> PathBuf {
-        let target = self.0.path().join(name);
+        let target = self.root.path().join(name);
         support::copy_directory(&example(name), &target);
         target
     }
@@ -76,8 +89,8 @@ fn parse(output: &Output) -> Value {
 }
 
 /// Every file below `root`, so tests notice anything an example writes into its own folder.
-fn files(root: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
+fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut found = BTreeMap::new();
     let mut pending = vec![root.to_owned()];
     while let Some(directory) = pending.pop() {
         for entry in fs::read_dir(directory).unwrap() {
@@ -85,11 +98,13 @@ fn files(root: &Path) -> Vec<PathBuf> {
             if path.is_dir() {
                 pending.push(path);
             } else {
-                found.push(path.strip_prefix(root).unwrap().to_owned());
+                found.insert(
+                    path.strip_prefix(root).unwrap().to_owned(),
+                    fs::read(&path).unwrap(),
+                );
             }
         }
     }
-    found.sort();
     found
 }
 
@@ -187,9 +202,9 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
     let session = Session::new();
     let repo = example("runtime-relations");
     let before = files(&repo);
-    let first = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let first = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(first["executionsStarted"], 3);
-    let second = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let second = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(second["executionsStarted"], 0);
     assert_eq!(executions(&second), executions(&first));
     let status = session.json(&repo, &["status", "--json"], 0);
@@ -223,7 +238,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
             ("usage/heading", "changed: page.md"),
         ])
     );
-    let red = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let red = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(
         statuses(&red),
         map(&[
@@ -245,7 +260,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
     // README: a page without its heading is RED and blocks its parent.
     let contents = fs::read_to_string(&page).unwrap();
     fs::write(&page, contents.split_once('\n').unwrap().1).unwrap();
-    let blocked = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let blocked = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(
         statuses(&blocked),
         map(&[
@@ -283,7 +298,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
             .all(|relation| relation["kind"] != "child")
     );
 
-    let first = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let first = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(statuses(&first), green);
     assert_eq!(first["executionsStarted"], 3);
     let first_requests = requests(&first);
@@ -313,17 +328,23 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         first_requests["tip/style"]["title"],
         "The brief post fits in 40 words and follows the house style"
     );
-    let second = session.json(&repo, &["verify", "--all", "--json"], 0);
+    let second = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(second["executionsStarted"], 0);
     assert_eq!(executions(&second), executions(&first));
-    let selected = session.json(&repo, &["verify", "tip/style", "--json"], 0);
+    let selected = session.json(&repo, &["verify", "--wait", "tip/style", "--json"], 0);
     assert_eq!(statuses(&selected), map(&[("tip/style", "GREEN")]));
     assert_eq!(selected["executionsStarted"], 0);
-    let selected = session.json(&repo, &["verify", "tip", "--json"], 0);
+    let selected = session.json(&repo, &["verify", "--wait", "tip", "--json"], 0);
     assert_eq!(statuses(&selected), map(&[("tip/style", "GREEN")]));
     let selected = session.json(
         &repo,
-        &["verify", "--evals", "welcome/style,tip/style", "--json"],
+        &[
+            "verify",
+            "--wait",
+            "--evals",
+            "welcome/style,tip/style",
+            "--json",
+        ],
         0,
     );
     assert_eq!(
@@ -337,11 +358,11 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
 
     let copy = session.copy("posts");
     append(&copy.join("README.md"), "Unrelated notes.\n");
-    let unrelated = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let unrelated = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(unrelated["executionsStarted"], 0);
     assert_eq!(executions(&unrelated), executions(&first));
     append(&copy.join("tip.md.artf"), "\n# Declaration-only comment.\n");
-    let comment = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let comment = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(comment["executionsStarted"], 0);
 
     // README: a banned word re-runs only the edited post, and restoring it reuses GREEN.
@@ -358,7 +379,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         .find(|eval| eval["id"] == "tip/style")
         .unwrap();
     assert_eq!(changed["changes"]["summary"], "changed: tip.md");
-    let red = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let red = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(
         statuses(&red),
         map(&[
@@ -383,11 +404,11 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         assert_eq!(executions(&red)[id], executions(&first)[id]);
     }
     fs::write(&tip, &original).unwrap();
-    let restored = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let restored = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(executions(&restored), executions(&first));
 
     fs::write(&tip, original.split_once('\n').unwrap().1).unwrap();
-    let heading = session.json(&copy, &["verify", "tip", "--json"], 1);
+    let heading = session.json(&copy, &["verify", "--wait", "tip", "--json"], 1);
     assert!(
         requests(&heading)["tip/style"]["result"]["stdout"]
             .as_str()
@@ -395,7 +416,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
             .contains("the first line is not a '# ' title")
     );
     fs::write(&tip, format!("{original}{}\n", "word ".repeat(41))).unwrap();
-    let long = session.json(&copy, &["verify", "tip", "--json"], 1);
+    let long = session.json(&copy, &["verify", "--wait", "tip", "--json"], 1);
     assert!(
         requests(&long)["tip/style"]["result"]["stdout"]
             .as_str()
@@ -409,14 +430,14 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         &copy.join("house-style/check.py"),
         "\n# Shared checker change.\n",
     );
-    let checker = session.json(&copy, &["verify", "--all", "--json"], 0);
+    let checker = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(statuses(&checker), green);
     assert_eq!(checker["executionsStarted"], 3);
     for id in green.keys() {
         assert_ne!(executions(&checker)[id], executions(&first)[id]);
     }
     append(&copy.join("house-style/banned.txt"), "tools\n");
-    let rules = session.json(&copy, &["verify", "--all", "--json"], 1);
+    let rules = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
     assert_eq!(rules["executionsStarted"], 3);
     assert_eq!(
         statuses(&rules),
@@ -505,13 +526,14 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     assert_eq!(image["mimeType"], "image/png");
 
     // README: the Human sign-off through request claim, tool and submit, while verify waits.
-    let signoff = ["verify", "--eval", "spec/signoff", "--json"];
+    let signoff = ["verify", "--wait", "--eval", "spec/signoff", "--json"];
     let verify = session
         .command(&repo, &signoff)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let verify = RunChild::new(verify, &session.root.path().join("state"), &repo);
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     let run_id = loop {
         let listed = session.json(&repo, &["request", "list", "--json"], 0);

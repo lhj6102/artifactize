@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{fs, path::PathBuf, process::Command, time::Duration};
 
 use artifactize_core::{
@@ -9,16 +12,16 @@ use artifactize_core::{
     runtime::Verdict,
     store,
 };
-use rusqlite::Connection;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: support::runs::RepoLease,
     repo: PathBuf,
     state: PathBuf,
 }
@@ -50,10 +53,12 @@ fn runtime(command: &str) -> Value {
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();
+        let repo = root.path().join("repo");
+        let state = root.path().join("state");
         Self {
-            repo: root.path().join("repo"),
-            state: root.path().join("state"),
-            _root: root,
+            _root: support::runs::RepoLease::new(root, &state, &repo),
+            repo,
+            state,
         }
     }
 
@@ -90,7 +95,7 @@ impl Fixture {
     }
 
     async fn verify(&self, options: &VerifyOptions) -> store::RunView {
-        project::verify(
+        support::runs::record(
             &self.repo,
             Some(&self.state),
             &Self::selection(),
@@ -214,51 +219,49 @@ fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicat
 }
 
 #[test]
-fn dependency_verdicts_are_derived_even_when_gates_are_ignored() {
+fn dependency_verdicts_are_derived_from_required_evidence() {
     let fixture = Fixture::new();
     fixture.declare("art", vec![runtime(&support::os::true_program())]);
     fixture.declare("movement", vec![runtime(&support::os::true_program())]);
     fixture.declare("player", vec![dependency(&["art", "movement"])]);
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
-    for ignore in [false, true] {
-        for (evidence, status) in [
-            (None, EvalStatus::Wait),
-            (Some(Evidence::Stale), EvalStatus::Wait),
-            (Some(Evidence::OperationalError), EvalStatus::Wait),
-            (Some(Evidence::Current(Verdict::Red)), EvalStatus::Blocked),
-            (Some(Evidence::Current(Verdict::Green)), EvalStatus::Green),
-        ] {
-            let mut evidence_map = std::collections::BTreeMap::from([
-                (
-                    "movement/check".parse().unwrap(),
-                    Evidence::Current(Verdict::Green),
-                ),
-                (
-                    "player/ready".parse().unwrap(),
-                    Evidence::Current(Verdict::Green),
-                ),
-            ]);
-            if let Some(evidence) = evidence {
-                evidence_map.insert("art/check".parse().unwrap(), evidence);
-            }
-            let result = graph.evaluate_with_policy(&evidence_map, ignore);
-            let derived = &result.evals["player/ready"];
-            assert_eq!(derived.status, status);
-            assert!(!derived.can_execute());
-            assert_eq!(
-                derived
-                    .blocked_by
-                    .iter()
-                    .map(|id| id.as_str())
-                    .collect::<Vec<_>>(),
-                if status == EvalStatus::Green {
-                    vec![]
-                } else {
-                    vec!["art", "art/check"]
-                }
-            );
+    for (evidence, status) in [
+        (None, EvalStatus::Wait),
+        (Some(Evidence::Stale), EvalStatus::Wait),
+        (Some(Evidence::OperationalError), EvalStatus::Wait),
+        (Some(Evidence::Current(Verdict::Red)), EvalStatus::Blocked),
+        (Some(Evidence::Current(Verdict::Green)), EvalStatus::Green),
+    ] {
+        let mut evidence_map = std::collections::BTreeMap::from([
+            (
+                "movement/check".parse().unwrap(),
+                Evidence::Current(Verdict::Green),
+            ),
+            (
+                "player/ready".parse().unwrap(),
+                Evidence::Current(Verdict::Green),
+            ),
+        ]);
+        if let Some(evidence) = evidence {
+            evidence_map.insert("art/check".parse().unwrap(), evidence);
         }
+        let result = graph.evaluate(&evidence_map);
+        let derived = &result.evals["player/ready"];
+        assert_eq!(derived.status, status);
+        assert!(!derived.can_execute());
+        assert_eq!(
+            derived
+                .blocked_by
+                .iter()
+                .map(|id| id.as_str())
+                .collect::<Vec<_>>(),
+            if status == EvalStatus::Green {
+                vec![]
+            } else {
+                vec!["art", "art/check"]
+            }
+        );
     }
 }
 
@@ -285,7 +288,7 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let output: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -300,8 +303,14 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
         eval["payload"]["instruction"] = json!(format!("Check {{{target}}}."));
         fixture.declare(name, vec![eval]);
     }
-    let config = fixture.config();
-    assert_eq!(Graph::new(&config).unwrap().components().len(), 1);
+    let checked = fixture
+        .command()
+        .args(["config", "check", "--json"])
+        .record_output()
+        .unwrap();
+    assert!(checked.status.success(), "{checked:?}");
+    let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
+    assert_eq!(checked["ok"], true);
 }
 
 #[test]
@@ -385,12 +394,13 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     let output = artifactize_core::query::run_output(&first, OffsetDateTime::now_utc());
     assert_eq!(output["requests"][0]["source"]["kind"], "derived");
     assert_eq!(output["summary"]["executed"]["total"], 1);
-    let db = Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    let cached = cache::list(&fixture.state, true).await.unwrap();
     assert_eq!(
-        db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
-            .get::<_, i64>(0))
-            .unwrap(),
-        1
+        cached
+            .iter()
+            .map(|entry| entry.eval_id.as_str())
+            .collect::<Vec<_>>(),
+        ["art/check"]
     );
     let config = fixture.config();
     assert_eq!(
@@ -422,15 +432,21 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     assert!(!second.requests[0].force);
     assert_eq!(second.requests[0].status().as_str(), "GREEN");
     assert_eq!(
-        db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
-            .get::<_, i64>(0))
-            .unwrap(),
-        1
+        cache::list(&fixture.state, true)
+            .await
+            .unwrap()
+            .iter()
+            .map(|entry| entry.execution_id.as_str())
+            .collect::<Vec<_>>(),
+        cached
+            .iter()
+            .map(|entry| entry.execution_id.as_str())
+            .collect::<Vec<_>>()
     );
     let text = fixture
         .command()
-        .args(["verify", "player/ready"])
-        .output()
+        .args(["verify", "--wait", "player/ready"])
+        .record_output()
         .unwrap();
     assert!(text.status.success());
     assert!(String::from_utf8_lossy(&text.stdout).contains("(derived)"));
@@ -446,7 +462,10 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         fixture.declare("art", vec![runtime(&command)]);
         fixture.declare("player", vec![dependency(&["art"])]);
         let options = VerifyOptions {
-            ignore_gates: Some(true),
+            modes: artifactize_core::runs::RunModes {
+                speculate: true,
+                defer_human: false,
+            },
             reuse_only: if reuse_only {
                 std::collections::BTreeSet::from([ProfileKind::Runtime])
             } else {
@@ -474,7 +493,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         let text = fixture
             .command()
             .args(["status", "player/ready", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         let status: Value = serde_json::from_slice(&text.stdout).unwrap();
         let derived = status["evals"]
@@ -522,11 +541,10 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     );
     fixture.declare("player", vec![dependency(&["art"])]);
     let options = VerifyOptions {
-        wait_timeout: Duration::from_millis(10),
         ..Default::default()
     };
     let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status().as_str(), "INCOMPLETE");
+    assert_eq!(run.run.status().as_str(), "RUNNING");
     assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     assert_eq!(
         run.requests[0]
@@ -543,10 +561,10 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     let review = fixture
         .command()
         .args(["review", run.requests[0].id.as_str(), "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(!review.status.success());
-    let receipts = store::Receipts::open(&fixture.state, &fixture.repo)
+    let receipts = store::OwnedReceipts::open(&fixture.state, &fixture.repo)
         .await
         .unwrap();
     assert!(
@@ -586,7 +604,8 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     );
     let next = fixture.verify(&VerifyOptions::default()).await;
     assert_eq!(next.requests[0].status().as_str(), "GREEN");
-    // The original Run is historical; it is not rewritten by the later derivation.
+    // The original owned Run continues and derives the newly submitted evidence.
+    owned_run::terminal(&fixture.state, &run.run.id).await;
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
@@ -594,7 +613,14 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
             .requests[0]
             .status()
             .as_str(),
-        "WAIT_DEPENDENCY"
+        "GREEN"
+    );
+    let root = fixture._root.path().to_owned();
+    drop(receipts);
+    drop(fixture);
+    assert!(
+        !root.exists(),
+        "completed dependency Runs and their review writer release temporary state"
     );
 }
 
@@ -605,7 +631,7 @@ async fn dependency_chains_derive_without_job_or_execution_budget() {
     fixture.declare("mid", vec![dependency(&["basis"])]);
     fixture.declare("player", vec![dependency(&["mid"])]);
     let options = VerifyOptions {
-        jobs: 1,
+        jobs: Some(1),
         max_executions: Some(0),
         reuse_only: std::collections::BTreeSet::from([ProfileKind::Dependency]),
         ..Default::default()
@@ -648,13 +674,14 @@ async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
         .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_offline-fixture")
         .args([
             "verify",
+            "--wait",
             "player/ready",
             "--reuse-only",
             "dependency",
             "--force",
             "--json",
         ])
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -670,16 +697,17 @@ async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
         .env("ARTIFACTIZE_REMOTE", &remote.url)
         .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_offline-fixture")
         .args(["status", "player/ready", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(status.status.success());
     assert!(remote.requests().is_empty());
-    let db = Connection::open(fixture.state.join(store::DATABASE)).unwrap();
-    assert_eq!(
-        db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
-            .get::<_, i64>(0))
-            .unwrap(),
-        0
+    assert!(cache::list(&fixture.state, true).await.unwrap().is_empty());
+    assert!(
+        run["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|request| { request["executionId"].is_null() && request["key"].is_null() })
     );
 }
 
@@ -710,29 +738,33 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         graph.evaluate(&cancelled).evals["player/ready"].status,
         EvalStatus::Wait
     );
-    let mut slow = runtime(&support::os::shell());
-    slow["profile"]["args"] = json!(["-c", format!("touch started; {}", support::os::LINGERING)]);
+    let script = fixture._root.path().join("controlled.py");
+    support::os::write_python_script(
+        &script,
+        "import pathlib,time\npathlib.Path('started').write_text('runtime-started')\nwhile True: time.sleep(0.01)\n",
+    );
+    let mut slow = runtime(support::os::python_program());
+    slow["profile"]["args"] = json!(["-I", support::os::path_text(&script)]);
     fixture.write(
         "art",
         json!({"name":"art","fingerprint":false,"evals":[slow]}),
     );
     let token = CancellationToken::new();
-    let cancel = token.clone();
     let started = fixture.repo.join("art/started");
-    let cancellation = async move {
+    let cancellation = async {
         tokio::time::timeout(support::os::patience(Duration::from_secs(10)), async {
-            while !started.exists() {
+            while fs::read_to_string(&started).ok().as_deref() != Some("runtime-started") {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
         .expect("runtime started");
-        cancel.cancel();
+        support::runs::cancel_active(&fixture.state, &fixture.repo);
     };
     let selection = Fixture::selection();
     let options = VerifyOptions::default();
     let (run, ()) = tokio::join!(
-        project::verify(
+        support::runs::record(
             &fixture.repo,
             Some(&fixture.state),
             &selection,
@@ -755,19 +787,25 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
 }
 
 #[tokio::test]
-async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations() {
+async fn speculation_preserves_dependency_verdict_and_final_obligations() {
     let fixture = Fixture::new();
     fs::create_dir_all(&fixture.repo).unwrap();
     support::declaration::write(
         fixture.repo.join("index.artf"),
-        json!({"name":"root","basis":true,"review_policy":{"dependency_gates":"ignore"}})
-            .to_string(),
+        json!({"name":"root","basis":true}).to_string(),
     )
     .unwrap();
     fixture.declare("art", vec![runtime(&support::os::false_program())]);
     fixture.declare("player", vec![dependency(&["art"])]);
-    let run = fixture.verify(&VerifyOptions::default()).await;
-    assert!(run.run.ignore_gates);
+    let run = fixture
+        .verify(&VerifyOptions {
+            modes: artifactize_core::runs::RunModes {
+                speculate: true,
+                defer_human: false,
+            },
+            ..Default::default()
+        })
+        .await;
     assert_eq!(run.requests[0].status().as_str(), "BLOCKED");
     assert_eq!(
         serde_json::to_value(&run.run.validation).unwrap()["satisfied"],
@@ -782,7 +820,7 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
     let text = fixture
         .command()
         .args(["status", "player/ready"])
-        .output()
+        .record_output()
         .unwrap();
     let text = String::from_utf8_lossy(&text.stdout);
     assert!(text.contains("player/ready: BLOCKED — derive"));
@@ -798,7 +836,6 @@ fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
     fixture.declare("player", vec![dependency(&["art"])]);
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
-    assert_eq!(graph.components().len(), 1);
     let evidence = std::collections::BTreeMap::from([(
         "art/check".parse().unwrap(),
         Evidence::Current(Verdict::Green),
@@ -825,15 +862,15 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
         json!({"name":"basis","basis":true,"mounts":{"leaf":"leaf"}}),
     );
     fixture.declare("player", vec![dependency(&["basis"])]);
-    for command in ["verify", "status"] {
-        let output = fixture
-            .command()
-            .args([command, "player/ready", "--json"])
-            .output()
-            .unwrap();
+    for args in [
+        &["verify", "--wait", "player/ready", "--json"][..],
+        &["status", "player/ready", "--json"][..],
+    ] {
+        let output = fixture.command().args(args).record_output().unwrap();
         assert!(
             output.status.success(),
-            "{command}: {}",
+            "{}: {}",
+            args[0],
             String::from_utf8_lossy(&output.stdout)
         );
     }
@@ -848,8 +885,8 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
     );
     let output = fixture
         .command()
-        .args(["verify", "player", "--json"])
-        .output()
+        .args(["verify", "--wait", "player", "--json"])
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -880,8 +917,8 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
         }
         let output = fixture
             .command()
-            .args(["verify", "--all", "--profile", "fast", "--json"])
-            .output()
+            .args(["verify", "--wait", "--all", "--profile", "fast", "--json"])
+            .record_output()
             .unwrap();
         assert!(
             output.status.success(),
@@ -900,7 +937,7 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
             let output = fixture
                 .command()
                 .args([command, "--all", "--profile", "missing", "--json"])
-                .output()
+                .record_output()
                 .unwrap();
             assert!(!output.status.success());
             let error: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -914,7 +951,7 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
         let status = fixture
             .command()
             .args(["status", "--all", "--profile", "fast", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert!(
             status.status.success(),
@@ -924,8 +961,15 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
         if derived {
             let output = fixture
                 .command()
-                .args(["verify", "player/ready", "--profile", "fast", "--json"])
-                .output()
+                .args([
+                    "verify",
+                    "--wait",
+                    "player/ready",
+                    "--profile",
+                    "fast",
+                    "--json",
+                ])
+                .record_output()
                 .unwrap();
             assert!(
                 output.status.success(),
@@ -935,7 +979,7 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
             let output = fixture
                 .command()
                 .args(["status", "player/ready", "--profile", "fast", "--json"])
-                .output()
+                .record_output()
                 .unwrap();
             assert!(
                 output.status.success(),

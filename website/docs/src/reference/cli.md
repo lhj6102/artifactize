@@ -8,7 +8,8 @@ policy, budgets, selection files and profile variants.
 Every command accepts the common options `--repo PATH` (default: the current
 directory), `--state-dir PATH` (default: the state home below) and `--json`, before
 or after the subcommand, at most once each; commands that do not read a repository
-or state ignore them, except `monitor` and `review` (which reject `--json`).
+or state ignore them, except `monitor` and `review` (which reject `--json`). `mcp` always emits
+JSON-RPC protocol on stdout, even with `--json`; startup errors go to stderr.
 Current-directory tool output is unchanged by `--json`; it is already text or JSON
 as listed below. After the program operand of `tools help`, trailing flags belong
 to that program, not artifactize.
@@ -19,11 +20,13 @@ to that program, not artifactize.
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--timeout-ms MS` (600000), `--reuse-only KINDS` | text or JSON | outcome |
-| `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
+| `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
+| `mcp` | | [MCP stdio protocol](mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
 | `config graph [ARTIFACT]` | | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
+| `run cancel RUN_ID` | | cancellation acknowledgement JSON | 0 |
 | `run show RUN_ID` | `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | JSON | 0; outcome with `--wait` |
 | `request list` | `--run RUN_ID` | text or JSON | 0 |
 | `request show ID` | | JSON | 0 |
@@ -53,7 +56,7 @@ to that program, not artifactize.
 | `models openai\|anthropic\|codex` | | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
-| `monitor` | `--all` (not with `--repo`) | terminal UI | 0 |
+| `monitor [PATH]` | starts on ALL; PATH or `--repo PATH` selects only the initial repository; `--all` conflicts with a path | terminal UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH` (a `repo:` search term), `--all` (the default; not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
 | `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
 | `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
@@ -61,13 +64,15 @@ to that program, not artifactize.
 | `server token revoke NAME` | `--purge` | JSON (also without `--json`) | 0 |
 | `server rm KEY` | | JSON | 0 |
 
-Run outcome codes (`verify`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
-cancelled, 3 Human wait timeout, 4 INCOMPLETE. `run show --wait` follows a RUNNING
+Run outcome codes (`verify --wait`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
+cancelled, 4 INCOMPLETE, 5 SIGNOFFS_PENDING (only sign-offs remain, not approval). Plain `verify` exits 0 on acceptance, not validation.
+Ctrl-C stops a watcher with exit 130; closing it never cancels the Run. `run show --wait` follows a RUNNING
 Run until it finishes; when its own timeout expires first it prints the current
 Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
 (unknown, repeated, conflicting or missing options and values) and operational
-errors: text on stderr, or `{"error":"..."}` on stdout with `--json`. There is no
-`plan`, `history`, `run cancel` or `--full`.
+errors: text on stderr, or `{"error":"..."}` on stdout with `--json` (except
+`mcp`, whose stdout remains protocol-only). There is no
+`plan`, `history` or `--full`.
 
 Run/request ID arguments (including `request list --run` and `review REQUEST_ID`)
 are validated before reading state: 1–200 ASCII letters, digits, `-`, `_` or `.`,
@@ -92,15 +97,73 @@ changed; `--json` prints `{"reference","sessionId","requestId","send","filesChan
 Both exit 2 for a reference to another machine or state, a session the GC removed, one
 that was not saved, a request that is still running (`send`), and a failed follow-up.
 
-Commands that read or write the state refuse a database written by an earlier
-artifactize with exit 2, without migrating it ([State](state-cache-limits.md#state)).
-`doctor` is the exception: it reports an incompatible schema as a hard error in its
-normal text or JSON report and exits 1.
+Commands opening an existing state apply supported additive schema upgrades with write
+access. Schema 6 upgrades to 7 while preserving Runs, cache and Human approvals;
+unsupported earlier and newer versions are refused ([State](state-cache-limits.md#state)).
+`doctor` reports an incompatible schema as a hard error and exits 1.
+
+## Submission and watching
+
+**Breaking change:** plain `verify` is submit-only. Scripts/CI requiring the old validation
+exit codes must add `--wait`. Its JSON is `{"run":"run-…","state":"preparing"}`
+(the state may already have advanced); only `verify --wait --json` renders the full final
+saved Run. `--wait` has no Human timeout and all eval kinds follow Run settlement.
+
+`--request-key KEY` accepts 1–128 ASCII letters/digits/`._:-`. Repeating a key for the same
+canonical repository returns its original Run without changing the accepted scope/options
+or re-executing it, even after checkout changes. Omitting the key always creates a new Run.
+
+```sh
+artifactize verify --all --request-key build-42
+artifactize run show RUN_ID --wait
+artifactize run cancel RUN_ID
+```
+
+Cancellation acknowledges intent; inspect the Run for its eventual outcome after cleanup.
+Repeated cancellation and cancellation after completion are safe. Only explicit cancel
+stops execution; terminal closure and watcher interruption stop observation only.
+
+## Verify modes
+
+`--speculate` and `--defer-human` are independent per-request switches, both off
+by default. The accepted Run records `modes: {speculate, defer_human}`; a retry
+with the same `--request-key` retains the first request's modes.
+
+| Modes | Dispatch and settlement |
+|---|---|
+| Neither | Wait for dependency GREEN evidence; the owned Run waits for people |
+| `--defer-human` | Wait for machine gates; run past deferrable sign-offs provisionally |
+| `--speculate` | Start all requested kinds before unresolved gates; wait for people |
+| Both | Start machine reviews speculatively; ask for deferrable sign-offs last |
+
+Speculation respects `--jobs`, backend capacity and `--max-executions`. Ready,
+unblockable work is dispatched first, longest remaining dependency paths next,
+with selection order breaking ties. Speculative work uses leftover capacity and
+is cancelled first when ready work needs that capacity; redispatch consumes
+another executor start. An upstream RED or ERROR cancels its transitive blocked
+work: runtime process groups, Agent reviews and their tool sessions end, Human
+requests are withdrawn, and not-started requests never start. Those requests end
+BLOCKED with no cancelled result eligible for reuse. An upstream GREEN retains
+speculative results: fingerprints cover files, not upstream verdicts.
+
+With `--defer-human`, pending deferrable Human gates count as passing **for
+execution**, never for final approval. Human requests are recorded as DEFERRED
+only after their Artifact's machine evals finish and nothing blocks them.
+Dependent results are PROVISIONAL. When every machine obligation passes and only
+these sign-offs remain, the Run ends SIGNOFFS_PENDING; `--wait` returns 5.
+Missing results, exhausted budgets, RED and ERROR retain their ordinary outcomes.
+`gate = "blocking"` on an eval retains its pending Human gate and the owned Run
+waits for it. CI's `--reuse-only agent,human` remains strict even with these flags.
+
+A later Human GREEN reruns nothing: the next `verify` reuses machine evidence and
+the sign-off and is SATISFIED, provided its fingerprints enable reuse and are
+unchanged. A RED blocks dependents on the next verification. Completed Runs remain
+historical records; submission does not restart them.
 
 ## Runtime CLI
 
 ```sh
-cargo run -q -p artifactize -- --repo crates/artifactize-core/tests/fixtures/runtime verify --all
+cargo run -q -p artifactize -- --repo crates/artifactize-core/tests/fixtures/runtime verify --all --wait
 cargo run -q -p artifactize -- run show RUN_ID
 ```
 
@@ -109,9 +172,9 @@ ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
 
 [Runs, status and validation](../concepts/runs-and-status.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
-Root `review_policy.dependency_gates` defaults to `green`; `ignore` enables bypass.
-The library's `project::VerifyOptions.ignore_gates` can explicitly override either
-policy, including `Some(false)` to enforce gates. `--force` marks only explicitly
+Gate bypass is removed: `--ignore-gates`, `VerifyOptions.ignore_gates` and
+`review_policy.dependency_gates` are no longer accepted. Choose the two
+per-request verify modes instead. Old saved keys are ignored on read; no state migration is needed for removal. `--force` marks only explicitly
 selected executable evals for a fresh review, not recursive dependencies; it
 neither expands
 the execution scope nor bypasses gates. Runs record the resolved policy and each
@@ -119,13 +182,15 @@ request's force flag. Forced evals never read or join cached results or live
 executions; a forced GREEN or RED is added as the key's newest record, and
 published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
-Dependency evals are always derived, never forced. Gate bypass changes neither
-their requirements nor their derived verdict.
+Dependency evals are always derived, never forced. Speculation and deferral never waive
+their final requirements.
 
-`--jobs N` bounds the evals one `verify` runs at once. Agent reviews are further
+There is no default eval-concurrency cap: every READY eval starts as soon as it is
+ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it
+then bounds the evals of this Run. Agent reviews are still
 bounded machine-wide per backend by `$STATE/limits.json`
 ([Backend capacity](state-cache-limits.md#backend-capacity)); a request waiting for a backend slot
-holds no job slot and no executor start.
+holds no optional `--jobs` slot and no executor start.
 
 `--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
 fingerprints are computed at once; the default is the number of CPUs available to
@@ -135,7 +200,8 @@ Results and output do not depend on the bound or on completion order.
 
 `verify --max-executions N` sets a nonnegative, shared per-Run executor-start
 budget (unlimited when omitted); it is not an Artifact declaration field.
-The Run records `jobs`, `fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
+The Run records an explicit `jobs` cap (the field is absent when unlimited),
+`fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
 later returns ERROR. Human waiting, claim and tool actions and dependency
 derivation consume no starts. Fingerprint preparation/rechecks, cache hits, and
@@ -149,13 +215,12 @@ leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
 error. There are no reservations, refunds, admission pools or restart ledger.
 
-`verify` waits for Human results as it waits for runtime and Agent evals: while a
-Human request of the Run waits, the Run stays RUNNING, and a submission resumes the
+The artifactize-owned Run waits for Human results as for runtime and Agent evals:
+while a Human request waits, the Run stays RUNNING, and a submission resumes the
 evals that depend on it in the same Run
-([Human reviews](../guides/human-reviews.md)). `--timeout-ms MS` (1–2147483647,
-default 600000) bounds the wait. When it expires, the Run ends INCOMPLETE with
-`waitTimedOut: true` and exit 3; the waiting requests stay open for submission,
-and running evals are never interrupted.
+([Human reviews](../guides/human-reviews.md)). There is no Human wait timeout:
+plain verify submits, and `--wait` observes until the Run ends. An observer's
+interruption never cancels the Run; use `run cancel RUN_ID` explicitly.
 
 Selection files must be regular files no larger than 4 MiB, containing a JSON
 string array or one trimmed ID per line (UTF-8 BOM and CRLF are accepted). They
@@ -195,7 +260,7 @@ configured. When there is none, the eval is not executed: no executor start, no
 provider call, no Human request, and no waiting, not even for a live execution of
 the key. A forced eval reads no cached result, so `--force` on a listed kind never
 executes it. Unlisted kinds run as usual. In CI,
-`artifactize verify --all --reuse-only agent,human` runs the tests and takes every
+`artifactize verify --all --wait --reuse-only agent,human` runs the tests and takes every
 review from the cache or the store ([CI](../guides/ci.md)).
 
 An eval that was not executed is reported `STALE`, with the reason in its
@@ -228,7 +293,7 @@ Human requirements produce WAIT_DEPENDENCY; fulfilled requirements produce GREEN
 rows from the Run's saved evidence and current request states; Detail's `Waits for`
 section lists the upstream Artifacts and their completion state (`w` shows pending evals).
 Tags appear on Artifact entries in text/JSON graph and status, and in the monitor.
-JSON graph/status and saved definitions also carry `kind` (`file` or `folder`)
+JSON graph/status and saved definitions also carry `kind` (`file`, `folder` or `graph`)
 and the workspace-relative target `path`. Text graph/status mark file Artifacts
 and show their paths; the monitor shows `[file]` in the tree and the path in Detail.
 
@@ -238,7 +303,7 @@ See [Dependency evals](declarations.md#dependency-evals).
 
 ## Saved Run evidence and terminal views
 
-`run show RUN_ID --json` and `verify --json` include top-level `evidence` when
+`run show RUN_ID --json` and `verify --wait --json` include top-level `evidence` when
 nonempty. Run fields are flattened into the output object, without a `run` wrapper.
 It maps qualified eval IDs to saved verdicts used without a request in this Run,
 such as cached upstream evidence in a partial Run. It is not the latest global

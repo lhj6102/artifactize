@@ -1,3 +1,5 @@
+# Version tags build and publish release artifacts after the dev-to-main PR gates.
+# Release verification belongs to CI and Binaries, not a duplicate tag-time test job.
 name: Release
 
 # Pushing a version tag releases it; the tag is the version, so no release needs a
@@ -5,10 +7,10 @@ name: Release
 #
 #   git tag v0.5.4 && git push origin v0.5.4
 #
-# 1. The tests and the Linux builds run at the same time.
-# 2. Once both pass, publish creates the GitHub release with the Linux archives and
+# 1. The Linux release builds run after reading the tag.
+# 2. Once they pass, publish creates the GitHub release with the Linux archives and
 #    their .sha256 checksums, so install.sh serves the new version, then publishes the
-#    crate to crates.io. A failed test or Linux build publishes nothing.
+#    crate to crates.io. A failed Linux build publishes nothing.
 # 3. The Windows zip and both macOS tarballs build alongside and are attached when
 #    ready. Until v1 they are best effort: they never delay or fail the release.
 #
@@ -48,20 +50,6 @@ jobs:
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >>"$GITHUB_OUTPUT"
 
-  test:
-    name: Tests
-    needs: plan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      # Shares ci.yml's cache, which pushes to main keep warm.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: linux
-          save-if: false
-      - run: cargo test --locked
-
   linux:
     needs: plan
     uses: ./.github/workflows/binaries.yml
@@ -84,7 +72,7 @@ jobs:
       platform: macos
 
   publish:
-    needs: [plan, test, linux]
+    needs: [plan, linux]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -124,7 +112,7 @@ jobs:
       - uses: rust-lang/crates-io-auth-action@v1
         if: env.PRERELEASE == 'false'
         id: auth
-      # The tests and the release builds already passed, so skip the verification
+      # PR verification and the release builds already passed, so skip the verification
       # build. --allow-dirty: the version was set in this checkout.
       - name: Publish to crates.io
         if: env.PRERELEASE == 'false'

@@ -3,7 +3,7 @@
   // dropdown. ↑/↓ choose a suggestion, Tab or Enter take it, Esc closes the dropdown, then
   // clears the query, then leaves for the list. Keys mid-composition belong to the input method.
   import type { Completion } from "../ipc/client";
-  import { SearchFieldState, setSearchFieldState } from "./searchField.svelte";
+  import { SearchFieldState, setSearchFieldState } from "./search-field-state.svelte";
   import { composing } from "../shell/keys";
 
   let {

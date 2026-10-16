@@ -1,0 +1,8 @@
+{
+  "name": "artifactize-desktop-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint --no-inline-config . && tsc -p ."
+  }
+}

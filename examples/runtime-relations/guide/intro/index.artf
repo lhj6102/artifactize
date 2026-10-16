@@ -1,5 +1,4 @@
 name = "intro"
-fingerprint = {}
 
 [evals.heading]
 title = "The page has a top-level heading"

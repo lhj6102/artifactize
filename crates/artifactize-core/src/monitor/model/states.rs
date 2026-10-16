@@ -22,6 +22,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Executed,
+    Provisional,
     Reused,
     Derived,
     /// A saved result the Run used for an eval it has no request for.
@@ -31,7 +32,9 @@ pub enum Source {
 /// Why a queued eval has not started although nothing upstream holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Queue {
-    /// Waiting for one of the Run's `--jobs`.
+    /// Ready, waiting for scheduler admission without a Run cap.
+    Ready,
+    /// Waiting for the Run's explicitly chosen `--jobs` cap.
     Jobs,
     /// Waiting for a backend slot (limits.json); holds the backend name.
     Slot(crate::config::Backend),
@@ -334,7 +337,6 @@ pub(super) struct States<'a> {
     pub derivations: std::cell::Cell<usize>,
     pub index: Index<'a>,
     pub running: bool,
-    ignore_gates: bool,
     views: RefCell<HashMap<&'a EvalId, Option<EvalView>>>,
     effective: RefCell<HashMap<&'a EvalId, Option<EvalStatus>>>,
     completions: RefCell<HashMap<&'a ArtifactName, Completion>>,
@@ -352,7 +354,6 @@ impl<'a> States<'a> {
             derivations: std::cell::Cell::new(0),
             index: Index::new(saved),
             running: run.status() == RunStatus::Running,
-            ignore_gates: run.ignore_gates,
             views: RefCell::new(HashMap::new()),
             effective: RefCell::new(HashMap::new()),
             completions: RefCell::new(HashMap::new()),
@@ -484,7 +485,7 @@ impl<'a> States<'a> {
         status
     }
 
-    /// `Graph::evaluate_with_policy` over the saved snapshot: gate readiness first, then
+    /// `Graph::evaluate` over the saved snapshot: gate readiness first, then
     /// the eval's own evidence.
     fn evaluate(&self, eval: &'a EvalId) -> EvalStatus {
         let request = self.request(eval).map(|view| &view.request);
@@ -496,20 +497,20 @@ impl<'a> States<'a> {
             return EvalStatus::Error;
         }
         let mut unmet = Vec::new();
-        if derived || !self.ignore_gates {
+        {
             for artifact in self.upstream(eval) {
                 for &gate in self.evals(artifact) {
                     let status = self.effective(gate);
-                    if status != EvalStatus::Green {
+                    if !status.passes_gate() {
                         unmet.push(status);
                     }
                 }
             }
         }
-        if unmet
-            .iter()
-            .any(|status| matches!(status, EvalStatus::Red | EvalStatus::Blocked))
-        {
+        if unmet.iter().any(|status| {
+            matches!(status, EvalStatus::Red | EvalStatus::Blocked)
+                || (self.run.modes.speculate && *status == EvalStatus::Error)
+        }) {
             return EvalStatus::Blocked;
         }
         if !unmet.is_empty() {
@@ -519,6 +520,8 @@ impl<'a> States<'a> {
             return EvalStatus::Green;
         }
         match status {
+            Some(RequestStatus::Deferred) => EvalStatus::Deferred,
+            Some(RequestStatus::Provisional) => EvalStatus::Provisional,
             Some(RequestStatus::Green) => EvalStatus::Green,
             Some(RequestStatus::Red) => EvalStatus::Red,
             Some(RequestStatus::Error) => EvalStatus::Error,
@@ -528,6 +531,12 @@ impl<'a> States<'a> {
     }
 
     /// Every eval of the Artifact is effectively GREEN: it fulfils downstream gates.
+    fn gate_met(&self, artifact: &ArtifactName) -> bool {
+        self.evals(artifact)
+            .iter()
+            .all(|eval| self.effective(eval).passes_gate())
+    }
+
     fn met(&self, artifact: &ArtifactName) -> bool {
         self.evals(artifact)
             .iter()
@@ -548,6 +557,7 @@ impl<'a> States<'a> {
         let request = &view.request;
         let dependency = request.profile.kind() == ProfileKind::Dependency;
         match request.status() {
+            RequestStatus::Provisional => EvalView::Done(Source::Provisional),
             RequestStatus::Green => EvalView::Done(if dependency {
                 Source::Derived
             } else if crate::query::reused(request) {
@@ -558,19 +568,15 @@ impl<'a> States<'a> {
             RequestStatus::Red => EvalView::Failed { verdict: true },
             RequestStatus::Error => EvalView::Failed { verdict: false },
             RequestStatus::Running => EvalView::InProgress(Activity::Running),
-            RequestStatus::WaitingHuman => EvalView::InProgress(Activity::Human(
-                view.claim.as_ref().map(|claim| claim.reviewer.clone()),
-            )),
+            RequestStatus::WaitingHuman | RequestStatus::Deferred => EvalView::InProgress(
+                Activity::Human(view.claim.as_ref().map(|claim| claim.reviewer.clone())),
+            ),
             RequestStatus::BudgetExhausted => EvalView::NotRun(NotRun::Budget),
             RequestStatus::Stale => EvalView::NotRun(NotRun::Stale),
             RequestStatus::Queued
             | RequestStatus::WaitDependency
             | RequestStatus::Unreviewed
             | RequestStatus::Blocked => {
-                // Gate bypass changes ordinary readiness; derived verdicts still follow targets.
-                if self.ignore_gates && !dependency {
-                    return self.ready(view);
-                }
                 let unmet = self.unmet(self.upstream(eval));
                 let blocking: Vec<_> = unmet
                     .iter()
@@ -579,6 +585,9 @@ impl<'a> States<'a> {
                     .collect();
                 if !blocking.is_empty() {
                     return EvalView::BlockedBy(blocking);
+                }
+                if self.run.modes.speculate && !dependency {
+                    return self.ready(view);
                 }
                 if !unmet.is_empty() {
                     let waits = Waits {
@@ -610,8 +619,10 @@ impl<'a> States<'a> {
                 Queue::Slot(backend)
             } else if request.execution_id.is_some() {
                 Queue::Joined
-            } else {
+            } else if self.run.jobs.is_some() {
                 Queue::Jobs
+            } else {
+                Queue::Ready
             },
         ))
     }
@@ -620,7 +631,7 @@ impl<'a> States<'a> {
     pub fn unmet(&self, artifacts: &[&'a ArtifactName]) -> Vec<crate::types::ArtifactName> {
         let mut unmet: Vec<_> = artifacts
             .iter()
-            .filter(|artifact| !self.met(artifact))
+            .filter(|artifact| !self.gate_met(artifact))
             .map(|artifact| (*artifact, self.completion(artifact)))
             .collect();
         unmet.sort_by_key(|(artifact, completion)| (completion.rank(), self.position(artifact)));
@@ -682,9 +693,10 @@ impl<'a> States<'a> {
 
     /// The graph's Blocked readiness downstream: an effective RED or blocked eval.
     fn blocks(&self, artifact: &ArtifactName) -> bool {
-        self.evals(artifact)
-            .iter()
-            .any(|eval| matches!(self.effective(eval), EvalStatus::Red | EvalStatus::Blocked))
+        self.evals(artifact).iter().any(|eval| {
+            matches!(self.effective(eval), EvalStatus::Red | EvalStatus::Blocked)
+                || (self.run.modes.speculate && self.effective(eval) == EvalStatus::Error)
+        })
     }
 
     /// Done evals whose own gates are unmet: the Artifacts holding them back.

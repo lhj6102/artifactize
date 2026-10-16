@@ -1,18 +1,18 @@
 use super::*;
 use crate::{
     monitor::{Action, Pane},
-    store::{Receipts, Run},
+    store::{OwnedReceipts, Run},
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
-use std::{fs, sync::Arc};
+use std::fs;
 
-async fn fixture(count: usize) -> (tempfile::TempDir, Receipts, Monitor) {
+async fn fixture(count: usize) -> (tempfile::TempDir, OwnedReceipts, Monitor) {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     for n in 0..count {
         let saved = json!({
             "id":format!("run-{n}"),"repoPath":repo,"stateDir":state,"status":"GREEN",
@@ -24,6 +24,84 @@ async fn fixture(count: usize) -> (tempfile::TempDir, Receipts, Monitor) {
     }
     (root, receipts, Monitor::new(state, None))
 }
+#[tokio::test]
+async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_every_exit() {
+    use futures_util::FutureExt;
+
+    enum Exit {
+        Quit,
+        Error,
+        Unwind,
+    }
+    // A watchdog diagnoses stuck cleanup; channel handoffs establish ordering.
+    const SHUTDOWN_BOUND: std::time::Duration = std::time::Duration::from_secs(6);
+    for exit in [Exit::Quit, Exit::Error, Exit::Unwind] {
+        let (root, receipts, mut monitor) = fixture(1).await;
+        drop(receipts);
+        let database = monitor.state.join(crate::store::DATABASE);
+        let changes = crate::changes::Subscription::new(&monitor.state).await;
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (release_snapshot, snapshot_gate) = std::sync::mpsc::channel();
+        let snapshot = monitor
+            .start_refresh_after(true, false, move || {
+                started.send(()).unwrap();
+                snapshot_gate.recv().unwrap();
+            })
+            .unwrap();
+        ready.await.unwrap();
+        let (session_root, source) = crate::test_session_files::fixture();
+        let mut live = crate::monitor::session::Live::new(1, source);
+        live.geometry(80, 10);
+        let mut job = live.job().unwrap();
+        let (release_session, session_gate) = std::sync::mpsc::channel();
+        let session = tokio::task::spawn_blocking(move || {
+            session_gate.recv().unwrap();
+            let window = job.reader.step(job.width, job.height, job.position);
+            (job, window)
+        });
+        let held = fs::File::open(&database).unwrap();
+        let jobs = crate::jobs::Jobs {
+            action: Some(Box::pin(async move {
+                // Accepted work, not a timer, releases both blocking reads during shutdown.
+                release_snapshot.send(()).unwrap();
+                release_session.send(()).unwrap();
+                drop(held);
+                crate::review::Outcome::Released {
+                    ids: Vec::new(),
+                    quit: true,
+                    failed: Vec::new(),
+                }
+            })),
+            snapshot: Some(snapshot),
+            session: Some(session),
+        };
+        let result: std::thread::Result<Result<(), String>> = match exit {
+            Exit::Quit => Ok(Ok(())),
+            Exit::Error => Ok(Err("terminal fixture error".into())),
+            Exit::Unwind => Err(Box::new("terminal fixture panic")),
+        };
+        let finished = tokio::time::timeout(
+            crate::test_os::patience(SHUTDOWN_BOUND),
+            std::panic::AssertUnwindSafe(jobs.finish(result, changes)).catch_unwind(),
+        )
+        .await
+        .expect("terminal work must finish");
+        match exit {
+            Exit::Quit => assert_eq!(finished.unwrap(), Ok(())),
+            Exit::Error => assert_eq!(finished.unwrap(), Err("terminal fixture error".into())),
+            Exit::Unwind => assert_eq!(
+                finished.unwrap_err().downcast_ref::<&str>(),
+                Some(&"terminal fixture panic")
+            ),
+        }
+        drop(live);
+        drop(monitor);
+        assert!(crate::test_os::database_released(&database).unwrap());
+        root.close().unwrap();
+        session_root.close().unwrap();
+    }
+}
+
 #[tokio::test]
 async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolete_selection() {
     let (_root, _receipts, mut monitor) = fixture(2).await;
@@ -37,61 +115,78 @@ async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolet
             gate.recv().unwrap();
         })
         .unwrap();
-    ready.await.unwrap();
+    let ready = ready.await;
     // No timers: the worker cannot proceed until after the input assertions finish.
-    assert!(monitor.start_refresh(true, false).is_none());
-    assert_eq!(monitor.key(KeyEvent::from(KeyCode::Down)), Action::Refresh);
-    assert_eq!(monitor.open.as_deref(), Some("run-0"));
-    assert_eq!(
-        monitor.key(KeyEvent::from(KeyCode::Char('q'))),
-        Action::Quit
-    );
-    release.send(()).unwrap();
-    assert!(
-        !monitor
-            .finish_refresh(crate::task::joined(job.await).unwrap())
-            .await
-    );
+    // Join even if an input assertion panics: its loader still owns the fixture database.
+    let assertions = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ready.unwrap();
+        assert!(monitor.start_refresh(true, false).is_none());
+        assert_eq!(monitor.key(KeyEvent::from(KeyCode::Down)), Action::Refresh);
+        assert_eq!(monitor.open.as_deref(), Some("run-0"));
+        assert_eq!(
+            monitor.key(KeyEvent::from(KeyCode::Char('q'))),
+            Action::Quit
+        );
+    }));
+    let released = release.send(());
+    let completed = crate::task::joined(job.await);
+    if let Err(panic) = assertions {
+        drop(completed);
+        std::panic::resume_unwind(panic);
+    }
+    released.unwrap();
+    assert!(!monitor.finish_refresh(completed.unwrap()).await);
     assert_eq!(monitor.open.as_deref(), Some("run-0"));
     monitor.refresh().await;
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-0");
+    monitor.focus = Pane::Artifacts;
+    let shown = tests::sized(&mut monitor, 200, 40);
+    assert!(shown.contains("Run run-0"), "{shown}");
+    assert!(!shown.contains("Run run-1"), "{shown}");
 }
 #[tokio::test]
 async fn page_edges_remain_bounded_and_the_selected_run_is_pinned_without_prefix_growth() {
     let (_root, receipts, mut monitor) = fixture(9).await;
     monitor.limit = 2;
     monitor.refresh().await;
-    assert_eq!(
-        monitor
-            .runs
-            .iter()
-            .map(|run| run.id.as_str())
-            .collect::<Vec<_>>(),
-        ["run-8", "run-7"]
-    );
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (2)", "run-8", "run-7"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert!(!shown.contains("run-6"), "{shown}");
     monitor.key(KeyEvent::from(KeyCode::Down));
     monitor.key(KeyEvent::from(KeyCode::Down));
     monitor.refresh().await;
-    assert_eq!(monitor.offset, 2);
-    assert_eq!(monitor.runs.len(), 2);
-    assert_eq!(monitor.open.as_deref(), Some("run-6"));
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (2)", "run-6", "run-5"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert!(!shown.contains("run-8"), "{shown}");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-6");
     monitor.key(KeyEvent::from(KeyCode::Up));
     monitor.refresh().await;
-    assert_eq!(monitor.offset, 0);
-    assert_eq!(monitor.open.as_deref(), Some("run-7"));
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (2)", "run-8", "run-7"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert!(!shown.contains("run-5"), "{shown}");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-7");
     let mut newest = monitor.run.as_ref().unwrap().0.run.clone();
     newest.id = "run-new".parse().unwrap();
     receipts.create_run(&newest, &[]).await.unwrap();
     monitor.refresh().await;
-    assert_eq!(monitor.limit, 2);
-    assert_eq!(monitor.runs.len(), 3);
-    assert_eq!(monitor.open.as_deref(), Some("run-7"));
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (3)", "run-new", "run-7"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-7");
     for _ in 0..4 {
         monitor.focus = Pane::Runs;
         monitor.select_run(monitor.runs.len() - 1);
         monitor.key(KeyEvent::from(KeyCode::Down));
-        monitor.refresh().await;
-        assert!(monitor.runs.len() <= 3);
+        let job = monitor.start_refresh(true, false).unwrap();
+        let completed = crate::task::joined(job.await).unwrap();
+        assert!(completed.result.as_ref().unwrap().runs.len() <= 3);
+        assert!(monitor.finish_refresh(completed).await);
     }
 }
 #[tokio::test]
@@ -99,7 +194,6 @@ async fn unrelated_writes_keep_the_selected_tree_and_detail_and_resync_forces_a_
     let (_root, receipts, mut monitor) = fixture(2).await;
     monitor.refresh().await;
     monitor.open_detail().await;
-    let nodes = monitor.nodes();
     let detail = monitor
         .detail
         .as_ref()
@@ -109,21 +203,30 @@ async fn unrelated_writes_keep_the_selected_tree_and_detail_and_resync_forces_a_
         .map(str::to_owned);
     let mut unrelated = monitor.run.as_ref().unwrap().0.run.clone();
     unrelated.id = "run-0".parse().unwrap();
-    unrelated.jobs += 1;
+    unrelated.jobs = Some(unrelated.jobs.unwrap_or(0) + 1);
     receipts.save_run(&unrelated).await.unwrap();
-    monitor.refresh().await;
-    assert!(Arc::ptr_eq(&nodes, &monitor.nodes()));
+    let job = monitor.start_refresh(true, false).unwrap();
+    let completed = crate::task::joined(job.await).unwrap();
+    assert!(
+        completed.result.as_ref().unwrap().selected.is_none(),
+        "the loader does not send unchanged selected Run data again"
+    );
+    assert!(monitor.finish_refresh(completed).await);
     assert_eq!(
         monitor.detail.as_ref().unwrap().detail.field("Path"),
         detail.as_deref()
     );
     let job = monitor.start_refresh(true, true).unwrap();
+    let completed = crate::task::joined(job.await).unwrap();
     assert!(
-        monitor
-            .finish_refresh(crate::task::joined(job.await).unwrap())
-            .await
+        completed.result.as_ref().unwrap().selected.is_some(),
+        "an explicit resync sends a fresh selected Run baseline"
     );
-    assert!(!Arc::ptr_eq(&nodes, &monitor.nodes()));
+    assert!(monitor.finish_refresh(completed).await);
+    assert_eq!(
+        monitor.detail.as_ref().unwrap().detail.field("Path"),
+        detail.as_deref()
+    );
 }
 
 #[tokio::test]
@@ -138,14 +241,17 @@ async fn scope_navigation_restores_the_same_cached_run_after_clearing_the_displa
         .position(|row| matches!(row.scope, Scope::Repository(_)))
         .unwrap();
     assert_eq!(monitor.select_scope(index), Action::Refresh);
-    assert!(monitor.run.is_none());
+    monitor.focus = Pane::Artifacts;
+    assert!(tests::sized(&mut monitor, 200, 40).contains("Select a Run."));
     let job = monitor.start_refresh(false, false).unwrap();
     assert!(
         monitor
             .finish_refresh(crate::task::joined(job.await).unwrap())
             .await
     );
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id, id);
+    let shown = tests::sized(&mut monitor, 200, 40);
+    assert!(shown.contains(&format!("Run {id}")), "{shown}");
+    assert!(!shown.contains("Select a Run."), "{shown}");
     // Catalog rebuilding on navigation retains its global badges and the selected scope.
     assert_eq!(monitor.catalog.selected.as_ref(), Some(&monitor.scope));
 }
@@ -154,27 +260,55 @@ async fn scope_navigation_restores_the_same_cached_run_after_clearing_the_displa
 async fn run_navigation_reuses_catalog_and_page_but_detects_a_commit_without_any_hint() {
     let (_root, receipts, mut monitor) = fixture(3).await;
     monitor.refresh().await;
-    monitor.select_run(1);
+    // Navigation gets four reads, allowing SQL refactoring while keeping it cheaper
+    // than rebuilding the catalog and page for every selection.
+    const NAVIGATION_QUERY_BUDGET: usize = 4;
+    // A committed change may reload all three views, with room for split queries;
+    // twelve reads cap snapshot work without prescribing joins or query order.
+    const COMMIT_QUERY_BUDGET: usize = 12;
+
+    assert_eq!(monitor.select_run(1), Action::Refresh);
     let job = monitor.start_refresh(false, false).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
-    assert_eq!(
-        completed.queries.len(),
-        2,
-        "Only the selected Run and joined requests are read"
+    assert!(
+        completed.queries.len() <= NAVIGATION_QUERY_BUDGET,
+        "navigation exceeded its query budget: {} > {NAVIGATION_QUERY_BUDGET}",
+        completed.queries.len()
     );
     assert!(monitor.finish_refresh(completed).await);
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-1");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-1");
+    assert_eq!(
+        monitor
+            .runs
+            .iter()
+            .map(|run| run.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run-2", "run-1", "run-0"]
+    );
+    monitor.focus = Pane::Artifacts;
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (3)", "Run run-1"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
     let mut inserted = monitor.run.as_ref().unwrap().0.run.clone();
     inserted.id = "run-new".parse().unwrap();
     receipts.create_run(&inserted, &[]).await.unwrap();
-    // No subscription/hint is involved here; data_version belongs to this exact reader.
-    monitor.select_run(2);
+    // No subscription/hint is involved here; the next navigation must see the commit.
+    assert_eq!(monitor.select_run(2), Action::Refresh);
     let job = monitor.start_refresh(false, false).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
-    assert_eq!(completed.queries.len(), 7);
+    assert!(
+        completed.queries.len() <= COMMIT_QUERY_BUDGET,
+        "commit refresh exceeded its query budget: {} > {COMMIT_QUERY_BUDGET}",
+        completed.queries.len()
+    );
     assert!(monitor.finish_refresh(completed).await);
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-0");
     assert!(monitor.runs.iter().any(|run| run.id.as_str() == "run-new"));
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-0");
+    let shown = tests::sized(&mut monitor, 200, 40);
+    for expected in ["Runs (4)", "Run run-0"] {
+        assert!(shown.contains(expected), "{shown}");
+    }
 }
 
 #[tokio::test]

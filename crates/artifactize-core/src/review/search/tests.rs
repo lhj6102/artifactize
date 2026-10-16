@@ -1,9 +1,12 @@
 use super::*;
 use serde_json::json;
 
+/// The public search page holds at most 100 requests, independent of implementation batching.
+const PAGE_REQUESTS: usize = 100;
+
 fn entry() -> Entry {
     Entry {
-        repository: "/work/artifactize".into(),
+        repository: "work/artifactize".into(),
         eval: "release/signoff".into(),
         request: "run-a-2".into(),
         reviewer: Some("bob".into()),
@@ -47,7 +50,7 @@ fn keys_restrict_a_term_to_one_field_and_terms_and_together() {
     assert!(!matches("reviewer:bob", &unclaimed));
     // Quoted values keep their spaces; a quoted word is free text even with a colon.
     let spaced = Entry {
-        repository: "/work/my repo".into(),
+        repository: "work/my repo".into(),
         ..entry.clone()
     };
     assert!(matches(r#"repo:"my repo""#, &spaced));
@@ -122,17 +125,17 @@ fn unknown_keys_values_and_empty_values_are_errors_that_name_the_choices() {
 
 #[test]
 fn a_repository_starts_from_the_default_query_with_its_term() {
-    assert_eq!(Query::text_for(None), DEFAULT);
+    assert_eq!(Query::text_for(None), "kind:human status:waiting_human");
     assert_eq!(
-        Query::text_for(Some(Path::new("/work/my repo"))),
-        r#"kind:human status:waiting_human repo:"/work/my repo""#
+        Query::text_for(Some(Path::new("work/my repo"))),
+        r#"kind:human status:waiting_human repo:"work/my repo""#
     );
     assert!(
-        Query::text_for(Some(Path::new("/work/my repo")))
+        Query::text_for(Some(Path::new("work/my repo")))
             .parse::<Query>()
             .unwrap()
             .matches(&Entry {
-                repository: "/work/my repo".into(),
+                repository: "work/my repo".into(),
                 ..entry()
             })
     );
@@ -143,7 +146,7 @@ fn completion_offers_keys_then_values_of_the_listed_requests() {
     let entries = [
         entry(),
         Entry {
-            repository: "/work/website".into(),
+            repository: "work/website".into(),
             eval: "docs/links".into(),
             reviewer: None,
             tags: vec!["docs".into()],
@@ -202,7 +205,7 @@ fn completion_offers_keys_then_values_of_the_listed_requests() {
     assert!(complete("rep:", &entries).candidates.is_empty());
     // A value with spaces completes quoted.
     let spaced = [Entry {
-        repository: "/work/my repo".into(),
+        repository: "work/my repo".into(),
         ..entry()
     }];
     assert_eq!(
@@ -221,7 +224,7 @@ async fn state_in(folder: &str, count: usize) -> (tempfile::TempDir, std::path::
     let repo = root.path().join(folder);
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
         "stateDir":state,"status":"GREEN","createdAt":"2026-01-01T00:00:00Z",
         "completedAt":"2026-01-01T00:01:00Z","selection":{"kind":"all"},"validation":null}))
@@ -246,16 +249,17 @@ async fn state_in(folder: &str, count: usize) -> (tempfile::TempDir, std::path::
 
 #[tokio::test]
 async fn search_pages_through_every_request_and_the_default_finds_waiting_human_ones() {
-    let (_root, state) = state(2 * PAGE + 10).await;
+    // 210 GREEN requests and one waiting sign-off require three 100-request pages.
+    let (_root, state) = state(210).await;
     let reviewer: ReviewerId = "alice".parse().unwrap();
     let everything = Query::default();
     let first = search(&state, &everything, &reviewer, 0).await.unwrap();
-    assert_eq!(first.requests.len(), PAGE);
-    assert_eq!(first.next, Some(PAGE as u64));
+    assert_eq!(first.requests.len(), PAGE_REQUESTS);
+    assert_eq!(first.next, Some(PAGE_REQUESTS as u64));
     let second = search(&state, &everything, &reviewer, first.next.unwrap())
         .await
         .unwrap();
-    assert_eq!(second.requests[0].1.eval, format!("app/check{PAGE:03}"));
+    assert_eq!(second.requests[0].1.eval, "app/check100");
     let third = search(&state, &everything, &reviewer, second.next.unwrap())
         .await
         .unwrap();
@@ -302,7 +306,7 @@ async fn suggestions_take_values_from_what_the_terms_before_the_last_find() {
 #[test]
 fn a_quoted_value_with_spaces_completes_as_one_term() {
     let entries = [Entry {
-        repository: "/work/my repo".into(),
+        repository: "work/my repo".into(),
         reviewer: Some("ann lee".into()),
         tags: vec!["needs review".into()],
         ..entry()
@@ -364,7 +368,7 @@ async fn every_page(state: &Path, query: &str) -> Vec<String> {
     let mut start = Some(0);
     while let Some(at) = start {
         let found = search(state, &query, &reviewer, at).await.unwrap();
-        assert!(found.requests.len() <= PAGE);
+        assert!(found.requests.len() <= PAGE_REQUESTS);
         evals.extend(found.requests.into_iter().map(|(_, entry)| entry.eval));
         start = found.next;
     }
@@ -374,12 +378,13 @@ async fn every_page(state: &Path, query: &str) -> Vec<String> {
 #[tokio::test]
 async fn pages_cross_batch_boundaries_with_mixed_statuses() {
     const STATUSES: [&str; 4] = ["GREEN", "RED", "ERROR", "STALE"];
-    let count = 2 * BATCH as usize + 105;
+    // A fixed 905-request fixture crosses multiple 100-request public pages.
+    let count = 905;
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
         "stateDir":state,"status":"RED","createdAt":"2026-01-01T00:00:00Z",
         "completedAt":"2026-01-01T00:01:00Z","selection":{"kind":"all"},"validation":null}))
@@ -398,12 +403,16 @@ async fn pages_cross_batch_boundaries_with_mixed_statuses() {
 
     // Everything, page after page: each request once, in one order.
     let all = every_page(&state, "").await;
-    assert_eq!(all.len(), count);
-    let unique: std::collections::BTreeSet<_> = all.iter().collect();
-    assert_eq!(unique.len(), count);
+    let expected_all: Vec<_> = (0..count)
+        .map(|index| format!("app/check{index:04}"))
+        .collect();
+    assert_eq!(all, expected_all);
     // A status read in the database, and a status with a text term matched after reading.
-    let red: Vec<_> = (0..count).filter(|index| index % 4 == 1).collect();
-    assert_eq!(every_page(&state, "status:red").await.len(), red.len());
+    let expected_red: Vec<_> = (1..count)
+        .step_by(4)
+        .map(|index| format!("app/check{index:04}"))
+        .collect();
+    assert_eq!(every_page(&state, "status:red").await, expected_red);
     let late_errors = every_page(&state, "status:error eval:check08").await;
     let expected: Vec<_> = (800..900)
         .filter(|index| index % 4 == 2)

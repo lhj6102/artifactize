@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+exclude = ["crates/artifactize-desktop/vendor/tauri-plugin-wdio-webdriver"]
 # Plain `cargo build/clippy/test` at the root cover the CLI and its tools. The desktop app
 # needs WebKitGTK and a built frontend, so it builds only when named (`-p artifactize-desktop`)
 # and has its own CI job; the CLI's builds, releases and lockfile versions stay as they were.
@@ -27,3 +28,7 @@ path = "crates/artifactize-tui"
 [workspace.dependencies.artifactize-tools]
 version = "0.0.0-dev"
 path = "crates/artifactize-tools"
+
+# The desktop e2e feature is the only consumer of this test-only input correction.
+[patch.crates-io]
+tauri-plugin-wdio-webdriver = { path = "crates/artifactize-desktop/vendor/tauri-plugin-wdio-webdriver" }

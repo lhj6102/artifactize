@@ -5,20 +5,26 @@ use serde_json::json;
 
 #[test]
 fn all_artifact_and_eval_projections_keep_json_and_text_api_literals() {
-    for (status, expected) in [
-        (ArtifactStatus::Basis, "BASIS"),
-        (ArtifactStatus::Green, "PASS"),
-        (ArtifactStatus::Incomplete, "INCOMPLETE"),
-        (ArtifactStatus::Error, "ERROR"),
-        (ArtifactStatus::Red, "RED"),
-        (ArtifactStatus::Blocked, "BLOCKED"),
-        (ArtifactStatus::Wait, "WAIT_DEPENDENCY"),
-        (ArtifactStatus::Stale, "STALE"),
-        (ArtifactStatus::Unreviewed, "UNREVIEWED"),
+    for (status, expected, saved) in [
+        (ArtifactStatus::Deferred, "DEFERRED", "DEFERRED"),
+        (ArtifactStatus::Provisional, "PROVISIONAL", "PROVISIONAL"),
+        (ArtifactStatus::Basis, "BASIS", "BASIS"),
+        (ArtifactStatus::Green, "PASS", "GREEN"),
+        (ArtifactStatus::Incomplete, "INCOMPLETE", "INCOMPLETE"),
+        (ArtifactStatus::Error, "ERROR", "ERROR"),
+        (ArtifactStatus::Red, "RED", "RED"),
+        (ArtifactStatus::Blocked, "BLOCKED", "BLOCKED"),
+        (ArtifactStatus::Wait, "WAIT_DEPENDENCY", "WAIT"),
+        (ArtifactStatus::Stale, "STALE", "STALE"),
+        (ArtifactStatus::Unreviewed, "UNREVIEWED", "UNREVIEWED"),
     ] {
         let state = ArtifactCondition::from(status);
         assert_eq!(state.to_string(), expected);
         assert_eq!(serde_json::to_value(state).unwrap(), json!(expected));
+        assert_eq!(
+            serde_json::to_value(crate::types::ArtifactValidationStatus::from(status)).unwrap(),
+            json!(saved)
+        );
     }
     for (status, expected) in [
         (EvalStatus::Green, "PASS"),

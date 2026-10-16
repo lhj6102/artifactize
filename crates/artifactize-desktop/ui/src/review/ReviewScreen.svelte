@@ -5,27 +5,30 @@
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
   import { getAppState } from "../shell/app.svelte";
+  import { reviewRefreshed } from "../ipc/activity.svelte";
   import type { Attachment } from "svelte/attachments";
   import {
     call,
-    commands,
+    useIpc,
     message,
     onStateChanged,
     type LaunchView,
     type Listed,
+    type Results,
   } from "../ipc/client";
   import HumanDetail from "./HumanDetail.svelte";
   import SearchField from "./SearchField.svelte";
   import RecordDetail from "../monitor/RecordDetail.svelte";
   import Sections from "../monitor/Sections.svelte";
   import Panel from "../shell/Panel.svelte";
-  import { ReviewScreenState, setReviewScreenState } from "./reviewScreen.svelte";
+  import { ReviewScreenState, setReviewScreenState } from "./review-screen-state.svelte";
   import { scrollTo } from "../shell/attach";
   import { useCommands } from "../shell/commands.svelte";
   import { chord, plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
   let { launch, active }: { launch: LaunchView; active: boolean } = $props();
+  const commands = useIpc();
   // The launch is fixed for the window's life: its search is where the screen starts.
   // svelte-ignore state_referenced_locally
   const r = new ReviewScreenState(launch.search);
@@ -46,11 +49,24 @@
   const page = $derived(r.previous.length + 1);
   const scope = $derived(r.query.trim() === "" ? "all requests" : r.query.trim() === WAITING ? "waiting Human reviews" : r.query.trim());
 
-  async function load(reload = true) {
-    const read = ++r.reads;
+  function load(reload = true) {
+    return request(reload).shown;
+  }
+
+  /** Ask for the list: `answer` is this read's own, `shown` settles once the list shows the
+   * newest answer (an overtaken read waits for the read that overtook it). */
+  function request(reload: boolean) {
+    const sequence = ++r.reads;
+    const answer = call(commands.reviewSearch(r.query, r.start, reload));
+    r.loading = read(sequence, reload, answer);
+    return { answer, shown: r.loading };
+  }
+
+  async function read(sequence: number, reload: boolean, answer: Promise<Results>): Promise<void> {
     try {
-      const found = await call(commands.reviewSearch(r.query, r.start, reload));
-      if (read !== r.reads) return;
+      const found = await answer;
+      // A refresh can overtake a search: its waiter needs the newest answer, not this stale one.
+      if (sequence !== r.reads) return r.loading;
       // The state generation the list and the open review were read from.
       const generation = r.results?.generation ?? null;
       if (generation !== null && found.generation !== generation) {
@@ -68,7 +84,25 @@
       r.index = kept >= 0 ? kept : Math.min(r.index, Math.max(rows.length - 1, 0));
       if (reload && r.record?.request) void reopen(r.record.request);
     } catch (failure) {
-      if (read === r.reads) r.error = message(failure);
+      if (sequence !== r.reads) return r.loading;
+      r.error = message(failure);
+    }
+  }
+
+  /** The manual refresh of the list (`r`, the palette's "Refresh the list"). */
+  function refresh() {
+    const { answer, shown } = request(true);
+    // E2E builds only: witness this refresh once its own reload succeeded and the list then
+    // settled on screen, whichever read it shows; what it shows is for the reader to check.
+    // Its own failure, or no answer yet, is never witnessed, whatever other reads answered.
+    if (import.meta.env.MODE === "e2e") {
+      void Promise.all([answer, shown]).then(
+        async () => {
+          await tick();
+          reviewRefreshed(app.activity, r.query, r.start);
+        },
+        () => {},
+      );
     }
   }
 
@@ -79,9 +113,9 @@
     if (text !== r.searched) r.typing = setTimeout(() => void research(), 120);
   }
 
-  /** Search the query from the newest page now, unless it already was. */
+  /** Search from the newest page, or await the answer already requested for this query. */
   async function research() {
-    if (r.query === r.searched) return;
+    if (r.query === r.searched) return r.loading;
     r.searched = r.query;
     r.start = 0;
     r.previous = [];
@@ -212,11 +246,16 @@
     r.list?.focus();
   }
 
-  /** Screen-wide: Ctrl+O and Ctrl+F work wherever focus is while the Review screen shows. */
+  /** Screen-wide: search works even when an empty Requests list cannot take focus. */
   function global(event: KeyboardEvent) {
-    if (!active) return;
+    if (!active || event.defaultPrevented) return;
     if (chord(event, "o")) r.asking = true;
-    else if (chord(event, "f")) void search();
+    else if (
+      chord(event, "f") || (
+        plain(event, "/") && r.focus === "list" &&
+        !app.palette && !app.help && !r.asking && app.leaving.taken === null
+      )
+    ) void search();
     else return;
     event.preventDefault();
   }
@@ -237,10 +276,9 @@
     if (plain(event, "ArrowDown") || plain(event, "j")) r.index = Math.min(r.index + 1, rows.length - 1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) r.index = Math.max(r.index - 1, 0);
     else if ((plain(event, "Enter") || plain(event, "ArrowRight")) && selected) openRow(selected);
-    else if (plain(event, "/")) void search();
     else if (plain(event, "PageDown")) older();
     else if (plain(event, "PageUp")) newer();
-    else if (plain(event, "r")) void load();
+    else if (plain(event, "r")) refresh();
     else return;
     event.preventDefault();
   }
@@ -269,7 +307,7 @@
             enabled: () => r.query !== launch.search,
             run: () => setQuery(launch.search),
           },
-          { id: "review.refresh", group: "Review", label: "Refresh the list", keys: "r", run: () => void load() },
+          { id: "review.refresh", group: "Review", label: "Refresh the list", keys: "r", run: refresh },
           { id: "review.older", group: "Review", label: "Older requests", keys: "PgDn", enabled: () => next !== null, run: older },
           { id: "review.newer", group: "Review", label: "Newer requests", keys: "PgUp", enabled: () => r.previous.length > 0, run: newer },
           {

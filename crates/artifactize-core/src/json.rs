@@ -100,13 +100,12 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Optional<T> {
 mod tests {
     use super::*;
     #[test]
-    fn typed_discard_keeps_json_number_and_recursion_refusals_without_a_tree() {
+    fn typed_discard_rejects_number_overflow_and_excessive_nesting() {
         for input in [
             "1e400",
             "{\"unknown\":[1e400]}",
             "{\"number\":1e400,\"number\":null}",
         ] {
-            assert!(serde_json::from_str::<serde_json::Value>(input).is_err());
             assert!(serde_json::from_str::<Ignored>(input).is_err());
         }
         for input in [
@@ -114,11 +113,9 @@ mod tests {
             "-9223372036854775809",
             "{\"unknown\":[null,true,0,1.5,\"s\"]}",
         ] {
-            assert!(serde_json::from_str::<serde_json::Value>(input).is_ok());
             assert!(serde_json::from_str::<Ignored>(input).is_ok());
         }
         let deep = format!("{}null{}", "[".repeat(200), "]".repeat(200));
-        assert!(serde_json::from_str::<serde_json::Value>(&deep).is_err());
         assert!(serde_json::from_str::<Ignored>(&deep).is_err());
     }
 }

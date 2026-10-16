@@ -92,7 +92,10 @@ fn text_width(text: &str) -> u16 {
 
 impl Review {
     pub fn draw(&mut self, frame: &mut Frame) {
+        #[cfg(not(test))]
         let now = OffsetDateTime::now_utc();
+        #[cfg(test)]
+        let now = super::tests::now();
         // With Detail focused the component shows the status itself.
         let status = if self.focus == Focus::List {
             self.status_line()
@@ -179,7 +182,7 @@ impl Review {
             right = format!("{right} · mouse off · F2");
         }
         let right = Line::from(right).dark_gray();
-        let room = usize::from(area.width).saturating_sub(right.width() + 2);
+        let room = usize::from(area.width).saturating_sub(right.width() + crate::HEADER_GAP);
         let [left, end] = Layout::horizontal([
             Constraint::Fill(1),
             Constraint::Length(u16::try_from(right.width()).unwrap_or(u16::MAX)),
@@ -200,7 +203,11 @@ impl Review {
                 Line::from(format!(
                     "{frame} {}… {}",
                     busy.label,
-                    duration(elapsed.as_secs() as i64)
+                    duration(
+                        elapsed
+                            .try_into()
+                            .expect("elapsed tool time fits time::Duration")
+                    )
                 ))
                 .yellow(),
             ];
@@ -258,7 +265,7 @@ impl Review {
                     }
                 });
                 let status = crate::monitor::Status::from(request.status());
-                let age = duration((now - request.created_at.time()).whole_seconds());
+                let age = duration(now - request.created_at.time());
                 [
                     request.eval_id.to_string(),
                     request.id.to_string(),

@@ -207,17 +207,17 @@ mod tests {
     use serde_json::json;
     #[test]
     fn stored_payloads_preserve_schema_5_missing_null_and_owner_context() {
-        for value in [
-            json!({}),
-            json!({"instruction":null,"owner":[true,null,42]}),
-            json!({"instruction":"Inspect {input}.","owner":{"nested":[]}}),
+        for (value, instruction) in [
+            (json!({}), ""),
+            (json!({"instruction":null,"owner":[true,null,42]}), ""),
+            (
+                json!({"instruction":"Inspect {input}.","owner":{"nested":[]}}),
+                "Inspect {input}.",
+            ),
         ] {
             let stored: StoredPayload = serde_json::from_value(value.clone()).unwrap();
             assert_eq!(serde_json::to_value(&stored).unwrap(), value);
-            assert_eq!(
-                stored.instruction(),
-                value["instruction"].as_str().unwrap_or_default()
-            );
+            assert_eq!(stored.instruction(), instruction);
             if value["instruction"].is_null() {
                 assert!(serde_json::from_value::<super::super::EvalPayload>(value).is_err());
             }

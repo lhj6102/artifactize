@@ -1,23 +1,26 @@
 // The window's own facts, each with one owner: the launch the backend reported, a failure to
 // start, the shown screen and the two dialogs. Shared with createContext.
 import { createContext } from "svelte";
-import type { LaunchView } from "../ipc/client";
+import { commands as bindings, type LaunchView } from "../ipc/client";
+import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
 import { Registry } from "./commands.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
 import { Leaving } from "./leaving.svelte";
 
-export type Screen = "monitor" | "review" | "settings";
+export type Screen = "monitor" | "review" | "settings" | "graph";
 
 export class AppState {
+  readonly activity = new Activity();
+  readonly ipc = observeCommands(bindings, this.activity);
   /** The backend's launch, replaced whole. */
   launch = $state.raw<LaunchView | null>(null);
   failure = $state<string | null>(null);
   screen = $state<Screen>("monitor");
   /** The monitor's snapshot. */
-  readonly browse = new Browse();
-  readonly leaving = new Leaving();
+  readonly browse = new Browse(this.ipc);
+  readonly leaving = new Leaving(this.ipc);
   /** The numbers of this window's cancellable Human jobs. */
   readonly jobs = new Jobs();
   /** What the command palette lists: each screen registers its commands here. */
@@ -28,11 +31,19 @@ export class AppState {
   palette = $state(false);
   help = $state(false);
 
-  /** The Review of request `id`, started on first use. A follower's ID and its original's name
-   * one Review: it takes the original's ID once it has read the request. */
+  /** One canonical Review, with requested IDs as aliases once IPC resolves them. */
   review(id: string): Review {
-    const known = this.reviews[id] ?? Object.values(this.reviews).find((review) => review.id === id);
-    return (known ?? (this.reviews[id] = new Review(id, this.jobs)));
+    return this.reviews[id] ?? (this.reviews[id] = new Review(id, this.jobs, (canonical, review) => this.#intern(canonical, review), this.ipc));
+  }
+
+  #intern(id: string, incoming: Review): Review {
+    const aliases = Object.entries(this.reviews).filter(([, review]) => review === incoming);
+    // A replaced state forgot this handle; a late read cannot repopulate that pool.
+    if (aliases.length === 0) return incoming;
+    const canonical = this.reviews[id] ?? incoming;
+    for (const [alias] of aliases) this.reviews[alias] = canonical;
+    this.reviews[id] = canonical;
+    return canonical;
   }
 
   /** A replaced state: the reviews and drafts of the old one no longer apply. */

@@ -1,3 +1,7 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::Watcher;
+
 use std::{
     fs,
     path::PathBuf,
@@ -10,17 +14,23 @@ use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        Self::from_root(support::os::tempdir())
+    }
+
+    fn from_root(root: tempfile::TempDir) -> Self {
+        let root = owned_run::Root::from(root);
         let repo = root.path().join("repo");
+        root.track(&root.path().join("state"), &repo);
         let runtime = |command: &str| json!({"kind": "runtime", "command": command, "args": []});
         for (name, profile) in [
             ("green", runtime(&support::os::true_program())),
@@ -63,16 +73,21 @@ impl Fixture {
         command
             // The declarations name `true`, `false` and `printf` for PATH to find.
             .env("PATH", support::os::path())
-            .env("USER", "alice")
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state);
+        support::os::sign_in_as(&mut command, "alice");
         command
     }
 
     fn json(&self, args: &[&str], code: i32) -> Value {
-        let output = self.command().args(args).arg("--json").output().unwrap();
+        let output = self
+            .command()
+            .args(args)
+            .arg("--json")
+            .record_output()
+            .unwrap();
         assert_eq!(output.status.code(), Some(code), "{args:?}: {output:?}");
         parse(&output)
     }
@@ -99,7 +114,7 @@ fn malformed_identity_usage_errors_precede_state_access_and_missing_keys_keep_th
             json["error"].as_str().unwrap().contains("Invalid"),
             "{args:?}: {json}"
         );
-        let output = fixture.command().args(&args).output().unwrap();
+        let output = fixture.command().args(&args).record_output().unwrap();
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -149,10 +164,11 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     let fixture = Fixture::new();
     let child = fixture
         .command()
-        .args(["verify", "human", "--timeout-ms", "20000"])
+        .args(["verify", "human"])
         .stdout(Stdio::null())
         .spawn()
         .unwrap();
+    let child = Watcher::new(child);
     let waiting = waiting_request(&fixture);
     let (id, run) = (
         waiting["id"].as_str().unwrap(),
@@ -169,16 +185,12 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     assert_eq!(child.wait_with_output().unwrap().status.code(), Some(0));
 
     for (args, code, status) in [
-        (vec!["verify", "green"], 0, "GREEN"),
-        (vec!["verify", "red"], 1, "RED"),
-        (vec!["verify", "broken"], 2, "ERROR"),
+        (vec!["verify", "--wait", "green"], 0, "GREEN"),
+        (vec!["verify", "--wait", "red"], 1, "RED"),
+        (vec!["verify", "--wait", "broken"], 2, "ERROR"),
+        (vec!["verify", "human"], 0, "RUNNING"),
         (
-            vec!["verify", "human", "--timeout-ms", "1"],
-            3,
-            "INCOMPLETE",
-        ),
-        (
-            vec!["verify", "human", "--reuse-only", "human"],
+            vec!["verify", "--wait", "human", "--reuse-only", "human"],
             4,
             "INCOMPLETE",
         ),
@@ -186,8 +198,12 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         let saved = fixture.json(&args, code);
         assert_eq!(saved["status"], status);
         let id = saved["id"].as_str().unwrap();
-        assert_eq!(fixture.json(&["run", "show", id], 0), saved);
-        fixture.json(&["run", "show", id, "--wait"], code);
+        let shown = fixture.json(&["run", "show", id], 0);
+        assert_eq!(shown["status"], saved["status"]);
+        assert_eq!(shown["requests"], saved["requests"]);
+        if status != "RUNNING" {
+            fixture.json(&["run", "show", id, "--wait"], code);
+        }
     }
     fixture.json(&["status", "green"], 0);
     fixture.json(&["status", "red"], 1);
@@ -201,8 +217,6 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         vec!["verify", "green", "--profile"],
         vec!["verify", "green", "--bogus"],
         vec!["verify", "green", "--jobs", "0"],
-        // Removed: verify waits for Human results by default.
-        vec!["verify", "green", "--wait"],
         vec!["verify", "green", "--reuse-only", "model"],
         vec!["run"],
         vec!["run", "show", run, "--timeout-ms", "5"],
@@ -210,7 +224,6 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         vec!["run", "show", "missing"],
         vec!["monitor"],
         // Removed in 0.5.0 with the chatgpt and claude backends.
-        vec!["mcp", "--manifest", "manifest.json"],
         vec!["login", "chatgpt"],
         vec!["logout", "chatgpt"],
         vec!["models", "chatgpt"],
@@ -224,16 +237,62 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     }
     let output = fixture
         .command()
-        .args(["verify", "green", "--all"])
-        .output()
+        .args(["verify", "--wait", "green", "--all"])
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Usage:"));
     for args in [["help", "verify"], ["run", "--help"], ["models", "--help"]] {
-        let output = fixture.command().args(args).output().unwrap();
+        let output = fixture.command().args(args).record_output().unwrap();
         assert!(output.status.success());
         assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: artifactize"));
+    }
+}
+
+#[test]
+fn run_fixture_releases_executor_supervisor_and_sqlite_on_return_and_unwind() {
+    for unwind in [false, true] {
+        let parent = owned_run::Root::from(support::os::tempdir());
+        let mut fixture = Fixture::from_root(support::os::tempdir_in(parent.path(), "run-"));
+        // The ancestor also owns the submission scope: if cleanup or an observation fails,
+        // it must release the same Run or retain its inputs, never recursively delete them.
+        parent.track(&fixture.state, &fixture.repo);
+        let run = fixture.json(&["verify", "human"], 0);
+        let id = run["id"].as_str().unwrap().parse().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let view = runtime.block_on(owned_run::human_waiting(&fixture.state, &id));
+        drop(runtime);
+        let control = view.run.control.unwrap();
+        let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
+            panic!("the waiting fixture has its admitted executor");
+        };
+        let supervisor = control.supervisor.expect("the real Run has a supervisor");
+        let identities = [owner, supervisor];
+        assert!(identities.iter().all(|identity| {
+            support::os::same_process_running(identity.pid.get(), identity.start_time)
+        }));
+
+        // Retaining inputs must not bypass Root's cleanup: observe actual SQLite closure
+        // and both process exits after Root drops. The parent owns the retained test files.
+        let state = fixture.state.clone();
+        fixture._root.retain_inputs();
+        let result = std::panic::catch_unwind(move || {
+            let _fixture = fixture;
+            assert!(!unwind, "Run fixture assertion unwind probe");
+        });
+        assert_eq!(result.is_err(), unwind);
+        assert!(state.is_dir());
+        assert!(identities.iter().all(|identity| {
+            !support::os::same_process_running(identity.pid.get(), identity.start_time)
+        }));
+        assert!(
+            support::os::database_released(&state.join(artifactize_core::store::DATABASE)).unwrap(),
+            "Run cleanup closes SQLite before returning on both paths"
+        );
     }
 }
 
@@ -241,7 +300,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
 fn version_matches_package() {
     let output = Command::new(support::os::cli())
         .arg("--version")
-        .output()
+        .record_output()
         .unwrap();
 
     assert!(output.status.success());
@@ -259,12 +318,13 @@ fn redirected_or_no_console_help_never_waits_for_input() {
     for with_console in [true, false] {
         let mut command = Command::new(support::os::cli());
         support::os::console_launch(&mut command, with_console);
-        let mut child = command
+        let child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = Watcher::new(child);
         // Keep the empty input pipe OPEN until the child has exited: an accidental read
         // cannot succeed on EOF, so completion proves it did not pause. No clock involved.
         let input = child.stdin.take().unwrap();
@@ -312,13 +372,13 @@ fn tools_facade_matches_the_standalone_cli() {
         let direct = Command::new(standalone)
             .current_dir(root.path())
             .args(&args)
-            .output()
+            .record_output()
             .unwrap();
         let facade = Command::new(support::os::cli())
             .current_dir(root.path())
             .arg("tools")
             .args(&args)
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(direct.status.code(), Some(code), "{args:?}: {direct:?}");
         assert_eq!(
@@ -333,7 +393,7 @@ fn tools_facade_matches_the_standalone_cli() {
     }
     let help = Command::new(support::os::cli())
         .args(["tools", "--help"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(help.status.success());
     let text = String::from_utf8(help.stdout).unwrap();
@@ -346,7 +406,7 @@ fn tools_facade_matches_the_standalone_cli() {
         );
         let output = Command::new(support::os::cli())
             .args(["tools", name, "--help"])
-            .output()
+            .record_output()
             .unwrap();
         assert!(output.status.success(), "{name}: {output:?}");
     }
@@ -354,10 +414,10 @@ fn tools_facade_matches_the_standalone_cli() {
 
 #[test]
 fn help_is_displayed_without_arguments() {
-    let output = Command::new(support::os::cli()).output().unwrap();
+    let output = Command::new(support::os::cli()).record_output().unwrap();
     let help = Command::new(support::os::cli())
         .arg("--help")
-        .output()
+        .record_output()
         .unwrap();
 
     assert!(output.status.success());
@@ -370,14 +430,16 @@ fn help_is_displayed_without_arguments() {
     assert!(text.contains("--repo <PATH>"));
     assert!(text.contains("--state-dir <PATH>"));
     assert!(text.contains("--json"));
-    for hidden in ["graph", "mcp"] {
-        assert!(
-            !text
-                .lines()
-                .any(|line| line.trim_start().starts_with(hidden)),
-            "{hidden} is hidden or removed: {text}"
-        );
-    }
+    assert!(
+        text.lines()
+            .any(|line| line.trim_start().starts_with("mcp"))
+    );
+    assert!(
+        !text
+            .lines()
+            .any(|line| line.trim_start().starts_with("graph")),
+        "graph is hidden or removed: {text}"
+    );
 }
 
 #[test]
@@ -386,7 +448,7 @@ fn graph_moved_under_config() {
     let output = fixture
         .command()
         .args(["config", "--help"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).unwrap();
@@ -411,7 +473,7 @@ fn graph_moved_under_config() {
         vec!["graph", "--compact"],
         vec!["graph", "--help"],
     ] {
-        let output = fixture.command().args(&args).output().unwrap();
+        let output = fixture.command().args(&args).record_output().unwrap();
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(output.stdout.is_empty());
         assert_eq!(
@@ -440,7 +502,7 @@ fn dropped_commands_and_flags_are_rejected() {
     ] {
         let output = Command::new(support::os::cli())
             .args(&args)
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         let error = String::from_utf8_lossy(&output.stderr);

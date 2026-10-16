@@ -1,14 +1,13 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::Watcher;
+
 use std::{
     fs,
-    io::{Read, Write},
+    io::Write,
     net::TcpListener,
     path::Path,
     process::{Command, Stdio},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread,
     time::Duration,
 };
 
@@ -37,13 +36,9 @@ fn artifactize(state: &Path) -> Command {
 
 /// Run with `--json`; the output never contains `secret`.
 fn run(command: &mut Command, stdin: &str, secret: &str, code: i32) -> Value {
-    let mut child = command
-        .arg("--json")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    command.arg("--json").stdin(Stdio::piped());
+    let child = support::os::start(command);
+    let mut child = Watcher::new(child);
     child
         .stdin
         .take()
@@ -71,75 +66,28 @@ fn run(command: &mut Command, stdin: &str, secret: &str, code: i32) -> Value {
 
 struct Whoami {
     url: String,
-    stop: Arc<AtomicBool>,
-    thread: Option<thread::JoinHandle<()>>,
+    _provider: support::FakeProvider,
 }
 
 impl Whoami {
     fn start(token: &str) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let url = format!("http://{}/", listener.local_addr().unwrap());
-        let stop = Arc::new(AtomicBool::new(false));
-        let done = stop.clone();
-        let expected = format!("authorization: Bearer {token}");
-        let thread = thread::spawn(move || {
-            while !done.load(Ordering::SeqCst) {
-                let mut stream = match listener.accept() {
-                    Ok((stream, _)) => stream,
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(5));
-                        continue;
-                    }
-                    Err(error) => panic!("{error}"),
-                };
-                stream.set_nonblocking(false).unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                let mut request = Vec::new();
-                let mut byte = [0];
-                while !request.ends_with(b"\r\n\r\n") {
-                    stream.read_exact(&mut byte).unwrap();
-                    request.push(byte[0]);
-                }
-                let request = String::from_utf8(request).unwrap();
-                assert!(
-                    request.starts_with("GET /v1/whoami HTTP/1.1\r\n"),
-                    "{request}"
-                );
-                let (status, body) = if request.lines().any(|line| line == expected) {
-                    (
-                        "200 OK",
-                        json!({"principal":"alice-laptop","scopes":["read","publish"]}),
-                    )
-                } else {
-                    (
-                        "401 Unauthorized",
-                        json!({"error":"Invalid or revoked token."}),
-                    )
-                };
-                let body = body.to_string();
-                write!(
-                    stream,
-                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
+        let expected = format!("Bearer {token}");
+        let provider = support::FakeProvider::start(move |request| {
+            assert_eq!(request.method, "GET");
+            assert_eq!(request.path, "/v1/whoami");
+            if request.headers.get("authorization") == Some(&expected) {
+                support::Reply::Json(
+                    200,
+                    json!({"principal":"alice-laptop","scopes":["read","publish"]}),
                 )
-                .unwrap();
+            } else {
+                support::Reply::Json(401, json!({"error":"Invalid or revoked token."}))
             }
         });
         Self {
-            url,
-            stop,
-            thread: Some(thread),
+            url: format!("{}/", provider.url),
+            _provider: provider,
         }
-    }
-}
-
-impl Drop for Whoami {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        self.thread.take().unwrap().join().unwrap();
     }
 }
 
@@ -157,10 +105,11 @@ fn login_status_overrides_and_logout_against_a_test_server() {
         2,
     );
     assert!(refused["error"].as_str().unwrap().contains("https://"));
+    let rejected_token = test_token();
     let rejected = run(
         artifactize(&state).args(["remote", "login", &server.url]),
-        &format!("{}\n", test_token()),
-        &token,
+        &format!("{rejected_token}\n"),
+        &rejected_token,
         2,
     );
     assert!(rejected["error"].as_str().unwrap().contains("rejected"));
@@ -398,16 +347,15 @@ fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
     let server = Whoami::start(&token);
     let (mut writer, reader) = support::os::mintty_pipe();
     assert!(
-        std::io::IsTerminal::is_terminal(&reader),
+        support::os::is_terminal(&reader),
         "the pipe passes for a mintty terminal"
     );
-    let child = artifactize(&root.path().join("state"))
-        .args(["remote", "login", &server.url])
-        .stdin(reader)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = support::os::start(
+        artifactize(&root.path().join("state"))
+            .args(["remote", "login", &server.url])
+            .stdin(reader),
+    );
+    let child = Watcher::new(child);
     // The pipe stays open meanwhile: a pty whose master closed is no longer a terminal.
     writer.write_all(format!("{token}\n").as_bytes()).unwrap();
     let output = child.wait_with_output().unwrap();

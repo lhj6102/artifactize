@@ -289,6 +289,12 @@ pub(super) async fn models(
 pub(super) fn usage_limited(error: &ProviderError) -> bool {
     body(error).is_some_and(|body| body.usage_limit(error.report().http_status))
 }
+/// Responses stream errors put their code at the root or inside response.error;
+/// rig's generic report only extracts error.code, so use the typed wire envelope.
+pub(super) fn overloaded(error: &ProviderError) -> bool {
+    body(error).is_some_and(|body| body.code() == Some("server_is_overloaded"))
+}
+
 fn body(error: &ProviderError) -> Option<errors::Error> {
     error
         .provider_response()

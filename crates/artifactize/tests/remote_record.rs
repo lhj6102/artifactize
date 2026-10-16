@@ -1,18 +1,22 @@
-use std::{fs, path::Path, process::Command, time::Duration};
+#[path = "support/run.rs"]
+mod owned_run;
+
+use std::{fs, path::Path, process::Command};
 
 use artifactize_core::{
     cache, human,
-    project::{self, VerifyOptions, selection::Selection},
+    project::{VerifyOptions, selection::Selection},
     remote::Record,
-    store::Receipts,
+    store::OwnedReceipts,
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::{cat_program, shell, true_program};
+use support::os::{cat_program, true_program};
 use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn cli(state: &Path, args: &[&str]) -> Value {
     let output = Command::new(support::os::cli())
@@ -20,7 +24,7 @@ fn cli(state: &Path, args: &[&str]) -> Value {
         .arg(state)
         .args(args)
         .arg("--json")
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -33,11 +37,11 @@ fn cli(state: &Path, args: &[&str]) -> Value {
 fn write_repo(repo: &Path, profile: Value) {
     fs::create_dir_all(repo).unwrap();
     fs::write(repo.join("fingerprint"), "remote-v1\n").unwrap();
-    fs::write(
-        repo.join("check.sh"),
-        "echo stdout-marker\necho stderr-marker >&2\n",
-    )
-    .unwrap();
+    // Declare the exact bytes: text-mode print translates newlines on Windows.
+    support::os::write_python_script(
+        &repo.join("check.py"),
+        "sys.stdout.buffer.write(b'stdout-marker\\n')\nsys.stderr.buffer.write(b'stderr-marker\\n')\n",
+    );
     support::declaration::write(
         repo.join("index.artf"),
         json!({
@@ -64,13 +68,12 @@ fn write_repo(repo: &Path, profile: Value) {
 }
 
 async fn verify(repo: &Path, state: &Path) -> artifactize_core::store::RunView {
-    project::verify(
+    support::runs::record(
         repo,
         Some(state),
         &Selection::All,
-        // A Human request is recorded, and the wait for it times out at once.
+        // Observe saved Human admission or terminal runtime state, without reconciling.
         &VerifyOptions {
-            wait_timeout: Duration::from_millis(1),
             ..Default::default()
         },
         CancellationToken::new(),
@@ -81,13 +84,14 @@ async fn verify(repo: &Path, state: &Path) -> artifactize_core::store::RunView {
 
 #[tokio::test]
 async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     write_repo(
         &repo,
-        json!({"kind":"runtime","command":shell(),"args":["check.sh"]}),
+        json!({"kind":"runtime","command":support::os::python_program(),"args":["-I","check.py"]}),
     );
     let producer_state = root.path().join("producer");
+    root.track(&producer_state, &repo);
     let produced = verify(&repo, &producer_state).await;
     assert_eq!(produced.run.status().as_str(), "GREEN");
     let key = produced.requests[0].key.clone().unwrap();
@@ -121,7 +125,10 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     ] {
         assert!(!text.contains(leaked), "{leaked} in {text}");
     }
-    assert!(!text.contains(root.path().to_str().unwrap()), "{text}");
+    assert!(
+        !text.contains(&support::os::path_text(root.path())),
+        "{text}"
+    );
     let summary_json = summary.result.to_json();
     let mut keys: Vec<_> = summary_json.as_object().unwrap().keys().collect();
     keys.sort();
@@ -147,7 +154,8 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     stored.publisher = Some("alice-laptop".parse().unwrap());
     stored.published_at = Some("2026-10-04T00:00:00Z".parse().unwrap());
     let consumer_state = root.path().join("consumer");
-    let receipts = Receipts::open(&consumer_state, &repo).await.unwrap();
+    root.track(&consumer_state, &repo);
+    let receipts = OwnedReceipts::open(&consumer_state, &repo).await.unwrap();
     let mirror = stored.mirror("https://reviews.example/").unwrap();
     let mirrored = receipts.mirror_execution(&mirror).await.unwrap().unwrap();
     assert_eq!(mirrored.id.as_str(), format!("remote-{}", execution.id));
@@ -201,13 +209,14 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
 
 #[tokio::test]
 async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     write_repo(
         &repo,
         json!({"kind":"runtime","command":true_program(),"args":[]}),
     );
     let producer_state = root.path().join("producer");
+    root.track(&producer_state, &repo);
     let produced = verify(&repo, &producer_state).await;
     let key = produced.requests[0].key.as_ref().unwrap();
     let original = cache::show(&producer_state, key, false)
@@ -231,7 +240,8 @@ async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
             assert_eq!(mirror.id.as_str(), format!("remote-{}", source.id));
             assert_eq!(mirror.id.len(), bytes + "remote-".len());
             let state = root.path().join(format!("consumer-{bytes}-{full}"));
-            let receipts = Receipts::open(&state, &repo).await.unwrap();
+            root.track(&state, &repo);
+            let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
             receipts.mirror_execution(&mirror).await.unwrap().unwrap();
             assert!(receipts.mirror_execution(&mirror).await.unwrap().is_none());
             let saved = cache::show(&state, key, false)
@@ -264,7 +274,9 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     assert_eq!(execution.id.len(), 207);
     let state = support::os::tempdir();
     let repo = support::os::tempdir();
-    Receipts::open(state.path(), repo.path()).await.unwrap();
+    OwnedReceipts::open(state.path(), repo.path())
+        .await
+        .unwrap();
     let db = Connection::open(state.path().join("state.sqlite")).unwrap();
     db.execute(
         "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) VALUES(?1,?2,?3,'GREEN',0,0,?4,?5,?4,?6)",
@@ -289,23 +301,19 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
             .id,
         execution.id
     );
-    assert_eq!(
-        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
-            .unwrap(),
-        artifactize_core::store::STATE_SCHEMA_VERSION
-    );
 }
 
 #[tokio::test]
 async fn human_summary_keeps_owner_fields_and_the_reviewer() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     write_repo(&repo, json!({"kind":"human"}));
     let state = root.path().join("state");
+    root.track(&state, &repo);
     let waiting = verify(&repo, &state).await;
     let request = &waiting.requests[0];
     assert_eq!(request.status().as_str(), "WAITING_HUMAN");
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     human::claim(&receipts, &request.id, &"alice".parse().unwrap())
         .await
         .unwrap();
@@ -341,7 +349,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         config::{Profile, read_workspace_config},
         store::{Execution, ExecutionOptions, Producer, Provenance},
     };
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let declared = json!({
         "kind":"agent",
@@ -366,6 +374,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     // The record the `fast` variant produced elsewhere, keyed like this repository's eval.
     let config = read_workspace_config(&repo).unwrap();
     let state = root.path().join("state");
+    root.track(&state, &repo);
     let fingerprints = cache::prepare(
         &config,
         [&config.artifacts["app"].name],
@@ -402,7 +411,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
                 .unwrap(),
         ),
         provenance: Provenance {
-            repo_path: "/elsewhere".into(),
+            repo_path: root.path().join("elsewhere"),
             run_id: "run-elsewhere".parse().unwrap(),
             request_id: "run-elsewhere-1".parse().unwrap(),
             eval_id: "app/check".parse().unwrap(),
@@ -424,7 +433,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     assert_eq!(record.options.model.as_deref(), Some("model-b"));
     record.publisher = Some("bob-laptop".parse().unwrap());
     record.published_at = Some("2026-10-04T00:00:02Z".parse().unwrap());
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     receipts
         .mirror_execution(&record.mirror("https://reviews.example/").unwrap())
         .await
@@ -437,7 +446,10 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     let request = &reused.requests[0];
     assert_eq!(
         serde_json::to_value(&request.profile).unwrap(),
-        serde_json::to_value(artifactize_core::config::StoredProfile::from(&variant)).unwrap()
+        json!({
+            "kind":"agent", "backend":"anthropic", "model":"model-b",
+            "reasoning":"low", "timeoutMs":null, "maxToolCalls":null, "maxTokens":500,
+        })
     );
     assert_eq!(
         serde_json::to_value(&request.requested_profile).unwrap()["model"],

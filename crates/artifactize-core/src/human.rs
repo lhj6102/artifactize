@@ -131,17 +131,22 @@ pub async fn submit_and_publish(
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     let (receipts, repo) = open(state, request).await?;
-    let remote = Session::open(Some(state), Some(&repo))?;
-    let request = submit(&receipts, request, reviewer, result, cancellation).await?;
-    if let Some(remote) = remote {
-        remote
-            .publish_request(&receipts, &request)
-            .await
-            .map_err(|error| {
-                format!("The Human result is saved locally, but publishing it failed: {error}")
-            })?;
+    let result = async {
+        let remote = Session::open(Some(state), Some(&repo))?;
+        let request = submit(&receipts, request, reviewer, result, cancellation).await?;
+        if let Some(remote) = remote {
+            remote
+                .publish_request(&receipts, &request)
+                .await
+                .map_err(|error| {
+                    format!("The Human result is saved locally, but publishing it failed: {error}")
+                })?;
+        }
+        Ok(request)
     }
-    Ok(request)
+    .await;
+    let closed = receipts.close().await;
+    result.and_then(|request| closed.map(|()| request))
 }
 
 pub(crate) fn definition(

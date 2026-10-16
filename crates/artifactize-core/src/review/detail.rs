@@ -3,7 +3,6 @@
 use crate::{
     monitor::{duration, plain},
     store::{Request, RequestView},
-    types::RequestStatus,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -26,11 +25,14 @@ impl Stage {
     }
 }
 
-/// Status, claim and waiting time in one row; errors keep their first line.
+/// Request identity, status, claim and waiting time in one row; errors keep their first line.
 pub fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
     let request = &view.request;
-    let waiting = request.status() == RequestStatus::WaitingHuman;
-    let mut parts = vec![request.status().to_string()];
+    let waiting = request.status().is_human_wait();
+    let mut parts = vec![
+        format!("Request {}", request.id),
+        request.status().to_string(),
+    ];
     if let Some(error) = &request.error() {
         let first = error.lines().next().unwrap_or_default();
         parts.push(match &request.error_code() {
@@ -49,7 +51,7 @@ pub fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
     if waiting {
         parts.push(format!(
             "waiting {}",
-            duration((now - request.created_at.time()).whole_seconds())
+            duration(now - request.created_at.time())
         ));
     }
     plain(&parts.join(" · ")).into_owned()
@@ -90,7 +92,7 @@ pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, Strin
         _ => request.status().to_string(),
     };
     let claim = match &view.claim {
-        None if request.status() == RequestStatus::WaitingHuman => {
+        None if request.status().is_human_wait() => {
             format!("unclaimed; c claims it for {reviewer}")
         }
         None => "none".into(),
@@ -149,4 +151,35 @@ pub fn outcome_text(request: &Request) -> String {
         || request.error().map(str::to_owned).unwrap_or_default(),
         |result| serde_json::to_string_pretty(result).unwrap_or_default(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::meta;
+    use crate::test_request::request;
+    use serde_json::json;
+
+    #[test]
+    fn human_detail_metadata_identifies_waiting_and_completed_requests() {
+        for (status, expected) in [
+            (
+                "WAITING_HUMAN",
+                "Request run-1-app-signoff · WAITING_HUMAN · unclaimed · waiting 0s",
+            ),
+            ("GREEN", "Request run-1-app-signoff · GREEN"),
+        ] {
+            let view = request(
+                "app/signoff",
+                status,
+                json!({
+                    "profile":{"kind":"human"},
+                    "requestedProfile":{"kind":"human"}
+                }),
+            );
+            assert_eq!(
+                meta(&view, "alice", view.request.created_at.time()),
+                expected
+            );
+        }
+    }
 }

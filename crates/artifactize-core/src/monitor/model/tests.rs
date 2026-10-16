@@ -1,0 +1,52 @@
+use super::{Section, Target, detail};
+use crate::{store::RunView, test_request::request};
+use serde_json::json;
+
+#[test]
+fn eval_detail_keeps_request_instruction_and_result_outside_technical() {
+    let request = request(
+        "app/check",
+        "GREEN",
+        json!({
+            "payload":{"instruction":"Check the release notes."},
+            "result":{"verdict":"GREEN","note":"Release notes match."},
+            "fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "key":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }),
+    );
+    let run: RunView = serde_json::from_value(json!({
+        "id":"run-1",
+        "repoPath":crate::test_os::temp_root().join("repo"),
+        "stateDir":crate::test_os::temp_root().join("state"),
+        "status":"GREEN",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "completedAt":"2026-01-01T00:00:01Z",
+        "selection":{"kind":"all"},
+        "definitions":{"artifacts":{},"evals":[]},
+        "validation":null,
+        "requests":[request.request]
+    }))
+    .unwrap();
+    let target = Target::Eval("app/check".parse().unwrap());
+    let now = run.run.created_at.time();
+    let detail = detail(&run, &[request], &target, now);
+    let visible = detail
+        .fields
+        .iter()
+        .filter(|(key, _)| Section::of(key) != Section::Technical)
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect::<Vec<_>>();
+
+    assert!(visible.contains(&("Request", "run-1-app-check")));
+    assert!(visible.contains(&("Instruction", "Check the release notes.")));
+    let result = visible
+        .iter()
+        .find_map(|(key, value)| (*key == "Result").then_some(*value))
+        .expect("the result is visible without unfolding Technical");
+    assert!(result.contains("GREEN"));
+    assert!(result.contains("Release notes match."));
+    for key in ["Fingerprint", "Key"] {
+        assert!(detail.field(key).is_some_and(|value| !value.is_empty()));
+        assert!(!visible.iter().any(|(name, _)| *name == key));
+    }
+}

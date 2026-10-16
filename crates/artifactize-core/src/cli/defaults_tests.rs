@@ -25,8 +25,13 @@ fn default_concurrency_and_run_history_page_remain_compatible() {
     let Some(Command::Verify { jobs, .. }) = cli.command else {
         panic!("verify command");
     };
-    assert_eq!(jobs, 4);
-    assert_eq!(jobs as usize, crate::project::VerifyOptions::default().jobs);
+    assert_eq!(jobs, None);
+    assert_eq!(crate::project::VerifyOptions::default().jobs, None);
+    let cli = Cli::try_parse_from(["artifactize", "verify", "--all", "--jobs", "2"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Verify { jobs: Some(2), .. })
+    ));
     let cli = Cli::try_parse_from(["artifactize", "run", "list"]).unwrap();
     let Some(Command::Run {
         command: RunCommand::List { limit, offset, .. },

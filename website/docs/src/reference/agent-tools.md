@@ -16,13 +16,15 @@ Descriptions must be nonblank, at most 4000 UTF-16 code units, and support only
 `{artifactName}` interpolation (the canonical Artifact ID). Built-in references
 take `builtin`, optional `args` and optional `description`. Without `args`, `read`,
 `list`, `glob`, `grep` and `view_image` take the model's input below; with `args`,
-`read`, `list`, `section` and `help` work on a fixed target, as described in
+`read`, `list`, `section` and `help` work on a fixed target, and `graph` with
+`args = []` prints the entire current project structure, as described in
 [Built-in tools](builtin-tools.md). Only explicitly declared tools are listed.
 Built-ins execute in-process without output directories (only `help` starts its
 program); `view_image` applies the same image checks as `json` image results.
 
 | Built-in | Arguments | Result |
 |---|---|---|
+| `graph` | Fixed declaration `args = []`; call `{}` | Complete name-based Artifact/eval tree, extracted criteria, graph fingerprint and input → consumer relations |
 | `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1), limit defaults to 80, max 500 | `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
 | `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | Sorted `entries: [{name, path, kind, ...}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
 | `glob` | `{pattern, path?}` | Up to 200 sorted logical `files`, `truncated` |
@@ -84,7 +86,7 @@ The `json` protocol receives exactly one request on stdin:
 }
 ```
 
-Scope entries contain canonical physical paths, `kind` (`file` or `folder`) and
+Scope entries contain canonical physical paths, `kind` (`file`, `folder` or `graph`) and
 logical child/mount maps. For a file Artifact, `context.artifactPath` and its
 scope entry's `path` name the file, not the process cwd; the cwd is its containing
 folder. File Artifact references reject `/path` suffixes.

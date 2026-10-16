@@ -28,7 +28,7 @@ fn request(run: &str, eval: &str, status: &str, profile: serde_json::Value) -> s
 }
 
 async fn run(state: &Path, repo: &Path, id: &str, requests: &[store::Request]) {
-    let receipts = store::Receipts::open(state, repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(state, repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({"id":id,"repoPath":repo,"stateDir":state,
         "status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},
         "validation":null}))
@@ -86,7 +86,7 @@ async fn fixture() -> Fixture {
     )
     .await;
     // The Agent review's saved conversation, as the reviewer records it.
-    let receipts = store::Receipts::open(&state, &alpha).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &alpha).await.unwrap();
     let saving = Saving {
         state: state.clone(),
         state_id: receipts.state_id().await.unwrap(),
@@ -169,7 +169,14 @@ async fn the_list_starts_on_every_repositorys_waiting_human_reviews_and_repo_nar
         "{}",
         review.query
     );
-    let _ = &fixture.alpha;
+    let mut review = Review::new(
+        fixture.state.clone(),
+        Some(fixture.alpha.clone()),
+        alice(),
+        None,
+    );
+    review.refresh().await;
+    assert_eq!(listed(&review), ["release/signoff"]);
 }
 
 #[tokio::test]
@@ -262,6 +269,13 @@ async fn an_agent_or_settled_request_opens_a_read_only_detail_with_its_evidence(
     // c claims nothing here; Esc goes back to the list.
     press(&mut review, KeyEvent::from(KeyCode::Char('c'))).await;
     assert!(review.taken.is_empty());
+    let saved = store::read_request(&fixture.state, "run-a-app-agent")
+        .await
+        .unwrap();
+    assert!(
+        saved.claim.is_none(),
+        "a read-only Detail never saves a claim"
+    );
     press(&mut review, KeyEvent::from(KeyCode::Esc)).await;
     assert_eq!(review.focus, Focus::List);
 
@@ -285,28 +299,47 @@ async fn page_keys_move_through_more_matches_than_one_page() {
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
-    let requests: Vec<_> = (0..search::PAGE + 5)
+    // The public search shows 100 matches per page; five more exercise the next page.
+    let requests: Vec<_> = (0..105)
         .map(|index| {
             request(
                 "run-p",
                 &format!("app/check{index:03}"),
                 "GREEN",
-                json!({"kind":"runtime","command":"true","args":[]}),
+                json!({"kind":"runtime","command":crate::test_os::true_program(),"args":[]}),
             )
         })
         .collect();
     run(&state, &repo, "run-p", &requests).await;
     let mut review = Review::new(state, None, "alice".parse().unwrap(), None);
-    review.query = "status:green".into();
-    review.filter = review.query.parse();
     review.refresh().await;
-    assert_eq!(review.listed.len(), search::PAGE);
+    press(&mut review, KeyEvent::from(KeyCode::Char('/'))).await;
+    press(
+        &mut review,
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+    )
+    .await;
+    type_text(&mut review, "status:green").await;
+    press(&mut review, KeyEvent::from(KeyCode::Enter)).await;
+    let first: Vec<_> = (0..100)
+        .map(|index| format!("app/check{index:03}"))
+        .collect();
+    assert_eq!(listed(&review), first);
     assert!(screen(&mut review).contains("page 1, PgDn more"));
     press(&mut review, KeyEvent::from(KeyCode::PageDown)).await;
-    assert_eq!(review.listed.len(), 5);
+    assert_eq!(
+        listed(&review),
+        [
+            "app/check100",
+            "app/check101",
+            "app/check102",
+            "app/check103",
+            "app/check104"
+        ]
+    );
     assert!(screen(&mut review).contains("page 2"));
     press(&mut review, KeyEvent::from(KeyCode::PageUp)).await;
-    assert_eq!(review.listed.len(), search::PAGE);
+    assert_eq!(listed(&review), first);
 }
 
 /// A paste is one edit of the search: it searches again from the first page, like typing.
@@ -316,13 +349,14 @@ async fn a_paste_into_the_search_requeries_from_the_first_page() {
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
-    let requests: Vec<_> = (0..search::PAGE + 5)
+    // The public search shows 100 matches per page; five more exercise the next page.
+    let requests: Vec<_> = (0..105)
         .map(|index| {
             request(
                 "run-p",
                 &format!("app/check{index:03}"),
                 "GREEN",
-                json!({"kind":"runtime","command":"true","args":[]}),
+                json!({"kind":"runtime","command":crate::test_os::true_program(),"args":[]}),
             )
         })
         .collect();

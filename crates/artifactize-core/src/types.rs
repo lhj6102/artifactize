@@ -158,6 +158,14 @@ identity!(ArtifactName, name);
 identity!(EvalId, |value: &str| value
     .split_once('/')
     .is_some_and(|(artifact, eval)| name(artifact) && name(eval)));
+/// Caller attempt keys are bounded independently of path-segment identities.
+const MAX_REQUEST_KEY_BYTES: usize = 128;
+identity!(RequestKey, |value: &str| (1..=MAX_REQUEST_KEY_BYTES)
+    .contains(&value.len())
+    && value.bytes().all(
+        |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
+    ));
+
 identity!(RunId, segment);
 identity!(RequestId, segment);
 // Stored mirrors predate typed identities and can be 207 bytes: the unchanged
@@ -242,6 +250,17 @@ identity!(DefinitionHash, sha256_hex);
 // State UUIDs and legacy session state identifiers share the saved segment domain.
 identity!(StateId, segment);
 identity!(Sha256Digest, sha256_hex);
+impl Sha256Digest {
+    /// Hash bytes into the same canonical lowercase spelling accepted at every edge.
+    pub fn of(bytes: &[u8]) -> Self {
+        Self(
+            sha2::Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        )
+    }
+}
 // Session locators use the bounded printable user@host label, not a filesystem segment;
 // a producer may contain a slash because locators split their four IDs from the right.
 identity!(ProducerId, |value: &str| (1..=MAX_ID_BYTES)
@@ -375,19 +394,22 @@ impl TryFrom<FailureCode> for BackendStopCode {
         code.as_str().parse()
     }
 }
-status!(FingerprintKind { Artifactsum => "artifactsum", Script => "script" });
-status!(ArtifactValidationStatus { Basis => "BASIS", Green => "GREEN", Incomplete => "INCOMPLETE", Error => "ERROR", Red => "RED", Blocked => "BLOCKED", Wait => "WAIT", Stale => "STALE", Unreviewed => "UNREVIEWED" });
+status!(FingerprintKind { Artifactsum => "artifactsum", Script => "script", Graph => "graph" });
+status!(ArtifactValidationStatus { Deferred => "DEFERRED", Provisional => "PROVISIONAL", Basis => "BASIS", Green => "GREEN", Incomplete => "INCOMPLETE", Error => "ERROR", Red => "RED", Blocked => "BLOCKED", Wait => "WAIT", Stale => "STALE", Unreviewed => "UNREVIEWED" });
 status!(RunStatus {
     Running => "RUNNING",
     Green => "GREEN",
     Red => "RED",
     Error => "ERROR",
     Incomplete => "INCOMPLETE",
+    SignoffsPending => "SIGNOFFS_PENDING",
 });
 status!(RequestStatus {
     Queued => "QUEUED",
     Running => "RUNNING",
     WaitingHuman => "WAITING_HUMAN",
+    Deferred => "DEFERRED",
+    Provisional => "PROVISIONAL",
     Green => "GREEN",
     Red => "RED",
     Error => "ERROR",
@@ -420,12 +442,19 @@ impl TryFrom<RequestStatus> for ExecutionStatus {
     fn try_from(status: RequestStatus) -> Result<Self, String> {
         match status {
             RequestStatus::Running => Ok(Self::Running),
-            RequestStatus::WaitingHuman => Ok(Self::WaitingHuman),
+            RequestStatus::WaitingHuman | RequestStatus::Deferred => Ok(Self::WaitingHuman),
+            RequestStatus::Provisional => Ok(Self::Green),
             RequestStatus::Green => Ok(Self::Green),
             RequestStatus::Red => Ok(Self::Red),
             RequestStatus::Error => Ok(Self::Error),
             other => Err(format!("Request state {other} is not an execution state.")),
         }
+    }
+}
+
+impl RequestStatus {
+    pub fn is_human_wait(self) -> bool {
+        matches!(self, Self::WaitingHuman | Self::Deferred)
     }
 }
 

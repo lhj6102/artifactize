@@ -2,8 +2,8 @@
 use super::{Action, Outcome, REFRESH, Review, SPIN, editor::edit};
 use crate::types::RequestId;
 use crossterm::event::{Event, EventStream, KeyEventKind};
-use futures_util::StreamExt;
-use std::{future::Future, path::PathBuf, pin::Pin};
+use futures_util::{FutureExt, StreamExt};
+use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
 /// Run the review UI until q, a signal, or a submission that leaves nothing waiting.
@@ -43,115 +43,117 @@ async fn drive(
     let mut tick = tokio::time::interval(REFRESH);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut spin = tokio::time::interval(SPIN);
-    let mut pending: Option<Pin<Box<dyn Future<Output = Outcome>>>> = None;
+    let mut jobs = crate::jobs::Jobs::default();
     let mut action = Action::Refresh;
-    // A read-only Agent Detail reads its session with the monitor's bounded reader jobs.
-    let mut session_job: Option<
-        tokio::task::JoinHandle<(
-            crate::monitor::session::Job,
-            crate::agent::session::live::Window,
-        )>,
-    > = None;
     let mut session_probe = tokio::time::interval(crate::monitor::SESSION_PROBE);
     session_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    loop {
+    let result = std::panic::AssertUnwindSafe(async {
         loop {
-            action = match action {
-                Action::None => break,
-                Action::Quit => return Ok(()),
-                Action::Refresh => {
-                    tick.reset();
-                    review.refresh().await
-                }
-                Action::Start(job) => {
-                    pending = Some(Box::pin(review.start(job)));
-                    Action::None
-                }
-                Action::Edit(text) => {
-                    // The editor owns the terminal; no event reader may compete for its input.
-                    drop(events);
-                    let edited = crate::monitor::suspend(terminal, edit(text)).await;
-                    crate::monitor::input::protocols(review.mouse_capture, true)?;
-                    events = EventStream::new();
-                    review.edited(edited?)
-                }
-                Action::Capture(capture) => {
-                    crate::monitor::input::protocols(capture, true)?;
-                    Action::None
-                }
-            };
-        }
-        terminal
-            .draw(|frame| review.draw(frame))
-            .map_err(|e| e.to_string())?;
-        if session_job.is_none()
-            && let Some(job) = review
-                .record_live()
-                .and_then(crate::monitor::session::Live::job)
-        {
-            session_job = Some(tokio::task::spawn_blocking(move || {
-                let mut job = job;
-                let window =
-                    job.reader
-                        .step_expanded(job.width, job.height, job.position, &job.expanded);
-                (job, window)
-            }));
-        }
-        action = tokio::select! {
-            _ = cancellation.cancelled() => Action::Quit,
-            outcome = async { session_job.as_mut().expect("active session job").await },
-                if session_job.is_some() =>
+            loop {
+                action = match action {
+                    Action::None => break,
+                    Action::Quit => return Ok(()),
+                    Action::Refresh => {
+                        tick.reset();
+                        review.refresh().await
+                    }
+                    Action::Start(job) => {
+                        jobs.action = Some(Box::pin(review.start(job)));
+                        Action::None
+                    }
+                    Action::Edit(text) => {
+                        // The editor owns the terminal; no event reader may compete for its input.
+                        drop(events);
+                        let edited = crate::monitor::suspend(terminal, edit(text)).await;
+                        crate::monitor::input::protocols(review.mouse_capture, true)?;
+                        events = EventStream::new();
+                        review.edited(edited?)
+                    }
+                    Action::Capture(capture) => {
+                        crate::monitor::input::protocols(capture, true)?;
+                        Action::None
+                    }
+                };
+            }
+            terminal
+                .draw(|frame| review.draw(frame))
+                .map_err(|e| e.to_string())?;
+            if jobs.session.is_none()
+                && let Some(job) = review
+                    .record_live()
+                    .and_then(crate::monitor::session::Live::job)
             {
-                session_job = None;
-                let (job, window) = crate::task::joined(outcome)
-                    .map_err(|error| format!("Session reader job failed: {error}"))?;
-                if let Some(live) = review.record_live()
-                    && live.serial == job.serial
-                    && live.source.reference == job.reader.source.reference
+                jobs.session = Some(tokio::task::spawn_blocking(move || {
+                    let mut job = job;
+                    let window = job.reader.step_expanded(
+                        job.width,
+                        job.height,
+                        job.position,
+                        &job.expanded,
+                    );
+                    (job, window)
+                }));
+            }
+            action = tokio::select! {
+                _ = cancellation.cancelled() => Action::Quit,
+                outcome = async { jobs.session.as_mut().expect("active session job").await },
+                    if jobs.session.is_some() =>
                 {
-                    live.finish(job, window);
-                }
-                Action::None
-            }
-            _ = session_probe.tick() => {
-                if let Some(live) = review.record_live() {
-                    live.invalidate();
-                }
-                Action::None
-            }
-            outcome = async { pending.as_mut().expect("pending job").await },
-                if pending.is_some() =>
-            {
-                pending = None;
-                if matches!(outcome, Outcome::Submitted { .. }) {
-                    // Remote and cache warnings may have reached stderr; repaint every cell.
-                    crate::monitor::repaint(terminal)?;
-                }
-                review.finish(outcome)
-            }
-            _ = spin.tick(), if review.busy() => Action::None,
-            _ = tick.tick() => Action::None,
-            change = changes.next() => match change {
-                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
-                    Action::Refresh
-                }
-                crate::changes::Change::SessionInvalidated(id) => {
+                    jobs.session = None;
+                    let (job, window) = crate::task::joined(outcome)
+                        .map_err(|error| format!("Session reader job failed: {error}"))?;
                     if let Some(live) = review.record_live()
-                        && live.source.reference.session_id == id
+                        && live.serial == job.serial
+                        && live.source.reference == job.reader.source.reference
                     {
+                        live.finish(job, window);
+                    }
+                    Action::None
+                }
+                _ = session_probe.tick() => {
+                    if let Some(live) = review.record_live() {
                         live.invalidate();
                     }
                     Action::None
                 }
-            },
-            event = events.next() => match event {
-                Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
-                Some(Ok(Event::Mouse(mouse))) => review.mouse(mouse),
-                Some(Ok(Event::Paste(text))) => review.paste(&text),
-                Some(Ok(_)) => Action::None,
-                Some(Err(error)) => return Err(error.to_string()),
-                None => Action::Quit,
-            },
-        };
-    }
+                outcome = async { jobs.action.as_mut().expect("pending job").await },
+                    if jobs.action.is_some() =>
+                {
+                    jobs.action = None;
+                    if matches!(outcome, Outcome::Submitted { .. }) {
+                        // Remote and cache warnings may have reached stderr; repaint every cell.
+                        crate::monitor::repaint(terminal)?;
+                    }
+                    review.finish(outcome)
+                }
+                _ = spin.tick(), if review.busy() => Action::None,
+                _ = tick.tick() => Action::None,
+                change = changes.next() => match change {
+                    crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
+                        Action::Refresh
+                    }
+                    crate::changes::Change::SessionInvalidated(id) => {
+                        if let Some(live) = review.record_live()
+                            && live.source.reference.session_id == id
+                        {
+                            live.invalidate();
+                        }
+                        Action::None
+                    }
+                },
+                event = events.next() => match event {
+                    Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
+                    Some(Ok(Event::Mouse(mouse))) => review.mouse(mouse),
+                    Some(Ok(Event::Paste(text))) => review.paste(&text),
+                    Some(Ok(_)) => Action::None,
+                    Some(Err(error)) => return Err(error.to_string()),
+                    None => Action::Quit,
+                },
+            };
+        }
+    })
+    .catch_unwind()
+    .await;
+    review.cancel_single();
+    jobs.finish(result, changes).await
 }

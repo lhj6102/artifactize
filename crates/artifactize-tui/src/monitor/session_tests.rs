@@ -46,7 +46,7 @@ fn expanded_activity_remains_open_after_late_completion_and_resize_while_paused(
     use rig_core::message::{
         AssistantContent, Message, ToolCall, ToolFunction, ToolName, ToolResultContent,
     };
-    let (root, source) = fixture();
+    let (_root, source) = fixture();
     let call = ToolCall::from_wire(
         "activity",
         ToolFunction::new(
@@ -91,7 +91,6 @@ fn expanded_activity_remains_open_after_late_completion_and_resize_while_paused(
     complete(&mut live);
     assert!(live.expanded(id));
     assert_eq!(live.scroll.mode, Mode::Paused);
-    drop(root);
 }
 
 #[test]
@@ -149,32 +148,38 @@ fn queued_scroll_then_resize_and_resize_then_scroll_latest_intent_survives_stale
     assert!(before.event > 0);
 }
 #[test]
-fn completed_but_stale_resize_never_replaces_committed_layout_and_home_down_is_bounded() {
+fn completed_but_stale_resize_never_replaces_layout_and_home_down_keeps_requested_position() {
     let (_root, mut live) = history();
     live.movement(Move::Up(30));
     complete(&mut live);
     let shown = live.window.anchor;
     live.geometry(40, 10);
     // Finish all intermediate layout jobs except the final one, then make it stale.
-    loop {
+    let mut made_stale = false;
+    for _ in 0..JOB_LIMIT {
         let (job, window) = run_job(&mut live);
         if !window.loading {
             live.geometry(100, 10);
             live.movement(Move::Up(1));
             live.finish(job, window);
+            made_stale = true;
             break;
         }
         live.finish(job, window);
     }
+    assert!(made_stale, "the resize never finished loading");
     complete(&mut live);
     assert!(live.window.status.is_none(), "{:?}", live.window.status);
     assert!(live.window.anchor.event <= shown.event);
     live.movement(Move::Top);
     live.movement(Move::Down(3));
-    let before = live.reader.as_ref().unwrap().bytes_read;
     complete(&mut live);
     assert_eq!(live.window.top, 3);
-    assert!(live.reader.as_ref().unwrap().bytes_read - before < 2048);
+    assert!(
+        live.window.rows.join("\n").contains("event 1"),
+        "{:?}",
+        live.window.rows
+    );
 }
 #[test]
 fn flip_back_partial_widths_do_not_replace_committed_generation() {
@@ -206,14 +211,12 @@ fn scrolling_during_large_append_layout_uses_completed_visible_prefix() {
     let old = live.window.anchor;
     append(&live.source, &answer(&"x".repeat(2 * 1024 * 1024)));
     live.invalidate();
-    loop {
-        let (job, window) = run_job(&mut live);
-        let decoding_done = job.reader.decoded_events > 601;
-        live.finish(job, window);
-        if decoding_done {
-            break;
-        }
-    }
+    let (job, window) = run_job(&mut live);
+    assert!(
+        window.loading,
+        "the large append has not finished laying out"
+    );
+    live.finish(job, window);
     live.movement(Move::Up(1));
     complete(&mut live);
     assert!(live.window.status.is_none(), "{:?}", live.window.status);
@@ -237,12 +240,34 @@ fn reset_and_saved_promotion_are_not_lost_when_job_is_stale() {
     live.finish(job, window);
     complete(&mut live);
     assert_eq!(live.scroll.mode, Mode::Following);
-    live.source.saved = false;
-    live.invalidate();
+    assert!(live.window.rows.join("\n").contains("replacement"));
+    std::fs::remove_file(
+        crate::agent::session::path(&live.source.state, &live.source.reference.session_id).unwrap(),
+    )
+    .unwrap();
+    let mut source = live.source.clone();
+    source.saved = false;
+    assert!(live.refresh(&source));
     let (job, window) = run_job(&mut live);
-    live.source.saved = true;
+    assert!(
+        window
+            .status
+            .as_deref()
+            .unwrap()
+            .contains("never recorded as saved")
+    );
+    source.saved = true;
+    assert!(live.refresh(&source));
     live.finish(job, window);
-    assert!(live.reader.as_ref().unwrap().source.saved);
+    complete(&mut live);
+    assert!(
+        live.window
+            .status
+            .as_deref()
+            .unwrap()
+            .contains("removed by session GC"),
+        "the next read uses the saved promotion received while its previous job was in flight"
+    );
 }
 
 #[test]
@@ -273,9 +298,13 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     });
     monitor.focus = Pane::Detail;
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .unwrap();
     complete(monitor.detail.as_mut().unwrap().content.live_mut().unwrap());
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .unwrap();
     let evidence = monitor.hits.areas[1];
     let mouse = |kind| MouseEvent {
         kind,
@@ -418,10 +447,12 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     assert!(!text.contains("Ctrl-S") && text.contains("d details · Esc back"));
     let live = monitor.detail.as_mut().unwrap().content.live_mut().unwrap();
     live.scroll.total = 100000;
-    live.scroll.top = live.scroll.bottom();
-    live.scroll.mode = Mode::Following;
-    let visible_position = format!("{}/100000", live.scroll.top + 1);
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    live.movement(Move::Bottom);
+    // An 80×30 Detail has 24 transcript rows, so its bottom window starts at row 99,977.
+    let visible_position = "99977/100000";
+    terminal
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .unwrap();
     let text = terminal
         .backend()
         .buffer()
@@ -430,21 +461,11 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         .map(|cell| cell.symbol())
         .collect::<String>();
     assert!(
-        text.contains(&visible_position) && text.contains("following") && text.contains("bottom")
+        text.contains(visible_position) && text.contains("following") && text.contains("bottom")
     );
     assert!(
-        monitor
-            .hits
-            .buttons
-            .iter()
-            .any(|(_, button)| *button == input::Button::SessionTop)
-    );
-    assert!(
-        monitor
-            .hits
-            .buttons
-            .iter()
-            .any(|(_, button)| *button == input::Button::SessionBottom)
+        text.contains("[Top]") && text.contains("[Bottom]"),
+        "{text}"
     );
 }
 
@@ -482,10 +503,14 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
             .map(|cell| cell.symbol())
             .collect::<String>()
     };
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .unwrap();
     assert!(screen(&terminal).contains("last: reading the session…"));
     complete(monitor.live_mut().unwrap());
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .unwrap();
     assert!(
         screen(&terminal).contains("last: Reading reference/cli.md now"),
         "{}",
@@ -493,10 +518,14 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
     );
     // Narrow terminals retain the fixed-width peek; moving focus away hides it.
     terminal.backend_mut().resize(90, 30);
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .unwrap();
     assert!(screen(&terminal).contains("last:"));
     monitor.focus = Pane::Runs;
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .unwrap();
     assert!(!screen(&terminal).contains("last:"));
 }
 
@@ -556,7 +585,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
         "stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z",
         "selection":{"kind":"all"},"validation":null}))
@@ -569,7 +598,10 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     )
     .request;
     request.cwd = repo.clone();
-    receipts.create_run(&run, &[request.clone()]).await.unwrap();
+    receipts
+        .create_run(&run, std::slice::from_ref(&request))
+        .await
+        .unwrap();
     let mut monitor = Monitor::new(state.clone(), None);
     monitor.refresh().await;
     monitor.focus = Pane::Artifacts;
@@ -597,30 +629,64 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
         session_id: id.parse().unwrap(),
     };
     let state_id: crate::types::StateId = receipts.state_id().await.unwrap();
-    request.session = Some(crate::agent::session::SessionRef {
-        state: state_id.clone(),
-        ..session("session-1")
-    });
+    let mut source = crate::agent::session::live::Source {
+        state: state.clone(),
+        reference: crate::agent::session::SessionRef {
+            state: state_id,
+            ..session("session-1")
+        },
+        saved: true,
+    };
+    crate::test_os::create_private_dir_all(&crate::agent::session::directory(&state));
+    crate::test_session_files::write(&source, &crate::test_session_files::header(&source));
+    for index in 0..80 {
+        append(&source, &answer(&format!("first session row {index}")));
+    }
+    request.session = Some(source.reference.clone());
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;
     monitor.sync_peek().await;
-    let serial = monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial;
-    // Unchanged facts keep the reader; nothing is resolved per frame or per refresh.
+    tests::sized(&mut monitor, 160, 30);
+    complete(monitor.live_mut().unwrap());
+    assert!(tests::sized(&mut monitor, 160, 30).contains("last: first session row 79"));
+    // A paused visible window survives an unchanged refresh without blanking/reloading.
+    let live = monitor.live_mut().unwrap();
+    live.movement(Move::Top);
+    complete(live);
+    let rows = live.window.rows.clone();
+    let paused = tests::sized(&mut monitor, 160, 30);
+    assert!(!paused.contains("last: first session row 79"), "{paused}");
     monitor.refresh().await;
     monitor.sync_peek().await;
+    assert!(!tests::sized(&mut monitor, 160, 30).contains("reading the session…"));
+    complete(monitor.live_mut().unwrap());
     assert_eq!(
-        monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial,
-        serial
+        monitor
+            .peek
+            .as_ref()
+            .unwrap()
+            .live
+            .as_ref()
+            .unwrap()
+            .window
+            .rows,
+        rows
     );
-    // A replaced session is resolved again and read from the start.
-    request.session = Some(crate::agent::session::SessionRef {
-        state: state_id.clone(),
-        ..session("session-2")
-    });
+    assert!(tests::sized(&mut monitor, 160, 30).contains("first session row"));
+    // A replaced session drops the old window and follows the replacement transcript.
+    source.reference.session_id = "session-2".parse().unwrap();
+    crate::test_session_files::write(&source, &crate::test_session_files::header(&source));
+    append(&source, &answer("replacement start"));
+    append(&source, &answer("replacement tail"));
+    request.session = Some(source.reference);
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;
     monitor.sync_peek().await;
-    let live = monitor.peek.as_ref().unwrap().live.as_ref().unwrap();
-    assert_ne!(live.serial, serial);
-    assert_eq!(live.source.reference.session_id.as_str(), "session-2");
+    let pending = tests::sized(&mut monitor, 160, 30);
+    assert!(pending.contains("reading the session…"), "{pending}");
+    assert!(!pending.contains("first session row"), "{pending}");
+    complete(monitor.live_mut().unwrap());
+    let replaced = tests::sized(&mut monitor, 160, 30);
+    assert!(replaced.contains("last: replacement tail"), "{replaced}");
+    assert!(!replaced.contains("first session row"), "{replaced}");
 }

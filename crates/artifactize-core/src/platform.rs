@@ -36,9 +36,9 @@ pub(crate) use os::{
     PrivateTempDir, STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, VISIBLE_INPUT_FALLBACK,
     create_private_dir, create_private_dir_all, editor, exit_signal, file_identity, home_directory,
     host_name, ipc, is_owner_only, is_private_dir, is_private_file, kill_saved_group,
-    path_from_bytes, private_options, private_tempdir_in, process_start_time,
+    kill_saved_session, path_from_bytes, private_options, private_tempdir_in, process_start_time,
     remove_abandoned_directory, resolve_system_aliases, restrict_file, running_process_start_time,
-    spawn_detached, spawn_gated, stop_requested, sync_dir, transient_file_access,
+    spawn_detached, spawn_gated, spawn_run, stop_requested, sync_dir, transient_file_access,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
@@ -96,6 +96,20 @@ pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
             "not a regular file",
         ))
     }
+}
+
+/// Decode one native tool path line. Unix paths may end in a literal carriage return;
+/// only Windows accepts CRLF as the line terminator rather than part of the path.
+pub(crate) fn path_from_line(bytes: &[u8]) -> std::path::PathBuf {
+    let path = if CRLF_LINE_ENDINGS {
+        bytes
+            .strip_suffix(b"\r\n")
+            .or_else(|| bytes.strip_suffix(b"\n"))
+            .unwrap_or(bytes)
+    } else {
+        bytes.strip_suffix(b"\n").unwrap_or(bytes)
+    };
+    path_from_bytes(path)
 }
 
 /// Default state directory policy belongs with the platform's environment names.

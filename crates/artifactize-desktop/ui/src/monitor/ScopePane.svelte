@@ -1,6 +1,6 @@
 <script lang="ts">
   // Every repository and worktree in the state; selecting one reads its Runs.
-  import { ScopePaneState, setScopePaneState } from "./scopePane.svelte";
+  import { ScopePaneState, setScopePaneState } from "./scope-pane-state.svelte";
   import { getAppState } from "../shell/app.svelte";
   import type { ScopeRow } from "../ipc/client";
   import Panel from "../shell/Panel.svelte";

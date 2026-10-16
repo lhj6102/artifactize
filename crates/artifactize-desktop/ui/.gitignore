@@ -1,2 +1,5 @@
 node_modules/
 dist/
+
+# pnpm briefly creates its hardlink/store probe here; it is never a source input.
+/_tmp_*

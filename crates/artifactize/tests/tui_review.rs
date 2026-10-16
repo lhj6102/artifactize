@@ -1,32 +1,65 @@
-use std::{
-    fs,
-    path::PathBuf,
-    process::{Child, Command},
-    time::{Duration, Instant},
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::{
+    RunChild,
+    launch::{LAUNCH, Launched},
 };
+
+use std::{fs, path::PathBuf, process::Command, time::Duration};
 
 use artifactize_core::{human, store};
 use artifactize_tui::review::{Action, Mode, Review};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
-use support::os::bin;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    // Drop explicitly joins the child before closing its repository cwd or inputs.
+    launched: Option<Launched>,
+    launch_inputs: Option<tempfile::TempDir>,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let Some(launched) = self.launched.take() else {
+            return;
+        };
+        // Consume the complete launch owner before the repository root can drop. Its
+        // native cwd is in the repo even though its PID/release markers live elsewhere.
+        let closed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| launched.close()))
+            .unwrap_or_else(|_| Err("detached review launch cleanup panicked".into()));
+        if let Err(error) = closed {
+            // Root still releases every Run, but may not remove a surviving child's cwd.
+            self._root.retain_inputs();
+            if std::thread::panicking() {
+                eprintln!("Review launch cleanup failed: {error}");
+            } else {
+                panic!("Review launch cleanup failed: {error}");
+            }
+        }
+    }
 }
 
 /// The review-demo shape: a Human sign-off with `output` and `launch` tools, and a dependent.
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         let release = repo.join("release");
+        let launch_inputs = support::os::tempdir();
+        let launch_args: Vec<_> = support::os::python(LAUNCH)
+            .into_iter()
+            .map(str::to_owned)
+            .chain(std::iter::once(support::os::path_text(
+                launch_inputs.path(),
+            )))
+            .collect();
         fs::create_dir_all(&release).unwrap();
         fs::write(release.join("notes.md"), "# Release notes\n- Ready.\n").unwrap();
         support::declaration::write(
@@ -39,20 +72,20 @@ impl Fixture {
                         "notes":{
                             "description":"Print the release notes.",
                             "kind":"output",
-                            "command":bin("cat"),
+                            "command":support::os::cat_program(),
                             "args":["{artifactPath}/notes.md"],
                         },
                         "fail":{
                             "description":"Fail.",
                             "kind":"output",
-                            "command":bin("false"),
+                            "command":support::os::false_program(),
                             "args":[],
                         },
                         "open":{
                             "description":"Open.",
                             "kind":"launch",
-                            "command":bin("true"),
-                            "args":["{artifactPath}"],
+                            "command":support::os::python_program(),
+                            "args":launch_args,
                         },
                         "summary":{
                             "builtin":"section",
@@ -93,7 +126,7 @@ impl Fixture {
                     {
                         "id":"check",
                         "title":"Ship",
-                        "profile":{"kind":"runtime","command":bin("true"),"args":[]},
+                        "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
                         "payload":{"instruction":"Ship {release}."},
                     },
                 ],
@@ -101,10 +134,14 @@ impl Fixture {
             .to_string(),
         )
         .unwrap();
+        let state = root.path().join("state");
+        root.track(&state, &repo);
         Self {
-            repo,
-            state: root.path().join("state"),
+            launched: None,
+            launch_inputs: Some(launch_inputs),
             _root: root,
+            repo,
+            state,
         }
     }
 
@@ -120,21 +157,30 @@ impl Fixture {
     }
 
     async fn waiting(&self) -> artifactize_core::types::RequestId {
-        let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
-        loop {
-            let waiting = store::read_waiting(&self.state, Some(&self.repo))
-                .await
-                .unwrap();
-            if let Some(view) = waiting.first() {
-                return view.request.id.clone();
-            }
-            assert!(Instant::now() < deadline, "Human request did not appear");
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        // The watchdog bounds a broken fixture, not the Human request's lifetime.
+        const WAITING_BOUND: Duration = Duration::from_secs(15);
+        let (run, request) = owned_run::subscribed(&self.state, async |changes| {
+            tokio::time::timeout(support::os::patience(WAITING_BOUND), async {
+                loop {
+                    let waiting = store::read_waiting(&self.state, Some(&self.repo))
+                        .await
+                        .unwrap();
+                    if let Some(view) = waiting.first() {
+                        break (view.request.run_id.clone(), view.request.id.clone());
+                    }
+                    changes.next_reconciled().await;
+                }
+            })
+            .await
+            .expect("Human request did not appear")
+        })
+        .await;
+        owned_run::human_waiting(&self.state, &run).await;
+        request
     }
 
-    async fn receipts(&self) -> store::Receipts {
-        store::Receipts::open(&self.state, &self.repo)
+    async fn receipts(&self) -> store::OwnedReceipts {
+        store::OwnedReceipts::open(&self.state, &self.repo)
             .await
             .unwrap()
     }
@@ -176,8 +222,8 @@ async fn press(review: &mut Review, key: impl Into<KeyEvent>) -> Action {
     }
 }
 
-fn finish(child: Child) -> (Option<i32>, Value) {
-    let output = support::os::finish(child, "verify");
+fn finish(child: RunChild) -> (Option<i32>, Value) {
+    let output = child.wait_with_output().unwrap();
     (
         output.status.code(),
         serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
@@ -188,14 +234,13 @@ fn finish(child: Child) -> (Option<i32>, Value) {
 
 #[tokio::test]
 async fn review_claims_runs_tools_and_submits_while_verify_waits() {
-    let fixture = Fixture::new();
-    let child = support::os::start(fixture.command().args([
-        "verify",
-        "--all",
-        "--timeout-ms",
-        "30000",
-        "--json",
-    ]));
+    let mut fixture = Fixture::new();
+    let child = support::os::start(
+        fixture
+            .command()
+            .args(["verify", "--wait", "--all", "--json"]),
+    );
+    let child = RunChild::new(child, &fixture.state, &fixture.repo);
     let id = fixture.waiting().await;
     let mut review = Review::new(
         fixture.state.clone(),
@@ -237,13 +282,14 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     // A long path may be cut at the pane's edge: compare the text without the layout.
     let unwrapped = |text: &str| -> String {
         text.chars()
-            .filter(|c| !c.is_whitespace() && !"│┌┐└┘─".contains(*c))
+            .filter(|c| !c.is_whitespace() && !"│┌┐└┘─\"'".contains(*c))
             .collect()
     };
     let notes = support::os::path_text(&release.join("notes.md"));
-    let cat = support::os::path_text(std::path::Path::new(&bin("cat")));
-    let command = artifactize_core::review::shell([cat.as_str(), notes.as_str()]);
-    let shown = format!("$ {command}");
+    let cat = support::os::path_text(std::path::Path::new(&support::os::cat_program()));
+    // Ignore display quoting as well as layout: host fixture paths may contain spaces.
+    // Compare independently declared command words, never the production formatter.
+    let shown = format!("$ {cat} {notes}");
     let prefix: String = unwrapped(&shown).chars().take(20).collect();
     assert!(unwrapped(&selected).contains(&prefix), "{selected}");
     assert!(!selected.contains("{artifactPath}"), "{selected}");
@@ -269,8 +315,12 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     );
     press(&mut review, KeyCode::Char('j')).await;
     press(&mut review, KeyCode::Char('j')).await;
+    // Install pending-handoff ownership before the launch key can accept a child.
+    fixture.launched = Some(Launched::new(fixture.launch_inputs.take().unwrap()));
     press(&mut review, KeyCode::Enter).await;
     assert!(screen(&mut review).contains("open_release launched."));
+    let launched = fixture.launched.as_mut().unwrap();
+    support::os::wait_until(Duration::from_secs(10), || launched.own().is_some());
     press(&mut review, KeyCode::Char('k')).await;
     press(&mut review, KeyCode::Enter).await;
     assert!(screen(&mut review).contains("notes_release finished."));
@@ -324,15 +374,78 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
 }
 
 #[tokio::test]
+async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
+    for (complete, unwind) in [(false, false), (false, true), (true, false), (true, true)] {
+        let fixture = Fixture::new();
+        let root = fixture._root.path().to_owned();
+        let output = support::os::run(fixture.command().args(["verify", "--all", "--json"]));
+        assert!(output.status.success(), "{output:?}");
+        let accepted: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let run: artifactize_core::types::RunId =
+            accepted["run"].as_str().unwrap().parse().unwrap();
+        let id = fixture.waiting().await;
+        let saved = store::read_run(&fixture.state, &run).await.unwrap();
+        assert_eq!(
+            saved.run.status(),
+            artifactize_core::types::RunStatus::Running
+        );
+        let control = saved.run.control.unwrap();
+        let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
+            panic!("waiting Human Run has an admitted worker");
+        };
+        let identities = std::iter::once(owner)
+            .chain(control.supervisor)
+            .collect::<Vec<_>>();
+        let receipts = fixture.receipts().await;
+        if complete {
+            let reviewer = "alice".parse().unwrap();
+            human::claim(&receipts, &id, &reviewer).await.unwrap();
+            human::submit(
+                &receipts,
+                &id,
+                &reviewer,
+                &json!({"verdict":"GREEN","approved":true}),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                owned_run::terminal(&fixture.state, &run).await.run.status(),
+                artifactize_core::types::RunStatus::Green
+            );
+        }
+        // The complete fixture is consumed; none of its shared launch-input state
+        // can be reused after unwinding, and its guards finish teardown first.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _owned = fixture;
+            // Local bindings drop in reverse order, including during unwinding: the
+            // fixture owns this writer too, not only the detached Human worker.
+            let _receipts = receipts;
+            assert!(!unwind, "submit-only fixture unwind probe");
+        }));
+        assert_eq!(result.is_err(), unwind);
+        assert!(
+            identities
+                .iter()
+                .all(|identity| !support::os::same_process_running(
+                    identity.pid.get(),
+                    identity.start_time
+                )),
+            "the exact Human worker and supervisor exited"
+        );
+        assert!(
+            !root.exists(),
+            "worker cleanup precedes temporary state removal"
+        );
+    }
+}
+
+#[tokio::test]
 async fn review_respects_other_claims_and_releases_its_own() {
     let fixture = Fixture::new();
-    let output = support::os::run(
-        fixture
-            .command()
-            .args(["verify", "--all", "--timeout-ms", "1"]),
-    );
-    // The Human wait times out at once; the request stays open.
-    assert_eq!(output.status.code(), Some(3));
+    let output = support::os::run(fixture.command().args(["verify", "--all"]));
+    // Submission returns at once; the Human request and owned Run stay open.
+    assert_eq!(output.status.code(), Some(0));
     let id = fixture.waiting().await;
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &id, &"bob".parse().unwrap())
@@ -437,14 +550,5 @@ fn pty_review_restores_the_terminal_on_quit() {
     }
     let output = String::from_utf8_lossy(&output);
     support::os::assert_restored(&output, frame);
-    // Bracketed paste is on while the review runs and off again before the screen is restored.
-    // A ConPTY keeps the console's input modes to itself rather than passing them on.
-    #[cfg(unix)]
-    {
-        let on = output.find("\x1b[?2004h").expect("bracketed paste enabled");
-        let off = output
-            .rfind("\x1b[?2004l")
-            .expect("bracketed paste disabled");
-        assert!(on < off, "{output:?}");
-    }
+    support::os::assert_bracketed_paste(&output);
 }

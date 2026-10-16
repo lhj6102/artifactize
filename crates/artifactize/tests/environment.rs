@@ -2,8 +2,12 @@
 //! their variables and the toolchains found through them. Only what is artifactize's own
 //! differs: its credentials and settings stay out, and each run has a private temporary
 //! directory that goes with it.
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use serde_json::{Value, json};
 use std::{fs, path::Path, process::Command};
@@ -11,37 +15,39 @@ use std::{fs, path::Path, process::Command};
 /// What a runtime eval or a command Agent tool is expected to see. The "toolchain" is a
 /// proxy that resolves through the home directory, as rustup's `cargo` does.
 const PROBE: &str = r#"import json, os, pathlib, sys
+PATH_TEXT_FUNCTION
 home = pathlib.Path(os.environ['HOME_NAME'])
-assert str(home) == sys.argv[1], home
+assert path_text(home) == sys.argv[1], home
 assert os.environ['AUTHOR_VARIABLE'] == 'from-the-terminal'
 assert (home / '.toolchains' / 'stable' / 'version').read_text().strip() == 'cargo 9.9'
 assert 'ARTIFACTIZE_REMOTE_TOKEN' not in os.environ
 assert 'ARTIFACTIZE_REMOTE' not in os.environ
 tmp = pathlib.Path(os.environ['TMPDIR'])
 assert tmp.is_dir() and not tmp.is_relative_to(home)
-(home / ('seen-tmp-' + sys.argv[2])).write_text(str(tmp))
+(home / ('seen-tmp-' + sys.argv[2])).write_text(path_text(tmp))
 if sys.argv[2] == 'tool':
     sys.stdin.read()
     print(json.dumps({'content': [{'type': 'text', 'text': 'ok'}]}))
 "#;
 
 struct Project {
-    root: tempfile::TempDir,
+    root: owned_run::Root,
 }
 
 impl Project {
     fn new(declare: impl FnOnce(&str, &str) -> Value) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let home = root.path().join("home");
         fs::create_dir_all(home.join(".toolchains/stable")).unwrap();
         fs::write(home.join(".toolchains/stable/version"), "cargo 9.9\n").unwrap();
         let repo = root.path().join("repo");
+        root.track(&root.path().join("state"), &repo);
         fs::create_dir(&repo).unwrap();
         support::os::write_python_script(
             &repo.join("probe.py"),
-            &PROBE.replace("HOME_NAME", support::os::home_env()),
+            &support::os::portable_path_probe(&PROBE.replace("HOME_NAME", support::os::home_env())),
         );
-        let home = home.to_str().unwrap().to_owned();
+        let home = support::os::path_text(&home);
         support::declaration::write(
             repo.join("index.artf"),
             declare(support::os::python_program(), &home).to_string(),
@@ -65,7 +71,7 @@ impl Project {
             .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-commands")
             .env("AUTHOR_VARIABLE", "from-the-terminal")
             .envs(support::os::home_variables(self.home()))
-            .output()
+            .record_output()
             .unwrap()
     }
 
@@ -99,7 +105,7 @@ fn a_runtime_eval_runs_in_the_authors_environment_and_its_tmp_goes_with_the_run(
             }],
         })
     });
-    check_succeeded(&project.run(&["verify", "--all", "--json"]));
+    check_succeeded(&project.run(&["verify", "--wait", "--all", "--json"]));
     // The private temporary directory was removed when the run ended.
     assert!(!project.seen_tmp("eval").exists());
 }

@@ -3,7 +3,6 @@ use std::{fs, path::PathBuf};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use artifactize_tools::builtin::{READ_BYTES, RESULT_BYTES, SEARCH_FILE_BYTES};
 use tokio_util::sync::CancellationToken;
 
 use super::image;
@@ -12,6 +11,13 @@ use crate::{
     test_os::{symlink_dir, symlink_file},
     tools::{Content, Registry, ToolResult},
 };
+
+// Public tool limits, stated independently of the implementation so changing a
+// production bound cannot silently move the regression fixtures with it.
+const READ_BYTES: usize = 64 * 1024;
+const RESULT_BYTES: usize = 512 * 1024;
+const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
+const IMAGE_BYTES: usize = 4 * 1024 * 1024;
 
 struct Fixture {
     directory: TempDir,
@@ -143,7 +149,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
         );
     }
     let mut bytes = image::tests::fixtures()[1].1.clone();
-    bytes.resize(image::IMAGE_LIMIT, 0);
+    bytes.resize(IMAGE_BYTES, 0);
     fixture.write("a/large", &bytes);
     assert!(
         !fixture
@@ -300,24 +306,11 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     if symlink_dir(fixture.directory.path(), a.join("escape")).is_some() {
         paths.push("escape");
     }
-    // Sockets and FIFOs: entries that are neither files nor directories, which only Unix has.
-    // Unix-only special-file or filesystem permission behavior.
-    #[cfg(unix)]
-    let _socket = crate::test_os::socket(&a.join("socket"));
-    // Unix-only special-file or filesystem permission behavior.
-    #[cfg(unix)]
-    {
-        crate::test_os::fifo(&a.join("fifo"));
-        paths.extend(["socket", "fifo"]);
-    }
-    // Junctions redirect like directory symlinks and need no privilege.
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        crate::test_os::junction(&a.join("data"), &a.join("joined"));
-        crate::test_os::junction(fixture.directory.path(), &a.join("escape-junction"));
-        paths.extend(["joined", "joined/file", "escape-junction"]);
-    }
+    let special_files = crate::test_os::special_files(&a);
+    paths.extend(special_files.paths().iter().copied());
+    crate::test_os::link_dir(&a.join("data"), &a.join("joined"));
+    crate::test_os::link_dir(fixture.directory.path(), &a.join("escape-junction"));
+    paths.extend(["joined", "joined/file", "escape-junction"]);
     for path in paths {
         for tool in ["read_a", "list_a", "glob_a", "grep_a", "view_image_a"] {
             let mut args = json!({"path":path});
@@ -349,18 +342,10 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     let symlinked = symlink_dir("old-a", fixture.root.join("a")).is_some();
     if symlinked {
         assert!(read().await.is_error());
+        crate::test_os::remove_link_dir(&fixture.root.join("a"));
     }
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        // Without the privilege to create the symlink above, there is nothing at "a" yet
-        // to remove.
-        if symlinked {
-            crate::test_os::remove_link_dir(&fixture.root.join("a"));
-        }
-        crate::test_os::junction(&fixture.root.join("old-a"), &fixture.root.join("a"));
-        assert!(read().await.is_error());
-    }
+    crate::test_os::link_dir(&fixture.root.join("old-a"), &fixture.root.join("a"));
+    assert!(read().await.is_error());
 }
 
 #[tokio::test]
@@ -407,15 +392,11 @@ async fn missing_paths_and_links_report_their_cause() {
     if symlink_dir("data", a.join("linkdir")).is_some() {
         cases.push(("list_a", "linkdir", symlink));
     }
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        crate::test_os::junction(&a.join("data"), &a.join("joined"));
-        cases.extend([
-            ("list_a", "joined", symlink),
-            ("read_a", "joined/file", symlink),
-        ]);
-    }
+    crate::test_os::link_dir(&a.join("data"), &a.join("joined"));
+    cases.extend([
+        ("list_a", "joined", symlink),
+        ("read_a", "joined/file", symlink),
+    ]);
     for (tool, path, message) in cases {
         let mut args = json!({"path":path});
         if tool == "grep_a" {
@@ -427,16 +408,10 @@ async fn missing_paths_and_links_report_their_cause() {
             "{tool} {path}"
         );
     }
-    // Any other failure names the operating system's error; Unix's is ENOTDIR here.
-    // Unix-only special-file or filesystem permission behavior.
-    #[cfg(unix)]
-    assert_eq!(
-        error(fixture.call("read_a", json!({"path":"data/file/x"})).await),
-        format!(
-            "Cannot open Artifact input: {}",
-            crate::test_os::not_a_directory()
-        )
-    );
+    let message = error(fixture.call("read_a", json!({"path":"data/file/x"})).await);
+    if let Some(cause) = crate::test_os::not_a_directory_error() {
+        assert_eq!(message, format!("Cannot open Artifact input: {cause}"));
+    }
 }
 
 #[tokio::test]
@@ -629,9 +604,7 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     fixture.write("a/search/binary.txt", b"alpha\n\0");
     fixture.write("a/search/invalid.txt", b"alpha\n\xff");
     symlink_file("a.txt", fixture.root.join("a/search/link.txt"));
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    crate::test_os::junction(
+    crate::test_os::link_dir(
         &fixture.root.join("a/search/sub"),
         &fixture.root.join("a/search/joined.txt"),
     );

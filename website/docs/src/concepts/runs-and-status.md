@@ -10,20 +10,24 @@ the next `verify` will execute, reuse, derive or wait for, without running evals
 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, or
 `--all`. Eval IDs are qualified (`green/check`). Selection order is preserved, with
 duplicates removed at their first occurrence; Artifacts expand to their evals in ID
-order within each declaration. READY runtime evals execute concurrently up to
-`--jobs N` (default 4, minimum 1). Nonrecursive dispatch preserves selector order;
-automatically included dependency requirements are appended in configuration
-order. With `--recursive`, the entire included scope instead dispatches in
-configuration order, not explicitly selected evals first. The graph is
+order within each declaration. Every READY eval starts as soon as it is ready,
+without a default concurrency cap. Add `--jobs N` (minimum 1) only if this
+concurrency causes trouble. Scheduling prefers unblockable work and the
+longest remaining dependency path; selection/configuration order breaks ties.
+Selection order still defines saved requests, not dispatch priority. The graph is
 re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
-fingerprint claim occupy job slots while polling, but cache hits occupy none. An
+fingerprint claim count against an explicit `--jobs` cap, but cache hits do not. An
 Agent review of a backend with a machine-wide limit also needs one of its
-[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one occupies no job slot. `verify` prints
-`Started RUN_ID (follow: artifactize monitor)` to stderr as soon as the Run is saved, before any eval runs, so a long
-Run can be followed (`artifactize monitor`, `artifactize run show RUN_ID --wait`) or cancelled from the start; nothing
-else is printed there unless something goes wrong. With `--json`, stdout still
-carries only the final JSON. An Artifact selector starts with that Artifact's evals;
+[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one does not count against `--jobs`.
+QUEUED means awaiting admission, a backend slot or a joined execution; only a
+Run with explicit `--jobs` can be waiting for a Run job slot. Artifactize owns
+each Run independently of its requester. Plain `verify` prints the Run ID
+and exits 0 when submission is accepted; `--json` prints `{"run","state"}`.
+Acceptance is not a validation verdict. Use `verify --wait` to announce the ID on stderr,
+observe settlement and render the final saved result. Interrupting or closing the watcher
+stops observation only; the Run continues. `run cancel RUN_ID` explicitly requests cancellation.
+An Artifact selector starts with that Artifact's evals;
 an individual eval selector starts with that eval. Both retain the full dependency
 closure as a final obligation. `--recursive` includes every eval in that closure,
 including other evals on the selected Artifact and cycle peers, in configuration
@@ -33,23 +37,60 @@ without `--recursive`: `artifactize verify player/ready` is sufficient. A file A
 own evals, never the surrounding folder's.
 
 RED blocks downstream execution; missing/operational evidence waits. Cycle peers
-have no internal gates. `--ignore-gates` bypasses execution gates only: final validation
-still requires actual GREEN evidence or explicit `basis = true` throughout the required
-scope. A basis never waives its dependencies. Selected GREEN results with missing
+have no internal gates. The per-request modes permit speculative execution or
+deferred sign-offs, but final validation always requires actual GREEN evidence or
+explicit `basis = true` throughout the required scope. Gate bypass
+(`--ignore-gates`, `review_policy.dependency_gates` and the old library override)
+is removed; declarations using the old policy fail configuration validation. A basis never waives its dependencies. Selected GREEN results with missing
 obligations remain recorded in an INCOMPLETE Run; both text and JSON output identify
-unmet obligations. Human evals record WAITING_HUMAN requests, and `verify` waits
-for their results as it waits for runtime and Agent evals: when a submission
-arrives, evals that depend on it run in the same Run. `--timeout-ms MS` (default 600000)
-bounds the wait; when it expires the Run ends INCOMPLETE with exit 3, and the
-waiting requests stay open for submission. `--reuse-only KINDS` (for example `agent,human` in CI)
+unmet obligations. Human evals record WAITING_HUMAN requests, and the artifactize-owned
+Run waits for their results as for runtime and Agent evals: when a submission
+arrives, evals that depend on it run in the same Run. Plain `verify` submits and
+returns; `verify --wait` follows that Run in the foreground. There is no Human wait
+deadline or `verify --timeout-ms`; all eval kinds share the same settlement wait rule.
+`--reuse-only KINDS` (for example `agent,human` in CI)
 lets evals of the listed kinds only reuse a result; one with nothing to reuse is not
 executed and leaves the Run INCOMPLETE ([CLI](../reference/cli.md#reuse-only)).
 
-Verification runs in the foreground: GREEN exits 0,
-RED 1, ERROR 2, Human wait timeout 3, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
-group, waits for cleanup, and records ERROR/CANCELLED for running and queued
-requests, never RED. Previously committed results remain unchanged. There is no
-detached worker.
+`verify --wait` exits 0 for GREEN/SATISFIED, 1 for RED, 2 for ERROR/cancelled and 4 for
+INCOMPLETE, or 5 for SIGNOFFS_PENDING when deferral leaves only sign-offs. Ctrl-C/SIGTERM exits 130 and stops watching, not verification. Explicit
+cancellation stops admission and active owned work, waits for cleanup and records
+ERROR/CANCELLED without erasing committed evidence. It never kills another Run's
+execution that this Run joined. A dead execution worker is reconciled as
+ERROR/OWNER_DIED; interrupted work is not replayed automatically.
+
+`--request-key K` supplies a caller attempt identity (1–128 ASCII letters/digits/`._:-`).
+The same canonical repository and key return the same Run, even after completion or
+checkout changes; the first selection and options remain authoritative. Different keys,
+or omitting the key, create new Runs. Eval/cache reuse remains independent of submission
+identity. Keep the key when retrying a lost response; use a new key for a new attempt.
+
+### Speculation and deferred sign-offs
+
+The two [per-request verify modes](../reference/cli.md#verify-modes),
+`--speculate` and `--defer-human`, default off and are saved in the Run's `modes`.
+The same request key keeps its original choices.
+
+Speculation starts requested runtime, Agent and Human evals before unresolved
+gates, within all scheduling limits. Ready work has priority; speculative work
+uses spare capacity and yields first. Upstream RED/ERROR immediately cancels
+transitively blocked work and marks it BLOCKED without a reusable cancelled
+result. GREEN keeps results already produced for the same files.
+
+Deferral allows execution past pending Human gates. A deferrable sign-off's
+request is issued as late as possible, after its Artifact's machine reviews finish
+and no gate blocks it. Requests show DEFERRED, dependent results PROVISIONAL.
+Neither state is actual approval. `gate = "blocking"` retains the strict Human
+gate. When all other obligations pass, the Run ends SIGNOFFS_PENDING (exit 5),
+meaning **only sign-offs remain**; it does not wait for those submissions.
+Later submissions update requests, not the historical Run verdict. A new verify
+reuses unchanged provisional machine results: GREEN sign-offs allow SATISFIED;
+RED sign-offs block dependents. `--reuse-only agent,human` never treats a pending
+sign-off as GREEN and stays suitable for CI.
+
+`status` labels current deferred waits and provisional results, but its execution
+prediction remains strict: a new default verify still waits for Human evidence.
+Run/result readers expose SIGNOFFS_PENDING as terminal and not satisfied.
 
 Text output prints one line per request and marks a result taken from another
 request's execution (a fingerprint hit, or a joined execution) with its source Run
@@ -89,7 +130,7 @@ Dependency requests instead have `kind: "derived"` and their own Run/request IDs
 no execution and are not counted as reused. `run show`, `request show` and `request list --json`
 carry `source` too.
 
-`--json` prints full saved results, including payloads, argv, stdout/stderr and
+`verify --wait --json` prints full saved results, including payloads, argv, stdout/stderr and
 runtime details; there is no compact projection or `--full` flag. `run show RUN_ID`
 always prints full saved JSON and exits 0 on a successful read, regardless of the
 saved verdict; `--wait` instead exits with the Run outcome code once it finishes.
@@ -107,7 +148,7 @@ those verdicts in `evidence`, a map from qualified eval IDs to saved states:
 {"evidence": {"code-style/approved": "GREEN"}}
 ```
 
-`run show RUN_ID --json` and `verify --json` flatten the saved Run's fields into
+`run show RUN_ID --json` and `verify --wait --json` flatten the saved Run's fields into
 the output object: `evidence` is a top-level field, not nested under `run`, and
 is omitted when empty. It is the evidence this Run used, not a lookup of the
 latest result. Saved definitions, `evidence` and the Run's request states let the
@@ -138,7 +179,7 @@ artifactize --repo PROJECT config check --json
 ```
 
 `status` accepts the same exclusive selectors as `verify`, defaulting to
-`--all`, and the same `--profile`, `--recursive`, `--force` and `--ignore-gates` policy
+`--all`, and the same `--profile`, `--recursive` and `--force` policy
 options. It reports current Artifact/eval states, unmet final obligations, and
 `execute` / `reuse` / `derive` / `wait` / `blocked` actions. All evals
 in the required closure are shown; `selected` and `included` distinguish explicit
@@ -221,7 +262,8 @@ including cycle peers. Text lists Artifacts with tags and file-kind markers, eva
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
 child/mount/instruction/argv/dependency relation metadata, cycle markers and
-dependency-first SCCs. Artifact entries carry `kind` (`file` or `folder`) and
+dependency-first strongly connected components (SCCs): groups of Artifacts that
+mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
 workspace-relative target `path`. Status also shows file kinds/paths; the monitor
 uses `[file]` on tree rows and keeps the target path in Detail.
 Component IDs refer to the full graph and may be
@@ -229,3 +271,14 @@ noncontiguous in a selected projection. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output
 level, with no `plan`, `--compact` or `--full`. The former top-level `graph`
 command is hidden from help; it prints `graph moved to "artifactize config graph"` and exits 2.
+
+### Current graph review tools
+
+`config graph` remains the configuration inspector. For review, declare the
+[built-in `graph` tools](../reference/builtin-tools.md#current-project-graph) on
+any Artifact: the Agent sees the extracted current graph as a tree; the Human
+opens it in the existing desktop graph viewer, without requiring a saved Run.
+The optional root [`.artf` graph Artifact](../reference/declarations.md#graph-artifact)
+has ordinary evals and appears in Runs and status like any other Artifact. Only
+its fingerprint algorithm is different; there is no graph-specific verification
+flow or automatic relation to the root folder Artifact.

@@ -1,5 +1,4 @@
 name = "logo"
-fingerprint = {}
 
 [views.human_tools]
 notes = { description = "Print the design notes for {artifactName}.", builtin = "read", args = ["{artifactPath}/notes.md"] }

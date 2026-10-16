@@ -1,0 +1,53 @@
+name = "landing"
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.follows-rules]
+title = "The landing page follows the introduction rules"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.follows-rules.profile_variants]
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+
+[evals.follows-rules.payload]
+instruction = """
+Read {writer-introduction} with read_rules_writer-introduction. Read index.html of {landing}
+using read_landing, grep_landing and list_landing. Check the landing page's visible introduction
+and page content against every W- item; installer implementation scripts are not page content.
+Also check this Artifact's own criterion L-SINGLE-INSTALL: {landing} has no separate install
+instructions or install commands, and has a clear Install link or button pointing to the single
+docs installation page (getting-started/install.html).
+Submit GREEN only when no shared item or this own criterion is clearly violated. Otherwise submit RED with up to 20 violations,
+most important first, each with the item id, a page path:line and one sentence on what to change
+in the landing page.
+"""
+
+[evals.follows-rules.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-rules.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.follows-rules.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.follows-rules.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.where = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["item", "where", "change"]
+additionalProperties = false
