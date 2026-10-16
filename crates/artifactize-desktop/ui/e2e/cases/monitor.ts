@@ -1,5 +1,5 @@
 // The monitor end to end, in the real app on fixture state made by the real CLI: catalog →
-// Run tree → Detail, the shared Human Detail's claim, release, tool, RED validation, Korean
+// Run graph → eval popup → Detail, the shared Human Detail's claim, release, tool, RED validation, Korean
 // text and GREEN submission, and a live update from another process.
 import assert from "node:assert/strict";
 import { artifactize, create, createNavigationFixture, type Fixture, launched, signoff, slowTool } from "../fixture.ts";
@@ -9,6 +9,7 @@ import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
+import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryShows } from "../graph-view.ts";
 
 async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
@@ -49,9 +50,10 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
   }
 
   async function openReview(claim = true) {
-    await browser.$('[role="tree"]').click();
-    await browser.$('//li[@role="treeitem"][@aria-level="2"][.//span[starts-with(normalize-space(.), "signoff")]]').click();
-    await press(browser, ["Enter"], () => human().isExisting(), "this case's Human Detail");
+    await browser.$(nodeAt("a:release")).click();
+    await browser.waitUntil(async () => (await popup(browser))?.artifact === "release", { timeout: 15000, timeoutMsg: "release's evals popped up" });
+    await browser.$(rowAt("a:release/e:release/signoff")).click();
+    await human().waitForExist({ timeout: 15000, timeoutMsg: "this case's Human Detail" });
     const id = signoff(fixture).id;
     await browser.waitUntil(async () => (await human().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
       timeout: 15000, timeoutMsg: "the default Human Detail identifies this case's exact waiting request without Technical",
@@ -67,17 +69,17 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
       assert.equal(initial.noticeError, false, "this case's claim did not inherit a tool error");
     }
   }
-  await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
+  await graphShown(browser, "a:release");
   return { text, human, toolOutput, selectTool, openReview };
 }
 
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-LAUNCH-MONITOR
+  // UX edges: E-LAUNCH-MONITOR E-MON-RUNS-GRAPH
   scenario<null>(
     "monitor-catalog",
-    "catalogs the repository and its Run, and peeks at the selected eval",
+    "catalogs the repository and its Run, and shows the Run's graph starting on its waiting eval",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       const { text } = await monitorUI(browser, fixture);
@@ -96,10 +98,15 @@ export const scenarios: Scenario[] = [
       assert.match(shown, /Runs \(1\)/i);
       assert.match(shown, /RUNNING/);
       assert.match(shown, /validation pending/);
-      // A new Run starts on its first in-progress eval; the peek follows it.
-      const selected = await browser.$('[role="treeitem"][aria-selected="true"]').getText();
-      assert.match(selected, /signoff/);
-      assert.match(shown, /WAITING_HUMAN — waiting for a Human submission/);
+      // The Run fills the right side as its graph, with every Artifact as a node.
+      for (const id of ["a:release", "a:ship", "a:docs"]) await graphShown(browser, id);
+      // A new Run starts on its first in-progress eval: its Artifact takes the keyboard with
+      // its summary, and its popup opens on that eval.
+      await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
+      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:release", "release focused in the graph");
+      await summaryShows(browser, nodeAt("a:release"), /release/);
+      await press(browser, ["Enter"], async () => (await popup(browser))?.selected === "a:release/e:release/signoff", "the sign-off selected in release's popup");
+      await summaryShows(browser, rowAt("a:release/e:release/signoff"), /WAITING_HUMAN — waiting for a Human submission/);
     },
   ),
 
@@ -365,37 +372,46 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-RESIZE
   scenario<null>(
     "monitor-resize",
-    "resizes a split pane by dragging its divider",
+    "resizes the graph against the left side, and Scope against Runs, by dragging their dividers",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       await monitorUI(browser, fixture);
-      const width = () =>
-        browser.execute(() =>
-          (document.querySelector('[role="tree"]')?.closest("[data-pane]") as HTMLElement).getBoundingClientRect().width,
-        );
-      const before = await width();
-      const dividers = await browser.$$("[data-pane-resizer]");
+      const size = (selector: string, axis: "width" | "height") =>
+        browser.execute((within, dimension) =>
+          (document.querySelector(within)?.closest("[data-pane]") as HTMLElement).getBoundingClientRect()[dimension as "width" | "height"],
+        selector, axis);
       // Paneforge installs its move listener in a post-press render effect. Keep the real
       // pointer held across that render boundary, rather than guessing how long it takes.
-      await browser.action("pointer", { id: "resize" }).move({ origin: dividers[2] }).down().perform(true);
-      try {
-        await afterRender(browser);
-        const pointer = browser.action("pointer", { id: "resize" });
-        for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x: 20, y: 0 });
-        await pointer.perform(true);
-        await browser.waitUntil(async () => (await width()) > before + 60, { timeout: 15000, timeoutMsg: "the dragged Run tree" });
-        await browser.action("pointer", { id: "resize" }).up().perform();
-      } finally { await browser.releaseActions(); }
-      await browser.waitUntil(async () => (await width()) > before + 60, { timeout: 15000, timeoutMsg: "a wider Run tree" });
+      const dividers = () => browser.$$(".monitor [data-pane-resizer]");
+      const drag = async (at: number, x: number, y: number, grown: () => Promise<boolean>, what: string) => {
+        await browser.action("pointer", { id: "resize" }).move({ origin: (await dividers())[at] }).down().perform(true);
+        try {
+          await afterRender(browser);
+          const pointer = browser.action("pointer", { id: "resize" });
+          for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x, y });
+          await pointer.perform(true);
+          await browser.waitUntil(grown, { timeout: 15000, timeoutMsg: `the dragged ${what}` });
+          await browser.action("pointer", { id: "resize" }).up().perform();
+        } finally { await browser.releaseActions(); }
+        await browser.waitUntil(grown, { timeout: 15000, timeoutMsg: `a larger ${what}` });
+      };
+      const graph = () => size(".monitor .stage", "width");
+      const scope = () => size('[role="listbox"][aria-label="Scope"]', "height");
+      const graphBefore = await graph();
+      const scopeBefore = await scope();
+      assert.equal((await dividers()).length, 2, "one divider between Scope and Runs, one between the left side and the graph");
+      // In document order: Scope | Runs inside the left side, then the left side | the graph.
+      await drag(1, -20, 0, async () => (await graph()) > graphBefore + 60, "Run graph");
+      await drag(0, 0, 20, async () => (await scope()) > scopeBefore + 60, "Scope pane");
     },
   ),
 
-  // UX edges: E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TREE
-  // E-MON-TREE-MOVE E-MON-TREE-FOLD E-MON-TREE-DETAIL E-MON-DETAIL-BACK
-  // E-MON-TREE-TO-RUNS E-MON-RUNS-TO-SCOPE
+  // UX edges: E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-MOVE E-MON-RUNS-GRAPH
+  // E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-DETAIL E-MON-DETAIL-BACK E-GRAPH-EVALS-CLOSE
+  // E-MON-GRAPH-TO-RUNS E-MON-RUNS-TO-SCOPE
   scenario<NavigationData>(
     "monitor-keyboard-journey",
-    "walks Scope → another Run → tree movement and folds → Detail → Tree → Runs → Scope without a mouse",
+    "walks Scope → another Run → its graph → the eval popup → Detail → back to Scope without a mouse",
     async () => {
       const { fixture, ...data } = await createNavigationFixture();
       return { fixture, data };
@@ -403,7 +419,6 @@ export const scenarios: Scenario[] = [
     async (browser, { data: example }) => {
       const pane = (name: string) => browser.$(`[role="listbox"][aria-label="${name}"]`);
       const selectedRun = () => browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
-      const selectedTree = () => browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("data-path");
       const scopeIndex = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"]')]
           .findIndex((row) => row.getAttribute("aria-selected") === "true"));
       await browser.waitUntil(() => pane("Runs").isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
@@ -424,20 +439,20 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Enter"], () => pane("Runs").isFocused(), "the repository's Runs focused");
       assert.equal(await selectedRun(), newer.id);
       await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id, "another identified Run selected");
-      await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "that Run's Tree focused");
+      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "that Run's subject Artifact focused in its graph");
+      await summaryShows(browser, nodeAt("a:subject"), /subject/);
       const evalPath = `a:subject/e:subject/${older.eval}`;
-      await browser.waitUntil(async () => (await selectedTree()) === evalPath, { timeout: 15000, timeoutMsg: "the older Run's own criterion selected" });
-      await press(browser, ["k"], async () => (await selectedTree()) === "a:subject", "the Artifact above its eval selected");
-      const expanded = () => browser.$('[role="treeitem"][data-path="a:subject"]').getAttribute("aria-expanded");
-      await press(browser, ["h"], async () => (await expanded()) === "false", "the Artifact folded");
-      await press(browser, ["l"], async () => (await expanded()) === "true", "the Artifact unfolded");
-      await press(browser, ["j"], async () => (await selectedTree()) === evalPath, "the identified eval selected again");
+      await press(browser, ["Enter"], async () => {
+        const shown = await popup(browser);
+        return !!shown?.focused && shown.selected === evalPath;
+      }, "the older Run's own criterion selected in subject's popup");
       const human = () => browser.$('[aria-label="Human review"]');
       await press(browser, ["Enter"], () => human().isExisting(), "the selected eval's Detail opened");
       await browser.waitUntil(() => browser.execute((name) => document.querySelector('[aria-label="Human review"] h3')?.textContent?.includes(`subject/${name}`) ?? false,
         older.eval), { timeout: 15000, timeoutMsg: "Detail has loaded the eval selected in this journey" });
-      await press(browser, ["Escape"], async () => !(await human().isExisting()) && await browser.$('[role="tree"]').isFocused(), "back to Tree");
-      assert.equal(await selectedTree(), evalPath, "Tree selection survived the Detail");
+      await press(browser, ["Escape"], async () => !(await human().isExisting()) && (await popup(browser))?.focused === true, "back to the popup");
+      assert.equal((await popup(browser))?.selected, evalPath, "the popup's selection survived the Detail");
+      await press(browser, ["Escape"], async () => (await popup(browser)) === null && (await focusedNode(browser)) === "a:subject", "the popup closed on subject");
       await press(browser, ["Escape"], () => pane("Runs").isFocused(), "back to Runs");
       assert.equal(await selectedRun(), older.id, "the same Run remains selected");
       await press(browser, ["ArrowLeft"], () => pane("Scope").isFocused(), "back to Scope");
@@ -452,17 +467,18 @@ export const scenarios: Scenario[] = [
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       const text = () => browser.execute(() => document.body.innerText);
-      await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      // The Runs pane has focus first: Enter steps into the tree, which starts on the sign-off.
-      await browser.keys(["Enter"]);
-      await browser.waitUntil(() => browser.$('[role="tree"]').isFocused(), { timeout: 15000, timeoutMsg: "tree focus" });
-      await browser.keys(["Enter"]);
-      await browser.waitUntil(() => browser.$('[aria-label="Human review"]').isExisting(), { timeout: 15000, timeoutMsg: "Human Detail" });
+      await graphShown(browser, "a:release");
+      // The Runs pane has focus first: Enter steps into the graph on release, whose popup
+      // starts on the sign-off.
+      await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
+      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:release", "release focused in the graph");
+      await press(browser, ["Enter"], async () => (await popup(browser))?.selected === "a:release/e:release/signoff", "the sign-off in release's popup");
+      await press(browser, ["Enter"], () => browser.$('[aria-label="Human review"]').isExisting(), "Human Detail");
       await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
       await browser.keys(["c"]);
       await browser.waitUntil(async () => signoff(fixture).claim?.reviewer === "alice", { timeout: 15000, timeoutMsg: "claimed" });
       await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
-      // Back out of the Detail to the tree, then q outside any field.
+      // Back out of the Detail to the graph, then q outside any field.
       await browser.keys(["Escape"]);
       await browser.$('[aria-label="Human review"]').waitForExist({ reverse: true, timeout: 10000 });
       const dialog = await browser.$('[role="alertdialog"]');

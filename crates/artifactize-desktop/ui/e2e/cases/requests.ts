@@ -10,6 +10,7 @@ import { reviewing } from "../human-review.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
+import { graphShown, nodeAt, popup, rowAt } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -179,10 +180,11 @@ export const scenarios: Scenario[] = [
     async () => ({ fixture: await create(), data: {} }),
     async (browser, { fixture }) => {
       const { text, human, composing } = submission(browser);
-      await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
-      await browser.$('[role="tree"]').click();
-      await browser.$('//li[@role="treeitem"][@aria-level="2"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "signoff")]]').click();
-      await press(browser, ["Enter"], () => human().isExisting(), "the Human review");
+      await graphShown(browser, "a:release");
+      await browser.$(nodeAt("a:release")).click();
+      await waitFor(browser, async () => (await popup(browser))?.artifact === "release", "release's evals popped up");
+      await browser.$(rowAt("a:release/e:release/signoff")).click();
+      await human().waitForExist({ timeout: 15000, timeoutMsg: "the Human review" });
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
       await human().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed");

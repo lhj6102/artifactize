@@ -18,14 +18,12 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
       const human = () => browser.$('[aria-label="Human review"]');
       const text = () => browser.execute(() => document.body.innerText);
       if (screen === "Monitor graph") {
-        await browser.$("button*=Graph").waitForExist({ timeout: 15000 });
-        await browser.$("button*=Graph").click();
         const release = await browser.$('.svelte-flow__node[data-id="a:release"]');
         await release.waitForExist({ timeout: 15000 });
         await release.click();
         await browser.waitUntil(
           () => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
-          { timeout: 15000, timeoutMsg: "focus in the release evals" },
+          { timeout: 15000, timeoutMsg: "focus in release's eval popup" },
         );
         await press(browser, ["Enter"], () => human().isExisting(), "the sign-off's Human Detail");
       } else {

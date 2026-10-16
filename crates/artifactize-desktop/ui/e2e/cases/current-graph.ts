@@ -65,10 +65,10 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
 }
 
 export const scenarios: Scenario[] = [
-  // J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-ZOOM → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
+  // J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-EVALS → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
   scenario<Record<string, never>>(
     "current-graph-refresh",
-    "opens without a saved Run, zooms into complete criteria and relations, then refreshes changed declarations",
+    "opens without a saved Run, pops up an Artifact's evals, expands complete criteria and relations, then refreshes changed declarations",
     async () => {
       const fixture = createGraph();
       return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
@@ -85,8 +85,10 @@ export const scenarios: Scenario[] = [
       const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
       await evals.waitForExist({ timeout: 10000 });
       assert.match(await evals.getText(), /A person approves the release/);
-      // Opening the selected eval exposes criteria, not a historical request Detail.
-      await evals.click();
+      // The popup beside release takes the keys; opening its selected eval exposes criteria,
+      // not a historical request Detail.
+      await browser.waitUntil(() => evals.isFocused(), { timeout: 15000, timeoutMsg: "release's eval popup focused" });
+      assert.equal(await expanded(), false, "the structure text starts folded");
       await press(browser, ["Enter"], expanded, "structure text expanded from the selected eval");
       const shown = await structure();
       const criteria: Record<string, unknown> = {};
@@ -120,7 +122,7 @@ export const scenarios: Scenario[] = [
       ], "the concrete input-to-consumer relation carries its instruction label");
       assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false);
 
-      // Continue the same launch, zoom and complete-structure journey: the text remains
+      // Continue the same launch, popup and complete-structure journey: the text remains
       // expanded while each real refresh reloads this window's changed declaration.
       const declaration = nativePath(fixture.repo, "docs", "index.artf");
       let previousTitle = "Docs build";

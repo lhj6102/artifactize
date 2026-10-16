@@ -1,62 +1,21 @@
 // The Run graph with every kind of verdict, and the Detail of a finished eval: node and edge
-// colours for RED, ERROR and blocked Artifacts, the arrows between nodes of one column, `v`
-// between the tree and the graph, and the instruction, request, result and technical record
-// of a completed eval.
+// colours for RED, ERROR and blocked Artifacts, the arrows between nodes of one column, and the
+// instruction, request, result and technical record of a completed eval.
 import assert from "node:assert/strict";
 import { createStates, requests } from "../fixture.ts";
 import { press } from "../keys.ts";
-import { breadcrumbNames } from "../breadcrumb.ts";
+import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryShows } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type VerdictLight } from "./graph-appearance.ts";
 
-/** A clicked node zooms in. Escape then steps back out: it is pressed only once the zoom is
- * shown, since before it Escape leaves the Run pane, and "zoomed out" would already hold. */
-async function zoomedIn(browser: WebdriverIO.Browser): Promise<void> {
-  await browser.$('[role="listbox"][aria-label="Evals"]').waitForExist({ timeout: 15000, timeoutMsg: "the clicked node zoomed in" });
-}
-
-function verdictGraph(browser: WebdriverIO.Browser) {
-  const text = () => browser.execute(() => document.body.innerText);
-
-  const lights = () => graphAppearance(browser);
-
-  const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
-
-  const tree = () => browser.$('[role="tree"]');
-  return { text, lights, focused, tree };
-}
-
-function finishedDetail(browser: WebdriverIO.Browser) {
-  const text = () => browser.execute(() => document.body.innerText);
-  return { text };
+/** A clicked node pops up its evals. Escape then closes them: it is pressed only once the
+ * popup is shown, since before it Escape leaves the Run pane. */
+async function popsUp(browser: WebdriverIO.Browser, artifact: string): Promise<void> {
+  await browser.waitUntil(async () => (await popup(browser))?.artifact === artifact, { timeout: 15000, timeoutMsg: `${artifact}'s evals popped up` });
 }
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-GRAPH-OPEN E-GRAPH-CLOSE
-  scenario<Record<string, never>>(
-    "states-tree-graph-switch",
-    "switches between the tree and the graph with v",
-    async () => {
-      const fixture = await createStates();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser) => {
-      const { text, tree } = verdictGraph(browser);
-      await browser.waitUntil(async () => (await text()).includes("crash"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await tree().click();
-      await press(browser, ["v"], () => browser.$(".svelte-flow__node").isExisting(), "the graph");
-      assert.ok(!(await tree().isExisting()), "the graph replaces the tree");
-      // The tree's list left with the switch; the graph's own node takes the keys.
-      await browser.$(".svelte-flow__node").click();
-      await zoomedIn(browser);
-      await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "zoomed out to a focused node");
-      await press(browser, ["v"], () => tree().isExisting(), "the tree again");
-      await tree().click();
-      await press(browser, ["v"], () => browser.$(".svelte-flow__node").isExisting(), "the graph once more");
-    },
-  ),
-
-  // UX edges: E-GRAPH-OPEN
+  // UX journey J-GRAPH-COLOURS: every verdict's own colour, on nodes and on edges.
   scenario<Record<string, never>>(
     "states-graph-lights",
     "colours RED, ERROR, blocked, waiting and GREEN Artifacts and the edges each passes on to its dependent",
@@ -65,10 +24,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      const { text, lights } = verdictGraph(browser);
-      await browser.waitUntil(async () => (await text()).includes("crash"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$("button*=Graph").click();
-      await browser.$(".svelte-flow__node").waitForExist({ timeout: 15000 });
+      const lights = () => graphAppearance(browser);
+      await graphShown(browser, "a:crash");
       const expectedNodes = {
         "a:red": "red",
         "a:crash": "error",
@@ -106,16 +63,12 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      const { text, focused } = verdictGraph(browser);
-      await browser.waitUntil(async () => (await text()).includes("crash"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$("button*=Graph").click();
-      await browser.$(".svelte-flow__node").waitForExist({ timeout: 15000 });
-      const on = (id: string) => async () => (await focused()) === id;
-      await browser.$('.svelte-flow__node[data-id="a:red"]').click();
-      // A click zooms in; step back out to the whole graph with the node focused.
-      await zoomedIn(browser);
-      await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "zoomed out");
-      await browser.waitUntil(on("a:red"), { timeout: 15000, timeoutMsg: "focus on red" });
+      await graphShown(browser, "a:red");
+      const on = (id: string) => async () => (await focusedNode(browser)) === id;
+      await browser.$(nodeAt("a:red")).click();
+      // A click pops up the evals; close them to move on the whole graph with the node focused.
+      await popsUp(browser, "red");
+      await press(browser, ["Escape"], async () => (await popup(browser)) === null && await on("a:red")(), "the popup closed on red");
       // → the dependent, ← back upstream.
       await press(browser, ["ArrowRight"], on("a:down"), "focus on down, downstream");
       await press(browser, ["ArrowLeft"], on("a:red"), "focus on red, upstream");
@@ -133,19 +86,18 @@ export const scenarios: Scenario[] = [
         .sort((a, b) => a.y - b.y)
         .map((node) => node.id);
       assert.ok(order.length >= 2, "a column of at least two nodes");
-      await browser.$(`.svelte-flow__node[data-id="${order[0]}"]`).click();
-      await zoomedIn(browser);
-      await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "the first node in the column focused");
-      await browser.waitUntil(on(order[0]), { timeout: 15000, timeoutMsg: `focus on ${order[0]}` });
+      await browser.$(nodeAt(order[0])).click();
+      await popsUp(browser, order[0].slice(2));
+      await press(browser, ["Escape"], async () => (await popup(browser)) === null && await on(order[0])(), `the first node in the column, ${order[0]}, focused`);
       for (const next of order.slice(1)) {
         await press(browser, ["ArrowDown"], on(next), `focus on ${next}, below`);
-        await breadcrumbNames(browser, next.slice(2));
+        await summaryShows(browser, nodeAt(next), new RegExp(next.slice(2)));
       }
       await press(browser, ["ArrowUp"], on(order[order.length - 2]), `focus on ${order[order.length - 2]}, above`);
     },
   ),
 
-  // UX edges: E-MON-DETAIL-TECHNICAL E-MON-TREE-DETAIL
+  // UX edges: E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-DETAIL E-MON-DETAIL-TECHNICAL
   scenario<Record<string, never>>(
     "states-finished-detail",
     "shows the instruction, the request and the result, and the technical record only on demand",
@@ -154,24 +106,21 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
-      const { text } = finishedDetail(browser);
-      await browser.waitUntil(async () => (await text()).includes("fine"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      const fine = '//li[@role="treeitem"][@aria-level="1"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "fine")]]';
-      await browser.$('[role="tree"]').click();
-      await browser.$(fine).click();
-      // A finished Artifact is folded: unfold it, then its eval is the row after it.
-      await press(browser, ["l"], async () => (await browser.$(fine).getAttribute("aria-expanded")) === "true", "fine unfolded");
-      const check = await browser.$(`${fine}/following-sibling::li[@role="treeitem"][1]`);
-      await check.click();
-      await press(browser, ["Enter"], () => browser.$("button*=Close").isExisting(), "the Detail opened");
+      await graphShown(browser, "a:fine");
+      await browser.$(nodeAt("a:fine")).click();
+      await popsUp(browser, "fine");
+      // A click on the popup's one eval opens its Detail.
+      await browser.$(rowAt("a:fine/e:fine/check")).click();
+      await browser.$('aside[aria-label="Detail"]').waitForExist({ timeout: 15000, timeoutMsg: "the Detail opened" });
       const request = requests(fixture).find((saved) => saved.evalId === "fine/check");
       assert.ok(request?.result, "the real CLI saved the completed fine/check result");
       assert.equal(request.status, "GREEN");
       assert.equal(request.result.verdict, "GREEN");
-      // Read only the opened Detail, not GREEN text already present in the Run tree.
+      // Read only the opened Detail, not GREEN text already present in the popup.
       const detailText = () => browser.$('[role="document"]').getText();
       const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
         .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
+      await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: "the opened Detail is fine/check's" });
       const shown = await detailText();
       assert.match(shown, /Pass\./, `the instruction in ${shown.slice(0, 1500)}`);
       assert.match(shown, /Source\s+executed in this Run/, "where the result came from");
@@ -197,19 +146,17 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("down"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      const down = '//li[@role="treeitem"][@aria-level="1"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "down")]]';
-      // `down` waits on `red`, which failed: its eval is the row after it.
-      await browser.$('[role="tree"]').click();
-      await browser.$(`${down}/following-sibling::li[@role="treeitem"][1]`).click();
-      const selected = () => browser.$('[role="treeitem"][aria-selected="true"]');
-      assert.match(await selected().getText(), /blocked by red/);
-      await press(
-        browser,
-        ["b"],
-        async () => (await selected().getAttribute("aria-level")) === "1" && /\bred\b/.test(await selected().getText()),
-        "the RED Artifact selected",
-      );
+      await graphShown(browser, "a:down");
+      // `down` waits on `red`, which failed: its one eval is blocked.
+      await browser.$(nodeAt("a:down")).click();
+      await popsUp(browser, "down");
+      const blocked = "a:down/e:down/check";
+      await browser.waitUntil(async () => (await popup(browser))?.selected === blocked && (await popup(browser))?.focused === true,
+        { timeout: 15000, timeoutMsg: "down's blocked eval selected in its focused popup" });
+      assert.match(await browser.$(rowAt(blocked)).getText(), /blocked by red/);
+      await summaryShows(browser, rowAt(blocked), /blocked/);
+      await press(browser, ["b"], async () => (await popup(browser)) === null && (await focusedNode(browser)) === "a:red", "the RED Artifact focused");
+      await summaryShows(browser, nodeAt("a:red"), /red/);
     },
   ),
 ];
