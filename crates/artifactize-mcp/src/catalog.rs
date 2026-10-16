@@ -4,6 +4,9 @@ use super::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, RUN_LIST_LIMIT};
 use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Value, json};
 
+/// Match core's ASCII RequestKey bound, keeping retry identities compact in stored receipts.
+const REQUEST_KEY_CHARS: usize = 128;
+
 pub(super) fn tools() -> Vec<Tool> {
     let scope = json!({"oneOf": [
         {"type":"object","properties":{"kind":{"const":"all"}},"required":["kind"],"additionalProperties":false},
@@ -17,7 +20,7 @@ pub(super) fn tools() -> Vec<Tool> {
         tool(
             "verify_start",
             "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. Modes default off; concurrency is unlimited unless jobs is explicitly given; backend limits still apply. Provisional sign-offs are not full approval.",
-            json!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":"^[A-Za-z0-9._:-]{1,128}$"},"speculate":{"type":"boolean","default":false},"defer_human":{"type":"boolean","default":false}}),
+            json!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":format!("^[A-Za-z0-9._:-]{{1,{REQUEST_KEY_CHARS}}}$")},"speculate":{"type":"boolean","default":false},"defer_human":{"type":"boolean","default":false}}),
             &["scope"],
             false,
         ),
