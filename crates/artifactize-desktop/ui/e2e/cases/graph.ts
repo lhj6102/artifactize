@@ -3,7 +3,7 @@
 // another process live without moving any node while release's evals pop up, still opens the
 // highlighted eval's Detail afterwards, and moves between connected Artifacts by keyboard.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryOpen, summaryShows } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -224,15 +224,16 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-SELECT E-GRAPH-EVALS-DETAIL E-GRAPH-EVALS-CLOSE
+  // UX edges: E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-SELECT E-GRAPH-EVALS-DETAIL E-MON-DETAIL-TECHNICAL
+  // E-MON-DETAIL-BACK E-GRAPH-EVALS-CLOSE
   scenario<Record<string, never>>(
     "graph-eval-selection",
-    "pops up an Artifact's evals with Enter, selects one with the arrows, opens its Detail and closes the popup",
+    "pops up an Artifact's evals with Enter, selects one with the arrows, opens its Detail with its technical record and closes both",
     async () => {
       const fixture = createEvals(["alpha", "beta", "gamma"]);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
-    async (browser) => {
+    async (browser, { fixture }) => {
       await graphShown(browser, "a:app");
       await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
       await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:app", "app focused in the graph");
@@ -247,8 +248,22 @@ export const scenarios: Scenario[] = [
       // Its summary follows the selection, beside its row.
       await summaryShows(browser, rowAt(path), new RegExp(`Check ${chosen}`));
       await press(browser, ["Enter"], () => detail(browser).isExisting(), "the Detail opened");
-      await browser.waitUntil(async () => new RegExp(`app/${chosen}`).test(await detail(browser).getText()), { timeout: 15000, timeoutMsg: "the Detail is the selected eval's" });
-      await press(browser, ["Escape"], async () => !(await detail(browser).isExisting()), "the Detail left");
+      // The selected eval's own instruction, result and request, then its technical record.
+      const request = requests(fixture).find((saved) => saved.evalId === `app/${chosen}`);
+      assert.ok(request?.result, `the real CLI saved app/${chosen}'s result`);
+      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
+        .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
+      await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: `the Detail is app/${chosen}'s` });
+      assert.ok((await browser.$('[role="document"]').getText()).includes(`Check ${chosen}.`), "its instruction");
+      assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "its exact saved result");
+      const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
+      assert.equal(await field("Fingerprint"), "", "the technical record starts folded");
+      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "", "the technical record shown");
+      assert.equal(await field("Request"), request.id, "the request stays shown beside the technical record");
+      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "", "the technical record hidden");
+      // Back to the graph as it was: the popup, the chosen eval still selected.
+      await press(browser, ["Escape"], async () => !(await detail(browser).isExisting()) && (await popup(browser))?.focused === true, "the Detail left");
+      assert.equal((await popup(browser))?.selected, path, "the chosen eval is still selected");
       await press(browser, ["Escape"], async () => (await popup(browser)) === null && (await focusedNode(browser)) === "a:app", "the popup closed on app");
     },
   ),
