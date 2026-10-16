@@ -1,5 +1,5 @@
 //! Lossless bounded pages of CLI JSON, without transport-owned result snapshots.
-use crate::types::Sha256Digest;
+use artifactize_core::types::Sha256Digest;
 use serde_json::{Value, json};
 use std::{fmt, str::FromStr};
 use time::OffsetDateTime;
@@ -56,7 +56,7 @@ impl fmt::Display for Cursor {
 }
 
 pub(super) fn project(
-    context: &crate::runs::Context,
+    context: &artifactize_core::runs::Context,
     name: &str,
     arguments: &Value,
     value: Value,
@@ -65,7 +65,7 @@ pub(super) fn project(
 ) -> Result<Value, String> {
     let text = serde_json::to_string(&value).map_err(|e| e.to_string())?;
     let revision = Sha256Digest::of(
-        &serde_json::to_vec(&(&context.repo, &context.state, name, arguments, &text))
+        &serde_json::to_vec(&(context.repo(), context.state(), name, arguments, &text))
             .map_err(|e| e.to_string())?,
     );
     let offset = match cursor {

@@ -1,5 +1,5 @@
 //! Parse MCP arguments once at the transport boundary.
-use crate::{project::selection::Selection, runs::ResultCursor, types::*};
+use artifactize_core::{project::selection::Selection, runs::ResultCursor, types::*};
 use serde::Deserialize;
 
 /// Bound model-driven array envelopes, without changing core selection expansion.
@@ -96,7 +96,7 @@ pub(super) struct Session {
 pub(super) struct Tools {
     pub eval: Option<EvalId>,
     pub artifact: Option<ArtifactName>,
-    pub tool: Option<crate::config::ToolName>,
+    pub tool: Option<artifactize_core::config::ToolName>,
     pub audience: Option<Audience>,
 }
 #[derive(Deserialize)]
@@ -105,7 +105,7 @@ pub(super) enum Audience {
     Agent,
     Human,
 }
-impl From<Audience> for crate::diagnostics::Audience {
+impl From<Audience> for artifactize_core::diagnostics::Audience {
     fn from(value: Audience) -> Self {
         match value {
             Audience::Agent => Self::Agent,
@@ -116,7 +116,7 @@ impl From<Audience> for crate::diagnostics::Audience {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Models {
-    pub provider: crate::config::Backend,
+    pub provider: artifactize_core::config::Backend,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -53,8 +53,8 @@ file Artifact. Omit the field for its default; use a script if the fingerprint
 needs to cover more than the file.
 
 The old `dependencies` fingerprint option is rejected: a fingerprint covers only its own
-Artifact. Walk limits and manifests are in the [reference](../reference/declarations.md#artifactsum); the script form is under
-[fingerprint scripts](../reference/declarations.md#fingerprint-scripts).
+Artifact. Walk limits and manifests are in the [reference](declarations.md#artifactsum); the script form is under
+[fingerprint scripts](declarations.md#fingerprint-scripts).
 
 ## The reuse key
 
@@ -113,7 +113,7 @@ store. Their required executable evals still reuse in the usual way.
 
 A successful end-of-review recheck adds the GREEN or RED result to its key's
 history: its self-contained `executions` row gets its completion time, size and last
-use ([State](../reference/state-cache-limits.md#state)). Errors and cancellation are
+use ([State](others/state.md#state)). Errors and cancellation are
 never recorded there. When a key holds more than one record,
 the most recent by completion time is reused, GREEN or RED. Results from different
 profiles therefore reuse each other: a review that `--profile fast` produced
@@ -140,19 +140,19 @@ A hit returns the original result without running the eval or re-validating it
 against the requested profile or schema. The request saves the original execution
 ID, the producing `profile` and `options`, `evalDefHash`, `key`, `provenance`
 (repository, Run, request, eval, definition hash, completion time and, for Agent
-results, the [pins of their tools' execution paths](../reference/agent-tools.md)) and the original attempts as `reusedUsage` when reported,
+results, the [pins of their tools' execution paths](tools/agent.md)) and the original attempts as `reusedUsage` when reported,
 alongside its own `requestedProfile`. Its own `usage` is null: a reused request spent
 nothing. Its `source`, `{"runId", "requestId", "kind"}`, names the request whose execution produced the
 result and whether it was a completed record (`cache`), a live execution the
 request waited for (`joined`) or a remote store record (`remote`). Dependency
 requests instead use `kind: "derived"`, with their own Run/request IDs; they are not
-reuse. `source` is null on a request that executed itself ([Runs](runs-and-status.md#verify-and-runs)). Runtime
+reuse. `source` is null on a request that executed itself ([Runs](run.md#verify-and-runs)). Runtime
 usage is null, not an invented zero. A reused RED remains RED for gates and final
 obligations. Dependencies outside execution selection can supply cached evidence
 without running. Results remain readable after the source repository is deleted;
 external paths embedded in result text are not made portable.
 
-With a [team review store](../reference/review-store.md#remote-review-store-client),
+With a [team review store](team/reference.md#remote-review-store-client),
 `verify` also asks the store for every key and reuses whichever record completed
 last, the local latest or the store's latest; a store that cannot be reached leaves
 the local latest.
@@ -173,7 +173,7 @@ eval once, Human sign-offs included; later Runs reuse normally.
 
 ## Graph fingerprint
 
-The root [`.artf` graph Artifact](../reference/declarations.md#graph-artifact)
+The root [`.artf` graph Artifact](declarations.md#graph-artifact)
 uses `graph:<sha256>`, computed from one canonical, name-based extraction of the
 whole project's current declarations. Objects and relations are sorted; child
 folder locations and repository paths are not identities. Extraction includes:

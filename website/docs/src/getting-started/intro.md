@@ -14,30 +14,18 @@ is a check on an Artifact—a command, an agent's judgment, or a person's sign-o
 - Share results with teammates and CI through the team review store. Monitor
   follows progress, and Review helps people work through their waiting sign-offs.
 
-It runs on Linux, macOS and Windows. The [concepts](concepts/artifacts-and-evals.md)
-explain declarations and relationships; the tour below needs no model or API key.
-
-## Get started
-
-Follow [Install](getting-started/install.md), then review the runtime-only example.
-No model or API key is needed. In a POSIX shell:
-
-```sh
-git clone https://github.com/lhj6102/artifactize   # the example projects
-cd artifactize/examples/runtime-relations
-export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
-artifactize verify --all --wait    # three GREEN results, exit 0
-artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
-```
-
-Continue with the [quick start](getting-started/quick-start.md) to explore more checks and reviews.
+It runs on Linux, macOS and Windows. Start with [Installation](/docs/getting-started/install.html), then
+follow the [Guide](/docs/getting-started/guide.html) to get a first GREEN result and reuse it without a
+model or API key.
 
 ## Where to go next
 
-- [Install](getting-started/install.md) and the [Quick start](getting-started/quick-start.md)
-  take you from install to a first reused result.
-- [Concepts](concepts/artifacts-and-evals.md) explain Artifacts, evals, fingerprints and Runs.
-- [Guides](guides/agent-evals.md) cover Agent and Human evals, the team review store and CI.
-- The [Reference](reference/overview.md) has every command, field, limit and protocol.
-- The source is on [GitHub](https://github.com/lhj6102/artifactize), open source under
-  the Apache License 2.0.
+- **[Features](/docs/features/artifact.html):** Artifacts and their Graph, evals,
+  fingerprints, Runs, tools and team sharing. These features work through the same
+  library in every interface.
+- **[Desktop](/docs/desktop/index.html):** browse Runs and handle Human reviews in a window.
+- **[Agent plugin](/docs/agent-plugin/hey-arti.html):** give Arti the portable skill and
+  connect your coding host through [MCP](/docs/agent-plugin/mcp.html).
+- **[CLI](/docs/cli/index.html):** command syntax, output and exit codes.
+- **[TUI](/docs/tui/index.html):** Monitor and Review in a terminal.
+- **[Source](https://github.com/lhj6102/artifactize):** open source under Apache 2.0.

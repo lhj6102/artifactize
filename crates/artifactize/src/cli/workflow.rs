@@ -8,16 +8,16 @@ use std::{
 };
 
 use super::{PolicyArgs, SelectionArgs, outcome_code};
-use crate::{config::read_workspace_config, project::selection::Selection};
+use artifactize_core::{config::read_workspace_config, project::selection::Selection};
 
 /// Execution-only arguments, separate from selection and dependency policy.
 pub(super) struct VerifyLimits {
-    pub modes: crate::runs::RunModes,
+    pub modes: artifactize_core::runs::RunModes,
     pub jobs: Option<u32>,
     pub max_executions: Option<u64>,
     pub wait: bool,
-    pub request_key: Option<crate::types::RequestKey>,
-    pub reuse_only: Vec<crate::config::ProfileKind>,
+    pub request_key: Option<artifactize_core::types::RequestKey>,
+    pub reuse_only: Vec<artifactize_core::config::ProfileKind>,
 }
 
 pub(super) async fn verify(
@@ -35,7 +35,7 @@ pub(super) async fn verify(
         reuse_only,
     } = limits;
     let selection = selection.resolve()?;
-    let options = crate::project::VerifyOptions {
+    let options = artifactize_core::project::VerifyOptions {
         modes,
         jobs: jobs.map(|limit| limit as usize),
         max_executions,
@@ -43,12 +43,13 @@ pub(super) async fn verify(
         ..policy.options()
     };
     let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-    let runs = crate::runs::Context::new(
+    let runs = artifactize_core::runs::Context::new(
         &repo,
         context.state_dir.as_deref(),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;
-    let observation = crate::runs::start(&runs, &selection, &options, request_key).await?;
+    let observation =
+        artifactize_core::runs::start(&runs, &selection, &options, request_key).await?;
     if !wait {
         if context.json {
             print_json(&serde_json::json!({"run": observation.run, "state": observation.state}))?;
@@ -64,15 +65,16 @@ pub(super) async fn verify(
         observation.run
     )
     .map_err(|e| e.to_string())?;
-    let result = crate::runs::wait(&runs, &observation.run, None, cancellation.clone()).await;
+    let result =
+        artifactize_core::runs::wait(&runs, &observation.run, None, cancellation.clone()).await;
     listener.abort();
     if cancellation.is_cancelled() {
         return Ok(INTERRUPTED_EXIT);
     }
     result?;
-    let view = crate::runs::view(&runs, &observation.run).await?;
+    let view = artifactize_core::runs::view(&runs, &observation.run).await?;
     if let Ok(log) = std::fs::File::open(
-        runs.state
+        runs.state()
             .join("runs")
             .join(view.run.id.as_str())
             .join("worker.stderr"),
@@ -98,7 +100,7 @@ pub(super) async fn status(
 ) -> Result<u8, String> {
     let selection = selection.resolve()?;
     let (cancellation, listener) = cancellation_listener()?;
-    let result = crate::project::status(
+    let result = artifactize_core::project::status(
         &context.repo.unwrap_or_else(|| PathBuf::from(".")),
         context.state_dir.as_deref(),
         &selection,
@@ -118,14 +120,14 @@ pub(super) async fn status(
 
 pub(super) async fn graph(
     context: Context,
-    artifact: Option<crate::types::ArtifactName>,
+    artifact: Option<artifactize_core::types::ArtifactName>,
 ) -> Result<u8, String> {
     let config = read_workspace_config(&context.repo.unwrap_or_else(|| PathBuf::from(".")))
         .map_err(|error| error.to_string())?;
     let selection = artifact.map_or(Selection::All, |artifact_id| Selection::Artifact {
         artifact_id,
     });
-    let view = crate::query::graph(&config, &selection)?;
+    let view = artifactize_core::query::graph(&config, &selection)?;
     if context.json {
         print_json(&view)?;
     } else {
@@ -136,7 +138,7 @@ pub(super) async fn graph(
 
 pub(super) async fn check(context: Context) -> Result<u8, String> {
     let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-    let report = crate::inspect::config_check(&repo)?;
+    let report = artifactize_core::inspect::config_check(&repo)?;
     if context.json {
         print_json(&report)?;
     } else {

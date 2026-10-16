@@ -169,7 +169,7 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = false;
 
 /// Whether a terminal that cannot hide input is still read, visibly, after a warning. A Unix
 /// terminal always can; failing to hide input is an error.
-pub(crate) const VISIBLE_INPUT_FALLBACK: bool = false;
+pub const VISIBLE_INPUT_FALLBACK: bool = false;
 
 /// The editor a review opens fields in when `EDITOR` is unset.
 pub(crate) const DEFAULT_EDITOR: &str = "vi";
@@ -242,7 +242,7 @@ pub(crate) fn resolve_system_aliases(path: &Path) -> io::Result<std::path::PathB
 }
 
 /// Register for SIGINT and SIGTERM now; the future completes at the first of them.
-pub(crate) fn stop_requested() -> io::Result<impl Future<Output = ()> + Send + 'static> {
+pub fn stop_requested() -> io::Result<impl Future<Output = ()> + Send + 'static> {
     let mut interrupt = signal(SignalKind::interrupt())?;
     let mut terminate = signal(SignalKind::terminate())?;
     Ok(async move {
@@ -251,7 +251,7 @@ pub(crate) fn stop_requested() -> io::Result<impl Future<Output = ()> + Send + '
 }
 
 /// Turns terminal echo off until dropped, so a pasted secret is not shown.
-pub(crate) struct HiddenInput(libc::termios);
+pub struct HiddenInput(libc::termios);
 
 impl HiddenInput {
     pub fn new() -> io::Result<Self> {

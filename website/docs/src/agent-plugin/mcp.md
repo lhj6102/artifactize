@@ -2,7 +2,7 @@
 
 `artifactize mcp` serves the verification and non-interactive inspection tools in
 the **same binary** as the CLI. Register it in the coding host, starting from the
-project directory; see [Claude Code and Codex registration](../guides/hey-arti.md#register-the-mcp-server).
+project directory; see [Claude Code and Codex registration](hey-arti.md#register-the-mcp-server).
 `--repo PATH` selects a different project and `--state-dir PATH` selects its state.
 The server resolves these once at startup. Run/request/session reads stay bound
 to that repository; cache records are reusable across repositories in the state.
@@ -11,6 +11,53 @@ The pinned rmcp transport supports the 2026-07-28 discovery/per-request-metadata
 lifecycle and legacy `initialize`/`notifications/initialized` clients. Stdout is
 JSON-RPC only; diagnostics go to stderr. There is no HTTP port, new token,
 Tasks extension, progress stream or subscription API.
+
+## Register the MCP server
+
+**MCP (Model Context Protocol)** connects your coding assistant to artifactize's
+tools, so it can inspect the project and start or observe reviews. **Stdio** means
+the host launches `artifactize mcp` and exchanges messages through that program's
+standard input and output, rather than connecting to a network port.
+
+Complete the [installation setup](../getting-started/install.md), then launch
+the coding host from **your project directory**.
+The stdio server uses the same binary and shared state as the CLI. It binds to one
+repository/state when started; it is not the HTTP review store (`artifactize
+server`), and requires no port, token argument or changed host timeout.
+
+These commands configure the host explicitly; artifactize does not install or
+change host configuration for you. Follow the host's normal trust/approval flow.
+
+### Claude Code
+
+From the project directory:
+
+```sh
+claude mcp add --transport stdio --scope project artifactize -- artifactize mcp
+claude mcp get artifactize
+```
+
+Project registration creates the host's project `.mcp.json`. Keep it free of
+credentials and machine-specific paths if you share it. Start/restart Claude Code
+from this project, use its MCP view to confirm the server is connected, and check
+that the verification and inspection tools below are listed.
+
+### Codex CLI
+
+Register the stdio command, then start Codex in the project directory:
+
+```sh
+codex mcp add artifactize -- artifactize mcp
+codex mcp get artifactize
+```
+
+Codex records this in its own MCP configuration. A globally registered command
+still needs to start from the intended project directory. Where a host cannot
+launch in the project, register a project-specific command using
+`artifactize --repo PATH mcp` rather than pointing it at the skill directory.
+Normal host permissions/authentication still apply; no bypass flags are needed.
+
+Registration supplies tools, not the [Hey Arti skill](hey-arti.md).
 
 ## Verification tools
 

@@ -11,9 +11,12 @@ const INCOMPLETE_EXIT: u8 = 4;
 /// Distinct terminal outcome: all machine work passed, but real sign-offs remain.
 const SIGNOFFS_PENDING_EXIT: u8 = 5;
 
-pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<(), String> {
+pub(super) fn verify(
+    view: &artifactize_core::store::RunView,
+    json_output: bool,
+) -> Result<(), String> {
     if json_output {
-        print_json(&crate::query::run_output(
+        print_json(&artifactize_core::query::run_output(
             view,
             time::OffsetDateTime::now_utc(),
         ))?;
@@ -24,7 +27,7 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
             "Run: {}\nExecution: {}\nState: {}",
             view.run.id,
             view.run.status(),
-            crate::platform::path_text(&view.run.state_dir)
+            artifactize_core::platform::path_text(&view.run.state_dir)
         )
         .map_err(|e| e.to_string())?;
         if let Some(error) = view.run.error() {
@@ -53,7 +56,8 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
                 .requests
                 .iter()
                 .filter(|request| {
-                    request.error_code() == Some(crate::types::FailureCode::BackendStopped)
+                    request.error_code()
+                        == Some(artifactize_core::types::FailureCode::BackendStopped)
                         && request.options.backend.as_ref() == Some(&stopped.backend)
                 })
                 .count();
@@ -67,7 +71,8 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
             )
             .map_err(|e| e.to_string())?;
         }
-        let (summary, saved) = crate::query::run_summary(view, time::OffsetDateTime::now_utc());
+        let (summary, saved) =
+            artifactize_core::query::run_summary(view, time::OffsetDateTime::now_utc());
         writeln!(
             stdout,
             "Summary: executed {}, reused {}{}",
@@ -126,11 +131,11 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
 
 /// Where a reused result came from: its source Run, plus the producer for a remote result,
 /// or the reviewer and the authenticated publisher for a remote Human sign-off.
-fn reuse_marker(request: &crate::store::Request) -> String {
-    if request.profile.kind() == crate::config::ProfileKind::Dependency {
+fn reuse_marker(request: &artifactize_core::store::Request) -> String {
+    if request.profile.kind() == artifactize_core::config::ProfileKind::Dependency {
         return " (derived)".into();
     }
-    let Some(source) = crate::query::source(request) else {
+    let Some(source) = artifactize_core::query::source(request) else {
         return String::new();
     };
     let profile = if request.profile == request.requested_profile {
@@ -138,17 +143,19 @@ fn reuse_marker(request: &crate::store::Request) -> String {
     } else {
         format!(
             ", profile {}",
-            crate::query::profile_name(&request.profile, &request.options)
+            artifactize_core::query::profile_name(&request.profile, &request.options)
         )
     };
     match &request.origin {
         None => format!(" (reused from {}{profile})", source.run_id),
-        Some(origin) if request.profile.kind() == crate::config::ProfileKind::Human => format!(
-            " (reused from remote: Human sign-off by {}, published by {}, {})",
-            request.reviewer.as_deref().unwrap_or("unknown"),
-            origin.publisher,
-            source.run_id
-        ),
+        Some(origin) if request.profile.kind() == artifactize_core::config::ProfileKind::Human => {
+            format!(
+                " (reused from remote: Human sign-off by {}, published by {}, {})",
+                request.reviewer.as_deref().unwrap_or("unknown"),
+                origin.publisher,
+                source.run_id
+            )
+        }
         Some(_) => format!(
             " (reused from remote: {}, {}{profile})",
             request
@@ -161,7 +168,7 @@ fn reuse_marker(request: &crate::store::Request) -> String {
 }
 
 /// `N (runtime R, agent A, human H)` from a summary tally.
-fn kinds(tally: &crate::query::Kinds) -> String {
+fn kinds(tally: &artifactize_core::query::Kinds) -> String {
     format!(
         "{} (runtime {}, agent {}, human {})",
         tally.total, tally.runtime, tally.agent, tally.human
@@ -188,7 +195,7 @@ fn tags(tags: &[String]) -> String {
     }
 }
 
-pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
+pub(super) fn status(view: &artifactize_core::project::StatusView) -> io::Result<()> {
     let mut out = io::stdout().lock();
     writeln!(
         out,
@@ -208,8 +215,11 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
             "  Artifact {}{}{}: {} ({}/{} Evals)",
             artifact.id,
             tags(&artifact.tags),
-            if artifact.kind == crate::config::ArtifactKind::File {
-                format!(" [file: {}]", crate::platform::path_text(&artifact.path))
+            if artifact.kind == artifactize_core::config::ArtifactKind::File {
+                format!(
+                    " [file: {}]",
+                    artifactize_core::platform::path_text(&artifact.path)
+                )
             } else {
                 String::new()
             },
@@ -271,7 +281,7 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
     Ok(())
 }
 
-pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
+pub(super) fn graph(view: &artifactize_core::query::GraphView<'_>) -> io::Result<()> {
     let mut out = io::stdout().lock();
     writeln!(
         out,
@@ -298,7 +308,7 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
                 out,
                 "    Artifact {id}{}{}{} ({})",
                 tags(&artifact.tags),
-                if artifact.kind == crate::config::ArtifactKind::File {
+                if artifact.kind == artifactize_core::config::ArtifactKind::File {
                     " [file]"
                 } else {
                     ""
@@ -311,7 +321,7 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
                 if artifact.path.as_os_str().is_empty() {
                     ".".into()
                 } else {
-                    crate::platform::path_text(&artifact.path)
+                    artifactize_core::platform::path_text(&artifact.path)
                 }
             )?;
             for eval in view.evals.iter().filter(|eval| eval.target == **id) {
@@ -330,7 +340,7 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
         }
     }
     for edge in &view.relations {
-        use crate::scope::RelationKind;
+        use artifactize_core::scope::RelationKind;
         let detail = match &edge.relation.kind {
             RelationKind::Child { path } => format!("child path={path}"),
             RelationKind::Mount { alias } => format!("mount alias={alias}"),
@@ -359,13 +369,15 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
 }
 
 /// Run outcome exit codes shared by `verify` and `run show --wait`.
-pub(super) fn outcome_code(run: &crate::store::Run) -> u8 {
+pub(super) fn outcome_code(run: &artifactize_core::store::Run) -> u8 {
     match run.status() {
-        crate::types::RunStatus::Green => 0,
-        crate::types::RunStatus::Red => 1,
-        crate::types::RunStatus::Incomplete => INCOMPLETE_EXIT,
-        crate::types::RunStatus::SignoffsPending => SIGNOFFS_PENDING_EXIT,
-        crate::types::RunStatus::Running | crate::types::RunStatus::Error => 2,
+        artifactize_core::types::RunStatus::Green => 0,
+        artifactize_core::types::RunStatus::Red => 1,
+        artifactize_core::types::RunStatus::Incomplete => INCOMPLETE_EXIT,
+        artifactize_core::types::RunStatus::SignoffsPending => SIGNOFFS_PENDING_EXIT,
+        artifactize_core::types::RunStatus::Running | artifactize_core::types::RunStatus::Error => {
+            2
+        }
     }
 }
 

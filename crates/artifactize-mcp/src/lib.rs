@@ -4,7 +4,7 @@ mod input;
 mod page;
 mod read;
 
-use crate::{project::VerifyOptions, runs};
+use artifactize_core::{project::VerifyOptions, runs};
 use input::*;
 use rmcp::{ErrorData, ServerHandler, ServiceExt, model::*, service::RequestContext};
 use serde::{Serialize, de::DeserializeOwned};

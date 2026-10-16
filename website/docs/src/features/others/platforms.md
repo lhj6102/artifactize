@@ -1,7 +1,7 @@
 # Operating systems
 
 artifactize runs on Linux (x86_64 and aarch64), macOS (Apple silicon and Intel) and
-Windows (x64). WSL 2 runs the Linux build. [Install](../getting-started/install.md)
+Windows (x64). WSL 2 runs the Linux build. [Install](../../getting-started/install.md)
 has the channels for each. A project, its declarations and its reviews are the same
 on every OS; this page lists what differs.
 
@@ -11,7 +11,7 @@ Runtime evals, fingerprint scripts, command Agent tools and command Human tools 
 their `command` with `args` as one argument vector on every OS. There is no shell and
 no per-OS variant of a declaration. A project declares commands that exist where it is
 reviewed: an eval that runs `python3` or `grep` needs them on every reviewer's `PATH`.
-For reading, searching and opening files, the [built-in tools](builtin-tools.md) work
+For reading, searching and opening files, the [built-in tools](../tools/builtin.md) work
 everywhere without an external program.
 
 Runtime evals, fingerprint scripts and command Agent tools also run in the author's own
@@ -19,9 +19,9 @@ environment: `artifactize` passes on its whole environment (the home and cache v
 each OS, and on Windows the system variables too), so a toolchain behind a version manager
 resolves as in a terminal. Only `ARTIFACTIZE_*` variables are withheld, and each run gets a
 private `TMPDIR` (`TMP` and `TEMP` as well) of its own. See the
-[runtime environment](declarations.md#runtime-execution-library). Command Human tools
+[runtime environment](../declarations.md#runtime-execution-library). Command Human tools
 inherit the reviewer's complete environment, `ARTIFACTIZE_*` variables included, and get no
-private temporary or output directories ([Human tools](human-tools.md)).
+private temporary or output directories ([Human tools](../tools/human.md)).
 
 ## Program lookup
 
@@ -71,7 +71,7 @@ child Artifact or mount alias only by case is refused rather than read.
 
 ## Opening files and the browser
 
-The built-in [`open`](builtin-tools.md#tools) tool and the `login codex` sign-in open
+The built-in [`open`](../tools/builtin.md#tools) tool and the `login codex` sign-in open
 their target with the desktop's default application:
 
 | OS | Opener |
@@ -108,4 +108,4 @@ channels also ship the standalone `artifactize-tools` command.
 The state directory is `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`,
 else `%LOCALAPPDATA%\artifactize` on Windows, else `~/.local/state/artifactize` (also
 on macOS). On Windows, every install for one user shares it, the Microsoft Store app
-included; WSL keeps its own. See [State](state-cache-limits.md#state).
+included; WSL keeps its own. See [State](state.md#state).

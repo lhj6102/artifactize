@@ -94,7 +94,7 @@ any provider.
 artifactize never remaps it. Use `--profile` together with
 `--eval spec/review`, because a named profile must exist on every included
 eval and `spec/signoff` is a Human eval. To change the default instead, edit
-`backend` and `model` in `profile`. See [Agent reviews](https://artifactize.dev/docs/guides/agent-evals.html#agent-reviews)
+`backend` and `model` in `profile`. See [Agent reviews](https://artifactize.dev/docs/features/agent.html#agent-reviews)
 for details on each backend.
 
 ```sh

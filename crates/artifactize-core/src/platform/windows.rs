@@ -129,7 +129,7 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = true;
 /// Whether a terminal that cannot hide input is still read, visibly, after a warning:
 /// mintty (Git Bash) hands Windows programs a pipe that only looks like a terminal, with no
 /// console echo to turn off.
-pub(crate) const VISIBLE_INPUT_FALLBACK: bool = true;
+pub const VISIBLE_INPUT_FALLBACK: bool = true;
 
 /// The editor a review opens fields in when `EDITOR` is unset.
 pub(crate) const DEFAULT_EDITOR: &str = "notepad";
@@ -168,7 +168,7 @@ pub(crate) fn resolve_system_aliases(path: &Path) -> io::Result<std::path::PathB
 }
 
 /// Register for Ctrl-C, Ctrl-Break and console close now; the future completes at the first.
-pub(crate) fn stop_requested() -> io::Result<impl Future<Output = ()> + Send + 'static> {
+pub fn stop_requested() -> io::Result<impl Future<Output = ()> + Send + 'static> {
     let mut interrupt = ctrl_c()?;
     let mut brk = ctrl_break()?;
     let mut close = ctrl_close()?;
@@ -182,7 +182,7 @@ pub(crate) fn stop_requested() -> io::Result<impl Future<Output = ()> + Send + '
 }
 
 /// Turns console echo off until dropped, so a pasted secret is not shown.
-pub(crate) struct HiddenInput {
+pub struct HiddenInput {
     console: HANDLE,
     mode: CONSOLE_MODE,
 }

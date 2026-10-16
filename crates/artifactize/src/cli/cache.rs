@@ -11,10 +11,10 @@ use super::CacheCommand;
 const MISSING_RECORD_EXIT: u8 = 4;
 
 pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u8, String> {
-    let state = crate::store::state_dir(context.state_dir.as_deref())?;
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
     match command {
         CacheCommand::List { history } => {
-            let entries = crate::cache::list(&state, history).await?;
+            let entries = artifactize_core::cache::list(&state, history).await?;
             if context.json {
                 print_json(&entries)?;
             } else {
@@ -39,7 +39,9 @@ pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u
                             .origin
                             .as_ref()
                             .map(ToString::to_string)
-                            .unwrap_or_else(|| crate::platform::path_text(&entry.repo_path)),
+                            .unwrap_or_else(|| artifactize_core::platform::path_text(
+                                &entry.repo_path
+                            )),
                         entry.records,
                         entry.bytes,
                         entry.last_used
@@ -49,7 +51,7 @@ pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u
             }
         }
         CacheCommand::Show { key, history } => {
-            let mut records = crate::cache::show(&state, &key, history).await?;
+            let mut records = artifactize_core::cache::show(&state, &key, history).await?;
             let found = !records.is_empty();
             if history {
                 print_json(&records)?;
@@ -59,7 +61,7 @@ pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u
             return Ok(if found { 0 } else { MISSING_RECORD_EXIT });
         }
         CacheCommand::Rm { key } => {
-            print_json(&json!({"removed": crate::cache::remove(&state, &key).await?}))?;
+            print_json(&json!({"removed": artifactize_core::cache::remove(&state, &key).await?}))?;
         }
     }
     Ok(0)

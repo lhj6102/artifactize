@@ -1,10 +1,10 @@
-# Team review store
+# Working as a team
 
 Machines and CI can reuse each other's verdicts through one shared review store,
 `artifactize server` ([design](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)). Each machine keeps its
 own state. The store keeps every record of each reuse key and returns the latest
 one, so a review done later (a forced re-review, say) replaces an earlier verdict
-for everyone. The [team walkthrough](team-walkthrough.md)
+for everyone. The [team walkthrough](walkthrough.md)
 runs two machines and CI end to end.
 
 **Server.** Run the store on a small host, with its own state directory:
@@ -23,8 +23,13 @@ To let teammates connect without sending tokens over an unencrypted network, use
 Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server and its clients
 together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
 Human sign-offs included, needs one new review. Dependency evals have no store
-records: each client derives them from current required evidence. See [Review store server](../reference/review-store.md#review-store-server) for
+records: each client derives them from current required evidence. See [Review store server](reference.md#review-store-server) for
 the full reference.
+
+Share reusable results through the team review store, then let [CI](ci.md) reuse
+Agent and Human verdicts with a read-only token. The [walkthrough](walkthrough.md)
+shows two machines and CI; the [reference](reference.md) covers server and client
+commands, record formats and security.
 
 ## Connect teammates securely
 
@@ -76,7 +81,7 @@ From then on:
 - `request submit` publishes Human sign-offs;
 - `remote push` sends results produced while the store was unreachable.
 
-See [Remote review store client](../reference/review-store.md#remote-review-store-client) for the full reference.
+See [Remote review store client](reference.md#remote-review-store-client) for the full reference.
 
 **CI.** Configure CI through the environment only; see [CI](ci.md).
 
@@ -91,7 +96,7 @@ See [Remote review store client](../reference/review-store.md#remote-review-stor
 - the profile, its execution options (backend, model, reasoning, limits, variant),
   usage counters and an Agent result's workspace-relative `executionPaths` pins;
 - the producer (`user@host`), the Human reviewer and timestamps;
-- for an Agent result, the [reference](agent-evals.md#saved-conversations) to its
+- for an Agent result, the [reference](../agent.md#saved-conversations) to its
   saved conversation (`producer.session`: the producer, its state id, and the Run,
   request and session ids).
 

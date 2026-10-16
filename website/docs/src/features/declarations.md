@@ -2,7 +2,7 @@
 
 The exact rules for TOML declarations, folder and file Artifacts, fingerprints,
 dependency evals, scoped references and the runtime execution environment.
-[Artifacts and evals](../concepts/artifacts-and-evals.md) introduces them.
+[Artifacts and evals](artifact.md) introduces them.
 
 ## Declaration validation
 
@@ -48,7 +48,7 @@ by ID, not by their position in the TOML source.
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals |
 | `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind; not allowed for dependency evals |
 
-[Tool sessions](agent-tools.md#tool-sessions) own start, stop and bound-call
+[Tool sessions](tools/agent.md#tool-sessions) own start, stop and bound-call
 processes for one review. Stop runs on normal release, panic and caller-runtime
 shutdown; abrupt owner death instead uses identity-checked crash recovery before
 the next session starts, including when the exited owner is an unreaped zombie.
@@ -164,7 +164,7 @@ connect declared tools or evals to other Artifacts. No source file is
 created or required. Ordinary Artifact cycles are allowed; extraction is flat and
 includes the graph Artifact's own declaration without recursive fingerprinting.
 
-The [graph fingerprint](../concepts/fingerprints-and-reuse.md#graph-fingerprint)
+The [graph fingerprint](fingerprint.md#graph-fingerprint)
 changes with structural definitions, not source file bytes or evaluation
 execution options. There is no diff, history or automatic review policy: results
 are reviewed or reused against the current state only.
@@ -246,8 +246,8 @@ profile = { kind = "human" }
 payload.instruction = "Approve the delivery before dependent work proceeds."
 ```
 
-See [verify modes](cli.md#verify-modes) and
-[deferred sign-offs](../guides/human-reviews.md#deferred-sign-offs).
+See [verify modes](../cli/index.md#verify-modes) and
+[deferred sign-offs](human.md#deferred-sign-offs).
 
 ## Dependency evals
 
@@ -299,7 +299,7 @@ a subsequent `status` or `verify` derives the new current verdict.
 
 ## Artifactsum
 
-[Fingerprints and reuse](../concepts/fingerprints-and-reuse.md#artifactsum)
+[Fingerprints and reuse](fingerprint.md#artifactsum)
 describes `files` and `ignore`. Omitting `fingerprint` uses artifactsum. For a
 folder, `fingerprint = {}` does the same. A file Artifact's explicit artifactsum
 form must list its target filename. `fingerprint = false` disables reuse;
@@ -308,7 +308,7 @@ form must list its target filename. `fingerprint = false` disables reuse;
 The value is `artifactsum:` plus the SHA-256 over each input file's owner-relative
 path and the SHA-256 of its bytes, in path order. It covers only the Artifact's own
 files: a dependency's change reaches an eval through the dependency's fingerprint
-in the [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key). Folder walks
+in the [reuse key](fingerprint.md#the-reuse-key). Folder walks
 exclude child Artifact folders and every `*.artf` file. Explicitly listing a
 `.artf` file in `fingerprint.files` fails `config check`, even if the file does not
 exist. Discovery also rejects non-regular `.artf` entries, including directories;
@@ -341,7 +341,7 @@ separate private output directories; a script that must run alone needs
 Every executable eval on an Artifact receives the same literal value, saved on
 its request and in the Run's Artifact validation. artifactize adds no repository,
 eval, profile, tool-view, dependency or content salt to script output. The eval's
-[reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key) combines it with the
+[reuse key](fingerprint.md#the-reuse-key) combines it with the
 Artifact names and kinds (`folder`/`file`/`graph`), dependency fingerprints and Eval
 definition hash. Physical paths never enter the reuse key. Artifactsum
 failures abort preparation in the same way.
@@ -437,7 +437,7 @@ invocation directory, not the caller's root.
 
 Because commands see the author's environment, a result depends on it like any
 terminal command does, and it is not part of the
-[reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key): a toolchain upgrade
+[reuse key](fingerprint.md#the-reuse-key): a toolchain upgrade
 does not invalidate a cached result. A fingerprint that must change with a tool's
 version has to read that version.
 

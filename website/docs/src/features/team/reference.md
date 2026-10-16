@@ -1,7 +1,7 @@
 # Review store server and client
 
 The exact behavior of `artifactize server` and of the client side of the shared
-review store. The [Team review store](../guides/team-review-store.md) guide shows
+review store. The [Team review store](index.md) guide shows
 how to set one up.
 
 ## Review store server
@@ -17,7 +17,7 @@ artifactize server rm KEY
 
 `artifactize server` keeps a [shared remote review store](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)
 in its own `review-store.sqlite` under `--state-dir`, separate from `state.sqlite`.
-It keeps every record of each [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key) and
+It keeps every record of each [reuse key](../fingerprint.md#the-reuse-key) and
 answers a lookup with the latest one by completion time, GREEN or RED, whoever
 published it and in whatever order records arrived. `server run` serves plain HTTP
 on loopback by default (it warns when bound elsewhere) and stops on Ctrl-C/SIGTERM;
@@ -120,7 +120,7 @@ becomes ERROR (`SUPERSEDED`). Text output names the source:
 The producer (`user@host`) and the Human reviewer are what the publishing machine
 recorded; the publisher is the server-authenticated token name. An Agent result's
 `producer` also carries `session`, the reference to its
-[saved conversation](../guides/agent-evals.md#saved-conversations) on the producing
+[saved conversation](../agent.md#saved-conversations) on the producing
 machine; the conversation itself is never published. Older clients ignore the field,
 and the server stores records as they are, so the protocol and record `schema` (2) are
 unchanged. A reused remote result's request shows the reference, and `session show`

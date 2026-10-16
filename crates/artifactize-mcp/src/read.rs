@@ -1,6 +1,6 @@
 //! Repository-bound inspection and lossless detail paging, with no CLI duplication.
 use super::{RUN_LIST_LIMIT, encode, input::*, page, parse};
-use crate::{project::VerifyOptions, runs};
+use artifactize_core::{project::VerifyOptions, runs};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -9,8 +9,8 @@ pub(super) async fn inspect(
     name: &str,
     arguments: Value,
 ) -> Result<Value, String> {
-    let repo = &context.repo;
-    let state = Some(context.state.as_path());
+    let repo = context.repo();
+    let state = Some(context.state());
 
     let cursor = arguments
         .get("cursor")
@@ -33,7 +33,7 @@ pub(super) async fn inspect(
         "status" => {
             let args: Status = parse(arguments)?;
             encode(
-                crate::project::status(
+                artifactize_core::project::status(
                     repo,
                     state,
                     &args.scope.0,
@@ -45,7 +45,7 @@ pub(super) async fn inspect(
         }
         "config_check" => {
             let _: Empty = parse(arguments)?;
-            encode(crate::inspect::config_check(repo)?)?
+            encode(artifactize_core::inspect::config_check(repo)?)?
         }
         "run_list" => {
             let args: Runs = parse(arguments)?;
@@ -54,8 +54,8 @@ pub(super) async fn inspect(
                 return Err("limit must be at most 20; use offset for older Runs.".into());
             }
             encode(
-                crate::store::read_runs(
-                    &context.state,
+                artifactize_core::store::read_runs(
+                    context.state(),
                     Some(repo),
                     limit,
                     args.offset.unwrap_or(0),
@@ -65,7 +65,7 @@ pub(super) async fn inspect(
         }
         "run_show" => {
             let args: RunDetails = parse(arguments)?;
-            crate::query::run_output(&runs::view(context, &args.run).await?, as_of)
+            artifactize_core::query::run_output(&runs::view(context, &args.run).await?, as_of)
         }
         "request_list" => {
             let args: Requests = parse(arguments)?;
@@ -73,31 +73,39 @@ pub(super) async fn inspect(
                 runs::view(context, run).await?;
             }
             encode(
-                crate::inspect::request_list(&context.state, args.run.as_ref(), Some(repo), as_of)
-                    .await?,
+                artifactize_core::inspect::request_list(
+                    context.state(),
+                    args.run.as_ref(),
+                    Some(repo),
+                    as_of,
+                )
+                .await?,
             )?
         }
         "request_show" => {
             let args: super::input::Request = parse(arguments)?;
-            let view = crate::store::read_request(&context.state, &args.id).await?;
-            if crate::store::read_request_repo(&context.state, &view.request.id)
+            let view = artifactize_core::store::read_request(context.state(), &args.id).await?;
+            if artifactize_core::store::read_request_repo(context.state(), &view.request.id)
                 .await?
                 .1
-                != *repo
+                != repo
             {
                 return Err("Request not found in this repository.".into());
             }
-            crate::inspect::request_show(&context.state, &args.id, as_of).await?
+            artifactize_core::inspect::request_show(context.state(), &args.id, as_of).await?
         }
         "session_show" => {
             let args: Session = parse(arguments)?;
-            let located = crate::inspect::session::locate(&context.state, &args.reference).await?;
+            let located =
+                artifactize_core::inspect::session::locate(context.state(), &args.reference)
+                    .await?;
             runs::view(context, &located.request.request.run_id).await?;
-            crate::inspect::session_show(&context.state, &args.reference, args.summary).await?
+            artifactize_core::inspect::session_show(context.state(), &args.reference, args.summary)
+                .await?
         }
         "tools_check" => {
             let args: Tools = parse(arguments)?;
-            let options = crate::diagnostics::ToolCheckOptions {
+            let options = artifactize_core::diagnostics::ToolCheckOptions {
                 eval: args.eval,
                 artifact: args.artifact,
                 tool: args.tool,
@@ -105,25 +113,31 @@ pub(super) async fn inspect(
                 ..Default::default()
             };
             encode(
-                crate::diagnostics::check_tools(repo, state, &options, CancellationToken::new())
-                    .await?,
+                artifactize_core::diagnostics::check_tools(
+                    repo,
+                    state,
+                    &options,
+                    CancellationToken::new(),
+                )
+                .await?,
             )?
         }
         "doctor" => {
             let _: Empty = parse(arguments)?;
-            encode(crate::diagnostics::doctor(state, Some(repo)).await?)?
+            encode(artifactize_core::diagnostics::doctor(state, Some(repo)).await?)?
         }
         "models" => {
             let args: Models = parse(arguments)?;
-            encode(crate::llm::models::list(args.provider, state, Some(repo)).await?)?
+            encode(artifactize_core::llm::models::list(args.provider, state, Some(repo)).await?)?
         }
         "remote_status" => {
             let _: Empty = parse(arguments)?;
-            crate::inspect::remote_status(state, Some(repo)).await?
+            artifactize_core::inspect::remote_status(state, Some(repo)).await?
         }
         "cache_show" => {
             let args: Cache = parse(arguments)?;
-            let mut records = crate::cache::show(&context.state, &args.key, args.history).await?;
+            let mut records =
+                artifactize_core::cache::show(context.state(), &args.key, args.history).await?;
             if args.history {
                 encode(records)?
             } else {

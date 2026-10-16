@@ -1,6 +1,6 @@
 # Agent tools
 
-[Agent evals and backends](../guides/agent-evals.md#agent-tools) shows an Agent tool declaration.
+[Tools](index.md#build-your-own-tool-artifact) shows how to declare and attach a custom tool Artifact.
 
 Command fields `description`, `protocol`, `command` and `args` are required.
 `input_schema` defaults to `{"type":"object","additionalProperties":false}`
@@ -18,7 +18,7 @@ take `builtin`, optional `args` and optional `description`. Without `args`, `rea
 `list`, `glob`, `grep` and `view_image` take the model's input below; with `args`,
 `read`, `list`, `section` and `help` work on a fixed target, and `graph` with
 `args = []` prints the entire current project structure, as described in
-[Built-in tools](builtin-tools.md). Only explicitly declared tools are listed.
+[Built-in tools](builtin.md). Only explicitly declared tools are listed.
 Built-ins execute in-process without output directories (only `help` starts its
 program); `view_image` applies the same image checks as `json` image results.
 
@@ -111,7 +111,7 @@ Pins retain at most 10,000 file/symlink entries; after that many have been retai
 encountering any further filesystem entry fails preparation. This is not a total
 filesystem traversal bound: directory visits alone, including empty directories,
 do not increment the counter. Pins are provenance, not part of the
-[reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key): to review again when a binary
+[reuse key](../fingerprint.md#the-reuse-key): to review again when a binary
 changes, cover it in a fingerprint.
 Successful stdout is one JSON object with 1–32 content blocks:
 `{"content":[{"type":"text","text":"..."},{"type":"json","data":{}}]}`.
@@ -136,7 +136,7 @@ tool error. Stderr is not included. Commands such as `rg` that exit nonzero for
 no matches need an owner wrapper if that should count as successful empty output.
 
 Bare executables use PATH only (with PATHEXT on Windows; see
-[Program lookup](platforms.md#program-lookup)), never implicit owner or
+[Program lookup](../others/platforms.md#program-lookup)), never implicit owner or
 `node_modules/.bin` lookup. Commands containing `/` resolve within a folder
 Artifact's admitted scope (`./tool` is accepted). For a file Artifact, a non-mount
 relative executable resolves beneath the containing folder, including unrelated
@@ -146,7 +146,7 @@ cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
 Command calls use the owner's working directory (the containing folder for a file
 Artifact) as cwd, the author's own environment (the
-[runtime environment](declarations.md#runtime-execution-library): the real home, no
+[runtime environment](../declarations.md#runtime-execution-library): the real home, no
 `ARTIFACTIZE_*` variables of the caller) with private external TMP/output, a default 120000 ms deadline (1–2147483647), and
 process-group cancellation/cleanup. Per-call directories are removed on success,
 failure and cancellation, including dropped call futures; caller-owned output

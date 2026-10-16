@@ -60,9 +60,9 @@ explains the alternatives—install scripts, Cargo and building from source—al
 with prerequisites, updates and uninstalling.
 
 Once installed, take the
-[5-minute quick start](https://artifactize.dev/docs/getting-started/quick-start.html).
+[5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
 It uses an example project and needs no AI account or API key.
-[Hey Arti](https://artifactize.dev/docs/guides/hey-arti.html) lets a coding assistant
+[Hey Arti](https://artifactize.dev/docs/agent-plugin/hey-arti.html) lets a coding assistant
 use the same review workflow.
 
 ## Learn more

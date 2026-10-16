@@ -22,7 +22,7 @@ to that program, not artifactize.
 |---|---|---|---|
 | `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
-| `mcp` | | [MCP stdio protocol](mcp.md); diagnostics on stderr | 0 on clean disconnect |
+| `mcp` | | [MCP stdio protocol](../agent-plugin/mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
 | `config graph [ARTIFACT]` | | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
@@ -82,12 +82,12 @@ as usage errors; valid but absent cache keys still make `cache show` print `null
 (or `[]` with `--history`) and exit 4, while `cache rm` reports `removed: false`.
 
 `session show` and `session send` read and continue an Agent review's
-[saved conversation](../guides/agent-evals.md#saved-conversations). `REF` is the
+[saved conversation](../features/agent.md#saved-conversations). `REF` is the
 request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a request
 id such as `run-Hq2b9X-1`, or a `sessionId`; a request that reused a result names the
 review that produced it. `show` prints the conversation as text, and with `--json` the
 stored events as they are: `{"reference","file","events"}`. `show --summary` prints
-the [session summary](../guides/agent-evals.md#session-summary), computed from the
+the [session summary](../features/agent.md#session-summary), computed from the
 session file alone: the backend, model and time span, the turns with their tokens and
 the total, the tool calls per tool with how many failed, and the follow-ups; `--json`
 prints `{"reference","sessionId","requestId","backend","model","reasoning","startedAt","endedAt","durationMs","followUps","turns","tokens","toolCalls"}`.
@@ -99,7 +99,7 @@ that was not saved, a request that is still running (`send`), and a failed follo
 
 Commands opening an existing state apply supported additive schema upgrades with write
 access. Schema 6 upgrades to 7 while preserving Runs, cache and Human approvals;
-unsupported earlier and newer versions are refused ([State](state-cache-limits.md#state)).
+unsupported earlier and newer versions are refused ([State](../features/others/state.md#state)).
 `doctor` reports an incompatible schema as a hard error and exits 1.
 
 ## Submission and watching
@@ -170,7 +170,7 @@ cargo run -q -p artifactize -- run show RUN_ID
 The fixture intentionally includes GREEN, RED, a timeout ERROR, RED-blocked and
 ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
 
-[Runs, status and validation](../concepts/runs-and-status.md#verify-and-runs) covers selectors, gates, outcomes and output.
+[Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
 Gate bypass is removed: `--ignore-gates`, `VerifyOptions.ignore_gates` and
 `review_policy.dependency_gates` are no longer accepted. Choose the two
@@ -189,7 +189,7 @@ There is no default eval-concurrency cap: every READY eval starts as soon as it 
 ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it
 then bounds the evals of this Run. Agent reviews are still
 bounded machine-wide per backend by `$STATE/limits.json`
-([Backend capacity](state-cache-limits.md#backend-capacity)); a request waiting for a backend slot
+([Backend capacity](../features/others/state.md#backend-capacity)); a request waiting for a backend slot
 holds no optional `--jobs` slot and no executor start.
 
 `--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
@@ -218,7 +218,7 @@ error. There are no reservations, refunds, admission pools or restart ledger.
 The artifactize-owned Run waits for Human results as for runtime and Agent evals:
 while a Human request waits, the Run stays RUNNING, and a submission resumes the
 evals that depend on it in the same Run
-([Human reviews](../guides/human-reviews.md)). There is no Human wait timeout:
+([Human reviews](../features/human.md)). There is no Human wait timeout:
 plain verify submits, and `--wait` observes until the Run ends. An observer's
 interruption never cancels the Run; use `run cancel RUN_ID` explicitly.
 
@@ -255,13 +255,13 @@ requested profile when a hit returns another one, and text output then adds
 `human` and `dependency`. Dependency evals still derive current evidence, even
 with `--reuse-only dependency`; they do not look up a cached verdict. An executable
 eval of a listed kind may only reuse a result: a completed record of its
-reuse key in the local cache, or in the [review store](review-store.md) when one is
+reuse key in the local cache, or in the [review store](../features/team/reference.md) when one is
 configured. When there is none, the eval is not executed: no executor start, no
 provider call, no Human request, and no waiting, not even for a live execution of
 the key. A forced eval reads no cached result, so `--force` on a listed kind never
 executes it. Unlisted kinds run as usual. In CI,
 `artifactize verify --all --wait --reuse-only agent,human` runs the tests and takes every
-review from the cache or the store ([CI](../guides/ci.md)).
+review from the cache or the store ([CI](../features/team/ci.md)).
 
 An eval that was not executed is reported `STALE`, with the reason in its
 `blockedReason`:
@@ -299,7 +299,7 @@ and show their paths; the monitor shows `[file]` in the tree and the path in Det
 
 There is no execution, cache key, team-store lookup or publication for the derived
 eval itself. Executable requirements keep normal reuse and execution behavior.
-See [Dependency evals](declarations.md#dependency-evals).
+See [Dependency evals](../features/declarations.md#dependency-evals).
 
 ## Saved Run evidence and terminal views
 
@@ -307,13 +307,13 @@ See [Dependency evals](declarations.md#dependency-evals).
 nonempty. Run fields are flattened into the output object, without a `run` wrapper.
 It maps qualified eval IDs to saved verdicts used without a request in this Run,
 such as cached upstream evidence in a partial Run. It is not the latest global
-verdict. See [Runs](../concepts/runs-and-status.md#verify-and-runs).
-For the terminal keys and layout, see [Monitor](../guides/human-reviews.md#monitor)
-and [Human reviews](../guides/human-reviews.md#review).
+verdict. See [Runs](../features/run.md#verify-and-runs).
+For the terminal keys and layout, see [Monitor](../tui/index.md#monitor)
+and [Human reviews](../tui/index.md#review).
 
 ## Current-directory tools
 
-`artifactize tools` also exposes the [standalone scoped tools](builtin-tools.md#artifactize-tools-cli),
+`artifactize tools` also exposes the [standalone scoped tools](../features/tools/builtin.md#artifactize-tools-cli),
 using the same CLI definition and runner as `artifactize-tools`. Paths are relative
 to the current directory (not `--repo`), with `.` the default for `list`, `glob`
 and `grep`; absolute paths, `..` and symlinks are refused. Only `open` accepts

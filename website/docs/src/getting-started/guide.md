@@ -1,4 +1,4 @@
-# Quick start (5 minutes, no model needed)
+# Guide (no model needed)
 
 The tour uses the example projects in the repository. Unless you built from a
 checkout, clone it first:
@@ -28,7 +28,7 @@ instead; the `artifactize` commands are the same.
 
 The [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) also shows how to make a check RED. Each folder declares itself in
 TOML `index.artf`; omission of `fingerprint` uses artifactsum. To disable reuse, set
-`fingerprint = false`. See [Declarations (.artf)](../reference/declarations.md) for snake_case keys and the JSON/output naming
+`fingerprint = false`. See [Declarations (.artf)](../features/declarations.md) for snake_case keys and the JSON/output naming
 distinction.
 
 ## Files and dependency readiness
@@ -66,7 +66,7 @@ profile = { kind = "dependency", depends_on = ["player-movement", "hero-art"] }
 
 Once those Artifacts are declared, `artifactize verify player/ready` includes their required evals
 automatically. The result is GREEN only when required evidence is GREEN; status and
-monitor show unfulfilled requirements. See [Artifacts and evals](../concepts/artifacts-and-evals.md).
+monitor show unfulfilled requirements. See [Artifacts and evals](../features/artifact.md).
 
 ## Agent tools and the Human flow
 
@@ -119,7 +119,7 @@ selects, `?` shows help, and `q` quits. Detail shows Agent conversations, Runtim
 logs or the requirements an eval waits for. Browsing runs no owner commands.
 
 For Human claims, tools and verdict forms, see
-[Human reviews and monitor](../guides/human-reviews.md#monitor).
+[Human reviews and monitor](../tui/index.md#monitor).
 
 ## Team review store (optional)
 
@@ -143,11 +143,11 @@ artifactize remote status
 only `ARTIFACTIZE_REMOTE` and a read-only `ARTIFACTIZE_REMOTE_TOKEN`. If the
 store is unreachable, `verify` warns once and reviews locally. `doctor` checks
 the remote configuration offline. See
-[Team review store](../guides/team-review-store.md) and the
-[team walkthrough](../guides/team-walkthrough.md).
+[Team review store](../features/team/index.md) and the
+[team walkthrough](../features/team/walkthrough.md).
 
 ## Next steps
 
 The [examples](examples.md) show each feature in a small project, and
-[Artifacts and evals](../concepts/artifacts-and-evals.md) explains the declaration
+[Artifacts and evals](../features/artifact.md) explains the declaration
 you just ran.

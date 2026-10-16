@@ -189,7 +189,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
 }
 
 /// Human action setup needs only the owning repository, not another full Run/request audit.
-pub(crate) async fn read_request_repo(
+pub async fn read_request_repo(
     state: &Path,
     id: &str,
 ) -> Result<(RequestView, std::path::PathBuf), String> {

@@ -60,84 +60,20 @@ The rig adapter, retries, tool results and usage counters are in
 
 ## Agent tools
 
-`views.agent_tools` is an explicit safe-name map. Each entry is either a flat command
-declaration or a built-in reference; unknown and mixed fields are rejected. There is
-no `metadata`, `script`, `result_kinds`, `artifact_kind` or `observation` wrapper on Agent
-tools.
-
-```toml
-[views.agent_tools]
-read = { builtin = "read", description = "Read {artifactName}." }
-section = { builtin = "section", args = ["spec.md"] }   # the model passes only the heading
-
-[views.agent_tools.inspect]
-description = "Inspect a section of {artifactName}."
-input_schema = { type = "object", properties = { section = { type = "string" } }, required = ["section"], additionalProperties = false }
-protocol = "json"
-command = "python3"
-args = ["inspect.py"]
-timeout_ms = 120000
-execution_paths = ["shared/rules.json"]
-
-[views.agent_tools.search]
-description = "Search {artifactName}."
-input_schema = { type = "object", properties = { query = { type = "string" } }, required = ["query"], additionalProperties = false }
-protocol = "plain"
-command = "rg"
-args = ["--", "{query}", "."]
-```
-
-Declaration keys are snake_case; JSON tool requests/results and saved profiles
-keep their existing names. A file Artifact's built-ins expose its file, mounts and
-referenced Artifacts, not sibling files; command tools use the containing folder
-as cwd and remain trusted local programs.
-
-Field rules, the `json` and `plain` protocols and their limits are in the
-[reference](../reference/agent-tools.md#agent-tools); every built-in tool, with its
-fixed `args` forms, is in [Built-in tools](../reference/builtin-tools.md).
-[`tools check`](../reference/agent-tools.md#tool-diagnostics) validates declared
-tools and runs one without a review.
-
-### Keep a harness running across tool calls
-
-Declare a [tool session](../reference/agent-tools.md#tool-sessions) and bind tools to
-it. artifactize starts it before the Agent and attempts stop and owned-process
-cleanup after the review;
-the Agent never calls start/stop or supplies a session ID.
-
-```toml
-[views.agent_sessions.app]
-start = { command = "harness", args = ["start"] }
-stop = { command = "harness", args = ["stop"] }
-
-[views.agent_tools.click]
-session = "app"
-description = "Click an element of the running app."
-command = "harness"
-args = ["act"]
-protocol = "json"
-```
-
-The start command receives the usual JSON envelope and `ARTIFACTIZE_SESSION_DIR`,
-prints one line when ready, and stays running. Bound tools and stop use the same
-session directory and the author's environment. Artifactize stops the session and
-cleans up owned processes after a review, including failed or interrupted reviews.
-If cleanup cannot be confirmed, it reports an error and retains recovery records;
-a later session start can recover abandoned work. Commands are trusted programs
-and can deliberately detach beyond that cleanup. Tool sessions are not the saved
-conversations below. See the [tool session reference](../reference/agent-tools.md#tool-sessions)
-for cleanup and crash-recovery details.
+Declare the read-only tools the reviewer needs. The [Tools](tools/index.md) area
+explains built-ins, custom commands and sessions that keep a harness running
+across calls. Saved Agent conversations below are separate from tool sessions.
 
 ## Agent backends
 
 [Agent reviews](#agent-reviews) above shows the Agent profile, the backends and
 `reasoning`. `models` output uses the JSON envelope described under
-[Local diagnostics and maintenance](../reference/state-cache-limits.md#doctor-models-and-prune).
+[Local diagnostics and maintenance](others/state.md#doctor-models-and-prune).
 
 Agent reviews stream the model's answer as it is produced. One review deadline
 (default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
 responses are ERROR, even if they contain a JSON verdict. Artifactize handles
-retries as described below; the [provider transport reference](../reference/state-cache-limits.md#provider-transport)
+retries as described below; the [provider transport reference](others/state.md#provider-transport)
 covers API settings and replay behavior.
 
 ### Retries and error codes
@@ -189,7 +125,7 @@ An `AUTHENTICATION` or `QUOTA` failure would repeat for every review on the same
 backend, so the Run stops admitting new reviews on it. Each later review of that
 backend in the Run is ERROR with `BACKEND_STOPPED`, never started, and its error
 names the failure. A review waiting for a free slot of that backend
-([backend capacity](../reference/state-cache-limits.md#backend-capacity)) stops waiting
+([backend capacity](others/state.md#backend-capacity)) stops waiting
 the same way, and a stopped backend takes no slot. Reviews that were already running
 finish, results that can be reused are still reused, and other backends carry on. The Run lists the stop under
 `stoppedBackends` (in `verify --wait --json` and `run show`), and `verify` prints it:
@@ -201,7 +137,7 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 The next Run admits the backend again.
 
 Only tools from the eval's scope are exposed. They run sequentially in the author's
-[environment](../reference/declarations.md#runtime-execution-library), each call with its own private output and temporary directories. Tool results keep text, JSON and validated base64 image blocks rather than flattening
+[environment](declarations.md#runtime-execution-library), each call with its own private output and temporary directories. Tool results keep text, JSON and validated base64 image blocks rather than flattening
 structured data. PNG/JPEG/WebP results reach both provider wires; unsupported-model
 image requests fail with the provider error. Duplicate provider call IDs fail
 closed. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
@@ -228,7 +164,7 @@ what the reviewer saw and said, and ask it a follow-up in the same conversation,
 like continuing a chat. The recorded verdict never changes.
 
 **What is saved.** Each review session gets one owner-only file under
-`$STATE/agent-sessions/` ([layout](../reference/state-cache-limits.md#agent-sessions)).
+`$STATE/agent-sessions/` ([layout](others/state.md#agent-sessions)).
 It holds the system prompt and instructions, every turn's messages, each tool call
 with its arguments and full result and whether it failed, the repair turn (the prompt
 that asked for it and the answer it replaced), each provider attempt with its token
@@ -257,7 +193,7 @@ on without it.
 
 `producer` is the `user@host` that ran the review, and `state` the stable id of its
 state database. A request that reuses a result names the review that produced it. The
-[team review store](team-review-store.md) carries the reference with each Agent result
+[team review store](team/index.md) carries the reference with each Agent result
 (as `producer.session`), never the conversation, so a teammate's verdict tells you
 whose state holds its conversation.
 
@@ -355,7 +291,7 @@ A follow-up continues the saved conversation with the same model and current
 project tools. Its answer is plain text; it does not change the recorded verdict,
 result or reuse. The header warns when reviewed inputs have changed. Each question
 gets fresh profile budgets, and questions to one session run in order. See the
-[follow-up replay reference](../reference/state-cache-limits.md#follow-up-replay)
+[follow-up replay reference](others/state.md#follow-up-replay)
 for caching, stored messages and compatibility details.
 
 A reference to another machine or state fails with where it lives, for example
@@ -364,7 +300,7 @@ A reference to another machine or state fails with where it lives, for example
 session GC`, and one that was never saved `was not saved`.
 
 **Retention.** The session store is bounded by size in
-[`limits.json`](../reference/state-cache-limits.md#agent-sessions) (`agentSessions`):
+[`limits.json`](others/state.md#agent-sessions) (`agentSessions`):
 once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
 it is at or below `targetBytes` (768 MiB). This runs at the end of every `verify` and in
 `artifactize prune`, and never touches the session of a request that is still running
@@ -400,7 +336,7 @@ artifactize logout codex    # revoke and delete artifactize's tokens
   Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git
   work tree, an artifactize workspace or `--repo`, `login codex` refuses and names the
   folder, and `doctor` warns
-  ([State](../reference/state-cache-limits.md#state)). Use a state directory outside
+  ([State](others/state.md#state)). Use a state directory outside
   it, or `ARTIFACTIZE_CODEX_AUTH_FILE`. artifactize refreshes the access token under a lock five minutes before it
   expires, so concurrent Runs refresh it once. When the server rejects the refresh
   token for good, the tokens are deleted and the review says to sign in again.

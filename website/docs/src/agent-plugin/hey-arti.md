@@ -16,52 +16,10 @@ not introduce discretionary sign-offs or mark unfinished work as `basis`.
 
 ## Register the MCP server
 
-**MCP (Model Context Protocol)** connects your coding assistant to artifactize's
-tools, so it can inspect the project and start or observe reviews. **Stdio** means
-the host launches `artifactize mcp` and exchanges messages through that program's
-standard input and output, rather than connecting to a network port.
-
-Complete the [installation setup](../getting-started/install.md), then launch
-the coding host from **your project directory**.
-The stdio server uses the same binary and shared state as the CLI. It binds to one
-repository/state when started; it is not the HTTP review store (`artifactize
-server`), and requires no port, token argument or changed host timeout.
-
-These commands configure the host explicitly; artifactize does not install or
-change host configuration for you. Follow the host's normal trust/approval flow.
-
-### Claude Code
-
-From the project directory:
-
-```sh
-claude mcp add --transport stdio --scope project artifactize -- artifactize mcp
-claude mcp get artifactize
-```
-
-Project registration creates the host's project `.mcp.json`. Keep it free of
-credentials and machine-specific paths if you share it. Start/restart Claude Code
-from this project, use its MCP view to confirm the server is connected, and check
-that the verification and inspection tools below are listed.
-
-### Codex CLI
-
-Register the stdio command, then start Codex in the project directory:
-
-```sh
-codex mcp add artifactize -- artifactize mcp
-codex mcp get artifactize
-```
-
-Codex records this in its own MCP configuration. A globally registered command
-still needs to start from the intended project directory. Where a host cannot
-launch in the project, register a project-specific command using
-`artifactize --repo PATH mcp` rather than pointing it at the skill directory.
-Normal host permissions/authentication still apply; no bypass flags are needed.
-
-Registration supplies tools; it does **not** install the skill. Until marketplace
-packaging is provided, give the agent the canonical body through its ordinary
-skill/instruction mechanism. Do not maintain a second edited version of it.
+Follow [MCP setup](mcp.md#register-the-mcp-server) to connect your coding host.
+Registration supplies tools; it does not install the skill. Give the agent the
+canonical body through its normal skill/instruction mechanism until marketplace
+packaging is provided. Do not maintain a second edited copy.
 
 ## Use MCP first
 
@@ -71,7 +29,7 @@ it does not run project tools or start a session. Saved evidence is available
 through `run_list`, `run_show`, `request_list`, `request_show`, `session_show` and
 `cache_show`; `doctor`, `models` and `remote_status` help inspect readiness.
 
-See the [MCP reference](../reference/mcp.md) for exact arguments and detail paging.
+See the [MCP reference](mcp.md) for exact arguments and detail paging.
 Inspection tools return bounded UTF-8 fragments of their CLI JSON in `entries[].text`;
 append continuation pages until `next_cursor` is null, then parse JSON.
 
@@ -90,8 +48,8 @@ artifactize tools check
 
 `config check` validates without hashing or running fingerprint scripts. `status`
 can compute fingerprints and consult the review store. See
-[Declarations](../reference/declarations.md) and
-[Fingerprints and reuse](../concepts/fingerprints-and-reuse.md) for exact rules.
+[Declarations](../features/declarations.md) and
+[Fingerprints and reuse](../features/fingerprint.md) for exact rules.
 
 ## Start with small current declarations
 
@@ -110,7 +68,7 @@ payload.instruction = "Run the library's tests."
 
 A consumer's Agent eval should explicitly reference `{library}` when its judgment
 really depends on it. Use the team's configured exact model ID and narrowly
-admitted read-only tools; see [Agent evals](agent-evals.md). Do not add unrelated
+admitted read-only tools; see [Agent evals](../features/agent.md). Do not add unrelated
 inputs just because they share a repository.
 
 A file sidecar gives an asset its own identity and narrow tool view. It creates no
@@ -138,7 +96,7 @@ Declare `views.agent_sessions.<name>.start`/`stop` and command tools bound with
 envelope, prepares its private `ARTIFACTIZE_SESSION_DIR`, prints one readiness
 newline, and stays alive. Stop and bound calls share the directory. Artifactize
 owns admission, stop and cleanup; the reviewer receives no instance ID or lifecycle
-knobs. See [Tool sessions](../reference/agent-tools.md#tool-sessions).
+knobs. See [Tool sessions](../features/tools/agent.md#tool-sessions).
 
 Commands inherit the author's terminal/toolchain environment with caller
 `ARTIFACTIZE_*` credentials/settings stripped and private external output/tmp.
@@ -205,7 +163,7 @@ indefinite polling or fake progress are needed, and yielding is not cancellation
 
 ## Team and CI
 
-Use the existing [team review store](team-review-store.md) login/environment flow.
+Use the existing [team review store](../features/team/index.md) login/environment flow.
 Keep credentials out of declarations, skill copies, transcripts and MCP
 registration. Human authority stays with people. CI gets a read-only token and
 must **wait for validation**:
@@ -219,4 +177,4 @@ must **wait for validation**:
 
 Runtime checks execute; Agent and Human verdicts must be reusable. Missing evidence
 is INCOMPLETE, not permission for CI to call a model or wait for a new sign-off.
-See [CI](ci.md). Submission acceptance alone must never pass the job.
+See [CI](../features/team/ci.md). Submission acceptance alone must never pass the job.

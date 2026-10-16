@@ -40,7 +40,11 @@ fn all_run_request_and_reuse_key_arguments_retain_valid_wire_strings() {
     };
     assert_eq!(parsed.as_str(), key);
     let legacy = "remote-".to_owned() + &"x".repeat(200);
-    assert!(legacy.parse::<crate::types::ExecutionId>().is_ok());
+    assert!(
+        legacy
+            .parse::<artifactize_core::types::ExecutionId>()
+            .is_ok()
+    );
     // The mirror allowance belongs only to ExecutionId, not RunId/RequestId.
     assert!(Cli::try_parse_from(["artifactize", "request", "show", legacy.as_str()]).is_err());
 }
@@ -128,7 +132,7 @@ fn selection_duration_and_verdict_are_parsed_at_the_command_boundary() {
     else {
         panic!("submit")
     };
-    assert_eq!(verdict, crate::runtime::Verdict::Green);
+    assert_eq!(verdict, artifactize_core::runtime::Verdict::Green);
 }
 
 #[test]
@@ -166,10 +170,10 @@ fn selection_files_validate_ids_before_entering_the_project() {
     let root = crate::test_os::tempdir();
     let path = root.path().join("selection.json");
     std::fs::write(&path, r#"["app/check","../escape"]"#).unwrap();
-    assert!(selection_file::<crate::types::EvalId>(&path).is_err());
+    assert!(selection_file::<artifactize_core::types::EvalId>(&path).is_err());
     std::fs::write(&path, r#"["app","lib"]"#).unwrap();
     assert_eq!(
-        selection_file::<crate::types::ArtifactName>(&path).unwrap(),
+        selection_file::<artifactize_core::types::ArtifactName>(&path).unwrap(),
         ["app", "lib"]
     );
 }

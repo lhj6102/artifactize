@@ -78,7 +78,7 @@ A new 0.9 state reviews every executable eval once, Human sign-offs included,
 and then reuses as before. Reuse-key v2 matches no earlier records, including
 script fingerprints and team-store records. Dependency evals derive current
 evidence; they have no execution or reusable record. See
-[Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
+[Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
 A schema-6 state from 0.9 is supported: it upgrades additively to schema 7 and
 passes [`doctor`](#doctor-models-and-prune)'s schema check. Unsupported earlier
 schemas and newer schemas remain hard errors.
@@ -124,7 +124,7 @@ variant), `fingerprints` (each Artifact the key covers), additive `artifactKinds
 `producer` (`user@host` and artifactize version; submitted Human results also
 record their `reviewer`); a missing key prints `null` and exits 4. `show
 --history` prints all of the key's records as a JSON array, latest first. Entries
-mirrored from a [shared remote review store](review-store.md) carry an `origin`
+mirrored from a [shared remote review store](../team/reference.md) carry an `origin`
 (store, publisher, publication time), which `list` shows in place of the
 repository. Reads neither create missing state nor update access times. A key's
 records are its completed GREEN/RED executions whose history columns
@@ -135,7 +135,7 @@ executions themselves. `rm` refuses a key with an active execution or waiter. Ke
 come from `cache list` or from a request's `key` in `verify --wait --json` and `run show`.
 
 How reuse keys are built and what a hit returns is in
-[Completed result reuse](../concepts/fingerprints-and-reuse.md#completed-result-reuse); entry and byte
+[Completed result reuse](../fingerprint.md#completed-result-reuse); entry and byte
 limits are in [Cache limits](#cache-limits).
 
 ## Cache limits
@@ -185,7 +185,7 @@ execution of its key takes none. The slot frees when the review's execution
 completes. An execution whose owner process has exited (including an unreaped
 zombie, checked by process state, pid and start time) ends as ERROR (`OWNER_DIED`) the next time a process asks for a slot,
 which frees its slot with it; there is no separate cleanup. When a review's failure
-stops its backend for the Run ([`BACKEND_STOPPED`](../guides/agent-evals.md#stopping-a-backend)),
+stops its backend for the Run ([`BACKEND_STOPPED`](../agent.md#stopping-a-backend)),
 the stop is recorded before its slot frees, so a request waiting for that slot is not
 started.
 
@@ -218,7 +218,7 @@ run stop.
 ## Agent sessions
 
 Each Agent review's conversation is saved under the state, for
-[`session show` and `session send`](../guides/agent-evals.md#saved-conversations).
+[`session show` and `session send`](../agent.md#saved-conversations).
 `limits.json` sets whether conversations are saved and how large their store grows:
 
 ```json
@@ -267,7 +267,7 @@ The events of a follow-up also carry its `send` number. When a budget, the deadl
 a repeated call ID stops a turn's tool calls, the results of the calls that ran are
 saved and the others have none. The request's verdict, result and usage stay in
 `state.sqlite`; the session is the only record of the conversation and its tool calls,
-and [`session show --summary`](../guides/agent-evals.md#session-summary) counts them.
+and [`session show --summary`](../agent.md#session-summary) counts them.
 A last line cut short by a crash is ignored when the file is read.
 
 ### Follow-up replay
@@ -297,7 +297,7 @@ Anthropic Messages. Anthropic requires a per-turn output cap of 16384 tokens,
 separate from the review budget. One review deadline covers all turns, retries and
 tools. Incomplete responses are errors even if a partial answer contains a verdict.
 Nested HTTP retries and redirects are disabled; artifactize handles turn retries
-as described in [retries and error codes](../guides/agent-evals.md#retries-and-error-codes).
+as described in [retries and error codes](../agent.md#retries-and-error-codes).
 
 ### Transcript reader
 
@@ -389,7 +389,7 @@ invalid file is a hard error). The `sessions` check reports the
 state's `stateId`. API keys are
 reported only as present/absent, never validated or printed. Missing keys are
 warnings: optional backends need not all be configured. A backend with a
-[test endpoint](../guides/agent-evals.md#test-against-a-fake-provider) is a warning
+[test endpoint](../agent.md#test-against-a-fake-provider) is a warning
 that reports it as `testEndpoint`; an invalid test endpoint is a hard error. The
 `codex` check reads the sign-in without a lock, refresh or network call: no sign-in
 is a warning, a stored sign-in passes even when its access token has expired (the
@@ -406,7 +406,7 @@ hard errors, 1 with hard errors, and 2 for invocation errors.
 
 `models openai` and `models anthropic` call the provider's models endpoint with the
 corresponding API key through rig; Anthropic pagination is followed. `models codex`
-lists the [Codex](../guides/agent-evals.md#codex) models of the signed-in account. A
+lists the [Codex](../agent.md#codex) models of the signed-in account. A
 test endpoint replaces the provider's API root here too. There is no account or backend
 fallback. Text lists tab-separated slug/name pairs; JSON is
 consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`.

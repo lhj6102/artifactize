@@ -1,8 +1,23 @@
-# Artifacts and evals
+# Artifact
 
 An Artifact is anything you review: code, docs, designs, images. A folder or a
 single file declares its evals in a static TOML `.artf` file. artifactize reads
 these declarations into one dependency graph.
+
+## Artifact Graph
+
+The **Artifact Graph** connects inputs to the evals that consume them. A reference
+such as `{spec}` admits that Artifact to an eval; changes to its fingerprint
+invalidate only reviews whose keys cover it. Child folders and mount aliases
+organize inputs, but sharing a repository alone does not make every Artifact a
+dependency of every check.
+
+The graph itself can be reviewed: a nameless root `.artf` declares the Graph
+Artifact. Its fingerprint covers extracted criteria and labeled relations, not
+source bytes or execution tuning. Use it for a person's review of the project's
+review structure. [Declarations](declarations.md#graph-artifact) gives the syntax;
+the [graph tool](tools/builtin.md#current-project-graph) shows the full current
+structure to an agent or opens it in Desktop for a person.
 
 ## Folder configuration
 
@@ -37,7 +52,7 @@ payload.instruction = "Check that every bold term in {intro} and {usage} is defi
 Declaration keys are snake_case. JSON Schema keywords such as `minLength` and
 `additionalProperties` keep their standard names; owner-defined payload fields keep their chosen
 names. `--json` output and stored state still use fields such as `passSchema`,
-`timeoutMs` and `agentTools`. See [Declarations (.artf)](../reference/declarations.md) for the exact syntax.
+`timeoutMs` and `agentTools`. See [Declarations (.artf)](declarations.md) for the exact syntax.
 
 ## File Artifacts
 
@@ -111,7 +126,7 @@ execute machine work early; deferred Human evidence yields PROVISIONAL derived
 results, never full approval. Dependency-eval wait cycles are rejected; ordinary Artifact cycles
 retain their existing scheduling rules.
 
-[Runs, status and validation](runs-and-status.md) explains derived requests and unfulfilled dependency output.
+[Runs, status and validation](run.md) explains derived requests and unfulfilled dependency output.
 
 ## The fingerprint field
 
@@ -123,14 +138,14 @@ Artifact folders; a file Artifact hashes its one target file.
   folder inputs. With an empty table, a folder's defaults apply. A file Artifact
   can explicitly list only its target filename and cannot declare `ignore`.
 - `fingerprint = { script = { command = "/bin/sh", args = ["fingerprint.sh"] } }`
-  uses an owner-written [fingerprint script](../reference/declarations.md#fingerprint-scripts),
+  uses an owner-written [fingerprint script](declarations.md#fingerprint-scripts),
   optionally with `files` (paths that must exist, never hashed) and `timeout_ms`.
 - `fingerprint = false` disables reuse for this Artifact and executable evals
   whose keys would depend on it. `fingerprint = true` is rejected.
 
 While the eval definition, Artifact kinds and all fingerprints in its key are
 unchanged, the prior
-GREEN or RED verdict is reused. See [Fingerprints and reuse](fingerprints-and-reuse.md). Dependency verdicts are derived
+GREEN or RED verdict is reused. See [Fingerprints and reuse](fingerprint.md). Dependency verdicts are derived
 again rather than reused.
 
 ## Tags and validation
@@ -142,4 +157,4 @@ key, relation or selection of `verify` and `status`; there are no tag filters fo
 relationship rules. Only the `artifactize review` search filters on tags, with `tag:` terms.
 
 Projects that want templates generate their own `.artf` files and commit them.
-Discovery and validation rules are in [Declaration validation](../reference/declarations.md#declaration-validation).
+Discovery and validation rules are in [Declaration validation](declarations.md#declaration-validation).

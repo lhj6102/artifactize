@@ -1,7 +1,7 @@
 # Human tools
 
-[Human reviews](../guides/human-reviews.md#human-tools) shows a Human tool declaration.
-A Human tool is a command or a [built-in tool](builtin-tools.md) (`read`, `list`,
+[Human reviews](../human.md#human-tools) shows a Human tool declaration.
+A Human tool is a command or a [built-in tool](builtin.md) (`read`, `list`,
 `section`, `help`, `open` or `graph`). `open` and `graph` are launch tools; the
 others print output. Built-ins use the same placeholders and scope checks
 for their target and run inside artifactize; the rest of this page is about commands.
@@ -63,8 +63,8 @@ or observation receipt is added.
 
 ## Human reviews
 
-The [Human reviews](../guides/human-reviews.md) guide covers the Human review flow and the
-[review](../guides/human-reviews.md#review) terminal UI.
+The [Human reviews](../human.md) guide covers the Human review flow and the
+[review](../../tui/index.md#review) terminal UI.
 
 The internal library exposes asynchronous operations with an open `store::Receipts`:
 

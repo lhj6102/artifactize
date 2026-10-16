@@ -4,14 +4,15 @@ use super::*;
 #[test]
 fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
     const PROBE: &str = "ARTIFACTIZE_MONITOR_PROBE";
-    if let Some(input) = crate::platform::environment::var(PROBE) {
+    if let Some(input) = artifactize_core::platform::environment::var(PROBE) {
         let args: Vec<String> = serde_json::from_str(&input.to_string_lossy()).unwrap();
         let screens = Screens {
             monitor: |_, initial, _| {
                 Box::pin(async move {
-                    let expected = crate::platform::environment::var("ARTIFACTIZE_MONITOR_EXPECT")
-                        .filter(|value| !value.is_empty())
-                        .map(PathBuf::from);
+                    let expected =
+                        artifactize_core::platform::environment::var("ARTIFACTIZE_MONITOR_EXPECT")
+                            .filter(|value| !value.is_empty())
+                            .map(PathBuf::from);
                     assert_eq!(initial, expected);
                     Ok(())
                 })
@@ -44,14 +45,17 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
         ),
         (
             &unrelated,
-            vec!["monitor".to_owned(), crate::platform::path_text(&selected)],
+            vec![
+                "monitor".to_owned(),
+                artifactize_core::platform::path_text(&selected),
+            ],
             Some(selected.clone()),
         ),
         (
             &unrelated,
             vec![
                 "--repo".to_owned(),
-                crate::platform::path_text(&selected),
+                artifactize_core::platform::path_text(&selected),
                 "monitor".to_owned(),
             ],
             Some(selected.clone()),
@@ -65,7 +69,7 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
         let args = vec![
             "artifactize".to_owned(),
             "--state-dir".to_owned(),
-            crate::platform::path_text(&root.path().join("state")),
+            artifactize_core::platform::path_text(&root.path().join("state")),
         ]
         .into_iter()
         .chain(tail)
@@ -79,7 +83,7 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
                     "ARTIFACTIZE_MONITOR_EXPECT",
                     expected
                         .as_deref()
-                        .map(crate::platform::path_text)
+                        .map(artifactize_core::platform::path_text)
                         .unwrap_or_default()
                         .into(),
                 ),

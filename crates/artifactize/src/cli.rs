@@ -33,7 +33,7 @@ use clap::{
 };
 use serde_json::json;
 
-use crate::{
+use artifactize_core::{
     config::ProfileKind,
     project::selection::{ProfileSelection, Selection, read_selection_file},
     types::{RequestId, ReuseKey, RunId},
@@ -104,7 +104,7 @@ pub enum Command {
     /// Remove finished, unowned Run output; preserve database audit and repositories.
     Prune {
         /// Minimum age since Run completion (for example 7d, 24h, 30m).
-        #[arg(long, value_name = "DURATION", value_parser = crate::store::prune::parse_duration)]
+        #[arg(long, value_name = "DURATION", value_parser = artifactize_core::store::prune::parse_duration)]
         older_than: Option<std::time::Duration>,
         /// Report eligible paths without deleting anything.
         #[arg(long)]
@@ -139,7 +139,7 @@ pub enum Command {
         wait: bool,
         /// Retry-safe caller attempt key (1–128 ASCII letters/digits/._:-).
         #[arg(long, value_name = "KEY")]
-        request_key: Option<crate::types::RequestKey>,
+        request_key: Option<artifactize_core::types::RequestKey>,
         /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is
         /// not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
@@ -211,7 +211,7 @@ pub enum Command {
         all: bool,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<crate::types::ReviewerId>,
+        reviewer: Option<artifactize_core::types::ReviewerId>,
     },
     /// Serve or administer a shared remote review store (review-store.sqlite).
     Server {
@@ -227,13 +227,13 @@ pub struct SelectionArgs {
     artifact: Option<Selector>,
     /// Select one qualified Eval ID.
     #[arg(long, value_name = "ID")]
-    eval: Option<crate::types::EvalId>,
+    eval: Option<artifactize_core::types::EvalId>,
     /// Select comma-separated qualified Eval IDs.
     #[arg(long, value_name = "CSV", value_delimiter = ',', num_args = 1)]
-    evals: Option<Vec<crate::types::EvalId>>,
+    evals: Option<Vec<artifactize_core::types::EvalId>>,
     /// Select comma-separated Artifact names.
     #[arg(long, value_name = "CSV", value_delimiter = ',', num_args = 1)]
-    artifacts: Option<Vec<crate::types::ArtifactName>>,
+    artifacts: Option<Vec<artifactize_core::types::ArtifactName>>,
     /// Read Eval IDs from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
     evals_file: Option<PathBuf>,
@@ -260,11 +260,11 @@ impl SelectionArgs {
             Ok(Selection::Artifacts { artifact_ids: ids })
         } else if let Some(path) = self.evals_file {
             Ok(Selection::Evals {
-                eval_ids: selection_file::<crate::types::EvalId>(&path)?,
+                eval_ids: selection_file::<artifactize_core::types::EvalId>(&path)?,
             })
         } else if let Some(path) = self.artifacts_file {
             Ok(Selection::Artifacts {
-                artifact_ids: selection_file::<crate::types::ArtifactName>(&path)?,
+                artifact_ids: selection_file::<artifactize_core::types::ArtifactName>(&path)?,
             })
         } else {
             Ok(Selection::All)
@@ -276,7 +276,7 @@ impl SelectionArgs {
 pub struct PolicyArgs {
     /// Use a declared profile variant for every included Eval.
     #[arg(long, value_name = "NAME")]
-    profile: Option<crate::config::ProfileVariantName>,
+    profile: Option<artifactize_core::config::ProfileVariantName>,
     /// Include all Evals in the required dependency scope, including cycle peers.
     #[arg(long)]
     recursive: bool,
@@ -289,8 +289,8 @@ pub struct PolicyArgs {
 }
 
 impl PolicyArgs {
-    fn options(self) -> crate::project::VerifyOptions {
-        crate::project::VerifyOptions {
+    fn options(self) -> artifactize_core::project::VerifyOptions {
+        artifactize_core::project::VerifyOptions {
             profile: self.profile.map(ProfileSelection::Named),
             recursive: self.recursive,
             force: self.force,
@@ -317,11 +317,11 @@ pub enum ModelProvider {
 }
 
 impl ModelProvider {
-    fn backend(self) -> crate::config::Backend {
+    fn backend(self) -> artifactize_core::config::Backend {
         match self {
-            Self::Openai => crate::config::Backend::Openai,
-            Self::Anthropic => crate::config::Backend::Anthropic,
-            Self::Codex => crate::config::Backend::Codex,
+            Self::Openai => artifactize_core::config::Backend::Openai,
+            Self::Anthropic => artifactize_core::config::Backend::Anthropic,
+            Self::Codex => artifactize_core::config::Backend::Codex,
         }
     }
 }
@@ -333,7 +333,7 @@ pub enum ConfigCommand {
     /// Inspect full static definitions, relations, and cycles.
     Graph {
         /// Select one Artifact and its required closure; defaults to all.
-        artifact: Option<crate::types::ArtifactName>,
+        artifact: Option<artifactize_core::types::ArtifactName>,
     },
 }
 
@@ -395,7 +395,7 @@ pub enum CacheCommand {
 #[derive(Debug, Subcommand)]
 pub enum ToolsCommand {
     /// Static preflight by default; --execute opts in to one tool call.
-    Check(crate::diagnostics::ToolCheckOptions),
+    Check(artifactize_core::diagnostics::ToolCheckOptions),
     #[command(flatten)]
     Builtin(artifactize_tools::cli::Tool),
 }
@@ -408,7 +408,7 @@ fn cancellation_listener() -> Result<
     String,
 > {
     let cancellation = tokio_util::sync::CancellationToken::new();
-    let stop = crate::platform::stop_requested().map_err(|e| e.to_string())?;
+    let stop = artifactize_core::platform::stop_requested().map_err(|e| e.to_string())?;
     let token = cancellation.clone();
     let listener = tokio::spawn(async move {
         stop.await;
@@ -447,7 +447,7 @@ fn repeated_global(options: &[&str]) -> Option<&'static str> {
 pub type Screen = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>;
 
 /// The terminal screens `artifactize monitor` and `artifactize review` open. They live in
-/// `artifactize-tui`, which the binary hands to [`run`], so this library draws nothing.
+/// `artifactize-tui`; the binary wires these entry points without a dependency from core to CLI.
 #[derive(Clone, Copy)]
 pub struct Screens {
     /// The Monitor over the state directory, on one repository or on every one.
@@ -456,8 +456,8 @@ pub struct Screens {
     pub review: fn(
         PathBuf,
         Option<PathBuf>,
-        crate::types::ReviewerId,
-        Option<crate::types::RequestId>,
+        artifactize_core::types::ReviewerId,
+        Option<artifactize_core::types::RequestId>,
         tokio_util::sync::CancellationToken,
     ) -> Screen,
 }
@@ -533,7 +533,7 @@ pub fn run(screens: Screens) -> ExitCode {
                 .map_err(|error| error.to_string())?;
             runtime.block_on(Box::pin(async {
                 let result = dispatch::execute(cli, screens).await;
-                crate::changes::drain().await;
+                artifactize_core::changes::drain().await;
                 result
             }))
         });
@@ -544,7 +544,7 @@ pub fn run(screens: Screens) -> ExitCode {
         Err(error) => Err(error.to_string()),
     };
     match result {
-        Ok(code) => match crate::platform::pause_after_help(has_args) {
+        Ok(code) => match artifactize_core::platform::pause_after_help(has_args) {
             Ok(()) => ExitCode::from(code),
             Err(error) => failure(&error.to_string(), json),
         },
@@ -561,7 +561,7 @@ fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
     let millis: u64 = text
         .parse()
         .map_err(|_| "timeout must be milliseconds".to_owned())?;
-    if !(1..=crate::config::validation::MAX_TIMEOUT_MS).contains(&millis) {
+    if !(1..=artifactize_core::config::MAX_TIMEOUT_MS).contains(&millis) {
         return Err("timeoutMs must be between 1 and 2147483647".into());
     }
     Ok(std::time::Duration::from_millis(millis))
@@ -570,8 +570,8 @@ fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
 /// The positional selection intentionally accepts either an Artifact or qualified Eval.
 #[derive(Debug, Clone)]
 enum Selector {
-    Artifact(crate::types::ArtifactName),
-    Eval(crate::types::EvalId),
+    Artifact(artifactize_core::types::ArtifactName),
+    Eval(artifactize_core::types::EvalId),
 }
 impl std::str::FromStr for Selector {
     type Err = String;

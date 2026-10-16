@@ -1,6 +1,6 @@
 # Install artifactize
 
-Every install provides `artifactize`, with its [built-in tools](../reference/builtin-tools.md#artifactize-tools-cli)
+Every install provides `artifactize`, with its [built-in tools](../features/tools/builtin.md#artifactize-tools-cli)
 available as `artifactize tools`. Non-Store channels also provide those tools as the
 standalone `artifactize-tools` command.
 Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
@@ -19,7 +19,7 @@ as soon as they build.
   runs the Linux build.
 - The example projects use `python3` to run Python checks and `grep` to search text.
   Both commands must be available in your terminal. Projects run their declared
-  commands as given on every OS; see [Operating systems](../reference/platforms.md).
+  commands as given on every OS; see [Operating systems](../features/others/platforms.md).
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime, Human and dependency evals
   need none.
@@ -147,7 +147,7 @@ your previous `artifactize` and `artifactize-tools` stay installed and runnable,
 with the [Linux](#linux) instructions. It is separate from a Windows install and keeps
 its own state. Built-in `open` and `login codex` use the distribution's `xdg-open`,
 never a Windows program; see
-[Opening files and the browser](../reference/platforms.md#opening-files-and-the-browser).
+[Opening files and the browser](../features/others/platforms.md#opening-files-and-the-browser).
 
 ### Cargo (all platforms)
 
@@ -172,7 +172,7 @@ under `DIR/bin` instead. Both cargo commands work on macOS and Windows too.
 ### Build from source (all platforms)
 
 To build from source, install from a checkout; its `rust-toolchain.toml` selects
-stable Rust. The example projects and the [Quick start](quick-start.md) use a
+stable Rust. The example projects and the [Quick start](guide.md) use a
 checkout too:
 
 ```sh
@@ -214,7 +214,7 @@ is the explicit cancellation action. The foreground Human deadline and
 
 Gate bypass (`--ignore-gates` and `review_policy`) is removed. Per-request
 `--speculate` and `--defer-human` replace it, both off by default; deferred sign-offs
-end with `SIGNOFFS_PENDING` and `--wait` exit 5. See [Runs and status](../concepts/runs-and-status.md).
+end with `SIGNOFFS_PENDING` and `--wait` exit 5. See [Runs and status](../features/run.md).
 Plain `artifactize monitor` starts on ALL; `monitor .`, a positional path or `--repo`
 selects that repository initially.
 
@@ -224,19 +224,19 @@ Rewrite declarations as TOML `index.artf` for folders and `<file>.artf` for file
 are snake_case and evals are `[evals.<id>]` tables; `.artfignore` replaces the old ignore
 file. There is no converter. Have an agent rewrite and commit the files, remove the
 legacy markers and run `artifactize config check`. Families are removed; use your own generator if
-you want templates and commit its `.artf` output. See [Declarations (.artf)](../reference/declarations.md).
+you want templates and commit its `.artf` output. See [Declarations (.artf)](../features/declarations.md).
 
 State schema 6 requires a new state. Earlier state is refused with exit 2;
 `artifactize doctor` reports a hard error and exits 1. Set `ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new
 directory, or move the old one away. Reuse-key v2 matches no earlier result, even in
 a team review store or with a script fingerprint. The first full `verify` reviews
 every executable eval once, Human sign-offs included. Dependency evals derive
-current evidence without execution. See [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
+current evidence without execution. See [Upgrading to 0.9](../features/fingerprint.md#upgrading-to-09).
 
 Monitor now opens an eval's Detail in its pane rather than a modal. Standalone
 Review shares that Human Detail: claims are explicit, and tools and submission
 never claim for you. The verdict forms, submit keys and editor shortcut changed;
-see [Human reviews and Monitor](../guides/human-reviews.md) for the current controls.
+see [Human reviews and Monitor](../features/human.md) for the current controls.
 
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command, and adds `codex` for ChatGPT plan
@@ -260,7 +260,7 @@ review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, el
 under review. Tokens under `auth/` are also refused inside any git work tree or
 artifactize project, such as a dotfiles repository at `$HOME` or a gitignored folder
 in a checkout; `ARTIFACTIZE_CODEX_AUTH_FILE` needs no storage
-([State](../reference/state-cache-limits.md#state)).
+([State](../features/others/state.md#state)).
 
 ## Backends
 
@@ -283,7 +283,7 @@ the printed URL into it if nothing opens. On another machine, or while port 1455
 browser ends on into the terminal instead. `logout codex` revokes and deletes
 artifactize's tokens. To use the tokens of an existing Codex sign-in instead, set
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`; artifactize only reads that file.
-See [Codex](../guides/agent-evals.md#codex).
+See [Codex](../features/agent.md#codex).
 
 ```sh
 artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store
@@ -328,4 +328,4 @@ results again. `prune` never touches active Runs, database rows or the repositor
 remove everything, delete the state directory that `artifactize doctor` prints on its
 first line.
 
-Next, take the [Quick start](quick-start.md): a five-minute tour that needs no model.
+Next, take the [Quick start](guide.md): a five-minute tour that needs no model.

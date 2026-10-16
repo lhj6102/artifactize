@@ -18,9 +18,9 @@ pub(super) async fn list(
     limit: u32,
     offset: u32,
 ) -> Result<u8, String> {
-    let state = crate::store::state_dir(context.state_dir.as_deref())?;
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
     let repo = (!all).then(|| context.repo.unwrap_or_else(|| PathBuf::from(".")));
-    let runs = crate::store::read_runs(&state, repo.as_deref(), limit, offset).await?;
+    let runs = artifactize_core::store::read_runs(&state, repo.as_deref(), limit, offset).await?;
     if context.json {
         print_json(&runs)?;
     } else {
@@ -38,7 +38,7 @@ pub(super) async fn list(
                 out,
                 "{}\t{}\t{}\t{}\t{}\t{}",
                 run.id,
-                crate::platform::path_text(&run.repo_path),
+                artifactize_core::platform::path_text(&run.repo_path),
                 run.created_at,
                 run.completed_at
                     .map_or_else(|| "-".to_owned(), |time| time.to_string()),
@@ -56,20 +56,20 @@ pub(super) async fn list(
 
 pub(super) async fn show(
     context: Context,
-    run_id: crate::types::RunId,
+    run_id: artifactize_core::types::RunId,
     wait: bool,
     timeout_ms: Option<Duration>,
 ) -> Result<u8, String> {
-    let state = crate::store::state_dir(context.state_dir.as_deref())?;
-    let initial = crate::store::read_run(&state, &run_id).await?;
-    let runs = crate::runs::Context::new(
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
+    let initial = artifactize_core::store::read_run(&state, &run_id).await?;
+    let runs = artifactize_core::runs::Context::new(
         &initial.run.repo_path,
         Some(&state),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;
     if wait {
         let (cancellation, listener) = super::cancellation_listener()?;
-        let result = crate::runs::wait(
+        let result = artifactize_core::runs::wait(
             &runs,
             &run_id,
             Some(timeout_ms.unwrap_or(DEFAULT_RUN_WAIT)),
@@ -82,15 +82,15 @@ pub(super) async fn show(
         }
         result?;
     }
-    let view = crate::runs::view(&runs, &run_id).await?;
-    print_json(&crate::query::run_output(
+    let view = artifactize_core::runs::view(&runs, &run_id).await?;
+    print_json(&artifactize_core::query::run_output(
         &view,
         time::OffsetDateTime::now_utc(),
     ))?;
     if !wait {
         return Ok(0);
     }
-    if view.run.status() == crate::types::RunStatus::Running {
+    if view.run.status() == artifactize_core::types::RunStatus::Running {
         writeln!(
             io::stderr().lock(),
             "Waiting timed out; Run {run_id} is still RUNNING."
@@ -101,14 +101,17 @@ pub(super) async fn show(
     Ok(outcome_code(&view.run))
 }
 
-pub(super) async fn cancel(context: Context, id: crate::types::RunId) -> Result<u8, String> {
-    let state = crate::store::state_dir(context.state_dir.as_deref())?;
-    let view = crate::store::read_run(&state, &id).await?;
-    let runs = crate::runs::Context::new(
+pub(super) async fn cancel(
+    context: Context,
+    id: artifactize_core::types::RunId,
+) -> Result<u8, String> {
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
+    let view = artifactize_core::store::read_run(&state, &id).await?;
+    let runs = artifactize_core::runs::Context::new(
         &view.run.repo_path,
         Some(&state),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;
-    print_json(&crate::runs::cancel(&runs, &id).await?)?;
+    print_json(&artifactize_core::runs::cancel(&runs, &id).await?)?;
     Ok(0)
 }

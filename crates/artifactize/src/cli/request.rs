@@ -7,7 +7,7 @@ use clap::Subcommand;
 use serde_json::{Value, json};
 
 use super::{cancellation_listener, print_json};
-use crate::{
+use artifactize_core::{
     human, store,
     tools::human::Content,
     types::{RequestId, RunId},
@@ -28,28 +28,28 @@ pub enum RequestCommand {
         id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<crate::types::ReviewerId>,
+        reviewer: Option<artifactize_core::types::ReviewerId>,
     },
     /// Release your Human reviewer lock while the request still waits.
     Unclaim {
         id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<crate::types::ReviewerId>,
+        reviewer: Option<artifactize_core::types::ReviewerId>,
     },
     /// Run a predefined Human tool as the claimant.
     Tool {
         id: RequestId,
-        tool: crate::config::ToolName,
+        tool: artifactize_core::config::ToolName,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<crate::types::ReviewerId>,
+        reviewer: Option<artifactize_core::types::ReviewerId>,
     },
     /// Submit a schema-valid Human verdict and owner fields.
     Submit {
         id: RequestId,
         #[arg(long, value_enum)]
-        verdict: crate::runtime::Verdict,
+        verdict: artifactize_core::runtime::Verdict,
         /// Owner fields as a JSON object (default {}).
         #[arg(long, value_name = "JSON", conflicts_with = "fields_file")]
         fields: Option<String>,
@@ -58,7 +58,7 @@ pub enum RequestCommand {
         fields_file: Option<PathBuf>,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<crate::types::ReviewerId>,
+        reviewer: Option<artifactize_core::types::ReviewerId>,
     },
 }
 
@@ -71,7 +71,7 @@ pub(super) async fn execute(
         RequestCommand::List { run } => {
             if json {
                 print_json(
-                    &crate::inspect::request_list(
+                    &artifactize_core::inspect::request_list(
                         state,
                         run.as_ref(),
                         None,
@@ -101,7 +101,12 @@ pub(super) async fn execute(
         }
         RequestCommand::Show { id } => {
             print_json(
-                &crate::inspect::request_show(state, &id, time::OffsetDateTime::now_utc()).await?,
+                &artifactize_core::inspect::request_show(
+                    state,
+                    &id,
+                    time::OffsetDateTime::now_utc(),
+                )
+                .await?,
             )?;
         }
         RequestCommand::Claim { id, reviewer } => {
@@ -168,7 +173,12 @@ pub(super) async fn execute(
             listener.abort();
             result?;
             print_json(
-                &crate::inspect::request_show(state, &id, time::OffsetDateTime::now_utc()).await?,
+                &artifactize_core::inspect::request_show(
+                    state,
+                    &id,
+                    time::OffsetDateTime::now_utc(),
+                )
+                .await?,
             )?;
         }
     }
@@ -176,12 +186,13 @@ pub(super) async fn execute(
 }
 
 fn submission(
-    verdict: crate::runtime::Verdict,
+    verdict: artifactize_core::runtime::Verdict,
     fields: Option<String>,
     file: Option<PathBuf>,
 ) -> Result<Value, String> {
     let fields = if let Some(path) = file {
-        let file = crate::platform::open_nonblocking(&path).map_err(|e| e.to_string())?;
+        let file =
+            artifactize_core::platform::open_nonblocking(&path).map_err(|e| e.to_string())?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
             return Err("Human fields must be a regular JSON file.".into());
         }

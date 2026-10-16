@@ -7,7 +7,7 @@ use clap::Subcommand;
 use serde_json::json;
 
 use super::print_json;
-use crate::{
+use artifactize_core::{
     auth::remote::{self, Share},
     platform::HiddenInput,
 };
@@ -84,7 +84,7 @@ pub(super) async fn execute(
             Ok(0)
         }
         RemoteCommand::Push { dry_run } => {
-            let report = crate::remote::push(state, repo, dry_run).await?;
+            let report = artifactize_core::remote::push(state, repo, dry_run).await?;
             if json {
                 print_json(&report)?;
             } else {
@@ -103,7 +103,7 @@ pub(super) async fn execute(
         RemoteCommand::Status => {
             let Some(status) = remote::status(state, repo).await? else {
                 if json {
-                    print_json(&crate::inspect::remote_output(None))?;
+                    print_json(&artifactize_core::inspect::remote_output(None))?;
                 } else {
                     writeln!(out, "No remote review store is configured.")
                         .map_err(|e| e.to_string())?;
@@ -111,7 +111,7 @@ pub(super) async fn execute(
                 return Ok(1);
             };
             if json {
-                print_json(&crate::inspect::remote_output(Some(&status)))?;
+                print_json(&artifactize_core::inspect::remote_output(Some(&status)))?;
             } else {
                 writeln!(
                     out,
@@ -154,7 +154,7 @@ fn read_token() -> Result<String, String> {
         let hidden = match HiddenInput::new() {
             Ok(hidden) => Some(hidden),
             // Where the platform allows it, read the token visibly rather than not at all.
-            Err(error) if crate::platform::VISIBLE_INPUT_FALLBACK => {
+            Err(error) if artifactize_core::platform::VISIBLE_INPUT_FALLBACK => {
                 writeln!(
                     io::stderr().lock(),
                     "Warning: this terminal cannot hide input ({error}); the token will be visible."

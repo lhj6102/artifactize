@@ -23,12 +23,12 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
     match cli.command {
         Some(Command::Mcp) => {
             let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-            let runs = crate::runs::Context::new(
+            let runs = artifactize_core::runs::Context::new(
                 &repo,
                 context.state_dir.as_deref(),
                 &std::env::current_exe().map_err(|e| e.to_string())?,
             )?;
-            crate::mcp::serve(runs).await?;
+            artifactize_mcp::serve(runs).await?;
             Ok(0)
         }
         None => {
@@ -38,15 +38,15 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             Ok(0)
         }
         Some(Command::VerifyWorker { run_id }) | Some(Command::VerifyExecution { run_id }) => {
-            let runs = crate::runs::Context::new(
+            let runs = artifactize_core::runs::Context::new(
                 context.repo.as_deref().unwrap_or(std::path::Path::new(".")),
                 context.state_dir.as_deref(),
                 &std::env::current_exe().map_err(|e| e.to_string())?,
             )?;
             if executor {
-                crate::runs::execute(&runs, &run_id).await?;
+                artifactize_core::runs::execute(&runs, &run_id).await?;
             } else {
-                crate::runs::supervise(&runs, &run_id).await?;
+                artifactize_core::runs::supervise(&runs, &run_id).await?;
             }
             Ok(0)
         }
@@ -87,7 +87,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                 selection,
                 policy,
                 workflow::VerifyLimits {
-                    modes: crate::runs::RunModes {
+                    modes: artifactize_core::runs::RunModes {
                         speculate,
                         defer_human,
                     },
@@ -142,15 +142,15 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             .await
         }
         Some(Command::Server { command }) => {
-            let state = crate::store::state_dir(context.state_dir.as_deref())?;
+            let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
             server::execute(&state, command, context.json).await
         }
         Some(Command::Request { command }) => {
-            let state = crate::store::state_dir(context.state_dir.as_deref())?;
+            let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
             request::execute(&state, command, context.json).await
         }
         Some(Command::Session { command }) => {
-            let state = crate::store::state_dir(context.state_dir.as_deref())?;
+            let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
             session::execute(&state, context.repo.as_deref(), command, context.json).await
         }
     }

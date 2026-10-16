@@ -21,17 +21,6 @@ pub(crate) use artifactize_core::{project, repository};
 #[path = "../../artifactize-core/tests/support/os.rs"]
 mod test_os;
 
-/// The screens `artifactize monitor` and `artifactize review` open, for the binary to hand to
-/// [`artifactize_core::cli::run`].
-pub fn screens() -> artifactize_core::cli::Screens {
-    artifactize_core::cli::Screens {
-        monitor: |state, repo, cancellation| Box::pin(monitor::run(state, repo, cancellation)),
-        review: |state, repo, reviewer, request, cancellation| {
-            Box::pin(review::run(state, repo, reviewer, request, cancellation))
-        },
-    }
-}
-
 /// A saved request, shared with the core's unit tests.
 #[cfg(test)]
 #[path = "../../artifactize-core/tests/support/request.rs"]

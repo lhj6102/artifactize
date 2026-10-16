@@ -46,7 +46,7 @@ where
 }
 
 /// Millisecond timeouts retain the signed 32-bit external protocol bound.
-pub(crate) const MAX_TIMEOUT_MS: u64 = 2_147_483_647;
+pub const MAX_TIMEOUT_MS: u64 = 2_147_483_647;
 
 pub(super) fn timeout_number<E: Error>(number: Number) -> Result<std::time::Duration, E> {
     let value = number

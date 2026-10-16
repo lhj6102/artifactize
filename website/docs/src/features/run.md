@@ -1,4 +1,4 @@
-# Runs, status and validation
+# Evaluation Run
 
 `verify` reviews the selected evals and records a Run; `status` predicts what
 the next `verify` will execute, reuse, derive or wait for, without running evals.
@@ -19,7 +19,7 @@ re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
 fingerprint claim count against an explicit `--jobs` cap, but cache hits do not. An
 Agent review of a backend with a machine-wide limit also needs one of its
-[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one does not count against `--jobs`.
+[backend slots](others/state.md#backend-capacity); a request waiting for one does not count against `--jobs`.
 QUEUED means awaiting admission, a backend slot or a joined execution; only a
 Run with explicit `--jobs` can be waiting for a Run job slot. Artifactize owns
 each Run independently of its requester. Plain `verify` prints the Run ID
@@ -50,7 +50,7 @@ returns; `verify --wait` follows that Run in the foreground. There is no Human w
 deadline or `verify --timeout-ms`; all eval kinds share the same settlement wait rule.
 `--reuse-only KINDS` (for example `agent,human` in CI)
 lets evals of the listed kinds only reuse a result; one with nothing to reuse is not
-executed and leaves the Run INCOMPLETE ([CLI](../reference/cli.md#reuse-only)).
+executed and leaves the Run INCOMPLETE ([CLI](../cli/index.md#reuse-only)).
 
 `verify --wait` exits 0 for GREEN/SATISFIED, 1 for RED, 2 for ERROR/cancelled and 4 for
 INCOMPLETE, or 5 for SIGNOFFS_PENDING when deferral leaves only sign-offs. Ctrl-C/SIGTERM exits 130 and stops watching, not verification. Explicit
@@ -67,7 +67,7 @@ identity. Keep the key when retrying a lost response; use a new key for a new at
 
 ### Speculation and deferred sign-offs
 
-The two [per-request verify modes](../reference/cli.md#verify-modes),
+The two [per-request verify modes](../cli/index.md#verify-modes),
 `--speculate` and `--defer-human`, default off and are saved in the Run's `modes`.
 The same request key keeps its original choices.
 
@@ -94,7 +94,7 @@ Run/result readers expose SIGNOFFS_PENDING as terminal and not satisfied.
 
 Text output prints one line per request and marks a result taken from another
 request's execution (a fingerprint hit, or a joined execution) with its source Run
-(results from a [remote review store](../reference/review-store.md#remote-review-store-client) also name their
+(results from a [remote review store](team/reference.md#remote-review-store-client) also name their
 producer or Human reviewer):
 
 ```text
@@ -125,7 +125,7 @@ whose execution produced the result for cache, joined and remote reuse:
 
 `kind` is `cache` for a completed record of the reuse key, `joined` for a
 live execution of the key that the request waited for (in another `verify`, or a
-sibling eval in the same Run), and `remote` for a record from the [remote review store](../reference/review-store.md#remote-review-store-client).
+sibling eval in the same Run), and `remote` for a record from the [remote review store](team/reference.md#remote-review-store-client).
 Dependency requests instead have `kind: "derived"` and their own Run/request IDs. They have
 no execution and are not counted as reused. `run show`, `request show` and `request list --json`
 carry `source` too.
@@ -165,9 +165,9 @@ create missing state, or require a repository to still exist. There is no
 separate `history` command.
 
 Review policy, `--force`, `--max-executions`, selection files and `--profile`
-variants are in the [reference](../reference/cli.md#runtime-cli), with the
-[command table](../reference/cli.md#command-reference) and the
-[state layout](../reference/state-cache-limits.md#state).
+variants are in the [reference](../cli/index.md#runtime-cli), with the
+[command table](../cli/index.md#command-reference) and the
+[state layout](others/state.md#state).
 
 ## Status and static graph
 
@@ -184,7 +184,7 @@ options. It reports current Artifact/eval states, unmet final obligations, and
 `execute` / `reuse` / `derive` / `wait` / `blocked` actions. All evals
 in the required closure are shown; `selected` and `included` distinguish explicit
 selection from included execution (recursive or automatic dependency requirements).
-In JSON, each eval also shows what its [reuse key](fingerprints-and-reuse.md#the-reuse-key) is made of: `evalDefHash`, the
+In JSON, each eval also shows what its [reuse key](fingerprint.md#the-reuse-key) is made of: `evalDefHash`, the
 target's `fingerprint`, `fingerprints` (each Artifact the eval depends on with its
 current fingerprint, or null without one) and the composed `key` (null when a
 fingerprint is disabled), the same values `verify` would key the Run with.
@@ -255,7 +255,7 @@ derives new current evidence. `run show` keeps saved validation and requests.
 The monitor derives its tree from the saved definitions and evidence with request
 states as they stand now, including later Human submissions. Its headline keeps
 **SATISFIED / NOT SATISFIED at Run end**; a dim `*` marks rows whose derived state
-changed since that end, not files changed. See [Monitor](../guides/human-reviews.md#monitor).
+changed since that end, not files changed. See [Monitor](../tui/index.md#monitor).
 
 `config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
 including cycle peers. Text lists Artifacts with tags and file-kind markers, evals, components and
@@ -275,10 +275,10 @@ command is hidden from help; it prints `graph moved to "artifactize config graph
 ### Current graph review tools
 
 `config graph` remains the configuration inspector. For review, declare the
-[built-in `graph` tools](../reference/builtin-tools.md#current-project-graph) on
+[built-in `graph` tools](tools/builtin.md#current-project-graph) on
 any Artifact: the Agent sees the extracted current graph as a tree; the Human
 opens it in the existing desktop graph viewer, without requiring a saved Run.
-The optional root [`.artf` graph Artifact](../reference/declarations.md#graph-artifact)
+The optional root [`.artf` graph Artifact](declarations.md#graph-artifact)
 has ordinary evals and appears in Runs and status like any other Artifact. Only
 its fingerprint algorithm is different; there is no graph-specific verification
 flow or automatic relation to the root folder Artifact.

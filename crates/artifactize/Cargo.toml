@@ -25,6 +25,15 @@ pkg-fmt = "zip"
 [dependencies]
 artifactize-core.workspace = true
 artifactize-tui.workspace = true
+artifactize-mcp.workspace = true
+artifactize-tools.workspace = true
+serde = { version = "1", features = ["derive"] }
+rig-core = { version = "=0.43.0", default-features = false, features = ["reqwest", "rustls"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
+clap = { version = "4.5", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
 artifactize-core = { workspace = true, features = ["test-support"] }

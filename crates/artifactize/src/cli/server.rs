@@ -8,7 +8,7 @@ use clap::Subcommand;
 use serde_json::json;
 
 use super::{cancellation_listener, print_json};
-use crate::server::{self, Scope, Store};
+use artifactize_core::server::{self, Scope, Store};
 
 #[derive(Debug, Subcommand)]
 pub enum ServerCommand {
@@ -24,14 +24,16 @@ pub enum ServerCommand {
         command: TokenCommand,
     },
     /// Remove every stored record of a reuse key.
-    Rm { key: crate::types::ReuseKey },
+    Rm {
+        key: artifactize_core::types::ReuseKey,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 pub enum TokenCommand {
     /// Create a token and print it once; only its SHA-256 is stored.
     Add {
-        name: crate::types::TokenName,
+        name: artifactize_core::types::TokenName,
         /// Comma-separated scopes: read, publish, human.
         #[arg(
             long,
@@ -46,7 +48,7 @@ pub enum TokenCommand {
     List,
     /// Revoke a token at once; --purge also deletes the entries it published.
     Revoke {
-        name: crate::types::TokenName,
+        name: artifactize_core::types::TokenName,
         #[arg(long)]
         purge: bool,
     },

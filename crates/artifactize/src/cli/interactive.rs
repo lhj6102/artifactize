@@ -18,7 +18,7 @@ pub(super) async fn monitor(
     if all && (context.repo.is_some() || path.is_some()) {
         return Err("monitor accepts --repo or --all, not both.".into());
     }
-    let state = crate::store::state_dir(context.state_dir.as_deref())?;
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
     let repo = path.or(context.repo);
     let (cancellation, listener) = cancellation_listener()?;
     let result = (screens.monitor)(state, repo, cancellation).await;
@@ -29,9 +29,9 @@ pub(super) async fn monitor(
 
 pub(super) async fn review(
     context: Context,
-    request: Option<crate::types::RequestId>,
+    request: Option<artifactize_core::types::RequestId>,
     all: bool,
-    reviewer: Option<crate::types::ReviewerId>,
+    reviewer: Option<artifactize_core::types::ReviewerId>,
     screens: Screens,
 ) -> Result<u8, String> {
     if context.json {
@@ -42,11 +42,11 @@ pub(super) async fn review(
     }
     let reviewer = match reviewer {
         Some(reviewer) => Ok(reviewer),
-        None => crate::human::default_reviewer(),
+        None => artifactize_core::human::default_reviewer(),
     }?;
-    let state = crate::store::state_dir(context.state_dir.as_deref())?;
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
     if let Some(id) = &request {
-        crate::store::read_request(&state, id).await?;
+        artifactize_core::store::read_request(&state, id).await?;
     }
     // The list searches every repository; --repo starts it on that repository's term, and
     // --all (the default) stays accepted.

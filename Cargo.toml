@@ -5,7 +5,7 @@ exclude = ["crates/artifactize-desktop/vendor/tauri-plugin-wdio-webdriver"]
 # Plain `cargo build/clippy/test` at the root cover the CLI and its tools. The desktop app
 # needs WebKitGTK and a built frontend, so it builds only when named (`-p artifactize-desktop`)
 # and has its own CI job; the CLI's builds, releases and lockfile versions stay as they were.
-default-members = ["crates/artifactize", "crates/artifactize-core", "crates/artifactize-tools", "crates/artifactize-tui"]
+default-members = ["crates/artifactize", "crates/artifactize-core", "crates/artifactize-tools", "crates/artifactize-tui", "crates/artifactize-mcp"]
 
 [workspace.package]
 version = "0.0.0-dev"
@@ -20,6 +20,10 @@ homepage = "https://artifactize.dev"
 [workspace.dependencies.artifactize-core]
 version = "0.0.0-dev"
 path = "crates/artifactize-core"
+
+[workspace.dependencies.artifactize-mcp]
+version = "0.0.0-dev"
+path = "crates/artifactize-mcp"
 
 [workspace.dependencies.artifactize-tui]
 version = "0.0.0-dev"

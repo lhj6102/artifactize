@@ -10,16 +10,11 @@ use rig_core::message::{AssistantContent, Message, ToolResultContent, UserConten
 use serde_json::json;
 
 use super::{cancellation_listener, print_json};
-use crate::inspect::session::{Located, locate};
-use crate::{
-    agent::{
-        self,
-        session::{self, Conversation, Recorder, Summary},
-    },
-    cache,
-    config::read_workspace_config,
-    store, workspace,
+use artifactize_core::agent::{
+    self,
+    session::{self, Conversation, Summary},
 };
+use artifactize_core::inspect::session::{Located, locate, send};
 
 #[derive(Debug, Subcommand)]
 pub enum SessionCommand {
@@ -52,7 +47,9 @@ pub(super) async fn execute(
     match command {
         SessionCommand::Show { reference, summary } => {
             if json {
-                print_json(&crate::inspect::session::show(state, &reference, summary).await?)?;
+                print_json(
+                    &artifactize_core::inspect::session::show(state, &reference, summary).await?,
+                )?;
             } else {
                 let located = locate(state, &reference).await?;
                 let conversation = located.load()?;
@@ -66,15 +63,6 @@ pub(super) async fn execute(
         }
         SessionCommand::Send { reference, message } => {
             let located = locate(state, &reference).await?;
-            if matches!(
-                located.request.request.status(),
-                crate::types::RequestStatus::Queued | crate::types::RequestStatus::Running
-            ) {
-                return Err(format!(
-                    "Request {} is still running; send a follow-up once its review has finished.",
-                    located.request.request.id
-                ));
-            }
             let (cancellation, listener) = cancellation_listener()?;
             let result = send(state, repo, &located, &message, cancellation).await;
             listener.abort();
@@ -123,130 +111,6 @@ pub(super) async fn execute(
     Ok(0)
 }
 
-struct Sent {
-    number: usize,
-    model: String,
-    files_changed: Option<bool>,
-}
-
-/// Continue the conversation under its lock, so concurrent sends make one thread.
-async fn send(
-    state: &Path,
-    repo: Option<&Path>,
-    located: &Located,
-    message: &str,
-    cancellation: tokio_util::sync::CancellationToken,
-) -> Result<(Sent, agent::FollowUp), String> {
-    // A session that was never saved, or is gone, gets no lock file.
-    located.load()?;
-    let _lock = tokio::select! {
-        lock = session::lock(state, &located.id) => lock?,
-        () = cancellation.cancelled() => {
-            return Err("Cancelled while waiting for another send to this session.".into());
-        }
-    };
-    let conversation = located.load()?;
-    let request = &located.request.request;
-    let repo = match repo {
-        Some(repo) => repo.to_path_buf(),
-        None => store::read_run(state, &request.run_id).await?.run.repo_path,
-    };
-    let config = read_workspace_config(&repo).map_err(|error| {
-        format!(
-            "Cannot resolve the review's tools in {}: {error}",
-            crate::platform::path_text(&repo)
-        )
-    })?;
-    let eval = config
-        .evals
-        .iter()
-        .find(|eval| eval.id == request.eval_id)
-        .ok_or_else(|| {
-            format!(
-                "Eval {} is no longer declared in {}; its tools cannot be resolved.",
-                request.eval_id,
-                crate::platform::path_text(&repo)
-            )
-        })?;
-    let output = workspace::prepare_directory(
-        &state.join("runs").join(request.run_id.as_str()),
-        &config.root,
-    )
-    .map_err(|e| e.to_string())?;
-    let files_changed = files_changed(&config, request, &output, cancellation.clone()).await;
-    let header = conversation.header();
-    let sent = Sent {
-        number: conversation.sends() + 1,
-        model: format!(
-            "{} {}{}",
-            header
-                .backend
-                .map(|backend| serde_json::to_value(backend)
-                    .expect("backend is JSON")
-                    .as_str()
-                    .expect("backend is text")
-                    .to_owned())
-                .unwrap_or_else(|| "?".into()),
-            header.model.as_deref().unwrap_or("?"),
-            header.reasoning.map_or(String::new(), |reasoning| format!(
-                " (reasoning {reasoning})"
-            ))
-        ),
-        files_changed,
-    };
-    let mut recorder = Recorder::append(state, &conversation.path, &located.id, sent.number)?;
-    let answer = agent::follow_up(
-        &config,
-        eval,
-        agent::Continuation {
-            conversation: &conversation,
-            files_changed,
-            output: &output,
-            state,
-        },
-        message,
-        &mut recorder,
-        cancellation,
-    )
-    .await;
-    Ok((sent, answer))
-}
-
-/// Whether an Artifact the review's key covered has another fingerprint now; `None` when
-/// the review had no key or a fingerprint cannot be computed.
-async fn files_changed(
-    config: &crate::config::RepoConfig,
-    request: &store::Request,
-    output: &Path,
-    cancellation: tokio_util::sync::CancellationToken,
-) -> Option<bool> {
-    if request.fingerprints.is_empty() {
-        return None;
-    }
-    if request
-        .fingerprints
-        .keys()
-        .any(|id| !config.artifacts.contains_key(id))
-    {
-        return Some(true);
-    }
-    let current = cache::prepare(
-        config,
-        request.fingerprints.keys(),
-        output,
-        &cache::Parallelism::new(cache::Parallelism::available()),
-        cancellation,
-    )
-    .await
-    .ok()?;
-    Some(
-        request
-            .fingerprints
-            .iter()
-            .any(|(id, fingerprint)| current.get(id).is_none_or(|now| &now.value != fingerprint)),
-    )
-}
-
 /// Keep text session transcripts readable with bounded tool excerpts;
 /// the explicit remainder marker directs readers to complete `--json` output.
 const SHOWN_CHARS: usize = 2000;
@@ -265,9 +129,9 @@ fn clip(text: &str) -> String {
 
 /// The backend, model and reasoning a session ran with.
 struct Engine {
-    backend: Option<crate::config::Backend>,
-    model: Option<crate::config::ModelId>,
-    reasoning: Option<crate::config::Reasoning>,
+    backend: Option<artifactize_core::config::Backend>,
+    model: Option<artifactize_core::config::ModelId>,
+    reasoning: Option<artifactize_core::config::Reasoning>,
 }
 
 /// An enum's name as its wire form spells it.
@@ -416,7 +280,7 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                     "\n── Review failed: {} {}",
                     end.failure()
                         .and_then(|(code, _)| code)
-                        .map(crate::agent::error::Code::as_str)
+                        .map(artifactize_core::agent::error::Code::as_str)
                         .unwrap_or_default(),
                     end.failure()
                         .map(|(_, message)| message)
@@ -441,7 +305,7 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                 answer
                     .failure()
                     .and_then(|(code, _)| code)
-                    .map(crate::agent::error::Code::as_str)
+                    .map(artifactize_core::agent::error::Code::as_str)
                     .unwrap_or_default(),
                 answer
                     .failure()

@@ -15,7 +15,7 @@ example projects. Each README lists the exact commands:
   Markdown file Artifacts, one sidecar per post, a shared style checker in a
   mounted basis Artifact, per-post word limits and independent artifactsum reuse.
   A post change reviews one eval; a shared checker or rule change reviews all three.
-- [Dependency readiness](../concepts/artifacts-and-evals.md#dependency-evals):
+- [Dependency readiness](../features/artifact.md#dependency-evals):
   a derived eval, with exact declarations and selector rules.
-- [Team walkthrough](../guides/team-walkthrough.md): two machines and CI reuse each
+- [Team walkthrough](../features/team/walkthrough.md): two machines and CI reuse each
   other's verdicts through one `artifactize server`.

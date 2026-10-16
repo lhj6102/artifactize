@@ -26,7 +26,10 @@ fn default_concurrency_and_run_history_page_remain_compatible() {
         panic!("verify command");
     };
     assert_eq!(jobs, None);
-    assert_eq!(crate::project::VerifyOptions::default().jobs, None);
+    assert_eq!(
+        artifactize_core::project::VerifyOptions::default().jobs,
+        None
+    );
     let cli = Cli::try_parse_from(["artifactize", "verify", "--all", "--jobs", "2"]).unwrap();
     assert!(matches!(
         cli.command,

@@ -32,7 +32,7 @@ take model input) and an optional `description`; each tool has a default descrip
 match the tool (`open` and `graph` launch, every other tool prints output) or `config check`
 rejects it. Built-ins take no `timeout_ms`, `command`, `protocol` or `input_schema`. The
 reviewer sees each tool as `<name>_<artifactId>`, as with
-[command tools](agent-tools.md#agent-tools).
+[command tools](agent.md#agent-tools).
 
 ## Tools
 
@@ -50,7 +50,7 @@ reviewer sees each tool as `<name>_<artifactId>`, as with
 
 Without `args`, an Agent tool takes the model's input; the input, result and limits of
 `read`, `list`, `glob`, `grep` and `view_image` are in
-[Agent tools](agent-tools.md#agent-tools). With `args`, the tool takes no model input
+[Agent tools](agent.md#agent-tools). With `args`, the tool takes no model input
 (except `section` with one argument) and returns text:
 
 - **`read`** prints a UTF-8 file, at most 64 KiB; a longer file ends with
@@ -109,7 +109,7 @@ Filesystem targets must stay inside the scope admitted to the actual review:
 - **Human tools** accept the same logical paths, and also `{artifactPath}` or
   `{artifactPath}/path` and `{name}` or `{name}/path`, where `name` is an Artifact
   or a mount alias of the declaring Artifact, as in
-  [Human tools](human-tools.md#human-tools). A `--flag=` prefix is not accepted.
+  [Human tools](human.md#human-tools). A `--flag=` prefix is not accepted.
   Discovery and `config check` validate reference names and target existence
   against the workspace, not the narrower review scope. An existing `{other}/file`
   can therefore pass configuration validation without being a child or mount.
@@ -126,7 +126,7 @@ scope checks.
 ### Reuse
 
 Tool declarations, including a built-in's name and `args`, are not part of the
-[reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key): a tool is a way of
+[reuse key](../fingerprint.md#the-reuse-key): a tool is a way of
 viewing an Artifact. Changing a tool reuses earlier verdicts, and a new artifactize
 release that changes how a built-in behaves does too. To review again when the file a tool reads changes, cover that file in the
 fingerprint; the default artifactsum covers the Artifact's own files.

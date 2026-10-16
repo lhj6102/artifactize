@@ -26,7 +26,7 @@ artifactize --state-dir "$WALK/server" server run      # Listening on http://127
 
 Leave `server run` in its own terminal. This walkthrough connects only programs
 on the same computer. For separate computers, first follow the
-[secure connection setup](team-review-store.md#connect-teammates-securely).
+[secure connection setup](index.md#connect-teammates-securely).
 
 ## 2. Alice reviews first
 
