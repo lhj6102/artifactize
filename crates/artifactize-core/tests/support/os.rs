@@ -20,6 +20,17 @@ pub fn database_released(path: &std::path::Path) -> std::io::Result<bool> {
 }
 #[path = "os/observation.rs"]
 mod observation;
+#[path = "os/tcp.rs"]
+mod tcp;
+
+/// Observe closed TCP after the caller has completed its owning operation.
+/// Every application response byte is retained, including bytes before a reset.
+pub async fn closed_tcp_probe(
+    stream: &mut tokio::io::BufReader<tokio::net::TcpStream>,
+    probe: &[u8],
+) -> std::io::Result<Vec<u8>> {
+    tcp::closed_probe(stream, probe).await
+}
 #[path = "os/worker.rs"]
 mod worker;
 

@@ -122,7 +122,7 @@ jobs:
       - run: node --test crates/artifactize/publish.test.mjs
       - name: Publication runtime ownership
         if: github.event_name == 'pull_request'
-        run: cargo test --locked -p artifactize --test publish_runtime publication_cancellation_reaps_the_build_script_before_releasing_owned_tmp -- --exact
+        run: cargo test --locked -p artifactize --test publish_runtime publication_
       - name: Native platform contracts
         if: github.event_name == 'pull_request'
         run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
@@ -147,7 +147,7 @@ jobs:
       - run: node --test crates/artifactize/publish.test.mjs
       - name: Publication runtime ownership
         if: github.event_name == 'pull_request'
-        run: cargo test --locked -p artifactize --test publish_runtime publication_cancellation_reaps_the_build_script_before_releasing_owned_tmp -- --exact
+        run: cargo test --locked -p artifactize --test publish_runtime publication_
       - name: Native platform contracts
         if: github.event_name == 'pull_request'
         run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"

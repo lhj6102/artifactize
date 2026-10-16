@@ -7,7 +7,7 @@ use artifactize_core::{process, runtime};
 use std::{fs, path::PathBuf};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -96,15 +96,15 @@ async fn publication_cancellation_reaps_the_build_script_before_releasing_owned_
         ready = socket.read_line(&mut line) => { ready.unwrap(); },
         outcome = &mut running => panic!("publication exited before the build script was ready: {outcome:?}"),
     }
-    let build_output = fs::canonicalize(PathBuf::from(line.trim()));
-    let owned_tmp = fs::canonicalize(&scratch);
+    let build_output = support::os::canonical(&PathBuf::from(line.trim()));
+    let owned_tmp = support::os::canonical(&scratch);
     cancellation.cancel();
     let outcome = running.await.unwrap();
     // Let an incorrectly surviving script answer and exit, so this negative check
     // owns its fixture even when the runtime's cancellation contract regresses.
-    let _ = socket.get_mut().write_all(b"probe").await;
-    let mut response = Vec::new();
-    socket.read_to_end(&mut response).await.unwrap();
+    let response = support::os::closed_tcp_probe(&mut socket, b"probe")
+        .await
+        .unwrap();
     assert!(
         matches!(
             outcome,
@@ -112,10 +112,44 @@ async fn publication_cancellation_reaps_the_build_script_before_releasing_owned_
         ),
         "{outcome:?}"
     );
-    assert!(build_output.unwrap().starts_with(owned_tmp.unwrap()));
+    assert!(build_output.starts_with(owned_tmp));
     assert!(
         response.is_empty(),
         "the build script survived: {response:?}"
     );
     assert!(!scratch.exists(), "runtime-owned tmp must be released");
+}
+
+#[tokio::test]
+async fn publication_closed_probe_preserves_a_live_peers_buffered_reply() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = async {
+        let (mut socket, _) = listener.accept().await?;
+        socket.write_all(b"ready\nalive").await?;
+        // Leaving the rest of the probe unread may reset TCP on close. The
+        // already-observed application reply must still not disappear.
+        let mut probe = [0];
+        socket.read_exact(&mut probe).await?;
+        Ok::<_, std::io::Error>(probe)
+    };
+    let observer = async {
+        let mut socket = BufReader::new(TcpStream::connect(address).await?);
+        let mut ready = String::new();
+        socket.read_line(&mut ready).await?;
+        // Observe at least one real reply byte before letting the peer terminate.
+        // This is a protocol barrier, not an assumption about TCP packet grouping.
+        let buffered = !socket.fill_buf().await?.is_empty();
+        let response = support::os::closed_tcp_probe(&mut socket, b"probe").await?;
+        Ok::<_, std::io::Error>((ready, buffered, response))
+    };
+    let (probe, (ready, buffered, response)) = tokio::try_join!(peer, observer).unwrap();
+    assert_eq!(probe, [b'p']);
+    assert_eq!(ready, "ready\n");
+    assert!(buffered);
+    assert!(
+        !response.is_empty(),
+        "a live reply must not become a successful closed observation"
+    );
+    assert_eq!(response[0], b'a');
 }
