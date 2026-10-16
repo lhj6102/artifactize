@@ -78,8 +78,11 @@ async fn open(state: &Path, writable: bool) -> Result<Option<NotifyingConnection
             schema_initialized(&transaction)
         })
         .await
-        .map_err(|e| e.to_string())?;
-    Ok(initialized.then_some(connection))
+        .map_err(|e| e.to_string());
+    match initialized {
+        Ok(true) => Ok(Some(connection)),
+        result => connection.finish(result.map(|_| None)).await,
+    }
 }
 
 /// The latest record of every key, or with `history` every record, latest first per key.
@@ -87,7 +90,7 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
     let Some(connection) = open(state, false).await? else {
         return Ok(Vec::new());
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
                 "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank,e.data FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
@@ -122,7 +125,8 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
                 .collect::<Result<_, _>>()?)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// A key's records, latest first; without `history` only the latest.
@@ -131,9 +135,9 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
         return Ok(Vec::new());
     };
     let Ok(key) = key.parse::<crate::types::ReuseKey>() else {
-        return Ok(Vec::new());
+        return connection.finish(Ok(Vec::new())).await;
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
                 "SELECT e.data FROM executions e WHERE e.key=? AND {RECORD} ORDER BY {LATEST} LIMIT ?"
@@ -149,7 +153,8 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
                 .collect()
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// The latest locally produced record (never a mirror) of each key after `after`, in key order.
@@ -161,7 +166,7 @@ pub async fn local(
     let Some(connection) = open(state, false).await? else {
         return Ok(Vec::new());
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
                 "SELECT data FROM (SELECT e.key,e.data,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD} AND json_extract(e.data,'$.origin') IS NULL AND e.key>?) WHERE rank=1 ORDER BY key LIMIT ?"
@@ -181,7 +186,8 @@ pub async fn local(
                 .collect()
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// Remove every record of an unused key from its history, preserving executions and Runs.
@@ -190,9 +196,9 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
         return Ok(false);
     };
     let Ok(key) = key.parse::<crate::types::ReuseKey>() else {
-        return Ok(false);
+        return connection.finish(Ok(false)).await;
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<bool, Error> {
             let transaction =
                 db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -214,7 +220,8 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
             Ok(removed != 0)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// The history columns of a completed record: its sortable completion time and size, or

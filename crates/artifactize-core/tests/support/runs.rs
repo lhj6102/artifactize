@@ -191,6 +191,13 @@ impl Drop for RepoLease {
             } else {
                 panic!("{message}");
             }
+        } else if let Err(error) = self.root.take().expect("fixture root is owned").close() {
+            let message = format!("Fixture directory cleanup failed: {error}");
+            if std::thread::panicking() {
+                eprintln!("{message}");
+            } else {
+                panic!("{message}");
+            }
         }
     }
 }

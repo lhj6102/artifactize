@@ -21,7 +21,7 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: support::runs::RepoLease,
     repo: PathBuf,
     state: PathBuf,
 }
@@ -50,19 +50,15 @@ fn runtime(command: &str) -> Value {
     })
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();
+        let repo = root.path().join("repo");
+        let state = root.path().join("state");
         Self {
-            repo: root.path().join("repo"),
-            state: root.path().join("state"),
-            _root: root,
+            _root: support::runs::RepoLease::new(root, &state, &repo),
+            repo,
+            state,
         }
     }
 
@@ -568,7 +564,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         .record_output()
         .unwrap();
     assert!(!review.status.success());
-    let receipts = store::Receipts::open(&fixture.state, &fixture.repo)
+    let receipts = store::OwnedReceipts::open(&fixture.state, &fixture.repo)
         .await
         .unwrap();
     assert!(
@@ -618,6 +614,13 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
             .status()
             .as_str(),
         "GREEN"
+    );
+    let root = fixture._root.path().to_owned();
+    drop(receipts);
+    drop(fixture);
+    assert!(
+        !root.exists(),
+        "completed dependency Runs and their review writer release temporary state"
     );
 }
 

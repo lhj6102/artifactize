@@ -19,18 +19,12 @@ use serde_json::{Value, json};
 mod support;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: support::runs::RepoLease,
     repo: PathBuf,
     state: PathBuf,
 }
 
 /// The review-demo shape: a Human sign-off with `output` and `launch` tools, and a dependent.
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();
@@ -110,10 +104,11 @@ impl Fixture {
             .to_string(),
         )
         .unwrap();
+        let state = root.path().join("state");
         Self {
+            _root: support::runs::RepoLease::new(root, &state, &repo),
             repo,
-            state: root.path().join("state"),
-            _root: root,
+            state,
         }
     }
 
@@ -143,8 +138,8 @@ impl Fixture {
         }
     }
 
-    async fn receipts(&self) -> store::Receipts {
-        store::Receipts::open(&self.state, &self.repo)
+    async fn receipts(&self) -> store::OwnedReceipts {
+        store::OwnedReceipts::open(&self.state, &self.repo)
             .await
             .unwrap()
     }
@@ -335,7 +330,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
 
 #[tokio::test]
 async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
-    for unwind in [false, true] {
+    for (complete, unwind) in [(false, false), (false, true), (true, false), (true, true)] {
         let fixture = Fixture::new();
         let root = fixture._root.path().to_owned();
         let output = support::os::run(fixture.command().args(["verify", "--all", "--json"]));
@@ -343,7 +338,7 @@ async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
         let accepted: Value = serde_json::from_slice(&output.stdout).unwrap();
         let run: artifactize_core::types::RunId =
             accepted["run"].as_str().unwrap().parse().unwrap();
-        fixture.waiting().await;
+        let id = fixture.waiting().await;
         let saved = store::read_run(&fixture.state, &run).await.unwrap();
         assert_eq!(
             saved.run.status(),
@@ -353,8 +348,29 @@ async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
         else {
             panic!("waiting Human Run has an admitted worker");
         };
+        let receipts = fixture.receipts().await;
+        if complete {
+            let reviewer = "alice".parse().unwrap();
+            human::claim(&receipts, &id, &reviewer).await.unwrap();
+            human::submit(
+                &receipts,
+                &id,
+                &reviewer,
+                &json!({"verdict":"GREEN","approved":true}),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                owned_run::terminal(&fixture.state, &run).await.run.status(),
+                artifactize_core::types::RunStatus::Green
+            );
+        }
         let result = std::panic::catch_unwind(move || {
             let _owned = fixture;
+            // Local bindings drop in reverse order, including during unwinding: the
+            // fixture owns this writer too, not only the detached Human worker.
+            let _receipts = receipts;
             assert!(!unwind, "submit-only fixture unwind probe");
         });
         assert_eq!(result.is_err(), unwind);

@@ -38,8 +38,8 @@ pub use executions::{
     Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,
     read_keyed_executions, read_latest_cached,
 };
-#[cfg(test)]
-pub(crate) use receipts::OwnedReceipts;
+#[cfg(any(test, feature = "test-support"))]
+pub use receipts::OwnedReceipts;
 pub(crate) use receipts::regular_files as check_probe_files;
 pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,

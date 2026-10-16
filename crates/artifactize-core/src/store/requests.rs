@@ -225,12 +225,6 @@ async fn read_with_repo(
     {
         return Ok(Vec::new());
     }
-    let connection = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
     let run = filter
         .run
         .map(str::parse::<crate::types::RunId>)
@@ -247,7 +241,13 @@ async fn read_with_repo(
         .session
         .map(str::parse::<crate::types::SessionId>)
         .transpose()?;
-    connection
+    let connection = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -301,7 +301,8 @@ async fn read_with_repo(
             Ok(views)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 /// Only present predicates are emitted, so Run and request lookups use their existing indexes.

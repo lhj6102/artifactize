@@ -544,7 +544,7 @@ pub async fn read_keyed_executions(
         return Ok(Default::default());
     };
     let keys = keys.to_vec();
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -561,7 +561,8 @@ pub async fn read_keyed_executions(
             Ok(entries)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 /// The latest record per (Eval id, Eval definition hash) under any key, read-only: what a
@@ -580,7 +581,7 @@ pub async fn read_latest_cached(
         return Ok(Default::default());
     };
     let keys = keys.to_vec();
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -609,7 +610,8 @@ pub async fn read_latest_cached(
             Ok(latest)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 impl Receipts {

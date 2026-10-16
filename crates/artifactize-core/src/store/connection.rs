@@ -17,6 +17,16 @@ pub(crate) async fn close(connection: Connection) -> Result<(), String> {
     .map_err(|error| error.to_string())?
 }
 
+/// A one-shot operation owns its worker until shutdown, even when the operation failed.
+/// Preserve its original error; report a close failure only after a successful operation.
+pub(super) async fn finish<T>(
+    connection: Connection,
+    result: Result<T, String>,
+) -> Result<T, String> {
+    let closed = close(connection).await;
+    result.and_then(|value| closed.map(|()| value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -84,7 +84,7 @@ pub async fn read_unreadable(state: &Path, repo: Option<&Path>) -> Result<Vec<Un
     .await
     .map_err(|error| error.to_string())?;
     let repo = repo.map(crate::platform::path_text);
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -106,7 +106,8 @@ pub async fn read_unreadable(state: &Path, repo: Option<&Path>) -> Result<Vec<Un
             Ok(unreadable)
         })
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string());
+    super::connection::finish(connection, result).await
 }
 
 /// Audit a bounded page in one query, including executions produced by it but no longer linked.

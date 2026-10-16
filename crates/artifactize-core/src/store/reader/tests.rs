@@ -96,6 +96,157 @@ async fn read_run_releases_database_before_return_on_success_and_errors() {
     }
 }
 
+async fn released<T>(
+    state: &Path,
+    read: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let result = read.await;
+    // The return boundary, not a retry or a runtime shutdown, releases the database.
+    assert!(crate::test_os::database_released(&state.join(DATABASE)).unwrap());
+    result
+}
+
+#[tokio::test]
+async fn one_shot_readers_release_database_before_return() {
+    let (root, repo, state, receipts) = fixture(1, 1).await;
+    drop(receipts);
+    assert_eq!(
+        released(&state, store::read_runs(&state, None, 10, 0))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        released(&state, store::read_waiting(&state, Some(&repo)))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        released(&state, store::read_request(&state, "run-0-a0"))
+            .await
+            .unwrap()
+            .request
+            .id
+            .as_str(),
+        "run-0-a0"
+    );
+    assert_eq!(
+        released(&state, store::read_latest_requests(&state, &repo))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        released(&state, store::read_catalog(&state))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        released(&state, store::read_unreadable(&state, None))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let keys = ["a".repeat(64).parse().unwrap()];
+    assert!(
+        released(&state, store::read_keyed_executions(&state, &keys))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let definitions = [(
+        "app/check".parse().unwrap(),
+        "a".repeat(64).parse().unwrap(),
+    )];
+    assert!(
+        released(&state, store::read_latest_cached(&state, &definitions))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        released(&state, store::history::list(&state, false))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    for key in [keys[0].as_str(), "invalid"] {
+        assert!(
+            released(&state, store::history::show(&state, key, false))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert!(
+        released(&state, store::history::local(&state, None, 10))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    for id in ["run-absent", ""] {
+        assert!(
+            released(&state, store::read_request(&state, id))
+                .await
+                .is_err()
+        );
+    }
+    assert!(
+        released(&state, store::read_requests(&state, Some("")))
+            .await
+            .is_err()
+    );
+    assert!(
+        released(&state, store::read_session_request(&state, ""))
+            .await
+            .is_err()
+    );
+    root.close().unwrap();
+}
+
+#[tokio::test]
+async fn one_shot_readers_release_uninitialized_and_failed_snapshots() {
+    for initialized in [false, true] {
+        let root = crate::test_os::tempdir();
+        let repo = root.path().join("repo");
+        let state = root.path().join("state");
+        fs::create_dir(&repo).unwrap();
+        fs::create_dir(&state).unwrap();
+        if initialized {
+            drop(OwnedReceipts::open(&state, &repo).await.unwrap());
+        }
+        let database = Connection::open(state.join(DATABASE)).unwrap();
+        if initialized {
+            database
+                .execute_batch("DROP TABLE requests; DROP TABLE executions; DROP TABLE runs;")
+                .unwrap();
+        }
+        drop(database);
+        let runs = released(&state, store::read_runs(&state, None, 10, 0)).await;
+        let requests = released(&state, store::read_waiting(&state, Some(&repo))).await;
+        let history = released(&state, store::history::list(&state, false)).await;
+        if initialized {
+            for error in [
+                runs.unwrap_err(),
+                requests.unwrap_err(),
+                history.unwrap_err(),
+            ] {
+                assert!(error.contains("no such table"), "{error}");
+            }
+        } else {
+            assert!(runs.unwrap().is_empty());
+            assert!(requests.unwrap().is_empty());
+            assert!(history.unwrap().is_empty());
+        }
+        root.close().unwrap();
+    }
+}
+
 #[tokio::test]
 async fn snapshots_and_direct_lookups_return_only_the_selected_runs_requests() {
     for (runs, requests) in [(3, 4), (11, 13)] {

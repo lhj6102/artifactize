@@ -530,17 +530,17 @@ pub struct Receipts {
 }
 
 /// A test writer closes its SQLite worker before the caller's temporary state is removed.
-#[cfg(test)]
-pub(crate) struct OwnedReceipts(Receipts);
+#[cfg(any(test, feature = "test-support"))]
+pub struct OwnedReceipts(Receipts);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl OwnedReceipts {
     pub async fn open(state: &Path, repo: &Path) -> Result<Self, String> {
         Receipts::open(state, repo).await.map(Self)
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl std::ops::Deref for OwnedReceipts {
     type Target = Receipts;
     fn deref(&self) -> &Self::Target {
@@ -548,7 +548,7 @@ impl std::ops::Deref for OwnedReceipts {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for OwnedReceipts {
     fn drop(&mut self) {
         let connection = self.0.connection.inner.clone();
@@ -609,6 +609,9 @@ pub(crate) struct NotifyingConnection {
     publisher: crate::changes::Publisher,
 }
 impl NotifyingConnection {
+    pub(super) async fn finish<T>(self, result: Result<T, String>) -> Result<T, String> {
+        super::connection::finish(self.inner, result).await
+    }
     pub(crate) fn new(inner: Connection, state: &Path) -> Self {
         Self {
             inner,
@@ -953,7 +956,7 @@ pub async fn read_latest_requests(
     .await
     .map_err(|e| e.to_string())?;
     let repo = repo.to_path_buf();
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -998,7 +1001,8 @@ pub async fn read_latest_requests(
             Ok(latest)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 /// Existing store only: no discovery, schema creation, or execution.
@@ -1055,6 +1059,5 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     .await;
     // A query result arrives before the DB worker drops its connection. Join the
     // close on every return path so callers can immediately release the state files.
-    super::connection::close(connection).await?;
-    result
+    super::connection::finish(connection, result).await
 }
