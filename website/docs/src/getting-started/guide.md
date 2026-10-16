@@ -8,6 +8,12 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
+Each reviewed piece is an **Artifact**. Its `index.artf` is a text configuration
+file listing its checks, called **evals**. It uses **TOML**, a readable `key = value`
+format. A **fingerprint** identifies the reviewed inputs; the built-in
+**artifactsum** makes that value from files so artifactize can detect changes.
+
+Artifactize's **state** is where it stores Runs and results.
 Keep this tour's reviews apart from your normal state. In a POSIX shell (for
 example Bash or zsh), the first line below creates a fresh temporary folder with
 `mktemp -d` and tells artifactize to keep its state there. `export` also passes that
@@ -61,8 +67,8 @@ and status identifies the reusable results. Keep this terminal open so later
 steps use the same temporary state directory.
 
 The [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) also shows how to make a check RED. Each folder declares itself in
-TOML `index.artf`; omission of `fingerprint` uses artifactsum. To disable reuse, set
-`fingerprint = false`. See [Declarations (.artf)](../features/declarations.md) for snake_case keys and the JSON/output naming
+its `index.artf` file. Leaving out `fingerprint` uses the built-in file-change
+check, artifactsum. To disable reuse, set `fingerprint = false`. See [Declarations (.artf)](../features/declarations.md) for snake_case keys and the JSON/output naming
 distinction.
 
 ## Files and dependency readiness

@@ -24,63 +24,62 @@ Dependency evals additionally derive their own explicit `depends_on` requirement
 ## Verify and Runs
 
 `verify` requires exactly one selector: positional `ARTIFACT` or qualified
-`ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, or
-`--all`. Eval IDs are qualified (`green/check`). Selection order is preserved, with
-duplicates removed at their first occurrence; Artifacts expand to their evals in ID
-order within each declaration. Every READY eval starts as soon as it is ready,
-without a default concurrency cap. Add `--jobs N` (minimum 1) only if this
-concurrency causes trouble. Scheduling prefers unblockable work and the
-longest remaining dependency path; selection/configuration order breaks ties.
-Selection order still defines saved requests, not dispatch priority. The graph is
-re-evaluated after each result;
-newly READY evals do not wait for an entire batch to finish. Waiters on a
-fingerprint claim count against an explicit `--jobs` cap, but cache hits do not. An
-Agent review of a backend with a machine-wide limit also needs one of its
-[backend slots](others/state.md#backend-capacity); a request waiting for one does not count against `--jobs`.
-QUEUED means awaiting admission, a backend slot or a joined execution; only a
-Run with explicit `--jobs` can be waiting for a Run job slot. Artifactize owns
-each Run independently of its requester. Plain `verify` prints the Run ID
-and exits 0 when submission is accepted; `--json` prints `{"run","state"}`.
-Acceptance is not a validation verdict. Use `verify --wait` to announce the ID on stderr,
-observe settlement and render the final saved result. Interrupting or closing the watcher
-stops observation only; the Run continues. `run cancel RUN_ID` explicitly requests cancellation.
-An Artifact selector starts with that Artifact's evals;
-an individual eval selector starts with that eval. Both retain the full dependency
-closure as a final obligation. `--recursive` includes every eval in that closure,
-including other evals on the selected Artifact and cycle peers, in configuration
-order. `--all` already includes every eval and all no-eval Artifact obligations.
-Selecting a dependency eval also includes evals in its required dependency scope,
-without `--recursive`: `artifactize verify player/ready` is sufficient. A file Artifact selector selects its
-own evals, never the surrounding folder's.
+`ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`,
+`--artifacts-file PATH`, or `--all`. Eval IDs are qualified (`green/check`).
+Selection preserves first occurrences and removes duplicates. Artifacts expand
+to their evals in ID order; selection order defines saved requests, not dispatch.
+An Artifact selector starts with its evals; an individual selector starts with
+that eval. Both retain the full dependency closure as a final obligation.
+`--recursive` includes every eval in that closure, including other evals on the
+target and cycle peers, in configuration order. `--all` includes every eval and
+all no-eval Artifact obligations. Selecting a dependency eval includes its required
+evals without `--recursive`, as in `artifactize verify player/ready`. A file
+Artifact selector never selects the surrounding folder's evals.
 
-RED blocks downstream execution; missing/operational evidence waits. Cycle peers
-have no internal gates. The per-request modes permit speculative execution or
-deferred sign-offs, but final validation always requires actual GREEN evidence or
-explicit `basis = true` throughout the required scope. Gate bypass
-(`--ignore-gates`, `review_policy.dependency_gates` and the old library override)
-is removed; declarations using the old policy fail configuration validation. A basis never waives its dependencies. Selected GREEN results with missing
-obligations remain recorded in an INCOMPLETE Run; both text and JSON output identify
-unmet obligations. Human evals record WAITING_HUMAN requests, and the artifactize-owned
-Run waits for their results as for runtime and Agent evals: when a submission
-arrives, evals that depend on it run in the same Run. Plain `verify` submits and
-returns; `verify --wait` follows that Run in the foreground. There is no Human wait
-deadline or `verify --timeout-ms`; all eval kinds share the same settlement wait rule.
-`--reuse-only KINDS` (for example `agent,human` in CI)
-lets evals of the listed kinds only reuse a result; one with nothing to reuse is not
-executed and leaves the Run INCOMPLETE ([CLI](../cli/index.md#reuse-only)).
+Every READY eval starts as soon as ready, with **no default concurrency cap**.
+Use `--jobs N` (minimum 1) only when concurrency causes trouble. Scheduling prefers
+unblockable work and the longest remaining dependency path; selection/configuration
+order breaks ties. New READY work starts after each result, not after a whole
+batch. Fingerprint-claim waiters count against an explicit jobs cap; cache hits do
+not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
+QUEUED can mean awaiting admission, a backend slot, a joined execution, or an
+explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
 
-`verify --wait` exits 0 for GREEN/SATISFIED, 1 for RED, 2 for ERROR/cancelled and 4 for
-INCOMPLETE, or 5 for SIGNOFFS_PENDING when deferral leaves only sign-offs. Ctrl-C/SIGTERM exits 130 and stops watching, not verification. Explicit
-cancellation stops admission and active owned work, waits for cleanup and records
-ERROR/CANCELLED without erasing committed evidence. It never kills another Run's
-execution that this Run joined. A dead execution worker is reconciled as
-ERROR/OWNER_DIED; interrupted work is not replayed automatically.
+### Submit, observe and cancel
 
-`--request-key K` supplies a caller attempt identity (1–128 ASCII letters/digits/`._:-`).
-The same canonical repository and key return the same Run, even after completion or
-checkout changes; the first selection and options remain authoritative. Different keys,
-or omitting the key, create new Runs. Eval/cache reuse remains independent of submission
-identity. Keep the key when retrying a lost response; use a new key for a new attempt.
+Artifactize owns the Run independently of its requester. Plain `verify` submits,
+prints its Run ID (or `{"run","state"}` with `--json`) and exits 0 on **acceptance**,
+not approval. `verify --wait` announces the ID on stderr, observes settlement and
+renders the saved result. Closing or interrupting that watcher stops observation
+only; the Run continues. Only `run cancel RUN_ID` explicitly requests cancellation:
+it stops new admission and owned active work, waits for cleanup, and records
+ERROR/CANCELLED without erasing committed evidence. It does not kill an execution
+this Run joined from another Run. Dead workers reconcile as ERROR/OWNER_DIED;
+interrupted work is not replayed automatically.
+
+In strict mode, the Run waits for WAITING_HUMAN requests like other reviews.
+A submission unblocks dependents in that same Run. There is no Human wait deadline
+or `verify --timeout-ms`; all eval kinds share the settlement rule. The optional
+modes below change execution order or defer sign-offs, not Human authority.
+
+Watching exits 0 for GREEN/SATISFIED, 1 for RED, 2 for ERROR/cancelled, 4 for
+INCOMPLETE, or 5 for SIGNOFFS_PENDING. Interrupting observation exits 130.
+
+Final validation needs actual GREEN evidence or explicit `basis = true` across
+all required scope; a basis never waives its dependencies. RED blocks downstream
+work and missing/operational evidence waits. Selected GREEN reviews with unmet
+obligations produce INCOMPLETE, with the obligations listed in text and JSON.
+Old gate-bypass declarations (`review_policy.dependency_gates`) and `--ignore-gates`
+are removed; the old declaration policy fails validation. `--reuse-only KINDS`
+(for example `agent,human` in CI) only reuses results for those kinds; missing
+reusable evidence is not executed and leaves INCOMPLETE. See [CLI](../cli/index.md#reuse-only).
+
+`--request-key K` is a caller attempt identity: 1–128 ASCII letters/digits/`._:-`.
+The same canonical repository/key returns the same Run, even after completion or
+checkout changes; the first selection and options remain authoritative. Omit it
+or choose a different key for a new Run. Eval-result reuse is independent of this
+submission identity. Retain the key when retrying a lost answer, not for a new
+attempt after fixes.
 
 ### Speculation and deferred sign-offs
 

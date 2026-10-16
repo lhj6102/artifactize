@@ -171,7 +171,9 @@ refresh, not a settings reload.
   pushes results (or a dry run) and signs out. **Summary** excludes argv, captured
   output, tool calls and paths; **Full** also sends the saved execution. Summary
   still shares review metadata and owner results, so choose according to the
-  team's privacy needs. Signing out removes local configuration, **not the server
+  team's privacy needs. It is not secret redaction: a Runtime profile's command
+  and arguments remain in the shared profile and can themselves contain paths
+  or sensitive literals. Signing out removes local configuration, **not the server
   token**; a store administrator must [revoke it](../features/team/reference.md#review-store-server).
   See [sharing and push behavior](../features/team/reference.md#remote-review-store-client).
 

@@ -77,6 +77,11 @@ its transcript groups and content do not respond to clicks or the wheel. F2 turn
 capture off for terminal text selection; the header shows `mouse off · F2`.
 Bracketed paste works either way.
 
+Standalone Review's Runtime evidence is a fixed lower pane below the sections.
+Its output is not independently scrollable: arrows and paging scroll the sections,
+and Tab does not switch focus to evidence. Monitor instead has an independently
+scrollable Runtime-evidence pane, beside or below its sections depending on width.
+
 ### Shared Human Detail
 
 The monitor and standalone `review` use **one Human review component**. Opening
@@ -243,20 +248,34 @@ waits for X** or **done, but blocked by X**, with zero passed (for example `0/1`
 All-GREEN eval rows therefore do not prove that the Artifact is ready for consumers; its
 required upstream evidence must also be satisfied.
 
+A partial Run can use saved evidence for an eval that has **no request in this
+Run**. Its row says `GREEN · saved result, not in this Run` (or the saved RED).
+That evidence contributes to completion counts and gates: saved GREEN can satisfy
+an input; saved RED can block a consumer. A dash means neither source is present.
+
 | View state | Meaning |
 |---|---|
-| `✓` done | GREEN, executed, reused or derived |
+| `✓` done | GREEN from execution, reuse, derivation or saved evidence outside this Run |
 | `✗` / `!` failed | RED / ERROR |
 | `◐` / `?` / `·` in progress | Running, waiting for a Human (with claimant), awaiting admission, waiting for a backend slot or an explicit `--jobs` cap, or joining an execution |
 | `…` waits for X | A running Run waits for X's required evals to be GREEN |
 | `⊘` blocked by X | An upstream RED or blocked eval prevents execution |
-| `○` / `$` / `-` not run | A finished Run waited for X, has stale evidence or did not review the eval (`○`); its budget ran out (`$`); the eval has no request (`-`) |
+| `○` / `$` / `-` not run | A finished Run waited for X, has stale evidence or did not review the eval (`○`); its budget ran out (`$`); the eval has neither a request nor saved evidence (`-`) |
 
 Running and Human rows are bold and colored; queued rows keep a colored `·`.
 Waiting and ordinary not-run rows are dim. ERROR
 upstream asks for a retry rather than blocking as RED does. A finished Run can
 still have an open Human request. These view states explain saved request states;
 they do not rename the states in JSON.
+
+The Run's [execution modes](../features/run.md#speculation-and-deferred-sign-offs)
+also explain its display. With `--speculate`, a downstream eval can be READY or
+running while upstream judgment is still pending; a later upstream RED/ERROR
+blocks or cancels that speculative work. With `--defer-human`, sign-offs appear
+as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A finished
+**SIGNOFFS_PENDING** Run means only those sign-offs remain. Their later submissions
+change current requests, not the historical Run-end verdict; strict Human gates
+still remain strict.
 
 Dependencies target **Artifacts**, not individual evals. A row shows at most two
 unmet Artifacts, then `+N`, with each Artifact's completion state. When all targets

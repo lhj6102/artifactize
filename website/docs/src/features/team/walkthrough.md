@@ -12,6 +12,26 @@ cp -r examples/runtime-relations "$WALK/alice"
 cp -r examples/runtime-relations "$WALK/bob"
 ```
 
+`mktemp -d` creates a new temporary folder outside the checkout; `WALK` holds its
+path. Print it now and keep the value:
+
+```sh
+printf '%s\n' "$WALK"
+```
+
+Use a separate terminal for the server, Alice, Bob and the local CI demonstration.
+**In each new terminal**, run the following, replacing `COPIED_WALK_PATH` with the
+absolute path just printed:
+
+```sh
+export WALK="COPIED_WALK_PATH"
+```
+
+Exporting in one terminal does not set variables in other terminals. Do not run
+`mktemp` again: all these local examples must use the same folder. The output
+below illustrates the Alice/Bob roles; your actual Run IDs and user/host labels
+will differ.
+
 ## 1. The server
 
 On the host that runs the store, create one token per machine. `token add` prints
@@ -102,8 +122,10 @@ Human sign-offs unless the token has `human`.
 ## 5. CI reuses both
 
 CI is configured through the environment only. It uses the read-only `ci` token
-from step 1, here in `CI_TOKEN`, and `--reuse-only agent,human`, so that Agent
-reviews and Human sign-offs only come from the store or the cache:
+from step 1, here supplied as the `CI_TOKEN` secret variable. Configure that value
+through your CI's secret settings, never in a committed file. `--reuse-only
+agent,human` ensures Agent reviews and Human sign-offs come only from the store
+or cache. For the local demonstration, first copy `WALK` into this terminal too:
 
 ```sh
 cp -r "$WALK/bob" "$WALK/ci" && cd "$WALK/ci"
@@ -156,11 +178,21 @@ the foreground. In a second terminal, in the same directory and with the same
 signs off. Her token has the `human` scope, so `request submit` publishes the
 sign-off, and her `verify --wait` finishes GREEN:
 
+In the first terminal, keep the watcher running:
+
 ```sh
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
-artifactize verify --all --wait                    # WAITING_HUMAN; waits for the sign-off
-# In the second terminal:
-artifactize request list                    # shows REQUEST_ID
+artifactize verify --all --wait
+```
+
+In a new terminal, set `WALK` to the copied path as above, enter the same project
+and choose Alice's same state. Replace `REQUEST_ID` with the waiting request's
+identifier printed by `request list`:
+
+```sh
+cd "$WALK/brand"
+export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
+artifactize request list
 artifactize request claim REQUEST_ID
 artifactize request submit REQUEST_ID --verdict GREEN
 ```
