@@ -537,6 +537,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     let mut other = Fixture::new(true);
     // The follower owns its Run in the shared state before its own repository drops.
     other.state = fixture.state.clone();
+    other._root.track(&other.state, &other.repo);
     let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),
@@ -651,6 +652,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let mut other = Fixture::new(true);
     // The follower owns its Run in the shared state before its own repository drops.
     other.state = fixture.state.clone();
+    other._root.track(&other.state, &other.repo);
     let run = support::runs::record(
         &other.repo,
         Some(&fixture.state),
