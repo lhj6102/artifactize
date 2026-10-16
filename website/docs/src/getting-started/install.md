@@ -185,6 +185,31 @@ cargo install --path crates/artifactize-tools --locked
 Releases take their version from their tag, so a build from a checkout reports the
 placeholder version `0.0.0-dev`.
 
+### Desktop preview (from source)
+
+The desktop app is an experiment built from the checkout, not part of the CLI
+release archives, package-manager installs or Store package. The [Desktop](../desktop/index.md)
+area describes how to use it after building it. TUI and MCP already come with the
+ordinary `artifactize` binary; they need no additional product install.
+
+In addition to the source-build Rust prerequisites above, install Node.js 24,
+pnpm at the version named in `crates/artifactize-desktop/ui/package.json`, and
+[Tauri's native prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
+Linux needs WebKitGTK 4.1, GTK 3 and librsvg development packages; macOS needs the
+Xcode command-line tools; Windows needs the C++ build tools and WebView2.
+From the repository root:
+
+```sh
+pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile
+pnpm -C crates/artifactize-desktop/ui build
+cargo install --path crates/artifactize-desktop --locked --bin artifactize-desktop
+artifactize-desktop
+```
+
+The frontend must be built before Cargo: the normal app embeds `ui/dist`. Keep
+the default Cargo features and do not enable the test-only `e2e` feature for a
+normal app. The app uses the same state home and credentials as the CLI.
+
 ## Update
 
 | Installed with | Update |

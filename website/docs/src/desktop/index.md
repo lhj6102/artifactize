@@ -1,6 +1,7 @@
 # Desktop
 
 The desktop app is a window onto the same machine-wide state as the CLI and TUI.
+It is currently a source-built preview, not a bundled CLI release component.
 Use it to browse Runs, inspect reviews and handle Human sign-offs. It does not run
 a second review engine or store a separate copy of the evidence. See
 [Installation](../getting-started/install.md) for availability and setup.
@@ -22,6 +23,7 @@ sets the cooperative claim name (normally the user name). `review REQUEST_ID`
 opens that saved request; `graph` requires `--repo` and reads current declarations.
 Invalid arguments exit 2.
 
+Shortcut labels below use Ctrl; on macOS the primary modifier is ⌘ instead.
 Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K or the palette
 button opens a searchable command palette; Enter runs a command and Esc closes it.
 `?` shows the current screen's keys. Ctrl+R or F5 refreshes from disk. Dividers

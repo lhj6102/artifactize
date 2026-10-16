@@ -2,7 +2,7 @@
 
 `artifactize mcp` serves the verification and non-interactive inspection tools in
 the **same binary** as the CLI. Register it in the coding host, starting from the
-project directory; see [Claude Code and Codex registration](hey-arti.md#register-the-mcp-server).
+project directory; see [registration below](#register-the-mcp-server).
 `--repo PATH` selects a different project and `--state-dir PATH` selects its state.
 The server resolves these once at startup. Run/request/session reads stay bound
 to that repository; cache records are reusable across repositories in the state.
