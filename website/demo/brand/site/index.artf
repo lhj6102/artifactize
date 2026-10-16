@@ -1,6 +1,5 @@
 name = "site"
 mounts = { brand = "logo" }
-fingerprint = {}
 
 [evals.embed]
 title = "The header embeds the signed-off logo"

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { create, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
-import { assertHarnessPlatform, embeddedPorts, harnessEnvironment, runnerCommand } from "../ui/e2e/platform.ts";
+import { asNativePath, assertHarnessPlatform, embeddedPorts, harnessEnvironment, nativePath, runnerCommand } from "../ui/e2e/platform.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 import { cargoGate, cleanup, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
@@ -367,7 +367,7 @@ async function serve(): Promise<void> {
               if (!["monitor", "review", "graph"].includes(request.screen)) throw new Error("unknown desktop launch screen");
               await shown?.session.stop();
               shown = undefined;
-              const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
+              const target = request.screen === "graph" ? { ...fixture, state: nativePath(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
               const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
               const session = await launch(input, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.
@@ -413,7 +413,7 @@ async function serve(): Promise<void> {
   try {
     await commands.run(async () => {
       startupStarted = true;
-      candidate = await snapshotCandidate(sessionDir);
+      candidate = await snapshotCandidate(asNativePath(sessionDir));
       if (stopping) return;
       fixture = await create();
       if (stopping) return;

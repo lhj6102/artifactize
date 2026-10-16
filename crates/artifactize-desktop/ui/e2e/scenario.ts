@@ -1,10 +1,11 @@
 import type { Fixture } from "./fixture.ts";
+import type { Environment } from "./platform.ts";
 
 /** Domain inputs prepared before the service launches a capability's app. */
 export type Prepared<T = unknown> = {
   fixture: Fixture;
   args?: string[];
-  env?: NodeJS.ProcessEnv;
+  env?: Environment;
   data: T;
   release?: () => Promise<void>;
 };

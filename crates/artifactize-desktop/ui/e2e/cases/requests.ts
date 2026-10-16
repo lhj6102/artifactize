@@ -7,6 +7,7 @@ import { afterRender, press, typeText } from "../keys.ts";
 import { checkpoint } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
+import { primaryModifier } from "../platform.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -77,7 +78,7 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const { listed, gone, exists } = opening(browser, signoff(fixture).id);
       await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
-      await press(browser, ["Control", "k"], () => browser.$('[aria-label="Command palette"][data-state="open"]').isExisting(), "the palette");
+      await press(browser, [primaryModifier, "k"], () => browser.$('[aria-label="Command palette"][data-state="open"]').isExisting(), "the palette");
       await typeText(browser, "Tools focused");
       await press(browser, ["Enter"], exists, "the Human review");
       await waitFor(browser, () => browser.$('[aria-label="Human tools"]').isFocused(), "focus on the Tools");
@@ -101,16 +102,16 @@ export const scenarios: Scenario[] = [
       await browser.$("#field-comment").setValue("GREEN draft stays");
       // An idempotent verdict leaves the same field visible: require the real chord's
       // defaultPrevented flag after the app handler, not only that already-true field state.
-      await press(browser, ["Control", "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G preserves GREEN", { handled: true });
+      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G preserves GREEN", { handled: true });
       assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
       assert.ok(!(await browser.$("#field-reason").isExisting()), "Ctrl+G kept the GREEN schema");
-      await press(browser, ["Control", "r"], () => browser.$("#field-reason").isExisting(), "the RED form");
+      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "no GREEN field in the RED form");
       await browser.$("#field-reason").setValue("RED draft stays");
-      await press(browser, ["Control", "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R preserves RED", { handled: true });
+      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R preserves RED", { handled: true });
       assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");
-      await press(browser, ["Control", "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
+      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
       assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
     },
   ),
@@ -196,11 +197,14 @@ export const scenarios: Scenario[] = [
       assert.ok(before.commands.humanClaim?.completed > 0, "the same read-only activity probe observes this case's successful claim");
       await browser.execute(() => document.activeElement?.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
       for (const key of ["g", "r", "q", "u", "c", "Escape"]) await composing(key);
-      await browser.execute(() => {
+      // The chords carry this platform's primary modifier, the one the shortcuts use.
+      await browser.execute((modifier) => {
         for (const key of ["g", "r", "u", "s", "e"]) {
-          document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, isComposing: true, bubbles: true }));
+          document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
+            key, ctrlKey: modifier === "Control", metaKey: modifier === "Meta", isComposing: true, bubbles: true,
+          }));
         }
-      });
+      }, primaryModifier);
       await afterRender(browser);
       const after = (await checkpoint(browser)).activity;
       for (const command of writes) assert.equal(after.commands[command]?.started ?? 0, before.commands[command]?.started ?? 0, `composition dispatches no ${command}`);
@@ -215,7 +219,7 @@ export const scenarios: Scenario[] = [
         field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "안녕" }));
       });
       assert.equal(await comment.getValue(), "안녕");
-      await press(browser, ["Control", "s"], async () => signoff(fixture).status === "GREEN", "GREEN saved");
+      await press(browser, [primaryModifier, "s"], async () => signoff(fixture).status === "GREEN", "GREEN saved");
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "안녕" });
       await waitFor(browser, async () => /completed result/i.test(await text()), "the completed result stays open");
     },

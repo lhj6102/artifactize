@@ -4,6 +4,6 @@
   "packageManager": "pnpm@12.5.1",
   "type": "module",
   "scripts": {
-    "lint": "node ui/node_modules/eslint/bin/eslint.js --no-inline-config --config eslint.config.js harness ui/vite.config.ts"
+    "lint": "node ui/node_modules/eslint/bin/eslint.js --no-inline-config --config eslint.config.js harness && node ui/node_modules/typescript/bin/tsc -p harness"
   }
 }

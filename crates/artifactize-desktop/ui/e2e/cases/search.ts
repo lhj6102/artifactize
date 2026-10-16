@@ -7,6 +7,7 @@ import { press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
+import { primaryModifier } from "../platform.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -91,9 +92,9 @@ export const scenarios: Scenario[] = [
         (await browser.execute(() => document.body.innerText)).includes("No Human reviews are waiting."), "the settled, empty waiting list");
       assert.equal(await browser.$('[aria-label="Requests"]').isExisting(), false, "there is no Requests list to receive keyboard focus");
       const kept = await query();
-      await press(browser, ["Control", "1"], focused("Runs"), "Monitor focused");
+      await press(browser, [primaryModifier, "1"], focused("Runs"), "Monitor focused");
       await press(browser, ["/"], async () => await focused("Runs")() && (await query()) === kept, "inactive Review leaves focus and its query alone");
-      await press(browser, ["Control", "2"], async () =>
+      await press(browser, [primaryModifier, "2"], async () =>
         (await browser.$('[role="tab"][aria-selected="true"]').getText()) === "Review", "the empty Review screen shown");
       await press(browser, ["/"], focused("Search requests"), "search focused without a Requests list");
       assert.equal(await query(), kept, "the shortcut focuses search without typing a slash");
@@ -178,8 +179,12 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], holds(""), "the query cleared again");
       await press(browser, ["Escape"], focused("Requests"), "Esc left for the list");
       await press(browser, ["/"], focused("Search requests"), "focus in the search a third time");
+      // The same query was searched before: only a newer, completed and rendered search of
+      // it, not the rows the earlier one left, shows the current result.
+      const beforeFinal = await checkpoint(browser);
       await type("kind:runtime eval:docs repo:third ");
       await press(browser, ["Enter"], focused("Requests"), "focus on the list again");
+      await commandsRendered(browser, beforeFinal);
       await waitFor(browser, async () => {
         const shown = await rows();
         return shown.length === 1 && shown[0].includes("docs/lint") && shown[0].includes("third");

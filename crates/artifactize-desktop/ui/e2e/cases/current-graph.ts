@@ -1,11 +1,10 @@
 // J-GRAPH-CURRENT: the graph launch reads current declarations, not saved Run state.
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createGraph, type Fixture, savedRuns, verifyWaiting } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { command, script } from "../native-fixtures.ts";
+import { nativePath, primaryModifier, readText, writeText } from "../platform.ts";
 import { graphAppearance, visibleColour } from "./graph-appearance.ts";
 
 function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
@@ -109,12 +108,10 @@ export const scenarios: Scenario[] = [
             required: ["reason"], additionalProperties: false },
         },
         "ship/check": { target: "ship", title: "Ship the release", gate: null,
-          criteria: { kind: "runtime", command: process.execPath,
-            args: [fileURLToPath(new URL("../domain-fixtures/command.mjs", import.meta.url)), "pass"] },
+          criteria: { kind: "runtime", command, args: [script, "pass"] },
           payload: { instruction: "Ship {release}." }, passSchema: null, failSchema: null },
         "docs/lint": { target: "docs", title: "Docs build", gate: null,
-          criteria: { kind: "runtime", command: process.execPath,
-            args: [fileURLToPath(new URL("../domain-fixtures/command.mjs", import.meta.url)), "pass"] },
+          criteria: { kind: "runtime", command, args: [script, "pass"] },
           payload: { instruction: "Build the docs." }, passSchema: null, failSchema: null },
       }, "every independently declared criterion and owner schema is exposed");
       const relations = shown.split("\n").filter((line) => line.includes(" → "));
@@ -125,11 +122,11 @@ export const scenarios: Scenario[] = [
 
       // Continue the same launch, zoom and complete-structure journey: the text remains
       // expanded while each real refresh reloads this window's changed declaration.
-      const declaration = join(fixture.repo, "docs", "index.artf");
+      const declaration = nativePath(fixture.repo, "docs", "index.artf");
       let previousTitle = "Docs build";
-      for (const [index, keys] of [null, ["Control", "r"], ["F5"]].entries()) {
+      for (const [index, keys] of [null, [primaryModifier, "r"], ["F5"]].entries()) {
         const title = `Current docs criterion ${index}`;
-        writeFileSync(declaration, readFileSync(declaration, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
+        writeText(declaration, readText(declaration).replace(/title = "[^"]*"/, `title = "${title}"`));
         if (keys) await press(browser, keys, async () => (await structure()).includes(title), `declarations refreshed with ${keys.join("+")}`);
         else {
           await browser.$("button=Refresh").click();

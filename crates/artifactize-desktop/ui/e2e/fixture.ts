@@ -2,16 +2,16 @@
 // a release Artifact with a waiting Human sign-off, its tools and owner schemas, and a
 // dependent Artifact that waits for it.
 // Portable domain inputs only: WDIO's outer runner/service owns the native app lifecycle.
-import { execFile, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { readCandidate } from "./build.ts";
 import { settleRuns } from "./runs.ts";
 import { environment, git } from "./environment.ts";
 import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
+import {
+  exists, makeDirectory, nativePath, parentOf, portablePath, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
+  type NativePath,
+} from "./platform.ts";
 export { environment } from "./environment.ts";
 export { createdRoots, releaseFixtures } from "./build-fixtures.ts";
 export { slowTool } from "./process-fixtures.ts";
@@ -21,11 +21,11 @@ export const cli = () => readCandidate().cli;
 export const app = () => readCandidate().app;
 /** Roots remain available until the outer owner releases them after app/service exit. */
 
-export type Fixture = { root: string; repo: string; state: string };
+export type Fixture = { root: NativePath; repo: NativePath; state: NativePath };
 
 /** The fixture's declared launch-tool stand-in actually wrote its completion marker. */
 export function launched(fixture: Fixture): boolean {
-  return existsSync(join(fixture.root, "launched"));
+  return exists(nativePath(fixture.root, "launched"));
 }
 
 /** Declared Human content, captured in the request before the app starts. */
@@ -35,15 +35,15 @@ const DEFAULT_SIGNOFF: SignoffDefinition = {
   instruction: "Read the release notes and approve them.",
 };
 
-const release = (root: string, signoff: SignoffDefinition = DEFAULT_SIGNOFF) => `name = "release"
+const release = (root: NativePath, signoff: SignoffDefinition = DEFAULT_SIGNOFF) => `name = "release"
 tags = ["type:release"]
 fingerprint = { files = ["."] }
 
 [views.human_tools]
-notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", join("{artifactPath}", "notes.md"))} }
-open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", join(root, "launched"))} }
+notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", textPath("{artifactPath}", "notes.md"))} }
+open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", portablePath(nativePath(root, "launched")))} }
 fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }
-slow = { description = "Wait until cancelled; serve the owned lifetime endpoint.", kind = "output", ${commandFields("slow", join(root, "slow.endpoint"))} }
+slow = { description = "Wait until cancelled; serve the owned lifetime endpoint.", kind = "output", ${commandFields("slow", portablePath(nativePath(root, "slow.endpoint")))} }
 
 [evals.signoff]
 title = ${JSON.stringify(signoff.title)}
@@ -90,12 +90,7 @@ Build the docs."""
 
 /** Run the CLI against the fixture; returns its exit status. */
 export function artifactize(fixture: Fixture, ...args: string[]): number {
-  const result = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...args], {
-    env: environment(fixture),
-    encoding: "utf8",
-  });
-  if (result.error) throw result.error;
-  return result.status ?? -1;
+  return runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...args], { env: environment(fixture) }).status;
 }
 
 export type Saved = {
@@ -108,25 +103,16 @@ export type Saved = {
 };
 
 /** Remote status without blocking an external store served by the calling test. */
-export function remoteStatus(fixture: Fixture): Promise<{ code: number; stdout: string }> {
-  return new Promise((done, fail) => {
-    execFile(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "remote", "status", "--json"],
-      { encoding: "utf8", env: { ...environment(fixture), ARTIFACTIZE_REMOTE: "" } },
-      (error, stdout) => {
-        if (error && typeof error.code !== "number") fail(error);
-        else done({ code: typeof error?.code === "number" ? error.code : 0, stdout });
-      });
-  });
+export async function remoteStatus(fixture: Fixture): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "remote", "status", "--json"],
+    { env: { ...environment(fixture), ARTIFACTIZE_REMOTE: "" } });
+  return { code: status, stdout };
 }
 
 /** The saved requests, as `request list --json` prints them. */
 export function requests(fixture: Fixture): Saved[] {
-  const result = spawnSync(
-    cli(),
-    ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],
-    { encoding: "utf8", env: environment(fixture) },
-  );
-  if (result.error) throw result.error;
+  const result = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],
+    { env: environment(fixture) });
   if (result.status !== 0) throw new Error(result.stderr);
   return JSON.parse(result.stdout) as Saved[];
 }
@@ -134,12 +120,8 @@ export function requests(fixture: Fixture): Saved[] {
 /** All saved Runs through the public CLI, including non-default statuses and old entries.
  * An empty state database is allowed: absence of Runs is a semantic query, not a file test. */
 export function savedRuns(fixture: Fixture): { id: string }[] {
-  const result = spawnSync(
-    cli(),
-    ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "list", "--all", "--limit", "4294967295", "--json"],
-    { encoding: "utf8", env: environment(fixture) },
-  );
-  if (result.error) throw result.error;
+  const result = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "list", "--all", "--limit", "4294967295", "--json"],
+    { env: environment(fixture) });
   if (result.status !== 0) throw new Error(result.stderr);
   return JSON.parse(result.stdout) as { id: string }[];
 }
@@ -157,16 +139,15 @@ export function signoff(fixture: Fixture): Saved {
 }
 
 /** Declare the release, ship and docs Artifacts in a new Git repository at `repo`. */
-function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n", signoff: SignoffDefinition = DEFAULT_SIGNOFF) {
+function declare(repo: NativePath, notes = "# Release notes\n- Ready to ship.\n", signoff: SignoffDefinition = DEFAULT_SIGNOFF) {
   for (const [name, text] of [
-    ["release", release(dirname(repo), signoff)],
+    ["release", release(parentOf(repo), signoff)],
     ["ship", SHIP],
     ["docs", DOCS],
   ]) {
-    mkdirSync(join(repo, name), { recursive: true });
-    writeFileSync(join(repo, name, "index.artf"), text);
+    writeText(nativePath(makeDirectory(nativePath(repo, name)), "index.artf"), text);
   }
-  writeFileSync(join(repo, "release", "notes.md"), notes);
+  writeText(nativePath(repo, "release", "notes.md"), notes);
   git(repo, "init", "-q", "--initial-branch=master", repo);
 }
 
@@ -178,17 +159,17 @@ export function verifyWaiting(fixture: Fixture): Promise<string> {
 /** Current declarations only: no verify and no saved Run. */
 export function createGraph(): Fixture {
   return prepareFixture((root) => {
-    const repo = join(root, "repo");
+    const repo = nativePath(root, "repo");
     declare(repo);
-    return { root, repo, state: join(root, "state") };
+    return { root, repo, state: nativePath(root, "state") };
   });
 }
 
 /** A fresh repository and state with one Run waiting for the Human sign-off. */
 export async function create(signoff: SignoffDefinition = DEFAULT_SIGNOFF): Promise<Fixture> {
   return prepareFixture(async (root) => {
-    const repo = join(root, "repo");
-    const state = join(root, "state");
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
     declare(repo, undefined, signoff);
     const fixture = { root, repo, state };
     await verifyWaiting(fixture);
@@ -200,17 +181,16 @@ export async function create(signoff: SignoffDefinition = DEFAULT_SIGNOFF): Prom
  * Another repository `name` beside the fixture's, in the same state, with the same eval IDs
  * and its own waiting sign-off (its notes differ, so it joins no other); returns its path.
  */
-export async function addRepository(fixture: Fixture, name: string, signoff: SignoffDefinition = DEFAULT_SIGNOFF): Promise<string> {
-  const repo = join(fixture.root, name);
+export async function addRepository(fixture: Fixture, name: string, signoff: SignoffDefinition = DEFAULT_SIGNOFF): Promise<NativePath> {
+  const repo = nativePath(fixture.root, name);
   declare(repo, `# Release notes of ${name}\n- Ready to ship.\n`, signoff);
   await verifyWaiting({ ...fixture, repo });
   return repo;
 }
 
-function humanExample(repo: string, name: string, criterion: string, title: string, tags: string[] = []): void {
-  const directory = join(repo, name);
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, "index.artf"), `name = ${JSON.stringify(name)}
+function humanExample(repo: NativePath, name: string, criterion: string, title: string, tags: string[] = []): void {
+  const directory = makeDirectory(nativePath(repo, name));
+  writeText(nativePath(directory, "index.artf"), `name = ${JSON.stringify(name)}
 tags = ${JSON.stringify(tags)}
 
 [evals.${criterion}]
@@ -228,7 +208,7 @@ export async function addSearchExamples(fixture: Fixture): Promise<{
   baseQuery: string; allIds: string[];
   tag: { term: string; id: string }; status: { term: string; id: string }; text: { term: string; id: string };
 }> {
-  const repo = join(fixture.root, "search-examples");
+  const repo = nativePath(fixture.root, "search-examples");
   humanExample(repo, "amber", "check", "AmberOnly example", ["search:target"]);
   humanExample(repo, "blue", "check", "Blue example", ["search:other"]);
   humanExample(repo, "cyan", "check", "Cyan example", ["search:other"]);
@@ -254,9 +234,8 @@ export async function addSearchExamples(fixture: Fixture): Promise<{
 }
 
 function deferredHuman(fixture: Fixture): string {
-  const submitted = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
-    "verify", "--all", "--defer-human", "--wait", "--json"], { encoding: "utf8", env: environment(fixture) });
-  if (submitted.error) throw submitted.error;
+  const submitted = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
+    "verify", "--all", "--defer-human", "--wait", "--json"], { env: environment(fixture) });
   if (submitted.status !== 5) throw new Error(submitted.stderr || submitted.stdout || "Human deferral did not complete");
   const saved = JSON.parse(submitted.stdout) as { status: string; requests: Saved[] };
   const run = saved.requests[0]?.runId;
@@ -273,22 +252,20 @@ export async function createNavigationFixture(): Promise<{
   fixture: Fixture; scopes: { repo: string[]; other: string[] }; runs: { id: string; eval: string }[];
 }> {
   return prepareFixture(async (root) => {
-    const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
+    const fixture = { root, repo: nativePath(root, "repo"), state: nativePath(root, "state") };
     humanExample(fixture.repo, "subject", "first-criterion", "First navigation criterion");
     git(fixture.repo, "init", "-q", "--initial-branch=master", fixture.repo);
     const first = deferredHuman(fixture);
     humanExample(fixture.repo, "subject", "second-criterion", "Second navigation criterion");
     const second = deferredHuman(fixture);
-    const other = { ...fixture, repo: join(root, "other") };
+    const other = { ...fixture, repo: nativePath(root, "other") };
     humanExample(other.repo, "elsewhere", "other-criterion", "Other scope criterion");
     git(other.repo, "init", "-q", "--initial-branch=master", other.repo);
     const third = deferredHuman(other);
     // All writers are joined. These explicit fixture times determine newest-first
     // navigation independently of wall-clock resolution and scheduling.
     const saved = requests(fixture);
-    const db = new DatabaseSync(join(fixture.state, "state.sqlite"));
-    try {
-      db.exec("PRAGMA busy_timeout=5000");
+    updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
       for (const [id, created] of [[first, "2000-01-01T00:00:00.000000000Z"],
         [second, "2000-01-02T00:00:00.000000000Z"], [third, "2000-01-03T00:00:00.000000000Z"]]) {
         db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, id);
@@ -296,7 +273,7 @@ export async function createNavigationFixture(): Promise<{
           db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
         }
       }
-    } finally { db.close(); }
+    });
     return { fixture, scopes: { repo: [first, second], other: [third] }, runs: [
       { id: first, eval: "first-criterion" }, { id: second, eval: "second-criterion" }, { id: third, eval: "other-criterion" },
     ] };
@@ -309,9 +286,9 @@ export async function addWorktrees(fixture: Fixture): Promise<string[]> {
   git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Fixture inputs");
   const runs: string[] = [];
   for (const name of ["scope-one", "scope-two"]) {
-    const repo = join(fixture.root, name);
+    const repo = nativePath(fixture.root, name);
     git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", name, repo);
-    writeFileSync(join(repo, "release", "notes.md"), `# Notes of ${name}\n- Distinct consumer inputs.\n`);
+    writeText(nativePath(repo, "release", "notes.md"), `# Notes of ${name}\n- Distinct consumer inputs.\n`);
     runs.push(await verifyWaiting({ ...fixture, repo }));
   }
   return runs;
@@ -323,8 +300,8 @@ export async function addWorktrees(fixture: Fixture): Promise<string[]> {
  */
 export function createChain(count: number): Fixture {
   return prepareFixture((root) => {
-    const repo = join(root, "repo");
-    const state = join(root, "state");
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
     const name = (index: number) => `n${String(index).padStart(3, "0")}`;
     for (let index = 0; index < count; index += 1) {
       const reference = index === 0 ? "the start" : `{${name(index - 1)}}`;
@@ -338,8 +315,7 @@ export function createChain(count: number): Fixture {
   instruction = """
   Check ${reference}."""
   `;
-      mkdirSync(join(repo, name(index)), { recursive: true });
-      writeFileSync(join(repo, name(index), "index.artf"), text);
+      writeText(nativePath(makeDirectory(nativePath(repo, name(index))), "index.artf"), text);
     }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
@@ -354,11 +330,8 @@ export function createPagedRequests(): { fixture: Fixture; expected: string[] } 
   const fixture = createChain(100);
   return prepareFixture(() => {
     const older = requests(fixture);
-    const completed = spawnSync(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
-      "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], {
-      encoding: "utf8", env: environment(fixture),
-    });
-    if (completed.error) throw completed.error;
+    const completed = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
+      "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], { env: environment(fixture) });
     if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
     const newer = (JSON.parse(completed.stdout) as { requests: Saved[] }).requests;
     // --wait observes terminal publication, not worker exit. Join every writer before
@@ -366,15 +339,13 @@ export function createPagedRequests(): { fixture: Fixture; expected: string[] } 
     settleRuns(cli(), fixture.repo, fixture.state);
     // This is fixture setup, not an observation: explicit times make the two batches
     // genuinely older/newer without depending on clock resolution or elapsed time.
-    const db = new DatabaseSync(join(fixture.state, "state.sqlite"));
-    try {
-      db.exec("PRAGMA busy_timeout=5000");
+    updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
       for (const [batch, created] of [[older, "2000-01-01T00:00:00.000000000Z"],
         [newer, "2000-01-02T00:00:00.000000000Z"]] as const) {
         db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, batch[0].runId);
         for (const request of batch) db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
       }
-    } finally { db.close(); }
+    });
     const identity = (batch: Saved[], count: number) => Array.from({ length: count }, (_, index) => {
       const evalId = `n${String(index).padStart(3, "0")}/check`;
       const request = batch.find((request) => request.evalId === evalId);
@@ -392,12 +363,11 @@ export function createPagedRequests(): { fixture: Fixture; expected: string[] } 
  */
 export async function createStates(): Promise<Fixture> {
   return prepareFixture(async (root) => {
-    const repo = join(root, "repo");
-    const state = join(root, "state");
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
     const artifact = (name: string, operation: Operation, instruction: string, timeoutMs?: number) => {
-      mkdirSync(join(repo, name), { recursive: true });
-      writeFileSync(
-        join(repo, name, "index.artf"),
+      writeText(
+        nativePath(makeDirectory(nativePath(repo, name)), "index.artf"),
         `name = "${name}"
 
   [evals.check]
@@ -419,9 +389,8 @@ export async function createStates(): Promise<Fixture> {
     artifact("fine", "pass", "Pass.");
     artifact("after", "pass", "Run after {crash}.");
     // A sign-off nobody has given yet, and what waits for it.
-    mkdirSync(join(repo, "gate"), { recursive: true });
-    writeFileSync(
-      join(repo, "gate", "index.artf"),
+    writeText(
+      nativePath(makeDirectory(nativePath(repo, "gate")), "index.artf"),
       `name = "gate"
 
   [evals.signoff]
@@ -448,8 +417,8 @@ export async function createStates(): Promise<Fixture> {
  */
 export function createEvals(names: string[]): Fixture {
   return prepareFixture((root) => {
-    const repo = join(root, "repo");
-    const state = join(root, "state");
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
     const evals = names
       .map(
         (name) => `
@@ -463,8 +432,7 @@ export function createEvals(names: string[]): Fixture {
   `,
       )
       .join("");
-    mkdirSync(join(repo, "app"), { recursive: true });
-    writeFileSync(join(repo, "app", "index.artf"), `name = "app"\n${evals}`);
+    writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), `name = "app"\n${evals}`);
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
@@ -480,11 +448,10 @@ export function createEvals(names: string[]): Fixture {
  */
 export function createOutside(): Fixture & { remove: () => Promise<void> } {
   return prepareFixture((root) => {
-    const repo = join(root, "repo");
-    mkdirSync(repo, { recursive: true });
+    const repo = makeDirectory(nativePath(root, "repo"));
     // The caller invokes this only after the service/app has exited.
     const remove = () => releaseFixtures([root]);
-    return { root, repo, state: join(root, "state"), remove };
+    return { root, repo, state: nativePath(root, "state"), remove };
   });
 }
 

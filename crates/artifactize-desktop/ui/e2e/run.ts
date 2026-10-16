@@ -1,43 +1,26 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
 import { inspect } from "node:util";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
-import { assertRunnerMachine, runnerCommand } from "./platform.ts";
+import {
+  absolutePath, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
+  nodeProgram, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
+} from "./platform.ts";
 
-const file = join(import.meta.dirname, "run.ts");
+const file = suitePath("run.ts");
+const ui = absolutePath(suitePath(), "..");
 // Embedded service launches every capability during onPrepare. Bounding the number
 // supplied to one Launcher, rather than scheduling app lifetimes ourselves, bounds
 // simultaneous WebViews and workers on ordinary CI machines.
 const CAPABILITIES_PER_INVOCATION = 2;
 let interrupted = false;
 
-async function execute(program: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
-  const child = spawn(program, args, { env, cwd: resolve(import.meta.dirname, ".."), stdio: "inherit" });
-  const interrupt = () => { interrupted = true; child.kill("SIGINT"); };
-  const terminate = () => { interrupted = true; child.kill("SIGTERM"); };
-  process.on("SIGINT", interrupt);
-  process.on("SIGTERM", terminate);
-  try {
-    let failure: Error | undefined;
-    child.once("error", (error) => { failure = error; });
-    const { code, signal } = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
-      child.once("close", (code, signal) => done({ code, signal }));
-    });
-    if (failure) throw failure;
-    if (signal) throw new Error(`runner terminated by ${signal}`);
-    return code ?? 1;
-  } finally {
-    process.off("SIGINT", interrupt);
-    process.off("SIGTERM", terminate);
-  }
+function execute(program: string, args: string[], env: Environment): Promise<number> {
+  return runForwardingInterrupts(program, args, env, ui, () => { interrupted = true; });
 }
 
 async function batch(): Promise<void> {
   const { Launcher } = await import("@wdio/cli");
-  const launcher = new Launcher(join(import.meta.dirname, "wdio.conf.ts"));
+  const launcher = new Launcher(suitePath("wdio.conf.ts"));
   // Initialize the public loader before importing its config, so the fixture owner
   // and WDIO use the same module instance and callbacks never leave this process.
   await launcher.initialize();
@@ -57,28 +40,27 @@ async function batch(): Promise<void> {
 async function suite(ids: string[]): Promise<void> {
   const { selectedScenarios } = await import("./catalog.ts");
   const selected = selectedScenarios(ids);
-  const scratch = process.env.ARTIFACTIZE_TMP_DIR ?? tmpdir();
-  const outputParent = process.env.ARTIFACTIZE_OUTPUT_DIR ?? scratch;
-  mkdirSync(outputParent, { recursive: true });
-  const output = mkdtempSync(join(outputParent, "desktop-e2e-"));
+  const scratch = scratchDirectory();
+  const declaredOutput = variable("ARTIFACTIZE_OUTPUT_DIR");
+  const output = newDirectory(declaredOutput === undefined ? scratch : asNativePath(declaredOutput), "desktop-e2e-");
   // The full suite always builds its own evaluated inputs, even when an Agent-tool
   // session has a prepared candidate in the environment. Explicit targeted developer
   // runs may reuse immutable binaries, but still own a private snapshot and fixtures.
-  const candidate = ids.length > 0 && process.env.DESKTOP_TEST_CANDIDATE ? await snapshotCandidate(scratch) : await prepare();
+  const candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratch) : await prepare();
   console.error(`Desktop E2E diagnostics: ${output}`);
   const failures: unknown[] = [];
   try {
     for (let offset = 0; offset < selected.length; offset += CAPABILITIES_PER_INVOCATION) {
       const ids = selected.slice(offset, offset + CAPABILITIES_PER_INVOCATION).map((item) => item.id);
       const env = {
-        ...process.env,
+        ...inheritedEnvironment(),
         DESKTOP_TEST_CANDIDATE: candidate.manifest,
         DESKTOP_TEST_RESOURCES: candidate.root,
         DESKTOP_TEST_BATCH: JSON.stringify(ids),
-        DESKTOP_TEST_BATCH_OUTPUT: join(output, `batch-${offset / CAPABILITIES_PER_INVOCATION + 1}`),
+        DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${offset / CAPABILITIES_PER_INVOCATION + 1}`),
       };
       try {
-        const code = await execute(process.execPath, [file, "batch"], env);
+        const code = await execute(nodeProgram, [file, "batch"], env);
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
       if (interrupted) {
@@ -93,10 +75,10 @@ async function suite(ids: string[]): Promise<void> {
 }
 
 async function unit(): Promise<void> {
-  const harness = resolve(import.meta.dirname, "../../harness");
-  const files = ["commands.test.ts", "keys.test.ts", "observation.test.ts", "runner.test.ts"].map((name) => join(import.meta.dirname, name));
-  if (existsSync(harness)) files.push(...readdirSync(harness).filter((name) => name.endsWith(".test.mts")).sort().map((name) => join(harness, name)));
-  process.exitCode = await execute(process.execPath, ["--test", ...files], process.env);
+  const harness = absolutePath(suitePath(), "../../harness");
+  const files = ["commands.test.ts", "keys.test.ts", "observation.test.ts", "runner.test.ts"].map((name) => suitePath(name));
+  if (exists(harness)) files.push(...listFiles(harness).filter((path) => path.endsWith(".test.mts")));
+  process.exitCode = await execute(nodeProgram, ["--test", ...files], inheritedEnvironment());
 }
 
 const mode = process.argv[2] ?? "suite";
@@ -107,7 +89,7 @@ try {
   else if (mode === "unit") await unit();
   else if (mode === "batch") await batch();
   else if (mode === "suite") {
-    if (process.env.DESKTOP_TEST_WRAPPED === "1") await suite(process.argv.slice(3));
+    if (variable("DESKTOP_TEST_WRAPPED") === "1") await suite(process.argv.slice(3));
     else {
       const wrapped = runnerCommand([file, "suite", ...process.argv.slice(3)]);
       process.exitCode = await execute(wrapped.program, wrapped.args, wrapped.env);

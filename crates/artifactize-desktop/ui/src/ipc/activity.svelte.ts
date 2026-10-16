@@ -92,9 +92,3 @@ export function exposeActivity(activity: Activity): () => void {
     }
   };
 }
-
-declare global {
-  interface Window {
-    readonly artifactizeCommands: CommandActivity;
-  }
-}

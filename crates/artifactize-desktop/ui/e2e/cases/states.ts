@@ -160,7 +160,7 @@ export const scenarios: Scenario[] = [
       const shown = await detailText();
       assert.match(shown, /Pass\./, `the instruction in ${shown.slice(0, 1500)}`);
       assert.match(shown, /Source\s+executed in this Run/, "where the result came from");
-      assert.match(await field("Result"), new RegExp(`^verdict ${request.result.verdict}(?:\\n|$)`), "the selected eval's saved verdict");
+      assert.match(await field("Result"), new RegExp(`^verdict ${request.result.verdict}(?:\n|$)`), "the selected eval's saved verdict");
       assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "Detail renders this eval's exact saved result");
       assert.equal(await field("Request"), request.id, "the opened Detail identifies its exact saved request by default");
       assert.equal(await field("Fingerprint"), "", "additional technical fields are folded initially");

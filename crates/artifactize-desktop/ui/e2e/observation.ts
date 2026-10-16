@@ -1,6 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { basename, join } from "node:path";
 import { readCandidate } from "./build.ts";
+import { asNativePath, nameOf, nativePath, runProgramOk, variable } from "./platform.ts";
 import type { Fixture } from "./fixture.ts";
 import type { Identity } from "./runs.ts";
 
@@ -20,8 +19,8 @@ async function identity(browser: WebdriverIO.Browser): Promise<Identity> {
 /** The existing Rust observer reads the saved birth identity without signalling,
  * launching, restarting or cleaning up the app. Observation failures are errors. */
 function nativeAlive(owner: Identity): boolean {
-  const value: unknown = JSON.parse(execFileSync(readCandidate().observer, ["alive"], {
-    input: JSON.stringify([owner]), encoding: "utf8", timeout: 5000,
+  const value: unknown = JSON.parse(runProgramOk(readCandidate().observer, ["alive"], {
+    input: JSON.stringify([owner]), timeout: 5000,
   }));
   if (!Array.isArray(value) || value.length !== 1 || typeof value[0] !== "boolean") {
     throw new Error("the Rust observer returned an invalid app-exit observation");
@@ -57,6 +56,6 @@ export async function sessionEndedByApp(
 }
 
 export async function saveEvidence(browser: WebdriverIO.Browser, fixture: Fixture, label: string): Promise<void> {
-  const output = process.env.HUMAN_FOCUS_EVIDENCE;
-  if (output) await browser.saveScreenshot(join(output, `${basename(fixture.root)}-${label.replaceAll(" ", "-")}.png`));
+  const output = variable("HUMAN_FOCUS_EVIDENCE");
+  if (output) await browser.saveScreenshot(nativePath(asNativePath(output), `${nameOf(fixture.root)}-${label.replaceAll(" ", "-")}.png`));
 }

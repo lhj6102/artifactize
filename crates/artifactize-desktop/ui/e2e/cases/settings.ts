@@ -1,12 +1,10 @@
 // Settings through the real app and CLI: environment-key presence without values,
 // and a remote store's HTTP identity, persisted sign-in, status, dry run and logout.
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:http";
-import { join } from "node:path";
 import { createOutside, environment, remoteStatus, type Fixture } from "../fixture.ts";
 import { typeText } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { nativePath, readText, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
 const TOKEN = "azt_e2esettingstoken0123456789abcdef";
@@ -20,14 +18,6 @@ function settingsEnvironment(fixture: Fixture): NodeJS.ProcessEnv {
     OPENAI_API_KEY: KEY,
     ANTHROPIC_API_KEY: undefined,
   };
-}
-
-function close(server: Server): Promise<void> {
-  return new Promise((done, fail) => {
-    server.closeAllConnections();
-    if (!server.listening) return done();
-    server.close((error) => error ? fail(error) : done());
-  });
 }
 
 export const scenarios: Scenario[] = [
@@ -60,33 +50,20 @@ export const scenarios: Scenario[] = [
       const fixture = createOutside();
       // The outer owner serves HTTP while WDIO runs elsewhere. Only this fixture's
       // domain state crosses that process boundary, never a server or live closure.
-      const principalFile = join(fixture.root, "remote-principal");
-      writeFileSync(principalFile, "alice-laptop");
-      const store = createServer((request, response) => {
+      const principalFile = nativePath(fixture.root, "remote-principal");
+      writeText(principalFile, "alice-laptop");
+      const store = await serveLoopbackHttp((request, response) => {
         request.resume();
         const ok = request.url === "/v1/whoami" && request.headers.authorization === `Bearer ${TOKEN}`;
         response.writeHead(ok ? 200 : 401, { "content-type": "application/json" });
-        response.end(JSON.stringify(ok ? { principal: readFileSync(principalFile, "utf8"), scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
+        response.end(JSON.stringify(ok ? { principal: readText(principalFile), scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
       });
-      try {
-        await new Promise<void>((done, fail) => {
-          store.once("error", fail);
-          store.listen(0, "127.0.0.1", () => { store.off("error", fail); done(); });
-        });
-        const address = store.address();
-        assert.ok(address && typeof address === "object");
-        const url = `http://127.0.0.1:${address.port}/`;
-        return {
-          fixture,
-          env: settingsEnvironment(fixture),
-          data: { url, principalFile, token: TOKEN },
-          release: () => close(store),
-        };
-      } catch (error) {
-        try { await close(store); }
-        catch (cleanup) { throw new AggregateError([error, cleanup], "remote store preparation and cleanup failed"); }
-        throw error;
-      }
+      return {
+        fixture,
+        env: settingsEnvironment(fixture),
+        data: { url: `${store.url}/`, principalFile, token: TOKEN },
+        release: () => store.close(),
+      };
     },
     async (browser, { fixture, data: { url, principalFile, token } }) => {
       const text = () => browser.execute(() => document.body.innerText);
@@ -115,7 +92,7 @@ export const scenarios: Scenario[] = [
       assert.ok((await text()).includes("full"), "the share level is also shown");
       assert.ok(!status.stdout.includes(token));
 
-      writeFileSync(principalFile, "alice-desktop");
+      writeText(principalFile, "alice-desktop");
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await text()).includes("alice-desktop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "Check status displays the fresh remote principal" });
       await browser.waitUntil(() => browser.execute(() => [...document.querySelectorAll("dt")].some((term) => term.textContent === "Reachable" && term.nextElementSibling?.textContent === "yes")), { timeout: 15000, timeoutMsg: "the store is reachable" });

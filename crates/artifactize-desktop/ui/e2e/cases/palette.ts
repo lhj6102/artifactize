@@ -7,12 +7,13 @@ import { press, typeText } from "../keys.ts";
 import { checkpoint, reviewRefreshed } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
+import { portablePath, primaryModifier, type NativePath } from "../platform.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
 }
 
-type PaletteData = { originalId: string; followerId: string; otherId: string; otherRepo: string };
+type PaletteData = { originalId: string; followerId: string; otherId: string; otherRepo: NativePath };
 type ListedRequest = { id: string; eval: string; status: string; claim: string; repository: string };
 
 async function preparePalette() {
@@ -31,20 +32,25 @@ async function preparePalette() {
   return { fixture, args: ["--repo", fixture.repo], data: { originalId: original.id, followerId: follower.id, otherId: other.id, otherRepo } };
 }
 
-function waitingRequest(id: string, repository: string): ListedRequest {
-  return { id, eval: "? release/signoff", status: "WAITING_HUMAN", claim: "-", repository: repository.replaceAll("\\", "/") };
+function waitingRequest(id: string, repository: NativePath): ListedRequest {
+  return { id, eval: "? release/signoff", status: "WAITING_HUMAN", claim: "-", repository: portablePath(repository) };
 }
 
 async function listShown(browser: WebdriverIO.Browser, expected: ListedRequest[], selected: string) {
-  const wanted = [...expected].sort((left, right) => left.id.localeCompare(right.id));
-  const snapshot = () => browser.execute(() => ({
-    rows: [...document.querySelectorAll('[aria-label="Requests"] [role="option"]')].map((row) => {
-      const cells = [...row.children].map((cell) => (cell as HTMLElement).innerText.trim());
-      return { id: cells[1], eval: cells[0], status: cells[2], claim: cells[3], repository: cells[5] };
-    }).sort((left, right) => left.id.localeCompare(right.id)),
-    selected: document.querySelector('[aria-label="Requests"] [aria-selected="true"] .mono')?.textContent?.trim(),
-    error: document.querySelector(".review .crumbs .error")?.textContent?.trim() ?? null,
-  }));
+  // Both sides are ordered here by code point: the page's and Node's collations differ.
+  const byId = (left: { id: string }, right: { id: string }) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  const wanted = [...expected].sort(byId);
+  const snapshot = async () => {
+    const shown = await browser.execute(() => ({
+      rows: [...document.querySelectorAll('[aria-label="Requests"] [role="option"]')].map((row) => {
+        const cells = [...row.children].map((cell) => (cell as HTMLElement).innerText.trim());
+        return { id: cells[1], eval: cells[0], status: cells[2], claim: cells[3], repository: cells[5] };
+      }),
+      selected: document.querySelector('[aria-label="Requests"] [aria-selected="true"] .mono')?.textContent?.trim(),
+      error: document.querySelector(".review .crumbs .error")?.textContent?.trim() ?? null,
+    }));
+    return { ...shown, rows: shown.rows.sort(byId) };
+  };
   try {
     await waitFor(browser, async () => {
       const shown = await snapshot();
@@ -74,11 +80,11 @@ function palette(browser: WebdriverIO.Browser) {
     await listShown(browser, expected, selected);
   };
   /** Open the palette with Ctrl+K, or close it with Esc. */
-  const ctrlK = (how: string) => press(browser, ["Control", "k"], shown, `the palette opens (${how})`);
+  const ctrlK = (how: string) => press(browser, [primaryModifier, "k"], shown, `the palette opens (${how})`);
   const escape = (how: string) => press(browser, ["Escape"], hidden, `the palette closes (${how})`);
   /** Open a request by ID with Ctrl+O; its Human review shows. */
   const openId = async (id: string) => {
-    await press(browser, ["Control", "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+    await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
     await browser.$('[aria-label="Request ID"]').click();
     await typeText(browser, id);
     await browser.$('[role="dialog"] button[type="submit"]').click();
@@ -197,7 +203,7 @@ export const scenarios: Scenario[] = [
       const expected = [waitingRequest(original.id, fixture.repo)];
       await press(
         browser,
-        ["Control", "2"],
+        [primaryModifier, "2"],
         () => browser.execute(() => document.querySelector('[role="tab"][data-state="active"]')?.textContent === "Review"),
         "the Review screen",
       );
@@ -225,7 +231,7 @@ export const scenarios: Scenario[] = [
         (window as unknown as { errors: string[] }).errors = errors;
         window.addEventListener("error", (event) => errors.push(event.message));
       });
-      await press(browser, ["Control", "2"], () => browser.$('[aria-label="Search requests"]').isExisting(), "this case's Review screen");
+      await press(browser, [primaryModifier, "2"], () => browser.$('[aria-label="Search requests"]').isExisting(), "this case's Review screen");
       const original = requests(fixture).find((request) => request.id === data.originalId);
       assert.ok(original);
       const all = [waitingRequest(data.otherId, data.otherRepo), waitingRequest(original.id, fixture.repo)];

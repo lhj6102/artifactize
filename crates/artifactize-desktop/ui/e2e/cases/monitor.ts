@@ -7,6 +7,7 @@ import { sessionEndedByApp } from "../observation.ts";
 import { afterRender, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { primaryModifier } from "../platform.ts";
 
 async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
@@ -270,7 +271,7 @@ export const scenarios: Scenario[] = [
       const reason = await browser.$("#field-reason");
       await press(browser, ["r"], () => reason.isExisting(), "the RED reason form");
       await reason.setValue("no");
-      await browser.keys(["Control", "s"]);
+      await browser.keys([primaryModifier, "s"]);
       const alert = await browser.$('[role="alert"]');
       await alert.waitForExist({ timeout: 15000 });
       assert.match(await alert.getText(), /reason/);
@@ -282,12 +283,12 @@ export const scenarios: Scenario[] = [
       assert.equal(signoff(fixture).result, null, "the invalid RED result was not saved");
       // Continue this rejected submission, without leaving its claimed review. Each verdict
       // must rebuild the owner's corresponding schema, even after validation failed.
-      await press(browser, ["Control", "g"], async () =>
+      await press(browser, [primaryModifier, "g"], async () =>
         await browser.$("#field-comment").isExisting() && !(await reason.isExisting()), "the pass-schema form after invalid RED");
       assert.equal(await browser.$("#field-approved").getValue(), "true (fixed)", "the pass schema's approved constant");
       await browser.$("#field-comment").setValue("checked after rejection");
       assert.equal(await browser.$("#field-comment").getValue(), "checked after rejection");
-      await press(browser, ["Control", "r"], async () =>
+      await press(browser, [primaryModifier, "r"], async () =>
         await reason.isExisting() && !(await browser.$("#field-comment").isExisting()), "the fail-schema form again");
       await reason.setValue("a correctable reason");
       assert.equal(await reason.getValue(), "a correctable reason");
@@ -322,14 +323,14 @@ export const scenarios: Scenario[] = [
       assert.equal(await comment.getValue(), korean);
       // Ctrl+E turns the typed form into focused JSON. Edit that text field through
       // WebDriver's text-input API, then Ctrl+S submits it; no click in between.
-      await browser.keys(["Control", "e"]);
+      await browser.keys([primaryModifier, "e"]);
       await browser.waitUntil(() => browser.execute(() => document.activeElement?.matches("textarea.json") ?? false), { timeout: 15000, timeoutMsg: "focus in the JSON text" });
       const json = await browser.$("textarea.json");
       assert.deepEqual(JSON.parse(await json.getValue()), { approved: true, comment: korean });
       const edited = JSON.stringify({ approved: true, comment: `${korean} (JSON)` }, null, 2);
       await json.setValue(edited);
       await browser.waitUntil(async () => (await json.getValue()) === edited, { timeout: 15000, timeoutMsg: "the JSON comment edit" });
-      await browser.keys(["Control", "s"]);
+      await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: `${korean} (JSON)` });
       const run = signoff(fixture).runId;

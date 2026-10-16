@@ -1,18 +1,4 @@
 name = "desktop"
-# The journeys are checked in the running app, built from this crate and the library it calls:
-# all of it is an input, not only the files this declaration owns.
-[fingerprint.script]
-command = "node"
-args = [
-  "fingerprint.mjs",
-  ".",
-  "{core}/src",
-  "{core}/Cargo.toml",
-  "{tools}/src",
-  "{tools}/Cargo.toml",
-  "{graph}/Cargo.toml",
-  "{graph}/Cargo.lock",
-]
 
 # The app runs headless for the whole review. start snapshots the explicitly prepared
 # candidate manifest into its own session; it never consumes shared Cargo output names.
@@ -86,9 +72,9 @@ title = "The backend, the UI and the journeys are ready"
 profile = { kind = "dependency", depends_on = ["desktop-backend", "desktop-ui", "ux-features"] }
 
 [evals.lint]
-title = "The desktop-owned TypeScript automation and build configuration lint passes"
+title = "The desktop-owned TypeScript automation harness lint passes"
 profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 600000 }
-payload.instruction = "Run eslint with no inline config over the TypeScript directly owned by {desktop}: its automation harness and frontend build configuration."
+payload.instruction = "Run eslint with no inline config over the TypeScript automation harness directly owned by {desktop}, then type-check it."
 
 [evals.follows-test-rules]
 title = "The desktop automation harness follows the test rules"
@@ -98,6 +84,14 @@ Read the TEST- rules of {code-style} with read_style_code-style. Review the auto
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
 fail_schema = { type = "object", properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }, required = ["violations"], additionalProperties = false }
+
+[evals.suite-passes]
+title = "The end-to-end suite passes on a headless display"
+profile = { kind = "runtime", command = "pnpm", args = ["-C", "ui", "e2e"], timeout_ms = 1800000 }
+
+[evals.suite-passes.payload]
+instruction = """
+Build the E2E test app of {desktop} (the test-only Cargo feature and its frontend build) and the CLI from {cli}, {tui}, {core} and {tools} with the workspace {cargo-manifest} and {cargo-lock} into build output this run owns, then run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
 
 [evals.fmt]
 title = "The Rust formatting check passes"
@@ -111,11 +105,11 @@ title = "Clippy passes for every Rust target"
 profile = { kind = "runtime", command = "node", args = ["harness/harness.mts", "clippy"], timeout_ms = 1800000 }
 
 [evals.clippy.payload]
-instruction = "Build the frontend input and check every Rust target of {desktop} with {core} with {tools}, treating every clippy warning as an error."
+instruction = "Build the frontend input and check every Rust target of {desktop} with {core} with {tools} with the workspace {cargo-manifest} and {cargo-lock}, treating every clippy warning as an error."
 
 [evals.tests]
 title = "The Rust crate tests pass"
 profile = { kind = "runtime", command = "node", args = ["harness/harness.mts", "test"], timeout_ms = 1800000 }
 
 [evals.tests.payload]
-instruction = "Build the frontend input and run the Rust tests of {desktop} with {core} with {tools} with {cli} with {tui}. Each fixture owns its resources even when desktop e2e runs concurrently."
+instruction = "Build the frontend input and run the Rust tests of {desktop} with {core} with {tools} with {cli} with {tui} with the workspace {cargo-manifest} and {cargo-lock}. Each fixture owns its resources even when desktop e2e runs concurrently."

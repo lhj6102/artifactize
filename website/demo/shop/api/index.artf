@@ -1,5 +1,4 @@
 name = "api"
-fingerprint = {}
 
 [evals.schema]
 title = "The OpenAPI document parses"

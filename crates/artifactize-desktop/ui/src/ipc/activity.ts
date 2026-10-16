@@ -10,3 +10,10 @@ export type CommandActivity = Readonly<{
 }>;
 
 export type ReviewRefresh = Readonly<{ generation: number; query: string; start: number }>;
+
+// The observation a test build publishes on its window; tests read it through WebDriver.
+declare global {
+  interface Window {
+    readonly artifactizeCommands: CommandActivity;
+  }
+}

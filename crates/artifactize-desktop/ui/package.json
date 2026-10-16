@@ -10,7 +10,7 @@
     "test": "vitest run",
     "e2e": "node e2e/run.ts",
     "test:automation": "node e2e/run.ts unit",
-    "lint": "eslint --no-inline-config src && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
+    "lint": "eslint --no-inline-config src vite.config.ts && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
   },
   "dependencies": {
     "@internationalized/date": "3.12.4",
