@@ -147,6 +147,7 @@ impl Receipts {
                 return Err("Run was already admitted.".into());
             }
             control.worker = Worker::Admitted { owner };
+            control.supervisor = Some(owner);
             Ok(())
         })
         .await

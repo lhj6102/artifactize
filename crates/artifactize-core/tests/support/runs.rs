@@ -30,9 +30,9 @@ mod process_observation;
 const ADMISSION_BOUND: Duration = Duration::from_secs(30);
 
 /// A terminal receipt can precede the worker's final SQLite/notification cleanup. Waiting
-/// here owns no execution: only the admitted worker's saved identity is observed, never its
-/// launcher, and a still-running Human/timeout result retains its real Run lifetime.
-async fn terminal_worker_exited(
+/// here owns no execution: the executor and supervisor's saved birth identities are observed,
+/// never the launcher, and a still-running Human/timeout result retains its real Run lifetime.
+pub async fn terminal_worker_exited(
     view: &store::RunView,
     changes: &mut artifactize_core::changes::Subscription,
     cancellation: &CancellationToken,
@@ -40,13 +40,18 @@ async fn terminal_worker_exited(
     if view.run.status() == RunStatus::Running {
         return Ok(());
     }
-    if let Some(runs::Worker::Admitted { owner }) =
-        view.run.control.as_ref().map(|control| control.worker)
-    {
-        while process_observation::same_process_running(owner.pid.get(), owner.start_time) {
-            tokio::select! {
-                _ = changes.next_reconciled() => {},
-                _ = cancellation.cancelled() => return Err("Fixture observation cancelled.".into()),
+    if let Some(control) = &view.run.control {
+        let owner = match control.worker {
+            runs::Worker::Admitted { owner } => Some(owner),
+            _ => None,
+        };
+        // The supervisor checks the executor after its exit, retaining its own state handles.
+        for owner in owner.into_iter().chain(control.supervisor) {
+            while process_observation::same_process_running(owner.pid.get(), owner.start_time) {
+                tokio::select! {
+                    _ = changes.next_reconciled() => {},
+                    _ = cancellation.cancelled() => return Err("Fixture observation cancelled.".into()),
+                }
             }
         }
     }
@@ -375,20 +380,23 @@ pub fn finished_worker(
                         RunStatus::Running,
                         "fixture Run must be terminal"
                     );
-                    let runs::Worker::Admitted { owner } = view.run.control.unwrap().worker else {
+                    let control = view.run.control.unwrap();
+                    let runs::Worker::Admitted { owner } = control.worker else {
                         panic!("fixture worker was admitted");
                     };
                     let result = tokio::time::timeout(ADMISSION_BOUND, async {
-                        while running(owner.pid.get())
-                            && process_observation::same_process_running(
-                                owner.pid.get(),
-                                owner.start_time,
-                            )
-                        {
-                            // Exit itself need not write SQLite. This subscription wait
-                            // supplies only an invalidation or a liveness-observation timeout;
-                            // it never runs the mutating Run reconciliation APIs.
-                            changes.next_reconciled().await;
+                        for owner in std::iter::once(owner).chain(control.supervisor) {
+                            while running(owner.pid.get())
+                                && process_observation::same_process_running(
+                                    owner.pid.get(),
+                                    owner.start_time,
+                                )
+                            {
+                                // Exit itself need not write SQLite. This subscription wait
+                                // supplies only an invalidation or a liveness-observation timeout;
+                                // it never runs the mutating Run reconciliation APIs.
+                                changes.next_reconciled().await;
+                            }
                         }
                     })
                     .await;

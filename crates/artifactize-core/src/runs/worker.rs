@@ -59,8 +59,14 @@ async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> 
 
 /// A separate artifactize supervisor settles an executor crash even with no observers.
 pub(crate) async fn supervise(context: &Context, id: &RunId) -> Result<(), String> {
-    let run = admission(context, id).await?;
+    admission(context, id).await?;
     let receipts = Receipts::open(&context.state, &context.repo).await?;
+    let result = supervise_open(context, id, &receipts).await;
+    let closed = receipts.close().await;
+    result.and(closed)
+}
+
+async fn supervise_open(context: &Context, id: &RunId, receipts: &Receipts) -> Result<(), String> {
     let supervisor = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
     let (owner, mut child) = match process::spawn_run(
         &context.executable,
@@ -71,7 +77,7 @@ pub(crate) async fn supervise(context: &Context, id: &RunId) -> Result<(), Strin
     ) {
         Ok(child) => child,
         Err(error) => {
-            return fail(&receipts, id, FailureCode::SpawnFailed, error.to_string()).await;
+            return fail(receipts, id, FailureCode::SpawnFailed, error.to_string()).await;
         }
     };
     let handed = receipts
@@ -85,10 +91,10 @@ pub(crate) async fn supervise(context: &Context, id: &RunId) -> Result<(), Strin
         })
         .await;
     if let Err(error) = handed {
-        fail(&receipts, id, FailureCode::SpawnFailed, error).await?;
+        fail(receipts, id, FailureCode::SpawnFailed, error).await?;
     }
     child.wait().await.map_err(|e| e.to_string())?;
-    let view = store::read_run(&context.state, &run.id).await?;
+    let view = store::read_run(&context.state, id).await?;
     if view.run.status() == RunStatus::Running {
         recover(&context.state, &view).await?;
     }
@@ -97,14 +103,17 @@ pub(crate) async fn supervise(context: &Context, id: &RunId) -> Result<(), Strin
 
 pub(crate) async fn execute(context: &Context, id: &RunId) -> Result<(), String> {
     let run = admission(context, id).await?;
+    let receipts = Receipts::open(&context.state, &context.repo).await?;
     let mut changes = crate::changes::Subscription::new(&context.state).await;
-    let result = execute_admitted(context, id, run, &mut changes).await;
+    let result = execute_admitted(context, id, run, &mut changes, &receipts).await;
     let closed = changes.close().await;
-    match (result, closed) {
+    let result = match (result, closed) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
         (Err(error), Err(close)) => Err(format!("{error}; closing worker subscription: {close}")),
-    }
+    };
+    let closed = receipts.close().await;
+    result.and(closed)
 }
 
 async fn execute_admitted(
@@ -112,8 +121,8 @@ async fn execute_admitted(
     id: &RunId,
     run: store::Run,
     changes: &mut crate::changes::Subscription,
+    receipts: &Receipts,
 ) -> Result<(), String> {
-    let receipts = Receipts::open(&context.state, &context.repo).await?;
     let cancellation = CancellationToken::new();
     if run
         .control
@@ -138,12 +147,12 @@ async fn execute_admitted(
         }
     };
     tokio::pin!(observing);
-    let execution = crate::project::verify::execute(run, cancellation.clone());
+    let execution = crate::project::verify::execute(run, receipts, cancellation.clone());
     tokio::pin!(execution);
     let result = tokio::select! {
         result = &mut execution => result,
         result = &mut observing => {
-            if let Err(error) = result { cancellation.cancel(); let _ = execution.await; return fail(&receipts, id, FailureCode::PreparationFailed, error).await; }
+            if let Err(error) = result { cancellation.cancel(); let _ = execution.await; return fail(receipts, id, FailureCode::PreparationFailed, error).await; }
             execution.await
         }
     };
@@ -155,7 +164,7 @@ async fn execute_admitted(
             } else {
                 error.code()
             };
-            fail(&receipts, id, code, error.to_string()).await
+            fail(receipts, id, code, error.to_string()).await
         }
     }
 }
@@ -191,34 +200,39 @@ pub(super) async fn recover(state: &std::path::Path, view: &RunView) -> Result<(
     }
     crate::tools::sessions::recover(state).map_err(|e| e.to_string())?;
     let receipts = Receipts::open(state, &view.run.repo_path).await?;
-    receipts
-        .retire_worker(&view.run.id, FailureCode::OwnerDied)
-        .await?;
-    let mut run = view.run.clone();
-    run.state = store::RunState::Error {
-        at: crate::broker::now(),
-        error: Some("Run worker died; interrupted work is not replayed.".into()),
-    };
-    if let Some(control) = &mut run.control {
-        control.failure_code = Some(FailureCode::OwnerDied);
+    let result = async {
+        receipts
+            .retire_worker(&view.run.id, FailureCode::OwnerDied)
+            .await?;
+        let mut run = view.run.clone();
+        run.state = store::RunState::Error {
+            at: crate::broker::now(),
+            error: Some("Run worker died; interrupted work is not replayed.".into()),
+        };
+        if let Some(control) = &mut run.control {
+            control.failure_code = Some(FailureCode::OwnerDied);
+        }
+        let requests: Vec<_> = view
+            .requests
+            .iter()
+            .map(|view| {
+                let mut request = view.clone();
+                if !matches!(
+                    request.status(),
+                    RequestStatus::Green | RequestStatus::Red | RequestStatus::Error
+                ) {
+                    request.state = store::RequestState::failed(
+                        "Run worker died.".into(),
+                        Some(FailureCode::OwnerDied),
+                        crate::broker::now(),
+                    );
+                }
+                request
+            })
+            .collect();
+        receipts.finish(&run, &requests).await
     }
-    let requests: Vec<_> = view
-        .requests
-        .iter()
-        .map(|view| {
-            let mut request = view.clone();
-            if !matches!(
-                request.status(),
-                RequestStatus::Green | RequestStatus::Red | RequestStatus::Error
-            ) {
-                request.state = store::RequestState::failed(
-                    "Run worker died.".into(),
-                    Some(FailureCode::OwnerDied),
-                    crate::broker::now(),
-                );
-            }
-            request
-        })
-        .collect();
-    receipts.finish(&run, &requests).await
+    .await;
+    let closed = receipts.close().await;
+    result.and(closed)
 }

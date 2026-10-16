@@ -574,6 +574,28 @@ mod ownership_tests {
     use super::*;
 
     #[tokio::test]
+    async fn failed_writer_initialization_releases_sqlite_before_returning_the_schema_error() {
+        let root = crate::test_os::tempdir();
+        let state = root.path().join("state");
+        let repo = root.path().join("repo");
+        std::fs::create_dir(&state).unwrap();
+        std::fs::create_dir(&repo).unwrap();
+        let database = state.join(DATABASE);
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute_batch("CREATE TABLE unrelated(value TEXT)")
+            .unwrap();
+        drop(connection);
+        let error = match Receipts::open(&state, &repo).await {
+            Ok(_) => panic!("an unversioned nonempty database is not our schema"),
+            Err(error) => error,
+        };
+        assert!(error.contains(&schema_error(0)), "{error}");
+        assert!(crate::test_os::database_released(&database).unwrap());
+        root.close().unwrap();
+    }
+
+    #[tokio::test]
     async fn explicit_writer_close_releases_sqlite_before_return_and_closes_clones() {
         let root = crate::test_os::tempdir();
         let state = root.path().join("state");
@@ -664,13 +686,13 @@ impl Receipts {
     pub async fn open(state: &Path, repo: &Path) -> Result<Self, String> {
         let state = prepare_directory(state, repo).map_err(|e| e.to_string())?;
         check_files(&state)?;
+        let state_id: crate::types::StateId = crate::agent::uuid()?.parse()?;
         let connection = Connection::open(state.join(DATABASE))
             .await
             .map_err(|e| e.to_string())?;
         let connection = NotifyingConnection::new(connection, &state);
         // WAL initialization retries share the database contention budget.
         let deadline = tokio::time::Instant::now() + super::SQLITE_BUSY_TIMEOUT;
-        let state_id: crate::types::StateId = crate::agent::uuid()?.parse()?;
         loop {
             let state_id = state_id.clone();
             let initialized = connection
@@ -714,7 +736,7 @@ impl Receipts {
                     // Concurrent first opens can race when enabling WAL despite busy_timeout.
                     tokio::time::sleep(INITIALIZATION_RETRY_INTERVAL).await;
                 }
-                Err(error) => return Err(error.to_string()),
+                Err(error) => return connection.finish(Err(error.to_string())).await,
             }
         }
         Ok(Self { connection })

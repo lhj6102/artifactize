@@ -283,7 +283,7 @@ async fn release(context: &runs::Context, state: &Path, id: &RunId) -> Result<()
                 runs::Worker::Admitted { owner } => Some(owner),
                 runs::Worker::Legacy => None,
             };
-            if let Some(owner) = owner {
+            for owner in owner.into_iter().chain(control.supervisor) {
                 while crate::support::os::same_process_running(owner.pid.get(), owner.start_time) {
                     changes.next_reconciled().await;
                 }

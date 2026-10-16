@@ -1,4 +1,6 @@
 //! Artifactize-owned verification: durable submission, observation and explicit cancellation.
+#[cfg(test)]
+mod lifetime_tests;
 mod observe;
 mod result;
 mod worker;
@@ -53,6 +55,9 @@ pub enum Worker {
 #[serde(rename_all = "camelCase")]
 pub struct Control {
     pub worker: Worker,
+    /// The supervisor keeps worker files open until its executor has exited and been checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor: Option<process::ChildIdentity>,
     pub activity: Activity,
     #[serde(default)]
     pub cancellation_requested: bool,
@@ -65,6 +70,7 @@ impl Control {
             worker: Worker::Starting {
                 launcher: process::child_identity(std::process::id()).map_err(|e| e.to_string())?,
             },
+            supervisor: None,
             activity: Activity::Preparing,
             cancellation_requested: false,
             failure_code: None,
@@ -73,6 +79,7 @@ impl Control {
     pub(crate) fn legacy() -> Self {
         Self {
             worker: Worker::Legacy,
+            supervisor: None,
             activity: Activity::Executing,
             cancellation_requested: false,
             failure_code: None,
@@ -114,7 +121,9 @@ pub async fn start(
         && context.state.join(store::DATABASE).is_file()
     {
         let receipts = Receipts::open(&context.state, &context.repo).await?;
-        if let Some(id) = receipts.keyed_run(&context.repo, key).await? {
+        let result = receipts.keyed_run(&context.repo, key).await;
+        let closed = receipts.close().await;
+        if let Some(id) = result.and_then(|id| closed.map(|()| id))? {
             return status(context, &id).await;
         }
     }
@@ -128,15 +137,22 @@ pub async fn start(
     .await?;
     if accepted {
         let receipts = Receipts::open(&context.state, &context.repo).await?;
-        let launch = process::launch_run(&context.executable, &id, &context.repo, &context.state);
-        let admitted = match launch {
-            Ok(identity) => receipts.admit(&id, identity).await,
-            Err(error) => Err(error.to_string()),
-        };
-        if let Err(error) = admitted {
-            worker::fail(&receipts, &id, FailureCode::SpawnFailed, error.clone()).await?;
-            return Err(format!("Run {id} handoff failed: {error}"));
+        let result = async {
+            let launch =
+                process::launch_run(&context.executable, &id, &context.repo, &context.state);
+            let admitted = match launch {
+                Ok(identity) => receipts.admit(&id, identity).await,
+                Err(error) => Err(error.to_string()),
+            };
+            if let Err(error) = admitted {
+                worker::fail(&receipts, &id, FailureCode::SpawnFailed, error.clone()).await?;
+                return Err(format!("Run {id} handoff failed: {error}"));
+            }
+            Ok(())
         }
+        .await;
+        let closed = receipts.close().await;
+        result.and(closed)?;
     }
     status(context, &id).await
 }
@@ -150,7 +166,9 @@ pub struct CancelAcknowledgement {
 pub async fn cancel(context: &Context, id: &RunId) -> Result<CancelAcknowledgement, String> {
     let current = view(context, id).await?;
     let receipts = Receipts::open(&context.state, &context.repo).await?;
-    let run = receipts.request_cancel(&current.run.id).await?;
+    let result = receipts.request_cancel(&current.run.id).await;
+    let closed = receipts.close().await;
+    let run = result.and_then(|run| closed.map(|()| run))?;
     Ok(CancelAcknowledgement {
         run: id.clone(),
         state: observe::state(&run, &current.requests),

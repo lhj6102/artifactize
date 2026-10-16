@@ -78,101 +78,109 @@ pub(crate) async fn reserve(
     let state = store::state_dir(state_dir)?;
     let _limits = crate::limits::Limits::read(&state)?;
     let receipts = Receipts::open(&state, &config.root).await?;
-    let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
-        .map_err(|e| e.to_string())?;
-    let directory =
-        crate::platform::private_tempdir_in("run-", &runs).map_err(|e| e.to_string())?;
-    let id = directory
-        .path()
-        .file_name()
-        .unwrap()
-        .to_str()
-        .expect("generated run directory names are ASCII")
-        .to_owned();
-    let _ = directory.keep();
-    let run = Run {
-        modes: options.modes.clone(),
-        control: Some(crate::runs::Control::starting()?),
-        request_key: request_key.cloned(),
-        id: id.parse()?,
-        repo_path: config.root.clone(),
-        repository: crate::repository::identify(&config.root),
-        state_dir: state,
-        state: crate::store::RunState::Running,
-        created_at: now(),
-        selection: selection.clone(),
-        profile: options.profile.clone(),
-        definitions,
-        jobs: options.jobs,
-        fingerprint_jobs: Some(parallelism.limit()),
-        max_executions: options.max_executions,
-        executions_started: 0,
-        wait_timeout_ms: None,
-        wait_timed_out: false,
-        reuse_only: options.reuse_only.clone(),
-        recursive: options.recursive,
-        force: options.force,
-        validation: Default::default(),
-        stopped_backends: Vec::new(),
-        evidence: BTreeMap::new(),
-    };
-    let requests: Vec<_> = evals
-        .iter()
-        .enumerate()
-        .map(|(ordinal, eval)| Request {
-            state: crate::store::RequestState::pending(crate::types::RequestStatus::Queued, None)
+    let result = async {
+        let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
+            .map_err(|e| e.to_string())?;
+        let directory =
+            crate::platform::private_tempdir_in("run-", &runs).map_err(|e| e.to_string())?;
+        let id = directory
+            .path()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .expect("generated run directory names are ASCII")
+            .to_owned();
+        let _ = directory.keep();
+        let run = Run {
+            modes: options.modes.clone(),
+            control: Some(crate::runs::Control::starting()?),
+            request_key: request_key.cloned(),
+            id: id.parse()?,
+            repo_path: config.root.clone(),
+            repository: crate::repository::identify(&config.root),
+            state_dir: state,
+            state: crate::store::RunState::Running,
+            created_at: now(),
+            selection: selection.clone(),
+            profile: options.profile.clone(),
+            definitions,
+            jobs: options.jobs,
+            fingerprint_jobs: Some(parallelism.limit()),
+            max_executions: options.max_executions,
+            executions_started: 0,
+            wait_timeout_ms: None,
+            wait_timed_out: false,
+            reuse_only: options.reuse_only.clone(),
+            recursive: options.recursive,
+            force: options.force,
+            validation: Default::default(),
+            stopped_backends: Vec::new(),
+            evidence: BTreeMap::new(),
+        };
+        let requests: Vec<_> = evals
+            .iter()
+            .enumerate()
+            .map(|(ordinal, eval)| Request {
+                state: crate::store::RequestState::pending(
+                    crate::types::RequestStatus::Queued,
+                    None,
+                )
                 .expect("queued state"),
-            id: format!("{}-{}", run.id, ordinal + 1)
-                .parse()
-                .expect("generated request id is a safe segment"),
-            run_id: run.id.clone(),
-            eval_id: eval.id.clone(),
-            target: eval.target.clone(),
-            title: eval.declaration.title.clone(),
-            profile: (eval.declaration.profile()).into(),
-            requested_profile: (eval.declaration.profile()).into(),
-            eval_def_hash: cache::eval_definition_hash(&eval.declaration),
-            options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref()),
-            execution_id: None,
-            provenance: None,
-            usage: None,
-            reused_usage: None,
-            joined: false,
-            producer: None,
-            reviewer: None,
-            origin: None,
-            session_id: None,
-            session: None,
-            human_definition: None,
-            payload: eval.declaration.payload().into(),
-            references: eval.references.clone(),
-            deps: eval.deps.clone(),
-            force: options.force
-                && selected_ids.contains(&eval.id)
-                && !matches!(
-                    eval.declaration.profile(),
-                    crate::config::Profile::Dependency { .. }
-                ),
-            fingerprint: None,
-            key: None,
-            fingerprints: Default::default(),
-            created_at: run.created_at,
-            started_at: None,
-            cwd: config.root.join(config.artifacts[&eval.target].folder()),
-            run_dir: None,
-            argv: None,
-            child: None,
-            blocked_reason: None,
-            queue: None,
-            blocked_by: Vec::new(),
-        })
-        .collect();
-    let id = receipts.reserve(&run, &requests).await?;
-    let accepted = id == run.id;
-    if !accepted {
-        let _ = std::fs::remove_dir(run.state_dir.join("runs").join(run.id.as_str()));
+                id: format!("{}-{}", run.id, ordinal + 1)
+                    .parse()
+                    .expect("generated request id is a safe segment"),
+                run_id: run.id.clone(),
+                eval_id: eval.id.clone(),
+                target: eval.target.clone(),
+                title: eval.declaration.title.clone(),
+                profile: (eval.declaration.profile()).into(),
+                requested_profile: (eval.declaration.profile()).into(),
+                eval_def_hash: cache::eval_definition_hash(&eval.declaration),
+                options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref()),
+                execution_id: None,
+                provenance: None,
+                usage: None,
+                reused_usage: None,
+                joined: false,
+                producer: None,
+                reviewer: None,
+                origin: None,
+                session_id: None,
+                session: None,
+                human_definition: None,
+                payload: eval.declaration.payload().into(),
+                references: eval.references.clone(),
+                deps: eval.deps.clone(),
+                force: options.force
+                    && selected_ids.contains(&eval.id)
+                    && !matches!(
+                        eval.declaration.profile(),
+                        crate::config::Profile::Dependency { .. }
+                    ),
+                fingerprint: None,
+                key: None,
+                fingerprints: Default::default(),
+                created_at: run.created_at,
+                started_at: None,
+                cwd: config.root.join(config.artifacts[&eval.target].folder()),
+                run_dir: None,
+                argv: None,
+                child: None,
+                blocked_reason: None,
+                queue: None,
+                blocked_by: Vec::new(),
+            })
+            .collect();
+        let id = receipts.reserve(&run, &requests).await?;
+        let accepted = id == run.id;
+        if !accepted {
+            let _ = std::fs::remove_dir(run.state_dir.join("runs").join(run.id.as_str()));
+        }
+        Ok((id, accepted))
     }
-    Ok((id, accepted))
+    .await;
+    let closed = receipts.close().await;
+    result.and_then(|reserved| closed.map(|()| reserved))
 }
 /// Keep the failure kind typed through execution; prefixes belong only to display.
 #[derive(Debug, thiserror::Error)]
@@ -204,6 +212,7 @@ impl From<&str> for Error {
 /// Execute exactly the admitted Run. Never reserve a second Run or substitute changed declarations.
 pub(crate) async fn execute(
     mut run: Run,
+    receipts: &Receipts,
     cancellation: CancellationToken,
 ) -> Result<RunView, Error> {
     let selection = &run.selection.clone();
@@ -249,7 +258,6 @@ pub(crate) async fn execute(
             .map_err(|error| error.to_string())?;
     let state = store::state_dir(state_dir)?;
     let limits = crate::limits::Limits::read(&state)?;
-    let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
     if serde_json::to_string(&definitions).map_err(|e| e.to_string())?
@@ -288,7 +296,7 @@ pub(crate) async fn execute(
     {
         remote
             .refresh(
-                &receipts,
+                receipts,
                 keys.values().map(|key| key.value.clone()).collect(),
             )
             .await?;
@@ -317,7 +325,7 @@ pub(crate) async fn execute(
         &limits,
         &mut run,
         &mut requests,
-        &receipts,
+        receipts,
         remote.clone(),
         cancellation.clone(),
     )
@@ -515,7 +523,7 @@ pub(crate) async fn execute(
         publishing.state = crate::store::RunState::Running;
         receipts.save_run(&publishing).await?;
         for request in &requests {
-            remote.publish_request(&receipts, request).await?;
+            remote.publish_request(receipts, request).await?;
         }
     }
     receipts.finish(&run, &requests).await?;
