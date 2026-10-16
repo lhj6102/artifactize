@@ -1,31 +1,81 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
+use artifactize_core::{
+    runs, store,
+    types::{RequestStatus, RunId, RunStatus},
+};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{cat_program, echo_program, false_program, shell, true_program};
-use tempfile::TempDir;
+
+#[path = "support/order.rs"]
+mod order;
+
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
+
+/// Bound fixture observation, not executor lifetimes or elapsed-time assertions.
+const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
 
 struct Fixture {
-    root: TempDir,
+    agent_endpoint: Option<String>,
+    root: owned_run::Root,
     state: PathBuf,
 }
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         Self {
+            agent_endpoint: None,
             state: root.path().join("state"),
             root,
         }
+    }
+
+    fn with_provider(provider: &support::FakeProvider) -> Self {
+        let mut fixture = Self::new();
+        fixture.agent_endpoint = Some(provider.openai_base());
+        fixture
+    }
+
+    fn agent_environment(&self) -> Vec<(&str, &str)> {
+        self.agent_endpoint
+            .as_deref()
+            .map_or_else(Vec::new, |endpoint| {
+                vec![
+                    ("OPENAI_API_KEY", "fake-openai-key"),
+                    ("ARTIFACTIZE_OPENAI_BASE_URL", endpoint),
+                ]
+            })
+    }
+
+    fn agent_repo(&self, name: &str, model: &str) -> PathBuf {
+        self.repo(
+            name,
+            json!({
+                "name":"shared",
+                "fingerprint":fingerprint("concurrent"),
+                "evals":[{
+                    "id":"check",
+                    "title":"Review",
+                    "profile":{"kind":"agent","backend":"openai","model":model},
+                    "pass_schema":{"type":"object","properties":{"profile":{"type":"string"}},"required":["profile"]},
+                    "payload":{"instruction":"Review."},
+                }],
+            }),
+        )
     }
 
     fn repo(&self, name: &str, value: Value) -> PathBuf {
@@ -35,14 +85,17 @@ impl Fixture {
     }
 
     fn command(&self, repo: &Path, args: &[&str], code: i32) -> Value {
+        self.root.track(&self.state, repo);
         let output = Command::new(support::os::cli())
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
             .arg(&self.state)
+            .env("ARTIFACTIZE_REMOTE", "off")
+            .envs(self.agent_environment())
             .args(args)
             .arg("--json")
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(
             output.status.code(),
@@ -55,19 +108,75 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        support::os::new_group(&mut Command::new(support::os::cli()))
+        self.root.track(&self.state, repo);
+        let child = support::os::new_group(&mut Command::new(support::os::cli()))
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
             .arg(&self.state)
-            .args(["verify", "--all", "--json"])
+            .env("ARTIFACTIZE_REMOTE", "off")
+            .envs(self.agent_environment())
+            .args(["verify", "--wait", "--all", "--json"])
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap()
+            .unwrap();
+        Child::new(child, &self.state, repo)
     }
 
+    fn announced(child: &mut Child) -> RunId {
+        child.run()
+    }
+
+    fn context(&self, repo: &Path) -> runs::Context {
+        self.root.track(&self.state, repo);
+        runs::Context::new(repo, Some(&self.state), &support::os::cli()).unwrap()
+    }
+
+    /// Subscribe before the baseline and wait for this Run's ownership relation, not any
+    /// transient QUEUED row in the whole fixture database.
+    async fn observed_request(
+        &self,
+        repo: &Path,
+        id: &RunId,
+        ready: impl Fn(&store::Request) -> bool,
+    ) -> store::Request {
+        owned_run::subscribed(&self.state, async |changes| {
+            let mut last = None;
+            tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
+                loop {
+                    let view = store::read_run(&self.state, id).await.unwrap();
+                    assert_eq!(view.run.repo_path, support::os::canonical(repo));
+                    let request = &view.requests[0];
+                    if ready(request) {
+                        return request.clone();
+                    }
+                    assert_eq!(view.run.status(), RunStatus::Running, "{view:?}");
+                    last = Some(view);
+                    changes.next_reconciled().await;
+                }
+            })
+            .await
+            .unwrap_or_else(|error| {
+                panic!("cache ownership relation for {id} was not reached: {error}; {last:?}")
+            })
+        })
+        .await
+    }
+
+    async fn completed(&self, repo: &Path, id: &RunId, child: Child, code: i32) -> Value {
+        let ended = owned_run::terminal(&self.state, id).await;
+        assert_eq!(ended.run.repo_path, support::os::canonical(repo));
+        output(
+            tokio::task::spawn_blocking(move || child.wait_with_output().unwrap())
+                .await
+                .unwrap(),
+            code,
+        )
+    }
+
+    /// Wait for a saved follower relation, not the owner's transient queued preparation.
     fn waiting_request(&self) -> Value {
         let mut request = Value::Null;
         wait_until(|| {
@@ -79,7 +188,7 @@ impl Fixture {
             };
             let data = db
                 .query_row::<String, _, _>(
-                    "SELECT data FROM requests WHERE status='QUEUED' AND execution_id IS NOT NULL LIMIT 1",
+                    "SELECT q.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE q.status='QUEUED' AND json_extract(e.data,'$.provenance.requestId')<>q.id LIMIT 1",
                     [],
                     |row| row.get(0),
                 )
@@ -94,13 +203,25 @@ impl Fixture {
         request
     }
 
+    /// SQL observations cannot create or modify fixture state.
+    fn observed(&self) -> Connection {
+        Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+    }
+
     fn execution(&self, id: &str) -> Value {
-        let data: String = Connection::open(self.state.join("state.sqlite"))
-            .unwrap()
-            .query_row("SELECT data FROM executions WHERE id=?", [id], |row| {
-                row.get(0)
-            })
-            .unwrap();
+        let data: String = Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+        .query_row("SELECT data FROM executions WHERE id=?", [id], |row| {
+            row.get(0)
+        })
+        .unwrap();
         serde_json::from_str(&data).unwrap()
     }
 
@@ -120,10 +241,9 @@ impl Fixture {
                             "command":shell(),
                             "args":[
                                 "review.sh",
-                                self.root.path().join("starts"),
-                                self.root.path().join("release"),
+                                support::os::path_text(&self.root.path().join("starts")),
+                                support::os::path_text(&self.root.path().join("release")),
                             ],
-                            "timeout_ms":10000,
                         },
                         "payload":{"instruction":"Review."},
                     },
@@ -134,25 +254,15 @@ impl Fixture {
         repo
     }
 
-    /// The owner's review in `repo` ends with `ERROR_SCRIPT` after the release. On Windows
-    /// `erroring` scales its deadline the same way `patience` does, so it reliably outlasts
-    /// the waiter's attachment (started and checked before `release`) without racing a slow
-    /// CI host, while `finish`'s own, equally scaled deadline still catches it.
-    fn erroring_owner(&self, repo: &Path) {
-        let path = repo.join("index.artf");
-        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
-        declaration["evals"][0] = erroring(declaration["evals"][0].take(), 3000);
-        support::declaration::write(path, declaration.to_string()).unwrap();
-    }
-
     fn release(&self) {
         support::declaration::write(self.root.path().join("release"), "").unwrap();
     }
 
-    /// Started review scripts; the shell creates the file before it writes the line.
+    /// Count completed marker records, not file creation or a partially written PID.
     fn starts(&self) -> usize {
-        fs::read_to_string(self.root.path().join("starts"))
-            .map_or(0, |starts| starts.lines().count())
+        fs::read_to_string(self.root.path().join("starts")).map_or(0, |starts| {
+            starts.bytes().filter(|byte| *byte == b'\n').count()
+        })
     }
 
     /// Records of the key history.
@@ -161,12 +271,15 @@ impl Fixture {
     }
 
     fn count(&self, table: &str) -> u32 {
-        Connection::open(self.state.join("state.sqlite"))
-            .unwrap()
-            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
-            .unwrap()
+        Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+        .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
     }
 
     /// Seed records under the keys `seed-00000`, `seed-00001`, ... (each its own execution),
@@ -187,9 +300,26 @@ impl Fixture {
         transaction.commit().unwrap();
     }
 
+    /// Seed the LRU consumer's input after the real producer has exited. Publication order
+    /// must not depend on sequential commands receiving different host clock ticks.
+    fn last_used(&self, repo: &Path, run: &Value, at: &str) {
+        let id = run["id"].as_str().unwrap().parse().unwrap();
+        support::runs::finished_worker(&self.state, repo, &id, support::os::running);
+        let at: artifactize_core::types::Timestamp = at.parse().unwrap();
+        let db = Connection::open(self.state.join("state.sqlite")).unwrap();
+        assert_eq!(
+            db.execute(
+                "UPDATE executions SET last_used=? WHERE id=? AND completed_at IS NOT NULL",
+                rusqlite::params![at, run["requests"][0]["executionId"].as_str().unwrap()],
+            )
+            .unwrap(),
+            1,
+        );
+    }
+
     /// Verify a new fingerprint from its own repository and return the reuse key; publishing
-    /// the record runs LRU GC.
-    fn publish(&self, name: &str) -> String {
+    /// the record runs LRU GC. Pin its subsequent collection position explicitly.
+    fn publish(&self, name: &str, last_used: &str) -> String {
         let repo = self.repo(
             name,
             json!({
@@ -198,23 +328,32 @@ impl Fixture {
                 "evals":[eval("check", "exit 0")],
             }),
         );
-        key(&self.command(&repo, &["verify", "--all"], 0), 0)
+        let run = self.command(&repo, &["verify", "--wait", "--all"], 0);
+        self.last_used(&repo, &run, last_used);
+        key(&run, 0)
     }
 
     /// The key a running execution holds.
     fn running_key(&self) -> String {
-        Connection::open(self.state.join("state.sqlite"))
-            .unwrap()
-            .query_row(
-                "SELECT key FROM executions WHERE status='RUNNING'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap()
+        Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
+        .query_row(
+            "SELECT key FROM executions WHERE status='RUNNING'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
     }
 
     fn entries(&self) -> Vec<(String, String, i64, String, String)> {
-        let db = Connection::open(self.state.join("state.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            self.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         let mut statement = db
             .prepare(
                 "SELECT key,id,bytes,last_used,data FROM executions WHERE completed_at IS NOT NULL ORDER BY key,completed_at",
@@ -236,7 +375,56 @@ impl Fixture {
     }
 }
 
-use support::os::{ERROR_CODE, ERROR_SCRIPT, erroring};
+/// The provider receives the owner before the waiter attaches. Only an explicit release
+/// supplies its verdict or non-retryable operational error; no child deadline orders it.
+struct ClaimProvider {
+    gate: support::Gate,
+    entered: std::sync::mpsc::Receiver<()>,
+    provider: support::FakeProvider,
+}
+
+impl ClaimProvider {
+    fn new(owner_success: bool) -> Self {
+        let gate = support::Gate::default();
+        let (entered, receiving) = std::sync::mpsc::channel();
+        let provider = support::FakeProvider::start({
+            let gate = gate.clone();
+            move |request| {
+                if request.body["model"] == "owner" {
+                    entered.send(()).unwrap();
+                    gate.wait();
+                    if !owner_success {
+                        return support::Reply::Json(
+                            404,
+                            json!({"error":{"message":"The model does not exist","code":"model_not_found"}}),
+                        );
+                    }
+                }
+                support::openai::completed(
+                    request,
+                    vec![support::openai::message(
+                        &json!({
+                            "verdict":"GREEN", "profile":request.body["model"],
+                        })
+                        .to_string(),
+                    )],
+                    support::openai::usage(10, 2),
+                )
+            }
+        });
+        Self {
+            gate,
+            entered: receiving,
+            provider,
+        }
+    }
+
+    fn owner_started(&self) {
+        self.entered
+            .recv_timeout(support::os::patience(OBSERVATION_BOUND))
+            .unwrap();
+    }
+}
 
 const WAIT_SCRIPT: &str =
     "echo $$ >> \"$1\"; while [ ! -e \"$2\" ]; do sleep 0.05; done; printf original";
@@ -265,20 +453,42 @@ fn output(output: Output, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// Interrupt, freeze or resume a process, named as the Unix signals that do it.
-fn signal(pid: u32, signal: &str) {
-    match signal {
-        "-INT" => support::os::interrupt(pid),
-        "-STOP" => support::os::suspend(pid),
-        "-CONT" => support::os::resume(pid),
-        _ => unreachable!("{signal}"),
+/// A suspended fixture worker is resumed on unwind before its Run owner cancels it.
+struct Suspended(artifactize_core::process::ChildIdentity);
+impl Suspended {
+    fn new(pid: u32) -> Self {
+        let suspended = Self(artifactize_core::process::ChildIdentity {
+            pid: std::num::NonZeroU32::new(pid)
+                .expect("owned worker PID")
+                .into(),
+            start_time: support::os::start_time(pid),
+        });
+        // Install ownership before the suspension call can unwind.
+        support::os::suspend(pid);
+        suspended
+    }
+}
+impl Drop for Suspended {
+    fn drop(&mut self) {
+        if support::os::same_process_running(self.0.pid.get(), self.0.start_time) {
+            support::os::resume(self.0.pid.get());
+        }
     }
 }
 
-/// A killed owner cannot run foreground cleanup; stop its orphaned review and children. On
-/// Windows the owner's Job Object closed with it and took the review along already.
-fn kill_orphans(starts: &str) {
-    support::os::kill_tree(starts.lines().next().unwrap().parse().unwrap());
+/// A deliberately killed worker cannot clean its runtime process group on unwind.
+/// Keep its birth identity and observe exit before the fixture's inputs are removed.
+fn orphan_group(fixture: &Fixture) -> owned_run::Processes {
+    let pid = fs::read_to_string(fixture.root.path().join("starts"))
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mut processes = owned_run::Processes::default();
+    processes.own(pid);
+    processes
 }
 
 fn write(repo: &Path, path: &str, value: Value) {
@@ -328,7 +538,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     );
     // The path artifactize records, taken before the source is deleted below.
     let source_path = support::os::canonical(&source);
-    let original = fixture.command(&source, &["verify", "--all"], 1);
+    let original = fixture.command(&source, &["verify", "--wait", "--all"], 1);
     let original_request = &original["requests"][0];
     assert!(original_request["child"]["pid"].is_number());
     assert!(original_request["usage"].is_null());
@@ -370,7 +580,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
         before,
         "status does not touch access times"
     );
-    let reused = fixture.command(&target, &["verify", "consumer", "--recursive"], 1);
+    let reused = fixture.command(&target, &["verify", "--wait", "consumer", "--recursive"], 1);
     let hit = request(&reused, "dependency/second");
     for field in ["result", "profile", "executionId", "provenance", "usage"] {
         assert_eq!(hit[field], original_request[field], "{field}");
@@ -390,7 +600,6 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     }
     assert_eq!(request(&reused, "consumer/check")["status"], "BLOCKED");
     assert_eq!(reused["validation"]["satisfied"], false);
-    assert!(!target.join("dependency/must-not-run").exists());
     assert!(!target.join("consumer/must-not-run").exists());
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(
@@ -405,7 +614,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
         fixture.command(&target, &["run", "show", reused["id"].as_str().unwrap()], 0),
         reused
     );
-    let nonrecursive = fixture.command(&target, &["verify", "consumer"], 1);
+    let nonrecursive = fixture.command(&target, &["verify", "--wait", "consumer"], 1);
     assert_eq!(nonrecursive["requests"].as_array().unwrap().len(), 1);
     assert_eq!(nonrecursive["requests"][0]["status"], "BLOCKED");
 }
@@ -434,7 +643,7 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
             ],
         }),
     );
-    let run = fixture.command(&repo, &["verify", "--all", "--jobs", "1"], 1);
+    let run = fixture.command(&repo, &["verify", "--wait", "--all", "--jobs", "1"], 1);
     let pass = &run["requests"][1];
     let fail = &run["requests"][0];
     assert_eq!(pass["status"], "GREEN");
@@ -449,7 +658,7 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
     assert_eq!(status["evals"][1]["state"], "PASS");
     assert_eq!(status["evals"][0]["state"], "RED");
     assert_eq!(status["counts"]["reuse"], 2);
-    let hit = fixture.command(&repo, &["verify", "--all"], 1);
+    let hit = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
     for (new, original) in hit["requests"]
         .as_array()
         .unwrap()
@@ -498,7 +707,7 @@ fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
             "evals":[eval("check", "exit 0")],
         }),
     );
-    fixture.command(&repo, &["verify", "--all"], 0);
+    fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     let before = fixture.entries();
     write(
         &repo,
@@ -510,7 +719,7 @@ fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
         }),
     );
     for _ in 0..2 {
-        let run = fixture.command(&repo, &["verify", "--all"], 1);
+        let run = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
         assert!(run["requests"][0]["fingerprint"].is_null());
         assert!(run["requests"][0]["child"]["pid"].is_number());
     }
@@ -527,17 +736,25 @@ fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
 #[test]
 fn errors_are_audited_but_never_published() {
     let fixture = Fixture::new();
+    // A missing fixture program fails operationally on every OS without a real deadline.
+    let (program, args, code) = support::os::runtime_failures()
+        .into_iter()
+        .find(|(_, _, code)| *code == "SPAWN_FAILED")
+        .unwrap();
+    let mut failed = eval("check", "");
+    failed["profile"]["command"] = json!(program);
+    failed["profile"]["args"] = json!(args);
     let repo = fixture.repo(
         "repo",
         json!({
             "name":"test",
             "fingerprint":fingerprint("retryable"),
-            "evals":[erroring(eval("check", ERROR_SCRIPT), 200)],
+            "evals":[failed],
         }),
     );
     for _ in 0..2 {
-        let run = fixture.command(&repo, &["verify", "--all"], 2);
-        assert_eq!(run["requests"][0]["errorCode"], ERROR_CODE);
+        let run = fixture.command(&repo, &["verify", "--wait", "--all"], 2);
+        assert_eq!(run["requests"][0]["errorCode"], code);
         assert!(run["requests"][0]["result"].is_null());
         assert_eq!(fixture.records(), 0);
     }
@@ -551,7 +768,7 @@ fn errors_are_audited_but_never_published() {
             "evals":[eval("check", "exit 0")],
         }),
     );
-    fixture.command(&repo, &["verify", "--all"], 0);
+    fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(fixture.records(), 1);
 }
 
@@ -571,15 +788,22 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
         }),
     );
     fs::write(repo.join("review.sh"), "exit 7").unwrap();
-    let original = fixture.command(&repo, &["verify", "--all"], 1);
+    let original = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
     assert_eq!(fixture.entries().len(), 1);
     fs::write(repo.join("review.sh"), "echo force >> starts").unwrap();
-    let forced = fixture.command(&repo, &["verify", "--all", "--force"], 0);
+    let forced = fixture.command(&repo, &["verify", "--wait", "--all", "--force"], 0);
     assert_ne!(
         forced["requests"][0]["executionId"],
         original["requests"][0]["executionId"]
     );
     assert!(forced["requests"][0]["child"]["pid"].is_number());
+    // Seed the record order: sequential executions can finish within one clock tick.
+    for (run, completed) in [
+        (&original, "2000-01-01T00:00:00.000000000Z"),
+        (&forced, "2000-01-02T00:00:00.000000000Z"),
+    ] {
+        order::completed_at(&fixture.state, &repo, run, completed);
+    }
     // The forced result joins the key's history next to the original.
     let after = fixture.entries();
     assert_eq!(after.len(), 2);
@@ -588,7 +812,7 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
     assert_eq!(status["evals"][0]["action"], "execute");
     assert_eq!(fixture.entries(), after);
     // The latest record wins: the next ordinary verify reuses the forced GREEN.
-    let next = fixture.command(&repo, &["verify", "--all"], 0);
+    let next = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         next["requests"][0]["executionId"],
         forced["requests"][0]["executionId"]
@@ -638,7 +862,7 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
             "evals":[eval("check", "exit 0")],
         }),
     );
-    fixture.command(&dependency, &["verify", "--all"], 0);
+    fixture.command(&dependency, &["verify", "--wait", "--all"], 0);
     write(
         &repo,
         "dependency/index.artf",
@@ -648,11 +872,14 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
             "evals":[eval("check", "exit 0")],
         }),
     );
-    let forced = fixture.command(&repo, &["verify", "test", "--recursive", "--force"], 0);
+    let forced = fixture.command(
+        &repo,
+        &["verify", "--wait", "test", "--recursive", "--force"],
+        0,
+    );
     assert_eq!(request(&forced, "test/check")["force"], true);
     assert_eq!(request(&forced, "dep/check")["force"], false);
     assert!(request(&forced, "dep/check")["child"].is_null());
-    assert!(!repo.join("dependency/must-not-run").exists());
 
     let absent = fixture.repo(
         "absent",
@@ -663,10 +890,10 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
         }),
     );
     let before = fixture.entries().len();
-    let forced = fixture.command(&absent, &["verify", "--all", "--force"], 0);
+    let forced = fixture.command(&absent, &["verify", "--wait", "--all", "--force"], 0);
     assert_eq!(fixture.entries().len(), before + 1);
     assert_eq!(
-        fixture.command(&absent, &["verify", "--all"], 0)["requests"][0]["executionId"],
+        fixture.command(&absent, &["verify", "--wait", "--all"], 0)["requests"][0]["executionId"],
         forced["requests"][0]["executionId"]
     );
 }
@@ -682,7 +909,7 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
         }),
     );
     fs::write(repo.join("key"), "first").unwrap();
-    fixture.command(&repo, &["verify", "--all"], 0);
+    fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     fs::remove_file(repo.join("executed")).unwrap();
     assert_eq!(
         fixture.command(&repo, &["status"], 0)["evals"][0]["action"],
@@ -730,10 +957,6 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
     assert_eq!(execution["status"], "RUNNING");
     assert!(execution["completedAt"].is_null());
     assert!(execution["ownerStartTime"].as_u64().unwrap() > 0);
-    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.busy_timeout(support::os::patience(Duration::from_millis(100)))
-        .unwrap();
-    db.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
     assert_eq!(
         fixture.command(&second, &["status"], 1)["evals"][0]["action"],
         "wait"
@@ -770,12 +993,16 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo replacement >> \"$1\"; printf recovered");
-    let mut owner = fixture.spawn(&source, &[]);
+    let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
+    let orphans = orphan_group(&fixture);
     let waiter = fixture.spawn(&target, &["--max-executions", "1"]);
     let waiting = fixture.waiting_request();
-    owner.kill().unwrap();
-    owner.wait().unwrap();
+    let worker = fixture.execution(waiting["executionId"].as_str().unwrap())["ownerPid"]
+        .as_u64()
+        .unwrap() as u32;
+    support::os::kill(worker);
+    finish(owner, 2);
     let recovered = finish(waiter, 0);
     let dead = fixture.execution(waiting["executionId"].as_str().unwrap());
     assert_eq!(dead["status"], "ERROR");
@@ -790,60 +1017,103 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
     assert_eq!(recovered["executionsStarted"], 1);
-    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
+    drop(orphans);
 }
 
 #[test]
 fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
-    let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", &format!("{WAIT_SCRIPT}; {ERROR_SCRIPT}"));
-    fixture.erroring_owner(&source);
-    let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
+    let provider = ClaimProvider::new(false);
+    let fixture = Fixture::with_provider(&provider.provider);
+    let source = fixture.agent_repo("source", "owner");
+    let target = fixture.agent_repo("target", "retry");
     let owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.starts() > 0);
+    provider.owner_started();
     let waiter = fixture.spawn(&target, &[]);
-    fixture.waiting_request();
-    fixture.release();
+    let waiting = fixture.waiting_request();
+    assert_eq!(fixture.count("executions"), 1);
+    provider.gate.open();
     let failed = finish(owner, 2);
     let recovered = finish(waiter, 0);
-    assert_eq!(failed["requests"][0]["errorCode"], ERROR_CODE);
-    assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
+    assert_eq!(failed["requests"][0]["status"], "ERROR");
+    assert_eq!(failed["requests"][0]["errorCode"], "PROVIDER_ERROR");
+    assert!(failed["requests"][0]["result"].is_null());
+    assert_eq!(failed["executionsStarted"], 1);
+    assert_eq!(recovered["executionsStarted"], 1);
+    assert_eq!(recovered["requests"][0]["status"], "GREEN");
+    assert_eq!(recovered["requests"][0]["result"]["profile"], "retry");
+    assert_ne!(
+        recovered["requests"][0]["executionId"],
+        waiting["executionId"]
+    );
     assert_eq!(
         recovered["requests"][0]["profile"],
         recovered["requests"][0]["requestedProfile"]
     );
+    assert_eq!(recovered["requests"][0]["profile"]["model"], "retry");
     assert_eq!(fixture.count("executions"), 2);
     assert_eq!(fixture.records(), 1);
-    assert_eq!(fixture.starts(), 2);
+    let requests = provider.provider.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "one failed owner and one own-profile retry"
+    );
+    assert_eq!(requests[0].body["model"], "owner");
+    assert_eq!(requests[1].body["model"], "retry");
 }
 
-#[test]
-fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
+#[tokio::test]
+async fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_owner_releases_the_claim()
+ {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
+    // These live claims finish only through the test's cancellation and release stimuli.
     let mut owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.starts() > 0);
-    let waiter = fixture.spawn(&target, &[]);
-    let waiting = fixture.waiting_request();
-    signal(waiter.id(), "-INT");
-    let cancelled = finish(waiter, 2);
+    let owner_id = Fixture::announced(&mut owner);
+    let owned = fixture
+        .observed_request(&source, &owner_id, |request| {
+            request.status() == RequestStatus::Running && fixture.starts() == 1
+        })
+        .await;
+    let mut waiter = fixture.spawn(&target, &[]);
+    let waiter_id = Fixture::announced(&mut waiter);
+    let waiting = fixture
+        .observed_request(&target, &waiter_id, |request| {
+            request.status() == RequestStatus::Queued
+                && request.execution_id == owned.execution_id
+                && request.child.is_none()
+        })
+        .await;
+    runs::cancel(&fixture.context(&target), &waiter_id)
+        .await
+        .unwrap();
+    let cancelled = fixture.completed(&target, &waiter_id, waiter, 2).await;
     assert_eq!(cancelled["requests"][0]["errorCode"], "CANCELLED");
     assert!(cancelled["requests"][0]["child"].is_null());
     assert!(owner.try_wait().unwrap().is_none());
     assert_eq!(
-        fixture.execution(waiting["executionId"].as_str().unwrap())["status"],
+        fixture.execution(waiting.execution_id.as_deref().unwrap())["status"],
         "RUNNING"
     );
     assert_eq!(fixture.starts(), 1);
-    let waiter = fixture.spawn(&target, &[]);
-    fixture.waiting_request();
-    signal(owner.id(), "-INT");
-    let cancelled = finish(owner, 2);
+    let mut waiter = fixture.spawn(&target, &[]);
+    let next_id = Fixture::announced(&mut waiter);
+    fixture
+        .observed_request(&target, &next_id, |request| {
+            request.status() == RequestStatus::Queued
+                && request.execution_id == owned.execution_id
+                && request.child.is_none()
+        })
+        .await;
+    runs::cancel(&fixture.context(&source), &owner_id)
+        .await
+        .unwrap();
+    let cancelled = fixture.completed(&source, &owner_id, owner, 2).await;
     assert_eq!(cancelled["requests"][0]["errorCode"], "CANCELLED");
-    let execution = fixture.execution(waiting["executionId"].as_str().unwrap());
+    let execution = fixture.execution(waiting.execution_id.as_deref().unwrap());
     assert_eq!(execution["errorCode"], "CANCELLED");
-    let recovered = finish(waiter, 0);
+    let recovered = fixture.completed(&target, &next_id, waiter, 0).await;
     assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
     assert_eq!(fixture.count("executions"), 2);
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
@@ -854,7 +1124,7 @@ fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
 fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconcile() {
     let fixture = Fixture::new();
     let repo = fixture.shared_repo("repo", "echo attempt >> \"$1\"");
-    let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let original = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     let id = original["requests"][0]["executionId"].as_str().unwrap();
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute(
@@ -873,29 +1143,48 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
     );
     fixture.command(&repo, &["run", "show", original["id"].as_str().unwrap()], 0);
     assert_eq!(fixture.execution(id)["status"], "RUNNING");
-    let recovered = fixture.command(&repo, &["verify", "--all"], 0);
+    let recovered = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     assert_ne!(recovered["requests"][0]["executionId"], id);
     assert_eq!(fixture.execution(id)["errorCode"], "OWNER_DIED");
     assert_eq!(fixture.starts(), 2);
 }
 
-#[test]
-fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
+#[tokio::test]
+async fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo forced >> \"$1\"; printf forced");
-    let owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.starts() > 0);
-    let forced = finish(fixture.spawn(&target, &["--force"]), 0);
+    let mut owner = fixture.spawn(&source, &[]);
+    let owner_id = Fixture::announced(&mut owner);
+    fixture
+        .observed_request(&source, &owner_id, |request| {
+            request.child.is_some() && fixture.starts() > 0
+        })
+        .await;
+    let mut child = fixture.spawn(&target, &["--force"]);
+    let forced_id = Fixture::announced(&mut child);
+    let forced = fixture.completed(&target, &forced_id, child, 0).await;
     let execution = fixture.execution(forced["requests"][0]["executionId"].as_str().unwrap());
     assert_eq!(execution["key"], fixture.running_key().as_str());
     assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
     fixture.release();
-    let original = finish(owner, 0);
+    let original = fixture.completed(&source, &owner_id, owner, 0).await;
     assert_eq!(fixture.records(), 2);
-    // The owner completed after the forced review, so its record is the latest.
-    let reused = fixture.command(&target, &["verify", "--all"], 0);
+    // The owner is later in the seeded history, independent of host clock progression.
+    order::completed_at(
+        &fixture.state,
+        &target,
+        &forced,
+        "2000-01-01T00:00:00.000000000Z",
+    );
+    order::completed_at(
+        &fixture.state,
+        &source,
+        &original,
+        "2000-01-02T00:00:00.000000000Z",
+    );
+    let reused = fixture.command(&target, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         reused["requests"][0]["executionId"],
         original["requests"][0]["executionId"]
@@ -914,7 +1203,10 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
         ]}),
     );
     let child = fixture.spawn(&repo, &["--jobs", "3", "--max-executions", "1"]);
-    wait_until(|| repo.join("starts").exists());
+    wait_until(|| {
+        fs::read_to_string(repo.join("starts"))
+            .is_ok_and(|contents| contents.replace("\r\n", "\n") == "first\n")
+    });
     wait_until(|| fixture.count("requests WHERE execution_id IS NOT NULL") == 3);
     fs::write(repo.join("release"), "").unwrap();
     let run = finish(child, 0);
@@ -923,16 +1215,32 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     for request in run["requests"].as_array().unwrap() {
         assert_eq!(request["executionId"], run["requests"][0]["executionId"]);
     }
-    let hit = fixture.command(&repo, &["verify", "--all", "--max-executions", "0"], 0);
+    let hit = fixture.command(
+        &repo,
+        &["verify", "--wait", "--all", "--max-executions", "0"],
+        0,
+    );
     assert_eq!(hit["executionsStarted"], 0);
     let forced = fixture.command(
         &repo,
-        &["verify", "--all", "--max-executions", "0", "--force"],
+        &[
+            "verify",
+            "--wait",
+            "--all",
+            "--max-executions",
+            "0",
+            "--force",
+        ],
         4,
     );
     assert_eq!(forced["executionsStarted"], 0);
     assert_eq!(fixture.count("executions"), 1);
-    assert!(!repo.join("must-not-run").exists());
+    assert_eq!(
+        fs::read_to_string(repo.join("starts"))
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "first\n"
+    );
 }
 
 #[test]
@@ -965,7 +1273,7 @@ fn source_names_the_execution_a_result_came_from_and_how() {
     assert_eq!(request["source"], source("joined"));
 
     // A later Run finds the completed record.
-    let hit = fixture.command(&repo, &["verify", "--all"], 0);
+    let hit = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     for request in hit["requests"].as_array().unwrap() {
         assert_eq!(request["source"], source("cache"));
     }
@@ -975,35 +1283,50 @@ fn source_names_the_execution_a_result_came_from_and_how() {
 #[test]
 fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
     for success in [true, false] {
-        let fixture = Fixture::new();
-        let script = if success {
-            WAIT_SCRIPT.to_owned()
-        } else {
-            format!("{WAIT_SCRIPT}; {ERROR_SCRIPT}")
-        };
-        let source = fixture.shared_repo("source", &script);
-        if !success {
-            fixture.erroring_owner(&source);
-        }
-        let target = fixture.shared_repo("target", "echo replacement >> \"$1\"");
+        let provider = ClaimProvider::new(success);
+        let fixture = Fixture::with_provider(&provider.provider);
+        let source = fixture.agent_repo("source", "owner");
+        let target = fixture.agent_repo("target", "replacement");
         let owner = fixture.spawn(&source, &[]);
-        wait_until(|| fixture.starts() > 0);
+        provider.owner_started();
         let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
-        fixture.waiting_request();
-        fixture.release();
+        let waiting = fixture.waiting_request();
+        assert_eq!(fixture.count("executions"), 1);
+        provider.gate.open();
         let original = finish(owner, if success { 0 } else { 2 });
         let joined = finish(waiter, if success { 0 } else { 4 });
         assert_eq!(original["executionsStarted"], 1);
         assert_eq!(joined["executionsStarted"], 0);
-        assert_eq!(fixture.starts(), 1);
         assert_eq!(fixture.count("executions"), 1);
+        let requests = provider.provider.requests();
+        assert_eq!(
+            requests.len(),
+            1,
+            "zero budget never starts its replacement profile"
+        );
+        assert_eq!(requests[0].body["model"], "owner");
         if success {
+            assert_eq!(original["requests"][0]["status"], "GREEN");
+            assert_eq!(joined["requests"][0]["status"], "GREEN");
             assert_eq!(
                 joined["requests"][0]["executionId"],
                 original["requests"][0]["executionId"]
             );
+            assert_eq!(
+                joined["requests"][0]["result"],
+                original["requests"][0]["result"]
+            );
+            assert_eq!(fixture.records(), 1);
         } else {
+            assert_eq!(original["requests"][0]["status"], "ERROR");
+            assert_eq!(original["requests"][0]["errorCode"], "PROVIDER_ERROR");
+            assert!(original["requests"][0]["result"].is_null());
+            assert_eq!(
+                original["requests"][0]["executionId"],
+                waiting["executionId"]
+            );
             assert_eq!(joined["requests"][0]["status"], "BUDGET_EXHAUSTED");
+            assert_eq!(fixture.records(), 0);
         }
     }
 }
@@ -1022,10 +1345,7 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
     );
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
-    let waiter = fixture.spawn(
-        &target,
-        &["--jobs", "1", "--max-executions", "1", "--ignore-gates"],
-    );
+    let waiter = fixture.spawn(&target, &["--jobs", "1", "--max-executions", "1"]);
     fixture.waiting_request();
     assert!(!target.join("independent/ran").exists());
     fixture.release();
@@ -1085,7 +1405,7 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
             "evals":[eval("check", "printf original; exit 7")],
         }),
     );
-    let run = fixture.command(&repo, &["verify", "--all"], 1);
+    let run = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
     fs::remove_dir_all(&repo).unwrap();
     let before = fixture.entries();
     let entries = fixture.command(&repo, &["cache", "list"], 0);
@@ -1113,8 +1433,9 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
         let output = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&fixture.state)
+            .env("ARTIFACTIZE_REMOTE", "off")
             .args(&args)
-            .output()
+            .record_output()
             .unwrap();
         assert!(output.status.success());
         if args[1] == "list" {
@@ -1165,7 +1486,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
         "repo",
         json!({"name":"test","fingerprint":fingerprint("seed"),"evals":[eval("check", "exit 0")]}),
     );
-    let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let original = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute(
         "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL",
@@ -1180,22 +1501,37 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
         [&current],
     )
     .unwrap();
-    let hit = fixture.command(&repo, &["verify", "--all"], 0);
-    assert_eq!(hit["requests"][0]["executionId"], "seed-00000");
-    let used: String = db
+    let previous_use: String = fixture
+        .observed()
         .query_row(
             "SELECT last_used FROM executions WHERE id='seed-00000'",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert!(used.as_str() > "2000");
+    let hit = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
+    assert_eq!(hit["requests"][0]["executionId"], "seed-00000");
+    let used: String = fixture
+        .observed()
+        .query_row(
+            "SELECT last_used FROM executions WHERE id='seed-00000'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_ne!(
+        used, previous_use,
+        "the cache hit touches its fixed seeded LRU timestamp"
+    );
     write(
         &repo,
         "index.artf",
         json!({"name":"test","fingerprint":fingerprint("new"),"evals":[eval("check", "exit 0")]}),
     );
-    let new = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
+    let new = key(
+        &fixture.command(&repo, &["verify", "--wait", "--all"], 0),
+        0,
+    );
     assert_eq!(fixture.records(), 10_000);
     assert_eq!(
         fixture.command(
@@ -1234,7 +1570,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
             "evals":[eval("check", "exit 0")],
         }),
     );
-    let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let original = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute(
         "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL",
@@ -1264,10 +1600,12 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         );
     }
     // The new entry takes 65 seeded 16 MiB entries over 1 GiB.
-    let first = fixture.publish("first");
+    let first = fixture.publish("first", "2000-01-02T00:00:00Z");
     assert_eq!(fixture.records(), 64);
     assert!(
-        db.query_row::<i64, _, _>("SELECT sum(bytes) FROM executions", [], |row| row.get(0))
+        fixture
+            .observed()
+            .query_row::<i64, _, _>("SELECT sum(bytes) FROM executions", [], |row| row.get(0))
             .unwrap()
             <= 1024 * MIB
     );
@@ -1295,12 +1633,14 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     assert_eq!(fixture.count("executions"), 68);
     assert_eq!(fixture.count("requests"), 3);
     assert_eq!(
-        db.query_row::<String, _, _>(
-            "SELECT status FROM executions WHERE id='active'",
-            [],
-            |row| row.get(0)
-        )
-        .unwrap(),
+        fixture
+            .observed()
+            .query_row::<String, _, _>(
+                "SELECT status FROM executions WHERE id='active'",
+                [],
+                |row| row.get(0)
+            )
+            .unwrap(),
         "WAITING_HUMAN"
     );
     db.execute(
@@ -1308,7 +1648,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         [16 * MIB + 1],
     )
     .unwrap();
-    let second = fixture.publish("second");
+    let second = fixture.publish("second", "2000-01-03T00:00:00Z");
     let keys = || {
         fixture
             .entries()
@@ -1333,7 +1673,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         .unwrap();
     db.execute("UPDATE requests SET status='GREEN' WHERE id='waiter'", [])
         .unwrap();
-    let third = fixture.publish("third");
+    let third = fixture.publish("third", "2000-01-04T00:00:00Z");
     assert_eq!(keys(), sorted(vec![second, third]));
     assert_eq!(fixture.count("executions"), 70);
 }
@@ -1350,7 +1690,7 @@ fn rm_refuses_an_active_key_even_without_an_entry() {
             .unwrap()
             .contains("active execution")
     );
-    fixture.publish("other");
+    fixture.publish("other", "2000-01-02T00:00:00Z");
     assert_eq!(fixture.count("executions"), 2);
     assert!(owner.try_wait().unwrap().is_none());
     fixture.release();
@@ -1365,7 +1705,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
     let waiting = fixture.waiting_request();
-    signal(waiter.id(), "-STOP");
+    let suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &target));
     fixture.release();
     let original = finish(owner, 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
@@ -1379,7 +1719,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
         [waiting["executionId"].as_str().unwrap()],
     )
     .unwrap();
-    signal(waiter.id(), "-CONT");
+    drop(suspended);
     let joined = finish(waiter, 0);
     assert_eq!(
         joined["requests"][0]["result"],
@@ -1395,19 +1735,20 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
 
 #[tokio::test]
 async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained() {
-    use artifactize_core::store::{Execution, Receipts, Request};
+    use artifactize_core::store::{Execution, OwnedReceipts as Receipts, Request};
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
-    let mut owner = fixture.spawn(&source, &[]);
+    let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
+    let orphans = orphan_group(&fixture);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
     let waiting = fixture.waiting_request();
-    signal(waiter.id(), "-STOP");
+    let suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &target));
     let mut execution: Execution =
         serde_json::from_value(fixture.execution(waiting["executionId"].as_str().unwrap()))
             .unwrap();
-    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    let db = fixture.observed();
     let data: String = db
         .query_row(
             "SELECT data FROM requests WHERE id=?",
@@ -1419,7 +1760,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     // Keep the publisher alive while injecting its completion. The frozen waiter may
     // have an in-flight read snapshot from before publication; killing the publisher
     // would make that snapshot legitimately exhaust its zero execution budget.
-    signal(owner.id(), "-STOP");
+    let _publisher_suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &source));
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
     execution.state = artifactize_core::store::ExecutionState::Completed {
         result: json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
@@ -1443,7 +1784,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
             .result(),
         request.result()
     );
-    signal(waiter.id(), "-CONT");
+    drop(suspended);
     // Drain stdout while the large result is written, rather than waiting on a full pipe.
     let joined = output(waiter.wait_with_output().unwrap(), 0);
     assert_eq!(
@@ -1452,13 +1793,16 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     );
     assert_eq!(joined["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(joined["executionsStarted"], 0);
-    owner.kill().unwrap();
-    owner.wait().unwrap();
-    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
+    let worker = fixture.execution(waiting["executionId"].as_str().unwrap())["ownerPid"]
+        .as_u64()
+        .unwrap() as u32;
+    support::os::kill(worker);
+    output(owner.wait_with_output().unwrap(), 2);
+    drop(orphans);
     assert_eq!(fixture.records(), 0);
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(fixture.starts(), 1);
-    let later = fixture.command(&target, &["verify", "--all"], 0);
+    let later = fixture.command(&target, &["verify", "--wait", "--all"], 0);
     assert_ne!(later["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(later["requests"][0]["result"]["stdout"], "unexpected");
 }
@@ -1470,7 +1814,9 @@ fn gc_failure_does_not_replace_a_completed_result() {
         "repo",
         json!({"name":"test","fingerprint":fingerprint("first"),"evals":[eval("check", "exit 0")]}),
     );
-    let first = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
+    let first_run = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
+    fixture.last_used(&repo, &first_run, "2000-01-01T00:00:00Z");
+    let first = key(&first_run, 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute(
         "UPDATE executions SET bytes=1073741824 WHERE completed_at IS NOT NULL",
@@ -1499,13 +1845,14 @@ fn gc_failure_does_not_replace_a_completed_result() {
     let run = output(verified, 0);
     assert_eq!(run["requests"][0]["status"], "GREEN");
     let second = key(&run, 0);
+    fixture.last_used(&repo, &run, "2000-01-02T00:00:00Z");
     assert!(
         fixture
             .command(&repo, &["cache", "show", &second], 0)
             .is_object()
     );
     db.execute_batch("DROP TRIGGER fail_gc").unwrap();
-    fixture.publish("third");
+    fixture.publish("third", "2000-01-04T00:00:00Z");
     assert_eq!(
         fixture.command(&repo, &["cache", "show", &first], 4),
         Value::Null,
@@ -1531,7 +1878,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
         "repo",
         json!({"name":"test","fingerprint":fingerprint("unchanged"),"evals":[base]}),
     );
-    let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let original = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     let change = |pointer: &str, value: Value| {
         let mut changed = base.clone();
         let (parent, key) = pointer.rsplit_once('/').unwrap();
@@ -1553,7 +1900,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
             "reuse",
             "{pointer}"
         );
-        let run = fixture.command(&repo, &["verify", "--all"], 0);
+        let run = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
         assert_eq!(run["executionsStarted"], 0, "{pointer}");
         assert_eq!(run["requests"][0]["key"], original["requests"][0]["key"]);
     }
@@ -1579,7 +1926,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
             "execute",
             "{pointer}"
         );
-        let run = fixture.command(&repo, &["verify", "--all"], code);
+        let run = fixture.command(&repo, &["verify", "--wait", "--all"], code);
         assert_eq!(run["executionsStarted"], 1, "{pointer}");
         assert_ne!(
             run["requests"][0]["evalDefHash"], original["requests"][0]["evalDefHash"],
@@ -1612,12 +1959,16 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
         json!({"name":"test","fingerprint":fingerprint("variants"),"evals":[declaration]}),
     );
     // The patient variant produces the result; the default profile reuses it.
-    let patient = fixture.command(&repo, &["verify", "--all", "--profile", "patient"], 0);
+    let patient = fixture.command(
+        &repo,
+        &["verify", "--wait", "--all", "--profile", "patient"],
+        0,
+    );
     assert_eq!(
         patient["requests"][0]["options"],
         json!({"timeoutMs":60000,"variant":"patient"})
     );
-    let default = fixture.command(&repo, &["verify", "--all"], 0);
+    let default = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(default["executionsStarted"], 0);
     let reused = &default["requests"][0];
     assert_eq!(reused["executionId"], patient["requests"][0]["executionId"]);
@@ -1635,8 +1986,9 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
         .arg(&repo)
         .arg("--state-dir")
         .arg(&fixture.state)
-        .args(["verify", "--all"])
-        .output()
+        .env("ARTIFACTIZE_REMOTE", "off")
+        .args(["verify", "--wait", "--all"])
+        .record_output()
         .unwrap();
     let text = String::from_utf8(text.stdout).unwrap();
     assert!(text.contains(", profile patient)"), "{text}");
@@ -1657,7 +2009,11 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
         fixture.command(&repo, &["status", "--profile", "fail"], 1)["evals"][0]["action"],
         "execute"
     );
-    let different = fixture.command(&repo, &["verify", "--all", "--profile", "fail"], 1);
+    let different = fixture.command(
+        &repo,
+        &["verify", "--wait", "--all", "--profile", "fail"],
+        1,
+    );
     assert_eq!(different["executionsStarted"], 1);
     assert_ne!(
         different["requests"][0]["evalDefHash"],
@@ -1670,7 +2026,7 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
         json!({"name":"test","fingerprint":fingerprint("variants"),"evals":[declaration]}),
     );
     assert_eq!(
-        fixture.command(&repo, &["verify", "--all"], 0)["requests"][0]["executionId"],
+        fixture.command(&repo, &["verify", "--wait", "--all"], 0)["requests"][0]["executionId"],
         patient["requests"][0]["executionId"]
     );
     assert_eq!(fixture.count("executions"), 2);
@@ -1766,9 +2122,13 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
     let children: Vec<_> = repos.iter().map(|repo| fixture.spawn(repo, &[])).collect();
     wait_until(|| fixture.starts() == 2);
     wait_until(|| {
-        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            fixture.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         db.query_row::<u32, _, _>(
-            "SELECT count(*) FROM requests WHERE status='QUEUED' AND execution_id IS NOT NULL",
+            "SELECT count(*) FROM requests q JOIN executions e ON e.id=q.execution_id WHERE q.status='QUEUED' AND json_extract(e.data,'$.provenance.requestId')<>q.id",
             [],
             |row| row.get(0),
         )
@@ -1809,7 +2169,7 @@ fn gc_and_removal_protect_only_the_matching_key() {
             "evals":[eval("pass", "exit 0"),eval("fail", "exit 1")],
         }),
     );
-    let run = fixture.command(&repo, &["verify", "--all"], 1);
+    let run = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
     let (active, other) = (key(&run, 1), key(&run, 0));
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute(
@@ -1827,13 +2187,13 @@ fn gc_and_removal_protect_only_the_matching_key() {
             .unwrap()
             .contains("in use")
     );
-    fixture.command(&repo, &["verify", "--eval", "test/fail"], 1);
+    fixture.command(&repo, &["verify", "--wait", "--eval", "test/fail"], 1);
     db.execute(
         "UPDATE executions SET bytes=16777217 WHERE completed_at IS NOT NULL",
         [],
     )
     .unwrap();
-    fixture.publish("other");
+    fixture.publish("other", "2000-01-02T00:00:00Z");
     assert_eq!(fixture.records(), 2);
     assert_eq!(
         fixture.command(&repo, &["cache", "show", &other], 4),

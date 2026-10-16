@@ -1,18 +1,23 @@
 //! Agent turn retries, error codes and stopping a backend, against loopback fakes.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -20,14 +25,15 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 /// A workspace of Artifacts, each with one Agent eval and its own fingerprint.
 struct Project {
-    _root: tempfile::TempDir,
+    // Retain inputs if releasing any durable worker fails, including on assertion unwind.
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Project {
     fn new(evals: &[(&str, Value)]) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         for (name, profile) in evals {
             let folder = repo.join(name);
@@ -43,8 +49,10 @@ impl Project {
             )
             .unwrap();
         }
+        let state = root.path().join("state");
+        root.track(&state, &repo);
         let project = Self {
-            state: root.path().join("state"),
+            state,
             repo,
             _root: root,
         };
@@ -63,13 +71,24 @@ impl Project {
     }
 
     fn verify(&self, provider: &FakeProvider, args: &[&str], json: bool) -> Output {
-        let mut command = Command::new(support::os::cli());
+        self.verify_with_cli(&support::os::cli(), provider, args, json)
+    }
+
+    fn verify_with_cli(
+        &self,
+        executable: &std::path::Path,
+        provider: &FakeProvider,
+        args: &[&str],
+        json: bool,
+    ) -> Output {
+        let mut command = Command::new(executable);
         command
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
             .arg("verify")
+            .arg("--wait")
             .args(args)
             .env("ARTIFACTIZE_REMOTE", "off")
             .env("OPENAI_API_KEY", "fake-openai-key")
@@ -82,7 +101,7 @@ impl Project {
         if json {
             command.arg("--json");
         }
-        command.output().unwrap()
+        command.record_output().unwrap()
     }
 
     fn run(&self, provider: &FakeProvider, args: &[&str], code: i32) -> Value {
@@ -228,6 +247,42 @@ fn a_later_turn_retries_transient_failures_and_replays_the_same_conversation() {
 }
 
 #[test]
+fn responses_stream_overload_retries_without_output_and_keeps_the_same_request() {
+    for backend in ["codex", "openai"] {
+        let project = Project::new(&[("notes", agent(backend))]);
+        // The real error arrives in SSE under HTTP 200, not an HTTP 5xx response.
+        let events = vec![json!({
+            "type":"error",
+            "code":"server_is_overloaded",
+            "message":"Our servers are currently overloaded. Please try again later.",
+            "param":null,
+            "sequence_number":0,
+        })];
+        let failure = if backend == "codex" {
+            codex::stream(events)
+        } else {
+            Reply::Events(events)
+        };
+        let provider = flaky(|_| true, vec![failure]);
+        let run = project.run(&provider, &["--all"], 0);
+        let review = request(&run, "notes/review");
+        assert_eq!(review["status"], "GREEN");
+        assert_eq!(
+            attempts(review),
+            [
+                (1, 1, json!("TRANSIENT")),
+                (1, 2, Value::Null),
+                (2, 1, Value::Null)
+            ]
+        );
+        let calls = provider.requests();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0].body, calls[1].body);
+        assert!(replayed(&calls[2]));
+    }
+}
+
+#[test]
 fn every_backend_retries_and_reports_exhausted_failures_by_code() {
     // Anthropic overloads, then passes; codex fails at its second turn, then passes.
     let project = Project::new(&[("claude", agent("anthropic")), ("luna", agent("codex"))]);
@@ -368,11 +423,11 @@ fn failures_carry_specific_error_codes() {
         .arg(&project.repo)
         .arg("--state-dir")
         .arg(&project.state)
-        .args(["verify", "--all", "--force", "--json"])
+        .args(["verify", "--wait", "--all", "--force", "--json"])
         .env("ARTIFACTIZE_REMOTE", "off")
         .env("ARTIFACTIZE_OPENAI_BASE_URL", invalid.openai_base())
         .env_remove("OPENAI_API_KEY")
-        .output()
+        .record_output()
         .unwrap();
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(request(&run, "notes/review")["errorCode"], "AUTHENTICATION");
@@ -435,7 +490,7 @@ fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
         .arg("--state-dir")
         .arg(&project.state)
         .args(["run", "show", run["id"].as_str().unwrap()])
-        .output()
+        .record_output()
         .unwrap();
     let shown: Value = serde_json::from_slice(&shown.stdout).unwrap();
     assert_eq!(shown["stoppedBackends"], run["stoppedBackends"]);
@@ -451,6 +506,136 @@ fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
         "{text}"
     );
     assert_eq!(models.load(Ordering::SeqCst), 2);
+}
+
+/// Cargo's published path can be replaced while another fixture's caller and worker run.
+/// A private candidate must keep serving later Runs, including their durable self-spawn.
+#[test]
+fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
+    let root = support::os::tempdir();
+    let source = root.path().join(support::os::cli().file_name().unwrap());
+    fs::copy(support::os::cli(), &source).unwrap();
+    let candidate = support::os::OwnedExecutable::copy_from(&source).unwrap();
+    let project = Project::new(&[("notes", agent("openai"))]);
+    let release = support::Gate::default();
+    let (arrived, admitted) = std::sync::mpsc::sync_channel(1);
+    let provider = FakeProvider::start({
+        let release = release.clone();
+        move |request| {
+            if !replayed(request) {
+                arrived.send(()).unwrap();
+                release.wait();
+            }
+            pass(request)
+        }
+    });
+    thread::scope(|scope| {
+        let running =
+            scope.spawn(|| project.verify_with_cli(candidate.path(), &provider, &["--all"], true));
+        // The provider request proves the real durable worker is alive, not just admitted.
+        // Release on assertion unwind as well, before the scoped caller is joined.
+        struct ReleaseOnExit(support::Gate);
+        impl Drop for ReleaseOnExit {
+            fn drop(&mut self) {
+                self.0.open();
+            }
+        }
+        let release_on_exit = ReleaseOnExit(release.clone());
+        admitted
+            .recv_timeout(support::os::patience(Duration::from_secs(20)))
+            .expect("the candidate's durable worker reached the provider");
+        fs::remove_file(&source).unwrap();
+        fs::write(&source, "replacement is deliberately not the declared CLI").unwrap();
+        release.open();
+        drop(release_on_exit);
+        let output = running.join().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(request(&run, "notes/review")["status"], "GREEN");
+    });
+    let working = FakeProvider::start(pass);
+    let output = project.verify_with_cli(candidate.path(), &working, &["--all", "--force"], true);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let review = request(&run, "notes/review");
+    assert_eq!(review["status"], "GREEN");
+    assert!(review["executionId"].is_string(), "a new worker executed");
+    let directory = candidate.path().parent().unwrap().to_owned();
+    // A terminal receipt can precede worker teardown; release the Run owner before its
+    // executable, including on Windows where a running executable cannot be unlinked.
+    drop(project);
+    drop(candidate);
+    assert!(!directory.exists(), "the scoped candidate was cleaned up");
+}
+
+#[test]
+fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
+    const RECORD: &str = "ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD";
+    const PANIC: &str = "ARTIFACTIZE_TEST_CLI_DIRECTORY_PANIC";
+    let root = support::os::tempdir();
+    for mode in ["success", "unwind", "exit"] {
+        let record = root.path().join(format!("candidate-{mode}"));
+        let mut command = support::os::test_command(
+            "owned_cli_exit_probe",
+            &[
+                (RECORD, record.as_os_str().to_owned()),
+                (PANIC, mode.into()),
+            ],
+        );
+        command.arg("--ignored");
+        let output = support::os::finish(support::os::start(&mut command), "owned CLI exit");
+        assert_eq!(
+            output.status.success(),
+            mode != "unwind",
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let directory = PathBuf::from(fs::read_to_string(record).unwrap());
+        assert!(!directory.exists(), "the process-owned CLI was cleaned up");
+    }
+}
+
+#[test]
+#[ignore = "launched by the owned CLI exit lifecycle test"]
+fn owned_cli_exit_probe() {
+    let executable = support::os::cli();
+    assert!(
+        Command::new(&executable)
+            .arg("--version")
+            .status()
+            .unwrap()
+            .success(),
+        "the published private CLI is executable"
+    );
+    fs::write(
+        support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD").unwrap(),
+        support::os::path_text(executable.parent().unwrap()),
+    )
+    .unwrap();
+    match support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_PANIC")
+        .unwrap()
+        .into_string()
+        .unwrap()
+        .as_str()
+    {
+        "success" => {}
+        "unwind" => panic!("scripted test unwind"),
+        "exit" => std::process::exit(0),
+        mode => panic!("unknown CLI exit mode: {mode}"),
+    }
 }
 
 #[test]
@@ -518,34 +703,35 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         .arg(&project.repo)
         .arg("--state-dir")
         .arg(&project.state)
-        .args(["verify", "--all", "--jobs", "3", "--json"])
+        .args(["verify", "--wait", "--all", "--jobs", "3", "--json"])
         .env("ARTIFACTIZE_REMOTE", "off")
         .env("OPENAI_API_KEY", "fake-openai-key")
         .env("ANTHROPIC_API_KEY", "fake-anthropic-key")
         .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
-        .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let child = command.spawn().unwrap();
-    let database = || rusqlite::Connection::open(project.state.join("state.sqlite")).ok();
+        .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base());
+    let child = Child::new(
+        support::os::start(&mut command),
+        &project.state,
+        &project.repo,
+    );
+    let database = || {
+        rusqlite::Connection::open_with_flags(
+            project.state.join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .ok()
+    };
     let waiting_for_slot = || {
         database().is_some_and(|db| {
             db.query_row(
-                "SELECT count(*) FROM requests WHERE json_extract(data,'$.evalId')='b/review' AND json_extract(data,'$.blockedReason') LIKE 'Waiting for a free openai slot%'",
-                [],
-                |row| row.get::<_, u32>(0),
+                "SELECT json_extract(data,'$.blockedReason') FROM requests WHERE run_id=? AND eval_id='b/review'",
+                [child.run()],
+                |row| row.get::<_, Option<String>>(0),
             )
-            .is_ok_and(|count| count == 1)
+            .is_ok_and(|reason| reason.is_some_and(|reason| reason.starts_with("Waiting for a free openai slot")))
         })
     };
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
-    while !waiting_for_slot() {
-        assert!(
-            Instant::now() < deadline,
-            "b never waited for the openai slot"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    support::os::wait_until(Duration::from_secs(20), waiting_for_slot);
     release.open();
     let output = child.wait_with_output().unwrap();
     assert_eq!(
@@ -564,21 +750,12 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     assert!(skipped["executionId"].is_null());
     assert_eq!(request(&run, "c/review")["status"], "GREEN");
     assert_eq!(models.load(Ordering::SeqCst), 1);
-    let slots: u32 = database()
-        .unwrap()
-        .query_row(
-            "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(slots, 0);
-}
-
-/// Yield to runnable futures without letting a paused runtime auto-advance its timers.
-async fn poll_ready() {
-    for _ in 0..32 {
-        tokio::task::yield_now().await;
+    // A fresh Run can admit both openai reviews under the same one-slot limit. This proves
+    // capacity was released through the public execution seam, not private row counts.
+    let working = FakeProvider::start(pass);
+    let next = project.run(&working, &["--all", "--force"], 0);
+    for eval in ["a/review", "b/review", "c/review"] {
+        assert_eq!(request(&next, eval)["status"], "GREEN", "{next}");
     }
 }
 
@@ -613,7 +790,7 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
         ),
         "fixture".into(),
     );
-    let running = tokio::spawn(async move {
+    let mut running = Box::pin(async move {
         let cancellation = tokio_util::sync::CancellationToken::new();
         let mut attempts = Vec::new();
         let result = client
@@ -629,18 +806,16 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
             .await;
         (result, attempts)
     });
-    poll_ready().await;
+    // Poll the public turn future to its actual pending retry, not a scheduler yield count.
+    assert!(futures_util::poll!(&mut running).is_pending());
     assert_eq!(captured.requests().len(), 1);
     tokio::time::advance(Duration::from_millis(699)).await;
-    poll_ready().await;
+    assert!(futures_util::poll!(&mut running).is_pending());
     assert_eq!(captured.requests().len(), 1, "retry ran before Retry-After");
     tokio::time::advance(Duration::from_millis(1)).await;
-    poll_ready().await;
-    assert!(
-        running.is_finished(),
-        "retry did not run when Retry-After elapsed"
-    );
-    let (_, attempts) = running.await.unwrap();
+    let std::task::Poll::Ready((_, attempts)) = futures_util::poll!(&mut running) else {
+        panic!("retry did not finish at the declared virtual deadline");
+    };
     assert_eq!(attempts.len(), 2);
     let calls = captured.requests();
     assert_eq!(calls.len(), 2);
@@ -672,7 +847,7 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
         ),
         "fixture".into(),
     );
-    let running = tokio::spawn(async move {
+    let mut running = Box::pin(async move {
         let cancellation = tokio_util::sync::CancellationToken::new();
         client
             .turn(
@@ -686,12 +861,10 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
             )
             .await
     });
-    poll_ready().await;
-    assert!(
-        running.is_finished(),
-        "an impossible retry waited instead of failing immediately"
-    );
-    let error = running.await.unwrap().unwrap_err();
+    let std::task::Poll::Ready(result) = futures_util::poll!(&mut running) else {
+        panic!("an impossible retry waited instead of failing immediately");
+    };
+    let error = result.unwrap_err();
     assert!(
         error.message.contains("past the review deadline"),
         "{error:?}"

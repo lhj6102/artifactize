@@ -108,7 +108,7 @@ pub enum ToolCheckStage {
 #[derive(Debug, Serialize)]
 pub struct ToolCheck {
     pub stage: ToolCheckStage,
-    pub tool: Option<String>,
+    pub tool: Option<crate::config::ToolName>,
     pub ok: bool,
     pub message: Option<String>,
 }
@@ -120,11 +120,16 @@ pub enum ToolCheckResult {
 }
 
 impl ToolCheckReport {
-    fn check(&mut self, stage: ToolCheckStage, name: Option<&str>, result: Result<(), String>) {
+    fn check(
+        &mut self,
+        stage: ToolCheckStage,
+        name: Option<&crate::config::ToolName>,
+        result: Result<(), String>,
+    ) {
         self.ok &= result.is_ok();
         self.checks.push(ToolCheck {
             stage,
-            tool: name.map(str::to_owned),
+            tool: name.cloned(),
             ok: result.is_ok(),
             message: result.err(),
         });

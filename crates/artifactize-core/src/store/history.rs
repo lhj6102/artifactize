@@ -42,9 +42,9 @@ pub struct Entry {
     pub fingerprint: Option<crate::types::Fingerprint>,
     pub completed_at: Option<crate::types::Timestamp>,
     /// `user@host` of the machine that produced the result.
-    pub producer: Option<String>,
+    pub producer: Option<crate::types::ProducerId>,
     /// The selected profile variant, when the result came from one.
-    pub variant: Option<String>,
+    pub variant: Option<crate::config::ProfileVariantName>,
     /// The remote store URL of a mirrored record.
     pub origin: Option<crate::types::StoreUrl>,
     /// How many records the key holds.
@@ -78,8 +78,11 @@ async fn open(state: &Path, writable: bool) -> Result<Option<NotifyingConnection
             schema_initialized(&transaction)
         })
         .await
-        .map_err(|e| e.to_string())?;
-    Ok(initialized.then_some(connection))
+        .map_err(|e| e.to_string());
+    match initialized {
+        Ok(true) => Ok(Some(connection)),
+        result => connection.finish(result.map(|_| None)).await,
+    }
 }
 
 /// The latest record of every key, or with `history` every record, latest first per key.
@@ -87,18 +90,20 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
     let Some(connection) = open(state, false).await? else {
         return Ok(Vec::new());
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
-                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank,e.data FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
+                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank,e.data FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
             ))?;
             Ok(statement
                 .query_map([history], |row| {
                     let id: crate::types::ExecutionId = row.get(2)?;
-                    let data: String = row.get(15)?;
-                    if super::unreadable::evidence::<Execution>("execution", &data).is_none() {
+                    let data: String = row.get(13)?;
+                    let Some(execution) =
+                        super::unreadable::evidence::<Execution>("execution", &data)
+                    else {
                         return Ok(None);
-                    }
+                    };
                     Ok(Some(Entry {
                         key: row.get(0)?,
                         eval_def_hash: row.get(1)?,
@@ -108,19 +113,20 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
                         eval_id: row.get(5)?,
                         fingerprint: row.get(6)?,
                         completed_at: row.get(7)?,
-                        producer: row.get(8)?,
-                        variant: row.get(9)?,
-                        origin: row.get(10)?,
-                        records: row.get(11)?,
-                        bytes: row.get(12)?,
-                        last_used: row.get(13)?,
+                        producer: execution.producer.map(|producer| producer.name),
+                        variant: execution.options.variant,
+                        origin: row.get(8)?,
+                        records: row.get(9)?,
+                        bytes: row.get(10)?,
+                        last_used: row.get(11)?,
                     }))
                 })?
                 .filter_map(|row| row.transpose())
                 .collect::<Result<_, _>>()?)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// A key's records, latest first; without `history` only the latest.
@@ -129,9 +135,9 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
         return Ok(Vec::new());
     };
     let Ok(key) = key.parse::<crate::types::ReuseKey>() else {
-        return Ok(Vec::new());
+        return connection.finish(Ok(Vec::new())).await;
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
                 "SELECT e.data FROM executions e WHERE e.key=? AND {RECORD} ORDER BY {LATEST} LIMIT ?"
@@ -147,7 +153,8 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
                 .collect()
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// The latest locally produced record (never a mirror) of each key after `after`, in key order.
@@ -159,7 +166,7 @@ pub async fn local(
     let Some(connection) = open(state, false).await? else {
         return Ok(Vec::new());
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
                 "SELECT data FROM (SELECT e.key,e.data,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD} AND json_extract(e.data,'$.origin') IS NULL AND e.key>?) WHERE rank=1 ORDER BY key LIMIT ?"
@@ -179,7 +186,8 @@ pub async fn local(
                 .collect()
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// Remove every record of an unused key from its history, preserving executions and Runs.
@@ -188,9 +196,9 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
         return Ok(false);
     };
     let Ok(key) = key.parse::<crate::types::ReuseKey>() else {
-        return Ok(false);
+        return connection.finish(Ok(false)).await;
     };
-    connection
+    let result = connection
         .call(move |db| -> Result<bool, Error> {
             let transaction =
                 db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -212,7 +220,8 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
             Ok(removed != 0)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
 
 /// The history columns of a completed record: its sortable completion time and size, or

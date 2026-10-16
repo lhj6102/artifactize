@@ -1,6 +1,6 @@
 //! Saved Run listing and bounded wait workflows.
 
-use super::{Context, print_json};
+use super::{Context, INTERRUPTED_EXIT, print_json};
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -9,11 +9,8 @@ use std::{
 use super::{outcome_code, render::WAIT_TIMEOUT_EXIT};
 use std::time::Duration;
 
-/// Match verify's ten-minute Human wait: allow interactive sign-off without an
-/// unbounded CLI wait. A timeout observes the Run; it never cancels its execution.
-const DEFAULT_RUN_WAIT: Duration = crate::project::DEFAULT_HUMAN_WAIT;
-/// Poll often enough for responsive completion without hammering the state database.
-const RUN_POLL_INTERVAL: Duration = Duration::from_millis(200);
+/// An optional run-show bound affects observation only, never the Run lifetime.
+const DEFAULT_RUN_WAIT: Duration = Duration::from_secs(600);
 
 pub(super) async fn list(
     context: Context,
@@ -64,16 +61,28 @@ pub(super) async fn show(
     timeout_ms: Option<Duration>,
 ) -> Result<u8, String> {
     let state = crate::store::state_dir(context.state_dir.as_deref())?;
-    let deadline = tokio::time::Instant::now() + timeout_ms.unwrap_or(DEFAULT_RUN_WAIT);
-    let mut view = crate::store::read_run(&state, &run_id).await?;
-    while wait && view.run.status() == crate::types::RunStatus::Running {
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            break;
+    let initial = crate::store::read_run(&state, &run_id).await?;
+    let runs = crate::runs::Context::new(
+        &initial.run.repo_path,
+        Some(&state),
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+    )?;
+    if wait {
+        let (cancellation, listener) = super::cancellation_listener()?;
+        let result = crate::runs::wait(
+            &runs,
+            &run_id,
+            Some(timeout_ms.unwrap_or(DEFAULT_RUN_WAIT)),
+            cancellation.clone(),
+        )
+        .await;
+        listener.abort();
+        if cancellation.is_cancelled() {
+            return Ok(INTERRUPTED_EXIT);
         }
-        tokio::time::sleep(remaining.min(RUN_POLL_INTERVAL)).await;
-        view = crate::store::read_run(&state, &run_id).await?;
+        result?;
     }
+    let view = crate::runs::view(&runs, &run_id).await?;
     print_json(&crate::query::run_output(
         &view,
         time::OffsetDateTime::now_utc(),
@@ -90,4 +99,16 @@ pub(super) async fn show(
         return Ok(WAIT_TIMEOUT_EXIT);
     }
     Ok(outcome_code(&view.run))
+}
+
+pub(super) async fn cancel(context: Context, id: crate::types::RunId) -> Result<u8, String> {
+    let state = crate::store::state_dir(context.state_dir.as_deref())?;
+    let view = crate::store::read_run(&state, &id).await?;
+    let runs = crate::runs::Context::new(
+        &view.run.repo_path,
+        Some(&state),
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+    )?;
+    print_json(&crate::runs::cancel(&runs, &id).await?)?;
+    Ok(0)
 }

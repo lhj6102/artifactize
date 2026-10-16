@@ -5,7 +5,7 @@ use std::{
     net::Shutdown,
     os::{fd::AsRawFd, unix::net::UnixStream},
     process::ExitStatus,
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock, mpsc},
 };
 
 use process_wrap::tokio::{ChildWrapper, CommandWrap, ProcessGroup};
@@ -158,6 +158,10 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
     command.spawn()
 }
 
+pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
+    spawn_detached(command)
+}
+
 /// The index of `starttime` (field 22 of /proc/PID/stat, see proc(5)) among the fields after
 /// the command name. The name, field 2, is cut off at its closing parenthesis because it may
 /// contain spaces, so the remaining fields start at field 3: 22 - 3 = 19.
@@ -272,17 +276,18 @@ fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo
 /// that this exact byte, not some other write, arrived.
 const GATE_ADMIT: u8 = 1;
 
-pub(crate) struct Gate(
-    Arc<AsyncFd<UnixStream>>,
-    Arc<OnceLock<crate::process::ChildIdentity>>,
-);
+pub(crate) struct Gate {
+    socket: Arc<AsyncFd<UnixStream>>,
+    identity: OnceLock<crate::process::ChildIdentity>,
+    admitted: mpsc::Sender<crate::process::ChildIdentity>,
+}
 
 impl Gate {
     pub async fn pid(&self) -> io::Result<u32> {
         let mut bytes = [0; 4];
         let mut offset = 0;
         while offset < bytes.len() {
-            let mut ready = self.0.readable().await?;
+            let mut ready = self.socket.readable().await?;
             match ready.try_io(|socket| socket.get_ref().read(&mut bytes[offset..])) {
                 Ok(Ok(0)) => return Err(io::ErrorKind::UnexpectedEof.into()),
                 Ok(Ok(count)) => offset += count,
@@ -292,28 +297,40 @@ impl Gate {
         }
         let pid = u32::from_ne_bytes(bytes);
         let identity = crate::process::child_identity(pid)?;
-        let _ = self.1.set(identity);
+        let _ = self.identity.set(identity);
         Ok(pid)
     }
 
     pub fn admit(&self) -> io::Result<()> {
-        self.0.get_ref().write_all(&[GATE_ADMIT])
+        let identity = self.identity.get().ok_or(io::ErrorKind::InvalidInput)?;
+        self.socket.get_ref().write_all(&[GATE_ADMIT])?;
+        // A native spawn is not proof of admission: a pre_exec child killed by
+        // SIGPIPE also closes std's exec-error pipe without reporting an errno.
+        // Publish the saved, inert identity only after opening the gate; the
+        // spawning thread waits for this handoff or for Gate drop to cancel it.
+        self.admitted
+            .send(*identity)
+            .map_err(|_| io::ErrorKind::BrokenPipe.into())
     }
 }
 
 impl Drop for Gate {
     fn drop(&mut self) {
         // shutdown also disconnects the copy held alive by the spawning thread.
-        let _ = self.0.get_ref().shutdown(Shutdown::Both);
+        let _ = self.socket.get_ref().shutdown(Shutdown::Both);
     }
 }
 
 fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
     let (parent, child) = UnixStream::pair()?;
     parent.set_nonblocking(true)?;
-    let identity = Arc::new(OnceLock::new());
-    let gate = Gate(Arc::new(AsyncFd::new(parent)?), identity.clone());
-    let parent = gate.0.clone();
+    let (admitted, admission) = mpsc::channel();
+    let gate = Gate {
+        socket: Arc::new(AsyncFd::new(parent)?),
+        identity: OnceLock::new(),
+        admitted,
+    };
+    let parent = gate.socket.clone();
     // SAFETY: the forked child uses only async-signal-safe syscalls and stack data.
     // Both descriptors stay alive until spawn completes; CLOEXEC closes the child
     // endpoint on exec. Closing the inherited parent endpoint makes EOF meaningful.
@@ -355,16 +372,109 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
     // std spawn waits for exec's error pipe, so it cannot run on the task that
     // opens the gate. Returning a guarded child also covers a dropped join handle.
     let spawning = tokio::task::spawn_blocking(move || {
-        let child = command.spawn()?;
-        // Captured while inert: even an immediately exiting command retains its
-        // original identity, rather than reading a potentially reused PID here.
-        let group = *identity.get().expect("admitted child identity");
-        Ok(Child {
-            child,
-            group: Some(group),
-        })
+        let spawned = command.spawn();
+        // Close the parent's captured child endpoint before awaiting admission.
+        // If pre_exec died without reporting an errno, Gate::pid must see EOF
+        // rather than wait on this copy of the socket for its own cancellation.
+        drop(command);
+        let mut child = spawned?;
+        match admission.recv() {
+            Ok(group) => Ok(Child {
+                child,
+                group: Some(group),
+            }),
+            Err(_) => {
+                // With no admission byte, a successful native spawn means the
+                // pre_exec child died and closed the exec-error pipe. It never
+                // executed user code or forked descendants. Reap its owned handle,
+                // without inventing an identity or signalling a numeric PGID.
+                tokio::runtime::Handle::current().block_on(child.inner_mut().wait())?;
+                Err(io::Error::from_raw_os_error(libc::ECANCELED))
+            }
+        }
     });
     Ok((gate, spawning))
+}
+
+/// Detached Run workers own a session, including preparation commands that have no request
+/// row yet. Recover all its groups, not just the worker's group. The saved start identity
+/// excludes a reused session leader; group IDs remain reserved while members refer to them.
+pub(crate) fn kill_saved_session(leader: crate::process::ChildIdentity) -> io::Result<()> {
+    match process_start_time(leader.pid.get()) {
+        Ok(start) if start != leader.start_time => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let session = i32::try_from(leader.pid.get()).map_err(|_| io::ErrorKind::InvalidInput)?;
+    let mut groups = std::collections::BTreeMap::new();
+    for pid in process_ids()? {
+        if pid <= 0 {
+            continue;
+        }
+        let Ok(member_start) = process_start_time(pid as u32) else {
+            continue;
+        };
+        // SAFETY: these read-only queries take a PID; vanished members return -1.
+        let (sid, group) = unsafe { (libc::getsid(pid), libc::getpgid(pid)) };
+        if sid != session || group <= 0 {
+            continue;
+        }
+        let start = match process_start_time(group as u32) {
+            Ok(start) => start,
+            // An orphaned group has no leader, but its members still reserve its ID.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
+            Err(error) => return Err(error),
+        };
+        if process_start_time(pid as u32).ok() == Some(member_start) {
+            groups.insert(group, start);
+        }
+    }
+    for (group, start_time) in groups {
+        if process_start_time(leader.pid.get()).is_ok_and(|start| start != leader.start_time) {
+            return Ok(());
+        }
+        // Reuse identity checks and Darwin's zombie-only group handling too.
+        kill_saved_group(crate::process::ChildIdentity {
+            pid: crate::process::ProcessId::new(group as u32),
+            start_time,
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn process_ids() -> io::Result<Vec<i32>> {
+    Ok(std::fs::read_dir("/proc")?
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+        .collect())
+}
+#[cfg(target_os = "macos")]
+fn process_ids() -> io::Result<Vec<i32>> {
+    // Bound the same kernel enumeration cost as the existing group-cleanup query.
+    const MAX_PID_BYTES: i32 = 16 * 1024 * 1024;
+    // SAFETY: a null buffer asks libproc for the PID count without writing records.
+    let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    if count <= 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let bytes = count
+        .checked_mul(std::mem::size_of::<i32>() as i32)
+        .ok_or_else(|| io::Error::other("process enumeration size overflow"))?;
+    if bytes > MAX_PID_BYTES {
+        return Err(io::Error::other("process enumeration exceeds 16 MiB"));
+    }
+    let mut pids = vec![0; count as usize];
+    // SAFETY: the aligned PID buffer has the queried byte capacity; truncation is rejected.
+    let read = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
+    if read < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if read >= count {
+        return Err(io::Error::other("incomplete process enumeration"));
+    }
+    pids.truncate(read as usize);
+    Ok(pids)
 }
 
 /// Recover only the saved group, never a reused leader PID. An absent leader can
@@ -416,6 +526,7 @@ mod tests {
     use process_wrap::tokio::ProcessGroup;
 
     use super::*;
+    use crate::test_os::BeforeIdentity;
 
     // Darwin killpg excludes zombies and returns EPERM for a zombie-only group.
     // Other Unix kernels already accept this signal; their cleanup tests cover it.
@@ -466,6 +577,48 @@ mod tests {
             1,
             "a cleaned group must never be signalled again"
         );
+    }
+
+    #[tokio::test]
+    async fn disconnect_before_identity_publication_cancels_and_reaps_native_child() {
+        let mut command = Command::new(crate::test_os::true_program());
+        command.env_clear().stdin(Stdio::null());
+        let mut checkpoint = BeforeIdentity::hold(&mut command);
+        let (gate, spawning) = spawn_gated(command).unwrap();
+        let pid = checkpoint.pid().await;
+        // The native child exists, but it cannot publish its PID to the gate until
+        // released. Its PID write now meets a disconnected socket and SIGPIPE.
+        drop(gate);
+        checkpoint.release().await;
+        let error = spawning
+            .await
+            .expect("pre-admission cancellation must not panic")
+            .err()
+            .expect("an unadmitted native child must not be returned");
+        assert_eq!(error.raw_os_error(), Some(libc::ECANCELED));
+        assert!(crate::test_os::gone(pid), "the native child must be reaped");
+    }
+
+    #[tokio::test]
+    async fn native_death_before_identity_publication_closes_pid_observation_and_reaps() {
+        let mut command = Command::new(crate::test_os::true_program());
+        command.env_clear().stdin(Stdio::null());
+        let mut checkpoint = BeforeIdentity::hold(&mut command);
+        let (gate, spawning) = spawn_gated(command).unwrap();
+        let pid = checkpoint.pid().await;
+        crate::test_os::kill(pid);
+        // The parent's captured child endpoint must be closed after native spawn
+        // returns, or PID observation would never learn that this child died.
+        let error = gate.pid().await.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        drop(gate);
+        let error = spawning
+            .await
+            .expect("pre-admission death must not panic")
+            .err()
+            .expect("an unadmitted native child must not be returned");
+        assert_eq!(error.raw_os_error(), Some(libc::ECANCELED));
+        assert!(crate::test_os::gone(pid), "the native child must be reaped");
     }
 
     #[tokio::test]

@@ -82,7 +82,7 @@ describe("Settings", () => {
     expect((await screen.findByTestId("key-openai")).textContent).toBe("Set");
     expect(screen.getByTestId("key-anthropic").textContent).toBe("Not set");
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in"));
-    expect(screen.getByTestId("remote-status").textContent).toBe("No remote review store is configured.");
+    expect((await screen.findByTestId("remote-status")).textContent).toBe("No remote review store is configured.");
     expect(screen.queryByRole("textbox", { name: /key/i })).toBeNull();
   });
 
@@ -157,6 +157,7 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Sign in to the store" }));
     expect(token.value).toBe("");
     await screen.findByText("Invalid or revoked token.");
+    await waitFor(() => expect(screen.getByRole("region", { name: "Shared remote review store" }).getAttribute("aria-busy")).toBe("false"));
     expect(document.body.innerHTML).not.toContain(TOKEN);
 
     await fireEvent.input(token, { target: { value: TOKEN } });
@@ -193,11 +194,18 @@ describe("Settings", () => {
     renderHosted(Settings, { active: true });
     await screen.findByTestId("remote-principal");
     slow = true;
+    const store = screen.getByRole("region", { name: "Shared remote review store" });
+    await waitFor(() => expect(store.getAttribute("aria-busy")).toBe("false"));
     await fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+    await waitFor(() => expect(store.getAttribute("aria-busy")).toBe("true"));
     await fireEvent.click(screen.getByRole("button", { name: "Sign out of the store" }));
     await screen.findByText(/Signed out of the remote review store/);
+    // Signing out finished, but the older check still owns an outstanding UI operation.
+    expect(store.getAttribute("aria-busy")).toBe("true");
     answer(signedIn);
-    await new Promise((done) => setTimeout(done, 20));
+    // The normal remoteCall finally clears the rendered busy state only after it has
+    // accepted or discarded the answer. Observe that boundary without replacing call().
+    await waitFor(() => expect(store.getAttribute("aria-busy")).toBe("false"));
     expect(screen.getByTestId("remote-status").textContent).toBe("No remote review store is configured.");
   });
 });

@@ -48,6 +48,22 @@ pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<Reques
     .await
 }
 
+pub async fn read_requests_in(
+    state: &Path,
+    run: Option<&str>,
+    repo: Option<&Path>,
+) -> Result<Vec<RequestView>, String> {
+    read(
+        state,
+        Filter {
+            run,
+            repo,
+            ..Filter::default()
+        },
+    )
+    .await
+}
+
 pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String> {
     read(
         state,
@@ -123,9 +139,7 @@ pub async fn read_waiting_originals(
         };
         // A follower whose original is gone or no longer waits stays listed as itself.
         let original = original
-            .filter(|original| {
-                original.request.status() == crate::types::RequestStatus::WaitingHuman
-            })
+            .filter(|original| original.request.status().is_human_wait())
             .unwrap_or_else(|| view.clone());
         if seen.insert(original.request.id.clone()) {
             originals.push(original);
@@ -211,12 +225,6 @@ async fn read_with_repo(
     {
         return Ok(Vec::new());
     }
-    let connection = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
     let run = filter
         .run
         .map(str::parse::<crate::types::RunId>)
@@ -233,7 +241,13 @@ async fn read_with_repo(
         .session
         .map(str::parse::<crate::types::SessionId>)
         .transpose()?;
-    connection
+    let connection = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -287,7 +301,8 @@ async fn read_with_repo(
             Ok(views)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 /// Only present predicates are emitted, so Run and request lookups use their existing indexes.
@@ -336,7 +351,7 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
         }
     }
     if filter.waiting {
-        predicates.push("q.status='WAITING_HUMAN'".into());
+        predicates.push("q.status IN ('WAITING_HUMAN','DEFERRED')".into());
     }
     if !filter.statuses.is_empty() {
         let marks = vec!["?"; filter.statuses.len()].join(",");

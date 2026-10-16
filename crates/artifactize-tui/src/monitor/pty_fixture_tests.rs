@@ -2,19 +2,22 @@
 use super::*;
 use crate::agent::session::{self as saved, Answer, Header, Kind, Recorder, Saving};
 use serde_json::json;
-use std::fs;
+use std::{fs, time::Duration};
+
+/// Check the harness's command files often enough for interactive key delivery without
+/// continuously scanning an idle PTY fixture. Assertions wait on its acknowledgement files.
+const COMMAND_CHECK_INTERVAL: Duration = Duration::from_millis(20);
 
 #[tokio::test]
 #[ignore = "requires the external fixture PTY harness"]
 async fn live_session_pty_fixture() {
-    let Some(path) = crate::platform::environment::var("ARTIFACTIZE_LIVE_PTY_FIXTURE") else {
-        return;
-    };
+    let path = crate::platform::environment::var("ARTIFACTIZE_LIVE_PTY_FIXTURE")
+        .expect("the external PTY harness must declare its owned fixture directory");
     let root = std::path::PathBuf::from(path);
     let repo = root.join("repo");
     let state = root.join("state");
     fs::create_dir_all(&repo).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({
         "id":"fixture-run",
         "repoPath":repo,
@@ -93,10 +96,12 @@ async fn live_session_pty_fixture() {
     let cancellation = tokio_util::sync::CancellationToken::new();
     let control = root.clone();
     let token = cancellation.clone();
-    let writer = tokio::spawn(async move {
+    // The task set aborts the fixture writer during panic unwinding; normal exit joins it.
+    let mut writers = tokio::task::JoinSet::new();
+    writers.spawn(async move {
         fs::write(control.join("ready"), "ready").unwrap();
         loop {
-            if control.join("quit").exists() {
+            if token.is_cancelled() || control.join("quit").exists() {
                 token.cancel();
                 break;
             }
@@ -113,12 +118,14 @@ async fn live_session_pty_fixture() {
                 crate::changes::drain().await;
                 fs::write(control.join("appended"), "flushed and notified").unwrap();
             }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            tokio::time::sleep(COMMAND_CHECK_INTERVAL).await;
         }
     });
-    terminal::run(state, None, cancellation).await.unwrap();
+    let terminal_result = terminal::run(state, None, cancellation.clone()).await;
+    cancellation.cancel();
     fs::write(root.join("quit"), "quit").unwrap();
-    writer.await.unwrap();
+    writers.join_next().await.unwrap().unwrap();
+    terminal_result.unwrap();
     assert!(
         saved::path(&saving.state, "fixture-session")
             .unwrap()

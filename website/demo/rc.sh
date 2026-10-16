@@ -37,7 +37,7 @@ case '@SCENARIO@' in
 reuse) cd ~/shop ;;
 change)
     cd ~/shop
-    artifactize verify --all >/dev/null 2>&1
+    artifactize verify --all --wait >/dev/null 2>&1
     ;;
 human) cd ~/brand ;;
 team)

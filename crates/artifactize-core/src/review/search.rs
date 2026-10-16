@@ -13,7 +13,7 @@
 //! | `reviewer:` | a substring of the claimant; unclaimed requests never match |
 //! | `tag:` | a substring of a tag of the eval's Artifact |
 //! | `kind:` | the eval kind exactly: `runtime`, `agent`, `human` or `dependency` |
-//! | `status:` | the request status exactly, such as `waiting_human` or `green` |
+//! | `status:` | the request status; `waiting_human` includes `deferred` sign-offs |
 //! | `is:` | `mine`, `claimed` or `unclaimed` (claims exist only on waiting Human requests) |
 //!
 //! Values with spaces are quoted: `repo:"/work/my repo"`. A quoted word is always free text, so
@@ -335,12 +335,11 @@ impl Query {
             Term::Field(Key::Tag, text) => entry.tags.iter().any(|tag| contains(tag, text)),
             Term::Field(_, _) => unreachable!("kind, status and is parse to their own terms"),
             Term::Kind(kind) => entry.kind == *kind,
+            Term::Status(RequestStatus::WaitingHuman) => entry.status.is_human_wait(),
             Term::Status(status) => entry.status == *status,
             Term::Is(Is::Mine) => entry.mine,
             Term::Is(Is::Claimed) => entry.reviewer.is_some(),
-            Term::Is(Is::Unclaimed) => {
-                entry.status == RequestStatus::WaitingHuman && entry.reviewer.is_none()
-            }
+            Term::Is(Is::Unclaimed) => entry.status.is_human_wait() && entry.reviewer.is_none(),
         })
     }
 
@@ -360,7 +359,16 @@ impl Query {
             .collect();
         match statuses.len() {
             // Two different required statuses match nothing; reading one keeps it bounded.
-            0 | 1 => statuses.into_iter().collect(),
+            0 | 1 => statuses
+                .into_iter()
+                .flat_map(|status| {
+                    if status == RequestStatus::WaitingHuman {
+                        vec![status, RequestStatus::Deferred]
+                    } else {
+                        vec![status]
+                    }
+                })
+                .collect(),
             _ => vec![*statuses.first().expect("two statuses")],
         }
     }
@@ -531,7 +539,7 @@ pub async fn search(
 
 /// A waiting follower whose original still waits: the original's own row lists it.
 async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
-    if view.request.status() != RequestStatus::WaitingHuman {
+    if !view.request.status().is_human_wait() {
         return false;
     }
     let Some(source) = view
@@ -544,5 +552,5 @@ async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
     };
     store::read_request(state, source)
         .await
-        .is_ok_and(|original| original.request.status() == RequestStatus::WaitingHuman)
+        .is_ok_and(|original| original.request.status().is_human_wait())
 }

@@ -49,7 +49,7 @@ pub struct Input {
     /// False before the first accepted snapshot, which picks the initial scope.
     pub initialized: bool,
     pub page: Page,
-    /// Read the catalog afresh instead of reusing unchanged cached facts.
+    /// Read the database catalog afresh; Git discovery stays cached until [`Loader::reset`].
     pub full: bool,
     /// The Run the caller already shows; the reader decodes it again only when it changed.
     pub displayed: Option<RunId>,
@@ -107,6 +107,8 @@ pub struct Snapshot {
 #[derive(Default)]
 pub struct Loader {
     reader: Reader,
+    /// The catalog is supplied by the caller, so reset invalidates its Git caches on load.
+    reset_git: bool,
 }
 impl Loader {
     /// The SELECT statements read since the last call, for tests that count what a read costs.
@@ -115,12 +117,20 @@ impl Loader {
         self.reader.traced_statements()
     }
 
-    pub fn load(&mut self, input: Input) -> Result<Snapshot, String> {
-        load(&mut self.reader, input)
+    pub fn load(&mut self, mut input: Input) -> Result<Snapshot, String> {
+        if self.reset_git {
+            input.catalog.reset_git();
+        }
+        let result = load(&mut self.reader, input);
+        if result.is_ok() {
+            self.reset_git = false;
+        }
+        result
     }
-    /// Drop every cache, so the next load reads the whole state afresh.
+    /// Drop every cache, so the next load reads the whole state and Git metadata afresh.
     pub fn reset(&mut self) {
         self.reader.reset();
+        self.reset_git = true;
     }
 }
 

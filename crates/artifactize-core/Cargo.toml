@@ -10,7 +10,7 @@ homepage.workspace = true
 documentation = "https://docs.rs/artifactize-core"
 keywords = ["collaboration", "ai", "agent", "review", "llm"]
 categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
-# The Windows test stand-in for /bin/sh, which tests build from source on demand.
+# The portable OS utility stand-in, which tests build from source on demand.
 exclude = ["tests/support/fixture.rs", "index.artf"]
 
 [features]
@@ -33,6 +33,7 @@ petgraph = { version = "0.8", default-features = false, features = ["std"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form"] }
 rig-core = { version = "=0.43.0", default-features = false, features = ["reqwest", "rustls"] }
 rig-reqwest = { version = "=0.43.0", default-features = false, features = ["rustls"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["server", "transport-io"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

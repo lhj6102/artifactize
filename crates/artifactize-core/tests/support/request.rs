@@ -20,7 +20,7 @@ pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
         "error": if status == "ERROR" { json!("fixture error") } else { Value::Null },
         "completedAt": if matches!(status, "GREEN" | "RED" | "ERROR") { json!("2026-01-01T00:00:01Z") } else { Value::Null },
         "createdAt":"2026-01-01T00:00:00Z",
-        "cwd":"/repo",
+        "cwd":crate::test_os::path_text(&crate::test_os::temp_root().join("repo")),
     });
     value
         .as_object_mut()

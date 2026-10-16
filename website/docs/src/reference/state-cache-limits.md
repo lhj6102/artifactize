@@ -6,7 +6,7 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 6),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 7),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
@@ -32,7 +32,7 @@ four tables:
 
 | Table | One row per | Columns besides the saved JSON in `data` |
 |---|---|---|
-| `runs` | Run | `id`, `repo`, `status` |
+| `runs` | Run | `id`, `repo`, `status`, nullable `request_key` |
 | `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, and `claimed_by` and `claimed_at`, the Human claim of a waiting request |
 | `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
 | `state_meta` | named value of the state | `name`, `value` |
@@ -49,13 +49,29 @@ id, a random UUID made when the database is created (row `id`), which
 conversation and its tool calls, is not in the state: it is in the review's
 [saved session](#agent-sessions).
 
-There is no migration. Commands that read or write a state written by an earlier
-artifactize (schemas 1–5, through artifactize 0.8) refuse it with exit code 2 and
-this message, leaving it as it is. `doctor` instead includes the same message in
-its hard-error report and exits 1:
+Supported upgrades are ordered additive steps applied together with `user_version` in one
+opening write transaction; the version is read again under that lock. Schema 6 upgrades
+to 7 by adding nullable `runs.request_key` and a partial unique index on `(repo, request_key)`
+where the key is not NULL. Existing Runs keep NULL keys. Run/request/execution IDs, cache,
+state identity and Human approvals survive; repeated opens do not remigrate. Existing-state
+readers and `doctor` use the same preflight without creating an absent database. Migration
+requires write access; a failed transaction rolls back rather than bypassing version checks.
+
+Same repository/key returns the same accepted Run; NULL keys never coalesce submissions.
+Worker PID/start identity and admission, cancellation intent, activity and failure code live
+in optional/defaulted Run JSON control fields. Old Runs without them are readable and are
+not treated as dead workers. Saved Run-end validation remains historical; detailed results
+are derived from saved Runs, requests and executions, not stored as another result snapshot.
+Dead-worker recovery keeps committed evidence, cleans only identity-checked owned children
+and releases dead slots. It records OWNER_DIED instead of replaying work; unconfirmed
+cleanup retains its journal records.
+
+**Downgrade boundary:** artifactize 0.11 cannot open a schema-7 state after upgrade. Its
+version guard refuses it. Unknown/newer versions and schemas 1–5 remain unsupported;
+commands exit 2 and `doctor` reports a hard error (exit 1). The older-schema message is:
 
 ```text
-This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.
+This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). Only schema 6 and later supported versions can be upgraded.
 ```
 
 A new 0.9 state reviews every executable eval once, Human sign-offs included,
@@ -63,8 +79,9 @@ and then reuses as before. Reuse-key v2 matches no earlier records, including
 script fingerprints and team-store records. Dependency evals derive current
 evidence; they have no execution or reusable record. See
 [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
-[`doctor`](#doctor-models-and-prune) reports such a state as a hard error, and a
-database written by a newer artifactize the same way.
+A schema-6 state from 0.9 is supported: it upgrades additively to schema 7 and
+passes [`doctor`](#doctor-models-and-prune)'s schema check. Unsupported earlier
+schemas and newer schemas remain hard errors.
 
 Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
 sign-in and the review store token, is refused when it lies inside a git work tree or
@@ -103,7 +120,7 @@ fingerprint and the profile variant). `--history` lists every record, latest fir
 within each key. `show` prints the key's latest saved execution as JSON, with
 result, actual `profile`, `options` (backend, model, reasoning, limits and
 variant), `fingerprints` (each Artifact the key covers), additive `artifactKinds`
-(the covered names mapped to `folder`/`file`), provenance, usage and
+(the covered names mapped to `folder`/`file`/`graph`), provenance, usage and
 `producer` (`user@host` and artifactize version; submitted Human results also
 record their `reviewer`); a missing key prints `null` and exits 4. `show
 --history` prints all of the key's records as a JSON array, latest first. Entries
@@ -115,7 +132,7 @@ records are its completed GREEN/RED executions whose history columns
 then the most recently stored. `rm` takes every record of the key out of its history
 and prints `{"removed":true}` (false if absent), preserving saved Runs and the
 executions themselves. `rm` refuses a key with an active execution or waiter. Keys
-come from `cache list` or from a request's `key` in `verify --json` and `run show`.
+come from `cache list` or from a request's `key` in `verify --wait --json` and `run show`.
 
 How reuse keys are built and what a hit returns is in
 [Completed result reuse](../concepts/fingerprints-and-reuse.md#completed-result-reuse); entry and byte
@@ -141,8 +158,9 @@ cleanup.
 
 ## Backend capacity
 
-`--jobs` bounds the evals of one `verify` process. Several processes on one
-machine (worktrees, CI jobs, a team member's integration run) can still send more
+READY evals have no default Run-concurrency cap. An explicit `--jobs N` limits
+only that Run; add it when unrestricted concurrency causes trouble. Multiple
+Runs on one machine (worktrees, CI jobs, a team member's integration run) can still send more
 Agent reviews to one backend at once than its rate limit or subscription allows.
 `$STATE/limits.json` caps the Agent reviews in flight per backend across every
 `verify` that uses that state directory:
@@ -174,11 +192,12 @@ started.
 With every slot of its backend in use, a request waits, as QUEUED, with a reason
 such as `Waiting for a free codex slot: all 4 are in use on this machine
 (limits.json).`, and is retried as slots free up, in selection order. While it waits
-it holds no `--jobs` slot and consumes no `--max-executions` start, so runtime
-evals, Human requests and other backends keep running. Once it has its slot it
-occupies a job slot like any running eval, so a process runs at most
-`min(--jobs, free slots)` reviews of a limited backend. Cancelling a `verify` ends
-its waiting requests as CANCELLED, and its held slots are released.
+it does not count against an explicit `--jobs` cap and consumes no
+`--max-executions` start, so runtime evals, Human requests and other backends
+keep running. When admitted, it counts against `--jobs` if given; without that
+cap, only the backend's available slots limit its reviews. Explicit `run cancel RUN_ID` ends
+its waiting requests with status ERROR and `errorCode = "CANCELLED"`, and its held slots are released. Interrupting
+`verify --wait` only stops observation; it does not cancel the Run.
 
 Tool-session directories live under `$STATE/tool-sessions/`, separately from saved
 conversations. They retain admission records for start, stop and bound invocation
@@ -251,6 +270,83 @@ saved and the others have none. The request's verdict, result and usage stay in
 and [`session show --summary`](../guides/agent-evals.md#session-summary) counts them.
 A last line cut short by a crash is ignored when the file is read.
 
+### Follow-up replay
+
+`session send` uses the saved review's backend, model, reasoning and session id.
+OpenAI and Codex retain the same `prompt_cache_key`; Codex also retains the
+`session-id` header. Saved history and the system prompt are replayed unchanged
+so the cached prefix matches. Current project tools are offered again; changed
+covered fingerprints add a warning to the header and the model's context.
+
+A question is a new user turn framed as a follow-up, not a new review. The
+frame asks for plain text, permits the tools and states that the recorded verdict
+will not change. Modern review system prompts state that same distinction;
+older saved conversations rely on the new turn's framing. `session show` prints
+the person's original question, while its JSON export retains the framing too.
+
+Questions, answers and tool calls append to the same saved thread. Sends to one
+session serialize: each continues after the preceding answer. Each question has
+fresh profile budgets. A RUNNING request cannot be followed up; recorded verdict,
+result, usage and reuse evidence remain immutable.
+
+### Provider transport
+
+The rig-core 0.43.0 provider client uses streaming OpenAI Responses with
+`store:false`, encrypted reasoning replay and parallel tool calls disabled, or
+Anthropic Messages. Anthropic requires a per-turn output cap of 16384 tokens,
+separate from the review budget. One review deadline covers all turns, retries and
+tools. Incomplete responses are errors even if a partial answer contains a verdict.
+Nested HTTP retries and redirects are disabled; artifactize handles turn retries
+as described in [retries and error codes](../guides/agent-evals.md#retries-and-error-codes).
+
+### Transcript reader
+
+Monitor Detail displays readable message text, public reasoning summaries and
+collapsed tool activity, not raw message envelopes or private reasoning payloads.
+Streaming updates replace their provisional text with final content; interrupted
+partial output is labeled. Public OpenAI/Codex summaries are read from streaming
+frames without changing the bytes passed to rig, the provider client library.
+Display-only events never enter replayed model history.
+
+The reader follows new messages until you scroll away. Resize preserves the
+reading position while paused and stays at the bottom while following. Tool
+activity expands to names, targets and recorded states, not full tool arguments
+or successful output. `session show --json` exports the complete saved events.
+Missing local sessions, never-saved conversations and remote references are
+reported separately; a remote reference cannot open arbitrary local files.
+
+History is indexed incrementally into private temporary text and row files, with
+only the visible pages loaded. There is no fixed first-2-MiB history cutoff.
+One complete event needs memory proportional to its size while being decoded;
+other history and layout work yields between bounded chunks. Complete malformed
+events report errors, while partial lines and incomplete UTF-8 wait for the next
+append. Replacement, truncation or deletion resets the reader; closing or resetting
+it removes its temporary files. Later `session send` events remain readable after
+the original review ends.
+
+### Local readers
+
+Monitor and Review use read-only state queries and cached Git discovery, rather
+than rediscovering declarations or fingerprints on every refresh. Local readers
+share a temporary hub inside the first subscriber process: an owner-only Unix
+socket or Windows named pipe, not a permanent daemon. Registration is acknowledged
+before the initial snapshot. Readers reconnect and resync after hub exit or a
+bounded hint-queue overflow; writers never elect a hub.
+
+If IPC is unsafe or unavailable, five-second authoritative reconciliation replaces
+it without an insecure transport fallback. A persistent read-only SQLite
+`data_version` connection and file-identity probe detect missed commits and database
+replacement. Clocks and spinners redraw cached data. Session hints wake only the
+selected transcript reader; a five-second file probe also catches missed appends
+or removal. Rendering does no file I/O, and input takes priority over history work.
+This is local coordination, not remote team-store push delivery.
+
+The Run worker separately reconciles dead execution owners and backend slots and
+optional remote results, without a Human wait deadline. Explicit Human actions use
+the shared atomic claim, fingerprint recheck, schema validation and
+`submit_and_publish` APIs. Followers resolve to their original request. Publication
+failure after local settlement preserves and shows that settlement.
+
 ## Local diagnostics and maintenance
 
 ```sh
@@ -281,7 +377,7 @@ directory, removed immediately (in the nearest existing ancestor when state does
 not yet exist). Before the writable probe it enforces the same current/legacy
 workspace-marker safety boundary, even without `--repo`; unsafe state fails
 without writing a probe inside that workspace. It reads the state database's
-schema without changing the file: a
+schema, applying a supported additive upgrade if needed: a
 database [written by an earlier artifactize](#state) (schemas 1–5) or by a newer
 one is a hard error (exit 1), with the message other commands refuse it with and
 its `schema` and the `supported` one in the details. `--repo`

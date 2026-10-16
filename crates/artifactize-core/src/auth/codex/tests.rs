@@ -1,4 +1,4 @@
-use std::{fs, sync::Arc};
+use std::fs;
 
 use rig_core::{http_client::StatusCode, test_utils::MockHttpResponse};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -220,7 +220,7 @@ async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
         form(&requests[0].body),
         BTreeMap::from([
             ("grant_type".into(), "authorization_code".into()),
-            ("client_id".into(), CLIENT_ID.into()),
+            ("client_id".into(), "app_EMoamEEZ73f0CkXaXp7hrann".into(),),
             ("code".into(), "the-code".into()),
             ("code_verifier".into(), verifier),
             ("redirect_uri".into(), redirect.clone()),
@@ -232,13 +232,7 @@ async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
     assert_eq!(saved.access_token, access);
     assert_eq!(saved.refresh_token, "refresh-1");
     assert_eq!(saved.account_id, "account-1");
-    assert_eq!(
-        saved.expires_at,
-        saved
-            .saved_at
-            .checked_add(Duration::from_secs(3600))
-            .unwrap()
-    );
+    assert_eq!(saved.expires_at.seconds() - saved.saved_at.seconds(), 3600);
     // The ID token is not kept.
     assert!(!fs::read_to_string(path).unwrap().contains("\"id\""));
 }
@@ -302,25 +296,22 @@ async fn login_accepts_a_pasted_redirect_and_rejects_unusable_token_responses() 
 #[tokio::test]
 async fn expiring_tokens_refresh_once_under_the_lock_and_rotate() {
     let temp = crate::test_os::tempdir();
-    let storage = Arc::new(storage(temp.path()));
+    let storage = storage(temp.path());
     stored(&storage, "old-access", 10_000 + 60);
     let fresh = jwt("account-1", 10_000 + 3600);
-    let server = Arc::new(Server::new(vec![tokens(&fresh, "new-refresh")]).await);
-    let tasks: Vec<_> = (0..2)
-        .map(|_| {
-            let storage = storage.clone();
-            let server = server.clone();
-            tokio::spawn(async move {
-                stored_token_at(&storage, &root(&server), || {
-                    Ok(Timestamp::from_seconds(10_000))
-                })
-                .await
-                .unwrap()
-            })
-        })
-        .collect();
-    for task in tasks {
-        let token = task.await.unwrap();
+    let server = Server::new(vec![tokens(&fresh, "new-refresh")]).await;
+    let root = root(&server);
+    let refresh = || stored_token_at(&storage, &root, || Ok(Timestamp::from_seconds(10_000)));
+    let first = refresh();
+    let second = refresh();
+    tokio::pin!(first, second);
+    // On this current-thread runtime the server cannot reply during either poll:
+    // the first holder waits for HTTP, then the second waits for its held lock.
+    assert!(futures_util::poll!(&mut first).is_pending());
+    assert!(futures_util::poll!(&mut second).is_pending());
+    let (first, second) = tokio::join!(first, second);
+    for result in [first, second] {
+        let token = result.unwrap();
         assert_eq!(token.access_token, fresh);
         assert_eq!(token.account_id, "account-1");
     }
@@ -331,7 +322,7 @@ async fn expiring_tokens_refresh_once_under_the_lock_and_rotate() {
         BTreeMap::from([
             ("grant_type".into(), "refresh_token".into()),
             ("refresh_token".into(), "old-refresh".into()),
-            ("client_id".into(), CLIENT_ID.into()),
+            ("client_id".into(), "app_EMoamEEZ73f0CkXaXp7hrann".into(),),
         ])
     );
     let saved: Credentials = storage.read(CREDENTIALS).unwrap().unwrap();
@@ -394,7 +385,10 @@ async fn refresh_failures_keep_or_drop_the_sign_in() {
     .await
     .err()
     .unwrap();
-    assert_eq!(missing.message, LOGIN_REQUIRED);
+    assert_eq!(
+        missing.message,
+        "Codex is not signed in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE."
+    );
 }
 
 #[test]
@@ -579,7 +573,7 @@ async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
     assert_eq!(request.line, "POST /v1/oauth/revoke HTTP/1.1");
     assert_eq!(
         request.body,
-        json!({"token":"old-refresh","token_type_hint":"refresh_token","client_id":CLIENT_ID})
+        json!({"token":"old-refresh","token_type_hint":"refresh_token","client_id":"app_EMoamEEZ73f0CkXaXp7hrann"})
     );
     // Nothing stored: nothing to revoke.
     assert!(sign_out(&storage, &root(&server)).await.unwrap());

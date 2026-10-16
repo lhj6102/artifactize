@@ -3,13 +3,16 @@ use std::fs;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::json;
 
-const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
-
 use super::*;
 use crate::{
     test_os::{symlink_dir, symlink_file},
     tools::result,
 };
+
+const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+// The public decoded-image limit, not the implementation's bound: these fixtures
+// must keep checking the 4 MiB contract if the production constant changes.
+const IMAGE_BYTES: usize = 4 * 1024 * 1024;
 
 pub(in crate::tools) fn fixtures() -> [(&'static str, Vec<u8>); 3] {
     let mut png = PNG_SIGNATURE.to_vec();
@@ -90,7 +93,7 @@ fn image_blocks_normalize_all_formats_and_serialize_without_paths() {
             block.clone(),
             json!({"type":"image","data":encoded.trim_end_matches('='),"mimeType":mime}),
             json!({"type":"image","path":"nested/image.wrong-extension","mimeType":mime}),
-            json!({"type":"image","path":file,"mimeType":mime}),
+            json!({"type":"image","path":crate::test_os::path_text(&file),"mimeType":mime}),
         ] {
             let result = result::parse(
                 &serde_json::to_vec(&json!({"content":[source]})).unwrap(),
@@ -174,7 +177,7 @@ fn image_validation_rejects_unsupported_signatures_mime_and_base64() {
 fn decoded_limit_is_inclusive_and_normalized_result_size_is_bounded() {
     let output = crate::test_os::tempdir();
     let mut bytes = fixtures()[1].1.clone();
-    bytes.resize(IMAGE_LIMIT, 0);
+    bytes.resize(IMAGE_BYTES, 0);
     let file = output.path().join("large");
     fs::write(&file, &bytes).unwrap();
     assert!(from_base64(&STANDARD.encode(&bytes), "image/jpeg").is_ok());
@@ -191,7 +194,7 @@ fn decoded_limit_is_inclusive_and_normalized_result_size_is_bounded() {
     assert!(from_base64(&STANDARD.encode(&bytes), "image/jpeg").is_err());
     fs::write(&file, &bytes).unwrap();
     assert!(from_output(output.path(), "large", "image/jpeg").is_err());
-    bytes.resize(IMAGE_LIMIT + 3, 0);
+    bytes.resize(IMAGE_BYTES + 3, 0);
     assert!(from_base64(&STANDARD.encode(&bytes), "image/jpeg").is_err());
 }
 
@@ -204,8 +207,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     fs::write(output.join("image"), bytes).unwrap();
     fs::write(directory.path().join("outside"), bytes).unwrap();
     fs::write(output.join("nested/image"), bytes).unwrap();
-    let outside = directory.path().join("outside");
-    let other = directory.path().join("output-other/image");
+    let outside = crate::test_os::path_text(&directory.path().join("outside"));
+    let other = crate::test_os::path_text(&directory.path().join("output-other/image"));
     let mut paths = vec![
         "../outside",
         "nested/../../outside",
@@ -215,8 +218,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
         "./image",
         "nested\\image",
         "missing",
-        outside.to_str().unwrap(),
-        other.to_str().unwrap(),
+        outside.as_str(),
+        other.as_str(),
     ];
     if symlink_file("image", output.join("link")).is_some() {
         paths.push("link");
@@ -232,13 +235,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     {
         paths.push("escape");
     }
-    // Only Unix has FIFOs.
-    // Unix-only special-file or filesystem permission behavior.
-    #[cfg(unix)]
-    {
-        crate::test_os::fifo(&output.join("fifo"));
-        paths.push("fifo");
-    }
+    let special_files = crate::test_os::special_files(&output);
+    paths.extend(special_files.paths().iter().copied());
     crate::test_os::link_dir(&output.join("nested"), &output.join("joined"));
     paths.push("joined/image");
     for path in paths {
@@ -248,17 +246,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     let symlinked = symlink_dir("old-output", &output).is_some();
     if symlinked {
         assert!(from_output(&output, "image", "image/png").is_err());
+        crate::test_os::remove_link_dir(&output);
     }
-    // A junction needs no privilege and redirects the output root just the same.
-    // Windows-only junction/reparse behavior or unprivileged link fallback.
-    #[cfg(windows)]
-    {
-        // Without the privilege to create the symlink above, there is nothing at the
-        // output root yet to remove.
-        if symlinked {
-            crate::test_os::remove_link_dir(&output);
-        }
-        crate::test_os::junction(&directory.path().join("old-output"), &output);
-        assert!(from_output(&output, "image", "image/png").is_err());
-    }
+    crate::test_os::link_dir(&directory.path().join("old-output"), &output);
+    assert!(from_output(&output, "image", "image/png").is_err());
 }

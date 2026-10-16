@@ -22,23 +22,25 @@ read = { builtin = "read" }
 
 [evals.covers-journeys]
 title = "The tests cover every journey and every edge of the UX"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 8000000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.covers-journeys.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000, max_tokens = 4000000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000, max_tokens = 4000000 }
-luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tokens = 8000000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.covers-journeys.payload]
 instruction = """
 Read the journeys {ux-features} with read_features_ux-features and the graph {ux-graph} with \
-read_graph_ux-graph. Then read the end-to-end tests of {desktop-e2e} (*.test.ts, with fixture.ts, \
-driver.ts and keys.ts as helpers) using list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and \
-read_desktop-e2e. Check that every journey (J- id) is exercised by a test that does what the journey \
-says, and that every edge (E- id) is exercised by an assertion that the transition happens, not only \
-mentioned in a comment. Submit GREEN when none is missing. Otherwise submit RED with up to 20 gaps, \
-the most important first, each with the journey or edge id (item), the test file (where) and one \
-sentence on the test to add or fix."""
+read_graph_ux-graph. Review the tests of {desktop-e2e} using list_desktop-e2e, glob_desktop-e2e, \
+grep_desktop-e2e and read_desktop-e2e. Evaluate UX coverage only: every journey (J- id) has a test \
+that performs its prescribed actions and checks its final outcome; every edge (E- id) has an \
+assertion that the transition happens, not only a comment naming it. Check that the assertions \
+express the actual feature and graph requirements, neither a weaker substitute nor an invented \
+requirement. Code style and E2E execution isolation have separate evals; do not duplicate those \
+reviews here. Submit GREEN when every journey and edge is meaningfully covered. Otherwise submit \
+RED with up to 20 coverage gaps, the most important first, each with the journey or edge id \
+(item), a test path:line (where) and one sentence on what to add or fix."""
 
 [evals.covers-journeys.pass_schema]
 type = "object"
@@ -64,6 +66,67 @@ properties.change = { type = "string", minLength = 1 }
 required = ["item", "where", "change"]
 additionalProperties = false
 
+[evals.follows-style]
+title = "The E2E code follows the shared test-writing rules"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.follows-style.payload]
+instruction = """
+Read {code-style} with read_style_code-style. Review all TypeScript tests, helpers and runner \
+code owned by {desktop-e2e}, using list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and \
+read_desktop-e2e. Apply every language-neutral TEST- rule and M-TAUTOLOGICAL-TESTS: exact async \
+states, controlled ordering and expiry, read-only observation, fixture ownership and cleanup, \
+self-contained build inputs, observable seams without over-verification, and independent expected \
+results. The other Rust-specific checklist items do not apply to TypeScript. Judge the code \
+against these shared rules only; UX coverage and the E2E-specific execution contract have their \
+own evals. Submit GREEN when no applicable rule is clearly violated. Otherwise submit RED with \
+up to 20 violations, most important first, each with the rule id (item), a path:line (where) \
+and one sentence on what to change.
+"""
+
+[evals.follows-style.pass_schema]
+type = "object"
+properties = { summary = { type = "string", minLength = 1 } }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-style.fail_schema]
+type = "object"
+properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
+required = ["violations"]
+additionalProperties = false
+
+[evals.follows-e2e-rules]
+title = "The real-app E2E tests follow Tauri's WebDriver approach and are isolated, causal and complete"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.follows-e2e-rules.payload]
+instruction = """
+Review all specs, fixtures, runner configuration and build/run code owned by {desktop-e2e}, using list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and read_desktop-e2e. These are this Artifact's E2E-writing rules. Their reference is Tauri's WebDriver guide (https://v2.tauri.app/develop/tests/webdriver/) and the WebdriverIO Tauri service docs (https://webdriver.io/docs/desktop-testing/tauri/).
+
+- E2E-WDIO-SERVICE: the suite runs on the WebdriverIO test runner with @wdio/tauri-service and the embedded WebDriver provider (tauri-plugin-wdio-webdriver), the same provider on Linux, Windows and macOS. The runner and service own app launch, WebDriver provisioning and shutdown, with capability-specific endpoints declared only in runner configuration. Specs and helpers do not spawn or kill the app or a WebDriver server, and do not wrap or re-wire the service's launcher lifecycle. When a journey's expected outcome is the app quitting, the spec observes the real exit and then marks that WebDriver session ended through one shared helper; this is the only session bookkeeping specs may do. On headless Linux, the whole runner runs under dbus-run-session and xvfb-run -a with X11, never on the user's desktop. Runner configuration is the only place where platforms differ; specs contain no OS branches.
+- E2E-TEST-BUILD-ONLY: the WebdriverIO plugins (their Rust crates, capability permissions and the frontend import) are compiled in only for the E2E test build, selected by one Cargo feature and the matching frontend build. The release app, its default capabilities and its frontend bundle contain none of them.
+- E2E-REAL-APP: drive the built test app through its real UI. Do not mock Tauri commands or intercept invoke, and do not use browser.tauri.execute to perform actions or change state; IPC mocking belongs in the component tests. Fixtures may control declared external inputs (repository contents, agent or backend stand-ins, network services), not the product behavior under test.
+- E2E-ISOLATED: each spec is valid on its own and in any order by establishing its starting state through the real UI and declared external inputs. An embedded app instance and its mutable fixture belong to one capability; specs of that capability may share the service-owned app lifetime, not rely on another spec's actions or leftovers. Separate capabilities/instances may run in parallel with disjoint repository/state directories, environment inputs and endpoints. The user's live environment stays untouched. A product-fixed resource that cannot be given per instance (such as a fixed callback port) is used by one capability only, declared in the runner configuration. Where an OS service cannot be redirected per instance, such as the Windows default URL handler, the runner configuration confines that platform's run to a disposable CI machine and fails explicitly anywhere else. Do not add global locks or serialization to hide interference.
+- E2E-OWNED-FIXTURES: fixtures are created by setup scoped to their owning app instance/capability and released by the matching owning teardown only after the runner and service have ended that app instance. Teardown may run after the WebdriverIO runner returns; worker/session hooks must not delete fixtures still used by the launcher-owned app. Setup and cleanup failures fail the run; they are not swallowed.
+- E2E-CAUSAL-OUTCOMES: tie each assertion to the action performed in that case and its observable completed outcome. Wait with WebdriverIO's waitFor*/waitUntil on the user-visible result; fixed sleeps, dispatch counts, pre-existing matching text, a merely accepted command and a transient render are not substitutes. A read-only probe that a forbidden action did not happen must also be shown to observe a real successful one. Assert user-visible semantics, not mounted counts or private implementation steps.
+- E2E-EXPLICIT-FAILURE: a missing platform prerequisite, a setup failure, a cancelled or incomplete run is a failure, never skipped coverage or a passing exit.
+
+Judge these contracts, not journey completeness or general code style, which have separate evals. Report concrete violations with a plausible action or interleaving and the affected resource, not hypothetical cheating or demands to test every permutation. Do not prescribe a particular class, algorithm or configuration knob. Submit GREEN when none of these rules is clearly violated. Otherwise submit RED with up to 20 violations, most important first, each with the E2E rule id (item), a path:line and failure scenario (where), and one sentence on what to change.
+"""
+
+[evals.follows-e2e-rules.pass_schema]
+type = "object"
+properties = { summary = { type = "string", minLength = 1 } }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-e2e-rules.fail_schema]
+type = "object"
+properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
+required = ["violations"]
+additionalProperties = false
+
 [evals.edge-ids]
 title = "Every edge id of the UX graph appears in the end-to-end tests"
 profile = { kind = "runtime", command = "node", args = ["check-edges.ts", "{ux-graph}", "."], timeout_ms = 30000 }
@@ -72,10 +135,17 @@ profile = { kind = "runtime", command = "node", args = ["check-edges.ts", "{ux-g
 instruction = """
 Check that every edge id of {ux-graph} is cited in the tests of {desktop-e2e}."""
 
+[evals.lint]
+title = "The end-to-end TypeScript lint passes"
+profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 600000 }
+
+[evals.lint.payload]
+instruction = "Run TypeScript eslint with no inline config over every test and helper of {desktop-e2e}."
+
 [evals.suite-passes]
 title = "The end-to-end suite passes on a headless display"
-profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "e2e"], timeout_ms = 900000 }
+profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "e2e"], timeout_ms = 1800000 }
 
 [evals.suite-passes.payload]
 instruction = """
-Run the end-to-end tests of {desktop-e2e} against the built app on a private Xvfb display."""
+Build the E2E test app (the test-only Cargo feature and its frontend build) and the CLI from {cli}, {tui}, {core}, {tools} and {desktop} into build output this run owns, then run the WebdriverIO suite of {desktop-e2e} against it on a headless display."""

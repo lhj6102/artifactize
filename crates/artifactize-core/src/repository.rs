@@ -34,13 +34,8 @@ fn git(path: &Path, args: &[&str]) -> Option<Vec<u8>> {
 
 fn git_path(path: &Path, arg: &str) -> Option<PathBuf> {
     let output = git(path, &["rev-parse", "--path-format=absolute", arg])?;
-    let text = String::from_utf8(output).ok()?;
-    // rev-parse emits one trailing newline; embedded newlines belong to the path.
-    let path = PathBuf::from(
-        text.strip_suffix("\r\n")
-            .or_else(|| text.strip_suffix('\n'))
-            .unwrap_or(&text),
-    );
+    // Only the native output terminator is removed; path bytes remain the platform's own.
+    let path = crate::platform::path_from_line(&output);
     crate::platform::canonicalize(&path).ok()
 }
 
@@ -95,13 +90,41 @@ fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_identity_preserves_supported_path_characters() {
+        let root = crate::test_os::tempdir();
+        for path in crate::test_os::git_path_cases(root.path()) {
+            crate::test_os::git(&path, &["init", "--quiet"]);
+            let identity = identify(&path);
+            assert_eq!(
+                identity.common_dir,
+                Some(crate::test_os::canonical(&path.join(".git"))),
+                "{path:?}"
+            );
+            assert_eq!(
+                identity.worktree_path,
+                Some(crate::test_os::canonical(&path)),
+                "{path:?}"
+            );
+        }
+    }
+
     #[test]
     fn porcelain_paths_are_not_split_on_whitespace() {
-        let trees = parse_worktrees(
-            b"worktree /a space\nline\0HEAD abc\0branch refs/heads/main\0\0worktree /detached\0HEAD def\0detached\0\0",
+        let root = crate::test_os::tempdir();
+        // Parser input only: no directory with an embedded newline is created.
+        let named = root.path().join("a space\nline");
+        let detached = root.path().join("detached");
+        let wire = format!(
+            "worktree {}\0HEAD abc\0branch refs/heads/main\0\0worktree {}\0HEAD def\0detached\0\0",
+            crate::platform::path_text(&named),
+            crate::platform::path_text(&detached),
         );
-        assert_eq!(trees[0].path, PathBuf::from("/a space\nline"));
+        let trees = parse_worktrees(wire.as_bytes());
+        assert_eq!(trees[0].path, named);
         assert_eq!(trees[0].branch.as_deref(), Some("main"));
+        assert_eq!(trees[1].path, detached);
         assert_eq!(trees[1].branch, None);
     }
 }

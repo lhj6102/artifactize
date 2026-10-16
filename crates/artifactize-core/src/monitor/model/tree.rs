@@ -100,7 +100,7 @@ pub struct Clock {
 
 impl Clock {
     pub fn elapsed(self, now: OffsetDateTime) -> String {
-        super::duration((self.end.unwrap_or(now) - self.start).whole_seconds())
+        super::duration(self.end.unwrap_or(now) - self.start)
     }
 }
 
@@ -181,6 +181,7 @@ pub fn completion(completion: Completion) -> (&'static str, Tone, &'static str) 
 /// Glyph, colour and weight of one eval row.
 fn style(view: &EvalView) -> (&'static str, Tone, Weight) {
     match view {
+        EvalView::Done(Source::Provisional) => ("○", Tone::Muted, Weight::Normal),
         EvalView::Done(_) => ("✓", Tone::Green, Weight::Normal),
         EvalView::Failed { verdict: true } => ("✗", Tone::Red, Weight::Normal),
         EvalView::Failed { verdict: false } => ("!", Tone::Error, Weight::Normal),
@@ -293,6 +294,7 @@ fn short_profile(profile: &crate::config::StoredProfile) -> String {
 fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<Segment> {
     let plain = |text: &str| vec![Segment::plain(text)];
     match view {
+        EvalView::Done(Source::Provisional) => plain("PROVISIONAL · sign-offs remain"),
         EvalView::Done(Source::Executed) => plain("GREEN"),
         EvalView::Done(Source::Reused) => plain("GREEN · reused"),
         EvalView::Done(Source::Derived) => plain("GREEN · derived"),
@@ -319,11 +321,19 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
             "running · {}",
             request.map_or_else(String::new, |view| short_profile(&view.request.profile))
         ))],
+        EvalView::InProgress(Activity::Human(None))
+            if request.is_some_and(|view| {
+                view.request.status() == crate::types::RequestStatus::Deferred
+            }) =>
+        {
+            plain("DEFERRED · Human sign-off · unclaimed")
+        }
         EvalView::InProgress(Activity::Human(None)) => plain("Human sign-off · unclaimed"),
         EvalView::InProgress(Activity::Human(Some(reviewer))) => vec![Segment::plain(format!(
             "Human sign-off · claimed by {reviewer}"
         ))],
-        EvalView::InProgress(Activity::Queued(Queue::Jobs)) => plain("queued"),
+        EvalView::InProgress(Activity::Queued(Queue::Ready)) => plain("queued"),
+        EvalView::InProgress(Activity::Queued(Queue::Jobs)) => plain("queued · --jobs slots full"),
         EvalView::InProgress(Activity::Queued(Queue::Slot(backend))) => {
             vec![Segment::plain(format!("queued · {backend} slots full"))]
         }
@@ -648,7 +658,24 @@ fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
         let request = &mut view.request;
         if late(request.completed_at()) {
             request.state = if request.profile.kind() == crate::config::ProfileKind::Human {
-                crate::store::RequestState::WaitingHuman
+                if run.run.modes.defer_human
+                    && request.profile.kind() == crate::config::ProfileKind::Human
+                    && run
+                        .run
+                        .definitions
+                        .graph()
+                        .and_then(|graph| {
+                            graph.evals().iter().find(|eval| eval.id == request.eval_id)
+                        })
+                        .and_then(|eval| eval.declaration.value())
+                        .is_some_and(|declaration| {
+                            declaration.gate.value() != Some(&crate::config::Gate::Blocking)
+                        })
+                {
+                    crate::store::RequestState::Deferred
+                } else {
+                    crate::store::RequestState::WaitingHuman
+                }
             } else {
                 crate::store::RequestState::Running
             };

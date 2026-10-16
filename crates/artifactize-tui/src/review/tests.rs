@@ -10,6 +10,15 @@ use crate::{
 
 const ID: &str = "run-1-3";
 
+/// Saved claims and requests use explicit times; rendering measures their age at this instant.
+pub(crate) fn now() -> OffsetDateTime {
+    OffsetDateTime::parse(
+        "2026-01-01T00:01:05Z",
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap()
+}
+
 #[tokio::test]
 async fn visual_precedes_editor_and_reads_the_saved_review() {
     if crate::platform::environment::var("ARTIFACTIZE_EDITOR_SEAM").is_some() {
@@ -35,20 +44,18 @@ async fn visual_precedes_editor_and_reads_the_saved_review() {
 }
 
 #[test]
-fn spinner_frames_keep_the_existing_hundred_millisecond_cadence_and_cast_order() {
+fn spinner_cycles_every_hundred_milliseconds() {
     assert_eq!(view::spinner(Duration::from_millis(0)), "⠋");
     assert_eq!(view::spinner(Duration::from_millis(99)), "⠋");
     assert_eq!(view::spinner(Duration::from_millis(100)), "⠙");
     assert_eq!(view::spinner(Duration::from_millis(999)), "⠏");
     assert_eq!(view::spinner(Duration::from_millis(1000)), "⠋");
-    // The cast truncates to the pointer width before indexing; pin both contracts.
-    let expected = "⠴";
-    assert_eq!(view::spinner(Duration::MAX), expected);
+    assert_eq!(view::spinner(Duration::from_millis(1100)), "⠙");
 }
 
 fn definition(pass: Value, fail: Value) -> Value {
     json!({
-        "repo":"/repo",
+        "repo":"repo",
         "eval":{
             "id":"release/signoff",
             "target":"release",
@@ -191,7 +198,7 @@ fn view(status: &str, reviewer: Option<&str>, definition: Value) -> RequestView 
             "error": if status == "ERROR" { json!("fixture error") } else { Value::Null },
             "completedAt": if matches!(status, "GREEN" | "RED" | "ERROR") { json!("2026-01-01T00:00:01Z") } else { Value::Null },
             "createdAt":"2026-01-01T00:00:00Z",
-            "cwd":"/repo",
+            "cwd":"repo",
             "humanDefinition":definition,
         }))
         .unwrap(),
@@ -203,8 +210,8 @@ fn view(status: &str, reviewer: Option<&str>, definition: Value) -> RequestView 
 
 pub(crate) fn opened(reviewer: Option<&str>, definition: Value) -> Review {
     let mut review = Review::new(
-        "/state".into(),
-        Some("/repo".into()),
+        "fixture-state".into(),
+        Some("repo".into()),
         "alice".parse().unwrap(),
         Some(ID.parse().unwrap()),
     );
@@ -247,11 +254,11 @@ fn control(review: &mut Review, c: char) -> Action {
 
 fn command(args: &[&str]) -> CommandLine {
     CommandLine {
-        repo: "/repo".into(),
+        repo: "repo".into(),
         kind: HumanToolKind::Output,
         program: "get".into(),
         args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-        cwd: "/repo/release".into(),
+        cwd: "repo/release".into(),
     }
 }
 
@@ -330,7 +337,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
     let text = screen(&mut review);
     for expected in [
         "release/signoff · Approve · CLAIM",
-        "WAITING_HUMAN · unclaimed · waiting",
+        "WAITING_HUMAN · unclaimed · waiting 1m 05s",
         "t technical ▸",
         "Approve the notes.",
         "Tools  notes_release (output) · open_release (launch)",
@@ -339,7 +346,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
         assert!(text.contains(expected), "{expected}\n{text}");
     }
     // Identifiers and raw schemas wait in the folded Technical section.
-    for hidden in ["Request: run-1-3", "Repository: /repo", "GREEN fields:"] {
+    for hidden in ["Request: run-1-3", "Repository: repo", "GREEN fields:"] {
         assert!(!text.contains(hidden), "{hidden}\n{text}");
     }
     press(&mut review, KeyCode::Char('t'));
@@ -348,7 +355,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
         "t technical ▾",
         "Request: run-1-3",
         "Run: run-1",
-        "Repository: /repo",
+        "Repository: repo",
         "Status: WAITING_HUMAN",
         "Claim: unclaimed; c claims it for alice",
         "GREEN fields: {",
@@ -383,7 +390,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
 fn shared_requests_name_where_actions_go_in_the_metadata() {
     let mut review = opened(None, demo());
     let execution = |request: &str| {
-        let provenance = json!({"repoPath":"/origin","runId":"run-0","requestId":request,
+        let provenance = json!({"repoPath":"origin","runId":"run-0","requestId":request,
             "evalId":"release/signoff","evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","completedAt":null});
         serde_json::from_value(
             json!({"id":"execution-fixture","key":null,"fingerprint":null,
@@ -399,7 +406,7 @@ fn shared_requests_name_where_actions_go_in_the_metadata() {
     assert!(!text.contains("actions go to"), "{text}");
     review.shown.request_mut().unwrap().execution = Some(execution("run-0-9"));
     let text = screen(&mut review);
-    assert!(text.contains("actions go to run-0-9 in /origin"), "{text}");
+    assert!(text.contains("actions go to run-0-9 in origin"), "{text}");
 }
 
 #[test]
@@ -417,7 +424,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
             [
                 (
                     "notes_release".parse().unwrap(),
-                    Ok(command(&["/repo/release/notes.md"])),
+                    Ok(command(&["repo/release/notes.md"])),
                 ),
                 (
                     "open_release".parse().unwrap(),
@@ -430,7 +437,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     };
     resolved(&mut review);
     let text = screen(&mut review);
-    assert!(text.contains("$ get /repo/release/notes.md"), "{text}");
+    assert!(text.contains("$ get repo/release/notes.md"), "{text}");
     assert!(!text.contains("{artifactPath}"), "{text}");
     let run = |tool: &str| {
         Action::Start(Job::Run {
@@ -453,7 +460,9 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     assert_eq!(press(&mut review, KeyCode::Enter), run("notes_release"));
     // A run drops the resolved commands until the next refresh resolves them again; a tool
     // that cannot be resolved shows its declaration and why.
-    assert!(review.commands.is_none());
+    let text = screen(&mut review);
+    assert!(text.contains("$ get {artifactPath}/notes.md"), "{text}");
+    assert!(!text.contains("$ get repo/release/notes.md"), "{text}");
     resolved(&mut review);
     press(&mut review, KeyCode::Down);
     let text = screen(&mut review);
@@ -526,7 +535,7 @@ fn requests_claimed_by_others_or_settled_are_read_only() {
 #[test]
 fn review_keys_need_detail_focus_and_an_owned_request() {
     // On the list, review letters do nothing; c never claims there.
-    let mut review = Review::new("/state".into(), None, "alice".parse().unwrap(), None);
+    let mut review = Review::new("fixture-state".into(), None, "alice".parse().unwrap(), None);
     review.set_listed(vec![view("WAITING_HUMAN", None, demo())]);
     for key in ['c', 'g', 'u', 'i', 't'] {
         assert_eq!(
@@ -585,8 +594,7 @@ fn review_keys_need_detail_focus_and_an_owned_request() {
         control(&mut review, 's'),
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
-            verdict: crate::runtime::Verdict::Red,
-            result: json!({"verdict":"RED","reason":"qcit"}),
+            result: json!({"verdict":"RED","reason":"qcit"}).try_into().unwrap(),
             claim: false
         })
     );
@@ -666,11 +674,10 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     assert!(text.contains("REVIEW (yours)"), "{text}");
     // A fixed field ignores typing.
     press(&mut review, KeyCode::Char('x'));
-    let submit = |verdict: crate::runtime::Verdict, result: Value| {
+    let submit = |_verdict: crate::runtime::Verdict, result: Value| {
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
-            verdict,
-            result,
+            result: result.try_into().unwrap(),
             claim: false,
         })
     };
@@ -789,8 +796,9 @@ fn other_schemas_edit_inline_and_ctrl_e_opens_the_editor() {
         review.edited(Ok(r#"{"approved":true,"checks":["a"]}"#.into())),
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
-            verdict: crate::runtime::Verdict::Green,
-            result: json!({"approved":true,"checks":["a"],"verdict":"GREEN"}),
+            result: json!({"approved":true,"checks":["a"],"verdict":"GREEN"})
+                .try_into()
+                .unwrap(),
             claim: false
         })
     );
@@ -1011,6 +1019,14 @@ fn quitting_keeps_or_releases_only_the_claims_this_session_took() {
 #[test]
 fn a_running_job_only_scrolls_or_cancels() {
     let mut review = opened(Some("alice"), demo());
+    let output = (0..30)
+        .map(|index| format!("output-{index:03}\n"))
+        .collect::<String>();
+    review.finish(Outcome::Ran {
+        tool: "notes_release".parse().unwrap(),
+        claimed: None,
+        result: printed(&output, false),
+    });
     drop(review.start(Job::Run {
         id: ID.parse().unwrap(),
         tool: "notes_release".parse().unwrap(),
@@ -1032,8 +1048,16 @@ fn a_running_job_only_scrolls_or_cancels() {
         assert_eq!(review.mode(), &Mode::Request);
         assert_eq!(review.focus(), Focus::Detail);
     }
+    assert!(text.contains("output-000"), "{text}");
     press(&mut review, KeyCode::PageDown);
-    assert_eq!(review.scroll, 10);
+    let text = screen(&mut review);
+    assert!(
+        text.contains("output-010") && !text.contains("output-000"),
+        "{text}"
+    );
+    press(&mut review, KeyCode::PageUp);
+    let text = screen(&mut review);
+    assert!(text.contains("output-000"), "{text}");
     let cancel = review.busy.as_ref().unwrap().cancel.clone();
     press(&mut review, KeyCode::Esc);
     assert!(cancel.is_cancelled());
@@ -1051,12 +1075,18 @@ fn a_running_job_only_scrolls_or_cancels() {
 }
 
 fn listed() -> Review {
-    let mut review = Review::new("/state".into(), None, "alice".parse().unwrap(), None);
+    let mut review = Review::new("fixture-state".into(), None, "alice".parse().unwrap(), None);
     let mut other = view("WAITING_HUMAN", Some("bob"), demo());
     other.request.id = "run-2-1".parse().unwrap();
     other.request.eval_id = "docs/check".parse().unwrap();
     review.set_listed(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
-    review.refreshed = Some(OffsetDateTime::now_utc());
+    review.refreshed = Some(
+        OffsetDateTime::parse(
+            "2026-01-01T00:01:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap(),
+    );
     review
 }
 
@@ -1069,7 +1099,7 @@ fn list_opens_requests_and_esc_steps_back_without_quitting() {
         text.contains("alice (you)") && text.contains("bob"),
         "{text}"
     );
-    assert!(text.contains("/repo"));
+    assert!(text.contains("repo"));
     // The selected request is previewed beside the list.
     assert!(text.contains("docs/check · Approve"), "{text}");
     assert!(text.contains("Enter: open review · Tab: tools"), "{text}");

@@ -1,0 +1,50 @@
+name = "ux-graph"
+
+[views.agent_tools]
+
+[views.agent_tools.read_graph]
+description = "Print the screens, states and transitions UX-GRAPH.md of {artifactName}."
+builtin = "read"
+args = ["UX-GRAPH.md"]
+
+[evals.covers-features]
+title = "Every journey of the UX features is a path in the graph"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+[evals.covers-features.profile_variants]
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+
+[evals.covers-features.payload]
+instruction = """
+Read the journeys {ux-features} with read_features_ux-features and the graph {ux-graph} with \
+read_graph_ux-graph. Check that every journey (J- id) is a path through edges of the graph: each \
+step the journey describes is an edge, and no edge contradicts what a journey says. Check also that \
+every edge id is unique and that each edge belongs to at least one journey. Submit GREEN when no \
+journey is missing a step. Otherwise submit RED with up to 20 gaps, the most important first, each \
+with the journey id (item), the step or edge involved (where) and one sentence on what to change \
+in the graph or the journeys."""
+
+[evals.covers-features.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.covers-features.fail_schema]
+type = "object"
+required = ["gaps"]
+additionalProperties = false
+
+[evals.covers-features.fail_schema.properties.gaps]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.covers-features.fail_schema.properties.gaps.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.where = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["item", "where", "change"]
+additionalProperties = false

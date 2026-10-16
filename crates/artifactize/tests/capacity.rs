@@ -1,13 +1,20 @@
 //! Machine-wide Agent backend capacity from `$STATE/limits.json`, shared by every `verify`
 //! process through the RUNNING executions of each backend in `state.sqlite`.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild as Child;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use std::{
     fs,
+    io::Write,
+    net::{Ipv4Addr, TcpListener},
     path::{Path, PathBuf},
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -21,7 +28,8 @@ use serde_json::{Value, json};
 use support::{FakeProvider, openai};
 
 struct Fixture {
-    root: tempfile::TempDir,
+    // Release every registered Run before its temporary state or provider is dropped.
+    root: owned_run::Root,
     provider: FakeProvider,
     /// Reviews in flight at the provider, and the most at once.
     active: Arc<AtomicUsize>,
@@ -29,10 +37,16 @@ struct Fixture {
     gate: support::Gate,
 }
 
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.gate.open();
+    }
+}
+
 impl Fixture {
     /// A fake provider whose response is released explicitly by the test.
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         fs::create_dir_all(root.path().join("home")).unwrap();
         fs::create_dir_all(root.path().join("state")).unwrap();
         let (active, most) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
@@ -82,6 +96,7 @@ impl Fixture {
             )
             .unwrap();
         }
+        self.root.track(&self.state(), &repo);
         repo
     }
 
@@ -105,20 +120,33 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        self.command(repo, &[&["verify", "--all", "--json"][..], args].concat())
+        let child = self
+            .command(
+                repo,
+                &[&["verify", "--wait", "--all", "--json"][..], args].concat(),
+            )
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap()
+            .unwrap();
+        Child::new(child, &self.state(), repo)
     }
 
-    fn database(&self) -> Connection {
+    fn stimulus(&self) -> Connection {
         Connection::open(self.state().join("state.sqlite")).unwrap()
+    }
+
+    fn observed(&self) -> Connection {
+        Connection::open_with_flags(
+            self.state().join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap()
     }
 
     /// Slots held: RUNNING executions on a backend.
     fn slots(&self) -> u32 {
-        self.database()
+        self.observed()
             .query_row(
                 "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
                 [],
@@ -129,7 +157,7 @@ impl Fixture {
 
     /// Hold an openai slot with an execution of this live process (the test).
     fn hold(&self) {
-        self.database().execute(
+        self.stimulus().execute(
             "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) SELECT 'held',NULL,eval_def_hash,'RUNNING',?1,?2,'openai',json_set(data,'$.id','held','$.key',NULL,'$.status','RUNNING','$.result',NULL,'$.error',NULL,'$.errorCode',NULL,'$.completedAt',NULL,'$.ownerPid',?1,'$.ownerStartTime',?2) FROM executions LIMIT 1",
             rusqlite::params![std::process::id(), own_start_time() as i64],
         )
@@ -177,14 +205,14 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     let (first, second) = (fixture.repo("a", 3), fixture.repo("b", 3));
     fixture.limits(json!({"backends":{"openai":1,"anthropic":2}}));
     fixture.gate.close();
-    let runs = [
-        fixture.spawn(&first, &["--jobs", "3"]),
-        fixture.spawn(&second, &["--jobs", "3"]),
-    ];
+    let runs = [fixture.spawn(&first, &[]), fixture.spawn(&second, &[])];
     let mut seen_waiting = false;
     wait_until(|| {
-        seen_waiting |= Connection::open(fixture.state().join("state.sqlite"))
-            .is_ok_and(|db| capacity_waiters(&db) > 0);
+        seen_waiting |= Connection::open_with_flags(
+            fixture.state().join("state.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .is_ok_and(|db| capacity_waiters(&db) > 0);
         seen_waiting
     });
     fixture.gate.open();
@@ -200,10 +228,7 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     fs::remove_file(fixture.state().join("limits.json")).unwrap();
     fixture.most.store(0, Ordering::SeqCst);
     fixture.gate.close();
-    let runs = [
-        fixture.spawn(&first, &["--jobs", "3"]),
-        fixture.spawn(&second, &["--jobs", "3"]),
-    ];
+    let runs = [fixture.spawn(&first, &[]), fixture.spawn(&second, &[])];
     wait_until(|| fixture.active.load(Ordering::SeqCst) > 1);
     fixture.gate.open();
     for run in runs {
@@ -225,7 +250,7 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     fixture.limits(json!({"backends":{"openai":1}}));
     // A first Run creates the state database; then a live process (this test) holds the slot.
     finish(fixture.spawn(&repo, &[]), 0);
-    let db = fixture.database();
+    let db = fixture.observed();
     fixture.hold();
     let calls = fixture.provider.requests().len();
     let waiting = fixture.spawn(&repo, &["--force", "--max-executions", "1"]);
@@ -243,11 +268,13 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     assert_eq!(started, 0);
 
     // The holder "crashes": the execution of an owner that is gone ends, and frees its slot.
-    db.execute(
-        "UPDATE executions SET owner_start_time=0 WHERE id='held'",
-        [],
-    )
-    .unwrap();
+    fixture
+        .stimulus()
+        .execute(
+            "UPDATE executions SET owner_start_time=0 WHERE id='held'",
+            [],
+        )
+        .unwrap();
     let run = finish(waiting, 0);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][0]["status"], "GREEN");
@@ -273,6 +300,88 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     assert_eq!(backends, [Some("openai".to_owned())]);
 }
 
+#[tokio::test]
+async fn a_slot_waiter_finishes_by_reusing_a_forced_producers_completed_result() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("solo", 1);
+    // Keep the waiter's one job occupied until its Agent request has reused the cache.
+    // It cannot race through claim/reuse instead of the scheduler's cache-read path.
+    let barrier = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    barrier.set_nonblocking(true).unwrap();
+    let address = barrier.local_addr().unwrap();
+    // A stable key lets the waiting Run reuse the forced producer's eventual result.
+    support::declaration::write(
+        repo.join("solo0/index.artf"),
+        json!({"name":"solo0","evals":[
+            {"id":"review","title":"Review",
+                "profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
+                "payload":{"instruction":"Review."}},
+            {"id":"zz-hold","title":"Hold the job",
+                "profile":{"kind":"runtime","command":support::os::python_program(),
+                    "args":["-c","import socket,sys\nwith socket.create_connection((sys.argv[1],int(sys.argv[2]))) as stream:\n    assert stream.recv(1) == b'x'",address.ip().to_string(),address.port().to_string()]},
+                "payload":{"instruction":"Wait for the fixture's release."}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    fixture.limits(json!({"backends":{"openai":1}}));
+    fixture.gate.close();
+    // A forced execution holds the backend slot but does not claim its reuse key.
+    let child = fixture
+        .command(
+            &repo,
+            &[
+                "verify",
+                "--wait",
+                "--eval",
+                "solo0/review",
+                "--force",
+                "--json",
+            ],
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let producer = Child::new(child, &fixture.state(), &repo);
+    wait_until(|| fixture.active.load(Ordering::SeqCst) == 1);
+    let waiter = fixture.spawn(&repo, &["--jobs", "1"]);
+    let db = fixture.observed();
+    wait_until(|| capacity_waiters(&db) == 1);
+    let mut held = None;
+    wait_until(|| {
+        held = barrier.accept().ok().map(|(stream, _)| stream);
+        held.is_some()
+    });
+    let mut held = held.unwrap();
+
+    fixture.gate.open();
+    // Only the Agent eval was selected, so this producer's Artifact still has an obligation.
+    let produced = finish(producer, 4);
+    let waiter_id = waiter.run();
+    wait_until(|| {
+        db.query_row(
+            "SELECT status FROM requests WHERE run_id=?1 AND json_extract(data,'$.evalId')='solo0/review'",
+            [waiter_id.as_str()],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap()
+            == "GREEN"
+    });
+    held.write_all(b"x").unwrap();
+    drop(held);
+    // A GREEN request alone is not completion: the Run itself must settle without cancel.
+    owned_run::terminal(&fixture.state(), &waiter_id).await;
+    let reused = finish(waiter, 0);
+    assert_eq!(reused["status"], "GREEN");
+    assert_eq!(
+        reused["executionsStarted"], 1,
+        "only the runtime job starts"
+    );
+    assert_eq!(reused["requests"][0]["status"], "GREEN");
+    assert_eq!(reused["requests"][0]["provenance"]["runId"], produced["id"]);
+}
+
 #[test]
 fn invalid_limits_fail_verify_and_doctor_before_any_run() {
     let fixture = Fixture::new();
@@ -285,8 +394,8 @@ fn invalid_limits_fail_verify_and_doctor_before_any_run() {
     ] {
         fixture.limits(limits);
         let output = fixture
-            .command(&repo, &["verify", "--all"])
-            .output()
+            .command(&repo, &["verify", "--wait", "--all"])
+            .record_output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -296,7 +405,7 @@ fn invalid_limits_fail_verify_and_doctor_before_any_run() {
         );
         let doctor = fixture
             .command(&repo, &["doctor", "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert_eq!(doctor.status.code(), Some(1));
         let report: Value = serde_json::from_slice(&doctor.stdout).unwrap();
@@ -312,7 +421,7 @@ fn invalid_limits_fail_verify_and_doctor_before_any_run() {
     fixture.limits(json!({"backends":{"codex":4,"openai":8}}));
     let doctor = fixture
         .command(&repo, &["doctor", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     let report: Value = serde_json::from_slice(&doctor.stdout).unwrap();
     let check = report["checks"]
@@ -350,7 +459,7 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
     .unwrap();
     fixture.limits(json!({"backends":{"openai":1}}));
     finish(fixture.spawn(&repo, &[]), 0);
-    let db = fixture.database();
+    let db = fixture.observed();
     fixture.hold();
     // With one job, the Agent review waits for its slot and the runtime eval still runs.
     let run = fixture.spawn(&repo, &["--force", "--jobs", "1"]);
@@ -364,7 +473,9 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
         .unwrap()
             == 1
     });
-    db.execute("UPDATE executions SET status='ERROR' WHERE id='held'", [])
+    fixture
+        .stimulus()
+        .execute("UPDATE executions SET status='ERROR' WHERE id='held'", [])
         .unwrap();
     let run = finish(run, 0);
     assert_eq!(run["executionsStarted"], 2);

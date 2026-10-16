@@ -343,6 +343,12 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
     }
 }
 
+/// Run workers also detach from their requester when its enclosing Job forbids breakaway;
+/// that Job's lifetime remains an OS-imposed bound, just as for a desktop handoff.
+pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
+    spawn_detached(command)
+}
+
 /// The creation time, in 100 ns intervals since 1601. A process that has exited counts as
 /// not found, as does one this user may not query: artifactize records only its own
 /// processes and children, so such a PID was reused by another user's or a system process.
@@ -392,6 +398,11 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
 /// Windows identity lookup already excludes a signalled (terminated) process.
 pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
     process_start_time(pid)
+}
+
+/// Every owned preparation/execution child has a kill-on-close Job held by its Run worker.
+pub(crate) fn kill_saved_session(_leader: crate::process::ChildIdentity) -> io::Result<()> {
+    Ok(())
 }
 
 /// A dead owner has already closed its kill-on-close Job handle.
@@ -455,34 +466,37 @@ mod tests {
 
     #[tokio::test]
     async fn detached_launch_probe() {
-        use windows_sys::Win32::System::{
-            JobObjects::IsProcessInJob, Threading::GetCurrentProcess,
-        };
-
         if std::env::var_os("ARTIFACTIZE_DETACHED_PROBE").is_none() {
             return;
         }
-        // A job without JOB_OBJECT_LIMIT_BREAKAWAY_OK; it also ends this probe's children.
-        let job = Job::new().unwrap();
-        // SAFETY: the job handle is open; GetCurrentProcess is a pseudo-handle.
-        assert_ne!(
-            unsafe { AssignProcessToJobObject(job.0.as_raw_handle(), GetCurrentProcess()) },
-            0
-        );
+        let job = crate::test_os::windows_job_without_breakaway();
         let command = crate::test_os::stdin_waiter();
         let mut child = spawn_detached(command).unwrap();
-        let mut in_job = 0;
-        // SAFETY: both handles are open and the out pointer is valid.
-        let queried = unsafe {
-            IsProcessInJob(
-                child.raw_handle().unwrap(),
-                job.0.as_raw_handle(),
-                &mut in_job,
-            )
-        };
-        assert_ne!(queried, 0);
-        assert_ne!(in_job, 0, "the fallback starts the handoff inside the job");
+        assert!(
+            crate::test_os::process_in_job(&child, &job),
+            "the fallback starts the handoff inside the job"
+        );
         child.kill().await.unwrap();
+
+        // A Run worker uses the same restricted Job, but with owner-only cwd and stderr
+        // beneath a parent whose Everyone ACE would otherwise be inherited.
+        let parent = crate::test_os::tempdir();
+        crate::test_os::share_dir(parent.path());
+        let directory = crate::platform::private_tempdir_in("run-", parent.path()).unwrap();
+        let stderr_path = directory.path().join("worker.stderr");
+        let stderr = std::fs::File::create(&stderr_path).unwrap();
+        let mut command = crate::test_os::windows_marker(directory.path());
+        command.stderr(std::process::Stdio::from(stderr));
+        let mut worker = spawn_run(command).unwrap();
+        assert!(worker.wait().await.unwrap().success());
+        assert!(directory.path().join("marker").exists());
+        assert!(crate::test_os::private_dir(directory.path()));
+        assert!(!crate::test_os::has_inherited_aces(directory.path()));
+        assert!(crate::test_os::private_file(&stderr_path));
+        assert!(crate::test_os::private_file(
+            &directory.path().join("marker")
+        ));
+
         // Closing the job's last handle would end this process too; it closes at exit.
         std::mem::forget(job);
     }
@@ -496,6 +510,10 @@ mod exit_tests {
         let mut child = crate::test_os::windows_exit(259).spawn().unwrap();
         let pid = child.id().unwrap();
         assert_eq!(child.wait().await.unwrap().code(), Some(259));
+        assert!(
+            !crate::test_os::running(pid),
+            "the fixture sees a terminated process"
+        );
         assert_eq!(
             process_start_time(pid).unwrap_err().kind(),
             io::ErrorKind::NotFound

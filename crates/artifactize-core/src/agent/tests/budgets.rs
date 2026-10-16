@@ -4,10 +4,10 @@ use super::*;
 async fn tool_budget_counts_unknown_and_invalid_calls_before_validation() {
     let mut invalid = call("first", "inspect_a");
     invalid["arguments"] = json!("{}");
-    for first in [
-        call("first", "inspect_a"),
-        call("first", "unknown"),
-        invalid,
+    for (first, failed) in [
+        (call("first", "inspect_a"), false),
+        (call("first", "unknown"), true),
+        (invalid, true),
     ] {
         let mut fixture = Fixture::new("openai");
         let Profile::Agent { max_tool_calls, .. } =
@@ -36,10 +36,7 @@ async fn tool_budget_counts_unknown_and_invalid_calls_before_validation() {
         // The first call ran and keeps its result; the budget stopped the others.
         let calls = fixture.calls();
         assert_eq!(calls.len(), 3);
-        assert_eq!(
-            calls[0].1.as_ref().unwrap().1,
-            first["name"] == "unknown" || first["arguments"] == "{}"
-        );
+        assert_eq!(calls[0].1.as_ref().unwrap().1, failed);
         assert!(calls[1].1.is_none() && calls[2].1.is_none());
     }
 }

@@ -312,7 +312,7 @@ impl Review {
         }
         if let (Ok(()), Some(id)) = (&result, self.open.clone()) {
             let read = match store::read_request(&self.state, &id).await {
-                Ok(view) if view.request.status() == crate::types::RequestStatus::WaitingHuman => {
+                Ok(view) if view.request.status().is_human_wait() => {
                     store::read_original(&self.state, &view).await
                 }
                 other => other,
@@ -372,7 +372,7 @@ impl Review {
             return;
         };
         let id = view.request.id.clone();
-        if view.request.status() != crate::types::RequestStatus::WaitingHuman
+        if !view.request.status().is_human_wait()
             || view.request.human_definition.is_none()
             || self.commands.as_ref().is_some_and(|(seen, _)| seen == &id)
         {
@@ -380,7 +380,9 @@ impl Review {
         }
         let commands = async {
             let (receipts, _) = human::open(&self.state, &id).await?;
-            human::tool_commands(&receipts, &id).await
+            let result = human::tool_commands(&receipts, &id).await;
+            let closed = receipts.close().await;
+            result.and_then(|commands| closed.map(|()| commands))
         }
         .await;
         // A request that cannot be resolved shows its tools as declared.
@@ -653,11 +655,12 @@ impl Review {
         }
     }
 
-    fn submit(&mut self, verdict: crate::runtime::Verdict, result: Value) -> Action {
-        match self.owned_request() {
-            Ok(id) => Action::Start(Job::Submit {
+    fn submit(&mut self, result: Value) -> Action {
+        match self.owned_request().and_then(|id| {
+            artifactize_core::review::Submission::try_from(result).map(|result| (id, result))
+        }) {
+            Ok((id, result)) => Action::Start(Job::Submit {
                 id,
-                verdict,
                 result,
                 claim: false,
             }),
@@ -676,7 +679,7 @@ impl Review {
         let label = match &job {
             Job::Claim { .. } => "Claiming the review".into(),
             Job::Run { tool, .. } => format!("Running {tool}"),
-            Job::Submit { verdict, .. } => format!("Submitting {}", verdict.as_str()),
+            Job::Submit { result, .. } => format!("Submitting {}", result.verdict().as_str()),
             Job::Release { .. } => "Releasing the claim".into(),
         };
         self.busy = Some(Busy {
@@ -806,9 +809,8 @@ impl Review {
             }
             Ok(text) => {
                 form.set_json(text);
-                let verdict = form.verdict;
                 match form.result() {
-                    Ok(result) => return self.submit(verdict, result),
+                    Ok(result) => return self.submit(result),
                     Err(error) => form.error = Some(error),
                 }
             }

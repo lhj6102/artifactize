@@ -1,26 +1,35 @@
 //! Read-through/write-through of the remote review store: two state directories ("machines")
 //! and one real `artifactize server` on loopback.
 
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::{RunChild, Watcher};
+
+#[path = "support/order.rs"]
+mod order;
+
 use std::{
     fs,
     io::{BufRead, BufReader},
     net::TcpListener,
     path::{Path, PathBuf},
-    process::{Child, ChildStdout, Command, Output, Stdio},
+    process::{ChildStdout, Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::{cat_program, shell, true_program};
+use sha2::{Digest, Sha256};
+use support::os::{cat_program, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Server {
     state: PathBuf,
-    child: Child,
+    child: Watcher,
     _stdout: BufReader<ChildStdout>,
     url: String,
 }
@@ -28,13 +37,14 @@ struct Server {
 impl Server {
     fn start(root: &Path) -> Self {
         let state = root.join("server");
-        let mut child = Command::new(support::os::cli())
+        let child = Command::new(support::os::cli())
             .arg("--state-dir")
             .arg(&state)
             .args(["server", "run", "--listen", "127.0.0.1:0"])
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = Watcher::new(child);
         let mut stdout = BufReader::new(child.stdout.take().unwrap());
         let mut line = String::new();
         stdout.read_line(&mut line).unwrap();
@@ -57,7 +67,7 @@ impl Server {
             .arg("--state-dir")
             .arg(&self.state)
             .args(["server", "token", "add", name, "--scopes", scopes, "--json"])
-            .output()
+            .record_output()
             .unwrap();
         assert!(output.status.success());
         let added: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -66,7 +76,11 @@ impl Server {
 
     /// Stored (publisher, record) pairs.
     fn entries(&self) -> Vec<(String, Value)> {
-        let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            self.state.join("review-store.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         let mut statement = db
             .prepare("SELECT publisher,data FROM entries ORDER BY publisher,key,completed_at")
             .unwrap();
@@ -85,7 +99,11 @@ impl Server {
     /// The last use of each stored record, by execution ID; a lookup updates the record it
     /// returns.
     fn last_used(&self) -> Vec<(String, String)> {
-        let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
+        let db = Connection::open_with_flags(
+            self.state.join("review-store.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
         let mut statement = db
             .prepare("SELECT execution_id,last_used FROM entries ORDER BY execution_id")
             .unwrap();
@@ -96,7 +114,8 @@ impl Server {
             .collect()
     }
 
-    /// Seed completion ordering, not elapsed wall-clock time, for a stored fixture.
+    /// Seed completion and last-use fixture times. A forbidden lookup must not hide
+    /// behind a host clock that returns the same timestamp as the original write.
     fn completed_at(&self, execution: &str, at: &str) {
         let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
         let data: String = db
@@ -109,7 +128,7 @@ impl Server {
         let data = completion_fixture(&data, at);
         assert_eq!(
             db.execute(
-                "UPDATE entries SET completed_at=?,bytes=?,data=? WHERE execution_id=?",
+                "UPDATE entries SET completed_at=?1,last_used=?1,bytes=?2,data=?3 WHERE execution_id=?4",
                 rusqlite::params![at, data.len() as i64, data, execution]
             )
             .unwrap(),
@@ -118,8 +137,7 @@ impl Server {
     }
 
     fn stop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.child.stop().unwrap();
     }
 }
 
@@ -130,17 +148,19 @@ impl Drop for Server {
 }
 
 /// One machine: its own state directory, user name and remote token.
-struct Machine {
+struct Machine<'a> {
+    root: &'a owned_run::Root,
     state: PathBuf,
     user: &'static str,
     url: String,
     token: String,
 }
 
-impl Machine {
-    fn new(root: &Path, user: &'static str, url: &str, token: &str) -> Self {
+impl<'a> Machine<'a> {
+    fn new(root: &'a owned_run::Root, user: &'static str, url: &str, token: &str) -> Self {
         Self {
-            state: root.join(format!("state-{user}")),
+            state: root.path().join(format!("state-{user}")),
+            root,
             user,
             url: url.into(),
             token: token.into(),
@@ -148,6 +168,9 @@ impl Machine {
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
+        // Register before submission. Failed cleanup retains the common root instead
+        // of deleting inputs still owned by either machine's detached workers.
+        self.root.track(&self.state, repo);
         let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
@@ -155,17 +178,17 @@ impl Machine {
             .arg("--state-dir")
             .arg(&self.state)
             .args(args)
-            .env("USER", self.user)
             .env("ARTIFACTIZE_REMOTE", &self.url)
             .env("ARTIFACTIZE_REMOTE_TOKEN", &self.token)
             .env_remove("ARTIFACTIZE_REMOTE_SHARE");
+        support::os::sign_in_as(&mut command, self.user);
         command
     }
 
     /// Text stdout and stderr; neither ever contains the token.
     fn run(&self, repo: &Path, args: &[&str], code: i32) -> (String, String) {
         checked(
-            self.command(repo, args).output().unwrap(),
+            self.command(repo, args).record_output().unwrap(),
             code,
             &self.token,
         )
@@ -176,25 +199,9 @@ impl Machine {
         serde_json::from_str(&stdout).unwrap()
     }
 
-    /// Keep cache metadata and its saved execution wire timestamp in agreement.
-    fn completed_at(&self, execution: &str, at: &str) {
-        let db = Connection::open(self.state.join("state.sqlite")).unwrap();
-        let data: String = db
-            .query_row(
-                "SELECT data FROM executions WHERE id=?",
-                [execution],
-                |row| row.get(0),
-            )
-            .unwrap();
-        let data = completion_fixture(&data, at);
-        assert_eq!(
-            db.execute(
-                "UPDATE executions SET completed_at=?,bytes=?,data=? WHERE id=?",
-                rusqlite::params![at, data.len() as i64, data, execution]
-            )
-            .unwrap(),
-            1
-        );
+    /// Seed ordering only after this Run's actual producer has closed SQLite.
+    fn completed_at(&self, repo: &Path, run: &Value, at: &str) {
+        order::completed_at(&self.state, repo, run, at);
     }
 
     /// Claim and submit the Human request that `run` recorded; returns stderr.
@@ -311,24 +318,19 @@ const OFFLINE: &str = "continuing without the remote review store";
 
 #[test]
 fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let alice = Machine::new(
-        root.path(),
+        &root,
         "alice",
         &server.url,
         &server.token("alice-laptop", "read,publish"),
     );
-    let bob = Machine::new(
-        root.path(),
-        "bob",
-        &server.url,
-        &server.token("bob-ci", "read"),
-    );
+    let bob = Machine::new(&root, "bob", &server.url, &server.token("bob-ci", "read"));
     let repo_a = runtime_repo(root.path(), "a", "v1");
     let repo_b = runtime_repo(root.path(), "b", "v1");
 
-    let (text, stderr) = alice.run(&repo_a, &["verify", "--all"], 0);
+    let (text, stderr) = alice.run(&repo_a, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 2 (runtime 2, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)"
@@ -346,7 +348,11 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
         );
         // A summary carries no captured output or local paths.
         assert!(record.get("execution").is_none());
-        assert!(!record.to_string().contains(root.path().to_str().unwrap()));
+        assert!(
+            !record
+                .to_string()
+                .contains(&support::os::path_text(root.path()))
+        );
     }
 
     // Status reads the remote without mirroring it.
@@ -361,7 +367,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     );
     assert!(bob.json(&repo_b, &["cache", "list"], 0) == json!([]));
 
-    let (text, _) = bob.run(&repo_b, &["verify", "--all"], 0);
+    let (text, _) = bob.run(&repo_b, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 0 (runtime 0, agent 0, human 0), reused 2 (runtime 2, agent 0, human 0)"
@@ -381,7 +387,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
         run["requests"][0]["source"],
         json!({
             "runId":source,
-            "requestId":run["requests"][0]["provenance"]["requestId"],
+            "requestId":entries[0].1["requestId"],
             "kind":"remote",
         })
     );
@@ -397,7 +403,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
 
     // Bob changes docs: it executes locally, and his read-only token publishes nothing.
     fs::write(repo_b.join("docs/version"), "docs-v2\n").unwrap();
-    let (text, stderr) = bob.run(&repo_b, &["verify", "--all"], 0);
+    let (text, stderr) = bob.run(&repo_b, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 1 (runtime 1, agent 0, human 0), reused 1 (runtime 1, agent 0, human 0)"
@@ -408,10 +414,10 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
 
 #[test]
 fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let mut server = Server::start(root.path());
     let bob = Machine::new(
-        root.path(),
+        &root,
         "bob",
         &server.url,
         &server.token("bob", "read,publish"),
@@ -419,7 +425,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
     server.stop();
     let repo = runtime_repo(root.path(), "repo", "v1");
 
-    let (text, stderr) = bob.run(&repo, &["verify", "--all"], 0);
+    let (text, stderr) = bob.run(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 2 (runtime 2, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)"
@@ -427,7 +433,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
     assert_eq!(stderr.matches(OFFLINE).count(), 1, "{stderr}");
     assert!(stderr.contains("unreachable"), "{stderr}");
     // The store is asked again next time; while it is down, the local latest is reused.
-    let (text, stderr) = bob.run(&repo, &["verify", "--all"], 0);
+    let (text, stderr) = bob.run(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
         "Summary: executed 0 (runtime 0, agent 0, human 0), reused 2 (runtime 2, agent 0, human 0)"
@@ -438,11 +444,11 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
 }
 #[test]
 fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
-    let machine = Machine::new(root.path(), "bob", &url, "azt_unused");
+    let machine = Machine::new(&root, "bob", &url, "azt_unused");
     let repo = runtime_repo(root.path(), "repo", "v1");
 
     let (_, stderr) = machine.run(&repo, &["status", "--force"], 1);
@@ -454,47 +460,48 @@ fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
 
     let server = Server::start(root.path());
     server.token("bob", "read,publish");
-    let rejected = Machine::new(root.path(), "mallory", &server.url, "azt_unknown");
-    let (_, stderr) = rejected.run(&repo, &["verify", "--all"], 2);
+    let rejected = Machine::new(&root, "mallory", &server.url, "azt_unknown");
+    let (_, stderr) = rejected.run(&repo, &["verify", "--wait", "--all"], 2);
     assert!(stderr.contains("rejected the token (HTTP 401)"), "{stderr}");
-    assert_eq!(rejected.json(&repo, &["run", "list"], 0), json!([]));
+    assert_eq!(
+        rejected.json(&repo, &["run", "list"], 0)[0]["status"],
+        "ERROR"
+    );
 }
 #[test]
 fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let laptop = Machine::new(
-        root.path(),
+        &root,
         "alice",
         &server.url,
         &server.token("alice-laptop", "read,publish"),
     );
     let signer = Machine::new(
-        root.path(),
+        &root,
         "signer",
         &server.url,
         &server.token("alice-signoff", "read,publish,human"),
     );
-    let bob = Machine::new(
-        root.path(),
-        "bob",
-        &server.url,
-        &server.token("bob-ci", "read"),
-    );
+    let bob = Machine::new(&root, "bob", &server.url, &server.token("bob-ci", "read"));
     let repo = human_repo(root.path(), "repo");
 
     // Bob waits for a sign-off that does not exist anywhere yet.
     let waiting = bob
-        .command(&repo, &["verify", "--all", "--timeout-ms", "30000"])
+        .command(&repo, &["verify", "--wait", "--all"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let waiting = RunChild::new(waiting, &bob.state, &repo);
+    let saved = waiting.human_waiting();
+    assert_eq!(saved.requests[0].status().as_str(), "WAITING_HUMAN");
 
     // A token without the human scope keeps the sign-off local. Each signer's own verify
     // records the request and stops waiting at once.
-    let record = ["verify", "--all", "--timeout-ms", "1"];
-    let run = laptop.json(&repo, &record, 3);
+    let record = ["verify", "--all"];
+    let run = laptop.json(&repo, &record, 0);
     let stderr = laptop.sign(&repo, &run);
     assert!(
         stderr.contains("stays local: remote token alice-laptop lacks the human scope"),
@@ -502,7 +509,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     );
     assert_eq!(server.entries(), []);
 
-    let run = signer.json(&repo, &record, 3);
+    let run = signer.json(&repo, &record, 0);
     assert!(signer.sign(&repo, &run).is_empty());
     let entries = server.entries();
     assert_eq!(entries.len(), 1);
@@ -533,22 +540,26 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     );
 
     // A fresh machine, such as CI, reuses the sign-off from the store under --reuse-only.
-    let carol = Machine::new(root.path(), "carol", &server.url, &bob.token);
-    let (text, _) = carol.run(&repo, &["verify", "--all", "--reuse-only", "human"], 0);
+    let carol = Machine::new(&root, "carol", &server.url, &bob.token);
+    let (text, _) = carol.run(
+        &repo,
+        &["verify", "--wait", "--all", "--reuse-only", "human"],
+        0,
+    );
     assert!(line(&text, "brand/signoff").contains("Human sign-off by alice"));
 }
 
 #[test]
 fn remote_push_publishes_results_produced_offline_once() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let token = server.token("alice-laptop", "read,publish");
-    let offline = Machine::new(root.path(), "alice", "off", &token);
-    let alice = Machine::new(root.path(), "alice", &server.url, &token);
+    let offline = Machine::new(&root, "alice", "off", &token);
+    let alice = Machine::new(&root, "alice", &server.url, &token);
     let runtime = runtime_repo(root.path(), "runtime", "v1");
     let human = human_repo(root.path(), "human");
-    offline.run(&runtime, &["verify", "--all"], 0);
-    let run = offline.json(&human, &["verify", "--all", "--timeout-ms", "1"], 3);
+    offline.run(&runtime, &["verify", "--wait", "--all"], 0);
+    let run = offline.json(&human, &["verify", "--all"], 0);
     offline.sign(&human, &run);
     assert_eq!(server.entries(), []);
 
@@ -574,13 +585,13 @@ fn remote_push_publishes_results_produced_offline_once() {
 
     // Another machine reuses the pushed results; its mirrors are never pushed again.
     let bob = Machine::new(
-        root.path(),
+        &root,
         "bob",
         &server.url,
         &server.token("bob-laptop", "read,publish"),
     );
     assert_eq!(
-        bob.json(&runtime, &["verify", "--all"], 0)["executionsStarted"],
+        bob.json(&runtime, &["verify", "--wait", "--all"], 0)["executionsStarted"],
         0
     );
     assert_eq!(
@@ -588,7 +599,7 @@ fn remote_push_publishes_results_produced_offline_once() {
         json!({"dryRun":false,"pushed":0,"existing":0,"skipped":0})
     );
 
-    let ci = Machine::new(root.path(), "ci", &server.url, &server.token("ci", "read"));
+    let ci = Machine::new(&root, "ci", &server.url, &server.token("ci", "read"));
     let (_, stderr) = ci.run(&runtime, &["remote", "push"], 2);
     assert!(
         stderr.contains("Remote token ci lacks the publish scope."),
@@ -602,19 +613,19 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     const FIRST: &str = "2000-01-01T00:00:01.000000000Z";
     const SECOND: &str = "2000-01-01T00:00:02.000000000Z";
     const THIRD: &str = "2000-01-01T00:00:03.000000000Z";
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let alice_token = server.token("alice-laptop", "read,publish");
-    let alice = Machine::new(root.path(), "alice", &server.url, &alice_token);
-    let offline = Machine::new(root.path(), "alice", "off", &alice_token);
+    let alice = Machine::new(&root, "alice", &server.url, &alice_token);
+    let offline = Machine::new(&root, "alice", "off", &alice_token);
     let bob = Machine::new(
-        root.path(),
+        &root,
         "bob",
         &server.url,
         &server.token("bob-laptop", "read,publish"),
     );
     let carol = Machine::new(
-        root.path(),
+        &root,
         "carol",
         &server.url,
         &server.token("carol-ci", "read"),
@@ -633,8 +644,8 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
                         "title":"Check",
                         "profile":{
                             "kind":"runtime",
-                            "command":shell(),
-                            "args":["-c","test ! -e broken"],
+                            "command":support::os::python_program(),
+                            "args":support::os::python("import pathlib, sys; sys.exit(int(pathlib.Path('broken').exists()))"),
                         },
                         "payload":{"instruction":"Check."},
                     },
@@ -645,9 +656,9 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
         repo
     };
     let (repo_a, repo_b, repo_c) = (repo("a"), repo("b"), repo("c"));
-    let first = alice.json(&repo_a, &["verify", "--all"], 0);
+    let first = alice.json(&repo_a, &["verify", "--wait", "--all"], 0);
     let alice_record = first["requests"][0]["executionId"].as_str().unwrap();
-    alice.completed_at(alice_record, FIRST);
+    alice.completed_at(&repo_a, &first, FIRST);
     server.completed_at(alice_record, FIRST);
     let key = first["requests"][0]["key"].as_str().unwrap().to_owned();
     assert_eq!(server.entries().len(), 1);
@@ -656,9 +667,9 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     // Bob reviews again by force: it reads nothing from the store, so no record's last use
     // changes, and its RED is published as a newer record without `remote push`.
     fs::write(repo_b.join("broken"), "").unwrap();
-    let forced = bob.json(&repo_b, &["verify", "--all", "--force"], 1);
+    let forced = bob.json(&repo_b, &["verify", "--wait", "--all", "--force"], 1);
     let bob_record = forced["requests"][0]["executionId"].as_str().unwrap();
-    bob.completed_at(bob_record, SECOND);
+    bob.completed_at(&repo_b, &forced, SECOND);
     server.completed_at(bob_record, SECOND);
     assert_eq!(forced["requests"][0]["key"], key.as_str());
     let entries = server.entries();
@@ -679,7 +690,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     );
 
     // A machine without a local record reuses the store's latest: bob's RED.
-    let reused = carol.json(&repo_c, &["verify", "--all"], 1);
+    let reused = carol.json(&repo_c, &["verify", "--wait", "--all"], 1);
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(reused["requests"][0]["provenance"]["runId"], forced["id"]);
 
@@ -696,18 +707,18 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     );
     let history = || alice.json(&repo_a, &["cache", "show", &key, "--history"], 0);
     assert_eq!(history().as_array().unwrap().len(), 1);
-    let newer = alice.json(&repo_a, &["verify", "--all"], 1);
+    let newer = alice.json(&repo_a, &["verify", "--wait", "--all"], 1);
     assert_eq!(newer["requests"][0]["provenance"]["runId"], forced["id"]);
     assert_eq!(newer["requests"][0]["origin"]["publisher"], "bob-laptop");
     assert_eq!(history().as_array().unwrap().len(), 2);
 
     // A newer local record beats an older store one: alice reviews again offline.
-    let local = offline.json(&repo_a, &["verify", "--all", "--force"], 0);
-    offline.completed_at(local["requests"][0]["executionId"].as_str().unwrap(), THIRD);
+    let local = offline.json(&repo_a, &["verify", "--wait", "--all", "--force"], 0);
+    offline.completed_at(&repo_a, &local, THIRD);
     assert_eq!(server.entries().len(), 2);
     let status = alice.json(&repo_a, &["status"], 0);
     assert_eq!(status["evals"][0]["state"], "PASS");
-    let again = alice.json(&repo_a, &["verify", "--all"], 0);
+    let again = alice.json(&repo_a, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         again["requests"][0]["executionId"],
         local["requests"][0]["executionId"]
@@ -721,7 +732,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
 /// warnings may hold the token or a piece of it.
 #[test]
 fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let token = format!("azt_lookup{}", "0123456789abcdef".repeat(2));
     let echoed = token.clone();
     let store = support::FakeProvider::start(move |request| match request.path.as_str() {
@@ -734,9 +745,9 @@ fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
         ),
         _ => support::Reply::Json(404, json!({"error":"not found"})),
     });
-    let bob = Machine::new(root.path(), "bob", &format!("{}/", store.url), &token);
+    let bob = Machine::new(&root, "bob", &format!("{}/", store.url), &token);
     let repo = runtime_repo(root.path(), "repo", "v1");
-    let (stdout, stderr) = bob.run(&repo, &["verify", "--all", "--json"], 0);
+    let (stdout, stderr) = bob.run(&repo, &["verify", "--wait", "--all", "--json"], 0);
     for piece in [&token[10..22], &token[token.len() - 12..]] {
         assert!(
             !stdout.contains(piece) && !stderr.contains(piece),
@@ -757,7 +768,7 @@ fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
 
 #[test]
 fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let log = root.path().join("log");
     fs::create_dir(&log).unwrap();
@@ -773,7 +784,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
     fs::write(repo.join("harness.py"), support::tool_sessions::script()).unwrap();
     let server = Server::start(root.path());
     let token = server.token("alice", "read,publish");
-    let consumer = Machine::new(root.path(), "bob", &server.url, &token);
+    let consumer = Machine::new(&root, "bob", &server.url, &token);
     let state = root.path().join("fixture-state");
     let config = artifactize_core::config::read_workspace_config(&repo).unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -844,13 +855,17 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
         assert_eq!(fetched[0].as_ref().unwrap().execution_paths, pins);
         serde_json::to_value(pins).unwrap()
     });
+    let expected: String = Sha256::digest(fs::read(repo.join("harness.py")).unwrap())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     for key in ["app_app.start", "app_app.stop"] {
-        assert_eq!(pins[key]["harness.py"].as_str().unwrap().len(), 64);
+        assert_eq!(pins[key]["harness.py"], expected);
     }
     let entries = server.entries();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].1["executionPaths"], pins);
-    let reused = consumer.json(&repo, &["verify", "--all"], 0);
+    let reused = consumer.json(&repo, &["verify", "--wait", "--all"], 0);
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(reused["requests"][0]["provenance"]["executionPaths"], pins);
     assert!(support::tool_sessions::directories(&consumer.state).is_empty());

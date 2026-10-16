@@ -4,7 +4,7 @@ Status: approved by the owner on 2026-10-04 with the decisions in [section 9](#9
 
 **Summary.** An optional HTTP store, `artifactize server`, holds one immutable, reduced record per (staleKey, Eval definition hash). Local `state.sqlite` keeps Runs and acts as a read-through/write-through cache. No remote claims; the first writer wins.
 
-**Since 0.5** ([#92](https://github.com/lhj6102/artifactize/issues/92)), records are keyed by the reuse key, `hash(eval strategy, (name, fingerprint) of each Artifact the eval depends on)`, and the store (schema 3) appends every record of a key and answers lookups with the latest by `completedAt`. This replaces first-writer-wins. `verify` looks up every key once per Run and reuses whichever completed last, the local latest or the store's latest, falling back to the local latest while the store is unreachable; `--force` reads nothing from the store but publishes its results. Routes are `POST /v1/lookup` with `{"keys":[KEY,...]}`, `PUT /v1/entries/{key}` and `server rm KEY`, records are schema 2, and the 0.3 `staleKey` alias is gone. The rest of this document describes the 0.3 design.
+**Since 0.5** ([#92](https://github.com/lhj6102/artifactize/issues/92)), records are keyed by the reuse key, `hash(evaluation criteria, (name, fingerprint) of each Artifact the eval depends on)`, and the store (schema 3) appends every record of a key and answers lookups with the latest by `completedAt`. This replaces first-writer-wins. `verify` looks up every key once per Run and reuses whichever completed last, the local latest or the store's latest, falling back to the local latest while the store is unreachable; `--force` reads nothing from the store but publishes its results. Routes are `POST /v1/lookup` with `{"keys":[KEY,...]}`, `PUT /v1/entries/{key}` and `server rm KEY`, records are schema 2, and the 0.3 `staleKey` alias is gone. The rest of this document describes the 0.3 design.
 
 ## 1. Backend options
 
@@ -43,11 +43,11 @@ Every new local execution records its `producer`; a submitted Human execution al
 
 ## 4. Cross-machine claims
 
-**Recommendation: accept duplicates.** Local claims still deduplicate within a machine. Remote claims would need leases, heartbeats, TTL tuning and stale-owner handling: the machinery PLAN dropped ("no lease timers", no Human reservation or expiry). A duplicate needs two machines to start one key before either publishes; the target flow (developer verifies and pushes, CI reuses) is sequential, and first-writer-wins keeps duplicates correct. Looking up again before each claim and on every `verify --wait` poll narrows the window. If #46's executed/reused numbers show real duplicate spend, add an advisory lease that correctness never depends on.
+**Recommendation: accept duplicates.** Local claims still deduplicate within a machine. Remote claims would need leases, heartbeats, TTL tuning and stale-owner handling: the machinery PLAN dropped ("no lease timers", no Human reservation or expiry). A duplicate needs two machines to start one key before either publishes; the target flow (developer verifies and pushes, CI reuses) is sequential, and first-writer-wins keeps duplicates correct. Looking up again before each claim and during the artifactize-owned worker's Human-wait reconciliation narrows the window. If #46's executed/reused numbers show real duplicate spend, add an advisory lease that correctness never depends on.
 
 ## 5. Human verdicts
 
-**Recommendation: reuse them team-wide.** A sign-off is only as trustworthy as its publishing token, so the server accepts Human records only from `human`-scoped tokens; CI never gets that scope. Output shows both names: `brand/signoff: GREEN (reused; Human sign-off by alice, published by alice-laptop, 2026-10-04)`. `reviewer` is the self-asserted claim name, while `publisher` is authenticated. When a local WAITING_HUMAN execution's key appears remotely during `verify` or a `--wait` poll, the local request settles from the mirror, as followers do today.
+**Recommendation: reuse them team-wide.** A sign-off is only as trustworthy as its publishing token, so the server accepts Human records only from `human`-scoped tokens; CI never gets that scope. Output shows both names: `brand/signoff: GREEN (reused; Human sign-off by alice, published by alice-laptop, 2026-10-04)`. `reviewer` is the self-asserted claim name, while `publisher` is authenticated. When a local WAITING_HUMAN execution's key appears remotely during preparation or Human-wait reconciliation by the artifactize-owned worker, the local request settles from the mirror, as followers do today.
 
 ## 6. Trust and security
 
@@ -77,7 +77,7 @@ Every new local execution records its `producer`; a submitted Human execution al
 1. **Backend:** `artifactize server`, an HTTP server over its own SQLite file, using axum, with scoped bearer tokens `read`/`publish`/`human`. The server stamps the authenticated publisher. Tokens are revocable with `--purge`.
 2. **Default share level:** `summary`. `full` is opt-in.
 3. **Unreachable remote:** fail open (run locally, warn once) on network errors, timeouts and 5xx. Fail closed on 401/403, TLS and configuration errors.
-4. **Cross-machine claims:** none. Accept duplicates, first writer wins, look up again before each local claim and on each poll while verify waits for Human results.
+4. **Cross-machine claims:** none. Accept duplicates, first writer wins, look up again before each local claim and during reconciliation while the artifactize-owned Run waits for Human results.
 5. **Human sign-offs:** reusable team-wide, accepted only from `human`-scoped tokens. Output shows the reviewer and the publisher.
 6. **Publishing:** scoped tokens; untrusted CI gets read-only.
 7. **TLS:** the server binds 127.0.0.1 by default, with a proxy or tunnel in front. Clients require HTTPS except on loopback.

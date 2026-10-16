@@ -76,10 +76,14 @@ fn entries(state: &Path) -> Result<Vec<Entry>, String> {
         if !metadata.is_file() {
             continue;
         }
+        let written = metadata.modified().map_err(|e| e.to_string())?;
+        // Tests replace only ordering metadata; file validation and collection stay real.
+        #[cfg(test)]
+        let written = tests::written(state, &id).unwrap_or(written);
         entries.push(Entry {
             id,
             bytes: metadata.len(),
-            written: metadata.modified().map_err(|e| e.to_string())?,
+            written,
         });
     }
     Ok(entries)
@@ -193,33 +197,93 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::{
+        cell::RefCell,
+        collections::BTreeMap,
+        path::PathBuf,
+        time::{Duration, UNIX_EPOCH},
+    };
 
     use super::*;
 
-    /// Sessions with equal explicit write times; identity provides deterministic tie order.
-    fn store(sizes: &[(&str, usize)]) -> tempfile::TempDir {
-        let state = crate::test_os::tempdir();
+    thread_local! {
+        // Collection is synchronous. Each test's owned state gets independent metadata
+        // on its own thread, without changing or trusting filesystem timestamps.
+        static WRITTEN: RefCell<BTreeMap<PathBuf, BTreeMap<String, SystemTime>>> =
+            const { RefCell::new(BTreeMap::new()) };
+    }
+
+    pub(super) fn written(state: &Path, id: &SessionId) -> Option<SystemTime> {
+        WRITTEN.with(|times| times.borrow().get(state)?.get(id.as_str()).copied())
+    }
+
+    /// Owns the real files and the injected write times until the collection finishes.
+    struct Store {
+        root: tempfile::TempDir,
+    }
+    impl Store {
+        fn path(&self) -> &Path {
+            self.root.path()
+        }
+
+        fn set_written(&self, id: &str, seconds: u64) {
+            WRITTEN.with(|times| {
+                let mut times = times.borrow_mut();
+                let written = times
+                    .get_mut(self.path())
+                    .expect("owned state's metadata")
+                    .get_mut(id)
+                    .expect("declared session");
+                *written = UNIX_EPOCH + Duration::from_secs(seconds);
+            });
+        }
+    }
+    impl Drop for Store {
+        fn drop(&mut self) {
+            WRITTEN.with(|times| {
+                times.borrow_mut().remove(self.path());
+            });
+        }
+    }
+
+    /// Equal synthetic write times make identity the deterministic tie breaker.
+    fn store(sizes: &[(&str, usize)]) -> Store {
+        let state = Store {
+            root: crate::test_os::tempdir(),
+        };
         let sessions = directory(state.path());
         fs::create_dir_all(&sessions).unwrap();
         for (id, bytes) in sizes {
-            let path = sessions.join(format!("{id}.jsonl"));
-            fs::write(&path, vec![b'x'; *bytes]).unwrap();
-            crate::test_os::set_modified(&path, UNIX_EPOCH + Duration::from_secs(1_000));
+            fs::write(sessions.join(format!("{id}.jsonl")), vec![b'x'; *bytes]).unwrap();
         }
+        WRITTEN.with(|times| {
+            times.borrow_mut().insert(
+                state.path().to_path_buf(),
+                sizes
+                    .iter()
+                    .map(|(id, _)| ((*id).to_owned(), UNIX_EPOCH))
+                    .collect(),
+            );
+        });
         state
     }
 
     #[test]
     fn ordering_uses_explicit_times_then_identity() {
-        let entry = |id: &str, secs| Entry {
-            id: id.parse().unwrap(),
-            bytes: 1,
-            written: UNIX_EPOCH + Duration::from_secs(secs),
-        };
-        let mut entries = [entry("a", 20), entry("c", 10), entry("b", 10)];
-        order(&mut entries);
-        assert_eq!(entries.map(|entry| entry.id.to_string()), ["b", "c", "a"]);
+        let state = store(&[("a", 1), ("c", 1), ("b", 1)]);
+        for (id, seconds) in [("a", 20), ("c", 10), ("b", 10)] {
+            state.set_written(id, seconds);
+        }
+        let collection = collect(state.path(), bounds(1, 0), false).unwrap();
+        assert_eq!(
+            collection
+                .removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["b", "c", "a"]
+        );
+        assert_eq!(usage(state.path()).unwrap().sessions, 0);
     }
 
     fn bounds(max_bytes: u64, target_bytes: u64) -> AgentSessions {
@@ -314,7 +378,7 @@ mod tests {
         );
         db.execute_batch("UPDATE requests SET data='{\"sessionId\":\"../invalid\"}';")
             .unwrap();
-        assert!(running(state.path()).is_err());
+        assert!(collect(state.path(), bounds(1, 0), false).is_err());
         assert!(directory(state.path()).join("active.jsonl").is_file());
     }
 

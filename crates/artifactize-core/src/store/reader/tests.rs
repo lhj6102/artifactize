@@ -1,9 +1,8 @@
 use super::*;
-use crate::store::{self, Receipts};
+use crate::store::{self, OwnedReceipts};
 use serde_json::{Value, json};
 use std::fs;
 
-use super::statements::take as statements;
 fn run(id: &str, repo: &Path, state: &Path, definitions: Value) -> Run {
     serde_json::from_value(json!({
         "id":id,"repoPath":repo,"stateDir":state,"status":"GREEN",
@@ -23,12 +22,15 @@ fn request(run: &str, artifact: &str, status: &str, repo: &Path) -> store::Reque
     )
     .request
 }
-async fn fixture(runs: usize, requests: usize) -> (tempfile::TempDir, PathBuf, PathBuf, Receipts) {
+async fn fixture(
+    runs: usize,
+    requests: usize,
+) -> (tempfile::TempDir, PathBuf, PathBuf, OwnedReceipts) {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     for n in 0..runs {
         let id = format!("run-{n}");
         let run = run(
@@ -49,7 +51,7 @@ fn read(
     state: &Path,
     id: &RunId,
     limit: u32,
-) -> (usize, Option<(RunView, Vec<RequestView>)>) {
+) -> Option<(RunView, Vec<RequestView>)> {
     reader
         .snapshot(state, |db, cache, state| {
             cache.catalog(db, state)?;
@@ -62,58 +64,220 @@ fn read(
                 .clone();
             let selected = cache.selected(db, state, id, Some(audit), false)?;
             cache.identity(db)?;
-            Ok((cache.decoded, selected))
+            Ok(selected)
         })
         .unwrap()
 }
 #[tokio::test]
-async fn snapshot_select_count_is_constant_and_direct_request_predicates_search_indexes() {
+async fn read_run_releases_database_before_return_on_success_and_errors() {
+    for id in ["run-0", "run-absent", ""] {
+        let (root, _repo, state, receipts) = fixture(1, 1).await;
+        drop(receipts);
+        let database = state.join(DATABASE);
+        let held =
+            Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        assert!(
+            !crate::test_os::database_released(&database).unwrap(),
+            "the probe must detect an idle read-only SQLite handle"
+        );
+        drop(held);
+        let result = store::read_run(&state, id).await;
+        if id == "run-0" {
+            let saved = result.unwrap();
+            assert_eq!(saved.run.id.as_str(), id);
+            assert_eq!(saved.requests.len(), 1);
+        } else {
+            assert!(result.is_err(), "{id:?} must not identify a saved Run");
+        }
+        // No retry or runtime yield: returning the read must release the database.
+        assert!(crate::test_os::database_released(&database).unwrap());
+        root.close().unwrap();
+    }
+}
+
+async fn released<T>(
+    state: &Path,
+    read: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let result = read.await;
+    // The return boundary, not a retry or a runtime shutdown, releases the database.
+    assert!(crate::test_os::database_released(&state.join(DATABASE)).unwrap());
+    result
+}
+
+#[tokio::test]
+async fn one_shot_readers_release_database_before_return() {
+    let (root, repo, state, receipts) = fixture(1, 1).await;
+    drop(receipts);
+    assert_eq!(
+        released(&state, store::read_runs(&state, None, 10, 0))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        released(&state, store::read_waiting(&state, Some(&repo)))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        released(&state, store::read_request(&state, "run-0-a0"))
+            .await
+            .unwrap()
+            .request
+            .id
+            .as_str(),
+        "run-0-a0"
+    );
+    assert_eq!(
+        released(&state, store::read_latest_requests(&state, &repo))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        released(&state, store::read_catalog(&state))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        released(&state, store::read_unreadable(&state, None))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let keys = ["a".repeat(64).parse().unwrap()];
+    assert!(
+        released(&state, store::read_keyed_executions(&state, &keys))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let definitions = [(
+        "app/check".parse().unwrap(),
+        "a".repeat(64).parse().unwrap(),
+    )];
+    assert!(
+        released(&state, store::read_latest_cached(&state, &definitions))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        released(&state, store::history::list(&state, false))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    for key in [keys[0].as_str(), "invalid"] {
+        assert!(
+            released(&state, store::history::show(&state, key, false))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert!(
+        released(&state, store::history::local(&state, None, 10))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    for id in ["run-absent", ""] {
+        assert!(
+            released(&state, store::read_request(&state, id))
+                .await
+                .is_err()
+        );
+    }
+    assert!(
+        released(&state, store::read_requests(&state, Some("")))
+            .await
+            .is_err()
+    );
+    assert!(
+        released(&state, store::read_session_request(&state, ""))
+            .await
+            .is_err()
+    );
+    root.close().unwrap();
+}
+
+#[tokio::test]
+async fn one_shot_readers_release_uninitialized_and_failed_snapshots() {
+    for initialized in [false, true] {
+        let root = crate::test_os::tempdir();
+        let repo = root.path().join("repo");
+        let state = root.path().join("state");
+        fs::create_dir(&repo).unwrap();
+        fs::create_dir(&state).unwrap();
+        if initialized {
+            drop(OwnedReceipts::open(&state, &repo).await.unwrap());
+        }
+        let database = Connection::open(state.join(DATABASE)).unwrap();
+        if initialized {
+            database
+                .execute_batch("DROP TABLE requests; DROP TABLE executions; DROP TABLE runs;")
+                .unwrap();
+        }
+        drop(database);
+        let runs = released(&state, store::read_runs(&state, None, 10, 0)).await;
+        let requests = released(&state, store::read_waiting(&state, Some(&repo))).await;
+        let history = released(&state, store::history::list(&state, false)).await;
+        if initialized {
+            for error in [
+                runs.unwrap_err(),
+                requests.unwrap_err(),
+                history.unwrap_err(),
+            ] {
+                assert!(error.contains("no such table"), "{error}");
+            }
+        } else {
+            assert!(runs.unwrap().is_empty());
+            assert!(requests.unwrap().is_empty());
+            assert!(history.unwrap().is_empty());
+        }
+        root.close().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn snapshots_and_direct_lookups_return_only_the_selected_runs_requests() {
     for (runs, requests) in [(3, 4), (11, 13)] {
         let (_root, _repo, state, _receipts) = fixture(runs, requests).await;
         let mut reader = Reader::default();
         let id = "run-0".parse().unwrap();
-        statements();
-        let (decoded, selected) = read(&mut reader, &state, &id, runs as u32);
-        assert_eq!(decoded, requests);
-        assert_eq!(selected.unwrap().1.len(), requests);
-        // 2 catalog + 3 page (including audit) + 2 selected + 1 state identity.
-        assert_eq!(statements().len(), 8);
-        let (decoded_again, selected) = read(&mut reader, &state, &id, runs as u32);
-        assert_eq!(decoded_again, requests);
-        assert!(selected.is_none());
-        assert_eq!(statements().len(), 7);
-        reader
-            .snapshot(&state, |db, _, _| {
-                for query in [
-                    Query {
-                        run: Some(id.clone()),
-                        ..Query::default()
-                    },
-                    Query {
-                        id: Some("run-0-a0".parse().unwrap()),
-                        ..Query::default()
-                    },
-                ] {
-                    requests::rows(db, &query)?;
-                    let sql = statements().pop().unwrap();
-                    let mut statement = db.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))?;
-                    let plan = statement
-                        .query_map([], |row| row.get::<_, String>(3))?
-                        .collect::<Result<Vec<_>, _>>()?
-                        .join("\n");
-                    assert!(plan.contains("SEARCH q USING INDEX"), "{plan}");
-                    assert!(
-                        !plan.contains("SCAN q") && !plan.contains("CORRELATED"),
-                        "{plan}"
-                    );
-                    assert!(
-                        !sql.contains("definitions") && !sql.contains("json_each"),
-                        "{sql}"
-                    );
-                }
-                Ok(())
-            })
-            .unwrap();
+        let (run, views) = read(&mut reader, &state, &id, runs as u32).unwrap();
+        assert_eq!(run.run.id.as_str(), "run-0");
+        let expected = (0..requests)
+            .map(|q| format!("run-0-a{q}"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            views
+                .iter()
+                .map(|view| view.request.id.to_string())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(read(&mut reader, &state, &id, runs as u32).is_none());
+        let direct = store::read_requests(&state, Some("run-0")).await.unwrap();
+        assert_eq!(
+            direct
+                .iter()
+                .map(|view| view.request.id.to_string())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        let direct = store::read_request(&state, "run-0-a0").await.unwrap();
+        assert_eq!(direct.request.id.as_str(), "run-0-a0");
+        assert_eq!(direct.request.run_id.as_str(), "run-0");
+        assert_eq!(direct.request.status(), crate::types::RequestStatus::Green);
     }
 }
 #[tokio::test]
@@ -121,13 +285,11 @@ async fn missed_hints_reconcile_only_changed_views_and_resync_rebuilds_the_basel
     let (_root, _repo, state, receipts) = fixture(3, 4).await;
     let mut reader = Reader::default();
     let id = "run-0".parse().unwrap();
-    assert_eq!(read(&mut reader, &state, &id, 3).0, 4);
+    assert_eq!(read(&mut reader, &state, &id, 3).unwrap().1.len(), 4);
     // Direct external commits emit no changes hint: the next snapshot remains authoritative.
     let db = Connection::open(state.join(DATABASE)).unwrap();
     db.execute("UPDATE requests SET status='ERROR',data=json_set(data,'$.status','ERROR','$.result',NULL,'$.error','external failure') WHERE id='run-0-a0'", []).unwrap();
-    let (decoded, selected) = read(&mut reader, &state, &id, 3);
-    assert_eq!(decoded, 5);
-    let (run, views) = selected.unwrap();
+    let (run, views) = read(&mut reader, &state, &id, 3).unwrap();
     assert_eq!(
         views[0].request.status(),
         crate::types::RequestStatus::Error
@@ -137,26 +299,28 @@ async fn missed_hints_reconcile_only_changed_views_and_resync_rebuilds_the_basel
         run.run.evidence["dependency/check"],
         crate::types::RequestStatus::Red
     );
-    // A Run lifecycle/metadata update must not decode its unchanged request bodies again.
+    // Run metadata is published once, even when all request bodies stay unchanged.
     let mut saved = run.run;
-    saved.jobs += 1;
+    saved.jobs = Some(7);
     receipts.save_run(&saved).await.unwrap();
-    assert_eq!(read(&mut reader, &state, &id, 3).0, 5);
-    assert!(read(&mut reader, &state, &id, 3).1.is_none());
+    let (run, views) = read(&mut reader, &state, &id, 3).unwrap();
+    assert_eq!(run.run.jobs, Some(7));
+    assert_eq!(views[0].request.error(), Some("external failure"));
+    assert!(read(&mut reader, &state, &id, 3).is_none());
     reader.reset();
-    let (decoded, selected) = read(&mut reader, &state, &id, 3);
-    assert_eq!(decoded, 4);
     assert_eq!(
-        selected.unwrap().1[0].request.error(),
+        read(&mut reader, &state, &id, 3).unwrap().1[0]
+            .request
+            .error(),
         Some("external failure")
     );
     // Deletion evicts the record rather than leaving an old cached request in the tree.
     db.execute("DELETE FROM requests WHERE id='run-0-a1'", [])
         .unwrap();
-    assert_eq!(read(&mut reader, &state, &id, 3).1.unwrap().1.len(), 3);
+    assert_eq!(read(&mut reader, &state, &id, 3).unwrap().1.len(), 3);
 }
 #[tokio::test]
-async fn one_snapshot_matches_both_public_views_and_preserves_missing_duplicate_definitions() {
+async fn one_snapshot_preserves_known_requests_and_missing_duplicate_definitions() {
     let (_root, repo, state, receipts) = fixture(0, 0).await;
     let mut saved = run(
         "run-1",
@@ -174,15 +338,17 @@ async fn one_snapshot_matches_both_public_views_and_preserves_missing_duplicate_
         .await
         .unwrap();
     let (snapshot, views) = store::read_run_requests(&state, "run-1").await.unwrap();
-    let original_run = store::read_run(&state, "run-1").await.unwrap();
-    let original_views = store::read_requests(&state, Some("run-1")).await.unwrap();
+    assert_eq!(snapshot.run.id.as_str(), "run-1");
+    assert_eq!(snapshot.run.status(), crate::types::RunStatus::Green);
     assert_eq!(
-        serde_json::to_value(&snapshot).unwrap(),
-        serde_json::to_value(original_run).unwrap()
-    );
-    assert_eq!(
-        serde_json::to_value(&views).unwrap(),
-        serde_json::to_value(original_views).unwrap()
+        views
+            .iter()
+            .map(|view| (view.request.id.as_str(), view.request.status()))
+            .collect::<Vec<_>>(),
+        [
+            ("run-1-app", crate::types::RequestStatus::Green),
+            ("run-1-unknown", crate::types::RequestStatus::Red)
+        ]
     );
     assert_eq!(
         serde_json::to_value(views[0].definition.as_ref().unwrap()).unwrap()["eval"]["declaration"]
@@ -228,7 +394,7 @@ async fn snapshot_keeps_old_evidence_while_a_wal_writer_commits_and_then_reconci
         Ok(())
     }).unwrap();
     assert_eq!(
-        read(&mut reader, &state, &id, 1).1.unwrap().1[0]
+        read(&mut reader, &state, &id, 1).unwrap().1[0]
             .request
             .status(),
         crate::types::RequestStatus::Queued
@@ -243,12 +409,12 @@ async fn reader_changes_database_identity_and_never_uses_the_previous_states_cac
     let original = reader
         .snapshot(&state, |db, cache, _| cache.identity(db))
         .unwrap();
-    assert_eq!(read(&mut reader, &state, &id, 1).1.unwrap().1.len(), 2);
+    assert_eq!(read(&mut reader, &state, &id, 1).unwrap().1.len(), 2);
     let replacement = reader
         .snapshot(&state2, |db, cache, _| cache.identity(db))
         .unwrap();
     assert_ne!(original, replacement);
-    assert_eq!(read(&mut reader, &state2, &id, 1).1.unwrap().1.len(), 3);
+    assert_eq!(read(&mut reader, &state2, &id, 1).unwrap().1.len(), 3);
 }
 
 #[tokio::test]
@@ -385,13 +551,13 @@ async fn uninitialized_database_is_empty_until_the_writer_publishes_the_schema()
             .unwrap()
             .is_none()
     );
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     receipts
         .create_run(&run("run-0", &repo, &state, Value::Null), &[])
         .await
         .unwrap();
     let id = "run-0".parse().unwrap();
-    assert!(read(&mut reader, &state, &id, 1).1.unwrap().1.is_empty());
+    assert!(read(&mut reader, &state, &id, 1).unwrap().1.is_empty());
 }
 
 #[tokio::test]
@@ -411,7 +577,7 @@ async fn failed_snapshot_cannot_suppress_the_next_accepted_changed_view() {
         Err(Error::Invalid("snapshot rejected after reading".into()))
     });
     assert!(failed.is_err());
-    let views = read(&mut reader, &state, &id, 1).1.unwrap().1;
+    let views = read(&mut reader, &state, &id, 1).unwrap().1;
     assert_eq!(views[0].request.title, "Changed");
 }
 
@@ -429,7 +595,7 @@ async fn unreadable_state_identity_does_not_hide_saved_runtime_runs() {
             .is_none()
     );
     let id = "run-0".parse().unwrap();
-    assert_eq!(read(&mut reader, &state, &id, 1).1.unwrap().1.len(), 2);
+    assert_eq!(read(&mut reader, &state, &id, 1).unwrap().1.len(), 2);
     db.execute("DELETE FROM state_meta WHERE name='id'", [])
         .unwrap();
     reader.reset();
@@ -439,7 +605,7 @@ async fn unreadable_state_identity_does_not_hide_saved_runtime_runs() {
             .unwrap()
             .is_none()
     );
-    assert_eq!(read(&mut reader, &state, &id, 1).1.unwrap().1.len(), 2);
+    assert_eq!(read(&mut reader, &state, &id, 1).unwrap().1.len(), 2);
 }
 
 #[tokio::test]

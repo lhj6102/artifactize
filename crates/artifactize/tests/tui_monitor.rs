@@ -1,8 +1,12 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::RunChild;
+
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command},
-    time::{Duration, Instant},
+    process::Command,
+    time::Duration,
 };
 
 use artifactize_core::store::{self, RequestView, RunView};
@@ -15,11 +19,15 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
+#[path = "support/order.rs"]
+mod order;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     alpha: PathBuf,
     beta: PathBuf,
     state: PathBuf,
@@ -50,7 +58,7 @@ impl Fixture {
     /// Repository alpha has a cycle, a child, a mount, and fingerprint-cached GREEN/RED results;
     /// beta has a long-running eval gated on a release file and a Human eval.
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let alpha = root.path().join("alpha");
         let beta = root.path().join("beta");
         let release = root.path().join("release");
@@ -100,8 +108,11 @@ impl Fixture {
             &beta.join("human"),
             json!({"name":"human","evals":[eval("review", json!({"kind":"human"}), "Approve.")]}),
         );
+        let state = root.path().join("state");
+        root.track(&state, &alpha);
+        root.track(&state, &beta);
         Self {
-            state: root.path().join("state"),
+            state,
             _root: root,
             alpha,
             beta,
@@ -123,7 +134,12 @@ impl Fixture {
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let output = support::os::run(self.command(repo).args(args).arg("--json"));
+        let output = self
+            .command(repo)
+            .args(args)
+            .arg("--json")
+            .record_output()
+            .unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -136,8 +152,22 @@ impl Fixture {
 
     /// Two finished alpha Runs; the second reuses the fingerprint-cached results of the first.
     fn seed(&self) -> (String, String) {
-        let first = self.json(&self.alpha, &["verify", "--all"], 1);
-        let second = self.json(&self.alpha, &["verify", "--all"], 1);
+        let first = self.json(&self.alpha, &["verify", "--wait", "--all"], 1);
+        let second = self.json(&self.alpha, &["verify", "--wait", "--all"], 1);
+        // Both monitor journeys select rows by Run order, not by host clock progression.
+        for (run, created) in [
+            (&first, "2000-01-01T00:00:00.000000000Z"),
+            (&second, "2000-01-02T00:00:00.000000000Z"),
+        ] {
+            let id = run["id"].as_str().unwrap();
+            support::runs::finished_worker(
+                &self.state,
+                &self.alpha,
+                &id.parse().unwrap(),
+                support::os::running,
+            );
+            order::created_at(&self.state, id, created);
+        }
         (
             first["id"].as_str().unwrap().into(),
             second["id"].as_str().unwrap().into(),
@@ -145,10 +175,7 @@ impl Fixture {
     }
 
     async fn load(&self, id: &str) -> (RunView, Vec<RequestView>) {
-        (
-            store::read_run(&self.state, id).await.unwrap(),
-            store::read_requests(&self.state, Some(id)).await.unwrap(),
-        )
+        store::read_run_requests(&self.state, id).await.unwrap()
     }
 }
 
@@ -168,47 +195,63 @@ fn press(monitor: &mut Monitor, code: KeyCode) -> monitor::Action {
     monitor.key(KeyEvent::from(code))
 }
 
-fn finish(child: Child) -> std::process::Output {
-    support::os::finish(child, "verify")
+fn finish(child: RunChild) -> std::process::Output {
+    child.wait_with_output().unwrap()
 }
 
 #[tokio::test]
 async fn live_verify_progress_and_runs_across_repositories() {
     let fixture = Fixture::new();
     let (_, second) = fixture.seed();
-    let child = support::os::start(fixture.command(&fixture.beta).args([
-        "verify",
-        "--all",
-        "--timeout-ms",
-        "30000",
-    ]));
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
-    let (live, human) = loop {
-        let runs = store::read_runs(&fixture.state, Some(&fixture.beta), 10, 0)
-            .await
-            .unwrap();
-        if let Some(run) = runs.first() {
-            let (view, requests) = fixture.load(&run.id).await;
-            let progress = monitor::progress(&view, &requests, OffsetDateTime::now_utc());
-            if !progress.running.is_empty() && !progress.waiting.is_empty() {
-                assert_eq!(progress.status.as_str(), "RUNNING");
-                assert_eq!(progress.validation, "pending");
-                assert_eq!(progress.running[0].0, "slow/wait");
-                assert_eq!(
-                    progress.waiting[0],
-                    ("human/review".into(), "unclaimed".into())
-                );
+    let child = support::os::start(
+        fixture
+            .command(&fixture.beta)
+            .args(["verify", "--wait", "--all"]),
+    );
+    let child = RunChild::new(child, &fixture.state, &fixture.beta);
+    let live = child.run();
+    // Observe the exact submitted Run and persisted request states, not the rendering
+    // function whose output is under test. The timeout only bounds a broken fixture.
+    const PROGRESS_BOUND: Duration = Duration::from_secs(15);
+    let human = owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
+            loop {
+                let (view, requests) = fixture.load(&live).await;
+                let slow = requests
+                    .iter()
+                    .find(|view| view.request.eval_id == "slow/wait");
                 let human = requests
                     .iter()
-                    .find(|view| view.request.eval_id == "human/review")
-                    .unwrap();
-                break (run.id.clone(), human.request.id.clone());
+                    .find(|view| view.request.eval_id == "human/review");
+                if slow.is_some_and(|view| {
+                    view.request.status() == artifactize_core::types::RequestStatus::Running
+                }) && human.is_some_and(|view| {
+                    view.request.status() == artifactize_core::types::RequestStatus::WaitingHuman
+                }) {
+                    let progress = monitor::progress(&view, &requests, OffsetDateTime::now_utc());
+                    assert_eq!(progress.status.as_str(), "RUNNING");
+                    assert_eq!(progress.validation, "pending");
+                    assert_eq!(progress.running.len(), 1);
+                    assert_eq!(progress.running[0].0, "slow/wait");
+                    assert_eq!(
+                        progress.waiting,
+                        [("human/review".into(), "unclaimed".into())]
+                    );
+                    break human.unwrap().request.id.clone();
+                }
+                changes.next_reconciled().await;
             }
-        }
-        assert!(Instant::now() < deadline, "live Run did not appear");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    };
+        })
+        .await
+        .expect("live Run did not appear")
+    })
+    .await;
 
+    order::created_at(
+        &fixture.state,
+        live.as_str(),
+        "2000-01-03T00:00:00.000000000Z",
+    );
     let mut all = Monitor::new(fixture.state.clone(), None);
     all.refresh().await;
     let list = screen(&mut all);
@@ -250,18 +293,29 @@ async fn live_verify_progress_and_runs_across_repositories() {
     );
 
     fs::write(&fixture.release, "").unwrap();
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
-    loop {
-        all.refresh().await;
-        if screen(&mut all).contains("◐ RUNNING · validation pending · ?1 ✓1") {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "runtime completion was not observed"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
+            loop {
+                let (_, requests) = fixture.load(&live).await;
+                if requests.iter().any(|view| {
+                    view.request.eval_id == "slow/wait"
+                        && view.request.status() == artifactize_core::types::RequestStatus::Green
+                }) {
+                    break;
+                }
+                changes.next_reconciled().await;
+            }
+        })
+        .await
+        .expect("runtime completion was not observed");
+    })
+    .await;
+    all.refresh().await;
+    let progress = screen(&mut all);
+    assert!(
+        progress.contains("◐ RUNNING · validation pending · ?1 ✓1"),
+        "{progress}"
+    );
     fixture.json(
         &fixture.beta,
         &["request", "claim", &human, "--reviewer", "tester"],
@@ -290,10 +344,16 @@ async fn live_verify_progress_and_runs_across_repositories() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    order::run_times(
+        &fixture.state,
+        live.as_str(),
+        "2000-01-03T00:00:00.000000000Z",
+        "2000-01-03T00:00:42.000000000Z",
+    );
     all.refresh().await;
     let done = screen(&mut all);
     assert!(
-        done.contains("✓ GREEN · SATISFIED at Run end · ✓2 · took"),
+        done.contains("✓ GREEN · SATISFIED at Run end · ✓2 · took 42s"),
         "{done}"
     );
     assert!(!done.contains("slow/wait  running"));
@@ -316,7 +376,11 @@ fn flatten<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>) {
 }
 
 fn dump(state: &Path) -> Vec<String> {
-    let db = Connection::open(state.join("state.sqlite")).unwrap();
+    let db = Connection::open_with_flags(
+        state.join("state.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let tables: Vec<String> = db
         .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         .unwrap()
@@ -352,24 +416,16 @@ async fn saved_tree_details_without_repository_or_writes() {
 
     let now = OffsetDateTime::now_utc();
     let (view, requests) = fixture.load(&second).await;
-    let reused = view.requests.iter().filter(|request| {
-        let source = request.provenance.as_ref();
-        source.is_some_and(|source| source.request_id != request.id)
-    });
     let work = monitor::progress(&view, &requests, now).work;
-    assert!(
-        work.contains(&format!(
-            "executed {} · reused {}",
-            view.run.executions_started,
-            reused.count()
-        )),
-        "{work}"
-    );
+    // Alpha declares five evals; this second Run must reuse all five without execution.
+    assert_eq!(work, "executed 0 · reused 5 · derived 0");
     let nodes = monitor::tree(&view, &requests, now);
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
     let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
-    for (id, _) in view.run.definitions.graph().unwrap().artifacts() {
+    for id in [
+        "input", "checkout", "search", "cycle-a", "cycle-b", "red", "part",
+    ] {
         assert_eq!(
             all.iter()
                 .filter(|node| node.id.as_str() == format!("a:{id}"))
@@ -566,9 +622,10 @@ async fn saved_tree_details_without_repository_or_writes() {
 /// saved results outside a partial Run, and GREEN results masked behind a RED upstream.
 #[tokio::test]
 async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
+    root.track(&state, &repo);
     let flag = root.path().join("fail");
     let check = support::os::fails_while_present_program(root.path());
     let fingerprint = |name: &str| json!({"script":{"command":support::os::echo_program(),"args":[format!("{name}-v1")]}});
@@ -589,17 +646,18 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
             eval("y", runtime(&support::os::true_program(), &[]), "Check {b}.")]}),
     );
     let verify = |args: &[&str], code: i32| -> String {
-        let output = support::os::run(
-            Command::new(support::os::cli())
-                .env("PATH", support::os::path())
-                .arg("--repo")
-                .arg(&repo)
-                .arg("--state-dir")
-                .arg(&state)
-                .arg("verify")
-                .args(args)
-                .arg("--json"),
-        );
+        let output = Command::new(support::os::cli())
+            .env("PATH", support::os::path())
+            .arg("--repo")
+            .arg(&repo)
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("verify")
+            .arg("--wait")
+            .args(args)
+            .arg("--json")
+            .record_output()
+            .unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -612,12 +670,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     };
     let load = |id: String| {
         let state = state.clone();
-        async move {
-            (
-                store::read_run(&state, &id).await.unwrap(),
-                store::read_requests(&state, Some(&id)).await.unwrap(),
-            )
-        }
+        async move { store::read_run_requests(&state, &id).await.unwrap() }
     };
     let now = OffsetDateTime::now_utc();
     verify(&["--all"], 0);

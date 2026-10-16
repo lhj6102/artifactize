@@ -83,7 +83,7 @@ pub async fn read_scoped_runs(
     )
     .await
     .map_err(|e| e.to_string())?;
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -95,7 +95,8 @@ pub async fn read_scoped_runs(
             Ok(runs)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 pub(super) fn in_snapshot(

@@ -7,6 +7,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::oneshot,
 };
+use tokio_util::task::AbortOnDropHandle;
 
 fn frame(mut value: serde_json::Value, sequence: usize) -> String {
     value["sequence_number"] = json!(sequence);
@@ -60,7 +61,7 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (release_tx, release_rx) = oneshot::channel();
-    let server = tokio::spawn(async move {
+    let server = AbortOnDropHandle::new(tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         read_request(&mut socket).await;
         socket
@@ -163,7 +164,7 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
             )
             .await
             .unwrap();
-    });
+    }));
     let client = Client::Openai(
         Box::new(
             OpenAIConfig::new("fixture-key")
@@ -286,7 +287,7 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (stop_tx, stop_rx) = oneshot::channel();
-    let server = tokio::spawn(async move {
+    let server = AbortOnDropHandle::new(tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         read_request(&mut socket).await;
         socket
@@ -312,7 +313,7 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
             .await
             .unwrap();
         let _ = stop_rx.await;
-    });
+    }));
     let client = Client::Openai(
         Box::new(
             OpenAIConfig::new("fixture")

@@ -1,28 +1,63 @@
 use std::{fs, process::Command, sync::mpsc, thread};
 
 use artifactize_core::store::{
-    DATABASE, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions, read_latest_requests,
-    read_request, read_requests, read_run, read_runs,
+    DATABASE, OwnedReceipts, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions,
+    read_latest_requests, read_request, read_requests, read_run, read_runs,
 };
 use rusqlite::Connection;
 
+#[path = "support/run.rs"]
+mod owned_run;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 use support::os::link_dir;
 
+/// Own the initializer across assertion failure or cancellation of its async test.
+struct Initializer {
+    commit: Option<mpsc::Sender<()>>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+impl Initializer {
+    fn finish(&mut self) -> thread::Result<()> {
+        if let Some(commit) = self.commit.take() {
+            // The thread may already have failed; joining still owns that failure.
+            let _ = commit.send(());
+        }
+        self.thread.take().map_or(Ok(()), |thread| thread.join())
+    }
+}
+impl Drop for Initializer {
+    fn drop(&mut self) {
+        let joined = self.finish();
+        if !thread::panicking() {
+            joined.expect("schema initializer releases SQLite before temporary state");
+        }
+    }
+}
+
 #[tokio::test]
 async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     assert!(read_run(&state, "missing").await.is_err());
     assert!(!state.exists());
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     drop(receipts);
-    let db = Connection::open(state.join(DATABASE)).unwrap();
-    db.pragma_update(None, "user_version", 99).unwrap();
+    // Future schema metadata is an explicit input; observations have no write capability.
+    Connection::open(state.join(DATABASE))
+        .unwrap()
+        .pragma_update(None, "user_version", 99)
+        .unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let before = db
         .query_row::<i64, _, _>("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
         .unwrap();
@@ -86,7 +121,7 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
             .arg(state)
             .args(args)
             .arg("--json")
-            .output()
+            .record_output()
             .unwrap();
         assert!(
             output.status.success(),
@@ -102,13 +137,17 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
 
 #[tokio::test]
 async fn readers_observe_empty_state_until_schema_commits() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let template = root.path().join("template");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let receipts = Receipts::open(&template, &repo).await.unwrap();
-    let db = Connection::open(template.join(DATABASE)).unwrap();
+    let receipts = OwnedReceipts::open(&template, &repo).await.unwrap();
+    let db = Connection::open_with_flags(
+        template.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let schema = db
         .prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY rowid")
         .unwrap()
@@ -125,29 +164,35 @@ async fn readers_observe_empty_state_until_schema_commits() {
     let (ready_tx, ready_rx) = mpsc::channel();
     let (commit_tx, commit_rx) = mpsc::channel();
     let path = state.join(DATABASE);
-    let initializer = thread::spawn(move || {
-        let mut db = Connection::open(path).unwrap();
-        db.pragma_update(None, "journal_mode", "WAL").unwrap();
-        let transaction = db
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .unwrap();
-        for sql in schema {
-            transaction.execute_batch(&sql).unwrap();
-        }
-        transaction
-            .pragma_update(None, "user_version", STATE_SCHEMA_VERSION)
-            .unwrap();
-        ready_tx.send(()).unwrap();
-        if commit_rx.recv().is_ok() {
-            transaction.commit().unwrap();
-        }
-    });
+    let mut initializer = Initializer {
+        commit: Some(commit_tx),
+        thread: Some(thread::spawn(move || {
+            let mut db = Connection::open(path).unwrap();
+            db.pragma_update(None, "journal_mode", "WAL").unwrap();
+            let transaction = db
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .unwrap();
+            for sql in schema {
+                transaction.execute_batch(&sql).unwrap();
+            }
+            transaction
+                .pragma_update(None, "user_version", STATE_SCHEMA_VERSION)
+                .unwrap();
+            ready_tx.send(()).unwrap();
+            if commit_rx.recv().is_ok() {
+                transaction.commit().unwrap();
+            }
+        })),
+    };
     ready_rx.recv().unwrap();
     assert_empty_reads(&state, &repo).await;
-    commit_tx.send(()).unwrap();
-    initializer.join().unwrap();
+    initializer.finish().unwrap();
     assert_empty_reads(&state, &repo).await;
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
@@ -157,7 +202,7 @@ async fn readers_observe_empty_state_until_schema_commits() {
 
 #[tokio::test]
 async fn repositories_share_one_state_database() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     // The long, plain paths artifactize records, whatever form TEMP takes.
     let base = support::os::canonical(root.path());
     let first = base.join("first");
@@ -172,6 +217,8 @@ async fn repositories_share_one_state_database() {
         )
         .unwrap();
     }
+    root.track(&state, &first);
+    root.track(&state, &second);
     let mut saved = Vec::new();
     for explicit in [false, true] {
         for repo in [&first, &second] {
@@ -187,8 +234,8 @@ async fn repositories_share_one_state_database() {
                     .arg(&state);
             }
             let output = command
-                .args(["verify", "--all", "--json"])
-                .output()
+                .args(["verify", "--wait", "--all", "--json"])
+                .record_output()
                 .unwrap();
             assert!(
                 output.status.success(),
@@ -207,7 +254,11 @@ async fn repositories_share_one_state_database() {
             saved.push(run);
         }
     }
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.query_row::<u32, _, _>("SELECT count(DISTINCT repo) FROM runs", [], |r| r.get(0))
             .unwrap(),
@@ -232,11 +283,11 @@ async fn repositories_share_one_state_database() {
 
 #[tokio::test]
 async fn schema_allows_only_one_active_execution_per_key() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let _receipts = Receipts::open(&state, &repo).await.unwrap();
+    let _receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     let db = Connection::open(state.join(DATABASE)).unwrap();
     let insert = "INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?, ?, 'hash', 1, 1, ?, '{}')";
     db.execute(insert, ["first", "shared", "RUNNING"]).unwrap();
@@ -259,7 +310,7 @@ async fn schema_allows_only_one_active_execution_per_key() {
 
 #[test]
 fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), r#"{"name":"basis","basis":true}"#)
@@ -279,8 +330,8 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
                 command.arg("--state-dir").arg(&state);
             }
             let output = command
-                .args(["verify", "--all", "--json"])
-                .output()
+                .args(["verify", "--wait", "--all", "--json"])
+                .record_output()
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
             assert!(
@@ -290,6 +341,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     }
     assert!(!repo.join("state").exists());
     let state = root.path().join("state");
+    root.track(&state, &repo);
     fs::create_dir(&state).unwrap();
     link_dir(&repo, &state.join("runs"));
     let output = Command::new(support::os::cli())
@@ -298,8 +350,8 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .arg(&repo)
         .arg("--state-dir")
         .arg(&state)
-        .args(["verify", "--all"])
-        .output()
+        .args(["verify", "--wait", "--all"])
+        .record_output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the reviewed repository"));
@@ -310,8 +362,8 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .arg(&repo)
         .arg("--state-dir")
         .arg(&state)
-        .args(["verify", "--all"])
-        .output()
+        .args(["verify", "--wait", "--all"])
+        .record_output()
         .unwrap();
     assert!(
         output.status.success(),
@@ -324,7 +376,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
 
 #[tokio::test]
 async fn sqlite_files_cannot_redirect_writes_through_links() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -355,19 +407,19 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
 }
 
 #[tokio::test]
-async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_writes_are_atomic() {
+async fn schema_five_profiles_survive_typed_reads_and_invalid_states_fail_at_parse_boundary() {
     use artifactize_core::store::RunView;
     use serde_json::json;
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     // Literal schema-5 fixture: optional profile fields were serialized as null.
     let view: RunView = serde_json::from_value(json!({
         "id":"run-old",
-        "repoPath":repo,
-        "stateDir":state,
+        "repoPath":support::os::path_text(&repo),
+        "stateDir":support::os::path_text(&state),
         "status":"RUNNING",
         "createdAt":"2026-01-01T00:00:00Z",
         "completedAt":null,
@@ -411,7 +463,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
                 "createdAt":"2026-01-01T00:00:00Z",
                 "startedAt":null,
                 "completedAt":null,
-                "cwd":repo,
+                "cwd":support::os::path_text(&repo),
                 "runDir":null,
                 "argv":null,
                 "child":null,
@@ -427,9 +479,9 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
         .create_run(&view.run, &view.requests)
         .await
         .unwrap();
-    let before = serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap();
+    let saved = serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap();
     assert_eq!(
-        before["requests"][0]["profile"],
+        saved["requests"][0]["profile"],
         json!({
             "kind":"agent",
             "backend":"openai",
@@ -456,11 +508,13 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     let mut wire = serde_json::to_value(&view.run).unwrap();
     wire["status"] = json!("GREEN");
     assert!(serde_json::from_value::<artifactize_core::store::Run>(wire).is_err());
-    assert_eq!(
-        serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap(),
-        before
-    );
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    // Parsing is the observable rejection boundary. No write was attempted, so an
+    // unchanged database would not independently demonstrate atomic write behavior.
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
@@ -468,11 +522,13 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     );
     // Valid older writes still read unchanged; contradictory lifecycle fields are
     // corruption and fail only that record at the parse boundary.
-    db.execute(
-        "UPDATE requests SET status='GREEN',data=json_set(data,'$.status','GREEN')",
-        [],
-    )
-    .unwrap();
+    Connection::open(state.join(DATABASE))
+        .unwrap()
+        .execute(
+            "UPDATE requests SET status='GREEN',data=json_set(data,'$.status','GREEN')",
+            [],
+        )
+        .unwrap();
     let saved = read_run(&state, "run-old").await.unwrap();
     assert!(saved.requests.is_empty());
     assert_eq!(saved.unreadable[0].id, "run-old-1");

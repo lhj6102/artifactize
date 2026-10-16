@@ -1,13 +1,17 @@
-// The frontend checklist's mechanical rules (FRONTEND-STYLE.md), run by `pnpm lint` with
+// The frontend checklist's mechanical rules (DEV-FRONTEND.md), run by `pnpm lint` with
 // --no-inline-config: no comment can switch a rule off. Generated IPC bindings are excluded.
 import svelte from "eslint-plugin-svelte";
 import tseslint from "typescript-eslint";
 import effectComment from "./lint/effect-comment.js";
+import typescript from "./lint/typescript.js";
 
 export default [
   { ignores: ["src/ipc/bindings.ts"] },
   tseslint.configs.base,
   ...svelte.configs["flat/recommended"],
+  // The e2e Artifact runs its own lint command; TypeScript's recommended rules cover
+  // that boundary without making a frontend-only lint execute the whole test suite.
+  ...typescript(["e2e/**/*.ts"]),
   {
     files: ["src/**/*.svelte", "src/**/*.svelte.ts"],
     languageOptions: {

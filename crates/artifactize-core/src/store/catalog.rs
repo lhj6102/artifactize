@@ -43,7 +43,7 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
     )
     .await
     .map_err(|error| error.to_string())?;
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -55,7 +55,8 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
             Ok(catalog)
         })
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string());
+    super::connection::finish(connection, result).await
 }
 
 pub(super) fn in_snapshot(

@@ -213,10 +213,6 @@ impl Pages {
             bytes_read: 0,
         })
     }
-    #[cfg(test)]
-    pub fn append(&mut self, text: &str) -> Result<(), String> {
-        self.set(self.texts.len(), text)
-    }
     /// Stable semantic block slots are replaced by appending a new private text extent.
     /// Only layout is rebuilt; original JSONL events are never decoded again.
     pub fn set(&mut self, id: usize, text: &str) -> Result<(), String> {
@@ -402,10 +398,6 @@ impl Pages {
     }
     pub fn layout(&mut self) -> Result<bool, String> {
         self.layout_chunk(CHUNK)
-    }
-    #[cfg(test)]
-    pub(super) fn private(&self) -> bool {
-        crate::platform::is_owner_only(&self.text).unwrap()
     }
     pub(super) fn layout_chunk(&mut self, chunk: usize) -> Result<bool, String> {
         let mut budget = chunk;

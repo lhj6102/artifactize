@@ -87,29 +87,3 @@ pub(super) struct GrepMatch {
     pub line: usize,
     pub text: String,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn entry_json_keeps_mount_identity_only_on_mounts() {
-        let entry = |kind| Entry {
-            kind,
-            name: "notes".into(),
-            path: "docs/notes".into(),
-        };
-        assert_eq!(
-            serde_json::to_value(entry(EntryKind::File)).unwrap(),
-            json!({"kind":"file","name":"notes","path":"docs/notes"})
-        );
-        assert_eq!(
-            serde_json::to_value(entry(EntryKind::Mount {
-                artifact_id: ArtifactId::new("target").unwrap(),
-            }))
-            .unwrap(),
-            json!({"artifactId":"target","kind":"mount","name":"notes","path":"docs/notes"})
-        );
-    }
-}

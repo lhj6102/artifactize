@@ -3,15 +3,18 @@
 use std::{fs, path::Path, process::Command};
 
 use artifactize_core::{
-    project::{self, VerifyOptions, selection::Selection},
+    project::{VerifyOptions, selection::Selection},
     store::{self, DATABASE, Execution, Request},
 };
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
+
+#[path = "support/run.rs"]
+mod owned_run;
 
 fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
     let mut command = Command::new(support::os::cli());
@@ -24,7 +27,7 @@ fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
     if json_output {
         command.arg("--json");
     }
-    let output = command.output().unwrap();
+    let output = command.record_output().unwrap();
     assert!(
         matches!(output.status.code(), Some(0..=2)),
         "{}",
@@ -34,15 +37,130 @@ fn cli(repo: &Path, state: &Path, args: &[&str], json_output: bool) -> String {
 }
 
 async fn verify(repo: &Path, state: &Path) -> store::RunView {
-    project::verify(
-        repo,
-        Some(state),
-        &Selection::All,
-        &VerifyOptions::default(),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap()
+    let context =
+        artifactize_core::runs::Context::new(repo, Some(state), &support::os::cli()).unwrap();
+    let started =
+        artifactize_core::runs::start(&context, &Selection::All, &VerifyOptions::default(), None)
+            .await
+            .unwrap();
+    // Own this submission only: other rows are deliberately corrupted fixture inputs.
+    // The lease also waits for the worker's final connections before corruption begins.
+    let _run = owned_run::RunLease::new(state, repo, started.run.clone());
+    owned_run::terminal(state, &started.run).await
+}
+
+#[tokio::test]
+async fn owned_root_releases_every_repository_before_removal_on_return_and_unwind() {
+    for unwind in [false, true] {
+        let root = owned_run::Root::from(support::os::tempdir());
+        let directory = root.path().to_owned();
+        let state = root.path().join("state");
+        let mut owners = Vec::new();
+        for name in ["first", "second"] {
+            let repo = root.path().join(name);
+            fs::create_dir(&repo).unwrap();
+            fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+            root.track(&state, &repo);
+            let saved = support::runs::record(
+                &repo,
+                Some(&state),
+                &Selection::All,
+                &VerifyOptions::default(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            let control = saved.run.control.unwrap();
+            let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
+                panic!("fixture worker was admitted");
+            };
+            owners.push(owner);
+            owners.extend(control.supervisor);
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let root = root;
+            assert!(!unwind, "fixture assertion failure");
+            drop(root);
+        }));
+        if unwind {
+            assert_eq!(
+                result.unwrap_err().downcast_ref::<&str>(),
+                Some(&"fixture assertion failure")
+            );
+        } else {
+            result.unwrap();
+        }
+        assert!(
+            owners
+                .into_iter()
+                .all(|owner| !support::os::same_process_running(owner.pid.get(), owner.start_time))
+        );
+        assert!(
+            !directory.exists(),
+            "only released fixture inputs are removed"
+        );
+    }
+}
+
+#[tokio::test]
+async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_scopes() {
+    for unwind in [false, true] {
+        // No auto-deleting ancestor may remove inputs retained by failed Run cleanup.
+        let root = owned_run::Root::from(support::os::tempdir());
+        let directory = root.path().to_owned();
+        let broken = root.path().join("a-broken-state");
+        let state = root.path().join("z-active-state");
+        let repo = root.path().join("repo");
+        fs::create_dir(&broken).unwrap();
+        fs::create_dir(&repo).unwrap();
+        fs::write(broken.join(DATABASE), "not SQLite").unwrap();
+        fs::write(repo.join("input"), "owned input").unwrap();
+        fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+        root.track(&broken, &repo);
+        root.track(&state, &repo);
+        let saved = support::runs::record(
+            &repo,
+            Some(&state),
+            &Selection::All,
+            &VerifyOptions::default(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let control = saved.run.control.unwrap();
+        let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
+            panic!("fixture worker was admitted");
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let root = root;
+            assert!(!unwind, "original fixture panic");
+            drop(root);
+        }));
+        let panic = result.unwrap_err();
+        if unwind {
+            assert_eq!(
+                panic.downcast_ref::<&str>(),
+                Some(&"original fixture panic")
+            );
+        } else {
+            assert!(
+                panic
+                    .downcast_ref::<String>()
+                    .unwrap()
+                    .starts_with("Fixture Run cleanup failed; inputs retained at ")
+            );
+        }
+        for owner in std::iter::once(owner).chain(control.supervisor) {
+            assert!(!support::os::same_process_running(
+                owner.pid.get(),
+                owner.start_time
+            ));
+        }
+        assert_eq!(fs::read(repo.join("input")).unwrap(), b"owned input");
+        assert!(directory.exists(), "failed cleanup retains inputs");
+        // Explicit removal is safe only after every saved worker/supervisor has exited.
+        fs::remove_dir_all(&directory).unwrap();
+    }
 }
 
 #[tokio::test]
@@ -54,8 +172,8 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     support::declaration::write(repo.join("index.artf"), json!({
         "name":"app",
         "evals":[
-            {"id":"bad","title":"Bad","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["bad"]}},
-            {"id":"healthy","title":"Healthy","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["healthy"]}}
+            {"id":"bad","title":"Bad","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["bad"]}},
+            {"id":"healthy","title":"Healthy","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["healthy"]}}
         ]
     }).to_string()).unwrap();
     let first = verify(&repo, &state).await;
@@ -158,10 +276,14 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), json!({
-        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
+        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let run = verify(&repo, &state).await;
-    let db = Connection::open(state.join(DATABASE)).unwrap();
+    let db = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let request_text: String = db
         .query_row(
             "SELECT data FROM requests WHERE id=?",
@@ -241,6 +363,25 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
 fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
     // Independent schema-5 fixture: field order, nulls and omission rules are historical.
     let wire = r#"{"id":"legacy-run","repoPath":"repo","stateDir":"state","status":"RUNNING","createdAt":"2026-01-01T00:00:00.000000000Z","completedAt":null,"selection":{"kind":"all"},"profile":null,"definitions":null,"recursive":false,"force":false,"ignoreGates":false,"jobs":2,"maxExecutions":null,"executionsStarted":0,"waitTimeoutMs":null,"waitTimedOut":false,"validation":null,"error":null}"#;
+    // Removed saved keys are ignored on read, without a schema migration.
+    let historical = wire.replace("\"ignoreGates\":false", "\"ignoreGates\":true");
+    let decoded = serde_json::from_str::<store::Run>(&historical).unwrap();
+    assert_eq!(decoded.jobs, Some(2), "legacy numeric caps remain explicit");
+    assert_eq!(serde_json::to_value(&decoded).unwrap()["jobs"], 2);
+    let unlimited: store::Run = serde_json::from_str(&wire.replace("\"jobs\":2,", "")).unwrap();
+    assert_eq!(unlimited.jobs, None);
+    assert!(
+        serde_json::to_value(unlimited)
+            .unwrap()
+            .get("jobs")
+            .is_none()
+    );
+    assert!(
+        serde_json::to_value(&decoded)
+            .unwrap()
+            .get("ignoreGates")
+            .is_none()
+    );
     for status in ["RUNNING", "GREEN", "RED", "ERROR", "INCOMPLETE"] {
         for at in ["null", "\"2026-01-01T00:00:01.000000000Z\""] {
             for error in ["null", "\"failure\""] {
@@ -259,7 +400,10 @@ fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
                 let run = serde_json::from_str::<store::Run>(&text);
                 assert_eq!(run.is_ok(), expected, "{status}, {at}, {error}");
                 if let Ok(run) = run {
-                    assert_eq!(serde_json::to_string(&run).unwrap(), text);
+                    assert_eq!(
+                        serde_json::to_string(&run).unwrap(),
+                        text.replace("\"ignoreGates\":false,", "")
+                    );
                 }
             }
         }
@@ -273,7 +417,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), json!({
-        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
+        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let healthy = verify(&repo, &state).await;
     // Corrupt the newest Run: the listings must still work.
@@ -322,7 +466,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         .arg("--state-dir")
         .arg(&state)
         .args(["run", "show", bad.run.id.as_str(), "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(!shown.status.success());
     let error = format!(
@@ -341,7 +485,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         .arg("--state-dir")
         .arg(&state)
         .args(["prune", "--dry-run", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(
         pruned.status.success(),

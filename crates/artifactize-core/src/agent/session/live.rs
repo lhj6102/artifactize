@@ -286,10 +286,6 @@ impl Reader {
             decoded_events: 0,
         }
     }
-    #[cfg(test)]
-    pub(crate) fn records_len(&self) -> usize {
-        self.records
-    }
     pub fn commit(&mut self, width: usize) {
         if let Some(pages) = &mut self.pages {
             pages.commit(width);

@@ -273,6 +273,12 @@ impl<'a> Registry<'a> {
         let command = match tool.declaration {
             AgentTool::Command(command) => command,
             AgentTool::Builtin(tool_declaration) => {
+                if tool_declaration.builtin == crate::config::Builtin::Graph {
+                    return match crate::graph_structure::read(&self.config.root) {
+                        Ok(graph) => ToolResult::success(Content::Text { text: graph.tree() }),
+                        Err(error) => ToolResult::error(error),
+                    };
+                }
                 if let Some(fixed_args) = &tool_declaration.args {
                     let owner = scope::tool_id(&tool.definition.artifact_id);
                     // An Agent's help program gets only the explicit standalone variables.

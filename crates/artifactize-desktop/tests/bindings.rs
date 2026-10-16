@@ -2,14 +2,17 @@
 //! `UPDATE_BINDINGS=1 cargo test -p artifactize-desktop --test bindings`.
 use std::path::Path;
 
+#[path = "../../artifactize-core/tests/support/os.rs"]
+mod os;
+
 #[test]
 fn checked_in_bindings_match_the_commands() {
     let checked_in = Path::new(env!("CARGO_MANIFEST_DIR")).join(artifactize_desktop::BINDINGS);
-    if std::env::var_os("UPDATE_BINDINGS").is_some() {
+    if os::environment_variable("UPDATE_BINDINGS").is_some() {
         artifactize_desktop::export(&checked_in).unwrap();
         return;
     }
-    let scratch = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let scratch = os::tempdir_in(Path::new(env!("CARGO_TARGET_TMPDIR")), "bindings-");
     let generated = scratch.path().join("bindings.ts");
     artifactize_desktop::export(&generated).unwrap();
     let expected = std::fs::read_to_string(&generated).unwrap();
@@ -17,6 +20,6 @@ fn checked_in_bindings_match_the_commands() {
     assert!(
         expected == actual,
         "{} is out of date; regenerate it with UPDATE_BINDINGS=1 cargo test -p artifactize-desktop --test bindings",
-        checked_in.display()
+        artifactize_tools::files::path_text(&checked_in)
     );
 }

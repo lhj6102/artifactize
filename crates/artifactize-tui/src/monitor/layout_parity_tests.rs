@@ -35,7 +35,23 @@ fn layout_matches_actual_renderer_for_cjk_combining_halfwidth_and_long_json() {
             assert_eq!(rendered.trim_end(), row.trim_end());
         }
     }
-    let rows = document::rows("ｶﾞｶﾞ", 2);
-    assert_eq!(rows.len(), 2);
-    assert_eq!(document::row("ｶﾞｶﾞ", &rows[0], 2), "ｶﾞ");
+    // Independent row expectations also catch dropped or repeated input; rendering the
+    // layout's own rows alone could not detect either mistake.
+    for (text, width, expected) in [
+        ("한글", 2, vec!["한", "글"]),
+        ("e\u{301}e\u{301}", 1, vec!["e\u{301}", "e\u{301}"]),
+        ("ｶﾞｶﾞ", 2, vec!["ｶﾞ", "ｶﾞ"]),
+        (
+            "{\"x\":\"abcdefgh\"}",
+            7,
+            vec!["{\"x\":\"a", "bcdefgh", "\"}"],
+        ),
+    ] {
+        let rows = document::rows(text, width);
+        let actual: Vec<_> = rows
+            .iter()
+            .map(|range| document::row(text, range, width))
+            .collect();
+        assert_eq!(actual, expected, "{text:?} at width {width}");
+    }
 }

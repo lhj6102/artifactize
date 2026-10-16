@@ -144,6 +144,7 @@ logical_name!(MountAlias, "mount alias", |value: &str| !value
 pub enum ArtifactKind {
     Folder,
     File,
+    Graph,
 }
 
 /// Access data computed by the caller, without declarations, evals, or owner commands.
@@ -161,7 +162,7 @@ pub struct Artifact {
 impl Artifact {
     pub fn folder(&self) -> &Path {
         match self.kind {
-            ArtifactKind::Folder => &self.path,
+            ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
             ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
         }
     }

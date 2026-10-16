@@ -42,8 +42,15 @@ impl Fixture {
         let result = registry
             .call("inspect_a", args, &self.output, CancellationToken::new())
             .await;
-        assert_eq!(fs::read_dir(&self.output).unwrap().count(), 1);
+        assert_eq!(self.output_entries(), [self.output.join("retained")]);
         result
+    }
+
+    fn output_entries(&self) -> Vec<PathBuf> {
+        fs::read_dir(&self.output)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect()
     }
 }
 
@@ -122,7 +129,7 @@ fn flat_declarations_validate_strictly_and_inertly() {
         ),
         (
             "input_schema",
-            json!({"type":"object","$ref":"file:///etc/passwd"}),
+            json!({"type":"object","$ref":format!("file://{}", crate::test_os::unix_system_file())}),
         ),
         ("timeout_ms", json!(0)),
         ("timeout_ms", json!(2_147_483_648u64)),
@@ -310,20 +317,21 @@ async fn json_images_are_embedded_before_output_cleanup_and_invalid_files_are_to
     let fixture = Fixture::new(command());
     for (mime, bytes) in image::tests::fixtures() {
         let encoded = STANDARD.encode(&bytes);
-        fixture.script(&format!(
-            r#"import base64, json, os, sys
+        fixture.script(&crate::test_os::portable_path_probe(&format!(
+            r#"import base64, json, os, pathlib, sys
+PATH_TEXT_FUNCTION
 request = json.load(sys.stdin)
 root = request['context']['outputDir']
 os.mkdir(os.path.join(root, 'nested'))
 path = os.path.join(root, 'nested', 'image')
 open(path, 'wb').write(base64.b64decode('{encoded}'))
 print(json.dumps({{'content':[
-    {{'type':'image','path':path,'mimeType':'{mime}'}},
+    {{'type':'image','path':path_text(path),'mimeType':'{mime}'}},
     {{'type':'image','path':'nested/image','mimeType':'{mime}'}},
     {{'type':'image','data':'{encoded}','mimeType':'{mime}'}}
 ]}}))
 "#
-        ));
+        )));
         let result = fixture.call(json!({})).await;
         assert!(!result.is_error(), "{result:?}");
         assert_eq!(
@@ -377,7 +385,10 @@ async fn plain_substitution_is_literal_single_pass_and_handles_escaping() {
     let fixture = Fixture::new(tool);
     fixture
         .script("import json, sys\nassert sys.stdin.read() == ''\nprint(json.dumps(sys.argv[1:]))");
-    let query = "a b ' \" ; $(touch injected)\n{n} \\ $HOME";
+    let query = format!(
+        "a b ' \" ; $(touch injected)\n{{n}} \\ {}",
+        crate::test_os::home_expression()
+    );
     let result = fixture
         .call(json!({"query":query,"n":42,"items":[1,true]}))
         .await;
@@ -594,16 +605,49 @@ fn concatenated_tool_name_collisions_are_rejected() {
     assert!(error.contains("collide: inspect_b_a"));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
+    // The declared budget is crossed explicitly, never by waiting for wall-clock expiry.
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
     let mut tool = command();
-    tool["timeout_ms"] = json!(50);
+    tool["timeout_ms"] = json!(TIMEOUT.as_millis());
     let fixture = Fixture::new(tool);
-    fixture.script("import threading\nthreading.Event().wait()");
-    assert_eq!(
-        text(&fixture.call(json!({})).await),
-        "Agent tool timed out."
-    );
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    fixture.script(&format!(
+        "import json,os,socket,sys,threading\njson.load(sys.stdin)\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()",
+        listener.local_addr().unwrap().port()
+    ));
+    let mut call = Box::pin(fixture.call(json!({})));
+    let ready = async {
+        use tokio::io::AsyncReadExt;
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut pid = String::new();
+        socket.read_to_string(&mut pid).await.unwrap();
+        pid.parse::<u32>().unwrap()
+    };
+    tokio::pin!(ready);
+    // Keep the runtime runnable so its paused clock cannot auto-advance while
+    // the OS admits the child and the child acknowledges receiving its input.
+    let pid = loop {
+        tokio::select! {
+            result = &mut call => panic!("tool completed before readiness: {result:?}"),
+            pid = &mut ready => break pid,
+            _ = tokio::task::yield_now() => {},
+        }
+    };
+    tokio::time::advance(TIMEOUT).await;
+    // Cleanup also waits for OS I/O; do not auto-advance its independent deadline.
+    let result = loop {
+        tokio::select! {
+            result = &mut call => break result,
+            _ = tokio::task::yield_now() => {},
+        }
+    };
+    assert!(result.is_error());
+    assert_eq!(text(&result), "Agent tool timed out.");
+    assert!(crate::test_os::gone(pid));
     let config = read_workspace_config(&fixture.repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     let cancel = CancellationToken::new();
@@ -616,7 +660,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
         )
         .contains("cancelled")
     );
-    assert_eq!(fs::read_dir(&fixture.output).unwrap().count(), 1);
+    assert_eq!(fixture.output_entries(), [fixture.output.join("retained")]);
 }
 
 #[tokio::test]
@@ -699,7 +743,7 @@ async fn dropping_call_cleans_process_before_removing_directories() {
     };
     drop(call);
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        while fs::read_dir(&fixture.output).unwrap().count() != 1 {
+        while fixture.output_entries() != [fixture.output.join("retained")] {
             tokio::task::yield_now().await;
         }
     })

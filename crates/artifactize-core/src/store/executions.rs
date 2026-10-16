@@ -544,7 +544,7 @@ pub async fn read_keyed_executions(
         return Ok(Default::default());
     };
     let keys = keys.to_vec();
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -561,7 +561,8 @@ pub async fn read_keyed_executions(
             Ok(entries)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 /// The latest record per (Eval id, Eval definition hash) under any key, read-only: what a
@@ -580,7 +581,7 @@ pub async fn read_latest_cached(
         return Ok(Default::default());
     };
     let keys = keys.to_vec();
-    connection
+    let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
@@ -609,7 +610,8 @@ pub async fn read_latest_cached(
             Ok(latest)
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
 }
 
 impl Receipts {
@@ -628,7 +630,8 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    /// The saved execution when its own settle added it to its key's history; never a mirror.
+    /// The saved execution eligible for publication; speculative Runs hold publication
+    /// until blocked work has been withdrawn. Mirrors never publish again.
     pub async fn published_execution(
         &self,
         execution_id: &str,
@@ -639,7 +642,7 @@ impl Receipts {
                 let data: Option<String> = db
                     .query_row(
                         &format!(
-                            "SELECT e.data FROM executions e WHERE e.id=? AND {}",
+                            "SELECT e.data FROM executions e LEFT JOIN runs r ON r.id=json_extract(e.data,'$.provenance.runId') WHERE e.id=? AND {} AND (r.id IS NULL OR r.status!='RUNNING' OR coalesce(json_extract(r.data,'$.modes.speculate'),0)=0 OR json_extract(r.data,'$.control.activity')='publishing')",
                             history::RECORD
                         ),
                         [execution_id],

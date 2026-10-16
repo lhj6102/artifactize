@@ -1,11 +1,10 @@
 //! HTTP lookup shape errors remain per-entry, never poison a valid neighbor.
 use super::*;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use crate::llm::tests::Server;
+use rig_core::test_utils::MockHttpResponse;
 
 #[tokio::test]
 async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = parse_url(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
     let good = json!({
         "schema":2,
         "key":"a".repeat(64),
@@ -23,23 +22,9 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
         "completedAt":"2026-01-01T00:00:01Z",
     });
     let body = json!({"entries":[{"unexpected":"shape"},good,17]}).to_string();
-    let server = tokio::spawn(async move {
-        let (mut connection, _) = listener.accept().await.unwrap();
-        let mut request = [0; 8192];
-        let _ = connection.read(&mut request).await.unwrap();
-        connection
-            .write_all(
-                format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
-            )
-            .await
-            .unwrap();
-    });
+    let server = Server::new(vec![MockHttpResponse::success(body)]).await;
     let remote = Remote {
-        url,
+        url: parse_url(&server.base).unwrap(),
         share: Share::Summary,
         token_source: TokenSource::Env,
         token: Some("fixture-only-token".into()),
@@ -53,5 +38,4 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
     assert!(entries[0].is_err());
     assert_eq!(entries[1].as_ref().unwrap().request_id.as_str(), "run-1-1");
     assert!(entries[2].is_err());
-    server.await.unwrap();
 }

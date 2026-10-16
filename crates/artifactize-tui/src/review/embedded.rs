@@ -2,7 +2,7 @@
 //! The shared Detail component and monitor's buttons drive them; jobs and the ownership
 //! protocol are the same for monitor and the standalone review.
 use super::{Action, Area, Form, Job, Mode, Outcome, Review, view};
-use crate::{store::RequestView, types::RequestStatus};
+use crate::store::RequestView;
 use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +48,7 @@ impl Review {
     pub(crate) fn settled(&self) -> bool {
         self.shown
             .request()
-            .is_some_and(|view| view.request.status() != RequestStatus::WaitingHuman)
+            .is_some_and(|view| !view.request.status().is_human_wait())
     }
     /// A form takes the keys only while the request can still be reviewed.
     pub(crate) fn editing(&self) -> bool {
@@ -150,11 +150,11 @@ impl Review {
             }
             Control::Submit => {
                 let result = match &self.mode {
-                    Mode::Form(form) => form.result().map(|result| (form.verdict, result)),
+                    Mode::Form(form) => form.result(),
                     _ => return self.notify("Choose GREEN or RED first.", true),
                 };
                 match result {
-                    Ok((verdict, result)) => self.submit(verdict, result),
+                    Ok(result) => self.submit(result),
                     Err(error) => {
                         if let Mode::Form(form) = &mut self.mode {
                             form.error = Some(error);

@@ -1,10 +1,10 @@
 //! Settings at the command boundary, against the CLI tests' loopback fake for the Codex
 //! sign-in, the model listings and a remote review store: API-key presence (never values),
 //! `login`/`logout codex` with a pasted redirect and a cancel, `models`, and `remote
-//! login|status|logout`. One test, so this process's environment is its own.
+//! login|status|logout`. A child probe owns its environment, separate from the shared fixture
+//! lifecycle tests running in this binary.
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
-use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     WebviewWindow,
     ipc::{CallbackFn, InvokeBody},
@@ -22,8 +22,6 @@ const OPENAI_KEY: &str = "sk-desktop-settings-secret";
 const REMOTE_TOKEN: &str = "azt_desktopsettingstoken0123456789";
 /// Answered with a client error that echoes it back.
 const ECHO_TOKEN: &str = "azt_echoedbythestore0123456789abcd";
-/// Every whoami echoes its Authorization header in a client error.
-static ECHO: AtomicBool = AtomicBool::new(false);
 
 fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Result<Value, Value> {
     tauri::test::get_ipc_response(
@@ -64,15 +62,13 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
             }
             ("POST", "/oauth/revoke") => Reply::Json(200, json!({})),
             // A store or proxy that echoes the Authorization header in a client error.
-            ("GET", "/v1/whoami") if ECHO.load(Ordering::SeqCst) || bearer(ECHO_TOKEN) => {
-                Reply::Json(
-                    400,
-                    json!({"error": format!(
-                        "Bad request; Authorization: {}",
-                        request.headers.get("authorization").cloned().unwrap_or_default()
-                    )}),
-                )
-            }
+            ("GET", "/v1/whoami") if bearer(ECHO_TOKEN) => Reply::Json(
+                400,
+                json!({"error": format!(
+                    "Bad request; Authorization: {}",
+                    request.headers.get("authorization").cloned().unwrap_or_default()
+                )}),
+            ),
             ("GET", "/v1/whoami") if bearer(REMOTE_TOKEN) => Reply::Json(
                 200,
                 json!({"principal":"alice-laptop","scopes":["read","publish"]}),
@@ -86,34 +82,75 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
             _ => Reply::Json(404, json!({"error":"not found"})),
         }
     });
-    // SAFETY: the only test in this binary, before the app starts any thread that reads them.
-    unsafe {
-        std::env::set_var("OPENAI_API_KEY", OPENAI_KEY);
-        std::env::remove_var("ANTHROPIC_API_KEY");
-        std::env::set_var("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base());
-        std::env::set_var("ARTIFACTIZE_CODEX_BASE_URL", provider.codex_base());
-        std::env::set_var("ARTIFACTIZE_CODEX_AUTH_URL", &provider.url);
-        for variable in [
-            "ARTIFACTIZE_CODEX_AUTH_FILE",
-            "ARTIFACTIZE_REMOTE",
-            "ARTIFACTIZE_REMOTE_TOKEN",
-            "ARTIFACTIZE_REMOTE_SHARE",
-        ] {
-            std::env::remove_var(variable);
-        }
+    let mut command = support::os::test_command(
+        "settings_command_probe",
+        &[
+            ("OPENAI_API_KEY", OPENAI_KEY.into()),
+            ("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base().into()),
+            ("ARTIFACTIZE_CODEX_BASE_URL", provider.codex_base().into()),
+            ("ARTIFACTIZE_CODEX_AUTH_URL", provider.url.clone().into()),
+        ],
+    );
+    command.arg("--ignored").env_remove("ANTHROPIC_API_KEY");
+    for variable in [
+        "ARTIFACTIZE_CODEX_AUTH_FILE",
+        "ARTIFACTIZE_REMOTE",
+        "ARTIFACTIZE_REMOTE_TOKEN",
+        "ARTIFACTIZE_REMOTE_SHARE",
+    ] {
+        command.env_remove(variable);
     }
+    let child = support::os::start(&mut command);
+    let output = support::os::finish(child, "settings command probe");
+    assert!(
+        output.status.success(),
+        "settings probe failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // The joined child can exchange only the two codes explicitly pasted while active;
+    // late pastes after cancellation never reach this provider.
+    let requests = provider.requests();
+    let exchanges: Vec<_> = requests
+        .iter()
+        .filter(|request| request.path == "/oauth/token")
+        .map(|request| request.body.as_str().unwrap())
+        .collect();
+    assert_eq!(exchanges.len(), 2, "{exchanges:?}");
+    assert!(exchanges[0].contains("code=fake-code"), "{exchanges:?}");
+    assert!(exchanges[1].contains("code=newer-code"), "{exchanges:?}");
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.path == "/oauth/revoke")
+            .count(),
+        2
+    );
+}
+
+#[test]
+#[ignore = "launched with its declared environment by the settings command test"]
+fn settings_command_probe() {
+    let provider_url = support::os::environment_variable("ARTIFACTIZE_CODEX_AUTH_URL")
+        .unwrap()
+        .into_string()
+        .unwrap();
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
+    let state = root.path().join("state");
     let launch = Launch {
         mode: Mode::Monitor,
-        state: root.path().join("state"),
+        state: state.clone(),
         repo: Some(repo),
         reviewer: "alice".parse().unwrap(),
         request: None,
         search: artifactize_core::review::search::DEFAULT.into(),
     };
     let app = artifactize_desktop::app(mock_builder(), launch)
+        // Settings commands do not observe live hints. Keep this fixture free of an
+        // app-lifetime subscription on Tauri's process-global test runtime.
+        .setup(|_| Ok(()))
         .build(mock_context(noop_assets()))
         .unwrap();
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
@@ -166,17 +203,10 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         call("codex_status", json!({})).unwrap(),
         json!({"state": "absent"})
     );
-    let exchanges = || {
-        provider
-            .requests()
-            .iter()
-            .filter(|request| request.path == "/oauth/token")
-            .count()
-    };
     let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
     let url = prompt["url"].as_str().unwrap().to_owned();
     assert!(
-        url.starts_with(&format!("{}/oauth/authorize?", provider.url)),
+        url.starts_with(&format!("{provider_url}/oauth/authorize?")),
         "{url}"
     );
     let redirect = format!(
@@ -195,12 +225,6 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     assert_eq!(status["expiry"]["state"], json!("usable"));
     secret_free(&status);
     assert!(!status.to_string().contains("refresh-1"));
-    let exchange = provider
-        .requests()
-        .into_iter()
-        .find(|request| request.path == "/oauth/token")
-        .unwrap();
-    assert!(exchange.body.as_str().unwrap().contains("code=fake-code"));
     let models = call("models_list", json!({"provider": "codex"})).unwrap();
     assert_eq!(
         models,
@@ -232,37 +256,20 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     // Sign out: revoked at the fake, removed locally.
     let out = call("codex_logout", json!({})).unwrap();
     assert_eq!(out, json!({"revoked": true, "status": {"state": "absent"}}));
-    assert!(
-        provider
-            .requests()
-            .iter()
-            .any(|request| request.path == "/oauth/revoke")
-    );
+    // The parent observes revocations after this probe exits.
 
-    // A cancelled sign-in stores nothing, even when the browser returns afterwards: the
-    // callback finds no listener and a paste no sign-in.
-    let before = exchanges();
+    // A cancelled sign-in stores nothing and a late redirect paste finds no sign-in.
+    // Do not probe the released callback port: another fixture or app could own it now.
     cancel_while_waiting(&|url| {
         let callback = format!("/auth/callback?code=late-code&state={}", oauth_state(url));
-        if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", 1455)) {
-            use std::io::Write;
-            let _ = write!(
-                stream,
-                "GET {callback} HTTP/1.1\r\nHost: localhost:1455\r\nConnection: close\r\n\r\n"
-            );
-        }
         let late = call(
             "codex_login_paste",
             json!({"redirect": format!("http://localhost:1455{callback}")}),
         );
         assert_eq!(late.unwrap_err()["kind"], "missing");
     });
-    // The waiter returned once the sign-in's task was gone: nothing of it is still running.
-    assert_eq!(
-        exchanges(),
-        before,
-        "no code was exchanged after the cancel"
-    );
+    // The waiter returned once the sign-in's task was gone. The parent checks that no
+    // cancelled code reached its provider after joining this entire probe.
     assert_eq!(
         call("codex_status", json!({})).unwrap(),
         json!({"state": "absent"})
@@ -289,23 +296,12 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     call("codex_login_paste", json!({"redirect": redirect})).unwrap();
     let status = call("codex_login_wait", wait(&newer)).unwrap();
     assert_eq!(status["state"], "stored");
-    let codes: Vec<String> = provider
-        .requests()
-        .iter()
-        .filter(|request| request.path == "/oauth/token")
-        .filter_map(|request| request.body.as_str().map(str::to_owned))
-        .collect();
-    assert!(
-        codes.last().unwrap().contains("code=newer-code"),
-        "{codes:?}"
-    );
-    assert_eq!(codes.len(), before + 1, "only B's code was exchanged");
     call("codex_logout", json!({})).unwrap();
 
     // Remote: not configured, a refused token saves nothing, then login, status, logout.
     let none = call("remote_status", json!({})).unwrap();
     assert_eq!(none["state"], json!("unconfigured"));
-    let store = format!("{}/", provider.url);
+    let store = format!("{provider_url}/");
     let refused = call(
         "remote_login",
         json!({"url": store, "share": "summary", "token": "azt_wrongtoken0123456789abcdef"}),
@@ -356,7 +352,12 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     assert_eq!(call("remote_status", json!({})).unwrap(), status);
     // A store that echoes the saved token in a client error: status and push say so, without
     // the token.
-    ECHO.store(true, Ordering::SeqCst);
+    let credential = state.join("auth/remote-token.json");
+    std::fs::remove_file(&credential).unwrap();
+    support::os::write_private_file(
+        &credential,
+        json!({"url": store, "token": ECHO_TOKEN}).to_string(),
+    );
     let echoed = call("remote_status", json!({})).unwrap();
     secret_free(&echoed);
     assert_eq!(echoed["connection"]["state"], json!("refused"));
@@ -370,10 +371,15 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         failed["message"].as_str().unwrap().contains("[withheld"),
         "{failed}"
     );
-    ECHO.store(false, Ordering::SeqCst);
+    std::fs::remove_file(&credential).unwrap();
+    support::os::write_private_file(
+        &credential,
+        json!({"url": store, "token": REMOTE_TOKEN}).to_string(),
+    );
     let pushed = call("remote_push", json!({"dryRun": true})).unwrap();
     assert_eq!(pushed["pushed"], json!(0));
     let out = call("remote_logout", json!({})).unwrap();
     assert_eq!(out["state"], json!("unconfigured"));
-    std::mem::forget(app);
+    window.destroy().unwrap();
+    // The owned window and app drop before the fixture root and fake provider, also on panic.
 }

@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use super::*;
-use serde_json::Value;
 
 #[test]
 fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_errors() {
@@ -40,7 +39,6 @@ fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_erro
         br#"{"models":[],"extra":{"nested":[1e400]}}"#.as_slice(),
         br#"{"models":[],"extra":1e400,"extra":null}"#.as_slice(),
     ] {
-        assert!(serde_json::from_slice::<Value>(body).is_err());
         assert_eq!(
             picker_models(body).err().unwrap(),
             "Invalid Codex models response."

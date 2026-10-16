@@ -343,8 +343,8 @@ mod tests {
     fn view() -> RunView {
         serde_json::from_value(json!({
             "id":"run-legacy",
-            "repoPath":"/repo",
-            "stateDir":"/state",
+            "repoPath":"repo",
+            "stateDir":"state",
             "status":"RUNNING",
             "createdAt":"2026-01-01T00:00:00Z",
             "completedAt":null,
@@ -368,7 +368,7 @@ mod tests {
                     "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                     "executionId":"execution-source-1",
                     "provenance":{
-                        "repoPath":"/source",
+                        "repoPath":"source",
                         "runId":"run-source",
                         "requestId":"run-source-1",
                         "evalId":"app/check",
@@ -390,7 +390,7 @@ mod tests {
                     "createdAt":"2026-01-01T00:00:00Z",
                     "startedAt":null,
                     "completedAt":"2026-01-01T00:00:01Z",
-                    "cwd":"/repo",
+                    "cwd":"repo",
                     "runDir":null,
                     "argv":null,
                     "child":null,

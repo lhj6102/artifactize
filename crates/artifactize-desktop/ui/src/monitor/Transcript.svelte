@@ -5,7 +5,7 @@
   import { onDestroy, onMount } from "svelte";
   import {
     call,
-    commands,
+    useIpc,
     message,
     onSessionChanged,
     onStateChanged,
@@ -15,6 +15,7 @@
   import { plain } from "../shell/keys";
 
   let { id, peek = false }: { id: string; peek?: boolean } = $props();
+  const commands = useIpc();
   const t = new TranscriptState();
   setTranscriptState(t);
 

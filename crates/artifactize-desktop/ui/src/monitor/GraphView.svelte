@@ -3,7 +3,7 @@
   // them. Nodes are focusable: arrows move between connected Artifacts, Enter or a click zooms
   // in, Esc zooms out. An eval selected here is the tree's selection, so Detail follows it.
   import { GraphViewState, setGraphViewState } from "./graphView.svelte";
-  import { SvelteFlow, Controls, MiniMap, useSvelteFlow, type Edge, type Node } from "@xyflow/svelte";
+  import { SvelteFlow, Controls, MiniMap, useSvelteFlow, getViewportForBounds, type Edge, type Node } from "@xyflow/svelte";
   import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { RunGraph, TreeNode } from "../ipc/client";
@@ -20,10 +20,14 @@
     selected,
     zoomed = $bindable(null),
     active = true,
+    structural = false,
     onselect,
     onopen,
+    onready,
   }: {
-    graph: RunGraph;
+    graph: Pick<RunGraph, "nodes" | "edges">;
+    /** Static structure has no Run verdicts. */
+    structural?: boolean;
     positions: Map<string, Point>;
     /** The Run's tree rows: an Artifact's evals come from there. */
     tree: TreeNode[];
@@ -33,12 +37,17 @@
     active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
+    /** Offer the existing focus path once the canvas and its focus handlers are mounted. */
+    onready?: (focus: () => void) => void;
   } = $props();
   const v = new GraphViewState();
   setGraphViewState(v);
 
   const flow = useSvelteFlow();
   const nodeTypes = { artifact: ArtifactNode };
+  /** The camera and its controls share the same zoom limits. */
+  const MIN_ZOOM = 0.05;
+  const MAX_ZOOM = 2;
   // Lights change in place; positions only come with a new layout. The selection is not part
   // of a node: a node whose selection flips is drawn again and loses focus, so focus (which
   // follows the selection) marks the selected Artifact instead.
@@ -52,10 +61,10 @@
         // A fixed size: recoloured nodes keep their dimensions and never re-measure.
         width: NODE.width,
         height: NODE.height,
-        data: { name: node.name, light: node.light, zoomed: node.id === zoomed },
+        data: { name: node.name, light: node.light, zoomed: node.id === zoomed, structural },
         draggable: false,
         connectable: false,
-        ariaLabel: `${node.name}: ${WORDS[node.light]}`,
+        ariaLabel: structural ? `${node.name}: current structure` : `${node.name}: ${WORDS[node.light]}`,
         domAttributes: { "data-light": node.light },
       })),
   );
@@ -204,14 +213,62 @@
     };
   };
 
+  /** A newly mounted view accepts focus only when its caller has a pending handoff. */
+  const ready: Attachment<HTMLElement> = (canvas) => {
+    void tick().then(() => {
+      if (!canvas.isConnected || hidden()) return;
+      onready?.(() => {
+        if (hidden()) return;
+        if (zoomed) v.list?.focus({ preventScroll: true });
+        else {
+          const id = positions.has(selected[0]) ? selected[0] : graph.nodes[0]?.id;
+          if (!id) return;
+          hold(id);
+          void centre(id);
+        }
+      });
+    });
+  };
+
+  /** Expanding the structural text changes the canvas height. Keep the selected graph in
+   * view rather than clipping it below the new canvas; the Run view keeps its own camera. */
+  const structuralSize: Attachment<HTMLElement> = (canvas) => {
+    if (!structural) return;
+    let previous = "";
+    const resized = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width === 0 || height === 0) return;
+      const size = `${width}:${height}`;
+      if (previous && previous !== size) {
+        void fit({ id: zoomed ?? undefined, duration: 0, maxZoom: 1.6, padding: 0.6 });
+      }
+      previous = size;
+    });
+    resized.observe(canvas);
+    return () => resized.disconnect();
+  };
+
+  /** fitView shares a pending resolver across calls. Use the public bounds calculation and
+   * a distinct viewport transition, so an old fit cannot finish a newer zoom-out early. */
+  function fit(options: { id?: string; duration: number; maxZoom?: number; padding?: number }) {
+    if (!v.canvas) return Promise.resolve(false);
+    const bounds = flow.getNodesBounds(options.id ? [options.id] : flow.getNodes());
+    const viewport = getViewportForBounds(
+      bounds, v.canvas.clientWidth, v.canvas.clientHeight,
+      MIN_ZOOM, options.maxZoom ?? MAX_ZOOM, options.padding ?? 0.1,
+    );
+    return flow.setViewport(viewport, { duration: options.duration });
+  }
+
   async function zoomIn(id: string) {
     release();
     zoomed = id;
     const at = evals.findIndex((node) => node.id === selected[1]);
     v.picked = Math.max(at, 0);
     onselect(evals[v.picked] ? [id, evals[v.picked].id] : [id]);
-    void flow.fitView({ nodes: [{ id }], duration: 250, maxZoom: 1.6, padding: 0.6 });
     await tick();
+    if (zoomed !== id || hidden()) return;
+    void fit({ id, duration: 250, maxZoom: 1.6, padding: 0.6 });
     v.list?.focus();
   }
 
@@ -224,7 +281,7 @@
     // Hold focus at once, so nothing during the transition can leave it on the page.
     await tick();
     const mine = hold(id);
-    await flow.fitView({ duration: 250 });
+    await fit({ duration: 250 });
     // Too many Artifacts to fit: bring this one into view, unless keys moved on meanwhile.
     if (mine === v.handoff) await centre(id);
   }
@@ -285,14 +342,14 @@
 
 <div class="graph" class:split={zoomed !== null}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={v.canvas} {@attach holdFocus} onkeydown={keydown} tabindex="-1">
+  <div class="canvas" bind:this={v.canvas} {@attach holdFocus} {@attach ready} {@attach structuralSize} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
       bind:nodes
       bind:edges
       {nodeTypes}
       fitView
-      minZoom={0.05}
-      maxZoom={2}
+      minZoom={MIN_ZOOM}
+      maxZoom={MAX_ZOOM}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={true}
@@ -306,9 +363,13 @@
       {#if graph.nodes.length > 40}<MiniMap pannable zoomable />{/if}
     </SvelteFlow>
     <ul class="legend" aria-label="Legend">
+      {#if structural}
+        <li>Current structure · arrows: input → consumer</li>
+      {:else}
       {#each LEGEND as light (light)}
         <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>
       {/each}
+      {/if}
     </ul>
   </div>
   {#if artifact}

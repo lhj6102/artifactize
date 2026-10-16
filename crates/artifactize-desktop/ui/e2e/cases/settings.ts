@@ -1,0 +1,131 @@
+// Settings through the real app and CLI: environment-key presence without values,
+// and a remote store's HTTP identity, persisted sign-in, status, dry run and logout.
+import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import { join } from "node:path";
+import { createOutside, environment, remoteStatus, type Fixture } from "../fixture.ts";
+import { typeText } from "../keys.ts";
+import { scenario, type Scenario } from "../scenario.ts";
+
+const KEY = "sk-e2e-settings-value";
+const TOKEN = "azt_e2esettingstoken0123456789abcdef";
+
+function settingsEnvironment(fixture: Fixture): NodeJS.ProcessEnv {
+  return {
+    ...environment(fixture),
+    ARTIFACTIZE_REMOTE: undefined,
+    ARTIFACTIZE_REMOTE_TOKEN: undefined,
+    ARTIFACTIZE_REMOTE_SHARE: undefined,
+    OPENAI_API_KEY: KEY,
+    ANTHROPIC_API_KEY: undefined,
+  };
+}
+
+function close(server: Server): Promise<void> {
+  return new Promise((done, fail) => {
+    server.closeAllConnections();
+    if (!server.listening) return done();
+    server.close((error) => error ? fail(error) : done());
+  });
+}
+
+export const scenarios: Scenario[] = [
+  // UX edges: E-SET-KEYS
+  scenario(
+    "settings-keys",
+    "settings: shows API-key presence without exposing values",
+    async () => {
+      const fixture = createOutside();
+      return { fixture, env: settingsEnvironment(fixture), data: { key: KEY } };
+    },
+    async (browser, { data: { key } }) => {
+      await browser.$("button=Settings").waitForExist({ timeout: 15000 });
+      await browser.$("button=Settings").click();
+      await browser.$('[data-testid="key-openai"]').waitForExist({ timeout: 15000 });
+      const keys = await browser.execute(() => ({
+        openai: document.querySelector('[data-testid="key-openai"]')?.textContent,
+        anthropic: document.querySelector('[data-testid="key-anthropic"]')?.textContent,
+      }));
+      assert.deepEqual(keys, { openai: "Set", anthropic: "Not set" });
+      const html = await browser.execute(() => document.documentElement.outerHTML);
+      assert.ok(!html.includes(key), "the key's value is nowhere on the page");
+    },
+  ),
+  // UX edges: E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-PUSH E-SET-REMOTE-LOGOUT
+  scenario(
+    "settings-remote",
+    "settings: remote sign-in, shared CLI status, fresh identity, dry run and sign-out",
+    async () => {
+      const fixture = createOutside();
+      // The outer owner serves HTTP while WDIO runs elsewhere. Only this fixture's
+      // domain state crosses that process boundary, never a server or live closure.
+      const principalFile = join(fixture.root, "remote-principal");
+      writeFileSync(principalFile, "alice-laptop");
+      const store = createServer((request, response) => {
+        request.resume();
+        const ok = request.url === "/v1/whoami" && request.headers.authorization === `Bearer ${TOKEN}`;
+        response.writeHead(ok ? 200 : 401, { "content-type": "application/json" });
+        response.end(JSON.stringify(ok ? { principal: readFileSync(principalFile, "utf8"), scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
+      });
+      try {
+        await new Promise<void>((done, fail) => {
+          store.once("error", fail);
+          store.listen(0, "127.0.0.1", () => { store.off("error", fail); done(); });
+        });
+        const address = store.address();
+        assert.ok(address && typeof address === "object");
+        const url = `http://127.0.0.1:${address.port}/`;
+        return {
+          fixture,
+          env: settingsEnvironment(fixture),
+          data: { url, principalFile, token: TOKEN },
+          release: () => close(store),
+        };
+      } catch (error) {
+        try { await close(store); }
+        catch (cleanup) { throw new AggregateError([error, cleanup], "remote store preparation and cleanup failed"); }
+        throw error;
+      }
+    },
+    async (browser, { fixture, data: { url, principalFile, token } }) => {
+      const text = () => browser.execute(() => document.body.innerText);
+      const html = () => browser.execute(() => document.documentElement.outerHTML);
+      await browser.$("button=Settings").waitForExist({ timeout: 15000 });
+      await browser.$("button=Settings").click();
+      await browser.waitUntil(async () => (await text()).includes("No remote review store is configured."), { timeout: 15000, timeoutMsg: "no store is configured yet" });
+      await browser.$("#remote-url").click();
+      await typeText(browser, url);
+      await browser.$("#remote-token").click();
+      await typeText(browser, token);
+      await browser.$('input[name="share"][value="full"]').click();
+      assert.equal(await browser.$("#remote-token").getAttribute("type"), "password");
+      await browser.$("button=Sign in to the store").click();
+      await browser.waitUntil(async () => (await text()).includes("alice-laptop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "the remote principal appears" });
+      assert.equal(await browser.$("#remote-token").getValue(), "", "the token left the field");
+      assert.ok(!(await html()).includes(token), "the token is nowhere on the page");
+
+      // The asynchronous CLI query shares saved state without blocking this store.
+      const status = await remoteStatus(fixture);
+      assert.equal(status.code, 0, status.stdout);
+      const parsed = JSON.parse(status.stdout);
+      assert.equal(parsed.principal, "alice-laptop");
+      assert.equal(parsed.tokenSource, "file");
+      assert.equal(parsed.share, "full", "the chosen share level was saved");
+      assert.ok((await text()).includes("full"), "the share level is also shown");
+      assert.ok(!status.stdout.includes(token));
+
+      writeFileSync(principalFile, "alice-desktop");
+      await browser.$("button=Check status").click();
+      await browser.waitUntil(async () => (await text()).includes("alice-desktop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "Check status displays the fresh remote principal" });
+      await browser.waitUntil(() => browser.execute(() => [...document.querySelectorAll("dt")].some((term) => term.textContent === "Reachable" && term.nextElementSibling?.textContent === "yes")), { timeout: 15000, timeoutMsg: "the store is reachable" });
+      await browser.$("button=Push (dry run)").click();
+      await browser.waitUntil(async () => /Would push \d+, already in the store \d+, skipped \d+\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run reports its result" });
+      await browser.$("button=Sign out of the store").click();
+      await browser.waitUntil(async () => (await text()).includes("No remote review store is configured."), { timeout: 15000, timeoutMsg: "the store is signed out" });
+      const after = await remoteStatus(fixture);
+      assert.equal(after.code, 1, after.stdout);
+      assert.deepEqual(JSON.parse(after.stdout), { configured: false });
+    },
+  ),
+];

@@ -15,7 +15,7 @@ async fn starting_inside_saved_non_git_workspace_selects_its_runs() {
     let repo = crate::test_os::canonical(root.path()).join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(repo.join("sub")).unwrap();
-    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(serde_json::json!({
         "id":"run-non-git",
         "repoPath":repo,

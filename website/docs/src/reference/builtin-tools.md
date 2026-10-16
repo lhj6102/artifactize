@@ -4,20 +4,24 @@ artifactize ships a set of tools written in Rust that behave the same on Linux, 
 and Windows. Declare one by name with `builtin` instead of writing a script or calling
 an OS program such as `cat` or `xdg-open`. Built-in tools run inside artifactize, so
 they do not need the [`artifactize-tools`](#artifactize-tools-cli) command on `PATH`;
-that command and `artifactize tools` offer the same tools to scripts and runtime evals.
+that command and `artifactize tools` offer the filesystem/program tools to scripts
+and runtime evals. The project-aware `graph` tool is available only as a declared
+review tool in artifactize, not in the standalone tools CLI.
 
 ```toml
 [views.agent_tools]
 read = { builtin = "read" }                                       # the model picks the path
 grep = { builtin = "grep" }
-style = { builtin = "read", args = ["STYLE.md"] }                 # one fixed file
+style = { builtin = "read", args = ["DEV-CODING.md"] }                 # one fixed file
 spec = { builtin = "section", args = ["spec.md"] }                # the model passes only the heading
 install = { builtin = "section", args = ["spec.md", "Install"] }  # one fixed section
 reqs = { builtin = "read", args = ["reqs/requirements.md"] }      # through the mount alias
+structure = { builtin = "graph", args = [] }                    # current project entity tree
 cargo_help = { builtin = "help", args = ["cargo", "build"] }      # cargo build --help
 
 [views.human_tools]
 open = { builtin = "open", args = ["{artifactPath}/notes.md"] }   # kind = "launch"
+viewer = { builtin = "graph", kind = "launch", args = [] }       # existing desktop graph view
 docs = { builtin = "open", args = ["https://artifactize.dev/docs/"] }
 notes = { builtin = "read", args = ["notes.md"] }                 # kind = "output"
 summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
@@ -25,7 +29,7 @@ summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
 
 A built-in declaration takes `builtin`, `args` (optional for the Agent tools that
 take model input) and an optional `description`; each tool has a default description. A Human built-in may also name its `kind`, which must
-match the tool (`open` launches, every other tool prints output) or `config check`
+match the tool (`open` and `graph` launch, every other tool prints output) or `config check`
 rejects it. Built-ins take no `timeout_ms`, `command`, `protocol` or `input_schema`. The
 reviewer sees each tool as `<name>_<artifactId>`, as with
 [command tools](agent-tools.md#agent-tools).
@@ -41,6 +45,7 @@ reviewer sees each tool as `<name>_<artifactId>`, as with
 | `view_image` | `{path}` | — | — | the image |
 | `section` | — | `[file]` (the model passes `heading`) or `[file, heading]` | `[file, heading]` | one Markdown section |
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | `program subcommand... --help` |
+| `graph` | — | `[]` | `[]` (launch) | Agent: entity tree with evals, criteria and directed relations; Human: desktop viewer |
 | `open` | — | — | `[file, folder or URL]` (launch) | nothing; opens the default application |
 
 Without `args`, an Agent tool takes the model's input; the input, result and limits of
@@ -70,6 +75,27 @@ Without `args`, an Agent tool takes the model's input; the input, result and lim
   never through a shell. Other URL schemes, such as `file:` or `mailto:`, are
   refused. The result only records that the application was
   started; the application belongs to the reviewer and keeps running.
+
+### Current project graph
+
+Declare `builtin = "graph", args = []` on any Artifact; no graph Artifact is
+required. It always reads the entire current project's declarations, not the
+selected review's historical Run or only its scope. It does not read source
+contents, start an eval or add dependencies. The two audience-specific tools use
+exactly the extraction that produces the graph fingerprint:
+
+- **Agent:** no model input (`{}` only). Prints a name-based, cycle-safe tree of
+  Artifacts and their evals, the complete extracted definitions/evaluation criteria,
+  the graph fingerprint, and labeled arrows from input to consumer.
+- **Human:** `kind = "launch"`. Starts `artifactize-desktop graph --repo PATH`
+  using the normal detached application handoff. `artifactize-desktop` must be
+  installed and discoverable through the program search path. The viewer reuses
+  the monitor's existing graph renderer and keyboard/zoom interactions, but shows
+  current declarations rather than Run verdicts. Expand **Structure and evaluation
+  criteria** for the same complete text tree as the Agent sees; **Refresh** or
+  Ctrl+R/F5 reloads declarations. This works before any Run exists. The tool returns
+  a launch acknowledgement, not an approval; the viewer keeps running when the
+  calling tool finishes.
 
 ### Paths in `args`
 
@@ -116,7 +142,7 @@ rather than running a current-directory tool.
 For runtime evals, fingerprint scripts and your own scripts:
 
 ```sh
-artifactize tools read STYLE.md             # also: artifactize-tools read STYLE.md
+artifactize tools read DEV-CODING.md             # also: artifactize-tools read DEV-CODING.md
 artifactize-tools list [PATH]
 artifactize-tools glob PATTERN [PATH]
 artifactize-tools grep [--glob GLOB] [--case-insensitive] PATTERN [PATH]

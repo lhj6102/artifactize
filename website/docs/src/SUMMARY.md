@@ -16,6 +16,7 @@
 
 # Guides
 
+- [Hey Arti: structure a project's reviews](guides/hey-arti.md)
 - [Agent evals and backends](guides/agent-evals.md)
 - [Human reviews](guides/human-reviews.md)
 - [Team review store](guides/team-review-store.md)
@@ -26,6 +27,7 @@
 
 - [Overview](reference/overview.md)
 - [CLI](reference/cli.md)
+- [MCP](reference/mcp.md)
 - [Declarations (.artf)](reference/declarations.md)
 - [Agent tools](reference/agent-tools.md)
 - [Human tools](reference/human-tools.md)

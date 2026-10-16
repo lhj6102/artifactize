@@ -201,13 +201,31 @@ const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
 
-pub fn duration(seconds: i64) -> String {
-    let seconds = seconds.max(0);
+pub fn duration(elapsed: time::Duration) -> String {
+    let seconds = elapsed.whole_seconds().max(0);
     match seconds {
         0..MINUTE => format!("{seconds}s"),
         MINUTE..HOUR => format!("{}m {:02}s", seconds / MINUTE, seconds % MINUTE),
         HOUR..DAY => format!("{}h {:02}m", seconds / HOUR, seconds % HOUR / MINUTE),
         _ => format!("{}d {}h", seconds / DAY, seconds % DAY / HOUR),
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn typed_durations_keep_the_display_units_and_clamp_clock_skew() {
+    for (elapsed, expected) in [
+        (time::Duration::seconds(-1), "0s"),
+        (time::Duration::ZERO, "0s"),
+        (time::Duration::milliseconds(59_999), "59s"),
+        (time::Duration::minutes(1), "1m 00s"),
+        (time::Duration::seconds(125), "2m 05s"),
+        (time::Duration::hours(1), "1h 00m"),
+        (time::Duration::minutes(61), "1h 01m"),
+        (time::Duration::days(1), "1d 0h"),
+        (time::Duration::hours(25), "1d 1h"),
+    ] {
+        assert_eq!(duration(elapsed), expected);
     }
 }
 
@@ -218,7 +236,7 @@ fn span(
     now: OffsetDateTime,
 ) -> Option<String> {
     let end = end.map_or(now, crate::types::Timestamp::time);
-    Some(duration((end - start.time()).whole_seconds()))
+    Some(duration(end - start.time()))
 }
 
 /// Status counts as glyphs, most urgent first and zero counts left out: `!2 ✓1`.
@@ -235,10 +253,13 @@ pub fn counts(counts: impl IntoIterator<Item = (Status, u64)>) -> String {
 
 /// Token totals for a headline: `950`, `12.3k`, `3.9M`.
 pub fn tokens(total: u64) -> String {
+    // Headlines abbreviate decimal thousands and millions as k and M, respectively.
+    const THOUSAND: u64 = 1_000;
+    const MILLION: u64 = 1_000_000;
     match total {
-        0..1_000 => total.to_string(),
-        1_000..1_000_000 => format!("{:.1}k", total as f64 / 1e3),
-        _ => format!("{:.1}M", total as f64 / 1e6),
+        0..THOUSAND => total.to_string(),
+        THOUSAND..MILLION => format!("{:.1}k", total as f64 / THOUSAND as f64),
+        _ => format!("{:.1}M", total as f64 / MILLION as f64),
     }
 }
 
@@ -272,7 +293,9 @@ fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
     }
     let active = matches!(
         request.status(),
-        crate::types::RequestStatus::Running | crate::types::RequestStatus::WaitingHuman
+        crate::types::RequestStatus::Running
+            | crate::types::RequestStatus::WaitingHuman
+            | crate::types::RequestStatus::Deferred
     );
     let start = request
         .started_at
@@ -355,7 +378,8 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             run.executions_started,
             run.max_executions
                 .map_or("unlimited".into(), |max| max.to_string()),
-            run.jobs,
+            run.jobs
+                .map_or("unlimited".into(), |limit| limit.to_string()),
         ),
         work: format!(
             "executed {} · reused {} · derived {}",
@@ -372,7 +396,9 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                 )
             })
             .collect(),
-        waiting: with(crate::types::RequestStatus::WaitingHuman)
+        waiting: requests
+            .iter()
+            .filter(|view| view.request.status().is_human_wait())
             .map(|view| (view.request.eval_id.to_string(), claim(view)))
             .collect(),
         errors: with(crate::types::RequestStatus::Error)

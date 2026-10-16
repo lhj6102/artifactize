@@ -1,3 +1,7 @@
+#[path = "support/run.rs"]
+mod owned_run;
+use owned_run::launch::{LAUNCH, Launched};
+
 use std::{fs, path::Path, process::Command, time::Duration};
 
 use artifactize_core::{
@@ -13,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn tool(kind: &str, command: &str, args: &[&str]) -> Value {
     json!({"description":"Inspect {artifactName}","kind":kind,"command":command,"args":args})
@@ -79,7 +84,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         ("args", json!(["{artifactPath}/../outside"])),
         ("args", json!(["{bad.name}"])),
         ("args", json!(["{unclosed"])),
-        ("args", json!(["${HOME}"])),
+        ("args", json!(["${ARTIFACTIZE_TEST_ARGUMENT}"])),
         ("args", json!(["prefix{artifactPath}"])),
         ("command", json!("{artifactPath}/tool")),
         ("timeout_ms", json!(0)),
@@ -117,7 +122,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
             "check",
             "--json",
         ])
-        .output()
+        .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
 }
@@ -258,14 +263,14 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
     write_artifact(&repo, "root", json!({}), "Review.");
     let owner = repo.join("a");
     write_artifact(&owner, "a", json!({}), "Review.");
-    let executable = owner.join("unique-human-tool-not-on-path");
-    support::os::write_script(&executable, "printf '%s' \"$PWD\"\n");
-    support::os::make_executable(&executable);
+    let executable =
+        support::os::working_directory_program(&owner, "unique-human-tool-not-on-path");
+    let executable = support::os::path_text(&executable);
     for (command, success) in [
         ("unique-human-tool-not-on-path", false),
         ("./unique-human-tool-not-on-path", true),
         ("../a/unique-human-tool-not-on-path", false),
-        (executable.to_str().unwrap(), true),
+        (executable.as_str(), true),
     ] {
         write_artifact(
             &owner,
@@ -276,7 +281,7 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
         let result = call(&repo).await;
         assert_eq!(!result.is_error(), success, "{command}: {result:?}");
         if success {
-            assert_eq!(text(&result), owner.to_str().unwrap());
+            assert_eq!(text(&result), support::os::path_text(&owner));
         }
     }
 }
@@ -290,11 +295,8 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         json!({
             "inspect":tool(
                 "output",
-                &support::os::shell(),
-                &[
-                    "-c",
-                    "printf '\\033[31mhello\\033[0m\\000\\t\\n'; printf '\\033[31mproblem\\033[0m\\000' >&2; exit 3",
-                ],
+                support::os::python_program(),
+                &python(r"import os, sys; os.write(1, b'\x1b[31mhello\x1b[0m\x00\t\n'); os.write(2, b'\x1b[31mproblem\x1b[0m\x00'); sys.exit(3)"),
             ),
         }),
         "Review.",
@@ -339,10 +341,12 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
 #[tokio::test]
 async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     let repo = support::os::tempdir();
+    // Only the tool's declared deadline ends this process; no natural sleep lifetime races it.
+    let (program, args) = support::os::lingering_command();
     let mut command = tool(
         "output",
-        &support::os::sleep_program(),
-        &[support::os::LINGERING_SECONDS],
+        &program,
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
     );
     command["timeout_ms"] = json!(40);
     write_artifact(repo.path(), "a", json!({"inspect":command}), "Review.");
@@ -371,62 +375,111 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         "Review.",
     );
     assert!(call(repo.path()).await.is_error());
+    let mut launched = Launched::new(repo);
     write_artifact(
-        repo.path(),
+        launched.path(),
         "a",
-        json!({"inspect":tool("launch", &support::os::false_program(), &[])}),
+        json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
         "Review.",
     );
     assert_eq!(
-        call(repo.path()).await.content(),
+        call(launched.path()).await.content(),
         [Content::Launch { launched: true }]
     );
+    // Handoff acceptance is not the saved marker. Observe the full marker and adopt the
+    // child while it is held by the fixture's release, including assertion-unwind paths.
+    let expected = support::os::environment_variable("ARTIFACTIZE_HUMAN_MARKER")
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "launched".into());
+    support::os::wait_until(Duration::from_secs(5), || {
+        fs::read_to_string(launched.path().join("marker")).unwrap_or_default() == expected
+            && launched.own().is_some()
+    });
 }
 
-struct Launched(u32);
-impl Drop for Launched {
-    fn drop(&mut self) {
-        support::os::kill_tree(self.0);
+#[tokio::test]
+async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
+    for unwind in [false, true] {
+        let repo = support::os::tempdir();
+        fs::write(repo.path().join("hold-handoff"), "").unwrap();
+        write_artifact(
+            repo.path(),
+            "a",
+            json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
+            "Review.",
+        );
+        let launched = Launched::new(repo);
+        assert_eq!(
+            call(launched.path()).await.content(),
+            [Content::Launch { launched: true }]
+        );
+        support::os::wait_until(Duration::from_secs(5), || {
+            launched.path().join("handoff-ready").exists()
+        });
+        assert!(!launched.path().join("pid").exists(), "PID handoff is held");
+        let root = launched.path().to_owned();
+        // Retain the joined fixture long enough to independently read the child's PID.
+        let inputs = launched.retain_inputs();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _owned = launched;
+            assert!(!unwind, "pending detached launch unwind probe");
+        }));
+        assert_eq!(result.is_err(), unwind);
+        let pid = fs::read_to_string(root.join("pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            !support::os::running(pid),
+            "the pending child was adopted and stopped"
+        );
+        drop(inputs);
+        assert!(!root.exists(), "child cleanup precedes fixture removal");
     }
 }
 
 #[test]
 fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize_variables() {
-    let repo = support::os::tempdir();
-    // The parent owns the release: exiting the launcher probe must not end its child.
-    let _release = support::os::Release(repo.path().to_path_buf());
-    // Build the Windows stand-ins before the probe needs them.
-    support::os::shell();
-    let mut command = Command::new(std::env::current_exe().unwrap());
-    support::os::human_environment(&mut command, repo.path());
-    let result = command
-        .args([
-            "--exact",
+    for unwind in [false, true] {
+        let repo = support::os::tempdir();
+        // The parent owns the release: exiting the launcher probe must not end its child.
+        let mut launched = Launched::new(repo);
+        let result = support::os::run_human_test(
             "human_environment_and_launch_probe",
-            "--nocapture",
-        ])
-        .env("ARTIFACTIZE_HUMAN_PROBE", repo.path())
-        .env("ARTIFACTIZE_HUMAN_MARKER", "reviewer-marker")
-        .output()
-        .unwrap();
-    let pid = fs::read_to_string(repo.path().join("pid"))
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok());
-    let child = pid.map(Launched);
-    assert!(result.status.success(), "{result:?}");
-    let child = child.expect("launcher wrote its pid");
-    // The probe that launched it has exited; the detached child outlives it, but may not
-    // have finished becoming a tracked job member or process-group leader just yet.
-    support::os::wait_until(Duration::from_secs(5), || support::os::running(child.0));
-    support::os::assert_detached(child.0);
-    assert!(
-        support::os::running(child.0),
-        "detached child is still running"
-    );
-    assert_eq!(
-        fs::read_to_string(repo.path().join("marker")).unwrap(),
-        "reviewer-marker"
-    );
+            launched.path(),
+            &[
+                (
+                    "ARTIFACTIZE_HUMAN_PROBE",
+                    launched.path().as_os_str().to_owned(),
+                ),
+                ("ARTIFACTIZE_HUMAN_MARKER", "reviewer-marker".into()),
+            ],
+        );
+        let pid = launched.own();
+        assert!(result.status.success(), "{result:?}");
+        let pid = pid.expect("launcher saved its complete pid marker");
+        // The probe that launched it has exited; the detached child outlives it, but may not
+        // have finished becoming a tracked job member or process-group leader just yet.
+        support::os::wait_until(Duration::from_secs(5), || support::os::running(pid));
+        support::os::assert_detached(pid);
+        assert!(support::os::running(pid), "detached child is still running");
+        assert_eq!(
+            fs::read_to_string(launched.path().join("marker")).unwrap(),
+            "reviewer-marker"
+        );
+        let start = support::os::start_time(pid);
+        let root = launched.path().to_owned();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _owned = launched;
+            assert!(!unwind, "detached Human launch fixture unwind probe");
+        }));
+        assert_eq!(result.is_err(), unwind);
+        assert!(!support::os::same_process_running(pid, start));
+        assert!(
+            !root.exists(),
+            "detached child cleanup precedes fixture removal"
+        );
+    }
 }
 
 #[tokio::test]
@@ -452,13 +505,20 @@ async fn human_environment_and_launch_probe() {
     );
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
-    // Python ends its printed lines with CRLF on Windows.
+    // Python prints native environment paths and uses CRLF on Windows. Normalize
+    // those two path fields at the observation boundary through the portable helper.
+    let observed = text(&result).replace("\r\n", "\n");
+    let mut lines: Vec<String> = observed.split('\n').map(str::to_owned).collect();
+    assert_eq!(lines.len(), 6, "{observed}");
+    for index in [1, 4] {
+        lines[index] = support::os::path_text(Path::new(&lines[index]));
+    }
     assert_eq!(
-        text(&result).replace("\r\n", "\n"),
+        lines.join("\n"),
         format!(
             "reviewer-marker\n{}\n:77\nwayland-test\n{}\n",
-            repo.join("real-home").display(),
-            repo.join("real-config").display()
+            support::os::path_text(&repo.join("real-home")),
+            support::os::path_text(&repo.join("real-config"))
         )
     );
     let mut declaration: Value =
@@ -480,17 +540,8 @@ async fn human_environment_and_launch_probe() {
             ],
         },
     });
-    declaration["views"]["human_tools"]["inspect"] = tool(
-        "launch",
-        &support::os::shell(),
-        &[
-            "-c",
-            &format!(
-                "printf '%s' $$ > pid; printf '%s' \"$ARTIFACTIZE_HUMAN_MARKER\" > marker; {}",
-                support::os::UNTIL_RELEASED
-            ),
-        ],
-    );
+    declaration["views"]["human_tools"]["inspect"] =
+        tool("launch", support::os::python_program(), &python(LAUNCH));
     support::declaration::write(repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
     assert!(Registry::new(&config, "a/agent").is_err());
@@ -514,10 +565,11 @@ async fn human_environment_and_launch_probe() {
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(result.content(), [Content::Launch { launched: true }]);
     tokio::time::timeout(support::os::patience(Duration::from_secs(2)), async {
-        while !repo.join("marker").exists()
+        while fs::read_to_string(repo.join("marker")).unwrap_or_default() != "reviewer-marker"
             || fs::read_to_string(repo.join("pid"))
-                .unwrap_or_default()
-                .is_empty()
+                .ok()
+                .and_then(|text| text.parse::<u32>().ok())
+                .is_none()
         {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }

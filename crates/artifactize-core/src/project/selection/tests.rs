@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::fs;
 
 use serde_json::json;
 
@@ -8,9 +8,42 @@ use crate::{
     graph::Graph,
 };
 
-fn fixture() -> RepoConfig {
-    read_workspace_config(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"))
-        .unwrap()
+/// Public selection-file contracts, independent of the parser's implementation constants.
+const FILE_BYTES: usize = 4 * 1024 * 1024;
+/// Duplicate input IDs still count against the declared 100000-ID input bound.
+const FILE_IDS: usize = 100_000;
+const INVALID_FILE: &str =
+    "Selection file must contain 1–100000 nonempty IDs, as a JSON string array or one ID per line.";
+
+fn fixture() -> (tempfile::TempDir, RepoConfig) {
+    let directory = crate::test_os::tempdir();
+    for (name, instruction) in [
+        ("blocked", "Check {red}."),
+        ("cycle-a", "Check {cycle-b}."),
+        ("cycle-b", "Check {cycle-a}."),
+        ("green", "Check {input}."),
+        ("red", "Check."),
+        ("timeout", "Check."),
+        ("waiting", "Check {timeout}."),
+    ] {
+        let path = directory.path().join(name);
+        fs::create_dir(&path).unwrap();
+        crate::test_declaration::write(
+            path.join("index.artf"),
+            json!({"name":name,"evals":[{"id":"check","title":"Check",
+                "profile":{"kind":"human"},"payload":{"instruction":instruction}}]})
+            .to_string(),
+        )
+        .unwrap();
+    }
+    fs::create_dir(directory.path().join("input")).unwrap();
+    crate::test_declaration::write(
+        directory.path().join("input/index.artf"),
+        json!({"name":"input","basis":true}).to_string(),
+    )
+    .unwrap();
+    let config = read_workspace_config(directory.path()).unwrap();
+    (directory, config)
 }
 
 fn eval_ids(selection: &Selection, config: &RepoConfig) -> Vec<String> {
@@ -25,7 +58,7 @@ fn eval_ids(selection: &Selection, config: &RepoConfig) -> Vec<String> {
 
 #[test]
 fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
-    let config = fixture();
+    let (_directory, config) = fixture();
     let artifacts = Selection::Artifacts {
         artifact_ids: vec![
             "green".parse().unwrap(),
@@ -51,11 +84,15 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
     );
     assert_eq!(
         eval_ids(&Selection::All, &config),
-        config
-            .evals
-            .iter()
-            .map(|eval| eval.id.clone())
-            .collect::<Vec<_>>()
+        [
+            "blocked/check",
+            "cycle-a/check",
+            "cycle-b/check",
+            "green/check",
+            "red/check",
+            "timeout/check",
+            "waiting/check",
+        ]
     );
     let selected = Selection::Eval {
         eval_id: "cycle-a/check".parse().unwrap(),
@@ -130,7 +167,7 @@ fn json_and_line_files_select_the_same_ordered_evals() {
     let lines = read_selection_file(&line_path).unwrap();
     assert_eq!(json, ["green", "cycle-b", "cycle-a"]);
     assert_eq!(json, lines);
-    let config = fixture();
+    let (_directory, config) = fixture();
     assert_eq!(
         eval_ids(
             &Selection::Artifacts {
@@ -197,28 +234,25 @@ fn selection_files_validate_before_deduplication_and_never_fallback_from_json() 
     ] {
         assert_eq!(
             parse_selection_file(input).unwrap_err(),
-            FILE_FORMAT_ERROR,
+            INVALID_FILE,
             "{input:?}"
         );
     }
     assert_eq!(
-        parse_selection_file("x\n".repeat(MAX_IDS).as_str()).unwrap(),
+        parse_selection_file("x\n".repeat(FILE_IDS).as_str()).unwrap(),
         ["x"]
     );
     assert_eq!(
-        parse_selection_file("x\n".repeat(MAX_IDS + 1).as_str()).unwrap_err(),
-        FILE_FORMAT_ERROR
+        parse_selection_file("x\n".repeat(FILE_IDS + 1).as_str()).unwrap_err(),
+        INVALID_FILE
     );
-    let ids = vec!["x"; MAX_IDS + 1];
+    let ids = vec!["x"; FILE_IDS + 1];
     assert_eq!(
         parse_selection_file(&serde_json::to_string(&ids).unwrap()).unwrap_err(),
-        FILE_FORMAT_ERROR
+        INVALID_FILE
     );
-    let text = "x".repeat(MAX_FILE_BYTES);
-    assert_eq!(
-        parse_selection_file(&text).unwrap()[0].len(),
-        MAX_FILE_BYTES
-    );
+    let text = "x".repeat(FILE_BYTES);
+    assert_eq!(parse_selection_file(&text).unwrap()[0].len(), FILE_BYTES);
     assert_eq!(
         parse_selection_file(&(text + "x")).unwrap_err(),
         "Selection file exceeds 4 MiB."
@@ -230,18 +264,14 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
     let directory = crate::test_os::tempdir();
     let path = directory.path().join("ids");
     let file = fs::File::create(&path).unwrap();
-    file.set_len(MAX_FILE_BYTES as u64 + 1).unwrap();
+    file.set_len(FILE_BYTES as u64 + 1).unwrap();
     let error = "Selection input must be a regular file no larger than 4 MiB.";
     assert_eq!(read_selection_file(&path).unwrap_err(), error);
     assert_eq!(read_selection_file(directory.path()).unwrap_err(), error);
     // The null device is no regular file on any system.
     assert!(read_selection_file(crate::test_os::null_device()).is_err());
-    // Only Unix has FIFOs.
-    // Unix-only special-file or filesystem permission behavior.
-    #[cfg(unix)]
-    {
-        let fifo = directory.path().join("fifo");
-        crate::test_os::fifo(&fifo);
+    let fifo = directory.path().join("fifo");
+    if crate::test_os::fifo_if_supported(&fifo).is_some() {
         assert_eq!(read_selection_file(&fifo).unwrap_err(), error);
     }
     assert!(read_selection_file(&directory.path().join("missing")).is_err());

@@ -55,7 +55,7 @@ pub enum RelationKind {
         eval_id: crate::config::EvalId,
         index: usize,
         name: crate::config::ReferenceName,
-        path: String,
+        path: LogicalTarget,
     },
 }
 
@@ -602,7 +602,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                             eval_id: eval.id.clone(),
                             index,
                             name: ref_name.clone(),
-                            path: path.to_string(),
+                            path: path.clone(),
                         },
                     });
                 }

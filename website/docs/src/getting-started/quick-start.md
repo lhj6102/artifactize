@@ -16,9 +16,9 @@ cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize config graph    # Artifacts, evals and child/mount/reference relations
-artifactize verify --all    # three GREEN results, exit 0; prints "Run: RUN_ID"
+artifactize verify --all --wait    # three GREEN results, exit 0; prints "Run: RUN_ID"
 artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, fingerprint
-artifactize verify --all    # exit 0 and nothing executes: all three results are reused
+artifactize verify --all --wait    # exit 0 and nothing executes: all three results are reused
 artifactize status          # exit 0: every eval shows "PASS — reuse"
 ```
 
@@ -43,8 +43,8 @@ example's directory:
 ```sh
 cd ../posts
 artifactize config check   # four Artifacts, three evals
-artifactize verify --all   # three GREEN results
-artifactize verify tip/style # qualified file eval; reused
+artifactize verify --all --wait   # three GREEN results
+artifactize verify tip/style --wait # qualified file eval; reused
 artifactize status         # all three post reviews are reused
 cd ../runtime-relations    # continue the tour below
 ```
@@ -70,12 +70,20 @@ monitor show unfulfilled requirements. See [Artifacts and evals](../concepts/art
 
 ## Agent tools and the Human flow
 
+Both terminals must use the same temporary state directory. Before starting the
+waiting command below, print the first terminal's value with
+`echo "$ARTIFACTIZE_STATE_HOME"` (PowerShell: `$env:ARTIFACTIZE_STATE_HOME`).
+In the second terminal, replace `STATE_DIRECTORY` below with that printed path.
+For PowerShell, use `$env:ARTIFACTIZE_STATE_HOME = "STATE_DIRECTORY"` instead of
+`export`. Then open the same example directory.
+
 ```sh
 cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{}'
-artifactize verify --eval spec/signoff   # records a WAITING_HUMAN request and waits
+artifactize verify --eval spec/signoff --wait   # records a WAITING_HUMAN request and waits
 # In a second terminal, in the same directory:
+export ARTIFACTIZE_STATE_HOME="STATE_DIRECTORY"  # copy the first terminal's path
 artifactize request list --run RUN_ID    # shows REQUEST_ID
 artifactize request claim REQUEST_ID
 artifactize request tool REQUEST_ID notes_spec
@@ -89,42 +97,28 @@ review` does the same in a terminal UI: it lists waiting requests and previews t
 instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
 Enter (or a click) runs one at once. `g`/`r` opens the GREEN/RED fields; Ctrl-S
 submits. Esc stops editing before returning to the list, keeping the draft.
-`verify` waits for Human results like any other, so dependents continue in the
-same Run; once the sign-off arrives it exits 4 here, because
-`spec/review` has no result yet.
+The artifactize-owned Run waits for Human results like any other, so dependents
+continue in the same Run. Plain `verify` submits and returns; `verify --wait`
+follows the Run in the foreground and exits 4 here once the sign-off arrives,
+because `spec/review` has no result yet.
 
 For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
-then run `artifactize verify --eval spec/review`, adding `--profile anthropic` or `--profile codex` for the other backends. Without
-credentials the review is recorded as ERROR and exits 2. See the [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
+then run `artifactize verify --eval spec/review --wait`, adding `--profile anthropic` or `--profile codex` for the other backends. Without
+credentials the review is recorded as ERROR and the waiting command exits 2. See the [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
 
 ## Monitor
 
 ```sh
-artifactize monitor         # Initially select this repository and worktree
-artifactize monitor --all   # Initially select every repository in this state
+artifactize monitor .      # Initially select this repository
+artifactize monitor        # Initially select ALL repositories in this state
 ```
 
-Start it in a second terminal while `verify` runs. Drill down through Scope → Runs
-→ Run tree → Detail with Enter or →; Esc steps back and never quits. The focused
-pane fills the remaining width between its immediate context and preview panes,
-which remain at every terminal width (except the missing neighbour at either end
-of the drill-down). Side panes are 16 columns below 100, 28 at 100–139, and 36 at
-140 or more; extremely small terminals clip them rather than dropping a level.
-`j`/`k` selects; the tree's Detail peek follows the selected eval. `?` shows help,
-`!` finds the next error, RED or waiting Human eval, and `q` or Ctrl-C quits.
+Start it in a second terminal while a Run executes. Use Enter or → to move from
+Scope through Runs and the tree to an eval's Detail; Esc steps back. `j`/`k`
+selects, `?` shows help, and `q` quits. Detail shows Agent conversations, Runtime
+logs or the requirements an eval waits for. Browsing runs no owner commands.
 
-Each eval has one row. `waits for X` and `blocked by X` name upstream Artifacts;
-`b` jumps to them and Backspace returns. The headline keeps validation **at Run
-end**; a dim `*` marks rows changed by later request updates. Enter on the Run row
-opens usage, budgets and counts. Agent Detail shows its saved conversation;
-Runtime Detail shows saved logs; dependency Detail shows derived requirements.
-A waiting Human Detail is the same component as `review`: `c` claims, `g`/`r`
-opens a verdict form and Ctrl-S submits. `i` expands its instruction; `t` opens
-Technical. Esc stops editing with the draft kept before leaving Detail. Nested
-JSON stays in the TUI; only standalone `review` offers Ctrl-E for `$EDITOR`.
-F2 toggles mouse capture for terminal text selection; keyboard paste works either
-way. Browsing runs no owner
-code; explicit Human tools and submissions use the review APIs. See
+For Human claims, tools and verdict forms, see
 [Human reviews and monitor](../guides/human-reviews.md#monitor).
 
 ## Team review store (optional)

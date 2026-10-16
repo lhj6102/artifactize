@@ -1,3 +1,6 @@
+#[path = "support/run.rs"]
+mod owned_run;
+
 use std::{
     collections::BTreeMap,
     fs,
@@ -8,8 +11,12 @@ use std::{
 use serde_json::{Value, json};
 use support::os::{echo_program, false_program, true_program};
 
+#[path = "support/order.rs"]
+mod order;
+
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::runs::RecordOutput;
 
 fn command(repo: &Path, state: &Path) -> Command {
     let mut command = Command::new(support::os::cli());
@@ -22,7 +29,7 @@ fn command(repo: &Path, state: &Path) -> Command {
 }
 
 fn output(repo: &Path, state: &Path, args: &[&str], code: i32) -> Output {
-    let output = command(repo, state).args(args).output().unwrap();
+    let output = command(repo, state).args(args).record_output().unwrap();
     assert_eq!(
         output.status.code(),
         Some(code),
@@ -51,7 +58,7 @@ fn counts(run: &Value) -> Value {
 
 #[test]
 fn saved_definitions_and_paged_runs_survive_repository_removal() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let first = root.path().join("first");
     let second = root.path().join("second");
     let state = root.path().join("state");
@@ -60,6 +67,9 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     fs::create_dir(first.join("input")).unwrap();
     fs::create_dir(first.join("unselected")).unwrap();
     fs::create_dir(&second).unwrap();
+    // Own submissions before any command or observation can unwind.
+    root.track(&state, &first);
+    root.track(&state, &second);
     support::declaration::write(
         first.join("input/index.artf"),
         r#"{"name":"input","basis":true}"#,
@@ -130,12 +140,12 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         &state,
         &[
             "verify",
+            "--wait",
             "--artifacts",
             "checkout,search",
             "--profile",
             "brief",
             "--force",
-            "--ignore-gates",
             "--jobs",
             "2",
             "--max-executions",
@@ -143,19 +153,48 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ],
         0,
     );
-    // The Human wait times out at once, so the Run ends INCOMPLETE with its request open.
-    let other = query(
-        &second,
-        &state,
-        &["verify", "--all", "--timeout-ms", "1"],
-        3,
-    );
+    // Submission returns while the owned Run remains RUNNING with its Human request open.
+    let other = query(&second, &state, &["verify", "--all"], 0);
     let last = query(
         &first,
         &state,
-        &["verify", "--eval", "checkout/review", "--profile", "brief"],
+        &[
+            "verify",
+            "--wait",
+            "--eval",
+            "checkout/review",
+            "--profile",
+            "brief",
+        ],
         0,
     );
+    // Fixed creation times make ordering and pagination independent of clock resolution.
+    let [selected, other, last] = {
+        [
+            (selected, "2000-01-01T00:00:00.000000000Z"),
+            (other, "2000-01-02T00:00:00.000000000Z"),
+            (last, "2000-01-03T00:00:00.000000000Z"),
+        ]
+        .map(|(run, created)| {
+            let id = run["id"].as_str().unwrap();
+            if run["status"] != "RUNNING" {
+                support::runs::finished_worker(
+                    &state,
+                    &first,
+                    &id.parse().unwrap(),
+                    support::os::running,
+                );
+            }
+            order::created_at(&state, id, created);
+            // Read the seeded audit before repository removal, including derived durations.
+            query(
+                &first,
+                &state,
+                &["run", "show", run["id"].as_str().unwrap()],
+                0,
+            )
+        })
+    };
     assert_eq!(selected["profile"], "brief");
     assert_eq!(
         selected["selection"],
@@ -164,7 +203,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     assert_eq!(selected["jobs"], 2);
     assert_eq!(selected["maxExecutions"], 3);
     assert_eq!(selected["force"], true);
-    assert_eq!(selected["ignoreGates"], true);
+    assert!(selected.get("ignoreGates").is_none());
     let definitions = &selected["definitions"];
     assert_eq!(definitions["artifacts"].as_object().unwrap().len(), 3);
     assert_eq!(definitions["artifacts"]["input"]["basis"], true);
@@ -224,7 +263,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
             &["run", "show", saved["id"].as_str().unwrap()],
             0,
         );
-        assert_eq!(shown, *saved);
+        if saved["status"] == "RUNNING" {
+            assert_eq!(shown["id"], saved["id"]);
+            assert_eq!(shown["requests"], saved["requests"]);
+            assert_eq!(shown["definitions"], saved["definitions"]);
+        } else {
+            assert_eq!(shown, *saved);
+        }
         for request in saved["requests"].as_array().unwrap() {
             let shown = query(
                 &first,
@@ -263,7 +308,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         .arg("--state-dir")
         .arg(&state)
         .args(["run", "list", "--json"])
-        .output()
+        .record_output()
         .unwrap();
     assert!(current.status.success());
     assert_eq!(

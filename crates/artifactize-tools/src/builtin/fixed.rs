@@ -38,6 +38,7 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
         };
     };
     let valid = match builtin {
+        Builtin::Graph => args.is_empty(),
         Builtin::Read | Builtin::List => args.len() == 1,
         Builtin::Section => args.len() == 2 || !human && args.len() == 1,
         Builtin::Help => !args.is_empty(),
@@ -97,7 +98,10 @@ pub fn validate_target(
     scope: &Scope,
     owner: &ArtifactId,
 ) -> Result<(), String> {
-    if builtin == Builtin::Help || builtin == Builtin::Open && is_url(&args[0]) {
+    if builtin == Builtin::Graph
+        || builtin == Builtin::Help
+        || builtin == Builtin::Open && is_url(&args[0])
+    {
         return Ok(());
     }
     // Existing targets are validated without following any symlink.
@@ -395,42 +399,4 @@ async fn help(
         return Err("Help output exceeds 64 KiB.".into());
     }
     Ok(String::from_utf8(crate::result::clean_output(&bytes)).expect("clean output is UTF-8"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn fixed_inputs_reject_missing_declarations_and_unexpected_model_fields() {
-        for (builtin, args, input) in [
-            (Builtin::Read, vec![], json!({})),
-            (Builtin::Read, vec!["notes".into()], json!({"path":"other"})),
-            (Builtin::Help, vec!["program".into()], json!({"extra":true})),
-            (Builtin::Section, vec!["notes".into()], json!({})),
-            (
-                Builtin::Section,
-                vec!["notes".into(), "Title".into()],
-                json!({"heading":"Other"}),
-            ),
-        ] {
-            assert!(FixedInput::parse(builtin, &args, input).is_err());
-        }
-        assert!(matches!(
-            FixedInput::parse(Builtin::Section, &["notes".into()], json!({"heading":"Title"})),
-            Ok(FixedInput::Section { heading, .. }) if heading == "Title"
-        ));
-    }
-
-    #[test]
-    fn sections_follow_markdown_headings_not_code_blocks() {
-        let text = "# Top\nintro\n## Exact\nbody\n### Child\nchild\n```md\n## Fake\n```\n## Next\nnext\n\nSetext\n======\nlast\n";
-        assert_eq!(
-            section(text, "Exact").unwrap(),
-            "## Exact\nbody\n### Child\nchild\n```md\n## Fake\n```\n"
-        );
-        assert_eq!(section(text, "Setext").unwrap(), "Setext\n======\nlast\n");
-        let error = section(text, "missing").unwrap_err();
-        assert!(error.contains("Top\nExact\nChild\nNext\nSetext"));
-        assert!(!error.contains("Fake"));
-    }
 }

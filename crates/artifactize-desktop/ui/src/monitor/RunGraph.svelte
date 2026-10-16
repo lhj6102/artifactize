@@ -5,7 +5,7 @@
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
-  import { call, commands, message, type RunGraph, type TreeNode } from "../ipc/client";
+  import { call, useIpc, message, type RunGraph, type TreeNode } from "../ipc/client";
   import { RunGraphState, setRunGraphState } from "./runGraph.svelte";
   import GraphView from "./GraphView.svelte";
   import { LIMIT, shape } from "./graph";
@@ -19,6 +19,7 @@
     active = true,
     onselect,
     onopen,
+    onready,
   }: {
     run: string;
     /** The browse revision: a new one means a new snapshot to read the graph from. */
@@ -30,7 +31,10 @@
     active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
+    /** The graph is mounted and can accept a requested keyboard-focus handoff. */
+    onready?: (focus: () => void) => void;
   } = $props();
+  const commands = useIpc();
   const g = new RunGraphState();
   setRunGraphState(g);
 
@@ -99,7 +103,7 @@
 {:else}
   {#key g.shown.graph.run}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} {onready} />
     </SvelteFlowProvider>
   {/key}
 {/if}

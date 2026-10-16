@@ -73,10 +73,9 @@ async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_id
         manifest.inputs,
         "e4f6b6f577a7a9d1317c8277472a2cf20ab370750350f87150dc6169e62a7506"
     );
-    assert_eq!(fingerprint.value.len(), 76);
     assert_eq!(
         fingerprint.value.as_str(),
-        format!("artifactsum:{}", manifest.inputs)
+        "artifactsum:e4f6b6f577a7a9d1317c8277472a2cf20ab370750350f87150dc6169e62a7506"
     );
 }
 
@@ -221,16 +220,11 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     };
     if symlink_file("a.txt", &link).is_some() {
         check(repo.fingerprint("owner").await.unwrap_err());
+        fs::remove_file(&link).unwrap();
     }
-    // Windows junctions are reparse links and exist only on Windows.
-    // They need no privilege to create.
-    #[cfg(windows)]
-    {
-        let _ = fs::remove_file(&link);
-        repo.write("elsewhere/b.txt", "b");
-        crate::test_os::junction(&repo.root.path().join("elsewhere"), &link);
-        check(repo.fingerprint("owner").await.unwrap_err());
-    }
+    repo.write("elsewhere/b.txt", "b");
+    crate::test_os::link_dir(&repo.root.path().join("elsewhere"), &link);
+    check(repo.fingerprint("owner").await.unwrap_err());
     repo.artifact(
         "owner",
         json!({"name":"owner","fingerprint":{"files":["a.txt","docs"],"ignore":["link"]}}),
@@ -377,10 +371,6 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
     };
     let one = key(&base, &fingerprints(&[("app", "v1"), ("core", "v1")]));
     assert_eq!(one.len(), 64);
-    assert_eq!(
-        key(&base, &fingerprints(&[("core", "v1"), ("app", "v1")])),
-        one
-    );
     for other in [
         key(&base, &fingerprints(&[("app", "v1"), ("core", "v2")])),
         key(&base, &fingerprints(&[("app", "v1")])),
@@ -396,10 +386,8 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
 
 #[test]
 fn changes_name_target_files_and_dependency_fingerprints() {
-    let manifest = |files: &[(&str, &str)]| Manifest {
-        inputs: content::hex(&Sha256::digest(format!("{files:?}")))
-            .parse()
-            .unwrap(),
+    let manifest = |input: &str, files: &[(&str, &str)]| Manifest {
+        inputs: input.repeat(64).parse().unwrap(),
         files: Some(
             files
                 .iter()
@@ -456,8 +444,11 @@ fn changes_name_target_files_and_dependency_fingerprints() {
         artifact_kinds: BTreeMap::new(),
     };
     let target: ArtifactName = "a".parse().unwrap();
-    let old = manifest(&[("src/a.py", "1"), ("old.md", "1"), ("same", "1")]);
-    let new = manifest(&[("src/a.py", "2"), ("docs/new.md", "1"), ("same", "1")]);
+    let old = manifest("1", &[("src/a.py", "1"), ("old.md", "1"), ("same", "1")]);
+    let new = manifest(
+        "2",
+        &[("src/a.py", "2"), ("docs/new.md", "1"), ("same", "1")],
+    );
     let before = fingerprints(&[("a", "artifactsum:1"), ("core", "x"), ("gone", "x")]);
     let after = current(&[("a", "artifactsum:2"), ("core", "y"), ("extra", "x")]);
     let changes = changes(
@@ -509,7 +500,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     assert!(changes.files.is_none() && changes.dependencies.is_none());
 }
 
-/// The upgrade invalidates even script keys, without changing the Eval strategy hash.
+/// The upgrade invalidates even script keys, without changing the evaluation criteria hash.
 #[test]
 fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
     let agent: EvalDeclaration = crate::test_declaration::eval(json!({

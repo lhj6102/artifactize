@@ -1,6 +1,7 @@
 // The Review state against a mocked command boundary: verdict forms that answer out of
 // order, and JSON drafts per verdict.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
@@ -36,8 +37,6 @@ function backend() {
   return { pending, drafts };
 }
 
-const settle = () => new Promise((done) => setTimeout(done, 0));
-
 afterEach(() => clearMocks());
 
 describe("Review", () => {
@@ -47,10 +46,10 @@ describe("Review", () => {
     await review.load();
     const green = review.choose("GREEN");
     const red = review.choose("RED");
-    await settle();
-    pending.find((request) => request.verdict === "RED")?.answer();
+    await waitFor(() => expect(pending.map((request) => request.verdict)).toEqual(["GREEN", "RED"]));
+    pending.find((request) => request.verdict === "RED")!.answer();
     await red;
-    pending.find((request) => request.verdict === "GREEN")?.answer();
+    pending.find((request) => request.verdict === "GREEN")!.answer();
     await green;
     expect(review.form?.verdict).toBe("RED");
   });
@@ -60,7 +59,7 @@ describe("Review", () => {
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     const green = review.choose("GREEN");
-    await settle();
+    await waitFor(() => expect(pending).toHaveLength(1));
     review.stopEditing();
     pending[0].answer();
     await green;
@@ -72,7 +71,7 @@ describe("Review", () => {
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     const green = review.choose("GREEN");
-    await settle();
+    await waitFor(() => expect(pending).toHaveLength(1));
     pending[0].answer();
     await green;
     await review.form!.set("comment", { kind: "text", value: "x" });
@@ -87,12 +86,12 @@ describe("Review", () => {
     });
     expect(review.form?.json).toContain('"approved": true');
     const red = review.choose("RED");
-    await settle();
+    await waitFor(() => expect(pending[1]?.verdict).toBe("RED"));
     pending[1].answer();
     await red;
     expect(review.form?.json).toBeNull();
     const again = review.choose("GREEN");
-    await settle();
+    await waitFor(() => expect(pending[2]?.verdict).toBe("GREEN"));
     pending[2].answer();
     await again;
     expect(review.form?.json).toContain('"approved": true');
@@ -122,10 +121,10 @@ describe("Review", () => {
     await review.choose("GREEN");
     await review.form!.set("comment", { kind: "text", value: "before" });
     const converting = review.editJson();
-    await settle();
-    void review.form!.set("comment", { kind: "text", value: "after" });
+    await waitFor(() => expect(pending).toHaveLength(1));
+    await review.form!.set("comment", { kind: "text", value: "after" });
     pending[0].answer();
-    await settle();
+    await waitFor(() => expect(pending).toHaveLength(2));
     pending[1].answer();
     await converting;
     expect(JSON.parse(review.form!.json!)).toEqual({ approved: true, comment: "after" });
