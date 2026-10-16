@@ -1839,6 +1839,11 @@ pub fn start_time(pid: u32) -> u64 {
     observation::start_time(pid)
 }
 
+/// Observe the native parent of this exact PID; callers guard lifetime identity separately.
+pub fn parent_pid(pid: u32) -> Option<u32> {
+    observation::parent_pid(pid)
+}
+
 /// Read a birth identity; disappearance before capture is an ordinary observation result.
 pub fn observed_start_time(pid: u32) -> Option<u64> {
     observation::observed_start_time(pid)

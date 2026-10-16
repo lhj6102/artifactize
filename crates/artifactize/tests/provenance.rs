@@ -13,21 +13,15 @@ use serde_json::{Value, json};
 use support::{FakeProvider, openai, os::true_program};
 
 struct Fixture {
-    root: tempfile::TempDir,
+    root: owned_run::Root,
     provider: FakeProvider,
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.root.path().join("state"), &self.repo());
-    }
 }
 
 impl Fixture {
     /// A repository whose Agent eval has a tool executing `bin/sim` and the `rules` folder,
     /// and a fake OpenAI provider that passes every review.
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("bin")).unwrap();
         fs::create_dir_all(repo.join("rules/nested")).unwrap();
@@ -73,6 +67,7 @@ impl Fixture {
                 openai::usage(10, 5),
             )
         });
+        root.track(&root.path().join("state"), &repo);
         Self { root, provider }
     }
 

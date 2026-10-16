@@ -12,31 +12,25 @@ use std::{
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::os::{echo_program, shell};
-use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    runs: Option<owned_run::RepoLease>,
-    root: TempDir,
+    root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         support::copy_fixture(name, &repo);
         let state = root.path().join("state");
-        Self {
-            runs: Some(owned_run::RepoLease::new(&state, &repo)),
-            repo,
-            state,
-            root,
-        }
+        root.track(&state, &repo);
+        Self { repo, state, root }
     }
 
     fn command(&self) -> Command {
@@ -362,7 +356,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
 
 #[test]
 fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
-    let mut fixture = Fixture::new("runtime");
+    let fixture = Fixture::new("runtime");
     let first = fixture.json(&["verify", "--wait", "green"], 0);
     let other = fixture.root.path().join("other");
     copy_directory(&fixture.repo, &other);
@@ -418,7 +412,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
         "runtime output\n"
     );
     // Release ownership before deliberately making this state unreadable to lifecycle APIs.
-    drop(fixture.runs.take());
+    fixture.root.release(&fixture.state, &fixture.repo).unwrap();
     // Corrupt schema metadata as an explicit input, separate from the read-only observer.
     Connection::open(fixture.state.join("state.sqlite"))
         .unwrap()

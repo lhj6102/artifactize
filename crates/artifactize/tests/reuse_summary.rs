@@ -6,8 +6,7 @@ mod support;
 use support::runs::RecordOutput;
 
 use std::{
-    cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -19,22 +18,13 @@ use support::{FakeProvider, openai, os::true_program};
 /// Checkouts of one project sharing a state directory, with a fake OpenAI provider
 /// that passes every Agent review.
 struct Fixture {
-    repos: RefCell<BTreeSet<PathBuf>>,
-    root: tempfile::TempDir,
+    root: owned_run::Root,
     provider: FakeProvider,
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        for repo in self.repos.get_mut().iter() {
-            owned_run::release_repo(&self.root.path().join("state"), repo);
-        }
-    }
 }
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         fs::create_dir(root.path().join("home")).unwrap();
         let provider = FakeProvider::start(|request| {
             assert_eq!(request.path, "/v1/responses");
@@ -45,11 +35,7 @@ impl Fixture {
                 openai::usage(120, 30),
             )
         });
-        Self {
-            root,
-            provider,
-            repos: RefCell::default(),
-        }
+        Self { root, provider }
     }
 
     /// `versions` are the api, web, style, docs and brand contents; each one is its fingerprint.
@@ -109,7 +95,7 @@ impl Fixture {
     }
 
     fn run(&self, repo: &Path, args: &[&str], code: i32) -> Output {
-        self.repos.borrow_mut().insert(repo.to_owned());
+        self.root.track(&self.root.path().join("state"), repo);
         let root = self.root.path();
         let output = Command::new(support::os::cli())
             .arg("--repo")

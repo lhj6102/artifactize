@@ -11,10 +11,10 @@ mod owned_run;
 
 #[test]
 fn ordinary_verify_reuses_graph_results_until_structure_changes() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     fs::create_dir(&repo).unwrap();
     let graph = json!({
         "name": "project-graph",

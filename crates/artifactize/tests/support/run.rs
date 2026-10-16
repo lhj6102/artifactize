@@ -8,6 +8,9 @@
 mod root;
 pub type Root = root::Root;
 
+#[path = "launch.rs"]
+pub mod launch;
+
 use artifactize_core::{changes::Subscription, runs, types::RunId};
 use futures_util::FutureExt;
 use std::{
@@ -264,6 +267,7 @@ pub(super) fn release_repo_result(state: &Path, repo: &Path) -> Result<(), Strin
                     // Bound page size only; no fixture Run is excluded by a count ceiling.
                     const PAGE_SIZE: u32 = 128;
                     let mut offset = 0;
+                    let mut errors = Vec::new();
                     loop {
                         let page = artifactize_core::store::read_runs(
                             state,
@@ -273,11 +277,18 @@ pub(super) fn release_repo_result(state: &Path, repo: &Path) -> Result<(), Strin
                         )
                         .await?;
                         let count = page.len();
+                        // A broken Run must not prevent releasing the fixture's other Runs.
                         for run in page {
-                            release(&context, state, &run.id).await?;
+                            if let Err(error) = release(&context, state, &run.id).await {
+                                errors.push(format!("{}: {error}", run.id));
+                            }
                         }
                         if count < PAGE_SIZE as usize {
-                            return Ok::<_, String>(());
+                            return if errors.is_empty() {
+                                Ok(())
+                            } else {
+                                Err(errors.join("; "))
+                            };
                         }
                         offset += PAGE_SIZE;
                     }

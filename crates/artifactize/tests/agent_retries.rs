@@ -25,16 +25,15 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 /// A workspace of Artifacts, each with one Agent eval and its own fingerprint.
 struct Project {
-    // Fields drop in declaration order: release durable workers before their temporary state.
-    _runs: owned_run::RepoLease,
-    _root: tempfile::TempDir,
+    // Retain inputs if releasing any durable worker fails, including on assertion unwind.
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Project {
     fn new(evals: &[(&str, Value)]) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         for (name, profile) in evals {
             let folder = repo.join(name);
@@ -51,8 +50,8 @@ impl Project {
             .unwrap();
         }
         let state = root.path().join("state");
+        root.track(&state, &repo);
         let project = Self {
-            _runs: owned_run::RepoLease::new(&state, &repo),
             state,
             repo,
             _root: root,

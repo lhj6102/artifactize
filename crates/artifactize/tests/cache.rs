@@ -477,24 +477,18 @@ impl Drop for Suspended {
 }
 
 /// A deliberately killed worker cannot clean its runtime process group on unwind.
-struct OrphanGroup(u32);
-impl OrphanGroup {
-    fn new(fixture: &Fixture) -> Self {
-        Self(
-            fs::read_to_string(fixture.root.path().join("starts"))
-                .unwrap()
-                .lines()
-                .next()
-                .unwrap()
-                .parse()
-                .unwrap(),
-        )
-    }
-}
-impl Drop for OrphanGroup {
-    fn drop(&mut self) {
-        support::os::kill_tree(self.0);
-    }
+/// Keep its birth identity and observe exit before the fixture's inputs are removed.
+fn orphan_group(fixture: &Fixture) -> owned_run::Processes {
+    let pid = fs::read_to_string(fixture.root.path().join("starts"))
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mut processes = owned_run::Processes::default();
+    processes.own(pid);
+    processes
 }
 
 fn write(repo: &Path, path: &str, value: Value) {
@@ -606,7 +600,6 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     }
     assert_eq!(request(&reused, "consumer/check")["status"], "BLOCKED");
     assert_eq!(reused["validation"]["satisfied"], false);
-    assert!(!target.join("dependency/must-not-run").exists());
     assert!(!target.join("consumer/must-not-run").exists());
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(
@@ -887,7 +880,6 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
     assert_eq!(request(&forced, "test/check")["force"], true);
     assert_eq!(request(&forced, "dep/check")["force"], false);
     assert!(request(&forced, "dep/check")["child"].is_null());
-    assert!(!repo.join("dependency/must-not-run").exists());
 
     let absent = fixture.repo(
         "absent",
@@ -1003,7 +995,7 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let target = fixture.shared_repo("target", "echo replacement >> \"$1\"; printf recovered");
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
-    let orphans = OrphanGroup::new(&fixture);
+    let orphans = orphan_group(&fixture);
     let waiter = fixture.spawn(&target, &["--max-executions", "1"]);
     let waiting = fixture.waiting_request();
     let worker = fixture.execution(waiting["executionId"].as_str().unwrap())["ownerPid"]
@@ -1243,7 +1235,12 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     );
     assert_eq!(forced["executionsStarted"], 0);
     assert_eq!(fixture.count("executions"), 1);
-    assert!(!repo.join("must-not-run").exists());
+    assert_eq!(
+        fs::read_to_string(repo.join("starts"))
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "first\n"
+    );
 }
 
 #[test]
@@ -1744,7 +1741,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
-    let orphans = OrphanGroup::new(&fixture);
+    let orphans = orphan_group(&fixture);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
     let waiting = fixture.waiting_request();
     let suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &target));

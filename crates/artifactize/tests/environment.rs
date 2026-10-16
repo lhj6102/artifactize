@@ -31,25 +31,17 @@ if sys.argv[2] == 'tool':
 "#;
 
 struct Project {
-    root: tempfile::TempDir,
-}
-
-impl Drop for Project {
-    fn drop(&mut self) {
-        owned_run::release_repo(
-            &self.root.path().join("state"),
-            &self.root.path().join("repo"),
-        );
-    }
+    root: owned_run::Root,
 }
 
 impl Project {
     fn new(declare: impl FnOnce(&str, &str) -> Value) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let home = root.path().join("home");
         fs::create_dir_all(home.join(".toolchains/stable")).unwrap();
         fs::write(home.join(".toolchains/stable/version"), "cargo 9.9\n").unwrap();
         let repo = root.path().join("repo");
+        root.track(&root.path().join("state"), &repo);
         fs::create_dir(&repo).unwrap();
         support::os::write_python_script(
             &repo.join("probe.py"),

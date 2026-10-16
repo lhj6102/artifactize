@@ -862,15 +862,15 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
         json!({"name":"basis","basis":true,"mounts":{"leaf":"leaf"}}),
     );
     fixture.declare("player", vec![dependency(&["basis"])]);
-    for command in ["verify", "status"] {
-        let output = fixture
-            .command()
-            .args([command, "player/ready", "--json"])
-            .record_output()
-            .unwrap();
+    for args in [
+        &["verify", "--wait", "player/ready", "--json"][..],
+        &["status", "player/ready", "--json"][..],
+    ] {
+        let output = fixture.command().args(args).record_output().unwrap();
         assert!(
             output.status.success(),
-            "{command}: {}",
+            "{}: {}",
+            args[0],
             String::from_utf8_lossy(&output.stdout)
         );
     }

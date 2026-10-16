@@ -23,25 +23,21 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let base = support::os::canonical(root.path());
         let repo = base.join("repo");
         fs::create_dir(&repo).unwrap();
+        let state = base.join("state");
+        root.track(&state, &repo);
         Self {
-            state: base.join("state"),
+            state,
             repo,
             _root: root,
         }
@@ -1320,8 +1316,10 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
     // The shared guard restores the original permissions before TempDir cleanup.
     let permissions = support::os::SearchOnlyDirectory::new(&ancestor);
     let state = parent.join("state");
-    let _state_runs = owned_run::RepoLease::new(&state, &fixture.repo);
-    let _blocked_runs = owned_run::RepoLease::new(&parent.join("blocked-state"), &fixture.repo);
+    fixture._root.track(&state, &fixture.repo);
+    fixture
+        ._root
+        .track(&parent.join("blocked-state"), &fixture.repo);
     let output = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&fixture.repo)
@@ -1333,7 +1331,7 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
     permissions.restore();
     assert!(output.status.success(), "{output:?}");
     // Release the valid state's worker before installing a deliberately invalid ancestor.
-    drop(_state_runs);
+    fixture._root.release(&state, &fixture.repo).unwrap();
     fs::write(ancestor.join("artifactize.json"), "legacy marker").unwrap();
     permissions.restrict();
     let output = Command::new(support::os::cli())

@@ -9,28 +9,25 @@ use std::{
 
 use serde_json::{Value, json};
 use support::os::{cat_program, echo_program, shell, true_program};
-use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    // Fields drop in declaration order: release durable workers before their temporary state.
-    _runs: owned_run::RepoLease,
-    _root: TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         let state = root.path().join("state");
+        root.track(&state, &repo);
         Self {
-            _runs: owned_run::RepoLease::new(&state, &repo),
             repo,
             state,
             _root: root,

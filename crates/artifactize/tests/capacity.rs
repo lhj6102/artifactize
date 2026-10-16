@@ -10,7 +10,6 @@ mod support;
 use support::runs::RecordOutput;
 
 use std::{
-    cell::RefCell,
     fs,
     io::Write,
     net::{Ipv4Addr, TcpListener},
@@ -29,9 +28,9 @@ use serde_json::{Value, json};
 use support::{FakeProvider, openai};
 
 struct Fixture {
+    // Release every registered Run before its temporary state or provider is dropped.
+    root: owned_run::Root,
     provider: FakeProvider,
-    repos: RefCell<Vec<PathBuf>>,
-    root: tempfile::TempDir,
     /// Reviews in flight at the provider, and the most at once.
     active: Arc<AtomicUsize>,
     most: Arc<AtomicUsize>,
@@ -41,17 +40,13 @@ struct Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         self.gate.open();
-        let state = self.state();
-        for repo in self.repos.get_mut().iter() {
-            owned_run::release_repo(&state, repo);
-        }
     }
 }
 
 impl Fixture {
     /// A fake provider whose response is released explicitly by the test.
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         fs::create_dir_all(root.path().join("home")).unwrap();
         fs::create_dir_all(root.path().join("state")).unwrap();
         let (active, most) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
@@ -74,7 +69,6 @@ impl Fixture {
         });
         Self {
             root,
-            repos: RefCell::default(),
             provider,
             active,
             most,
@@ -102,7 +96,7 @@ impl Fixture {
             )
             .unwrap();
         }
-        self.repos.borrow_mut().push(repo.clone());
+        self.root.track(&self.state(), &repo);
         repo
     }
 

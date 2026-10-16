@@ -11,17 +11,13 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    // Release both explicitly selected and default-state Runs before TempDir teardown.
-    runs: Option<owned_run::RepoLease>,
-    home_runs: Option<owned_run::RepoLease>,
-    _root: TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
     home: PathBuf,
@@ -29,16 +25,16 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         // The long, plain path artifactize reports, whatever form TEMP takes.
         let base = support::os::canonical(root.path());
         let repo = base.join("repo");
         fs::create_dir(&repo).unwrap();
         let state = base.join("receipts");
         let home = base.join("home");
+        root.track(&state, &repo);
+        root.track(&home, &repo);
         Self {
-            runs: Some(owned_run::RepoLease::new(&state, &repo)),
-            home_runs: Some(owned_run::RepoLease::new(&home, &repo)),
             repo,
             state,
             home,
@@ -46,9 +42,9 @@ impl Fixture {
         }
     }
 
-    fn release(&mut self) {
-        drop(self.runs.take());
-        drop(self.home_runs.take());
+    fn release(&self) {
+        self._root.release(&self.state, &self.repo).unwrap();
+        self._root.release(&self.home, &self.repo).unwrap();
     }
 
     fn command(&self) -> Command {
@@ -126,7 +122,7 @@ fn json_output(output: &Output) -> Value {
 
 #[test]
 fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     support::copy_fixture("runtime", &fixture.repo);
     let output = fixture
         .command()
@@ -912,7 +908,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         ("openai", "OPENAI_API_KEY"),
         ("anthropic", "ANTHROPIC_API_KEY"),
     ] {
-        let mut fixture = Fixture::new();
+        let fixture = Fixture::new();
         fixture.runtime(&support::os::true_program(), &[]);
         let path = fixture.repo.join("index.artf");
         let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();

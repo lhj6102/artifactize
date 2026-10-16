@@ -91,6 +91,60 @@ pub fn same_process_running(pid: u32, start_time: u64) -> bool {
 #[cfg(all(unix, not(target_os = "macos")))]
 const START_TIME_INDEX: usize = 19;
 
+/// Observe this PID's native parent, without assigning ownership or guarding PID reuse.
+/// Callers that need a lifetime identity also capture and compare the process birth time.
+pub fn parent_pid(pid: u32) -> Option<u32> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // After the parenthesized comm field, index 0 is state and index 1 is parent PID.
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        stat.rsplit_once(')')?
+            .1
+            .split_whitespace()
+            .nth(1)?
+            .parse()
+            .ok()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        bsd_info(pid).map(|info| info.pbi_ppid)
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+            System::Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+                TH32CS_SNAPPROCESS,
+            },
+        };
+        // SAFETY: the snapshot is checked and closed on every path; the sized entry buffer
+        // is writable for enumeration, and only the entry matching the requested PID is read.
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot == INVALID_HANDLE_VALUE {
+                return None;
+            }
+            let mut entry = PROCESSENTRY32W {
+                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+                ..Default::default()
+            };
+            let mut found = Process32FirstW(snapshot, &mut entry);
+            let parent = loop {
+                if found == 0 {
+                    break None;
+                }
+                if entry.th32ProcessID == pid {
+                    break Some(entry.th32ParentProcessID);
+                }
+                found = Process32NextW(snapshot, &mut entry);
+            };
+            CloseHandle(snapshot);
+            parent
+        }
+    }
+}
+
 /// Read a birth identity without panicking if an observed process has already exited.
 pub fn observed_start_time(pid: u32) -> Option<u64> {
     #[cfg(all(unix, not(target_os = "macos")))]

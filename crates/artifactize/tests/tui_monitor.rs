@@ -6,7 +6,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use artifactize_core::store::{self, RequestView, RunView};
@@ -27,7 +27,7 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     alpha: PathBuf,
     beta: PathBuf,
     state: PathBuf,
@@ -54,18 +54,11 @@ fn runtime(command: &str, args: &[&str]) -> Value {
     json!({"kind":"runtime","command":command,"args":args,"timeout_ms":20000})
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.alpha);
-        owned_run::release_repo(&self.state, &self.beta);
-    }
-}
-
 impl Fixture {
     /// Repository alpha has a cycle, a child, a mount, and fingerprint-cached GREEN/RED results;
     /// beta has a long-running eval gated on a release file and a Human eval.
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let alpha = root.path().join("alpha");
         let beta = root.path().join("beta");
         let release = root.path().join("release");
@@ -115,8 +108,11 @@ impl Fixture {
             &beta.join("human"),
             json!({"name":"human","evals":[eval("review", json!({"kind":"human"}), "Approve.")]}),
         );
+        let state = root.path().join("state");
+        root.track(&state, &alpha);
+        root.track(&state, &beta);
         Self {
-            state: root.path().join("state"),
+            state,
             _root: root,
             alpha,
             beta,
@@ -213,32 +209,43 @@ async fn live_verify_progress_and_runs_across_repositories() {
             .args(["verify", "--wait", "--all"]),
     );
     let child = RunChild::new(child, &fixture.state, &fixture.beta);
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
-    let (live, human) = loop {
-        let runs = store::read_runs(&fixture.state, Some(&fixture.beta), 10, 0)
-            .await
-            .unwrap();
-        if let Some(run) = runs.first() {
-            let (view, requests) = fixture.load(&run.id).await;
-            let progress = monitor::progress(&view, &requests, OffsetDateTime::now_utc());
-            if !progress.running.is_empty() && !progress.waiting.is_empty() {
-                assert_eq!(progress.status.as_str(), "RUNNING");
-                assert_eq!(progress.validation, "pending");
-                assert_eq!(progress.running[0].0, "slow/wait");
-                assert_eq!(
-                    progress.waiting[0],
-                    ("human/review".into(), "unclaimed".into())
-                );
+    let live = child.run();
+    // Observe the exact submitted Run and persisted request states, not the rendering
+    // function whose output is under test. The timeout only bounds a broken fixture.
+    const PROGRESS_BOUND: Duration = Duration::from_secs(15);
+    let human = owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
+            loop {
+                let (view, requests) = fixture.load(&live).await;
+                let slow = requests
+                    .iter()
+                    .find(|view| view.request.eval_id == "slow/wait");
                 let human = requests
                     .iter()
-                    .find(|view| view.request.eval_id == "human/review")
-                    .unwrap();
-                break (run.id.clone(), human.request.id.clone());
+                    .find(|view| view.request.eval_id == "human/review");
+                if slow.is_some_and(|view| {
+                    view.request.status() == artifactize_core::types::RequestStatus::Running
+                }) && human.is_some_and(|view| {
+                    view.request.status() == artifactize_core::types::RequestStatus::WaitingHuman
+                }) {
+                    let progress = monitor::progress(&view, &requests, OffsetDateTime::now_utc());
+                    assert_eq!(progress.status.as_str(), "RUNNING");
+                    assert_eq!(progress.validation, "pending");
+                    assert_eq!(progress.running.len(), 1);
+                    assert_eq!(progress.running[0].0, "slow/wait");
+                    assert_eq!(
+                        progress.waiting,
+                        [("human/review".into(), "unclaimed".into())]
+                    );
+                    break human.unwrap().request.id.clone();
+                }
+                changes.next_reconciled().await;
             }
-        }
-        assert!(Instant::now() < deadline, "live Run did not appear");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    };
+        })
+        .await
+        .expect("live Run did not appear")
+    })
+    .await;
 
     order::created_at(
         &fixture.state,
@@ -286,18 +293,29 @@ async fn live_verify_progress_and_runs_across_repositories() {
     );
 
     fs::write(&fixture.release, "").unwrap();
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
-    loop {
-        all.refresh().await;
-        if screen(&mut all).contains("◐ RUNNING · validation pending · ?1 ✓1") {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "runtime completion was not observed"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
+            loop {
+                let (_, requests) = fixture.load(&live).await;
+                if requests.iter().any(|view| {
+                    view.request.eval_id == "slow/wait"
+                        && view.request.status() == artifactize_core::types::RequestStatus::Green
+                }) {
+                    break;
+                }
+                changes.next_reconciled().await;
+            }
+        })
+        .await
+        .expect("runtime completion was not observed");
+    })
+    .await;
+    all.refresh().await;
+    let progress = screen(&mut all);
+    assert!(
+        progress.contains("◐ RUNNING · validation pending · ?1 ✓1"),
+        "{progress}"
+    );
     fixture.json(
         &fixture.beta,
         &["request", "claim", &human, "--reviewer", "tester"],
@@ -604,10 +622,10 @@ async fn saved_tree_details_without_repository_or_writes() {
 /// saved results outside a partial Run, and GREEN results masked behind a RED upstream.
 #[tokio::test]
 async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
-    let _lease = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     let flag = root.path().join("fail");
     let check = support::os::fails_while_present_program(root.path());
     let fingerprint = |name: &str| json!({"script":{"command":support::os::echo_program(),"args":[format!("{name}-v1")]}});

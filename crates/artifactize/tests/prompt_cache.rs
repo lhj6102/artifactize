@@ -14,16 +14,15 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 /// A workspace of Artifacts, each with one Agent eval whose result must list `covered`.
 struct Project {
-    // Fields drop in declaration order: release durable workers before their temporary state.
-    _runs: owned_run::RepoLease,
-    _root: tempfile::TempDir,
+    // Retain inputs if releasing any durable worker fails, including on assertion unwind.
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Project {
     fn new(evals: &[(&str, &str)]) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         for (name, backend) in evals {
             let folder = repo.join(name);
@@ -49,8 +48,8 @@ impl Project {
         let credentials = json!({"access_token":codex::jwt("account-1", expires),
             "refresh_token":"refresh","account_id":"account-1","expires_at":expires,"saved_at":1});
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
+        root.track(&state, &repo);
         Self {
-            _runs: owned_run::RepoLease::new(&state, &repo),
             _root: root,
             repo,
             state,

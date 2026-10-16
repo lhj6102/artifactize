@@ -49,10 +49,10 @@ fn parsed(output: Output, code: i32) -> Value {
 
 #[test]
 fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     declaration(
         &repo,
         json!({
@@ -223,10 +223,10 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
 
 #[test]
 fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     declaration(&repo, json!({}), json!({}));
     if support::os::symlink_file(repo.join("a/notes.md"), repo.join("a/link.md")).is_none() {
         return;
@@ -329,10 +329,10 @@ fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
 
 #[test]
 fn request_tools_execute_builtins_in_process_with_bounded_text() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     fs::create_dir_all(repo.join("a")).unwrap();
     let (help, args) = support::os::python_script(
         &repo.join("a/help-stub"),
@@ -394,10 +394,10 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
 #[cfg(unix)]
 #[test]
 fn request_open_hands_one_target_to_the_shared_opener() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     declaration(
         &repo,
         json!({}),

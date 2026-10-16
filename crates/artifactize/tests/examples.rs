@@ -6,7 +6,6 @@ mod owned_run;
 use owned_run::RunChild;
 
 use std::{
-    cell::RefCell,
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
@@ -16,7 +15,6 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -31,24 +29,18 @@ fn example(name: &str) -> PathBuf {
 }
 
 struct Session {
-    // Leases drop before state, even when an assertion interrupts a submission barrier.
-    leases: RefCell<BTreeMap<PathBuf, owned_run::RepoLease>>,
-    root: TempDir,
+    root: owned_run::Root,
 }
 
 impl Session {
     fn new() -> Self {
         Self {
-            leases: RefCell::new(BTreeMap::new()),
-            root: support::os::tempdir(),
+            root: owned_run::Root::from(support::os::tempdir()),
         }
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
-        self.leases
-            .borrow_mut()
-            .entry(repo.to_owned())
-            .or_insert_with(|| owned_run::RepoLease::new(&self.root.path().join("state"), repo));
+        self.root.track(&self.root.path().join("state"), repo);
         let mut command = Command::new(support::os::cli());
         command
             // Runtime evals name `grep` and declared tools name `python3` for PATH to find.

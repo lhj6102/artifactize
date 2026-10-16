@@ -17,21 +17,20 @@ mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        Self::from_root(support::os::tempdir())
+    }
+
+    fn from_root(root: tempfile::TempDir) -> Self {
+        let root = owned_run::Root::from(root);
         let repo = root.path().join("repo");
+        root.track(&root.path().join("state"), &repo);
         let runtime = |command: &str| json!({"kind": "runtime", "command": command, "args": []});
         for (name, profile) in [
             ("green", runtime(&support::os::true_program())),
@@ -248,6 +247,52 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         let output = fixture.command().args(args).record_output().unwrap();
         assert!(output.status.success());
         assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: artifactize"));
+    }
+}
+
+#[test]
+fn run_fixture_releases_executor_supervisor_and_sqlite_on_return_and_unwind() {
+    for unwind in [false, true] {
+        let parent = owned_run::Root::from(support::os::tempdir());
+        let mut fixture = Fixture::from_root(support::os::tempdir_in(parent.path(), "run-"));
+        // The ancestor also owns the submission scope: if cleanup or an observation fails,
+        // it must release the same Run or retain its inputs, never recursively delete them.
+        parent.track(&fixture.state, &fixture.repo);
+        let run = fixture.json(&["verify", "human"], 0);
+        let id = run["id"].as_str().unwrap().parse().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let view = runtime.block_on(owned_run::human_waiting(&fixture.state, &id));
+        drop(runtime);
+        let control = view.run.control.unwrap();
+        let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
+            panic!("the waiting fixture has its admitted executor");
+        };
+        let supervisor = control.supervisor.expect("the real Run has a supervisor");
+        let identities = [owner, supervisor];
+        assert!(identities.iter().all(|identity| {
+            support::os::same_process_running(identity.pid.get(), identity.start_time)
+        }));
+
+        // Retaining inputs must not bypass Root's cleanup: observe actual SQLite closure
+        // and both process exits after Root drops. The parent owns the retained test files.
+        let state = fixture.state.clone();
+        fixture._root.retain_inputs();
+        let result = std::panic::catch_unwind(move || {
+            let _fixture = fixture;
+            assert!(!unwind, "Run fixture assertion unwind probe");
+        });
+        assert_eq!(result.is_err(), unwind);
+        assert!(state.is_dir());
+        assert!(identities.iter().all(|identity| {
+            !support::os::same_process_running(identity.pid.get(), identity.start_time)
+        }));
+        assert!(
+            support::os::database_released(&state.join(artifactize_core::store::DATABASE)).unwrap(),
+            "Run cleanup closes SQLite before returning on both paths"
+        );
     }
 }
 

@@ -12,34 +12,25 @@ use std::{
 
 use serde_json::{Value, json};
 use support::os::{shell, symlink_file, true_program};
-use tempfile::TempDir;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
 use support::runs::RecordOutput;
 
 struct Fixture {
-    root: TempDir,
+    root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
-    }
-}
-
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
-        Self {
-            repo,
-            state: root.path().join("state"),
-            root,
-        }
+        let state = root.path().join("state");
+        root.track(&state, &repo);
+        Self { repo, state, root }
     }
 
     fn write(&self, path: &str, value: Value) {

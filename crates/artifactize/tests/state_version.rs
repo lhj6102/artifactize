@@ -43,7 +43,7 @@ fn names(db: &Connection, query: &str) -> Vec<String> {
 
 #[test]
 fn an_earlier_state_is_refused_and_left_as_it_is() {
-    let temp = support::os::tempdir();
+    let temp = owned_run::Root::from(support::os::tempdir());
     let root = temp.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
@@ -122,7 +122,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
     }
 
     // Only the new real submissions have worker lifetimes; the old schemas are inert input.
-    let _lease = owned_run::RepoLease::new(&state, &repo);
+    temp.track(&state, &repo);
     // A new state has the four tables, and works.
     let output = artifactize(root, &["verify", "--wait", "--all", "--json"]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");

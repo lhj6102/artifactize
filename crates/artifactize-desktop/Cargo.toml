@@ -50,7 +50,7 @@ tempfile = "3.27"
 libc = { version = "0.2", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", optional = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", optional = true, features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2"

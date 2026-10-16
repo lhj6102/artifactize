@@ -5,9 +5,15 @@ use std::{
     sync::Mutex,
 };
 
+enum Inputs {
+    Temporary,
+    Retained,
+}
+
 pub struct Root {
     directory: Option<tempfile::TempDir>,
     scopes: Mutex<BTreeSet<(PathBuf, PathBuf)>>,
+    inputs: Inputs,
 }
 
 impl From<tempfile::TempDir> for Root {
@@ -15,6 +21,7 @@ impl From<tempfile::TempDir> for Root {
         Self {
             directory: Some(directory),
             scopes: Mutex::default(),
+            inputs: Inputs::Temporary,
         }
     }
 }
@@ -34,6 +41,23 @@ impl Root {
             .expect("register a fixture repository")
             .insert((state.to_owned(), repo.to_owned()));
     }
+
+    /// Preserve a detached tool's cwd after its separate owner reports failed cleanup.
+    /// Drop still releases every registered Run before retaining this directory.
+    pub fn retain_inputs(&mut self) {
+        self.inputs = Inputs::Retained;
+    }
+
+    /// Release before replacing lifecycle data with deliberately unsupported schema input.
+    /// A failed release stays registered so Drop retains the fixture's files.
+    pub fn release(&self, state: &Path, repo: &Path) -> Result<(), String> {
+        super::release_repo_result(state, repo)?;
+        self.scopes
+            .lock()
+            .expect("release a fixture repository")
+            .remove(&(state.to_owned(), repo.to_owned()));
+        Ok(())
+    }
 }
 
 impl Drop for Root {
@@ -52,10 +76,20 @@ impl Drop for Root {
             .collect();
         let directory = self.directory.take().expect("fixture root is owned");
         let message = if errors.is_empty() {
-            directory
-                .close()
-                .err()
-                .map(|error| format!("Fixture directory cleanup failed: {error}"))
+            match self.inputs {
+                Inputs::Temporary => directory
+                    .close()
+                    .err()
+                    .map(|error| format!("Fixture directory cleanup failed: {error}")),
+                Inputs::Retained => {
+                    let retained = directory.keep();
+                    eprintln!(
+                        "Fixture inputs retained at {}",
+                        crate::support::os::path_text(&retained)
+                    );
+                    None
+                }
+            }
         } else {
             let retained = directory.keep();
             Some(format!(

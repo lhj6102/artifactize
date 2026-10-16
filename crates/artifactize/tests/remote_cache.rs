@@ -9,8 +9,6 @@ use owned_run::{RunChild, Watcher};
 mod order;
 
 use std::{
-    cell::RefCell,
-    collections::BTreeSet,
     fs,
     io::{BufRead, BufReader},
     net::TcpListener,
@@ -116,7 +114,8 @@ impl Server {
             .collect()
     }
 
-    /// Seed completion ordering, not elapsed wall-clock time, for a stored fixture.
+    /// Seed completion and last-use fixture times. A forbidden lookup must not hide
+    /// behind a host clock that returns the same timestamp as the original write.
     fn completed_at(&self, execution: &str, at: &str) {
         let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
         let data: String = db
@@ -129,7 +128,7 @@ impl Server {
         let data = completion_fixture(&data, at);
         assert_eq!(
             db.execute(
-                "UPDATE entries SET completed_at=?,bytes=?,data=? WHERE execution_id=?",
+                "UPDATE entries SET completed_at=?1,last_used=?1,bytes=?2,data=?3 WHERE execution_id=?4",
                 rusqlite::params![at, data.len() as i64, data, execution]
             )
             .unwrap(),
@@ -149,27 +148,19 @@ impl Drop for Server {
 }
 
 /// One machine: its own state directory, user name and remote token.
-struct Machine {
-    repos: RefCell<BTreeSet<PathBuf>>,
+struct Machine<'a> {
+    root: &'a owned_run::Root,
     state: PathBuf,
     user: &'static str,
     url: String,
     token: String,
 }
 
-impl Drop for Machine {
-    fn drop(&mut self) {
-        for repo in self.repos.get_mut().iter() {
-            owned_run::release_repo(&self.state, repo);
-        }
-    }
-}
-
-impl Machine {
-    fn new(root: &Path, user: &'static str, url: &str, token: &str) -> Self {
+impl<'a> Machine<'a> {
+    fn new(root: &'a owned_run::Root, user: &'static str, url: &str, token: &str) -> Self {
         Self {
-            state: root.join(format!("state-{user}")),
-            repos: RefCell::default(),
+            state: root.path().join(format!("state-{user}")),
+            root,
             user,
             url: url.into(),
             token: token.into(),
@@ -177,7 +168,9 @@ impl Machine {
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
-        self.repos.borrow_mut().insert(repo.to_owned());
+        // Register before submission. Failed cleanup retains the common root instead
+        // of deleting inputs still owned by either machine's detached workers.
+        self.root.track(&self.state, repo);
         let mut command = Command::new(support::os::cli());
         command
             .arg("--repo")
@@ -325,20 +318,15 @@ const OFFLINE: &str = "continuing without the remote review store";
 
 #[test]
 fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let alice = Machine::new(
-        root.path(),
+        &root,
         "alice",
         &server.url,
         &server.token("alice-laptop", "read,publish"),
     );
-    let bob = Machine::new(
-        root.path(),
-        "bob",
-        &server.url,
-        &server.token("bob-ci", "read"),
-    );
+    let bob = Machine::new(&root, "bob", &server.url, &server.token("bob-ci", "read"));
     let repo_a = runtime_repo(root.path(), "a", "v1");
     let repo_b = runtime_repo(root.path(), "b", "v1");
 
@@ -399,7 +387,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
         run["requests"][0]["source"],
         json!({
             "runId":source,
-            "requestId":run["requests"][0]["provenance"]["requestId"],
+            "requestId":entries[0].1["requestId"],
             "kind":"remote",
         })
     );
@@ -426,10 +414,10 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
 
 #[test]
 fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let mut server = Server::start(root.path());
     let bob = Machine::new(
-        root.path(),
+        &root,
         "bob",
         &server.url,
         &server.token("bob", "read,publish"),
@@ -456,11 +444,11 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
 }
 #[test]
 fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
-    let machine = Machine::new(root.path(), "bob", &url, "azt_unused");
+    let machine = Machine::new(&root, "bob", &url, "azt_unused");
     let repo = runtime_repo(root.path(), "repo", "v1");
 
     let (_, stderr) = machine.run(&repo, &["status", "--force"], 1);
@@ -472,7 +460,7 @@ fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
 
     let server = Server::start(root.path());
     server.token("bob", "read,publish");
-    let rejected = Machine::new(root.path(), "mallory", &server.url, "azt_unknown");
+    let rejected = Machine::new(&root, "mallory", &server.url, "azt_unknown");
     let (_, stderr) = rejected.run(&repo, &["verify", "--wait", "--all"], 2);
     assert!(stderr.contains("rejected the token (HTTP 401)"), "{stderr}");
     assert_eq!(
@@ -482,26 +470,21 @@ fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
 }
 #[test]
 fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let laptop = Machine::new(
-        root.path(),
+        &root,
         "alice",
         &server.url,
         &server.token("alice-laptop", "read,publish"),
     );
     let signer = Machine::new(
-        root.path(),
+        &root,
         "signer",
         &server.url,
         &server.token("alice-signoff", "read,publish,human"),
     );
-    let bob = Machine::new(
-        root.path(),
-        "bob",
-        &server.url,
-        &server.token("bob-ci", "read"),
-    );
+    let bob = Machine::new(&root, "bob", &server.url, &server.token("bob-ci", "read"));
     let repo = human_repo(root.path(), "repo");
 
     // Bob waits for a sign-off that does not exist anywhere yet.
@@ -557,7 +540,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     );
 
     // A fresh machine, such as CI, reuses the sign-off from the store under --reuse-only.
-    let carol = Machine::new(root.path(), "carol", &server.url, &bob.token);
+    let carol = Machine::new(&root, "carol", &server.url, &bob.token);
     let (text, _) = carol.run(
         &repo,
         &["verify", "--wait", "--all", "--reuse-only", "human"],
@@ -568,11 +551,11 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
 
 #[test]
 fn remote_push_publishes_results_produced_offline_once() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let token = server.token("alice-laptop", "read,publish");
-    let offline = Machine::new(root.path(), "alice", "off", &token);
-    let alice = Machine::new(root.path(), "alice", &server.url, &token);
+    let offline = Machine::new(&root, "alice", "off", &token);
+    let alice = Machine::new(&root, "alice", &server.url, &token);
     let runtime = runtime_repo(root.path(), "runtime", "v1");
     let human = human_repo(root.path(), "human");
     offline.run(&runtime, &["verify", "--wait", "--all"], 0);
@@ -602,7 +585,7 @@ fn remote_push_publishes_results_produced_offline_once() {
 
     // Another machine reuses the pushed results; its mirrors are never pushed again.
     let bob = Machine::new(
-        root.path(),
+        &root,
         "bob",
         &server.url,
         &server.token("bob-laptop", "read,publish"),
@@ -616,7 +599,7 @@ fn remote_push_publishes_results_produced_offline_once() {
         json!({"dryRun":false,"pushed":0,"existing":0,"skipped":0})
     );
 
-    let ci = Machine::new(root.path(), "ci", &server.url, &server.token("ci", "read"));
+    let ci = Machine::new(&root, "ci", &server.url, &server.token("ci", "read"));
     let (_, stderr) = ci.run(&runtime, &["remote", "push"], 2);
     assert!(
         stderr.contains("Remote token ci lacks the publish scope."),
@@ -630,19 +613,19 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     const FIRST: &str = "2000-01-01T00:00:01.000000000Z";
     const SECOND: &str = "2000-01-01T00:00:02.000000000Z";
     const THIRD: &str = "2000-01-01T00:00:03.000000000Z";
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let server = Server::start(root.path());
     let alice_token = server.token("alice-laptop", "read,publish");
-    let alice = Machine::new(root.path(), "alice", &server.url, &alice_token);
-    let offline = Machine::new(root.path(), "alice", "off", &alice_token);
+    let alice = Machine::new(&root, "alice", &server.url, &alice_token);
+    let offline = Machine::new(&root, "alice", "off", &alice_token);
     let bob = Machine::new(
-        root.path(),
+        &root,
         "bob",
         &server.url,
         &server.token("bob-laptop", "read,publish"),
     );
     let carol = Machine::new(
-        root.path(),
+        &root,
         "carol",
         &server.url,
         &server.token("carol-ci", "read"),
@@ -749,7 +732,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
 /// warnings may hold the token or a piece of it.
 #[test]
 fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let token = format!("azt_lookup{}", "0123456789abcdef".repeat(2));
     let echoed = token.clone();
     let store = support::FakeProvider::start(move |request| match request.path.as_str() {
@@ -762,7 +745,7 @@ fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
         ),
         _ => support::Reply::Json(404, json!({"error":"not found"})),
     });
-    let bob = Machine::new(root.path(), "bob", &format!("{}/", store.url), &token);
+    let bob = Machine::new(&root, "bob", &format!("{}/", store.url), &token);
     let repo = runtime_repo(root.path(), "repo", "v1");
     let (stdout, stderr) = bob.run(&repo, &["verify", "--wait", "--all", "--json"], 0);
     for piece in [&token[10..22], &token[token.len() - 12..]] {
@@ -785,7 +768,7 @@ fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
 
 #[test]
 fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let log = root.path().join("log");
     fs::create_dir(&log).unwrap();
@@ -801,7 +784,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
     fs::write(repo.join("harness.py"), support::tool_sessions::script()).unwrap();
     let server = Server::start(root.path());
     let token = server.token("alice", "read,publish");
-    let consumer = Machine::new(root.path(), "bob", &server.url, &token);
+    let consumer = Machine::new(&root, "bob", &server.url, &token);
     let state = root.path().join("fixture-state");
     let config = artifactize_core::config::read_workspace_config(&repo).unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()

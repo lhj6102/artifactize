@@ -1,12 +1,8 @@
 #[path = "support/run.rs"]
 mod owned_run;
+use owned_run::launch::{LAUNCH, Launched};
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-    time::Duration,
-};
+use std::{fs, path::Path, process::Command, time::Duration};
 
 use artifactize_core::{
     config::{parse_declaration, read_workspace_config},
@@ -379,15 +375,15 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         "Review.",
     );
     assert!(call(repo.path()).await.is_error());
-    let mut launched = Launched::new(repo.path());
+    let mut launched = Launched::new(repo);
     write_artifact(
-        repo.path(),
+        launched.path(),
         "a",
         json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
         "Review.",
     );
     assert_eq!(
-        call(repo.path()).await.content(),
+        call(launched.path()).await.content(),
         [Content::Launch { launched: true }]
     );
     // Handoff acceptance is not the saved marker. Observe the full marker and adopt the
@@ -396,75 +392,10 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_else(|| "launched".into());
     support::os::wait_until(Duration::from_secs(5), || {
-        fs::read_to_string(repo.path().join("marker")).unwrap_or_default() == expected
+        fs::read_to_string(launched.path().join("marker")).unwrap_or_default() == expected
             && launched.own().is_some()
     });
 }
-
-/// The parent installs ownership before starting its launcher probe. A probe failing after
-/// handoff still leaves its atomic PID marker for this guard, and the child exits before
-/// the parent's temporary directory is removed.
-struct Launched {
-    root: PathBuf,
-    processes: owned_run::Processes,
-}
-impl Launched {
-    fn new(root: &Path) -> Self {
-        Self {
-            root: root.to_owned(),
-            processes: owned_run::Processes::default(),
-        }
-    }
-    fn own(&mut self) -> Option<u32> {
-        let pid = fs::read_to_string(self.root.join("pid"))
-            .ok()?
-            .parse()
-            .ok()?;
-        self.processes.own(pid);
-        Some(pid)
-    }
-}
-impl Drop for Launched {
-    fn drop(&mut self) {
-        // A successful launch can still be starting its interpreter when an assertion
-        // unwinds. Keep the root and release in place until that pending handoff arrives.
-        // The first signal also opens the deliberately held handoff in the cleanup probe.
-        let _ = fs::write(self.root.join("release-handoff"), "");
-        const HANDOFF_BOUND: Duration = Duration::from_secs(30);
-        const HANDOFF_POLL: Duration = Duration::from_millis(10);
-        let deadline = std::time::Instant::now() + support::os::patience(HANDOFF_BOUND);
-        let adopted = loop {
-            if self.own().is_some() {
-                break true;
-            }
-            if std::time::Instant::now() >= deadline {
-                break false;
-            }
-            std::thread::sleep(HANDOFF_POLL);
-        };
-        let released = fs::write(self.root.join("release"), "");
-        if !std::thread::panicking() {
-            assert!(adopted, "detached child did not finish its PID handoff");
-            released.expect("release the owned detached child");
-        }
-        // Processes drops next and joins the adopted birth identity before the caller's
-        // TempDir drops, on both ordinary completion and assertion unwinding.
-    }
-}
-
-/// Markers are atomically published with their full contents, then the detached child waits
-/// for its fixture's explicit release rather than a timing-dependent sleep lifetime.
-const LAUNCH: &str = r"import os, pathlib, time
-root = pathlib.Path.cwd()
-if (root / 'hold-handoff').exists():
-    (root / 'handoff-ready').write_text('')
-    while not (root / 'release-handoff').exists(): time.sleep(0.01)
-for name, contents in [('pid', str(os.getpid())), ('marker', os.environ.get('ARTIFACTIZE_HUMAN_MARKER', 'launched'))]:
-    pending = root / (name + '.pending')
-    pending.write_text(contents)
-    pending.replace(root / name)
-while not (root / 'release').exists(): time.sleep(0.01)
-";
 
 #[tokio::test]
 async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
@@ -477,20 +408,22 @@ async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
             json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
             "Review.",
         );
-        let launched = Launched::new(repo.path());
+        let launched = Launched::new(repo);
         assert_eq!(
-            call(repo.path()).await.content(),
+            call(launched.path()).await.content(),
             [Content::Launch { launched: true }]
         );
         support::os::wait_until(Duration::from_secs(5), || {
-            repo.path().join("handoff-ready").exists()
+            launched.path().join("handoff-ready").exists()
         });
-        assert!(!repo.path().join("pid").exists(), "PID handoff is held");
-        let root = repo.path().to_owned();
-        let result = std::panic::catch_unwind(move || {
+        assert!(!launched.path().join("pid").exists(), "PID handoff is held");
+        let root = launched.path().to_owned();
+        // Retain the joined fixture long enough to independently read the child's PID.
+        let inputs = launched.retain_inputs();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let _owned = launched;
             assert!(!unwind, "pending detached launch unwind probe");
-        });
+        }));
         assert_eq!(result.is_err(), unwind);
         let pid = fs::read_to_string(root.join("pid"))
             .unwrap()
@@ -500,7 +433,7 @@ async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
             !support::os::running(pid),
             "the pending child was adopted and stopped"
         );
-        repo.close().unwrap();
+        drop(inputs);
         assert!(!root.exists(), "child cleanup precedes fixture removal");
     }
 }
@@ -510,14 +443,14 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
     for unwind in [false, true] {
         let repo = support::os::tempdir();
         // The parent owns the release: exiting the launcher probe must not end its child.
-        let mut launched = Launched::new(repo.path());
+        let mut launched = Launched::new(repo);
         let result = support::os::run_human_test(
             "human_environment_and_launch_probe",
-            repo.path(),
+            launched.path(),
             &[
                 (
                     "ARTIFACTIZE_HUMAN_PROBE",
-                    repo.path().as_os_str().to_owned(),
+                    launched.path().as_os_str().to_owned(),
                 ),
                 ("ARTIFACTIZE_HUMAN_MARKER", "reviewer-marker".into()),
             ],
@@ -531,16 +464,15 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
         support::os::assert_detached(pid);
         assert!(support::os::running(pid), "detached child is still running");
         assert_eq!(
-            fs::read_to_string(repo.path().join("marker")).unwrap(),
+            fs::read_to_string(launched.path().join("marker")).unwrap(),
             "reviewer-marker"
         );
         let start = support::os::start_time(pid);
-        let root = repo.path().to_owned();
-        let result = std::panic::catch_unwind(move || {
-            // Fields drop in this order: the child exits before its temporary directory.
-            let _owned = (launched, repo);
+        let root = launched.path().to_owned();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _owned = launched;
             assert!(!unwind, "detached Human launch fixture unwind probe");
-        });
+        }));
         assert_eq!(result.is_err(), unwind);
         assert!(!support::os::same_process_running(pid, start));
         assert!(

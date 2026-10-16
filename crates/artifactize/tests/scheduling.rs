@@ -9,7 +9,6 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
 #[path = "support/run.rs"]
 mod owned_run;
@@ -70,20 +69,23 @@ impl Drop for EventLog {
 struct Fixture {
     // The writer is joined before its temporary files are removed, including on unwind.
     events: Option<EventLog>,
-    _root: TempDir,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        owned_run::release_repo(&self.state, &self.repo);
+        let released = self._root.release(&self.state, &self.repo);
+        if !std::thread::panicking() {
+            released.expect("release the Run before joining its fixture event writer");
+        }
     }
 }
 
 impl Fixture {
     fn new(evals: Vec<Value>) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         support::declaration::write(
@@ -91,10 +93,12 @@ impl Fixture {
             json!({"name":"test","fingerprint":false,"evals":evals}).to_string(),
         )
         .unwrap();
+        let state = root.path().join("state");
+        root.track(&state, &repo);
         Self {
             events: None,
             repo,
-            state: root.path().join("state"),
+            state,
             _root: root,
         }
     }
@@ -142,8 +146,12 @@ impl Fixture {
     fn starts(&self) -> Vec<String> {
         fs::read_to_string(self.repo.join("events"))
             .unwrap_or_default()
-            .lines()
-            .filter_map(|line| line.strip_prefix("start ").map(str::to_owned))
+            .split_inclusive('\n')
+            .filter_map(|line| {
+                line.strip_suffix('\n')?
+                    .strip_prefix("start ")
+                    .map(str::to_owned)
+            })
             .collect()
     }
 }
@@ -205,27 +213,28 @@ async fn observed(
     id: &artifactize_core::types::RunId,
     ready: impl Fn(&artifactize_core::store::RunView) -> bool,
 ) -> artifactize_core::store::RunView {
-    let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
-    // A fixture observation watchdog, not an execution lifetime or timing assertion.
-    const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
-    let result = tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
-        loop {
-            let view = artifactize_core::store::read_run(&fixture.state, id)
-                .await
-                .unwrap();
-            if ready(&view) {
-                return view;
+    owned_run::subscribed(&fixture.state, async |changes| {
+        // A fixture observation watchdog, not an execution lifetime or timing assertion.
+        const OBSERVATION_BOUND: Duration = Duration::from_secs(30);
+        tokio::time::timeout(support::os::patience(OBSERVATION_BOUND), async {
+            loop {
+                let view = artifactize_core::store::read_run(&fixture.state, id)
+                    .await
+                    .unwrap();
+                if ready(&view) {
+                    return view;
+                }
+                assert_eq!(
+                    view.run.status(),
+                    artifactize_core::types::RunStatus::Running
+                );
+                changes.next_reconciled().await;
             }
-            assert_eq!(
-                view.run.status(),
-                artifactize_core::types::RunStatus::Running
-            );
-            changes.next_reconciled().await;
-        }
+        })
+        .await
+        .unwrap()
     })
-    .await;
-    changes.close().await.unwrap();
-    result.unwrap()
+    .await
 }
 
 #[tokio::test]
@@ -241,49 +250,58 @@ async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() 
             && view.requests[1].status() == artifactize_core::types::RequestStatus::BudgetExhausted
     })
     .await;
-    let mut notifications = artifactize_core::changes::Subscription::new(&fixture.state).await;
-    notifications.next_state().await;
-    // Another real Run changes the shared state; observing it must not consume another
-    // start or change the original Run's already-visible budget decision.
-    let other = fixture._root.path().join("other");
-    fs::create_dir(&other).unwrap();
-    support::declaration::write(
-        other.join("index.artf"),
-        json!({
-            "name":"other", "evals":[{"id":"check","title":"Check","profile":{
-                "kind":"runtime","command":support::os::true_program(),"args":[]},
-                "payload":{"instruction":"Check."}}]
+    owned_run::subscribed(&fixture.state, async |notifications| {
+        // Bound stalled fixture notifications without assigning the Run an execution lifetime.
+        const NOTIFICATION_BOUND: Duration = Duration::from_secs(30);
+        tokio::time::timeout(support::os::patience(NOTIFICATION_BOUND), async {
+            notifications.next_state().await;
+            // Another real Run changes the shared state; observing it must not consume another
+            // start or change the original Run's already-visible budget decision.
+            let other = fixture._root.path().join("other");
+            fs::create_dir(&other).unwrap();
+            support::declaration::write(
+                other.join("index.artf"),
+                json!({
+                    "name":"other", "evals":[{"id":"check","title":"Check","profile":{
+                        "kind":"runtime","command":support::os::true_program(),"args":[]},
+                        "payload":{"instruction":"Check."}}]
+                })
+                .to_string(),
+            )
+            .unwrap();
+            fixture._root.track(&fixture.state, &other);
+            let output = Command::new(support::os::cli())
+                .args(["verify", "--wait", "--all", "--json"])
+                .arg("--repo")
+                .arg(&other)
+                .arg("--state-dir")
+                .arg(&fixture.state)
+                .record_output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            notifications.next_state().await;
+            let after = observed(&fixture, &id, |view| view.run.executions_started == 1).await;
+            assert_eq!(
+                serde_json::to_value(&after.requests[1]).unwrap(),
+                serde_json::to_value(&before.requests[1]).unwrap(),
+                "the visible budget audit is unchanged"
+            );
+            assert_eq!(
+                after.requests[1].execution_id,
+                before.requests[1].execution_id
+            );
+            // RUNNING is saved before Python publishes its start event; wait for that event itself.
+            wait_until(|| fixture.starts().iter().any(|id| id == "slow"));
+            assert_eq!(fixture.starts(), ["slow"]);
+            fs::write(fixture.repo.join("release"), "finish").unwrap();
+            let run = finish(child, 4);
+            assert_eq!(run["executionsStarted"], 1);
+            assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
         })
-        .to_string(),
-    )
-    .unwrap();
-    let _other_runs = owned_run::RepoLease::new(&fixture.state, &other);
-    let output = Command::new(support::os::cli())
-        .args(["verify", "--wait", "--all", "--json"])
-        .arg("--repo")
-        .arg(&other)
-        .arg("--state-dir")
-        .arg(&fixture.state)
-        .record_output()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
-    notifications.next_state().await;
-    let after = observed(&fixture, &id, |view| view.run.executions_started == 1).await;
-    assert_eq!(
-        serde_json::to_value(&after.requests[1]).unwrap(),
-        serde_json::to_value(&before.requests[1]).unwrap(),
-        "the visible budget audit is unchanged"
-    );
-    assert_eq!(
-        after.requests[1].execution_id,
-        before.requests[1].execution_id
-    );
-    assert_eq!(fixture.starts(), ["slow"]);
-    fs::write(fixture.repo.join("release"), "finish").unwrap();
-    let run = finish(child, 4);
-    assert_eq!(run["executionsStarted"], 1);
-    assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
-    notifications.close().await.unwrap();
+        .await
+        .expect("fixture notification states were observed");
+    })
+    .await;
 }
 
 fn slow_eval(id: &str, address: SocketAddr) -> Value {
@@ -418,11 +436,14 @@ async fn completion_releases_a_dependent_while_an_independent_eval_is_still_runn
 
 #[test]
 fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
-    let fixture = Fixture::new(
+    let fixture = Fixture::recorded(|address| {
         (0..5)
-            .map(|id| eval(&format!("e{id}"), "import pathlib,sys\nwith pathlib.Path('events').open('a', encoding='utf-8') as events: events.write('start ' + sys.argv[1] + '\\n')"))
-            .collect(),
-    );
+            .map(|id| slow_eval(&format!("e{id}"), address))
+            .collect()
+    });
+    // Let admitted executions finish immediately; their acknowledged events still share
+    // one writer, so concurrent starts cannot overwrite each other's records on Windows.
+    fs::write(fixture.repo.join("release"), "finish").unwrap();
     let run = fixture.run(&["--jobs", "4", "--max-executions", "2"], 4);
     assert_eq!(run["status"], "INCOMPLETE");
     assert_eq!(run["maxExecutions"], 2);
@@ -536,8 +557,8 @@ async fn owned_run_drop_and_unwind_release_the_worker_and_groups_before_fixture_
                 && view.requests[0].child.is_some()
         })
         .await;
-        let artifactize_core::runs::Worker::Admitted { owner } = before.run.control.unwrap().worker
-        else {
+        let control = before.run.control.unwrap();
+        let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
             panic!("controlled execution has an admitted worker");
         };
         let pids = recorded_pids(&fixture.repo.join("pids")).unwrap();
@@ -554,10 +575,12 @@ async fn owned_run_drop_and_unwind_release_the_worker_and_groups_before_fixture_
             after.requests[0].error_code(),
             Some(artifactize_core::types::FailureCode::Cancelled)
         );
-        assert!(
-            !support::os::running(owner.pid.get()),
-            "durable worker exited"
-        );
+        for owner in std::iter::once(owner).chain(control.supervisor) {
+            assert!(
+                !support::os::same_process_running(owner.pid.get(), owner.start_time),
+                "durable worker and supervisor exited"
+            );
+        }
         assert!(!support::os::running(watcher), "watcher was reaped");
         assert!(pids.into_iter().all(|pid| !support::os::running(pid)));
         assert!(

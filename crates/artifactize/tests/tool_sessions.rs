@@ -22,11 +22,11 @@ use support::{FakeProvider, openai, tool_sessions as harness};
 struct Fixture {
     provider: FakeProvider,
     processes: RefCell<owned_run::Processes>,
-    root: tempfile::TempDir,
+    root: owned_run::Root,
 }
 impl Fixture {
     fn new(start: &str, stop: &str, action: &str, calls: usize) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         let log = root.path().join("log");
         fs::create_dir_all(&repo).unwrap();
@@ -49,6 +49,7 @@ impl Fixture {
             };
             openai::completed(request, vec![result], openai::usage(10, 5))
         });
+        root.track(&root.path().join("state"), &repo);
         Self {
             root,
             provider,
@@ -108,11 +109,10 @@ impl Fixture {
         support::declaration::write(self.repo().join("index.artf"), definition.to_string())
             .unwrap();
     }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        // Snapshot detached identities before release; every invocation writes its child
-        // marker before the structured record, including failures during startup.
+
+    fn own_processes(&mut self) {
+        // Every invocation writes its child marker before the structured record,
+        // including failures during startup.
         if let Ok(entries) = fs::read_dir(self.log()) {
             for entry in entries.flatten() {
                 if entry.file_name().to_string_lossy().starts_with("child-")
@@ -125,11 +125,22 @@ impl Drop for Fixture {
         for kind in ["start", "call", "stop"] {
             self.records(kind);
         }
+    }
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.own_processes();
         // Wake provider callbacks and blocked tools even when an assertion unwinds.
         for marker in ["release", "continue", "admit", "verdict"] {
             let _ = fs::write(self.log().join(marker), "ready");
         }
-        owned_run::release_repo(&self.state(), &self.repo());
+        let released = self.root.release(&self.state(), &self.repo());
+        // Cancellation may start stop or finish a pending invocation. Adopt those
+        // identities too before the process guard and temporary root can drop.
+        self.own_processes();
+        if !std::thread::panicking() {
+            released.expect("release tool-session Run owners before fixture removal");
+        }
     }
 }
 

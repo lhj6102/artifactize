@@ -116,7 +116,7 @@ fn doctor(state: &Path, path: &Path) -> Command {
 
 #[test]
 fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     let bin = root.path().join("bin");
@@ -166,7 +166,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert!(!state.exists());
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 
-    let runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     let run = runtime_run(&state, &repo);
     let id = run["id"].as_str().unwrap().parse().unwrap();
     support::runs::finished_worker(&state, &repo, &id, support::os::running);
@@ -225,7 +225,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
 
     // No live fixture remains when schema corruption makes lifecycle reads invalid.
-    drop(runs);
+    root.release(&state, &repo).unwrap();
     // A database written by a newer artifactize is a hard error and stays as it is.
     rusqlite::Connection::open(state.join("state.sqlite"))
         .unwrap()
@@ -306,10 +306,10 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
 
 #[test]
 fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let state = root.path().join("state");
     let repo = root.path().join("repo");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     let finished = runtime_run(&state, &repo);
     let waiting = verify(&state, &repo, json!({"kind":"human"}), 0);
     let _waiting = owned_run::RunLease::new(
@@ -429,10 +429,10 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
 
 #[test]
 fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let state = root.path().join("state");
     let repo = root.path().join("repo");
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     let finished = runtime_run(&state, &repo);
     let run = state.join("runs").join(finished["id"].as_str().unwrap());
     let output = Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output");
@@ -530,10 +530,10 @@ fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
         ".artifactizeignore",
         "file.txt.artf",
     ] {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let state = root.path().join("state");
         let repo = root.path().join("reviewed");
-        let _runs = owned_run::RepoLease::new(&state, &repo);
+        root.track(&state, &repo);
         let finished = runtime_run(&state, &repo);
         let copy =
             Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output/copy");
@@ -627,7 +627,7 @@ fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
 #[cfg(target_os = "macos")]
 #[test]
 fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links() {
-    let root = support::os::tempdir_below_tmp_alias();
+    let root = owned_run::Root::from(support::os::tempdir_below_tmp_alias());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -650,7 +650,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
             .args(args);
         result(&mut command, code)
     };
-    let _runs = owned_run::RepoLease::new(&state, &repo);
+    root.track(&state, &repo);
     let run = invoke(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["status"], "GREEN");
     assert_eq!(

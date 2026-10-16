@@ -58,7 +58,7 @@ fn counts(run: &Value) -> Value {
 
 #[test]
 fn saved_definitions_and_paged_runs_survive_repository_removal() {
-    let root = support::os::tempdir();
+    let root = owned_run::Root::from(support::os::tempdir());
     let first = root.path().join("first");
     let second = root.path().join("second");
     let state = root.path().join("state");
@@ -68,8 +68,8 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     fs::create_dir(first.join("unselected")).unwrap();
     fs::create_dir(&second).unwrap();
     // Own submissions before any command or observation can unwind.
-    let _first_runs = owned_run::RepoLease::new(&state, &first);
-    let _other_runs = owned_run::RepoLease::new(&state, &second);
+    root.track(&state, &first);
+    root.track(&state, &second);
     support::declaration::write(
         first.join("input/index.artf"),
         r#"{"name":"input","basis":true}"#,

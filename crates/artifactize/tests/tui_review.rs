@@ -1,13 +1,11 @@
 #[path = "support/run.rs"]
 mod owned_run;
-use owned_run::RunChild;
-
-use std::{
-    fs,
-    path::PathBuf,
-    process::Command,
-    time::{Duration, Instant},
+use owned_run::{
+    RunChild,
+    launch::{LAUNCH, Launched},
 };
+
+use std::{fs, path::PathBuf, process::Command, time::Duration};
 
 use artifactize_core::{human, store};
 use artifactize_tui::review::{Action, Mode, Review};
@@ -19,17 +17,49 @@ use serde_json::{Value, json};
 mod support;
 
 struct Fixture {
-    _root: support::runs::RepoLease,
+    // Drop explicitly joins the child before closing its repository cwd or inputs.
+    launched: Option<Launched>,
+    launch_inputs: Option<tempfile::TempDir>,
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let Some(launched) = self.launched.take() else {
+            return;
+        };
+        // Consume the complete launch owner before the repository root can drop. Its
+        // native cwd is in the repo even though its PID/release markers live elsewhere.
+        let closed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| launched.close()))
+            .unwrap_or_else(|_| Err("detached review launch cleanup panicked".into()));
+        if let Err(error) = closed {
+            // Root still releases every Run, but may not remove a surviving child's cwd.
+            self._root.retain_inputs();
+            if std::thread::panicking() {
+                eprintln!("Review launch cleanup failed: {error}");
+            } else {
+                panic!("Review launch cleanup failed: {error}");
+            }
+        }
+    }
 }
 
 /// The review-demo shape: a Human sign-off with `output` and `launch` tools, and a dependent.
 impl Fixture {
     fn new() -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         let release = repo.join("release");
+        let launch_inputs = support::os::tempdir();
+        let launch_args: Vec<_> = support::os::python(LAUNCH)
+            .into_iter()
+            .map(str::to_owned)
+            .chain(std::iter::once(support::os::path_text(
+                launch_inputs.path(),
+            )))
+            .collect();
         fs::create_dir_all(&release).unwrap();
         fs::write(release.join("notes.md"), "# Release notes\n- Ready.\n").unwrap();
         support::declaration::write(
@@ -54,8 +84,8 @@ impl Fixture {
                         "open":{
                             "description":"Open.",
                             "kind":"launch",
-                            "command":support::os::true_program(),
-                            "args":["{artifactPath}"],
+                            "command":support::os::python_program(),
+                            "args":launch_args,
                         },
                         "summary":{
                             "builtin":"section",
@@ -105,8 +135,11 @@ impl Fixture {
         )
         .unwrap();
         let state = root.path().join("state");
+        root.track(&state, &repo);
         Self {
-            _root: support::runs::RepoLease::new(root, &state, &repo),
+            launched: None,
+            launch_inputs: Some(launch_inputs),
+            _root: root,
             repo,
             state,
         }
@@ -124,18 +157,26 @@ impl Fixture {
     }
 
     async fn waiting(&self) -> artifactize_core::types::RequestId {
-        let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
-        loop {
-            let waiting = store::read_waiting(&self.state, Some(&self.repo))
-                .await
-                .unwrap();
-            if let Some(view) = waiting.first() {
-                owned_run::human_waiting(&self.state, &view.request.run_id).await;
-                return view.request.id.clone();
-            }
-            assert!(Instant::now() < deadline, "Human request did not appear");
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        // The watchdog bounds a broken fixture, not the Human request's lifetime.
+        const WAITING_BOUND: Duration = Duration::from_secs(15);
+        let (run, request) = owned_run::subscribed(&self.state, async |changes| {
+            tokio::time::timeout(support::os::patience(WAITING_BOUND), async {
+                loop {
+                    let waiting = store::read_waiting(&self.state, Some(&self.repo))
+                        .await
+                        .unwrap();
+                    if let Some(view) = waiting.first() {
+                        break (view.request.run_id.clone(), view.request.id.clone());
+                    }
+                    changes.next_reconciled().await;
+                }
+            })
+            .await
+            .expect("Human request did not appear")
+        })
+        .await;
+        owned_run::human_waiting(&self.state, &run).await;
+        request
     }
 
     async fn receipts(&self) -> store::OwnedReceipts {
@@ -193,7 +234,7 @@ fn finish(child: RunChild) -> (Option<i32>, Value) {
 
 #[tokio::test]
 async fn review_claims_runs_tools_and_submits_while_verify_waits() {
-    let fixture = Fixture::new();
+    let mut fixture = Fixture::new();
     let child = support::os::start(
         fixture
             .command()
@@ -274,8 +315,12 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     );
     press(&mut review, KeyCode::Char('j')).await;
     press(&mut review, KeyCode::Char('j')).await;
+    // Install pending-handoff ownership before the launch key can accept a child.
+    fixture.launched = Some(Launched::new(fixture.launch_inputs.take().unwrap()));
     press(&mut review, KeyCode::Enter).await;
     assert!(screen(&mut review).contains("open_release launched."));
+    let launched = fixture.launched.as_mut().unwrap();
+    support::os::wait_until(Duration::from_secs(10), || launched.own().is_some());
     press(&mut review, KeyCode::Char('k')).await;
     press(&mut review, KeyCode::Enter).await;
     assert!(screen(&mut review).contains("notes_release finished."));
@@ -344,10 +389,13 @@ async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
             saved.run.status(),
             artifactize_core::types::RunStatus::Running
         );
-        let artifactize_core::runs::Worker::Admitted { owner } = saved.run.control.unwrap().worker
-        else {
+        let control = saved.run.control.unwrap();
+        let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {
             panic!("waiting Human Run has an admitted worker");
         };
+        let identities = std::iter::once(owner)
+            .chain(control.supervisor)
+            .collect::<Vec<_>>();
         let receipts = fixture.receipts().await;
         if complete {
             let reviewer = "alice".parse().unwrap();
@@ -366,17 +414,24 @@ async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
                 artifactize_core::types::RunStatus::Green
             );
         }
-        let result = std::panic::catch_unwind(move || {
+        // The complete fixture is consumed; none of its shared launch-input state
+        // can be reused after unwinding, and its guards finish teardown first.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let _owned = fixture;
             // Local bindings drop in reverse order, including during unwinding: the
             // fixture owns this writer too, not only the detached Human worker.
             let _receipts = receipts;
             assert!(!unwind, "submit-only fixture unwind probe");
-        });
+        }));
         assert_eq!(result.is_err(), unwind);
         assert!(
-            !support::os::running(owner.pid.get()),
-            "Human worker exited"
+            identities
+                .iter()
+                .all(|identity| !support::os::same_process_running(
+                    identity.pid.get(),
+                    identity.start_time
+                )),
+            "the exact Human worker and supervisor exited"
         );
         assert!(
             !root.exists(),

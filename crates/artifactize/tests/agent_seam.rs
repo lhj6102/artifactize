@@ -17,9 +17,8 @@ use serde_json::{Value, json};
 use support::{FakeProvider, Reply, anthropic, openai};
 
 struct Project {
-    // Fields drop in declaration order: release durable workers before their temporary state.
-    _runs: owned_run::RepoLease,
-    _root: tempfile::TempDir,
+    // Retain inputs if releasing any durable worker fails, including on assertion unwind.
+    _root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
 }
@@ -27,7 +26,7 @@ struct Project {
 impl Project {
     /// One `spec` Artifact with a built-in `read` tool and one Agent eval.
     fn new(profile: Value) -> Self {
-        let root = support::os::tempdir();
+        let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
         fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
@@ -54,8 +53,8 @@ impl Project {
         )
         .unwrap();
         let state = root.path().join("state");
+        root.track(&state, &repo);
         Self {
-            _runs: owned_run::RepoLease::new(&state, &repo),
             state,
             repo,
             _root: root,
