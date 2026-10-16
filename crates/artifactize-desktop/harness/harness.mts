@@ -231,30 +231,61 @@ export function forwardReadiness(source: NodeJS.ReadableStream, output: NodeJS.W
 
 /** Forward termination through the standard wrappers' inherited stdin, not their
  * PIDs: killing an intermediate wrapper can remove X11 before service cleanup. */
-export async function superviseOwner(command: ReturnType<typeof runnerCommand>): Promise<void> {
+export async function superviseOwner(
+  command: ReturnType<typeof runnerCommand>,
+  onStartup?: (shutdown: AbortSignal) => Promise<void>,
+): Promise<void> {
   const child = spawn(command.program, command.args, { env: command.env, stdio: ["pipe", "pipe", "inherit"] });
   const failures: unknown[] = [];
+  const shutdown = new AbortController();
+  let ownerClosed = false;
+  const closed = new Promise<void>((done) => {
+    child.once("error", (error) => { failures.push(error); });
+    child.once("close", (code, signal) => {
+      ownerClosed = true;
+      shutdown.abort();
+      if (code !== 0) failures.push(new Error(`desktop harness exited ${signal ?? code}`));
+      done();
+    });
+  });
   let stopping = false;
   const requestStop = () => {
     if (stopping) return;
     stopping = true;
-    child.stdin!.end();
+    shutdown.abort();
+    if (!ownerClosed) child.stdin!.end();
   };
-  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, requestStop);
-  child.stdin!.on("error", (error) => { failures.push(error); });
-  forwardReadiness(child.stdout!, process.stdout, process.stderr);
+  const failed = (error: Error) => { failures.push(error); requestStop(); };
+  let startup: Promise<void> | undefined;
+  let lines: ReturnType<typeof forwardReadiness> | undefined;
   try {
-    await new Promise<void>((done) => {
-      child.once("error", (error) => { failures.push(error); });
-      child.once("close", (code, signal) => {
-        if (code !== 0) failures.push(new Error(`desktop harness exited ${signal ?? code}`));
-        done();
-      });
+    for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, requestStop);
+    for (const output of [process.stdout, process.stderr]) output.on("error", failed);
+    child.stdin!.on("error", failed);
+    child.stdout!.on("error", failed);
+    lines = forwardReadiness(child.stdout!, process.stdout, process.stderr);
+    lines.on("line", (line) => {
+      if (line !== "harness:startup-acquired" || startup || stopping || ownerClosed) return;
+      // The optional callback is an internal controlled-ordering seam, not a CLI/env option.
+      startup = Promise.resolve().then(() => onStartup?.(shutdown.signal)).then(() => {
+        if (!stopping && !ownerClosed) child.stdin!.write("continue\n");
+      }).catch((error: unknown) => { failures.push(error); requestStop(); });
     });
-    if (failures.length) throw new AggregateError(failures, "desktop owner supervision failed");
+    await closed;
+    await startup;
+  } catch (error) {
+    failures.push(error);
+    requestStop();
+    await closed;
+    await startup;
   } finally {
+    lines?.close();
     for (const signal of ["SIGINT", "SIGTERM"] as const) process.off(signal, requestStop);
+    for (const output of [process.stdout, process.stderr]) output.off("error", failed);
+    child.stdin!.off("error", failed);
+    child.stdout!.off("error", failed);
   }
+  if (failures.length) throw new AggregateError(failures, "desktop owner supervision failed");
 }
 
 /** Standard wrappers own the display and bus for the entire service host process. */
@@ -271,6 +302,10 @@ async function serve(): Promise<void> {
   let shown: { session: Session; fixture: Fixture } | undefined;
   let fixture: Fixture;
   let stopping = false;
+  let phase: "startup" | "ready" = "startup";
+  const outputFailures: Error[] = [];
+  let permitStartup!: () => void;
+  const startupPermit = new Promise<void>((done) => { permitStartup = done; });
   // Service cleanup completes before public Run settlement or input deletion.
   // Startup is an active command too, so an in-flight acquisition is joined first.
   const release = async () => {
@@ -289,10 +324,19 @@ async function serve(): Promise<void> {
   const end = () => commands.end();
   let finishStop!: (result: { error?: unknown }) => void;
   const stopped = new Promise<{ error?: unknown }>((done) => { finishStop = done; });
-  const requestStop = () => void end().then(
-    () => finishStop({}),
-    (error: unknown) => finishStop({ error }),
-  );
+  let requested = false;
+  const requestStop = () => {
+    if (requested) return;
+    requested = true;
+    const ending = end(); // Close admission before acknowledging receipt, not completion.
+    console.log(`harness:shutdown-requested ${phase}`);
+    permitStartup();
+    void ending.then(
+      () => finishStop(outputFailures.length ? { error: new AggregateError(outputFailures, "harness output failed") } : {}),
+      (error: unknown) => finishStop({ error }),
+    );
+  };
+  const outputFailed = (error: Error) => { outputFailures.push(error); requestStop(); };
   const token = randomBytes(32).toString("hex");
   const server = createServer((socket: Socket) => {
     socket.setTimeout(REQUEST_TIMEOUT, () => socket.destroy(new Error("desktop tool request timed out")));
@@ -357,8 +401,14 @@ async function serve(): Promise<void> {
   // Install before the first asynchronous acquisition: endpoint creation is not a
   // prerequisite for shutdown. EOF also covers an unexpectedly lost start wrapper.
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, requestStop);
-  process.stdin.once("end", requestStop);
-  process.stdin.resume();
+  for (const output of [process.stdout, process.stderr]) output.on("error", outputFailed);
+  const control = createInterface({ input: process.stdin });
+  control.on("line", (line) => {
+    if (line === "continue") permitStartup();
+    else outputFailed(new Error("unknown harness owner control message"));
+  });
+  control.once("close", requestStop);
+  process.stdin.on("error", outputFailed);
   let startupStarted = false;
   try {
     await commands.run(async () => {
@@ -370,6 +420,9 @@ async function serve(): Promise<void> {
       const session = await launch(candidate, fixture, platformEnv);
       shown = { session, fixture };
       if (stopping) return;
+      console.log("harness:startup-acquired");
+      await startupPermit;
+      if (stopping) return;
       await rendered(session.browser, "monitor");
       if (stopping) return;
       await new Promise<void>((done, fail) => {
@@ -380,6 +433,7 @@ async function serve(): Promise<void> {
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("desktop control server has no TCP endpoint");
       writeFileSync(join(sessionDir, ENDPOINT), JSON.stringify({ port: address.port, token } satisfies Endpoint), { mode: 0o600, flag: "wx" });
+      phase = "ready";
       console.log("ready");
     });
     const result = await stopped;
@@ -389,7 +443,10 @@ async function serve(): Promise<void> {
     return throwAfterCleanup(error, end);
   } finally {
     for (const signal of ["SIGTERM", "SIGINT"] as const) process.off(signal, requestStop);
-    process.stdin.off("end", requestStop);
+    for (const output of [process.stdout, process.stderr]) output.off("error", outputFailed);
+    process.stdin.off("error", outputFailed);
+    control.off("close", requestStop);
+    control.close();
     process.stdin.pause();
   }
 }

@@ -69,7 +69,6 @@ export const scenarios: Scenario[] = [
       const { graph } = runGraph(browser);
       await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
       await browser.$("button*=Graph").click();
-      await browser.waitUntil(async () => Object.keys((await graph()).nodes).length === 3, { timeout: 15000, timeoutMsg: "three Artifact nodes" });
       await browser.waitUntil(async () => {
         const { nodes, edges } = await graph();
         return (

@@ -81,7 +81,11 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await openedId()) === id, { timeout: 15000, timeoutMsg: "Detail identifies exactly the entered request" });
       assert.notEqual(await openedId(), selected);
       await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
-      await press(browser, ["c"], () => requests(fixture).find((request) => request.id === id)?.claim?.reviewer === "alice", "the entered request claimed");
+      await press(browser, ["c"], async () =>
+        requests(fixture).find((request) => request.id === id)?.claim?.reviewer === "alice" &&
+        (await openedId()) === id &&
+        await browser.execute(() => document.querySelector('[aria-label="Human review"][tabindex="0"]')
+          ?.textContent?.includes("REVIEW (yours)") ?? false), "the entered request's saved claim and rendered review");
       // request list reaches every repository in this state: observe by exact identities,
       // not by calling a first-signoff helper with another --repo path.
       const previous = requests(fixture).find((request) => request.id === selected);

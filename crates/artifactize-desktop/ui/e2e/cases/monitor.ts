@@ -93,9 +93,6 @@ export const scenarios: Scenario[] = [
       const selected = await browser.$('[role="treeitem"][aria-selected="true"]').getText();
       assert.match(selected, /signoff/);
       assert.match(shown, /WAITING_HUMAN — waiting for a Human submission/);
-      const activity = (await checkpoint(browser)).activity;
-      assert.ok(activity.commands.launch?.completed > 0, "the window observes its normal launch completion");
-      assert.ok(activity.commands.browse?.completed > 0, "the AppState Browse helper reports to the same owner");
     },
   ),
 

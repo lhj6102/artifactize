@@ -61,23 +61,32 @@ export function harnessEnvironment(): Record<string, string> {
   return env;
 }
 
+export function assertRunnerMachine(): void {
+  if (process.platform === "win32" && !(process.env.GITHUB_ACTIONS === "true"
+    && process.env.RUNNER_ENVIRONMENT === "github-hosted" && process.env.RUNNER_OS === "Windows")) {
+    throw new Error("Windows desktop E2E requires a disposable GitHub-hosted Windows runner; its default URL handler cannot be isolated per app instance");
+  }
+}
+
 export function assertHarnessPlatform(): void {
+  assertRunnerMachine();
   if (process.platform !== "linux") return;
   if (!process.env.DISPLAY || !process.env.DBUS_SESSION_BUS_ADDRESS || process.env.GDK_BACKEND !== "x11" || process.env.WAYLAND_DISPLAY) {
     throw new Error("Linux desktop E2E requires the whole runner inside dbus-run-session -- xvfb-run -a, GDK_BACKEND=x11 and no WAYLAND_DISPLAY");
   }
 }
 
-/** Linux CI has no desktop browser. This declared opener performs the real HTTP GET;
+/** Unix desktop openers are declared fixture executables performing the real HTTP GET;
  * the account server, not this program, records the exact displayed address reached. */
 export function accountBrowserEnvironment(fixture: Fixture, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  if (process.platform !== "linux") return env;
+  if (process.platform === "win32") return env;
   const bin = join(fixture.root, "browser-bin");
   mkdirSync(bin, { recursive: true });
   const program = join(bin, "open-url.mjs");
   writeFileSync(program, `const response = await fetch(process.argv[2]);\nawait response.arrayBuffer();\nif (!response.ok) throw new Error(\`browser HTTP \${response.status}\`);\n`);
   // Paths are arguments, never interpreted as shell source.
-  writeFileSync(join(bin, "xdg-open"), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
+  const opener = process.platform === "darwin" ? "open" : "xdg-open";
+  writeFileSync(join(bin, opener), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
   return { ...env, PATH: `${bin}${delimiter}${env.PATH ?? ""}`, DESKTOP_TEST_NODE: process.execPath, DESKTOP_TEST_BROWSER_PROGRAM: program };
 }
 

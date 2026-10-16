@@ -64,13 +64,7 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await text()).includes("crash"), { timeout: 15000, timeoutMsg: "the Run tree" });
       await browser.$("button*=Graph").click();
       await browser.$(".svelte-flow__node").waitForExist({ timeout: 15000 });
-      // Svelte Flow can mount nodes before its asynchronous layout renders the edges.
-      await browser.waitUntil(async () => {
-        const graph = await lights();
-        return Object.keys(graph.nodes).length === 7 && Object.keys(graph.edges).length === 3;
-      }, { timeout: 15000, timeoutMsg: "seven Artifact nodes and their three rendered edges" });
-      const { nodes, edges } = await lights();
-      assert.deepEqual(nodes, {
+      const expectedNodes = {
         "a:red": "red",
         "a:crash": "error",
         "a:down": "blocked",
@@ -78,9 +72,17 @@ export const scenarios: Scenario[] = [
         "a:fine": "green",
         "a:gate": "active",
         "a:later": "waiting",
-      });
+      };
       // Each edge is lit as what its source passes on: RED, ERROR, or work in progress.
-      assert.deepEqual(edges, { "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active" });
+      const expectedEdges = { "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active" };
+      await browser.waitUntil(async () => {
+        const graph = await lights();
+        return Object.entries(expectedNodes).every(([id, light]) => graph.nodes[id] === light) &&
+          Object.entries(expectedEdges).every(([id, light]) => graph.edges[id] === light);
+      }, { timeout: 15000, timeoutMsg: "the fixture's Artifacts and dependencies display their declared verdicts" });
+      const { nodes, edges } = await lights();
+      assert.deepEqual(nodes, expectedNodes);
+      assert.deepEqual(edges, expectedEdges);
       const legend = await browser.$('[aria-label="Legend"]').getText();
       for (const word of ["GREEN", "RED", "ERROR", "blocked"]) assert.match(legend, new RegExp(word));
     },
@@ -110,8 +112,8 @@ export const scenarios: Scenario[] = [
       // ↑ ↓ walk the nodes of a column from top to bottom and back.
       const placed = await browser.execute(() =>
         [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].map((node) => {
-          const at = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(node.style.transform);
-          return { id: node.dataset.id ?? "", x: Number(at?.[1] ?? 0), y: Number(at?.[2] ?? 0) };
+          const box = node.getBoundingClientRect();
+          return { id: node.dataset.id ?? "", x: box.left, y: box.top };
         }),
       );
       const byColumn = new Map<number, { id: string; y: number }[]>();

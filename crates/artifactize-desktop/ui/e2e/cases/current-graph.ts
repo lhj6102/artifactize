@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createGraph, type Fixture, savedRuns } from "../fixture.ts";
+import { createGraph, type Fixture, savedRuns, verifyWaiting } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -141,6 +141,11 @@ export const scenarios: Scenario[] = [
         await assertDeclarationsOnly();
         previousTitle = title;
       }
+      // Only after every declarations-only/no-Run check, create a real Run in this
+      // same state. Its independently submitted identity proves the absence probe
+      // would have detected a Run had the graph launch or refresh created one.
+      const controlRun = await verifyWaiting(fixture);
+      assert.deepEqual(savedRuns(fixture).map((run) => run.id), [controlRun], "the same saved-Run probe detects this fixture's real CLI-created Run");
     },
   ),
 ];

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer, type ServerResponse } from "node:http";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,7 @@ async function peer(test: TestContext, reply: Record<string, unknown> | null) {
   const directory = mkdtempSync(join(tmpdir(), "artifactize-harness-protocol-"));
   const received: Envelope[] = [];
   const sockets = new Set<Socket>();
+  const children = new Map<ReturnType<typeof execFile>, Promise<void>>();
   const server = createServer((socket) => {
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
@@ -32,9 +34,14 @@ async function peer(test: TestContext, reply: Record<string, unknown> | null) {
     });
   });
   test.after(async () => {
-    for (const socket of sockets) socket.destroy();
-    await new Promise<void>((done, fail) => server.close((error) => error ? fail(error) : done()));
-    rmSync(directory, { recursive: true });
+    try {
+      for (const socket of sockets) socket.destroy();
+      await Promise.all([...children].map(async ([child, closed]) => {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+        await closed;
+      }));
+      if (server.listening) await new Promise<void>((done, fail) => server.close((error) => error ? fail(error) : done()));
+    } finally { rmSync(directory, { recursive: true }); }
   });
   await new Promise<void>((done, fail) => {
     server.once("error", fail);
@@ -48,6 +55,7 @@ async function peer(test: TestContext, reply: Record<string, unknown> | null) {
       env: { ...process.env, ARTIFACTIZE_SESSION_DIR: directory },
       encoding: "utf8", timeout: 15000,
     }, (error, stdout) => error ? fail(error) : done(stdout));
+    children.set(child, new Promise<void>((done) => { child.once("close", () => done()); }));
     child.stdin!.end(JSON.stringify({ args }));
   });
   return { call, received };
@@ -56,20 +64,46 @@ async function peer(test: TestContext, reply: Record<string, unknown> | null) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   for (const exitCode of [0, 7]) {
     it(`${signal} forwards control EOF and joins ${exitCode ? "failed" : "successful"} owner teardown before supervisor exit`, { timeout: 15000 }, async (test) => {
+      let ownerStopping!: () => void;
+      const stopping = new Promise<void>((done) => { ownerStopping = done; });
+      const responses = new Set<ServerResponse>();
+      let released = false;
+      const release = () => {
+        released = true;
+        for (const response of responses) response.end("released");
+      };
+      // The fixture owns this release gate before spawning anything. Teardown can
+      // open it even when owner readiness was never received or an assertion fails.
+      const server = createHttpServer((_request, response) => {
+        responses.add(response);
+        response.once("close", () => responses.delete(response));
+        ownerStopping();
+        if (released) response.end("released");
+      });
+      let joinSupervisor = async () => {};
+      test.after(async () => {
+        release();
+        try { await joinSupervisor(); }
+        finally {
+          if (server.listening) await new Promise<void>((done, fail) => server.close((error) => error ? fail(error) : done()));
+        }
+      });
+      await new Promise<void>((done, fail) => {
+        server.once("error", fail);
+        server.listen(0, "127.0.0.1", () => { server.off("error", fail); done(); });
+      });
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
       const owner = `
-        import {createServer} from 'node:http';
-        let stopping = false;
-        const server = createServer((request, response) => {
-          if (!stopping || request.url !== '/release') { response.writeHead(409).end(); return; }
-          response.end('released');
-          server.close(() => process.exit(${exitCode}));
+        import {get} from 'node:http';
+        process.stdin.once('end', () => {
+          get('http://127.0.0.1:${address.port}/release', (response) => {
+            response.resume();
+            response.once('end', () => process.exit(${exitCode}));
+          }).once('error', (error) => { console.error(error); process.exit(1); });
         });
-        process.stdin.once('end', () => { stopping = true; console.log('owner-stopping'); });
         process.stdin.resume();
-        server.listen(0, '127.0.0.1', () => {
-          console.error('OWNER http://127.0.0.1:' + server.address().port);
-          console.log('ready');
-        });
+        console.log('ready');
       `;
       const script = `import {superviseOwner} from ${JSON.stringify(new URL("./harness.mts", import.meta.url).href)};
         await superviseOwner({program: process.execPath, args: ['--input-type=module', '-e', ${JSON.stringify(owner)}], env: process.env});`;
@@ -78,36 +112,26 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         supervisor.once("error", fail);
         supervisor.once("close", (code, signal) => done({ code, signal }));
       });
-      let ownerUrl!: (url: string) => void;
-      const url = new Promise<string>((done) => { ownerUrl = done; });
-      let ownerStopping!: () => void;
-      const stopping = new Promise<void>((done) => { ownerStopping = done; });
+      // Installed synchronously after spawn, before any acquisition can fail.
+      joinSupervisor = async () => {
+        try {
+          if (supervisor.exitCode === null && supervisor.signalCode === null) supervisor.kill("SIGTERM");
+          await closed;
+        } finally { lines.close(); output.close(); }
+      };
       let diagnostics = "";
       const lines = createInterface({ input: supervisor.stderr });
-      lines.on("line", (line) => {
-        diagnostics += line + "\n";
-        if (line.startsWith("OWNER ")) ownerUrl(line.slice("OWNER ".length));
-        if (line === "owner-stopping") ownerStopping();
+      lines.on("line", (line) => { diagnostics += line + "\n"; });
+      const output = createInterface({ input: supervisor.stdout });
+      const prematureExit = closed.then((status) => {
+        throw new Error(`supervisor exited before owner release: ${JSON.stringify(status)}\n${diagnostics}`);
       });
-      const ready = new Promise<void>((done) => {
-        const output = createInterface({ input: supervisor.stdout });
-        output.once("line", (line) => { assert.equal(line, "ready"); done(); });
-      });
-      const endpoint = await url;
-      test.after(async () => {
-        if (supervisor.exitCode === null && supervisor.signalCode === null) {
-          supervisor.kill("SIGTERM");
-          await stopping;
-          await fetch(endpoint + "/release");
-          await closed;
-        }
-      });
-      await ready;
+      assert.deepEqual(await Promise.race([once(output, "line"), prematureExit]), ["ready"]);
       assert.equal(supervisor.kill(signal), true);
-      await stopping;
+      await Promise.race([stopping, prematureExit]);
       assert.equal(supervisor.exitCode, null, "registered supervisor must remain until owner teardown finishes");
       assert.equal(supervisor.kill(signal), true, "repeated termination joins the same owner shutdown");
-      assert.equal((await fetch(endpoint + "/release")).status, 200);
+      release();
       const result = await closed;
       assert.deepEqual(result, { code: exitCode === 0 ? 0 : 1, signal: null });
       if (exitCode) assert.match(diagnostics, /desktop owner supervision failed/);
@@ -132,7 +156,7 @@ it("embedded endpoint configuration selects distinct loopback ports and releases
   }
 });
 
-it("readiness is the only stdout line while all startup and later service logs remain diagnostics", async () => {
+it("readiness is the only stdout line while all startup and later service logs remain diagnostics", async (test) => {
   const source = new PassThrough();
   const output = new PassThrough();
   const diagnostics = new PassThrough();
@@ -141,6 +165,7 @@ it("readiness is the only stdout line while all startup and later service logs r
   output.on("data", (chunk) => { stdout += chunk; });
   diagnostics.on("data", (chunk) => { stderr += chunk; });
   const lines = forwardReadiness(source, output, diagnostics);
+  test.after(() => { lines.close(); source.destroy(); output.destroy(); diagnostics.destroy(); });
   const closed = once(lines, "close");
   source.write("starting WDIO\nrea");
   assert.equal(stdout, "");

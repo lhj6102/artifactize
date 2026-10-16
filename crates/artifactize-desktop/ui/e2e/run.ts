@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
-import { runnerCommand } from "./platform.ts";
+import { assertRunnerMachine, runnerCommand } from "./platform.ts";
 
 const file = join(import.meta.dirname, "run.ts");
 // Embedded service launches every capability during onPrepare. Bounding the number
@@ -36,13 +36,16 @@ async function batch(): Promise<void> {
   // Initialize the public loader before importing its config, so the fixture owner
   // and WDIO use the same module instance and callbacks never leave this process.
   await launcher.initialize();
-  const { releasePrepared } = await import("./wdio.conf.ts");
+  const configuration = await import("./wdio.conf.ts");
   const failures: unknown[] = [];
   try {
     const code = await launcher.run();
     if (code !== 0) failures.push(new Error(`WDIO batch failed with exit code ${code}`));
-  } catch (error) { failures.push(error); }
-  try { await releasePrepared(); } catch (error) { failures.push(error); }
+  } catch (error) {
+    failures.push(configuration.preparationFailure === undefined ? error
+      : new Error("Desktop scenario preparation failed", { cause: configuration.preparationFailure }));
+  }
+  try { await configuration.releasePrepared(); } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, "desktop WDIO batch failed");
 }
 
@@ -86,13 +89,14 @@ async function suite(ids: string[]): Promise<void> {
 
 async function unit(): Promise<void> {
   const harness = resolve(import.meta.dirname, "../../harness");
-  const files = ["commands.test.ts", "keys.test.ts", "observation.test.ts"].map((name) => join(import.meta.dirname, name));
+  const files = ["commands.test.ts", "keys.test.ts", "observation.test.ts", "runner.test.ts"].map((name) => join(import.meta.dirname, name));
   if (existsSync(harness)) files.push(...readdirSync(harness).filter((name) => name.endsWith(".test.mts")).sort().map((name) => join(harness, name)));
   process.exitCode = await execute(process.execPath, ["--test", ...files], process.env);
 }
 
 const mode = process.argv[2] ?? "suite";
 try {
+  if (mode === "suite" || mode === "batch") assertRunnerMachine();
   if (mode === "prepare") console.log((await prepare()).manifest);
   else if (mode === "cleanup") await cleanup(readCandidate(process.argv[3]).root);
   else if (mode === "unit") await unit();
