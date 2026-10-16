@@ -3,7 +3,7 @@
   // them. Nodes are focusable: arrows move between connected Artifacts, Enter or a click zooms
   // in, Esc zooms out. An eval selected here is the tree's selection, so Detail follows it.
   import { GraphViewState, setGraphViewState } from "./graphView.svelte";
-  import { SvelteFlow, Controls, MiniMap, useSvelteFlow, type Edge, type Node } from "@xyflow/svelte";
+  import { SvelteFlow, Controls, MiniMap, useSvelteFlow, getViewportForBounds, type Edge, type Node } from "@xyflow/svelte";
   import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { RunGraph, TreeNode } from "../ipc/client";
@@ -45,6 +45,9 @@
 
   const flow = useSvelteFlow();
   const nodeTypes = { artifact: ArtifactNode };
+  /** The camera and its controls share the same zoom limits. */
+  const MIN_ZOOM = 0.05;
+  const MAX_ZOOM = 2;
   // Lights change in place; positions only come with a new layout. The selection is not part
   // of a node: a node whose selection flips is drawn again and loses focus, so focus (which
   // follows the selection) marks the selected Artifact instead.
@@ -237,7 +240,7 @@
       if (width === 0 || height === 0) return;
       const size = `${width}:${height}`;
       if (previous && previous !== size) {
-        void flow.fitView({ nodes: zoomed ? [{ id: zoomed }] : undefined, duration: 0, maxZoom: 1.6, padding: 0.6 });
+        void fit({ id: zoomed ?? undefined, duration: 0, maxZoom: 1.6, padding: 0.6 });
       }
       previous = size;
     });
@@ -245,14 +248,27 @@
     return () => resized.disconnect();
   };
 
+  /** fitView shares a pending resolver across calls. Use the public bounds calculation and
+   * a distinct viewport transition, so an old fit cannot finish a newer zoom-out early. */
+  function fit(options: { id?: string; duration: number; maxZoom?: number; padding?: number }) {
+    if (!v.canvas) return Promise.resolve(false);
+    const bounds = flow.getNodesBounds(options.id ? [options.id] : flow.getNodes());
+    const viewport = getViewportForBounds(
+      bounds, v.canvas.clientWidth, v.canvas.clientHeight,
+      MIN_ZOOM, options.maxZoom ?? MAX_ZOOM, options.padding ?? 0.1,
+    );
+    return flow.setViewport(viewport, { duration: options.duration });
+  }
+
   async function zoomIn(id: string) {
     release();
     zoomed = id;
     const at = evals.findIndex((node) => node.id === selected[1]);
     v.picked = Math.max(at, 0);
     onselect(evals[v.picked] ? [id, evals[v.picked].id] : [id]);
-    void flow.fitView({ nodes: [{ id }], duration: 250, maxZoom: 1.6, padding: 0.6 });
     await tick();
+    if (zoomed !== id || hidden()) return;
+    void fit({ id, duration: 250, maxZoom: 1.6, padding: 0.6 });
     v.list?.focus();
   }
 
@@ -265,7 +281,7 @@
     // Hold focus at once, so nothing during the transition can leave it on the page.
     await tick();
     const mine = hold(id);
-    await flow.fitView({ duration: 250 });
+    await fit({ duration: 250 });
     // Too many Artifacts to fit: bring this one into view, unless keys moved on meanwhile.
     if (mine === v.handoff) await centre(id);
   }
@@ -332,8 +348,8 @@
       bind:edges
       {nodeTypes}
       fitView
-      minZoom={0.05}
-      maxZoom={2}
+      minZoom={MIN_ZOOM}
+      maxZoom={MAX_ZOOM}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={true}
