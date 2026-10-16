@@ -5,7 +5,7 @@
   import { call, useIpc, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import type { Review } from "../review/review.svelte";
-  import { DetailPaneState, setDetailPaneState } from "./detailPane.svelte";
+  import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
   import Panel from "../shell/Panel.svelte";
   import RecordDetail from "./RecordDetail.svelte";
   import Sections from "./Sections.svelte";

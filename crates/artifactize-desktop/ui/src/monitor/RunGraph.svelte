@@ -6,7 +6,7 @@
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
   import { call, useIpc, message, type RunGraph, type TreeNode } from "../ipc/client";
-  import { RunGraphState, setRunGraphState } from "./runGraph.svelte";
+  import { RunGraphState, setRunGraphState } from "./run-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
   import { LIMIT, shape } from "./graph";
 

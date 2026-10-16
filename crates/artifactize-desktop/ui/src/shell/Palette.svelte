@@ -3,7 +3,7 @@
   import { Command, Dialog } from "bits-ui";
   import { getAppState } from "./app.svelte";
   import { label } from "./keys";
-  import { PaletteState, setPaletteState } from "./palette.svelte";
+  import { PaletteState, setPaletteState } from "./palette-state.svelte";
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
   const { commands } = getAppState();
