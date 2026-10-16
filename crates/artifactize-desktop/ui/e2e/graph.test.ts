@@ -8,13 +8,13 @@ import { artifactize, create, createChain, createEvals, type Fixture, signoff } 
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
-async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
+async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000, evidence?: () => unknown) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     if (await check()) return;
     await new Promise((done) => setTimeout(done, 100));
   }
-  assert.fail(`timed out: ${what}`);
+  assert.fail(`timed out: ${what}${evidence ? `; ${JSON.stringify(evidence())}` : ""}`);
 }
 
 describe("run graph", () => {
@@ -221,16 +221,26 @@ describe("run graph of many Artifacts", () => {
         // during the camera move, but culling leaves only the visible portion afterwards.
         // The disabled zoom-out control marks the actual zoom endpoint, not a quiet frame
         // or an elapsed delay; the selected Artifact must still be in view and focused.
+        let endpoint: unknown;
         await eventually(async () => {
-          const visible = await browser.execute(() => {
+          const shown = await browser.execute(() => {
             const node = document.querySelector('[data-id="a:n040"].svelte-flow__node');
             const box = node?.getBoundingClientRect();
             const canvas = document.querySelector(".graph .canvas")?.getBoundingClientRect();
-            return !document.querySelector('[role="listbox"][aria-label="Evals"]') && document.activeElement === node &&
-              !!box && !!canvas && box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
+            return {
+              evals: !!document.querySelector('[role="listbox"][aria-label="Evals"]'),
+              focused: document.activeElement === node,
+              visible: !!box && !!canvas && box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom,
+              active: { tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute("aria-label"), node: document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") },
+              node: box?.toJSON(), canvas: canvas?.toJSON(),
+              viewport: document.querySelector<HTMLElement>(".graph .svelte-flow__viewport")?.style.transform,
+            };
           });
-          return visible && !(await zoomOut.isEnabled());
-        }, "the zoomed-out graph with n040 visible and focused at the camera's endpoint");
+          const enabled = await zoomOut.isEnabled();
+          endpoint = { ...shown, zoomOutEnabled: enabled };
+          return !shown.evals && shown.focused && shown.visible && !enabled;
+        }, "the zoomed-out graph with n040 visible and focused at the camera's endpoint", 15000, () => endpoint);
+        console.log(`e2e graph endpoint: ${JSON.stringify(endpoint)}`);
         assert.match(await browser.$('nav[aria-label="Breadcrumb"]').getText(), /n040/, "selection held through the transition");
       }
     }
