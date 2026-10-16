@@ -58,7 +58,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-OPEN
   scenario<Record<string, never>>(
     "states-graph-lights",
-    "colours RED, ERROR, blocked and GREEN Artifacts and the edge between a RED one and its dependent",
+    "colours RED, ERROR, blocked, waiting and GREEN Artifacts and the edges each passes on to its dependent",
     async () => {
       const fixture = await createStates();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -76,9 +76,15 @@ export const scenarios: Scenario[] = [
         "a:fine": "green",
         "a:gate": "active",
         "a:later": "waiting",
+        "a:past": "blocked",
+        "a:beyond": "waiting",
       } satisfies Record<string, VerdictLight>;
-      // Each edge is painted as what its source passes on: RED, ERROR, or work in progress.
-      const expectedEdges = { "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active" } satisfies Record<string, VerdictLight>;
+      // Each edge is painted as what its source passes on: RED, ERROR, work in progress, a
+      // blocked or a waiting source.
+      const expectedEdges = {
+        "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active",
+        "a:down>a:past": "blocked", "a:later>a:beyond": "waiting",
+      } satisfies Record<string, VerdictLight>;
       await browser.waitUntil(async () => graphHasColours(await lights(), expectedNodes, expectedEdges), {
         timeout: 15000, timeoutMsg: "every node border/dot and relation stroke matches its verdict's distinct visible Legend colour",
       });
@@ -86,7 +92,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, node.light])), expectedNodes);
       assert.deepEqual(Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, edge.light])), expectedEdges);
       const legend = await browser.$('[aria-label="Legend"]').getText();
-      for (const word of ["GREEN", "RED", "ERROR", "blocked"]) assert.match(legend, new RegExp(word));
+      for (const word of ["GREEN", "RED", "ERROR", "blocked", "waiting"]) assert.match(legend, new RegExp(word));
     },
   ),
 
