@@ -47,11 +47,16 @@
   const page = $derived(r.previous.length + 1);
   const scope = $derived(r.query.trim() === "" ? "all requests" : r.query.trim() === WAITING ? "waiting Human reviews" : r.query.trim());
 
-  async function load(reload = true) {
-    const read = ++r.reads;
+  function load(reload = true) {
+    r.loading = read(++r.reads, reload);
+    return r.loading;
+  }
+
+  async function read(sequence: number, reload: boolean): Promise<void> {
     try {
       const found = await call(commands.reviewSearch(r.query, r.start, reload));
-      if (read !== r.reads) return;
+      // A refresh can overtake a search: its waiter needs the newest answer, not this stale one.
+      if (sequence !== r.reads) return r.loading;
       // The state generation the list and the open review were read from.
       const generation = r.results?.generation ?? null;
       if (generation !== null && found.generation !== generation) {
@@ -69,7 +74,8 @@
       r.index = kept >= 0 ? kept : Math.min(r.index, Math.max(rows.length - 1, 0));
       if (reload && r.record?.request) void reopen(r.record.request);
     } catch (failure) {
-      if (read === r.reads) r.error = message(failure);
+      if (sequence !== r.reads) return r.loading;
+      r.error = message(failure);
     }
   }
 
@@ -80,9 +86,9 @@
     if (text !== r.searched) r.typing = setTimeout(() => void research(), 120);
   }
 
-  /** Search the query from the newest page now, unless it already was. */
+  /** Search from the newest page, or await the answer already requested for this query. */
   async function research() {
-    if (r.query === r.searched) return;
+    if (r.query === r.searched) return r.loading;
     r.searched = r.query;
     r.start = 0;
     r.previous = [];

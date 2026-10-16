@@ -27,6 +27,8 @@ export class ReviewScreenState {
   searched: string;
   /** Each read supersedes the ones before it, so a slow answer never shows an older query. */
   reads = 0;
+  /** The newest read; leaving the search waits for the answer the list will show. */
+  loading: Promise<void> = Promise.resolve();
   /** The pending search after a pause in typing. */
   typing: ReturnType<typeof setTimeout> | undefined;
 

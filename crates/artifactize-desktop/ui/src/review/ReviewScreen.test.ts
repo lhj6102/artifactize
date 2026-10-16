@@ -5,7 +5,8 @@ import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 import ReviewScreen from "./ReviewScreen.svelte";
 import { greenForm, humanView } from "./fixtures";
 import type { DetailView, LaunchView, Listed, Opened } from "../ipc/client";
@@ -49,13 +50,19 @@ const agentDetail: DetailView = {
   evidence: null,
 };
 
+function delayedRows() {
+  let resolve!: (rows: Listed[]) => void;
+  const promise = new Promise<Listed[]>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 function backend(options: {
   generation: () => number;
-  rows: (query: string) => Listed[];
+  rows: (query: string) => Listed[] | Promise<Listed[]>;
   searched?: string[];
 }) {
   mockIPC(
-    (cmd, args) => {
+    async (cmd, args) => {
       const payload = args as Record<string, unknown>;
       switch (cmd) {
         case "review_search": {
@@ -63,7 +70,7 @@ function backend(options: {
           options.searched?.push(query);
           return {
             generation: options.generation(),
-            rows: options.rows(query),
+            rows: await options.rows(query),
             next: null,
             error: query.includes("kind:robot") ? "Unknown kind `robot`" : null,
             waiting: query.includes(WAITING),
@@ -107,6 +114,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.useRealTimers();
 });
 
 async function openReview() {
@@ -159,6 +167,76 @@ describe("ReviewScreen", () => {
     expect(screen.queryByText("release/signoff")).toBeNull();
     await fireEvent.input(field, { target: { value: "kind:robot" } });
     await screen.findByText("Unknown kind `robot`");
+  });
+
+  it.each(["Enter", "Escape"])("%s waits for an already dispatched search before focusing its list", async (key) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    const answer = delayedRows();
+    const searched: string[] = [];
+    backend({ generation: () => 0, rows: (query) => query === "" ? answer.promise : [], searched });
+    renderHosted(ReviewScreen, { launch, active: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText("No Human reviews are waiting.")).not.toBeNull();
+    const field = screen.getByLabelText<HTMLInputElement>("Search requests");
+    field.focus();
+    await fireEvent.keyDown(field, { key: "Escape" });
+    expect(field.value).toBe("");
+    // Dispatch the debounced query, but hold its native answer until after leaving the field.
+    await vi.advanceTimersByTimeAsync(120);
+    expect(searched).toEqual([WAITING, ""]);
+    await fireEvent.keyDown(field, { key });
+    expect(document.activeElement).toBe(field);
+    answer.resolve([row]);
+    await vi.advanceTimersByTimeAsync(0);
+    await tick();
+    expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Requests" }));
+  });
+
+  it("waits for a refresh that supersedes the search before focusing the new list", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    const search = delayedRows();
+    const refresh = delayedRows();
+    const searched: string[] = [];
+    let requests = 0;
+    backend({
+      generation: () => 0,
+      rows: (query) => query === "" ? (++requests === 1 ? search.promise : refresh.promise) : [],
+      searched,
+    });
+    renderHosted(ReviewScreen, { launch, active: true });
+    await vi.advanceTimersByTimeAsync(0);
+    const field = screen.getByLabelText<HTMLInputElement>("Search requests");
+    field.focus();
+    await fireEvent.keyDown(field, { key: "Escape" });
+    await vi.advanceTimersByTimeAsync(120);
+    await fireEvent.keyDown(field, { key: "Enter" });
+    await emit("state-changed", { resync: false });
+    expect(searched).toEqual([WAITING, "", ""]);
+    // The superseded search cannot satisfy Enter: only the newer answer will be displayed.
+    search.resolve([agentRow]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.queryByRole("listbox", { name: "Requests" })).toBeNull();
+    expect(document.activeElement).toBe(field);
+    refresh.resolve([row]);
+    await vi.advanceTimersByTimeAsync(0);
+    await tick();
+    expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Requests" }));
+    expect(screen.queryByText("app/agent")).toBeNull();
+  });
+
+  it("Enter waits for the initial query even before its first answer", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    const answer = delayedRows();
+    backend({ generation: () => 0, rows: () => answer.promise });
+    renderHosted(ReviewScreen, { launch, active: true });
+    await vi.advanceTimersByTimeAsync(0);
+    const field = screen.getByLabelText<HTMLInputElement>("Search requests");
+    field.focus();
+    await fireEvent.keyDown(field, { key: "Enter" });
+    answer.resolve([row]);
+    await vi.advanceTimersByTimeAsync(0);
+    await tick();
+    expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Requests" }));
   });
 
   it("opens a request that is not a Human review read-only", async () => {
