@@ -133,7 +133,7 @@ export const scenarios: Scenario[] = [
         "a composition dispatches no claim, including one whose native completion is still pending");
       assert.equal(signoff(fixture).claim, null, "a composition claims nothing");
 
-      await press(browser, ["c"], async () => (await text()).includes("claimed by you (alice)"), "claimed");
+      await press(browser, ["c"], async () => (await text()).includes("claimed by you (alice)") && await reviewing(browser), "claimed");
       assert.equal(signoff(fixture).claim?.reviewer, "alice");
       const claimed = (await checkpoint(browser)).activity.commands.humanClaim;
       assert.ok(claimed && claimed.completed > (claimBefore?.completed ?? 0), "the same read-only probe observes this successful claim");
