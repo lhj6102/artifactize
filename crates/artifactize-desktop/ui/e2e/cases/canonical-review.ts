@@ -1,6 +1,7 @@
 // The real IPC resolves both request IDs to one review and one kept draft, in either order.
 import assert from "node:assert/strict";
 import { artifactize, create, requests, verifyWaiting } from "../fixture.ts";
+import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
@@ -35,8 +36,7 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
           async () => !(await browser.$('[aria-label="Request ID"]').isExisting()) && await human().isExisting(),
           { timeout: 15000, timeoutMsg: "the resolved review opens" },
         );
-        await browser.waitUntil(() => browser.execute(() =>
-          document.querySelector('[aria-label="Human review"]')?.textContent?.includes("REVIEW (yours)") ?? false), { timeout: 15000 });
+        await browser.waitUntil(() => reviewing(browser), { timeout: 15000 });
         await human().click();
         await press(browser, ["g"], () => field().isExisting(), "the kept GREEN form");
       }

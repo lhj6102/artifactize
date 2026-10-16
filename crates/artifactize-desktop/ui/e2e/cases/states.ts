@@ -135,7 +135,15 @@ export const scenarios: Scenario[] = [
         // The breadcrumb follows the focused node's selection, in a later render.
         const crumbs = () => browser.$('nav[aria-label="Breadcrumb"]').getText();
         await browser.waitUntil(async () => (await crumbs()).includes(next.slice(2)), { timeout: 15000, timeoutMsg: `the breadcrumb names ${next}` })
-          .catch(async (error: unknown) => { throw new Error(`the breadcrumb names ${next}: ${await crumbs()}`, { cause: error }); });
+          .catch(async (error: unknown) => {
+            // Which pane the Monitor holds focused, and which node its graph selected.
+            const state = await browser.execute(() => ({
+              panes: [...document.querySelectorAll(".monitor section.panel")].map((pane) => `${pane.getAttribute("aria-label")}${pane.classList.contains("focused") ? " (focused)" : ""}`),
+              selected: [...document.querySelectorAll(".svelte-flow__node.selected")].map((node) => node.getAttribute("data-id")),
+              active: document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? document.activeElement?.tagName ?? null,
+            }));
+            throw new Error(`the breadcrumb names ${next}: ${await crumbs()}; ${JSON.stringify(state)}`, { cause: error });
+          });
       }
       await press(browser, ["ArrowUp"], on(order[order.length - 2]), `focus on ${order[order.length - 2]}, above`);
     },

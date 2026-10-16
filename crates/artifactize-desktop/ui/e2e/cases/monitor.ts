@@ -3,6 +3,7 @@
 // text and GREEN submission, and a live update from another process.
 import assert from "node:assert/strict";
 import { artifactize, create, createNavigationFixture, type Fixture, launched, signoff, slowTool } from "../fixture.ts";
+import { reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
@@ -58,7 +59,7 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
     assert.equal(await human().$(".instruction .text").getText(), "Read the release notes and approve them.", "the selected Human eval's default instruction");
     assert.equal(await human().$("button*=Technical").getAttribute("aria-expanded"), "false", "request and instruction are visible before Technical");
     if (claim) {
-      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && (await text()).includes("REVIEW (yours)"), "this case's claim");
+      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "this case's claim");
       assert.equal((await checkpoint(browser)).activity.commands.humanRun?.started ?? 0, 0, "this fresh session has dispatched no tool");
       const initial = await toolOutput();
       assert.equal(initial.title, "Output", "this case has no prior tool title");
@@ -140,7 +141,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["u"], async () => (await text()).includes("Claim released."), "released");
       assert.equal(signoff(fixture).claim, null);
       await press(browser, ["c"], () => signoff(fixture).claim?.reviewer === "alice", "claimed again");
-      await browser.waitUntil(async () => (await text()).includes("REVIEW (yours)"), { timeout: 15000, timeoutMsg: "the review stage" });
+      await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
     },
   ),
 
@@ -460,7 +461,7 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
       await browser.keys(["c"]);
       await browser.waitUntil(async () => signoff(fixture).claim?.reviewer === "alice", { timeout: 15000, timeoutMsg: "claimed" });
-      await browser.waitUntil(async () => (await text()).includes("REVIEW (yours)"), { timeout: 15000, timeoutMsg: "the review stage" });
+      await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
       // Back out of the Detail to the tree, then q outside any field.
       await browser.keys(["Escape"]);
       await browser.$('[aria-label="Human review"]').waitForExist({ reverse: true, timeout: 10000 });
