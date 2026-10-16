@@ -229,18 +229,37 @@ export function forwardReadiness(source: NodeJS.ReadableStream, output: NodeJS.W
   return lines;
 }
 
+/** Forward termination through the standard wrappers' inherited stdin, not their
+ * PIDs: killing an intermediate wrapper can remove X11 before service cleanup. */
+export async function superviseOwner(command: ReturnType<typeof runnerCommand>): Promise<void> {
+  const child = spawn(command.program, command.args, { env: command.env, stdio: ["pipe", "pipe", "inherit"] });
+  const failures: unknown[] = [];
+  let stopping = false;
+  const requestStop = () => {
+    if (stopping) return;
+    stopping = true;
+    child.stdin!.end();
+  };
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, requestStop);
+  child.stdin!.on("error", (error) => { failures.push(error); });
+  forwardReadiness(child.stdout!, process.stdout, process.stderr);
+  try {
+    await new Promise<void>((done) => {
+      child.once("error", (error) => { failures.push(error); });
+      child.once("close", (code, signal) => {
+        if (code !== 0) failures.push(new Error(`desktop harness exited ${signal ?? code}`));
+        done();
+      });
+    });
+    if (failures.length) throw new AggregateError(failures, "desktop owner supervision failed");
+  } finally {
+    for (const signal of ["SIGINT", "SIGTERM"] as const) process.off(signal, requestStop);
+  }
+}
+
 /** Standard wrappers own the display and bus for the entire service host process. */
 async function start(): Promise<void> {
-  const command = runnerCommand([fileURLToPath(import.meta.url), "serve"]);
-  const child = spawn(command.program, command.args, { env: command.env, stdio: ["inherit", "pipe", "inherit"] });
-  forwardReadiness(child.stdout!, process.stdout, process.stderr);
-  await new Promise<void>((done, fail) => {
-    child.once("error", fail);
-    child.once("close", (code, signal) => {
-      if (code === 0) done();
-      else fail(new Error(`desktop harness exited ${signal ?? code}`));
-    });
-  });
+  await superviseOwner(runnerCommand([fileURLToPath(import.meta.url), "serve"]));
 }
 
 async function serve(): Promise<void> {
@@ -248,30 +267,32 @@ async function serve(): Promise<void> {
   assertHarnessPlatform();
   const platformEnv = harnessEnvironment();
   process.chdir(sessionDir);
-  const candidate = await snapshotCandidate(sessionDir);
+  let candidate: Candidate | undefined;
   let shown: { session: Session; fixture: Fixture } | undefined;
+  let fixture: Fixture;
+  let stopping = false;
   // Service cleanup completes before public Run settlement or input deletion.
+  // Startup is an active command too, so an in-flight acquisition is joined first.
   const release = async () => {
+    if (server.listening) server.close();
     await shown?.session.stop();
     shown = undefined;
-    await releaseFixtures();
-    await cleanup(candidate.root);
+    if (candidate) {
+      await releaseFixtures();
+      await cleanup(candidate.root);
+    }
     rmSync(join(sessionDir, ENDPOINT), { force: true });
   };
-  let fixture: Fixture;
-  try {
-    fixture = await create();
-    const session = await launch(candidate, fixture, platformEnv);
-    shown = { session, fixture };
-    await rendered(session.browser, "monitor");
-  } catch (error) {
-    return throwAfterCleanup(error, release);
-  }
   let edits = 0;
   let graphLaunches = 0;
-  // Signals and socket stop share admission closure and drain before reading shown.
-  const commands = commandStream(() => { server.close(); }, release);
+  const commands = commandStream(() => { stopping = true; }, release);
   const end = () => commands.end();
+  let finishStop!: (result: { error?: unknown }) => void;
+  const stopped = new Promise<{ error?: unknown }>((done) => { finishStop = done; });
+  const requestStop = () => void end().then(
+    () => finishStop({}),
+    (error: unknown) => finishStop({ error }),
+  );
   const token = randomBytes(32).toString("hex");
   const server = createServer((socket: Socket) => {
     socket.setTimeout(REQUEST_TIMEOUT, () => socket.destroy(new Error("desktop tool request timed out")));
@@ -287,18 +308,24 @@ async function serve(): Promise<void> {
           if (envelope.token !== token) throw new Error("invalid desktop session token");
           const request = envelope.request;
           if (request.op === "stop") {
-            await end();
-            socket.end(JSON.stringify({ stopped: true }) + "\n", () => process.exit(0));
+            try {
+              await end();
+              socket.end(JSON.stringify({ stopped: true }) + "\n", () => finishStop({}));
+            } catch (error) {
+              socket.end(JSON.stringify({ error: errorText(error) }) + "\n", () => finishStop({ error }));
+            }
             return;
           }
           reply = await commands.run(async () => {
+            const input = candidate;
+            if (!input) throw new Error("the app session has no prepared candidate");
             if (request.op === "launch") {
               if (!["monitor", "review", "graph"].includes(request.screen)) throw new Error("unknown desktop launch screen");
               await shown?.session.stop();
               shown = undefined;
               const target = request.screen === "graph" ? { ...fixture, state: join(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
               const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
-              const session = await launch(candidate, target, platformEnv, args);
+              const session = await launch(input, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.
               shown = { session, fixture: target };
               try {
@@ -317,7 +344,7 @@ async function serve(): Promise<void> {
               return { text: `Changed docs/lint title to ${title}. The app has not been refreshed.` };
             } else {
               if (!shown) throw new Error("no app session is running; launch an entry point first");
-              return handle(candidate, shown.session, shown.fixture, request);
+              return handle(input, shown.session, shown.fixture, request);
             }
           });
         } catch (error) {
@@ -327,22 +354,43 @@ async function serve(): Promise<void> {
       })().catch((error: Error) => { socket.destroy(error); });
     });
   });
-  for (const name of ["SIGTERM", "SIGINT"] as const) process.on(name, () => void end().then(
-    () => process.exit(0),
-    (error: unknown) => { console.error(error); process.exit(1); },
-  ));
+  // Install before the first asynchronous acquisition: endpoint creation is not a
+  // prerequisite for shutdown. EOF also covers an unexpectedly lost start wrapper.
+  for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, requestStop);
+  process.stdin.once("end", requestStop);
+  process.stdin.resume();
+  let startupStarted = false;
   try {
-    await new Promise<void>((done, fail) => {
-      server.once("error", fail);
-      server.listen(0, "127.0.0.1", () => { server.off("error", fail); done(); });
+    await commands.run(async () => {
+      startupStarted = true;
+      candidate = await snapshotCandidate(sessionDir);
+      if (stopping) return;
+      fixture = await create();
+      if (stopping) return;
+      const session = await launch(candidate, fixture, platformEnv);
+      shown = { session, fixture };
+      if (stopping) return;
+      await rendered(session.browser, "monitor");
+      if (stopping) return;
+      await new Promise<void>((done, fail) => {
+        server.once("error", fail);
+        server.listen(0, "127.0.0.1", () => { server.off("error", fail); done(); });
+      });
+      if (stopping) return;
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("desktop control server has no TCP endpoint");
+      writeFileSync(join(sessionDir, ENDPOINT), JSON.stringify({ port: address.port, token } satisfies Endpoint), { mode: 0o600, flag: "wx" });
+      console.log("ready");
     });
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("desktop control server has no TCP endpoint");
-    writeFileSync(join(sessionDir, ENDPOINT), JSON.stringify({ port: address.port, token } satisfies Endpoint), { mode: 0o600, flag: "wx" });
-    console.log("ready");
-    // The listening server owns the lifetime; no unowned keep-alive timer is needed.
+    const result = await stopped;
+    if ("error" in result) throw result.error;
   } catch (error) {
+    if (stopping && !startupStarted) { await end(); return; }
     return throwAfterCleanup(error, end);
+  } finally {
+    for (const signal of ["SIGTERM", "SIGINT"] as const) process.off(signal, requestStop);
+    process.stdin.off("end", requestStop);
+    process.stdin.pause();
   }
 }
 
@@ -389,6 +437,7 @@ if (import.meta.main) {
     await start();
   } else if (mode === "serve") {
     await serve();
+    process.exit(0);
   } else if (mode === "stop") {
     const reply = await ask({ op: "stop" });
     if (typeof reply.error === "string") throw new Error(reply.error);

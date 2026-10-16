@@ -1,11 +1,12 @@
 // Exercise the actual Node tool protocol against a loopback peer; no native app mock.
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { it, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -50,6 +51,68 @@ async function peer(test: TestContext, reply: Record<string, unknown> | null) {
     child.stdin!.end(JSON.stringify({ args }));
   });
   return { call, received };
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  for (const exitCode of [0, 7]) {
+    it(`${signal} forwards control EOF and joins ${exitCode ? "failed" : "successful"} owner teardown before supervisor exit`, { timeout: 15000 }, async (test) => {
+      const owner = `
+        import {createServer} from 'node:http';
+        let stopping = false;
+        const server = createServer((request, response) => {
+          if (!stopping || request.url !== '/release') { response.writeHead(409).end(); return; }
+          response.end('released');
+          server.close(() => process.exit(${exitCode}));
+        });
+        process.stdin.once('end', () => { stopping = true; console.log('owner-stopping'); });
+        process.stdin.resume();
+        server.listen(0, '127.0.0.1', () => {
+          console.error('OWNER http://127.0.0.1:' + server.address().port);
+          console.log('ready');
+        });
+      `;
+      const script = `import {superviseOwner} from ${JSON.stringify(new URL("./harness.mts", import.meta.url).href)};
+        await superviseOwner({program: process.execPath, args: ['--input-type=module', '-e', ${JSON.stringify(owner)}], env: process.env});`;
+      const supervisor = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "pipe", "pipe"] });
+      const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done, fail) => {
+        supervisor.once("error", fail);
+        supervisor.once("close", (code, signal) => done({ code, signal }));
+      });
+      let ownerUrl!: (url: string) => void;
+      const url = new Promise<string>((done) => { ownerUrl = done; });
+      let ownerStopping!: () => void;
+      const stopping = new Promise<void>((done) => { ownerStopping = done; });
+      let diagnostics = "";
+      const lines = createInterface({ input: supervisor.stderr });
+      lines.on("line", (line) => {
+        diagnostics += line + "\n";
+        if (line.startsWith("OWNER ")) ownerUrl(line.slice("OWNER ".length));
+        if (line === "owner-stopping") ownerStopping();
+      });
+      const ready = new Promise<void>((done) => {
+        const output = createInterface({ input: supervisor.stdout });
+        output.once("line", (line) => { assert.equal(line, "ready"); done(); });
+      });
+      const endpoint = await url;
+      test.after(async () => {
+        if (supervisor.exitCode === null && supervisor.signalCode === null) {
+          supervisor.kill("SIGTERM");
+          await stopping;
+          await fetch(endpoint + "/release");
+          await closed;
+        }
+      });
+      await ready;
+      assert.equal(supervisor.kill(signal), true);
+      await stopping;
+      assert.equal(supervisor.exitCode, null, "registered supervisor must remain until owner teardown finishes");
+      assert.equal(supervisor.kill(signal), true, "repeated termination joins the same owner shutdown");
+      assert.equal((await fetch(endpoint + "/release")).status, 200);
+      const result = await closed;
+      assert.deepEqual(result, { code: exitCode === 0 ? 0 : 1, signal: null });
+      if (exitCode) assert.match(diagnostics, /desktop owner supervision failed/);
+    });
+  }
 }
 
 it("embedded endpoint configuration selects distinct loopback ports and releases them for the service", async () => {
