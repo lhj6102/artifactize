@@ -34,6 +34,8 @@ jobs:
             ':(glob)crates/*/src/platform/**' \
             ':(glob)crates/artifactize-core/tests/support/os*' \
             ':(glob)crates/artifactize-core/tests/support/os/**' \
+            ':(glob)crates/artifactize/publish*.mjs' \
+            crates/artifactize/tests/publish_runtime.rs \
             .github/workflows/ci.yml)
           if [[ -n "$paths" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -53,10 +55,10 @@ jobs:
           shared-key: linux
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - run: cargo test
       - run: node --test crates/artifactize/publish.test.mjs
       # Packages the crates with an invocation-owned staging registry, without uploading.
       - run: node publish.mjs
@@ -114,6 +116,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # This namespace exercises each native implementation behind the portable layer,
       # including Windows creation-time jobs/ACLs and macOS zombie-group cleanup.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test crates/artifactize/publish.test.mjs
+      - name: Publication runtime ownership
+        if: github.event_name == 'pull_request'
+        run: cargo test --locked -p artifactize --test publish_runtime publication_cancellation_reaps_the_build_script_before_releasing_owned_tmp -- --exact
       - name: Native platform contracts
         if: github.event_name == 'pull_request'
         run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
@@ -132,6 +141,13 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test crates/artifactize/publish.test.mjs
+      - name: Publication runtime ownership
+        if: github.event_name == 'pull_request'
+        run: cargo test --locked -p artifactize --test publish_runtime publication_cancellation_reaps_the_build_script_before_releasing_owned_tmp -- --exact
       - name: Native platform contracts
         if: github.event_name == 'pull_request'
         run: "cargo test --locked -p artifactize-core -p artifactize-tools --lib platform::"
