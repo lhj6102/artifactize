@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { verifyWaiting, addRepository, create, requests } from "../fixture.ts";
 import { press, typeText } from "../keys.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint, reviewRefreshed } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
@@ -68,35 +69,9 @@ function palette(browser: WebdriverIO.Browser) {
   const opened = (how: string) => waitFor(browser, shown, `the palette opens (${how})`);
   const closed = (how: string) => waitFor(browser, async () => !(await shown()), `the palette closes (${how})`);
   const hidden = async () => !(await shown());
-  /** The palette's search text and its options as shown, the selected one marked. */
-  const search = () => browser.execute(() => {
-    const dialog = document.querySelector('[aria-label="Command palette"][data-state="open"]');
-    const input = dialog?.querySelector("input") ?? null;
-    return {
-      focused: !!input && document.activeElement === input,
-      query: input?.value ?? null,
-      options: [...(dialog?.querySelectorAll('[role="option"]') ?? [])].map((option) => ({
-        label: option.querySelector("span")?.textContent ?? "",
-        selected: option.getAttribute("aria-selected") === "true",
-      })),
-    };
-  });
-  /** Wait for `check` over the palette as shown; a timeout reports what it showed. */
-  const searchShows = async (check: (shown: Awaited<ReturnType<typeof search>>) => boolean, what: string) => {
-    try {
-      await waitFor(browser, async () => check(await search()), what);
-    } catch (error) {
-      throw new Error(`${what}; the palette showed ${JSON.stringify(await search())}`, { cause: error });
-    }
-  };
-  /** Run the command labelled `label` from the open palette by typing and Enter. An opened
-   * palette is not yet ready for input, and a typed query is not yet a selection: each step
-   * waits for the state the next one needs. */
+  /** Run the command labelled `label` from the open palette by typing and Enter. */
   const run = async (label: string) => {
-    await searchShows((shown) => shown.focused && shown.query === "", "the palette's empty search has focus");
-    await typeText(browser, label);
-    await searchShows((shown) => shown.query === label && shown.options.some((option) => option.selected && option.label === label),
-      `${label} is the typed query and the selected command`);
+    await choosePaletteCommand(browser, label);
     await press(browser, ["Enter"], hidden, `${label} selected and palette closed`);
   };
   const refresh = async (expected: ListedRequest[], selected: string) => {

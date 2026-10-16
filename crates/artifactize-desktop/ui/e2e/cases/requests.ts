@@ -3,7 +3,8 @@
 // page holds.
 import assert from "node:assert/strict";
 import { artifactize, create, createPagedRequests, signoff } from "../fixture.ts";
-import { afterRender, press, typeText } from "../keys.ts";
+import { afterRender, press } from "../keys.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
@@ -79,7 +80,7 @@ export const scenarios: Scenario[] = [
       const { listed, gone, exists } = opening(browser, signoff(fixture).id);
       await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
       await press(browser, [primaryModifier, "k"], () => browser.$('[aria-label="Command palette"][data-state="open"]').isExisting(), "the palette");
-      await typeText(browser, "Tools focused");
+      await choosePaletteCommand(browser, "Tools focused", "Open the selected request with Tools focused");
       await press(browser, ["Enter"], exists, "the Human review");
       await waitFor(browser, () => browser.$('[aria-label="Human tools"]').isFocused(), "focus on the Tools");
       await press(browser, ["Escape"], gone, "back on the list");
