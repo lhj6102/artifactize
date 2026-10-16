@@ -1,7 +1,7 @@
 // Immutable executable inputs. App/driver lifetimes belong exclusively to WDIO's Tauri service.
 import {
   absolutePath, asNativePath, childDirectories, copyFile, executableName, exists, inheritedEnvironment, isInside,
-  makeDirectory, nativePath, newDirectory, packageCommand, readJson, readText, removeTree, runStep, scratchDirectory,
+  makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, readJson, readText, removeTree, runStep, scratchDirectory,
   setVariable, suitePath, variable, writeJson, type Environment, type NativePath,
 } from "./platform.ts";
 
@@ -43,10 +43,9 @@ async function frontend(root: NativePath): Promise<Environment> {
   const frontend = packageCommand(["-C", ui, "build", "--mode", "e2e", "--outDir", dist]);
   await runStep(frontend.program, frontend.args, { env, cwd: workspace });
   const app = { withGlobalTauri: true, windows: testWindows() };
-  // Tauri's build opens this folder, so it is the native path: "C:/..." would parse as a
-  // URL with the scheme "c", and the Windows app would browse the folder instead of
-  // serving the frontend from it.
-  return { ...env, TAURI_CONFIG: JSON.stringify({ build: { frontendDist: dist }, app }) };
+  // frontendDist takes a URL or a folder. A URL makes the app browse it instead of embedding
+  // and serving the frontend, so the folder is given in a form that cannot be a URL.
+  return { ...env, TAURI_CONFIG: JSON.stringify({ build: { frontendDist: pathNotUrl(dist) }, app }) };
 }
 
 function save(root: NativePath, cli: NativePath, app: NativePath, observer: NativePath): Candidate {

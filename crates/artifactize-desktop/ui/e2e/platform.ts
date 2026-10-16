@@ -12,7 +12,7 @@ import {
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createConnection, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type { Socket as LoopbackSocket } from "node:net";
@@ -88,6 +88,13 @@ export function portablePath(path: NativePath): string {
  * (8.3) names and macOS `/var` aliases expanded, as the product canonicalizes paths. */
 export function canonicalPath(path: NativePath): NativePath {
   return realpathSync.native(path) as NativePath;
+}
+
+/** A folder for a tool setting that takes a URL or a path. A Windows drive path such as
+ * C:\x also parses as a URL with the scheme "c", so it is given in its namespaced form
+ * \\?\C:\x, which only a path can be; other systems' absolute paths are no URL. */
+export function pathNotUrl(path: NativePath): string {
+  return toNamespacedPath(path);
 }
 
 /** A file of the E2E suite itself. */

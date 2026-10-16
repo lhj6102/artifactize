@@ -17,6 +17,10 @@ const input = readJson(asNativePath(context)) as Prepared;
 describe(item.title, () => {
   it(item.id, async () => {
     try {
+      // Setup is complete only when the app runs its own frontend; anything else fails here
+      // once, by name, rather than as every later wait of the scenario.
+      await browser.waitUntil(() => browser.execute(() => (document.getElementById("app")?.childElementCount ?? 0) > 0),
+        { timeout: 30000, timeoutMsg: "setup failed: the test app did not load its frontend" });
       await item.run(browser, input);
     } catch (error) {
       // CI keeps no screenshots: a failure carries what the window showed when it failed.
