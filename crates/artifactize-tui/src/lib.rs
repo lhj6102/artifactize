@@ -1,6 +1,7 @@
 //! The terminal screens of artifactize: the Monitor and the Human review. Every fact and
 //! operation they show comes from `artifactize-core`; this crate draws and reads keys.
 
+mod jobs;
 pub mod monitor;
 pub mod review;
 

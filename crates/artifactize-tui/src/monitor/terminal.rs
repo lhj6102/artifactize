@@ -1,8 +1,8 @@
 //! Terminal ownership and the asynchronous event/job driver.
 use super::{Action, Monitor, REFRESH, SESSION_PROBE, SPIN, input, review};
 use crossterm::event::{Event, EventStream, KeyEventKind};
-use futures_util::StreamExt;
-use std::{future::Future, path::PathBuf, pin::Pin};
+use futures_util::{FutureExt, StreamExt};
+use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
 /// Restore every input protocol when leaving, including errors, signals and panic unwinding.
@@ -85,30 +85,15 @@ async fn watch(
     let mut tick = tokio::time::interval(REFRESH);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut spin = tokio::time::interval(SPIN);
-    let mut pending: Option<Pin<Box<dyn Future<Output = review::Outcome>>>> = None;
+    let mut jobs = crate::jobs::Jobs::default();
     let mut action = Action::Refresh;
-    let mut snapshot_job = None;
     let mut wanted = Wanted::Nothing;
-    let mut session_job: Option<
-        tokio::task::JoinHandle<(super::session::Job, crate::agent::session::live::Window)>,
-    > = None;
     let mut session_probe = tokio::time::interval(SESSION_PROBE);
     session_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let result = std::panic::AssertUnwindSafe(async {
     loop {
         match action {
-            Action::Quit => {
-                if let Some(review) = monitor
-                    .detail
-                    .as_ref()
-                    .and_then(|pane| pane.content.review())
-                {
-                    review.cancel_single();
-                }
-                if let Some(job) = pending.take() {
-                    let _ = job.await;
-                }
-                return Ok(());
-            }
+            Action::Quit => return Ok(()),
             Action::Refresh | Action::Review(review::Action::Refresh) => {
                 wanted.at_least(if std::mem::take(&mut monitor.navigation) {
                     Wanted::Changes
@@ -121,7 +106,7 @@ async fn watch(
             Action::Capture(capture) => input::protocols(capture, true)?,
             Action::Review(review::Action::Start(job)) => {
                 if let Some(review) = monitor.review_mut() {
-                    pending = Some(Box::pin(review.start(job)));
+                    jobs.action = Some(Box::pin(review.start(job)));
                 }
             }
             Action::Review(review::Action::Edit(_)) => {
@@ -129,8 +114,8 @@ async fn watch(
             }
             _ => {}
         }
-        if wanted > Wanted::Nothing && snapshot_job.is_none() {
-            snapshot_job =
+        if wanted > Wanted::Nothing && jobs.snapshot.is_none() {
+            jobs.snapshot =
                 monitor.start_refresh(wanted >= Wanted::Everything, wanted == Wanted::Resynced);
             wanted = Wanted::Nothing;
         }
@@ -140,10 +125,10 @@ async fn watch(
             .map_err(|error| error.to_string())?;
         // A Detail or peek switch drops the obsolete job's result. There is at most one bounded
         // job; render only marks geometry dirty and never performs I/O or spawns tasks.
-        if session_job.is_none()
+        if jobs.session.is_none()
             && let Some(job) = monitor.live_mut().and_then(super::session::Live::job)
         {
-            session_job = Some(tokio::task::spawn_blocking(move || {
+            jobs.session = Some(tokio::task::spawn_blocking(move || {
                 let mut job = job;
                 let window =
                     job.reader
@@ -169,20 +154,20 @@ async fn watch(
                 Some(Err(error)) => return Err(error.to_string()),
                 None => Action::Quit,
             },
-            outcome = async { snapshot_job.as_mut().expect("active snapshot job").await },
-                if snapshot_job.is_some() =>
+            outcome = async { jobs.snapshot.as_mut().expect("active snapshot job").await },
+                if jobs.snapshot.is_some() =>
             {
-                snapshot_job = None;
+                jobs.snapshot = None;
                 let completed = crate::task::joined(outcome).map_err(|error| error.to_string())?;
                 if !monitor.finish_refresh(completed).await {
                     wanted.at_least(Wanted::Everything);
                 }
                 Action::None
             }
-            outcome = async { session_job.as_mut().expect("active session job").await },
-                if session_job.is_some() =>
+            outcome = async { jobs.session.as_mut().expect("active session job").await },
+                if jobs.session.is_some() =>
             {
-                session_job = None;
+                jobs.session = None;
                 match crate::task::joined(outcome) {
                     Ok((job, window)) => {
                         if let Some(live) = monitor.live_mut()
@@ -203,12 +188,12 @@ async fn watch(
                 Action::None
             },
             outcome = async {
-                match &mut pending {
+                match &mut jobs.action {
                     Some(job) => Some(job.await),
                     None => None,
                 }
-            }, if pending.is_some() => {
-                pending = None;
+            }, if jobs.action.is_some() => {
+                jobs.action = None;
                 // Publishing may have emitted a fail-open warning on stderr.
                 repaint(terminal)?;
                 match (outcome, monitor.review_mut()) {
@@ -216,7 +201,7 @@ async fn watch(
                     _ => Action::Refresh,
                 }
             }
-            _ = spin.tick(), if pending.is_some() => Action::None,
+            _ = spin.tick(), if jobs.action.is_some() => Action::None,
             _ = tick.tick() => Action::None,
             change = changes.next() => match change {
                 crate::changes::Change::StateInvalidated => {
@@ -238,4 +223,14 @@ async fn watch(
             },
         };
     }
+    })
+    .catch_unwind()
+    .await;
+    if let Some(review) = monitor.review_mut() {
+        review.cancel_single();
+    }
+    for review in monitor.reviews.values() {
+        review.cancel_single();
+    }
+    jobs.finish(result, changes).await
 }

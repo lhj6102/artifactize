@@ -25,6 +25,84 @@ async fn fixture(count: usize) -> (tempfile::TempDir, OwnedReceipts, Monitor) {
     (root, receipts, Monitor::new(state, None))
 }
 #[tokio::test]
+async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_every_exit() {
+    use futures_util::FutureExt;
+
+    enum Exit {
+        Quit,
+        Error,
+        Unwind,
+    }
+    // A watchdog diagnoses stuck cleanup; channel handoffs establish ordering.
+    const SHUTDOWN_BOUND: std::time::Duration = std::time::Duration::from_secs(6);
+    for exit in [Exit::Quit, Exit::Error, Exit::Unwind] {
+        let (root, receipts, mut monitor) = fixture(1).await;
+        drop(receipts);
+        let database = monitor.state.join(crate::store::DATABASE);
+        let changes = crate::changes::Subscription::new(&monitor.state).await;
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (release_snapshot, snapshot_gate) = std::sync::mpsc::channel();
+        let snapshot = monitor
+            .start_refresh_after(true, false, move || {
+                started.send(()).unwrap();
+                snapshot_gate.recv().unwrap();
+            })
+            .unwrap();
+        ready.await.unwrap();
+        let (session_root, source) = crate::test_session_files::fixture();
+        let mut live = crate::monitor::session::Live::new(1, source);
+        live.geometry(80, 10);
+        let mut job = live.job().unwrap();
+        let (release_session, session_gate) = std::sync::mpsc::channel();
+        let session = tokio::task::spawn_blocking(move || {
+            session_gate.recv().unwrap();
+            let window = job.reader.step(job.width, job.height, job.position);
+            (job, window)
+        });
+        let held = fs::File::open(&database).unwrap();
+        let jobs = crate::jobs::Jobs {
+            action: Some(Box::pin(async move {
+                // Accepted work, not a timer, releases both blocking reads during shutdown.
+                release_snapshot.send(()).unwrap();
+                release_session.send(()).unwrap();
+                drop(held);
+                crate::review::Outcome::Released {
+                    ids: Vec::new(),
+                    quit: true,
+                    failed: Vec::new(),
+                }
+            })),
+            snapshot: Some(snapshot),
+            session: Some(session),
+        };
+        let result: std::thread::Result<Result<(), String>> = match exit {
+            Exit::Quit => Ok(Ok(())),
+            Exit::Error => Ok(Err("terminal fixture error".into())),
+            Exit::Unwind => Err(Box::new("terminal fixture panic")),
+        };
+        let finished = tokio::time::timeout(
+            crate::test_os::patience(SHUTDOWN_BOUND),
+            std::panic::AssertUnwindSafe(jobs.finish(result, changes)).catch_unwind(),
+        )
+        .await
+        .expect("terminal work must finish");
+        match exit {
+            Exit::Quit => assert_eq!(finished.unwrap(), Ok(())),
+            Exit::Error => assert_eq!(finished.unwrap(), Err("terminal fixture error".into())),
+            Exit::Unwind => assert_eq!(
+                finished.unwrap_err().downcast_ref::<&str>(),
+                Some(&"terminal fixture panic")
+            ),
+        }
+        drop(live);
+        drop(monitor);
+        assert!(crate::test_os::database_released(&database).unwrap());
+        root.close().unwrap();
+        session_root.close().unwrap();
+    }
+}
+
+#[tokio::test]
 async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolete_selection() {
     let (_root, _receipts, mut monitor) = fixture(2).await;
     monitor.refresh().await;
@@ -37,21 +115,27 @@ async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolet
             gate.recv().unwrap();
         })
         .unwrap();
-    ready.await.unwrap();
+    let ready = ready.await;
     // No timers: the worker cannot proceed until after the input assertions finish.
-    assert!(monitor.start_refresh(true, false).is_none());
-    assert_eq!(monitor.key(KeyEvent::from(KeyCode::Down)), Action::Refresh);
-    assert_eq!(monitor.open.as_deref(), Some("run-0"));
-    assert_eq!(
-        monitor.key(KeyEvent::from(KeyCode::Char('q'))),
-        Action::Quit
-    );
-    release.send(()).unwrap();
-    assert!(
-        !monitor
-            .finish_refresh(crate::task::joined(job.await).unwrap())
-            .await
-    );
+    // Join even if an input assertion panics: its loader still owns the fixture database.
+    let assertions = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ready.unwrap();
+        assert!(monitor.start_refresh(true, false).is_none());
+        assert_eq!(monitor.key(KeyEvent::from(KeyCode::Down)), Action::Refresh);
+        assert_eq!(monitor.open.as_deref(), Some("run-0"));
+        assert_eq!(
+            monitor.key(KeyEvent::from(KeyCode::Char('q'))),
+            Action::Quit
+        );
+    }));
+    let released = release.send(());
+    let completed = crate::task::joined(job.await);
+    if let Err(panic) = assertions {
+        drop(completed);
+        std::panic::resume_unwind(panic);
+    }
+    released.unwrap();
+    assert!(!monitor.finish_refresh(completed.unwrap()).await);
     assert_eq!(monitor.open.as_deref(), Some("run-0"));
     monitor.refresh().await;
     monitor.focus = Pane::Artifacts;
