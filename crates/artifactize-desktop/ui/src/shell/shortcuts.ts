@@ -32,37 +32,42 @@ const HUMAN: Section = {
 
 export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]> = {
   graph: [
-    { title: "Current Artifact graph", keys: [["← / →", "Upstream / downstream Artifact"], ["↑ / ↓", "Artifact above / below; select an eval while zoomed"], ["Enter / click", "Zoom into an Artifact"], ["Enter on eval", "Expand structure and evaluation criteria"], ["Esc", "Zoom out"], ["Ctrl+R / F5", "Reload current declarations"]] },
+    { title: "Current Artifact graph", keys: [["← / →", "Upstream / downstream Artifact"], ["↑ / ↓", "Artifact above / below; select an eval in the popup"], ["Enter / click", "Pop up an Artifact's evals"], ["Enter / click on eval", "Expand structure and evaluation criteria"], ["Esc", "Close the evals"], ["Ctrl+R / F5", "Reload current declarations"]] },
     COMMON,
   ],
   monitor: [
     {
       title: "Navigate",
       keys: [
-        ["↑ / ↓ · j / k", "Select a row"],
-        ["Enter / →", "Next level; on a tree row, open Detail"],
-        ["o / double-click", "Open the tree row's Detail"],
+        ["↑ / ↓ · j / k", "Select a scope or a Run"],
+        ["Enter / →", "Next level: Scope, Runs, the Run's graph"],
         ["← / Esc", "Step back"],
-        ["Space", "Worktrees without Runs; fold a tree row"],
-        ["h / l", "Fold / unfold"],
+        ["Space", "Worktrees without Runs"],
         ["b / Backspace", "Upstream blocker / back"],
         ["!", "Next ERROR, RED or waiting Human eval"],
-        ["t / w / d", "Technical / pending evals / Agent details"],
       ],
     },
     {
       title: "Run graph",
       keys: [
-        ["v", "Switch the Run between tree and graph"],
         ["← / →", "Upstream / downstream Artifact"],
         ["↑ / ↓", "Artifact above / below in the same column"],
-        ["Enter / click", "Zoom into the Artifact: its evals"],
-        ["↑ / ↓ · Enter", "In the evals: select (Detail follows) / open Detail"],
-        ["Esc", "Zoom out, then step back"],
+        ["Enter / click", "Pop up the Artifact's evals"],
+        ["↑ / ↓ · Enter / click", "In the evals: select (its summary shows) / open Detail"],
+        ["o", "Open the Detail of the selected Artifact or eval"],
+        ["Click the headline", "Open the Run's Detail"],
+        ["Esc", "Close the evals, then step back"],
         [
           "Colours",
           "green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked by an upstream RED, ERROR or block",
         ],
+      ],
+    },
+    {
+      title: "Detail",
+      keys: [
+        ["t / w / d", "Technical / pending evals / Agent details"],
+        ["Esc / ←", "Close the Detail"],
       ],
     },
     HUMAN,

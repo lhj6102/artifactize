@@ -1,7 +1,7 @@
 import { renderHosted as render } from "../test-host";
 // The Run graph against a mocked command boundary and layout: nodes take their lights, a click
-// zooms into an Artifact and lists its evals from the tree, selecting one moves the tree's
-// selection and Enter opens Detail, Esc zooms out, and a new snapshot recolours in place.
+// pops up an Artifact's evals from the Run's tree beside it, selecting one moves the selection
+// and Enter opens Detail, Esc closes the popup, and a new snapshot recolours in place.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -94,7 +94,7 @@ function setup(served: () => Graph) {
 const node = (id: string) => document.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
 
 describe("RunGraph", () => {
-  it("lights nodes and edges, zooms into an Artifact's evals and selects and opens one", async () => {
+  it("lights nodes and edges, pops up an Artifact's evals and selects and opens one", async () => {
     const { onselect, onopen } = setup(() => graph("active"));
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     expect(node("a:release")?.dataset.light).toBe("active");
@@ -116,7 +116,7 @@ describe("RunGraph", () => {
     expect(onselect).toHaveBeenLastCalledWith(["a:release"]);
   });
 
-  it("moves along edges with arrows and zooms in with Enter on a focused node", async () => {
+  it("moves along edges with arrows and pops up the evals with Enter on a focused node", async () => {
     const { onselect } = setup(() => graph("active"));
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     node("a:release")!.focus();
@@ -126,6 +126,24 @@ describe("RunGraph", () => {
     await fireEvent.keyDown(node("a:ship")!, { key: "Enter" });
     await screen.findByRole("listbox", { name: "Evals" });
     expect(screen.getByText("No evals.")).not.toBeNull();
+  });
+
+  it("tells which Artifact or popup eval is under the pointer as it moves, and when none is", async () => {
+    mockIPC((cmd) => (cmd === "run_graph" ? graph("active") : null));
+    layout.mockImplementation(async (laid: Graph) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
+    const onhover = vi.fn();
+    render(RunGraph, { run: "run-a", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn(), onhover });
+    await waitFor(() => expect(node("a:ship")).not.toBeNull());
+    await fireEvent.mouseMove(node("a:ship")!);
+    expect(onhover).toHaveBeenLastCalledWith(["a:ship"]);
+    await fireEvent.mouseMove(node("a:ship")!.querySelector(".name")!);
+    expect(onhover).toHaveBeenCalledTimes(1);
+    await fireEvent.click(node("a:release")!);
+    const row = (await screen.findByRole("listbox", { name: "Evals" })).querySelector<HTMLElement>('[data-eval="e:release/notes"]')!;
+    await fireEvent.mouseMove(row);
+    expect(onhover).toHaveBeenLastCalledWith(["a:release", "e:release/notes"]);
+    await fireEvent.mouseMove(document.body);
+    expect(onhover).toHaveBeenLastCalledWith(null);
   });
 
   it("recolours a new snapshot in place and lays out again only for a new shape", async () => {
@@ -179,14 +197,14 @@ describe("RunGraph", () => {
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
-  it("opens the highlighted eval after the tree's selection left it on a live completion", async () => {
+  it("opens the highlighted eval after the selection left it on a live completion", async () => {
     let served = graph("active");
     const { rerender, onselect, onopen } = setup(() => served);
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     await fireEvent.click(node("a:release")!);
     const list = await screen.findByRole("listbox", { name: "Evals" });
     await rerender({ selected: ["a:release", "e:release/signoff"] });
-    // The sign-off completes elsewhere: the tree folds the done Artifact and selects it.
+    // The sign-off completes elsewhere and the selection moves to its Artifact.
     served = graph("green");
     await rerender({ revision: 2, selected: ["a:release"] });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));

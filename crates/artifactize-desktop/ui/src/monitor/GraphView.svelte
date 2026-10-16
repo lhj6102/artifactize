@@ -1,7 +1,8 @@
 <script lang="ts">
-  // The laid-out Run graph and, once an Artifact is zoomed into, its evals as the tree shows
-  // them. Nodes are focusable: arrows move between connected Artifacts, Enter or a click zooms
-  // in, Esc zooms out. An eval selected here is the tree's selection, so Detail follows it.
+  // The laid-out graph and, beside the Artifact it was opened on, a popup of that Artifact's
+  // evals with their verdicts. Nodes are focusable: arrows move between connected Artifacts,
+  // Enter or a click pops up the evals, Esc closes them. An eval selected in the popup is the
+  // Run's selection; Enter or a click on it asks for its Detail.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { SvelteFlow, Controls, MiniMap, useSvelteFlow, getViewportForBounds, type Edge, type Node } from "@xyflow/svelte";
   import { tick } from "svelte";
@@ -10,6 +11,7 @@
   import ArtifactNode from "./ArtifactNode.svelte";
   import { LEGEND, WORDS, neighbor, type Arrow, type Point } from "./graph";
   import { NODE } from "./layout";
+  import { beside } from "./float";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
@@ -18,12 +20,13 @@
     positions,
     tree,
     selected,
-    zoomed = $bindable(null),
+    popup = $bindable(null),
     active = true,
     structural = false,
     onselect,
     onopen,
     onready,
+    onhover,
   }: {
     graph: Pick<RunGraph, "nodes" | "edges">;
     /** Static structure has no Run verdicts. */
@@ -32,13 +35,18 @@
     /** The Run's tree rows: an Artifact's evals come from there. */
     tree: TreeNode[];
     selected: string[];
-    zoomed?: string | null;
+    /** The Artifact whose evals pop up beside it. */
+    popup?: string | null;
     /** The graph's screen is shown: only then may it hold keyboard focus. */
     active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
-    /** Offer the existing focus path once the canvas and its focus handlers are mounted. */
-    onready?: (focus: () => void) => void;
+    /** Offers, once the canvas and its focus handlers are mounted, a way to give the graph
+     * keyboard focus (on the popup, else on the selected Artifact), which says whether it
+     * could; `null` once the canvas is gone. */
+    onready?: (focus: (() => boolean) | null) => void;
+    /** The Artifact (`[artifact]`) or popup eval (`[artifact, eval]`) under the pointer. */
+    onhover?: (path: string[] | null) => void;
   } = $props();
   const v = new GraphViewState();
   setGraphViewState(v);
@@ -61,7 +69,7 @@
         // A fixed size: recoloured nodes keep their dimensions and never re-measure.
         width: NODE.width,
         height: NODE.height,
-        data: { name: node.name, light: node.light, zoomed: node.id === zoomed, structural },
+        data: { name: node.name, light: node.light, open: node.id === popup, structural },
         draggable: false,
         connectable: false,
         ariaLabel: structural ? `${node.name}: current structure` : `${node.name}: ${WORDS[node.light]}`,
@@ -80,23 +88,20 @@
     })),
   );
 
-  const artifact = $derived(zoomed ? (tree.find((node) => node.id === zoomed) ?? null) : null);
+  const artifact = $derived(popup ? (tree.find((node) => node.id === popup) ?? null) : null);
   const evals = $derived(artifact?.children ?? []);
 
-  /** The eval the list was last pointed at by a key or a click. */
-  
-  /** The eval of the zoomed Artifact the list points at: the tree's selection moves the
-   * highlight; when it leaves the evals (a completed Artifact folds in the tree), the
-   * highlight stays and Enter selects it again. */
+  /** The eval of the popup's Artifact the list points at: the selection moves the highlight;
+   * when the selection leaves the evals, the highlight stays and Enter selects it again. */
   const index = $derived.by(() => {
-    const at = zoomed && selected[0] === zoomed ? evals.findIndex((node) => node.id === selected[1]) : -1;
+    const at = popup && selected[0] === popup ? evals.findIndex((node) => node.id === selected[1]) : -1;
     return at >= 0 ? at : Math.min(v.picked, Math.max(evals.length - 1, 0));
   });
 
   /** Open the Detail of the highlighted eval, which becomes the selection first. */
   function openEval() {
-    if (!zoomed || !evals[index]) return;
-    onselect([zoomed, evals[index].id]);
+    if (!popup || !evals[index]) return;
+    onselect([popup, evals[index].id]);
     onopen();
   }
 
@@ -184,8 +189,11 @@
       const id = canvas.contains(target) ? target.closest<HTMLElement>(".svelte-flow__node")?.dataset.id : undefined;
       if (!id) return release();
       if (id !== v.held) hold(id);
-      // Focus is the graph's selection, so the keys always start from the node in focus.
-      if (id !== selected[0] && !zoomed) onselect([id]);
+      // Focus is the graph's selection, so the keys always start from the node in focus; another
+      // Artifact in focus closes the popup.
+      if (id === popup) return;
+      popup = null;
+      if (id !== selected[0]) onselect([id]);
     };
     const pointerdown = (event: PointerEvent) => {
       if (!canvas.contains(event.target as HTMLElement | null)) release();
@@ -213,21 +221,51 @@
     };
   };
 
-  /** A newly mounted view accepts focus only when its caller has a pending handoff. */
+  /** The node under the pointer, told as the pointer moves anywhere on the page: an Artifact,
+   * an eval of the popup, or nothing. Movement is what every pointer reports, real or driven. */
+  const pointer: Attachment<HTMLElement> = (root) => {
+    let last = "";
+    const tell = (path: string[] | null) => {
+      const key = path?.join("\n") ?? "";
+      if (key === last) return;
+      last = key;
+      onhover?.(path);
+    };
+    const move = (event: MouseEvent) => {
+      const target = event.target instanceof Element && root.contains(event.target) ? event.target : null;
+      const row = target?.closest<HTMLElement>("[data-eval]");
+      const node = target?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
+      tell(row?.dataset.eval && popup ? [popup, row.dataset.eval] : node ? [node] : null);
+    };
+    const left = () => tell(null);
+    document.addEventListener("mousemove", move);
+    document.documentElement.addEventListener("mouseleave", left);
+    return () => {
+      document.removeEventListener("mousemove", move);
+      document.documentElement.removeEventListener("mouseleave", left);
+      tell(null);
+    };
+  };
+
+  /** A mounted view offers its caller a way to give it focus; the caller decides when. */
   const ready: Attachment<HTMLElement> = (canvas) => {
     void tick().then(() => {
-      if (!canvas.isConnected || hidden()) return;
+      if (!canvas.isConnected) return;
       onready?.(() => {
-        if (hidden()) return;
-        if (zoomed) v.list?.focus({ preventScroll: true });
-        else {
-          const id = positions.has(selected[0]) ? selected[0] : graph.nodes[0]?.id;
-          if (!id) return;
-          hold(id);
-          void centre(id);
+        if (!canvas.isConnected || hidden()) return false;
+        if (popup && v.list) {
+          void centre(popup);
+          v.list.focus({ preventScroll: true });
+          return true;
         }
+        const id = positions.has(selected[0]) ? selected[0] : graph.nodes[0]?.id;
+        if (!id) return false;
+        hold(id);
+        void centre(id);
+        return true;
       });
     });
+    return () => onready?.(null);
   };
 
   /** Expanding the structural text changes the canvas height. Keep the selected graph in
@@ -240,7 +278,7 @@
       if (width === 0 || height === 0) return;
       const size = `${width}:${height}`;
       if (previous && previous !== size) {
-        void fit({ id: zoomed ?? undefined, duration: 0, maxZoom: 1.6, padding: 0.6 });
+        void fit({ id: popup ?? undefined, duration: 0, maxZoom: 1.6, padding: 0.6 });
       }
       previous = size;
     });
@@ -249,7 +287,7 @@
   };
 
   /** fitView shares a pending resolver across calls. Use the public bounds calculation and
-   * a distinct viewport transition, so an old fit cannot finish a newer zoom-out early. */
+   * a distinct viewport transition, so an old fit cannot finish a newer one early. */
   function fit(options: { id?: string; duration: number; maxZoom?: number; padding?: number }) {
     if (!v.canvas) return Promise.resolve(false);
     const bounds = flow.getNodesBounds(options.id ? [options.id] : flow.getNodes());
@@ -260,30 +298,27 @@
     return flow.setViewport(viewport, { duration: options.duration });
   }
 
-  async function zoomIn(id: string) {
+  /** Pop up the evals of `id` beside it, the selected one (else the first) highlighted and
+   * the list focused. */
+  async function openEvals(id: string) {
     release();
-    zoomed = id;
-    const at = evals.findIndex((node) => node.id === selected[1]);
+    popup = id;
+    const at = selected[0] === id ? evals.findIndex((node) => node.id === selected[1]) : -1;
     v.picked = Math.max(at, 0);
     onselect(evals[v.picked] ? [id, evals[v.picked].id] : [id]);
     await tick();
-    if (zoomed !== id || hidden()) return;
-    void fit({ id, duration: 250, maxZoom: 1.6, padding: 0.6 });
-    v.list?.focus();
+    if (popup !== id || hidden()) return;
+    v.list?.focus({ preventScroll: true });
   }
 
-  /** Back to the whole graph, keyboard focus on the Artifact through the camera's move. */
-  async function zoomOut() {
-    const id = zoomed;
-    zoomed = null;
+  /** Close the popup, keyboard focus back on its Artifact. */
+  function closeEvals() {
+    const id = popup;
     if (!id) return;
+    // Hold the node first, so the list leaving takes no focus with it.
+    hold(id);
+    popup = null;
     onselect([id]);
-    // Hold focus at once, so nothing during the transition can leave it on the page.
-    await tick();
-    const mine = hold(id);
-    await fit({ duration: 250 });
-    // Too many Artifacts to fit: bring this one into view, unless keys moved on meanwhile.
-    if (mine === v.handoff) await centre(id);
   }
 
   /** The Artifact node `event` happened on. */
@@ -302,7 +337,7 @@
     await centre(id);
   }
 
-  /** Keys on the canvas: arrows move along edges, Enter zooms in, Esc zooms out. */
+  /** Keys on the canvas: arrows move along edges, Enter pops up the evals, Esc closes them. */
   function keydown(event: KeyboardEvent) {
     // On a node, or on the canvas while the held node is not drawn.
     const focused = nodeOf(event) ?? (event.target === v.canvas ? (v.held ?? undefined) : undefined);
@@ -312,14 +347,17 @@
   /** A key for the Artifact node `focused`. */
   function handle(event: KeyboardEvent, focused: string) {
     // From the selected Artifact, which focus follows; the focused node if they differ.
-    const id = selected[0] && positions.has(selected[0]) && !zoomed ? selected[0] : focused;
+    const id = selected[0] && positions.has(selected[0]) ? selected[0] : focused;
     const arrows: Arrow[] = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
     const arrow = arrows.find((key) => plain(event, key));
     if (arrow) {
       const next = neighbor(graph, positions, id, arrow);
-      if (next) void reveal(next);
-    } else if (plain(event, "Enter")) void zoomIn(focused);
-    else if (plain(event, "Escape") && zoomed) void zoomOut();
+      if (next) {
+        popup = null;
+        void reveal(next);
+      }
+    } else if (plain(event, "Enter")) void openEvals(focused);
+    else if (plain(event, "Escape") && popup) closeEvals();
     else return;
     event.preventDefault();
     event.stopPropagation();
@@ -328,19 +366,19 @@
   function listKey(event: KeyboardEvent) {
     const move = (to: number) => {
       v.picked = Math.min(Math.max(to, 0), evals.length - 1);
-      if (zoomed && evals[v.picked]) onselect([zoomed, evals[v.picked].id]);
+      if (popup && evals[v.picked]) onselect([popup, evals[v.picked].id]);
     };
     if (plain(event, "ArrowDown") || plain(event, "j")) move(index + 1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) move(index - 1);
     else if ((plain(event, "Enter") || plain(event, "o") || plain(event, "ArrowRight")) && evals[index]) openEval();
-    else if (plain(event, "Escape") || plain(event, "ArrowLeft")) void zoomOut();
+    else if (plain(event, "Escape") || plain(event, "ArrowLeft")) closeEvals();
     else return;
     event.preventDefault();
     event.stopPropagation();
   }
 </script>
 
-<div class="graph" class:split={zoomed !== null}>
+<div class="graph" {@attach pointer}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="canvas" bind:this={v.canvas} {@attach holdFocus} {@attach ready} {@attach structuralSize} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
@@ -357,7 +395,8 @@
       elevateNodesOnSelect={false}
       onlyRenderVisibleElements={graph.nodes.length > 80}
       proOptions={{ hideAttribution: true }}
-      onnodeclick={({ node }) => void zoomIn(node.id)}
+      onnodeclick={({ node }) => void openEvals(node.id)}
+      onpaneclick={() => popup && closeEvals()}
     >
       <Controls showLock={false} />
       {#if graph.nodes.length > 40}<MiniMap pannable zoomable />{/if}
@@ -373,11 +412,11 @@
     </ul>
   </div>
   {#if artifact}
-    <section class="evals" aria-label="Evals of {artifact.name}">
+    <section class="evals" aria-label="Evals of {artifact.name}" {@attach beside(`.svelte-flow__node[data-id="${CSS.escape(artifact.id)}"]`)}>
       <header>
         <strong>{artifact.name}</strong>
         <span class="muted">{artifact.right}</span>
-        <button class="button small" onclick={() => void zoomOut()} title="Back to the whole graph">Zoom out <kbd>Esc</kbd></button>
+        <button class="button small" onclick={closeEvals} title="Close the evals">Close <kbd>Esc</kbd></button>
       </header>
       <ul role="listbox" aria-label="Evals" tabindex="0" bind:this={v.list} onkeydown={listKey}>
         {#each evals as node, at (node.id)}
@@ -386,11 +425,9 @@
             aria-selected={at === index}
             class:selected={at === index}
             class="weight-{node.weight}"
+            data-path="{artifact.id}/{node.id}"
+            data-eval={node.id}
             onclick={() => {
-              v.picked = at;
-              if (zoomed) onselect([zoomed, node.id]);
-            }}
-            ondblclick={() => {
               v.picked = at;
               openEval();
             }}
@@ -413,13 +450,11 @@
 
 <style>
   .graph {
+    position: relative;
     height: 100%;
     display: grid;
     grid-template-rows: 1fr;
     min-height: 0;
-  }
-  .graph.split {
-    grid-template-rows: minmax(140px, 1fr) minmax(120px, auto);
   }
   .canvas {
     position: relative;
@@ -464,9 +499,15 @@
     background: var(--light);
   }
   .evals {
-    border-top: 1px solid var(--border);
+    position: absolute;
+    z-index: 10;
+    width: min(360px, calc(100% - 16px));
+    max-height: 60%;
     overflow: auto;
-    max-height: 50vh;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
   }
   .evals header {
     display: flex;
