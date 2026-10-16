@@ -1,5 +1,4 @@
 name = "brand"
-fingerprint = {}
 
 [evals.logo]
 title = "The logo is well-formed SVG"

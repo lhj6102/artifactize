@@ -1,8 +1,4 @@
 name = "cli"
-# Cargo also reads the workspace manifest and locked dependency graph.
-[fingerprint.script]
-command = "node"
-args = ["{desktop}/fingerprint.mjs", ".", "{graph}/Cargo.toml", "{graph}/Cargo.lock"]
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -104,18 +100,18 @@ title = "Clippy passes for every Rust target"
 profile = { kind = "runtime", command = "cargo", args = ["clippy", "--locked", "-p", "artifactize", "--all-targets", "--", "-D", "warnings"], timeout_ms = 1800000 }
 
 [evals.clippy.payload]
-instruction = "Check every Rust target of {cli} with {core} with {tools} with {tui}, treating every clippy warning as an error."
+instruction = "Check every Rust target of {cli} with {core} with {tools} with {tui} with the workspace {cargo-manifest} and {cargo-lock}, treating every clippy warning as an error."
 
 [evals.tests]
 title = "The Rust crate tests pass"
 profile = { kind = "runtime", command = "cargo", args = ["test", "--locked", "-p", "artifactize"], timeout_ms = 1800000 }
 
 [evals.tests.payload]
-instruction = "Run the tests of {cli} with {core} with {tools} with {tui}. Fixtures build or declare every executable they use and own their resources."
+instruction = "Run the tests of {cli} with {core} with {tools} with {tui} with the workspace {cargo-manifest} and {cargo-lock}. Fixtures build or declare every executable they use and own their resources."
 
 [evals.publish]
 title = "Every published Rust crate packages and builds"
 profile = { kind = "runtime", command = "node", args = ["publish.mjs"], timeout_ms = 1800000 }
 
 [evals.publish.payload]
-instruction = "Package and verify {cli}, {core}, {tools} and {tui} exactly as publication would, without uploading. Allow the builder's uncommitted candidate; the package verification still builds every crate."
+instruction = "Package and verify {cli}, {core}, {tools} and {tui} with the workspace {cargo-manifest} and {cargo-lock} exactly as publication would, without uploading. Allow the builder's uncommitted candidate; the package verification still builds every crate."

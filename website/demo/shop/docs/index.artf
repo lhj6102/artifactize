@@ -1,5 +1,4 @@
 name = "docs"
-fingerprint = {}
 
 [evals.heading]
 title = "The guide has a top-level heading"

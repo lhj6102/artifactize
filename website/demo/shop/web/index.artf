@@ -1,5 +1,4 @@
 name = "web"
-fingerprint = {}
 
 [evals.colors]
 title = "The page uses only defined color tokens"

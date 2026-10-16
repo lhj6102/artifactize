@@ -1,6 +1,5 @@
 name = "guide"
 mounts = { terms = "glossary" }
-fingerprint = { files = ["."] }
 
 [evals.terms]
 title = "Every bold term is defined in the glossary"
