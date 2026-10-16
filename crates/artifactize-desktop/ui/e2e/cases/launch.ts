@@ -28,6 +28,25 @@ async function prepareRepositories(reviewScreen = false) {
   return { fixture, args: reviewScreen ? ["review"] : [], data: {} };
 }
 
+type PreviewExpectation = { title: string; instruction: string };
+
+async function preparePreviews() {
+  const definitions = [
+    { name: "repo", title: "Primary release approval", instruction: "Review the primary release notes for this preview." },
+    { name: "other", title: "Other release approval", instruction: "Review the other repository's release notes for this preview." },
+    { name: "third", title: "Third release approval", instruction: "Review the third repository's release notes for this preview." },
+  ];
+  const fixture = await create(definitions[0]);
+  const previews: Record<string, PreviewExpectation> = {};
+  for (const [index, definition] of definitions.entries()) {
+    if (index > 0) await addRepository(fixture, definition.name, definition);
+    const added = requests(fixture).filter((request) => request.evalId === "release/signoff" && !(request.id in previews));
+    assert.equal(added.length, 1, `one new ${definition.name} sign-off was prepared`);
+    previews[added[0].id] = { title: `release/signoff · ${definition.title}`, instruction: definition.instruction };
+  }
+  return { fixture, args: ["review"], data: { previews } };
+}
+
 function monitor(browser: WebdriverIO.Browser) {
   const text = () => browser.execute(() => document.body.innerText);
   const scopes = () =>
@@ -187,27 +206,38 @@ export const scenarios: Scenario[] = [
     },
   ),
   // UX edges: E-REVIEW-PREVIEW
-  scenario<Record<string, never>>(
+  scenario<{ previews: Record<string, PreviewExpectation> }>(
     "launch-review-preview",
     "previews each selected request read-only and claims none",
-    async () => prepareRepositories(true),
-    async (browser, { fixture }) => {
+    preparePreviews,
+    async (browser, { fixture, data: { previews } }) => {
       const { rows, preview } = review(browser);
       await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
+      await waitFor(browser, async () => (await rows()).length === 3, "three independently identified sign-offs");
       await waitFor(browser, () => browser.$('[aria-label="Requests"]').isFocused(), "focus on the list");
-      const first = await preview();
-      assert.match(first, /release\/signoff/);
-      /** The Preview pane's text: the last pane of the window. */
-      const pane = () => browser.execute(() => (document.querySelectorAll("section.panel")[5] as HTMLElement).innerText);
       const idOf = (row: string) => /run-\S+/.exec(row)![0];
       const [top, below] = await rows();
+      const loaded = async (id: string, claim: string) => {
+        const expected = previews[id];
+        assert.ok(expected, `the fixture independently identifies ${id}`);
+        return browser.execute((wantedId, title, instruction, claimant) => {
+          const selected = document.querySelector('[aria-label="Requests"] [aria-selected="true"] .mono')?.textContent?.trim();
+          const pane = document.querySelector('section.panel[aria-label="Preview"] .preview');
+          return selected === wantedId && pane?.querySelector("h3")?.textContent?.trim() === title
+            && pane.querySelector(".instruction")?.textContent?.trim() === instruction
+            && (pane.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`WAITING_HUMAN · ${claimant} · waiting `);
+        }, id, expected.title, expected.instruction, claim);
+      };
+      await waitFor(browser, () => loaded(idOf(top), "unclaimed"), "the first identified, loaded and unclaimed Preview");
+      const first = await preview();
+      assert.match(first, /release\/signoff/);
+      const pane = () => browser.$('section.panel[aria-label="Preview"]').getText();
       // The request below is claimed by someone else: its Preview says so, the first one's does not.
       assert.equal(artifactize(fixture, "request", "claim", idOf(below), "--reviewer", "bob"), 0);
       assert.doesNotMatch(await pane(), /claimed by bob/, "the first request's Preview");
       assert.match(await pane(), /unclaimed/);
-      await press(browser, ["j"], async () => (await browser.$('[aria-label="Requests"] [aria-selected="true"]').getText()) !== top, "another row selected");
-      await waitFor(browser, async () => /claimed by bob · read-only/.test(await pane()), "the Preview of the other request, read-only");
-      await press(browser, ["k"], async () => !/claimed by bob/.test(await pane()), "back on the first request's Preview");
+      await press(browser, ["j"], () => loaded(idOf(below), "claimed by bob · read-only"), "the other identified request's loaded, read-only Preview");
+      await press(browser, ["k"], () => loaded(idOf(top), "unclaimed"), "the first identified request's loaded, unclaimed Preview restored");
       const claims = Object.fromEntries(requests(fixture).map((request) => [request.id, request.claim?.reviewer ?? null]));
       assert.equal(claims[idOf(top)], null, "previewing claims nothing");
       assert.equal(claims[idOf(below)], "bob");

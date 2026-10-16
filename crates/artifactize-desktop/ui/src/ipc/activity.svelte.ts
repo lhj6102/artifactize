@@ -1,9 +1,26 @@
 import { createContext, untrack } from "svelte";
 
-import type { CommandActivity } from "./activity";
+import type { CommandActivity, ReviewRefresh } from "./activity";
 
 // Read-only command activity at the frontend's IPC boundary. Arguments and results are
 // private; only the public search query is retained so a deferred search can be identified.
+
+/** The manual Review-list refreshes of one window that showed a fresh read. */
+class ReviewRefreshes {
+  #last = $state.raw<ReviewRefresh | null>(null);
+
+  get last(): ReviewRefresh | null {
+    return this.#last;
+  }
+
+  shown(query: string, start: number): void {
+    this.#last = Object.freeze({ generation: (this.#last?.generation ?? 0) + 1, query, start });
+  }
+}
+
+// E2E builds only. The mode is replaced at build time, so other builds keep no table, no
+// snapshot field and no recorder: the bundle drops all of it.
+const refreshes = import.meta.env.MODE === "e2e" ? new WeakMap<Activity, ReviewRefreshes>() : null;
 
 export class Activity {
   #revision = $state(0);
@@ -20,7 +37,12 @@ export class Activity {
     pending: this.#pending,
     commands: this.#projectedCommands,
     search: this.#search === null ? null : Object.freeze({ ...this.#search }),
+    ...(import.meta.env.MODE === "e2e" ? { reviewRefresh: refreshes?.get(this)?.last ?? null } : {}),
   }));
+
+  constructor() {
+    if (import.meta.env.MODE === "e2e") refreshes?.set(this, new ReviewRefreshes());
+  }
 
   snapshot(): CommandActivity {
     return this.#snapshot;
@@ -40,6 +62,12 @@ export class Activity {
       if (query !== undefined && this.#search?.sequence === sequence) this.#search.completed = true;
     }
   }
+}
+
+/** E2E builds only: a manual Review-list refresh showed a fresh read of `query` from `start`.
+ * Observation only; nothing in the app reads it back. Callers guard on the build mode too. */
+export function reviewRefreshed(activity: Activity, query: string, start: number): void {
+  refreshes?.get(activity)?.shown(query, start);
 }
 
 export const [getActivity, setActivity] = createContext<Activity>();

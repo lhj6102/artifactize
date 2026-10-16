@@ -21,7 +21,13 @@ function opening(browser: WebdriverIO.Browser) {
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
   const listed = () => browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
   const gone = async () => !(await human().isExisting());
-  const exists = () => human().isExisting();
+  const exists = () => browser.execute(() => {
+    const opened = document.querySelector('[aria-label="Human review"][tabindex="0"]');
+    return opened?.querySelector("h3")?.textContent?.trim() === "release/signoff · A person approves the release"
+      && opened.querySelector(".instruction .text")?.textContent?.trim() === "Read the release notes and approve them."
+      && opened.querySelector(".stage")?.textContent?.trim() === "CLAIM"
+      && (opened.querySelector(".meta")?.textContent?.trim() ?? "").startsWith("WAITING_HUMAN · unclaimed · waiting ");
+  });
   return { human, listed, gone, exists };
 }
 
@@ -155,9 +161,12 @@ export const scenarios: Scenario[] = [
       assert.doesNotMatch(await text(), /claimed by you/);
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => signoff(fixture).claim === null, "released");
-      await waitFor(browser, async () => !/claimed by bob/.test(await text()), "the release shown");
+      await waitFor(browser, async () =>
+        (await human().$(".meta").getText()).startsWith("WAITING_HUMAN · unclaimed · waiting ")
+        && await human().$("button*=Claim").isEnabled(), "the loaded review shows the release and offers Claim again");
       await human().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed here after the release");
+      await waitFor(browser, async () => (await human().$(".meta").getText()).includes("claimed by you (alice)"), "this review displays the new claim");
     },
   ),
   // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT

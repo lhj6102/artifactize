@@ -28,7 +28,14 @@ export function launched(fixture: Fixture): boolean {
   return existsSync(join(fixture.root, "launched"));
 }
 
-const release = (root: string) => `name = "release"
+/** Declared Human content, captured in the request before the app starts. */
+export type SignoffDefinition = { title: string; instruction: string };
+const DEFAULT_SIGNOFF: SignoffDefinition = {
+  title: "A person approves the release",
+  instruction: "Read the release notes and approve them.",
+};
+
+const release = (root: string, signoff: SignoffDefinition = DEFAULT_SIGNOFF) => `name = "release"
 tags = ["type:release"]
 fingerprint = { files = ["."] }
 
@@ -39,12 +46,11 @@ fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fai
 slow = { description = "Wait until cancelled; serve the owned lifetime endpoint.", kind = "output", ${commandFields("slow", join(root, "slow.endpoint"))} }
 
 [evals.signoff]
-title = "A person approves the release"
+title = ${JSON.stringify(signoff.title)}
 profile = { kind = "human" }
 
 [evals.signoff.payload]
-instruction = """
-Read the release notes and approve them."""
+instruction = ${JSON.stringify(signoff.instruction)}
 
 [evals.signoff.pass_schema]
 type = "object"
@@ -151,9 +157,9 @@ export function signoff(fixture: Fixture): Saved {
 }
 
 /** Declare the release, ship and docs Artifacts in a new Git repository at `repo`. */
-function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
+function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n", signoff: SignoffDefinition = DEFAULT_SIGNOFF) {
   for (const [name, text] of [
-    ["release", release(dirname(repo))],
+    ["release", release(dirname(repo), signoff)],
     ["ship", SHIP],
     ["docs", DOCS],
   ]) {
@@ -179,11 +185,11 @@ export function createGraph(): Fixture {
 }
 
 /** A fresh repository and state with one Run waiting for the Human sign-off. */
-export async function create(): Promise<Fixture> {
+export async function create(signoff: SignoffDefinition = DEFAULT_SIGNOFF): Promise<Fixture> {
   return prepareFixture(async (root) => {
     const repo = join(root, "repo");
     const state = join(root, "state");
-    declare(repo);
+    declare(repo, undefined, signoff);
     const fixture = { root, repo, state };
     await verifyWaiting(fixture);
     return fixture;
@@ -194,9 +200,9 @@ export async function create(): Promise<Fixture> {
  * Another repository `name` beside the fixture's, in the same state, with the same eval IDs
  * and its own waiting sign-off (its notes differ, so it joins no other); returns its path.
  */
-export async function addRepository(fixture: Fixture, name: string): Promise<string> {
+export async function addRepository(fixture: Fixture, name: string, signoff: SignoffDefinition = DEFAULT_SIGNOFF): Promise<string> {
   const repo = join(fixture.root, name);
-  declare(repo, `# Release notes of ${name}\n- Ready to ship.\n`);
+  declare(repo, `# Release notes of ${name}\n- Ready to ship.\n`, signoff);
   await verifyWaiting({ ...fixture, repo });
   return repo;
 }

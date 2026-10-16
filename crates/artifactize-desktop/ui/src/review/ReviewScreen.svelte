@@ -5,6 +5,7 @@
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
   import { getAppState } from "../shell/app.svelte";
+  import { reviewRefreshed } from "../ipc/activity.svelte";
   import type { Attachment } from "svelte/attachments";
   import {
     call,
@@ -13,6 +14,7 @@
     onStateChanged,
     type LaunchView,
     type Listed,
+    type Results,
   } from "../ipc/client";
   import HumanDetail from "./HumanDetail.svelte";
   import SearchField from "./SearchField.svelte";
@@ -48,13 +50,21 @@
   const scope = $derived(r.query.trim() === "" ? "all requests" : r.query.trim() === WAITING ? "waiting Human reviews" : r.query.trim());
 
   function load(reload = true) {
-    r.loading = read(++r.reads, reload);
-    return r.loading;
+    return request(reload).shown;
   }
 
-  async function read(sequence: number, reload: boolean): Promise<void> {
+  /** Ask for the list: `answer` is this read's own, `shown` settles once the list shows the
+   * newest answer (an overtaken read waits for the read that overtook it). */
+  function request(reload: boolean) {
+    const sequence = ++r.reads;
+    const answer = call(commands.reviewSearch(r.query, r.start, reload));
+    r.loading = read(sequence, reload, answer);
+    return { answer, shown: r.loading };
+  }
+
+  async function read(sequence: number, reload: boolean, answer: Promise<Results>): Promise<void> {
     try {
-      const found = await call(commands.reviewSearch(r.query, r.start, reload));
+      const found = await answer;
       // A refresh can overtake a search: its waiter needs the newest answer, not this stale one.
       if (sequence !== r.reads) return r.loading;
       // The state generation the list and the open review were read from.
@@ -76,6 +86,23 @@
     } catch (failure) {
       if (sequence !== r.reads) return r.loading;
       r.error = message(failure);
+    }
+  }
+
+  /** The manual refresh of the list (`r`, the palette's "Refresh the list"). */
+  function refresh() {
+    const { answer, shown } = request(true);
+    // E2E builds only: witness this refresh once its own reload succeeded and the list then
+    // settled on screen, whichever read it shows; what it shows is for the reader to check.
+    // Its own failure, or no answer yet, is never witnessed, whatever other reads answered.
+    if (import.meta.env.MODE === "e2e") {
+      void Promise.all([answer, shown]).then(
+        async () => {
+          await tick();
+          reviewRefreshed(app.activity, r.query, r.start);
+        },
+        () => {},
+      );
     }
   }
 
@@ -251,7 +278,7 @@
     else if ((plain(event, "Enter") || plain(event, "ArrowRight")) && selected) openRow(selected);
     else if (plain(event, "PageDown")) older();
     else if (plain(event, "PageUp")) newer();
-    else if (plain(event, "r")) void load();
+    else if (plain(event, "r")) refresh();
     else return;
     event.preventDefault();
   }
@@ -280,7 +307,7 @@
             enabled: () => r.query !== launch.search,
             run: () => setQuery(launch.search),
           },
-          { id: "review.refresh", group: "Review", label: "Refresh the list", keys: "r", run: () => void load() },
+          { id: "review.refresh", group: "Review", label: "Refresh the list", keys: "r", run: refresh },
           { id: "review.older", group: "Review", label: "Older requests", keys: "PgDn", enabled: () => next !== null, run: older },
           { id: "review.newer", group: "Review", label: "Newer requests", keys: "PgUp", enabled: () => r.previous.length > 0, run: newer },
           {

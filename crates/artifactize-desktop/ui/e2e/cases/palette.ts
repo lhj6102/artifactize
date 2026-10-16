@@ -1,8 +1,10 @@
 // The command palette in the real app: it opens by its button and by Ctrl+K, runs a command,
 // and opens again after every way of closing it, screen switches included.
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { verifyWaiting, addRepository, create, requests } from "../fixture.ts";
 import { press, typeText } from "../keys.ts";
+import { checkpoint, reviewRefreshed } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -10,13 +12,48 @@ async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolea
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
 }
 
+type PaletteData = { originalId: string; followerId: string; otherId: string; otherRepo: string };
+type ListedRequest = { id: string; eval: string; status: string; claim: string; repository: string };
+
 async function preparePalette() {
   const fixture = await create();
-  // A second Run follows the first waiting sign-off.
-  await verifyWaiting(fixture);
+  const original = requests(fixture).find((request) => request.evalId === "release/signoff");
+  assert.ok(original);
+  // A second Run follows this identified original, not the other repository's sign-off.
+  const followerRun = await verifyWaiting(fixture);
   // Another repository has the same eval IDs and distinct release notes.
-  await addRepository(fixture, "other");
-  return { fixture, args: ["--repo", fixture.repo], data: {} };
+  const otherRepo = await addRepository(fixture, "other");
+  const signoffs = requests(fixture).filter((request) => request.evalId === "release/signoff");
+  const follower = signoffs.find((request) => request.runId === followerRun);
+  assert.ok(follower);
+  const other = signoffs.find((request) => request.id !== original.id && request.id !== follower.id);
+  assert.ok(other);
+  return { fixture, args: ["--repo", fixture.repo], data: { originalId: original.id, followerId: follower.id, otherId: other.id, otherRepo } };
+}
+
+function waitingRequest(id: string, repository: string): ListedRequest {
+  return { id, eval: "? release/signoff", status: "WAITING_HUMAN", claim: "-", repository: repository.replaceAll("\\", "/") };
+}
+
+async function listShown(browser: WebdriverIO.Browser, expected: ListedRequest[], selected: string) {
+  const wanted = [...expected].sort((left, right) => left.id.localeCompare(right.id));
+  const snapshot = () => browser.execute(() => ({
+    rows: [...document.querySelectorAll('[aria-label="Requests"] [role="option"]')].map((row) => {
+      const cells = [...row.children].map((cell) => (cell as HTMLElement).innerText.trim());
+      return { id: cells[1], eval: cells[0], status: cells[2], claim: cells[3], repository: cells[5] };
+    }).sort((left, right) => left.id.localeCompare(right.id)),
+    selected: document.querySelector('[aria-label="Requests"] [aria-selected="true"] .mono')?.textContent?.trim(),
+    error: document.querySelector(".review .crumbs .error")?.textContent?.trim() ?? null,
+  }));
+  try {
+    await waitFor(browser, async () => {
+      const shown = await snapshot();
+      return shown.error === null && shown.selected === selected && isDeepStrictEqual(shown.rows, wanted);
+    }, "the completed Review list has the exact saved requests and selection");
+  } catch (error) {
+    throw new Error(`Review list mismatch: ${JSON.stringify({ expected: { rows: wanted, selected, error: null }, actual: await snapshot() })}`, { cause: error });
+  }
+  assert.deepEqual(await snapshot(), { rows: wanted, selected, error: null });
 }
 
 function palette(browser: WebdriverIO.Browser) {
@@ -28,7 +65,13 @@ function palette(browser: WebdriverIO.Browser) {
   /** Run the command labelled `label` from the open palette by typing and Enter. */
   const run = async (label: string) => {
     await typeText(browser, label);
-    await press(browser, ["Enter"], hidden, `${label} ran`);
+    await press(browser, ["Enter"], hidden, `${label} selected and palette closed`);
+  };
+  const refresh = async (expected: ListedRequest[], selected: string) => {
+    const before = await checkpoint(browser);
+    await run("Refresh the list");
+    await reviewRefreshed(browser, before);
+    await listShown(browser, expected, selected);
   };
   /** Open the palette with Ctrl+K, or close it with Esc. */
   const ctrlK = (how: string) => press(browser, ["Control", "k"], shown, `the palette opens (${how})`);
@@ -43,12 +86,12 @@ function palette(browser: WebdriverIO.Browser) {
       !(await browser.$('[aria-label="Request ID"]').isExisting()) && await browser.$('[aria-label="Human review"]').isExisting(),
     `the request ID dialog resolves to the review of ${id}`);
   };
-  return { shown, opened, closed, hidden, run, ctrlK, escape, openId };
+  return { shown, opened, closed, hidden, run, refresh, ctrlK, escape, openId };
 }
 
 export const scenarios: Scenario[] = [
   // UX edges: E-PALETTE-OPEN E-PALETTE-CLOSE
-  scenario<Record<string, never>>(
+  scenario<PaletteData>(
     "palette-reopen",
     "opens by its button and by Ctrl+K, and again after Esc, several times",
     async () => preparePalette(),
@@ -71,7 +114,7 @@ export const scenarios: Scenario[] = [
     },
   ),
   // UX edges: E-PALETTE-OPEN E-PALETTE-FILTER
-  scenario<Record<string, never>>(
+  scenario<PaletteData>(
     "palette-filter",
     "lists the enabled Monitor commands and filters them by what is typed",
     async () => preparePalette(),
@@ -102,7 +145,7 @@ export const scenarios: Scenario[] = [
     },
   ),
   // UX edges: E-PALETTE-RUN E-SCREEN-MONITOR E-SCREEN-REVIEW E-SCREEN-SETTINGS
-  scenario<Record<string, never>>(
+  scenario<PaletteData>(
     "palette-screens",
     "runs commands that switch screens and opens again after each",
     async () => preparePalette(),
@@ -130,12 +173,12 @@ export const scenarios: Scenario[] = [
       }
     },
   ),
-  scenario<Record<string, never>>(
+  scenario<PaletteData>(
     "palette-id-follower",
     "opens after requests were opened by ID on the review screen, a follower included",
     async () => preparePalette(),
-    async (browser, { fixture }) => {
-      const { opened, closed, run, ctrlK, escape, openId } = palette(browser);
+    async (browser, { fixture, data }) => {
+      const { opened, refresh, ctrlK, escape, openId } = palette(browser);
       await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
       // Errors the page throws (a broken palette threw while rendering) fail the scenario.
       await browser.execute(() => {
@@ -146,32 +189,35 @@ export const scenarios: Scenario[] = [
       const signoffs = requests(fixture).filter((request) => request.evalId === "release/signoff");
       const source = (request: (typeof signoffs)[number]) =>
         (request as unknown as { execution?: { provenance?: { requestId?: string } } }).execution?.provenance?.requestId;
-      const original = signoffs.find((request) => source(request) === request.id);
-      const follower = signoffs.find((request) => source(request) !== request.id);
+      const original = signoffs.find((request) => request.id === data.originalId);
+      const follower = signoffs.find((request) => request.id === data.followerId);
       assert.ok(original && follower, "an original and its follower");
+      assert.equal(source(original), original.id, "the prepared original owns its execution");
+      assert.equal(source(follower), original.id, "the identified follower shares this original's execution");
+      const expected = [waitingRequest(original.id, fixture.repo)];
       await press(
         browser,
         ["Control", "2"],
         () => browser.execute(() => document.querySelector('[role="tab"][data-state="active"]')?.textContent === "Review"),
         "the Review screen",
       );
+      await listShown(browser, expected, original.id);
       for (const id of [original.id, follower.id, original.id]) {
         await openId(id);
         await browser.$("button*=Commands").click();
         await opened(`button after opening ${id}`);
-        await run("Refresh the list");
-        await closed("the command ran");
+        await refresh(expected, original.id);
         await ctrlK(`Ctrl+K after opening ${id}`);
         await escape("Esc");
       }
     },
   ),
-  scenario<Record<string, never>>(
+  scenario<PaletteData>(
     "palette-search",
     "opens after a request opened by ID, Esc and a search of every repository",
     async () => preparePalette(),
-    async (browser, { fixture }) => {
-      const { opened, closed, run, ctrlK, openId } = palette(browser);
+    async (browser, { fixture, data }) => {
+      const { opened, closed, run, refresh, ctrlK, openId } = palette(browser);
       await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
       // Errors the page throws (a broken palette threw while rendering) fail the scenario.
       await browser.execute(() => {
@@ -180,8 +226,10 @@ export const scenarios: Scenario[] = [
         window.addEventListener("error", (event) => errors.push(event.message));
       });
       await press(browser, ["Control", "2"], () => browser.$('[aria-label="Search requests"]').isExisting(), "this case's Review screen");
-      const original = requests(fixture).find((request) => request.evalId === "release/signoff");
+      const original = requests(fixture).find((request) => request.id === data.originalId);
       assert.ok(original);
+      const all = [waitingRequest(data.otherId, data.otherRepo), waitingRequest(original.id, fixture.repo)];
+      const scoped = [waitingRequest(original.id, fixture.repo)];
       const listed = () =>
         browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
       for (let round = 0; round < 2; round += 1) {
@@ -205,18 +253,21 @@ export const scenarios: Scenario[] = [
         await typeText(browser, "kind:human status:waiting_human ");
         await waitFor(browser, async () => (await listed()) === 2, "the sign-offs of both repositories");
         await press(browser, ["Enter"], focused("Requests"), "focus on the list");
+        const selected = await browser.$('[aria-label="Requests"] [aria-selected="true"] .mono').getText();
+        assert.ok(all.some((request) => request.id === selected), "one of the exact prepared requests is selected before Refresh");
+        await listShown(browser, all, selected);
         await browser.$("button*=Commands").click();
         await opened(`button after the search, round ${round}`);
-        await run("Refresh the list");
-        await closed("the command ran");
+        await refresh(all, selected);
         await ctrlK(`Ctrl+K after the search, round ${round}`);
         await run("Show waiting Human reviews");
         await closed("the search reset");
         await waitFor(browser, async () => (await listed()) === 1, "this repository's sign-off again");
+        await listShown(browser, scoped, original.id);
       }
     },
   ),
-  scenario<Record<string, never>>(
+  scenario<PaletteData>(
     "palette-outside",
     "opens again after a click outside closed it",
     async () => preparePalette(),

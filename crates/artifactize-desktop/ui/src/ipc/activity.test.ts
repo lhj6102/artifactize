@@ -1,7 +1,7 @@
 // The shared IPC boundary reports dispatched and completed commands without exposing
 // credentials, mutating generated bindings or confusing superseded search generations.
 import { describe, expect, it } from "vitest";
-import { Activity, observeCommands } from "./activity.svelte";
+import { Activity, observeCommands, reviewRefreshed } from "./activity.svelte";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -116,5 +116,12 @@ describe("command activity", () => {
     expect(await commands.login("private token")).toBe("private result");
     expect(JSON.stringify(activity.snapshot())).not.toMatch(/private|token/);
     expect(activity.snapshot().search).toBeNull();
+  });
+
+  it("has no manual-refresh witness outside E2E builds", () => {
+    expect(import.meta.env.MODE).not.toBe("e2e");
+    const activity = new Activity();
+    reviewRefreshed(activity, "kind:human", 0);
+    expect(Object.keys(activity.snapshot())).toEqual(["revision", "pending", "commands", "search"]);
   });
 });
