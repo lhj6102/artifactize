@@ -21,6 +21,13 @@ pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
                     CREATE UNIQUE INDEX run_request_key ON runs(repo,request_key) WHERE request_key IS NOT NULL;")?;
                 version += 1;
             }
+            7 => {
+                transaction.execute_batch("ALTER TABLE executions ADD COLUMN profile_identity TEXT;
+                    UPDATE executions SET profile_identity=json_extract(data,'$.profile') WHERE key IS NOT NULL AND json_valid(data);
+                    DROP INDEX active_key;
+                    CREATE UNIQUE INDEX active_key ON executions(key,profile_identity) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');")?;
+                version += 1;
+            }
             version => return Err(Error::Invalid(super::schema_error(version))),
         }
         transaction.pragma_update(None, "user_version", version)?;

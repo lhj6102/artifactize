@@ -440,9 +440,19 @@ fn retire_unreadable(
     Ok(())
 }
 
+/// The one definition of in-flight identity. Completed evidence still uses only its
+/// reuse key; joining additionally requires the complete declared effective profile.
+fn sharing_identity(
+    key: &ReuseKey,
+    profile: &crate::config::StoredProfile,
+) -> Result<(ReuseKey, String), Error> {
+    Ok((key.clone(), serde_json::to_string(profile)?))
+}
+
 fn active_owner(
     db: &rusqlite::Connection,
     key: &ReuseKey,
+    profile: Option<&str>,
 ) -> Result<
     Option<(
         crate::types::ExecutionId,
@@ -453,8 +463,8 @@ fn active_owner(
 > {
     let row = db
         .query_row(
-            "SELECT id,owner_pid,owner_start_time,status,data FROM executions WHERE key=? AND status IN ('RUNNING','WAITING_HUMAN')",
-            [key],
+            "SELECT id,owner_pid,owner_start_time,status,data FROM executions WHERE key=?1 AND (?2 IS NULL OR profile_identity=?2) AND status IN ('RUNNING','WAITING_HUMAN')",
+            params![key, profile],
             |row| {
                 Ok((
                     row.get::<_, crate::types::ExecutionId>(0)?,
@@ -477,29 +487,59 @@ fn available_to_waiter(
     db: &rusqlite::Connection,
     key: &ReuseKey,
     waiting_for: Option<&crate::types::ExecutionId>,
+    profile: &str,
 ) -> Result<Option<Claim>, Error> {
     if let Some(id) = waiting_for {
         let data: Option<String> = db
             .query_row(
-                "SELECT data FROM executions WHERE id=? AND key=? AND status IN ('GREEN','RED')",
-                params![id, key],
+                "SELECT data FROM executions WHERE id=? AND key=? AND profile_identity=?",
+                params![id, key, profile],
                 |row| row.get(0),
             )
             .optional()?;
         if let Some(data) = data
-            && let Some(execution) = super::unreadable::evidence("execution", &data)
+            && let Some(execution) = super::unreadable::evidence::<Execution>("execution", &data)
         {
-            return Ok(Some(Claim::Reuse(Box::new(execution))));
+            match execution.status() {
+                ExecutionStatus::Green | ExecutionStatus::Red => {
+                    return Ok(Some(Claim::Reuse(Box::new(execution))));
+                }
+                ExecutionStatus::Error
+                    if !matches!(
+                        execution.error_code(),
+                        Some(
+                            crate::types::FailureCode::Cancelled
+                                | crate::types::FailureCode::OwnerDied
+                        )
+                    ) =>
+                {
+                    return Ok(Some(Claim::Reuse(Box::new(execution))));
+                }
+                // A joined request stays with its execution, even if an independent
+                // forced or different-profile review publishes another result meanwhile.
+                ExecutionStatus::Running
+                    if process::is_alive(execution.owner)
+                        .map_err(|error| Error::Invalid(error.to_string()))? =>
+                {
+                    return Ok(Some(Claim::Wait(execution.id)));
+                }
+                ExecutionStatus::WaitingHuman => return Ok(Some(Claim::WaitHuman(execution.id))),
+                _ => {}
+            }
         }
     }
-    available(db, key)
+    available(db, key, Some(profile))
 }
 
-fn available(db: &rusqlite::Connection, key: &ReuseKey) -> Result<Option<Claim>, Error> {
+fn available(
+    db: &rusqlite::Connection,
+    key: &ReuseKey,
+    profile: Option<&str>,
+) -> Result<Option<Claim>, Error> {
     if let Some(execution) = lookup(db, key)? {
         return Ok(Some(Claim::Reuse(Box::new(execution))));
     }
-    if let Some((id, owner, status)) = active_owner(db, key)? {
+    if let Some((id, owner, status)) = active_owner(db, key, profile)? {
         if status == ExecutionStatus::WaitingHuman {
             return Ok(Some(Claim::WaitHuman(id)));
         }
@@ -537,13 +577,40 @@ pub async fn read_keyed_executions(
     state: &std::path::Path,
     keys: &[ReuseKey],
 ) -> Result<std::collections::BTreeMap<ReuseKey, Claim>, String> {
+    read_claims(
+        state,
+        keys.iter()
+            .map(|key| (key.clone(), key.clone(), None))
+            .collect(),
+    )
+    .await
+}
+
+pub(crate) async fn read_profiled_executions(
+    state: &std::path::Path,
+    keys: Vec<(crate::types::EvalId, ReuseKey, crate::config::StoredProfile)>,
+) -> Result<BTreeMap<crate::types::EvalId, Claim>, String> {
+    let keys = keys
+        .into_iter()
+        .map(|(id, key, profile)| {
+            sharing_identity(&key, &profile)
+                .map(|(key, profile)| (id, key, Some(profile)))
+                .map_err(|error| error.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    read_claims(state, keys).await
+}
+
+async fn read_claims<K: Ord + Send + 'static>(
+    state: &std::path::Path,
+    keys: Vec<(K, ReuseKey, Option<String>)>,
+) -> Result<BTreeMap<K, Claim>, String> {
     if keys.is_empty() {
         return Ok(Default::default());
     }
     let Some(connection) = open_read_only(state).await? else {
         return Ok(Default::default());
     };
-    let keys = keys.to_vec();
     let result = connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
@@ -552,9 +619,9 @@ pub async fn read_keyed_executions(
                 return Ok(Default::default());
             }
             let mut entries = std::collections::BTreeMap::new();
-            for key in keys {
-                if let Some(claim) = available(&transaction, &key)? {
-                    entries.insert(key, claim);
+            for (id, key, profile) in keys {
+                if let Some(claim) = available(&transaction, &key, profile.as_deref())? {
+                    entries.insert(id, claim);
                 }
             }
             transaction.commit()?;
@@ -658,7 +725,7 @@ impl Receipts {
     }
 
     /// Claim an execution for its request. A `keyed` claim (a key, not forced) first reuses
-    /// the key's latest record or waits for the key's live execution. Starting needs
+    /// the key's latest record or waits for its live execution with the same profile. Starting needs
     /// `allow_start` and, on a backend with a machine-wide limit, a free slot: the slots the
     /// backend's RUNNING executions hold are counted and this execution inserted RUNNING in
     /// one write transaction. An unkeyed or forced execution without a limit is saved when it
@@ -673,13 +740,21 @@ impl Receipts {
     ) -> Result<Claim, String> {
         let execution = execution.clone();
         let waiting_for = waiting_for.cloned();
+        let identity = execution
+            .key
+            .as_ref()
+            .filter(|_| keyed)
+            .map(|key| sharing_identity(key, &execution.profile))
+            .transpose()
+            .map_err(|error| error.to_string())?;
         self.connection
             .call(move |db| -> Result<Claim, Error> {
-                let key = execution.key.as_ref().filter(|_| keyed);
+                let key = identity.as_ref().map(|(key, _)| key);
+                let profile = identity.as_ref().map(|(_, profile)| profile.as_str());
                 if let Some(key) = key {
                     let transaction = db.transaction()?;
                     if let Some(claim) =
-                        available_to_waiter(&transaction, key, waiting_for.as_ref())?
+                        available_to_waiter(&transaction, key, waiting_for.as_ref(), profile.expect("keyed identity"))?
                     {
                         return Ok(claim);
                     }
@@ -695,7 +770,7 @@ impl Receipts {
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 if let Some(key) = key
                     && let Some(claim) =
-                        available_to_waiter(&transaction, key, waiting_for.as_ref())?
+                        available_to_waiter(&transaction, key, waiting_for.as_ref(), profile.expect("keyed identity"))?
                 {
                     return Ok(claim);
                 }
@@ -716,12 +791,12 @@ impl Receipts {
                     }
                 }
                 if let Some(key) = key
-                    && let Some((id, _, _)) = active_owner(&transaction, key)?
+                    && let Some((id, _, _)) = active_owner(&transaction, key, profile)?
                 {
                     owner_died(&transaction, &id, execution.started_at)?;
                 }
                 let inserted = transaction.execute(
-                    "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
+                    "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,profile_identity,data) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(key,profile_identity) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
                     params![
                         execution.id,
                         key,
@@ -730,12 +805,13 @@ impl Receipts {
                         execution.owner_pid(),
                         execution.owner_start_time() as i64,
                         execution.backend(),
+                        profile,
                         serde_json::to_string(&execution)?
                     ],
                 )?;
                 let claim = match key {
                     Some(key) if inserted == 0 => Claim::Wait(
-                        active_owner(&transaction, key)?
+                        active_owner(&transaction, key, profile)?
                             .expect("conflicting active key")
                             .0,
                     ),

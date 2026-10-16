@@ -803,9 +803,9 @@ impl Scheduler<'_, '_> {
                             admissions[index] = Admission::Idle;
                             evidence.insert(
                                 request.eval_id.clone(),
-                                Evidence::Current(
-                                    execution.verdict().expect("completed cache entry"),
-                                ),
+                                execution
+                                    .verdict()
+                                    .map_or(Evidence::OperationalError, Evidence::Current),
                             );
                             cache::reuse(request, &execution, now());
                             self.receipts.reuse_execution(request).await?;
@@ -867,16 +867,16 @@ impl Scheduler<'_, '_> {
                         Claim::Wait(id) => {
                             admissions[index] = Admission::Joining;
                             if request.execution_id.as_ref() != Some(&id) {
-                                request.execution_id = Some(id);
+                                request.execution_id = Some(id.clone());
                                 request.state = crate::store::RequestState::pending(
                                     crate::types::RequestStatus::Queued,
                                     request.completed_at(),
                                 )
                                 .expect("pending request state");
                                 request.queue = None;
-                                request.blocked_reason = Some(
-                                    "Waiting for the active execution of this reuse key.".into(),
-                                );
+                                request.blocked_reason = Some(format!(
+                                    "Waiting for execution {id} with the same reuse key and profile."
+                                ));
                                 self.receipts.save_request(request).await?;
                             }
                             continue;
