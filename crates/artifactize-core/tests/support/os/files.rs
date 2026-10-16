@@ -47,18 +47,13 @@ pub fn database_released(path: &Path) -> io::Result<bool> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        use windows_sys::Win32::{
-            Foundation::ERROR_SHARING_VIOLATION,
-            Storage::FileSystem::{DELETE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE},
-        };
+        use windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION;
 
-        // SQLite denies delete sharing even for a read-only connection. Requesting
-        // DELETE access observes that denial; it does not request file deletion.
-        match fs::OpenOptions::new()
-            .access_mode(DELETE)
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
-            .open(path)
-        {
+        // Denying read/write sharing detects even an idle SQLite reader through
+        // another hard link to the file. DELETE access is insufficient: Windows
+        // can permit deleting one link while a handle holds another link open.
+        // This requests read access only and never changes the file or its names.
+        match fs::OpenOptions::new().read(true).share_mode(0).open(path) {
             Ok(_) => Ok(true),
             Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION as i32) => Ok(false),
             Err(error) => Err(error),

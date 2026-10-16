@@ -268,20 +268,25 @@ fn database_release_probe_tracks_idle_readers_among_unrelated_descriptors() {
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
 
     for path in [&database, &alias] {
-        assert!(database_released(&database).unwrap());
+        for observed in [&database, &alias] {
+            assert!(database_released(observed).unwrap());
+        }
         // Opening read-only without executing a statement holds no SQLite lock.
-        // A second name must still identify the held file, not a different database.
+        // Both names must identify the held file, not a different database.
         let reader =
             rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .unwrap();
-        assert!(
-            !database_released(&database).unwrap(),
-            "an idle reader must be detected, including through a hard-link alias"
-        );
+        for observed in [&database, &alias] {
+            assert!(
+                !database_released(observed).unwrap(),
+                "an idle reader through {path:?} must be detected through {observed:?}"
+            );
+        }
         reader.close().unwrap();
-        assert!(database_released(&database).unwrap());
-        assert_eq!(fs::read(&database).unwrap(), contents);
-        assert!(alias.exists(), "observation must not rename database files");
+        for observed in [&database, &alias] {
+            assert!(database_released(observed).unwrap());
+            assert_eq!(fs::read(observed).unwrap(), contents);
+        }
     }
 
     drop(listener);
