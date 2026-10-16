@@ -206,17 +206,24 @@ export const scenarios: Scenario[] = [
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
-    async (browser) => {
+    async (browser, { fixture }) => {
       const { text, row } = monitorNavigation(browser);
       await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
       await browser.$('[role="tree"]').click();
       await (await row(2, "check")).click();
       const close = () => browser.$("button*=Close");
       await press(browser, ["Enter"], () => close().isExisting(), "the Detail opened");
+      const request = requests(fixture).find((saved) => saved.evalId === "ship/check");
+      assert.ok(request, "the fixture independently identifies ship/check");
+      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
+        .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
+      await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: "the opened Detail identifies ship/check by default" });
       const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
       assert.equal(await technical(), "false");
-      await press(browser, ["t"], async () => (await technical()) === "true", "the technical record shown");
-      await press(browser, ["t"], async () => (await technical()) === "false", "the technical record hidden");
+      assert.equal(await field("Fingerprint"), "");
+      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "", "the actual additional technical record shown");
+      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "", "the additional technical record hidden");
+      assert.equal(await field("Request"), request.id, "hiding Technical does not hide the default request");
       await press(browser, ["Escape"], async () => !(await close().isExisting()), "the Detail closed");
       await browser.waitUntil(() => browser.$('[role="tree"]').isFocused(), { timeout: 15000, timeoutMsg: "focus back on the tree" });
     },

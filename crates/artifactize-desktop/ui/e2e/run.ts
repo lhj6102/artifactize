@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { inspect } from "node:util";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import { assertRunnerMachine, runnerCommand } from "./platform.ts";
 
@@ -20,10 +21,14 @@ async function execute(program: string, args: string[], env: NodeJS.ProcessEnv):
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   try {
-    return await new Promise<number>((done, fail) => {
-      child.once("error", fail);
-      child.once("close", (code, signal) => signal ? fail(new Error(`runner terminated by ${signal}`)) : done(code ?? 1));
+    let failure: Error | undefined;
+    child.once("error", (error) => { failure = error; });
+    const { code, signal } = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
+      child.once("close", (code, signal) => done({ code, signal }));
     });
+    if (failure) throw failure;
+    if (signal) throw new Error(`runner terminated by ${signal}`);
+    return code ?? 1;
   } finally {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
@@ -109,7 +114,7 @@ try {
     }
   } else throw new Error(`unknown desktop test runner mode: ${mode}`);
 } catch (error) {
-  console.error(error);
+  console.error(inspect(error, { depth: null, colors: false }));
   process.exitCode = 1;
 }
 // WDIO's async-exit-hook registers beforeExit with a hard-coded zero. Just like

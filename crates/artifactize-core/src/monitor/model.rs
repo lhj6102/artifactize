@@ -5,6 +5,8 @@ mod node_id;
 pub use node_id::NodeId;
 mod states;
 mod status;
+#[cfg(test)]
+mod tests;
 mod tree;
 pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
 pub use status::Status;
@@ -60,7 +62,7 @@ impl Section {
         Self::Technical,
     ];
 
-    /// The verdict first; identifiers and hashes last. Unknown fields stay visible in What.
+    /// The verdict first; technical identifiers and hashes last. The request stays visible.
     pub fn of(key: &str) -> Self {
         match key {
             "Status" | "Error" | "Reason" | "Blocked by" | "Result" | "Claim" | "Source"
@@ -68,8 +70,8 @@ impl Section {
             | "Evals" | "Gates" => Self::Outcome,
             "Waits for" => Self::Waits,
             "Timing" | "Usage" | "Budget" | "Work" | "Saved usage" => Self::Provenance,
-            "Request" | "Execution" | "Fingerprint" | "Key" | "Key covers" | "Path" | "Tags"
-            | "Cycle" | "Run" | "Repository" => Self::Technical,
+            "Execution" | "Fingerprint" | "Key" | "Key covers" | "Path" | "Tags" | "Cycle"
+            | "Run" | "Repository" => Self::Technical,
             _ => Self::What,
         }
     }

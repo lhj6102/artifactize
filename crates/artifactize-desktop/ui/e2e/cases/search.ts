@@ -192,16 +192,18 @@ export const scenarios: Scenario[] = [
         const opened = await detail();
         return opened?.title === "docs/lint · Docs build · read-only" && opened.close;
       }, "the non-Human read-only Detail opened");
-      // Request identities belong to the opened document's folded Technical section.
-      const technical = () => record().$("button*=Technical");
-      await technical().click();
-      await waitFor(browser, async () => (await technical().getAttribute("aria-expanded")) === "true", "the opened Detail discloses its request identity");
+      await waitFor(browser, async () => (await detail())?.fields.Request === requestId, "the default Detail identifies the exact opened request without Technical");
       const opened = await detail();
       assert.ok(opened);
-      assert.equal(opened.fields.Request, requestId, "this opened Detail belongs to the exact listed request");
+      assert.equal(opened.fields.Request, requestId, "this opened Detail belongs to the exact listed request by default");
       assert.equal(opened.title, "docs/lint · Docs build · read-only", "this Detail names the eval and its read-only state");
       assert.equal(opened.editable, false, "this non-Human Detail has no review form or editing controls");
       assert.ok(opened.close, "the opened Detail offers Back to the list");
+      assert.equal(opened.fields.Fingerprint, undefined, "additional technical fields start folded");
+      const technical = () => record().$("button*=Technical");
+      await technical().click();
+      await waitFor(browser, async () => (await technical().getAttribute("aria-expanded")) === "true" && !!(await detail())?.fields.Fingerprint, "the opened Detail renders its additional technical record");
+      assert.equal((await detail())?.fields.Request, requestId, "Technical preserves the opened request's identity");
       await press(browser, ["Escape"], async () => !(await record().isExisting()) && await focused("Requests")(), "the opened Detail closed back to the list");
     },
   ),
