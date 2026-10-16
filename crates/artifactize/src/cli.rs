@@ -13,6 +13,7 @@ mod monitor_tests;
 mod remote;
 mod render;
 mod run;
+mod tools;
 mod workflow;
 use dispatch::Context;
 use render::{outcome_code, print_json};
@@ -395,7 +396,7 @@ pub enum CacheCommand {
 #[derive(Debug, Subcommand)]
 pub enum ToolsCommand {
     /// Static preflight by default; --execute opts in to one tool call.
-    Check(artifactize_core::diagnostics::ToolCheckOptions),
+    Check(tools::ToolCheckArgs),
     #[command(flatten)]
     Builtin(artifactize_tools::cli::Tool),
 }

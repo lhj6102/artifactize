@@ -55,7 +55,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         }) => run::cancel(context, run_id).await,
         Some(Command::Tools {
             command: ToolsCommand::Check(options),
-        }) => maintenance::tools(context, options).await,
+        }) => maintenance::tools(context, options.into()).await,
         Some(Command::Tools {
             command: ToolsCommand::Builtin(tool),
         }) => Ok(artifactize_tools::cli::run(tool).await),

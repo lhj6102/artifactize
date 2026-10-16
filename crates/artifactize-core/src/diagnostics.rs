@@ -22,28 +22,21 @@ pub enum Audience {
     Human,
 }
 
-#[derive(Debug, Default, clap::Args)]
+#[derive(Debug, Default)]
 pub struct ToolCheckOptions {
     /// Select one Agent or Human eval's admitted scope (same as --eval).
-    #[arg(conflicts_with = "eval")]
     pub selector: Option<crate::types::EvalId>,
     /// Select one Agent or Human eval's admitted scope.
-    #[arg(long, value_name = "ID")]
     pub eval: Option<crate::types::EvalId>,
     /// Check tools declared for one Artifact.
-    #[arg(long, value_name = "ID")]
     pub artifact: Option<crate::types::ArtifactName>,
     /// Restrict --artifact to Agent or Human tools.
-    #[arg(long, value_enum)]
     pub audience: Option<Audience>,
     /// Check one tool by short or published name.
-    #[arg(long, value_name = "NAME")]
     pub tool: Option<crate::config::ToolName>,
     /// Invoke exactly one explicitly selected tool; never create review evidence.
-    #[arg(long)]
     pub execute: bool,
     /// JSON arguments for an executed Agent tool.
-    #[arg(long, value_name = "JSON", value_parser = json_arguments)]
     pub args: Option<serde_json::Value>,
 }
 
@@ -72,11 +65,6 @@ impl ToolCheckOptions {
         }
         Ok(())
     }
-}
-
-/// `--args`, parsed once where it is given.
-fn json_arguments(text: &str) -> Result<serde_json::Value, String> {
-    serde_json::from_str(text).map_err(|e| format!("Invalid --args JSON: {e}"))
 }
 
 #[derive(Debug, Serialize)]
