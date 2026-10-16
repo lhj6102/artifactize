@@ -108,3 +108,26 @@ pub fn graph<'a>(
         components,
     })
 }
+
+/// Conservative change impact: consumers of the selected roots, including cycle peers.
+/// This is structural reachability, not a prediction that every eval's reuse key changed.
+pub fn impact(config: &RepoConfig, selection: &Selection) -> Result<Selection, String> {
+    let resolved = selection.resolve(config)?;
+    let mut affected: std::collections::BTreeSet<_> = resolved.roots.into_iter().cloned().collect();
+    loop {
+        let consumers: Vec<_> = config
+            .relations
+            .iter()
+            .filter(|edge| affected.contains(&edge.source))
+            .map(|edge| edge.target.clone())
+            .collect();
+        let before = affected.len();
+        affected.extend(consumers);
+        if affected.len() == before {
+            break;
+        }
+    }
+    Ok(Selection::Artifacts {
+        artifact_ids: affected.into_iter().collect(),
+    })
+}

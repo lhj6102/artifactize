@@ -56,8 +56,17 @@ It follows the docs' `mcp add`/`mcp get` registration, launching in a private
 project with temporary `CLAUDE_CONFIG_DIR`/`CODEX_HOME` and a child PATH containing
 only the selected candidate ahead of the normal PATH. Claude Code's actual startup
 inventory and Codex's actual app-server `mcpServerStatus/list` must contain exactly
-17 tools. Registration/get output, host transcripts and result JSON remain
+20 tools. Registration/get output, host transcripts and result JSON remain
 external. No owner's configuration or credentials are copied or changed.
+
+The inventory includes `config_graph`, `request_logs` and `verify_watch`.
+The Rust MCP seams exercise change-driven notification delivery, final-outcome
+separation, bounded long-log tail/range/search and missing/pruned evidence.
+These deterministic checks are not evidence that a real host injects notifications
+into an agent conversation. The live builder prompt asks for graph discovery and
+impact, log-specific diagnosis where needed, and watch where the host supports it;
+bounded wait remains a valid fallback. Keep actual host transcripts as evidence,
+never replace them with a claimed stream delivery.
 
 ## Manual live builders
 

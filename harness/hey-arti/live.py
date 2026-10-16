@@ -185,7 +185,11 @@ Use the canonical skill below. The agreed proposal/consent is already supplied,
 so apply it without requesting a new Human authorization. Repository: {repo.as_posix()}.
 Candidate: {candidate.as_posix()}; model available for Agent evals: anthropic/{model}.
 No plugin packaging. Leave speculate/defer_human off for these fixture checks; preserve the agreed Human boundary.
-MCP registration must supply all 17 tools; demonstrate config_check and status.
+MCP registration must supply all 20 tools; demonstrate config_check, config_graph (including impact) and status.
+Use verify_watch for active machine work if the host exposes progress notifications;
+otherwise bounded verify_wait is the supported fallback. Inspect runtime evidence
+with request_logs (tail/range/search) when diagnosing a failed runtime eval.
+A live update or one eval result is not the Run final validation outcome.
 Read tools return the CLI JSON in entries.text; append pages then parse JSON.
 Do not inspect any credentials or change anything outside this private case.
 Use MCP first; do not execute project programs except through runtime evals/owned

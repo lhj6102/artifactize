@@ -256,6 +256,7 @@ where
             command,
             input,
             output_limit,
+            None,
             cancellation,
             register,
         ))
@@ -267,6 +268,7 @@ async fn run_inner<F, R>(
     command: Command,
     input: Option<Vec<u8>>,
     output_limit: usize,
+    logs: Option<PathBuf>,
     cancellation: CancellationToken,
     register: F,
 ) -> Result<Output, Error>
@@ -331,7 +333,18 @@ where
     };
     let capture = async {
         let read = async {
-            tokio::try_join!(capture(stdout, output_limit), capture(stderr, output_limit))
+            tokio::try_join!(
+                capture(
+                    stdout,
+                    output_limit,
+                    logs.as_ref().map(|dir| dir.join("runtime.stdout"))
+                ),
+                capture(
+                    stderr,
+                    output_limit,
+                    logs.as_ref().map(|dir| dir.join("runtime.stderr"))
+                )
+            )
         };
         tokio::pin!(read);
         tokio::select! {
@@ -571,14 +584,69 @@ async fn terminate(child: &mut Child) -> io::Result<()> {
     Ok(())
 }
 
-async fn capture(mut pipe: impl AsyncRead + Unpin, limit: usize) -> io::Result<(Vec<u8>, bool)> {
+/// Runtime logs live with their Run and are pruned with it. Protocol callers retain
+/// prefix-only capture: changing protocol bytes to head/tail would corrupt replies.
+pub(crate) async fn run_logged<F, R>(
+    command: Command,
+    directory: PathBuf,
+    cancellation: CancellationToken,
+    register: F,
+) -> Result<Output, Error>
+where
+    F: FnOnce(ChildIdentity) -> R + Send + 'static,
+    R: Future<Output = io::Result<()>> + Send + 'static,
+{
+    let cancellation = cancellation.child_token();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    crate::task::joined(
+        tokio::spawn(run_inner(
+            command,
+            None,
+            OUTPUT_LIMIT,
+            Some(directory),
+            cancellation,
+            register,
+        ))
+        .await,
+    )?
+}
+
+async fn capture(
+    mut pipe: impl AsyncRead + Unpin,
+    limit: usize,
+    path: Option<PathBuf>,
+) -> io::Result<(Vec<u8>, bool)> {
+    let mut log = path
+        .as_ref()
+        .map(|path| {
+            let mut options = platform::private_options();
+            options.write(true).create_new(true);
+            options.open(path).map(tokio::fs::File::from_std)
+        })
+        .transpose()?;
     let mut output = Vec::new();
     let mut buffer = [0; CAPTURE_BUFFER_BYTES];
     let mut truncated = false;
     loop {
         let count = pipe.read(&mut buffer).await?;
         if count == 0 {
+            if let (Some(log), Some(path)) = (&mut log, &path) {
+                log.flush().await?;
+                let mut options = platform::private_options();
+                options.write(true).create_new(true);
+                options.open(path.with_extension(format!(
+                        "{}.complete",
+                        path.extension()
+                            .expect("stream extension")
+                            .to_string_lossy()
+                    )))?;
+            }
             return Ok((output, truncated));
+        }
+        if let Some(log) = &mut log {
+            log.write_all(&buffer[..count]).await?;
+            // Make captured evidence available while the process is still running.
+            log.flush().await?;
         }
         let retained = count.min(limit - output.len());
         output.extend_from_slice(&buffer[..retained]);

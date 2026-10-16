@@ -36,6 +36,13 @@ pub(super) fn tools() -> Vec<Tool> {
             false,
         ),
         tool(
+            "verify_watch",
+            "Subscribe for this bounded call: progress notifications carry JSON update/eval_result/outcome events when the client supplies _meta.progressToken. Reattachment replays saved results. Returns compact observation; only outcome/verify_result is final validation. No conversation injection or background subscription.",
+            json!({"run":string}),
+            &["run"],
+            false,
+        ),
+        tool(
             "verify_result",
             "Terminal verdict and at most 20 concise findings; follow next_cursor. Active Runs return ready:false.",
             json!({"run":string,"cursor":string}),
@@ -54,6 +61,20 @@ pub(super) fn tools() -> Vec<Tool> {
             "Predict execute/reuse/wait using the CLI's status operation. May run trusted fingerprint commands.",
             json!({"scope":scope}),
             &[],
+            true,
+        ),
+        tool(
+            "config_graph",
+            "Discover static Artifacts, eval criteria, input/consumer relations and cycles without running commands. Scope selects required inputs; impact includes downstream consumers and their inputs, conservatively, not exact cache invalidation.",
+            json!({"scope":scope,"impact":{"type":"boolean","default":false}}),
+            &[],
+            true,
+        ),
+        tool(
+            "request_logs",
+            "Inspect runtime stdout/stderr without the full request. Defaults to last 50 lines per stream; explicit evidence distinguishes full local capture, partial, saved audit and missing. Search is literal. Tail/range exclusive. next_start continues forward queries.",
+            json!({"id":string,"stream":{"enum":["stdout","stderr","both"],"default":"both"},"tail":{"type":"integer","minimum":1,"maximum":200},"start":{"type":"integer","minimum":1},"end":{"type":"integer","minimum":1},"search":{"type":"string","minLength":1,"maxLength":2048}}),
+            &["id"],
             true,
         ),
         tool(

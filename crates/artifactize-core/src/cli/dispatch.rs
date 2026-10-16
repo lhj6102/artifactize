@@ -51,6 +51,9 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             Ok(0)
         }
         Some(Command::Run {
+            command: RunCommand::Watch { run_id },
+        }) => run::watch(context, run_id).await,
+        Some(Command::Run {
             command: RunCommand::Cancel { run_id },
         }) => run::cancel(context, run_id).await,
         Some(Command::Tools {
@@ -77,6 +80,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             jobs,
             max_executions,
             wait,
+            watch,
             request_key,
             reuse_only,
             speculate,
@@ -94,6 +98,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                     jobs,
                     max_executions,
                     wait,
+                    watch,
                     request_key,
                     reuse_only,
                 },
@@ -105,8 +110,8 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         }
         Some(Command::Graph { .. }) => Err(r#"graph moved to "artifactize config graph""#.into()),
         Some(Command::Config {
-            command: ConfigCommand::Graph { artifact },
-        }) => workflow::graph(context, artifact).await,
+            command: ConfigCommand::Graph { artifact, impact },
+        }) => workflow::graph(context, artifact, impact).await,
         Some(Command::Config {
             command: ConfigCommand::Check,
         }) => workflow::check(context).await,

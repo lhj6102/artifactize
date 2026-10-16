@@ -137,6 +137,9 @@ pub enum Command {
         /// Observe until the Run ends; interrupting stops watching, not execution.
         #[arg(long)]
         wait: bool,
+        /// Submit and stream JSON-line updates, eval results and final validation.
+        #[arg(long, conflicts_with = "wait")]
+        watch: bool,
         /// Retry-safe caller attempt key (1–128 ASCII letters/digits/._:-).
         #[arg(long, value_name = "KEY")]
         request_key: Option<crate::types::RequestKey>,
@@ -334,6 +337,9 @@ pub enum ConfigCommand {
     Graph {
         /// Select one Artifact and its required closure; defaults to all.
         artifact: Option<crate::types::ArtifactName>,
+        /// Include downstream consumers and their required inputs (conservative impact).
+        #[arg(long)]
+        impact: bool,
     },
 }
 
@@ -356,6 +362,8 @@ pub enum RunCommand {
         #[arg(long, value_name = "N", default_value = "0")]
         offset: u32,
     },
+    /// Stream live updates, saved eval results and final validation as JSON lines.
+    Watch { run_id: RunId },
     /// Read the full saved audit as JSON, even without --json.
     Show {
         run_id: RunId,

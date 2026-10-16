@@ -112,3 +112,29 @@ pub(super) async fn cancel(context: Context, id: crate::types::RunId) -> Result<
     print_json(&crate::runs::cancel(&runs, &id).await?)?;
     Ok(0)
 }
+
+/// One JSON object per line, flushed immediately for pipes and background-agent hosts.
+pub(super) async fn watch(context: Context, id: crate::types::RunId) -> Result<u8, String> {
+    let state = crate::store::state_dir(context.state_dir.as_deref())?;
+    let view = crate::store::read_run(&state, &id).await?;
+    let runs = crate::runs::Context::new(
+        &view.run.repo_path,
+        Some(&state),
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+    )?;
+    let (cancellation, listener) = super::cancellation_listener()?;
+    let result = crate::runs::watch(&runs, &id, None, cancellation.clone(), |event| async move {
+        let mut out = io::stdout().lock();
+        serde_json::to_writer(&mut out, &event).map_err(|e| e.to_string())?;
+        writeln!(out)
+            .and_then(|()| out.flush())
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    listener.abort();
+    if cancellation.is_cancelled() {
+        return Ok(INTERRUPTED_EXIT);
+    }
+    result?;
+    Ok(outcome_code(&crate::runs::view(&runs, &id).await?.run))
+}

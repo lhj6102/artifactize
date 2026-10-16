@@ -193,6 +193,10 @@ sandbox**. Built-in scoping is not a promise of confinement for owner commands.
 
 Use the repository-bound artifactize MCP tools first:
 
+- `config_graph` discovers Artifact/eval definitions, required inputs, relations
+  and cycles without executing code. Select `scope`; add `impact:true` to include
+  downstream consumers and their inputs conservatively. This is structural
+  reachability, not proof that every included eval needs execution.
 - `config_check` validates declarations without hashing inputs or running
   fingerprint scripts.
 - `status` predicts execution/reuse and shows covered changes; it can compute
@@ -244,7 +248,9 @@ Review-store credentials configure state/environment, never `.artf` inputs.
 ## 6. Long verification: retain the Run, not the caller
 
 Artifactize owns every Run. Start with `verify_start`, retain its returned Run ID,
-follow with bounded `verify_wait`, and read `verify_result` when terminal. Acceptance
+follow with bounded `verify_watch` when the host consumes standard MCP progress
+notifications (tool-call `_meta.progressToken`), otherwise `verify_wait`, and read
+`verify_result` when terminal. Acceptance
 is not validation. Use `run_show`, `request_list`, `request_show` and `session_show`
 for bounded saved evidence when useful; `run_list` can help recover a known attempt.
 `doctor`, `models`, `remote_status` and `cache_show` inspect readiness or saved
@@ -274,6 +280,13 @@ The verification tools are:
 - `verify_status {run}` reads a compact saved observation, not a new verification.
 - `verify_wait {run, seconds?}` waits until Run end or its bound: default 30 seconds,
   integer 0–40, whole call under 45 seconds. Active at the bound is normal.
+- `verify_watch {run}` subscribes for up to 30 seconds. With standard tool-call
+  `_meta.progressToken`, notification messages contain JSON events: `update`
+  (live state/counts), `eval_result` (one saved eval result, including reuse), and
+  `outcome` (final Run validation in the `verify_result` schema). Reattachment
+  replays saved results; it is not an exact event journal. The returned compact
+  observation alone is not the final findings. Follow outcome `next_cursor` with
+  `verify_result`. Cancellation/expiry stops only observation.
 - `verify_result {run, cursor?}` reads terminal findings in bounded pages; active
   results have `ready:false`. Follow continuations rather than treating one page
   as all evidence.
@@ -292,7 +305,28 @@ a Run with only sign-offs left ends SIGNOFFS_PENDING (`--wait` exit 5). A later
 Human GREEN reuses unchanged machine results; RED blocks dependents on the next
 verify. CI with `--reuse-only agent,human` stays strict, regardless of either flag. Do not enable either switch just to evade a required person.
 
-Prefer bounded wait to short-interval status loops. Read details only when useful.
+The client/host must display progress or route it into its own task queue or
+conversation. Notifications do not create model turns or survive a closed call;
+artifactize cannot inject conversation messages. Without client progress support,
+use bounded wait, not fake streaming or short-interval status loops. A shell-capable
+host can supervise `artifactize verify --all --watch` or `artifactize run watch RUN`
+for flushed JSON-line events with the same three event kinds. `--watch` is exclusive
+with `--wait`, returns the Run outcome, and interruption never cancels execution.
+
+From a failed finding, use its request ID with `request_logs`, before loading a
+large `request_show` or `run_show`. Select `stream: "stderr"` or `"stdout"` (default
+both), `tail` (1–200, defaults 50 when no range), inclusive one-based `start`/`end`,
+and optional literal case-sensitive `search`. Tail and range are exclusive.
+Forward queries expose `next_start`; retain the other filters. Long lines are
+marked `clipped` with bounded head/tail text. Each stream explicitly reports full `complete` local capture,
+`partial` capture without confirmed EOF, older/remote/pruned `saved_audit`,
+`missing`, or `not_runtime`. Full local runtime stdout/stderr, including tails past
+the 128 KiB saved audit, remain with Run output until pruning. Reused results follow
+the original local producer; an absent remote/pruned tail cannot be recovered by
+paging. For Agent failures use `session_show` instead. CLI equivalents are
+`request logs REQUEST --stream stderr --tail 30`, `--start 100 --end 150`, and
+`--search TEXT`; `config graph INPUT --impact --json` discovers conservative impact.
+Read details only when useful.
 RED is a verification result, not a tool invocation failure. Fix the evaluated
 Artifact and start a new attempt; resolve operational errors rather than inventing
 approval. Closing the terminal, interrupting a watcher, ending an agent turn or

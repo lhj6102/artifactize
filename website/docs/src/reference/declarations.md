@@ -442,8 +442,11 @@ does not invalidate a cached result. A fingerprint that must change with a tool'
 version has to read that version.
 
 The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 ms.
-It covers inert-child registration and execution without a reset. Each raw stdout
-and stderr stream is capped at 128 KiB while excess bytes are drained. Runtime
+It covers inert-child registration and execution without a reset. Each stdout
+and stderr **saved audit** retains the first 128 KiB. Runtime evals also retain
+full raw streams in private Run output, including the tail, until normal output
+pruning; `request logs`/MCP `request_logs` read bounded tail/range/search excerpts.
+Missing, partial and older/remote audit-only evidence are reported explicitly. Runtime
 results decode UTF-8 lossily, remove ANSI CSI sequences and C0 controls except tab,
 LF and CR (DEL is preserved), and retain the truncation flag and actual exit
 status/duration. Low-level process results remain unmodified bytes.

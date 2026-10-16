@@ -20,16 +20,18 @@ to that program, not artifactize.
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `mcp` | | [MCP stdio protocol](mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
-| `config graph [ARTIFACT]` | | text or JSON | 0 |
+| `config graph [ARTIFACT]` | `--impact` | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
+| `run watch RUN_ID` | | JSON-line updates, eval results, final validation | Run outcome |
 | `run cancel RUN_ID` | | cancellation acknowledgement JSON | 0 |
 | `run show RUN_ID` | `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | JSON | 0; outcome with `--wait` |
 | `request list` | `--run RUN_ID` | text or JSON | 0 |
 | `request show ID` | | JSON | 0 |
+| `request logs ID` | `--stream stdout\|stderr\|both`, `--tail N`, `--start N`, `--end N`, `--search TEXT` | bounded evidence JSON | 0 |
 | `request claim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
 | `request unclaim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
 | `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
@@ -320,3 +322,34 @@ and `grep`; absolute paths, `..` and symlinks are refused. Only `open` accepts
 HTTP(S) URLs. `artifactize tools --help` lists both `check` and these tools, and
 `artifactize tools SUBCOMMAND --help` documents each one. The `help` subcommand
 runs a trusted program with `--help`; it is not help navigation.
+
+
+### Agent streaming and runtime logs
+
+`verify SELECTOR --watch` submits and immediately follows the saved Run;
+`run watch RUN_ID` attaches later. Both emit flushed JSON lines, regardless of
+`--json`: `kind: update` for live state/counts, `kind: eval_result` for a concise
+saved request result, and `kind: outcome` for final Run validation. `--watch` and
+`--wait` are mutually exclusive. The watcher exits with the Run outcome; interrupt
+exits 130 and stops observation only. Reattachment replays completed evals, not an
+exact historical event journal. Follow an outcome's `next_cursor` through MCP
+`verify_result`, or inspect the saved Run when full detail is needed.
+
+For a failed runtime finding:
+
+```sh
+artifactize request logs REQUEST_ID --stream stderr --tail 30
+artifactize request logs REQUEST_ID --stream stdout --start 100 --end 150
+artifactize request logs REQUEST_ID --search 'failure' --tail 10
+artifactize config graph INPUT_ARTIFACT --impact --json
+```
+
+Log queries return explicit retention/missing evidence and original line numbers,
+not the full request audit. Tail defaults to 50 matching lines per stream; range
+queries return at most 200 lines per stream and a bounded byte budget, with
+`next_start` for continuation. Tail and range are exclusive. `search` is a literal,
+case-sensitive 1–2048-byte string. Lines longer than 2048 raw bytes are marked
+`clipped` with bounded head/tail text. Full raw runtime streams, including tails beyond the 128 KiB saved
+audit, stay in Run output until pruning; older/remote/pruned evidence may have
+only the saved audit and says so. See [MCP focused diagnosis](mcp.md#streaming-and-focused-diagnosis)
+for the shared evidence/event schemas and client delivery limits.

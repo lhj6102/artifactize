@@ -125,3 +125,18 @@ pub(super) struct Cache {
     #[serde(default)]
     pub history: bool,
 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct GraphInput {
+    #[serde(default = "all")]
+    pub scope: Scope,
+    #[serde(default)]
+    pub impact: bool,
+}
+#[derive(Deserialize)]
+pub(super) struct LogInput {
+    pub id: RequestId,
+    #[serde(flatten)]
+    pub query: crate::inspect::LogQuery,
+}

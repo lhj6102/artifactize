@@ -65,7 +65,9 @@ skill/instruction mechanism. Do not maintain a second edited version of it.
 
 ## Use MCP first
 
-Arti uses `config_check` to validate declarations and `status` to predict which
+Arti uses `config_graph` to discover Artifacts, evals and dependencies (`impact:true`
+adds downstream consumers conservatively), `config_check` to validate declarations
+and `status` to predict which
 evals execute, reuse or wait. `tools_check` inspects tools and sessions statically;
 it does not run project tools or start a session. Saved evidence is available
 through `run_list`, `run_show`, `request_list`, `request_show`, `session_show` and
@@ -160,13 +162,26 @@ after completion or source edits; retry a lost start answer with that key. A
 new attempt after fixes needs a new key or no key. Omitting it creates a new Run
 every time; it does not disable ordinary eval-result reuse.
 
-Use `verify_wait {run, seconds?}` rather than short-interval status loops. It
+When the host consumes standard MCP progress notifications, use `verify_watch
+{run}` with tool-call `_meta.progressToken`: up to 30 seconds of `update`,
+`eval_result` and final `outcome` events. Reattach at the bound, or read
+`verify_result` when terminal. A live update or one eval's GREEN is not final
+Run approval. Displaying/routing notifications into a conversation requires
+client support; artifactize cannot inject model turns. See the
+[MCP streaming contract](../reference/mcp.md#streaming-and-focused-diagnosis).
+
+Without client progress support, use `verify_wait {run, seconds?}` rather than
+short-interval status loops. It
 returns on Run end or its bound (default 30 seconds; integer 0–40; whole call under
 45 seconds), not early merely because a person is needed. A still-active response
 at the bound is normal. `verify_status` reads saved state; `verify_result` reads
 terminal findings with an optional continuation cursor, or `ready:false` while
 active. Follow continuation pages for complete evidence. RED is a verdict, not a
-tool invocation error.
+tool invocation error. Diagnose a failed runtime finding with `request_logs`:
+select stdout/stderr, tail, original line range or literal search without loading
+the full request. Evidence explicitly distinguishes full local captures (including
+tails past the saved audit limit), partial capture and unavailable older/remote/
+pruned logs. For Agent failures, inspect `session_show`.
 
 Two per-request choices default off: `speculate` can speed integration by starting
 downstream evals before upstream judgment, at the cost of work cancelled after
@@ -178,7 +193,9 @@ block. Do not choose these modes to evade a required person.
 Artifactize owns the Run, not the caller. Terminal closure, watcher interruption,
 MCP disconnection or ending the agent turn does not stop execution. Only explicit
 `verify_cancel {run}` requests cancellation; observe settlement to confirm cleanup.
-CLI fallback is `artifactize verify --all --request-key KEY` to submit,
+CLI fallback is `artifactize verify --all --watch` for JSON-line streaming,
+`artifactize run watch RUN_ID` to reattach,
+`artifactize verify --all --request-key KEY` to submit,
 `artifactize verify --all --wait --request-key KEY` to follow, `artifactize run
 show RUN_ID` to inspect, and `artifactize run cancel RUN_ID` to explicitly cancel.
 Default CLI `verify` exits zero on **acceptance**, not a successful review. There
