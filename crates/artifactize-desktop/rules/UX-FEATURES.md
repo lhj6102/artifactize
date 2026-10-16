@@ -19,8 +19,8 @@ a worktree, and its Review search reaches every repository. It shows and changes
 
 - **J-MON-CATALOG**: the left side stacks the Scope and Runs panes; the Scope pane lists ALL (this machine) and each repository and worktree; selecting one narrows the Runs pane to its Runs; the selected Run fills the right side as the graph of its Artifacts with their verdicts, under the Run's headline and what needs attention.
 - **J-MON-NAVIGATE**: arrow keys or `j`/`k` select a scope or a Run, Enter or → goes one level deeper (Scope, Runs, the Run's graph), Esc goes back a level, and so does ← in the Runs pane.
-- **J-MON-DETAIL**: hovering an Artifact or an eval, or selecting it with the keys, shows its Detail summary next to it. Enter, `o` or a click on an eval opens its full Detail as an overlay on the right of the graph: instruction, result, request, and with `t` the technical record; `o` on an Artifact opens the Artifact's Detail, and a click on the Run's headline the Run's. Esc closes the overlay.
-- **J-MON-ATTENTION**: `!` jumps to the next ERROR, RED or waiting Human eval, zoomed into its Artifact; `b` follows a blocked Artifact or eval to its upstream blocker.
+- **J-MON-DETAIL**: hovering an Artifact or an eval, or selecting it with the keys, shows its Detail summary next to it. Enter, `o` or a click on an eval in an Artifact's eval popup opens its full Detail as an overlay on the right of the graph: instruction, result, request, and with `t` the technical record; `o` on an Artifact opens the Artifact's Detail, and a click on the Run's headline the Run's. Esc closes the overlay.
+- **J-MON-ATTENTION**: `!` opens the eval popup of the Artifact of the next ERROR, RED or waiting Human eval, with that eval selected; `b` follows a blocked Artifact or eval to its upstream blocker.
 - **J-MON-LIVE**: a change made by another process (a claim, a submission, a new Run) appears in the open Monitor without a reload.
 - **J-MON-RESIZE**: the dividers between Scope and Runs and between the left side and the graph can be dragged to resize them.
 
@@ -28,10 +28,10 @@ a worktree, and its Review search reaches every repository. It shows and changes
 
 The Monitor shows a Run only as its graph.
 
-- **J-GRAPH-CURRENT**: `artifactize-desktop graph --repo PATH` (also the declared Human `graph` tool) opens current declarations in the same graph view, without a saved Run; nodes zoom to their evals, the structure text exposes all criteria and labeled relations, Refresh or Ctrl+R/F5 reloads declarations. There are no Run verdicts on this screen.
+- **J-GRAPH-CURRENT**: `artifactize-desktop graph --repo PATH` (also the declared Human `graph` tool) opens current declarations in the same graph view, without a saved Run; a click or Enter on a node pops up its evals around it, the structure text exposes all criteria and labeled relations, Refresh or Ctrl+R/F5 reloads declarations. There are no Run verdicts on this screen.
 - **J-GRAPH-COLOURS**: nodes and edges are coloured by verdict (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked) and recolour in place when a result arrives.
 - **J-GRAPH-MOVE**: ← → move to the upstream or downstream Artifact; ↑ ↓ to the neighbour in the same column; the selected Artifact's summary shows next to it.
-- **J-GRAPH-ZOOM**: Enter or a click zooms into an Artifact's evals, ↑ ↓ select one (its summary shows next to it), Esc zooms out.
+- **J-GRAPH-EVALS**: Enter or a click on an Artifact pops up its evals with their verdicts around the node, ↑ ↓ select one (its summary shows next to it), Esc closes the popup.
 - **J-GRAPH-LARGE**: a Run too large to draw at once stays navigable: moving beyond the drawn nodes brings the next ones into view and focus follows.
 
 ## Human review
