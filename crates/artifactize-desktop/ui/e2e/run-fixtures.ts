@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup } from "./build.ts";
 import { nativeFixture } from "./native-fixtures.ts";
-import { groupAlive, registerGroup } from "./owned.ts";
-import { exited, finishFixture, removeFixture, running, workers, type Identity } from "./runs.ts";
+import { groupAlive, registerGroup, withCleanup } from "./owned.ts";
+import { exited, finishFixture, identity, removeFixture, running, startedWorkers, workers, type Identity } from "./runs.ts";
 
 export async function workerExitFixture() {
   return nativeFixture((scratch) => {
@@ -21,6 +21,55 @@ export async function workerExitFixture() {
     release() { child.endInput(); },
     stop: () => scratch.dispose(),
   };
+  });
+}
+
+/** One state is already live while a second, requested acquisition is explicitly
+ * held. Its release is a protocol action, never a scheduling-delay inference. */
+export async function workerAdmissionFixture() {
+  return nativeFixture(async (scratch) => {
+    const scopes = [{ name: "monitor", state: scratch.path("state") }, { name: "graph", state: scratch.path("graph-state") }];
+    for (const { state } of scopes) mkdirSync(state);
+    const launch = (state: string) => scratch.node(
+      'process.stdin.resume(); process.stdin.on("end", () => process.exit(0)); console.log("ready");', {},
+      ["--", "--state-dir", state, "__execute", "run-admission-probe"]);
+    const first = launch(scopes[0].state);
+    await first.line();
+    const initial = identity(first.owned.child.pid!);
+    let admit!: () => void;
+    // Request this acquisition before observing readiness. Unwind releases and joins
+    // that same pending operation, rather than abandoning its observer or input tree.
+    const acquisition = new Promise<void>((done) => { admit = done; }).then(async () => {
+      const second = launch(scopes[1].state);
+      await second.line();
+      return identity(second.owned.child.pid!);
+    });
+    let captured: Identity[] | undefined;
+    const ready = startedWorkers(scopes.map(({ state }) => state)).then((owners) => { captured = owners; });
+    void acquisition.catch(() => {});
+    void ready.catch(() => {});
+    let ending: Promise<void> | undefined;
+    const expected = [initial];
+    return {
+      returned: () => captured !== undefined,
+      async admitSecond() {
+        if (ending) throw new Error("the worker admission fixture is stopping");
+        admit();
+        expected[1] = await acquisition;
+      },
+      ready: () => ready,
+      capturedScopes: () => scopes.filter((_scope, index) => expected[index] && captured?.some((owner) =>
+        owner.pid === expected[index].pid && owner.start_time === expected[index].start_time)).map(({ name }) => name),
+      capturedActive: () => !!captured?.length && captured.every(running),
+      stop() {
+        return ending ??= (async () => {
+          // Admission is closed above; settle the already-requested acquisition and
+          // observation before stopping native groups and releasing leased scratch.
+          admit();
+          await withCleanup(() => acquisition, () => ready, () => scratch.dispose());
+        })();
+      },
+    };
   });
 }
 

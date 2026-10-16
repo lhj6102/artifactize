@@ -62,6 +62,10 @@ describe("monitor", () => {
   it("catalogs the repository and its Run, and peeks at the selected eval", async () => {
     const shown = await text();
     assert.equal(await browser.$(".brand").getText(), "Artifactize");
+    await eventually(() => browser.execute(() => {
+      const mark = document.querySelector<HTMLImageElement>(".brand img");
+      return !!mark && mark.complete && mark.naturalWidth > 0;
+    }), "the approved brand image finished loading successfully");
     assert.equal(await browser.$(".brand img").execute((image) => {
       const mark = image as HTMLImageElement;
       return mark.complete && mark.naturalWidth > 0;

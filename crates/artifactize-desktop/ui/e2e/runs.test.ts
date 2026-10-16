@@ -1,8 +1,9 @@
 // Saved terminal state is not process exit; use the shared native scenario API.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { setImmediate } from "node:timers/promises";
 import { nativeUnsupported } from "./native-fixtures.ts";
-import { failedRunCleanupFixture, fixtureGroup, fixtureLifecycle, fixtureSnapshot, workerExitFixture } from "./run-fixtures.ts";
+import { failedRunCleanupFixture, fixtureGroup, fixtureLifecycle, fixtureSnapshot, workerAdmissionFixture, workerExitFixture } from "./run-fixtures.ts";
 import { withCleanup } from "./owned.ts";
 
 /** Retain the real failing CLI/cancellation cause, not merely a cleanup wrapper. */
@@ -27,6 +28,21 @@ describe("Linux durable worker exit", { skip: nativeUnsupported }, () => {
       await fixture.child.closed;
       assert.equal(fixture.active(), false);
       fixture.requireExited();
+    }, () => fixture.stop());
+  });
+
+  it("waits for each requested state's live admission and captures both worker lifetimes", async () => {
+    const fixture = await workerAdmissionFixture();
+    await withCleanup(async () => {
+      // The first state is actually ready; the second acquisition is still held by
+      // the fixture protocol. Let an erroneously immediate readiness promise settle.
+      await setImmediate();
+      assert.equal(fixture.returned(), false, "the live Monitor worker cannot stand in for pending graph-state admission");
+      await fixture.admitSecond();
+      await fixture.ready();
+      assert.equal(fixture.returned(), true);
+      assert.deepEqual(fixture.capturedScopes(), ["monitor", "graph"], "the readiness snapshot retains both actual birth identities");
+      assert.equal(fixture.capturedActive(), true, "readiness observes actual live work, not just accepted requests");
     }, () => fixture.stop());
   });
 

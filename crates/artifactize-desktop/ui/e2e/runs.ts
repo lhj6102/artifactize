@@ -61,14 +61,16 @@ export function workers(state: string): Identity[] {
   });
 }
 
-/** An accepted verify may still be handing off. Observe actual worker admission before
- * an interruption scenario, instead of assuming its CLI receipt means it is running. */
+/** An accepted verify may still be handing off. Every requested state must admit
+ * actual live work; a different state's older worker cannot establish its readiness.
+ * Return the same observed birth identities, not a later unqualified process scan. */
 export async function startedWorkers(states: string[]): Promise<Identity[]> {
   const deadline = Date.now() + EXIT_BOUND;
   for (;;) {
-    const owners = states.flatMap(workers);
-    if (owners.some(running)) return owners;
-    if (Date.now() >= deadline) throw new Error("fixture Run workers did not start");
+    const observed = states.map((state) => ({ state, owners: workers(state).filter(running) }));
+    const pending = observed.filter(({ owners }) => owners.length === 0);
+    if (observed.length > 0 && pending.length === 0) return observed.flatMap(({ owners }) => owners);
+    if (Date.now() >= deadline) throw new Error(`fixture Run workers did not start in every requested state: ${pending.map(({ state }) => state).join(", ") || "no states requested"}`);
     await new Promise((done) => setTimeout(done, 25));
   }
 }

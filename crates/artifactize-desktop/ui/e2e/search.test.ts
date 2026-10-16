@@ -3,7 +3,7 @@
 // takes a typed partial key and its value, and any other request opens read-only.
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { addRepository, artifactize, create, type Fixture, signoff } from "./fixture.ts";
+import { addRepository, artifactize, create, type Fixture, requests } from "./fixture.ts";
 import { checkBuild, type Session, start } from "./driver.ts";
 import { press, typeText } from "./keys.ts";
 import { checkpoint, commandsRendered } from "./commands.ts";
@@ -76,9 +76,17 @@ describe("review search", () => {
   // J-REVIEW-SEARCH; UX edges: E-SCREEN-MONITOR E-SCREEN-REVIEW E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS
   it("focuses search with / after switching to Review with no waiting requests, without taking typed slashes", async () => {
     await eventually(async () => (await rows()).length === 1, "the repository's waiting sign-off");
-    const id = signoff(fixture).id;
+    // The public request queue spans every repository in this state. Complete the exact
+    // row shown by this repository-scoped search, not its newest same-eval request elsewhere.
+    const id = await browser.execute(() => document.querySelector('[aria-label="Requests"] [role="option"] .mono')?.textContent?.trim());
+    assert.ok(id, "the visible waiting row names its request");
+    const waiting = requests(fixture).find((request) => request.id === id);
+    assert.ok(waiting, "the displayed request is in the public queue");
+    assert.equal(waiting.evalId, "release/signoff", "the displayed request is the sign-off");
+    assert.equal(waiting.status, "WAITING_HUMAN", "that exact displayed request still waits");
     assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "alice"), 0);
     assert.equal(artifactize(fixture, "request", "submit", id, "--reviewer", "alice", "--verdict", "GREEN", "--fields", '{"approved":true,"comment":"ok"}'), 0);
+    assert.equal(requests(fixture).find((request) => request.id === id)?.status, "GREEN", "the exact displayed request is settled in the public queue");
     await eventually(async () => (await rows()).length === 0 &&
       (await browser.execute(() => document.body.innerText)).includes("No Human reviews are waiting."), "the settled, empty waiting list");
     assert.equal(await browser.$('[aria-label="Requests"]').isExisting(), false, "there is no Requests list to receive keyboard focus");
