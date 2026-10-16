@@ -542,7 +542,7 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
 /// A deferred Agent request with a saved conversation of `rows` answers. Its recorded Run
 /// has ended with sign-offs pending; it must not claim a live worker that was never started.
 async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String {
-    let receipts = artifactize_core::store::Receipts::open(&fixture.state, &fixture.repo)
+    let receipts = artifactize_core::store::OwnedReceipts::open(&fixture.state, &fixture.repo)
         .await
         .unwrap();
     let run: artifactize_core::store::Run = serde_json::from_value(json!({
@@ -649,7 +649,7 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
 
     // The request completes with the same session: its evidence stamp changes, the reader stays.
     runtime.block_on(async {
-        let receipts = artifactize_core::store::Receipts::open(&fixture.state, &fixture.repo)
+        let receipts = artifactize_core::store::OwnedReceipts::open(&fixture.state, &fixture.repo)
             .await
             .unwrap();
         let mut view = artifactize_core::store::read_request(&fixture.state, &id)
@@ -679,7 +679,7 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
 
     // Another session replaces the reader.
     runtime.block_on(async {
-        let receipts = artifactize_core::store::Receipts::open(&fixture.state, &fixture.repo)
+        let receipts = artifactize_core::store::OwnedReceipts::open(&fixture.state, &fixture.repo)
             .await
             .unwrap();
         let mut view = artifactize_core::store::read_request(&fixture.state, &id)
