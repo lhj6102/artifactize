@@ -2,7 +2,7 @@
 // with an unsubmitted claim (stay, then release and quit).
 import assert from "node:assert/strict";
 import { addRepository, artifactize, create, type Fixture, requests, signoff } from "../fixture.ts";
-import { press, typeText } from "../keys.ts";
+import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -12,8 +12,7 @@ async function claimReview(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
   await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
   await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
-  const input = await browser.$('[aria-label="Request ID"]');
-  await input.setValue(signoff(fixture).id);
+  await fill(browser, '[aria-label="Request ID"]', signoff(fixture).id);
   await browser.$('[role="dialog"] button[type="submit"]').click();
   await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
   await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
@@ -93,7 +92,7 @@ export const scenarios: Scenario[] = [
       const id = selected === original ? otherId : original;
       assert.notEqual(id, selected, "the typed ID differs from the exact currently selected request");
       await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
-      await browser.$('[aria-label="Request ID"]').setValue(id);
+      await fill(browser, '[aria-label="Request ID"]', id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
       await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
       await browser.waitUntil(async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
@@ -193,8 +192,7 @@ export const scenarios: Scenario[] = [
       const text = () => browser.execute(() => document.body.innerText);
       await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
       await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
-      const input = await browser.$('[aria-label="Request ID"]');
-      await input.setValue(signoff(fixture).id);
+      await fill(browser, '[aria-label="Request ID"]', signoff(fixture).id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
       const human = await browser.$('[aria-label="Human review"]');
       await human.waitForExist({ timeout: 15000 });

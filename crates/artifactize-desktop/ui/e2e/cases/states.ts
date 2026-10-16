@@ -123,8 +123,10 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(on(order[0]), { timeout: 15000, timeoutMsg: `focus on ${order[0]}` });
       for (const next of order.slice(1)) {
         await press(browser, ["ArrowDown"], on(next), `focus on ${next}, below`);
-        const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
-        assert.ok(crumbs.includes(next.slice(2)), `the breadcrumb names ${next}: ${crumbs}`);
+        // The breadcrumb follows the focused node's selection, in a later render.
+        const crumbs = () => browser.$('nav[aria-label="Breadcrumb"]').getText();
+        await browser.waitUntil(async () => (await crumbs()).includes(next.slice(2)), { timeout: 15000, timeoutMsg: `the breadcrumb names ${next}` })
+          .catch(async (error: unknown) => { throw new Error(`the breadcrumb names ${next}: ${await crumbs()}`, { cause: error }); });
       }
       await press(browser, ["ArrowUp"], on(order[order.length - 2]), `focus on ${order[order.length - 2]}, above`);
     },

@@ -3,7 +3,7 @@
 // page holds.
 import assert from "node:assert/strict";
 import { artifactize, create, createPagedRequests, signoff } from "../fixture.ts";
-import { afterRender, press } from "../keys.ts";
+import { afterRender, fill, press } from "../keys.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint } from "../commands.ts";
 
@@ -100,7 +100,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["c"], async () => (await browser.execute(() => document.body.innerText)).includes("claimed by you"), "claimed");
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       assert.ok(!(await browser.$("#field-reason").isExisting()), "no RED field in the GREEN form");
-      await browser.$("#field-comment").setValue("GREEN draft stays");
+      await fill(browser, "#field-comment", "GREEN draft stays");
       // An idempotent verdict leaves the same field visible: require the real chord's
       // defaultPrevented flag after the app handler, not only that already-true field state.
       await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G preserves GREEN", { handled: true });
@@ -108,7 +108,7 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.$("#field-reason").isExisting()), "Ctrl+G kept the GREEN schema");
       await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "no GREEN field in the RED form");
-      await browser.$("#field-reason").setValue("RED draft stays");
+      await fill(browser, "#field-reason", "RED draft stays");
       await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R preserves RED", { handled: true });
       assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");

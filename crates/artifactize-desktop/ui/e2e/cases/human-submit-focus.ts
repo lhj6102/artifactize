@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { create, signoff } from "../fixture.ts";
 import { saveEvidence } from "../observation.ts";
-import { press } from "../keys.ts";
+import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
 
@@ -30,7 +30,7 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
       } else {
         await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
         await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "open by ID");
-        await browser.$('[aria-label="Request ID"]').setValue(signoff(fixture).id);
+        await fill(browser, '[aria-label="Request ID"]', signoff(fixture).id);
         await browser.$('[role="dialog"] button[type="submit"]').click();
         await human().waitForExist({ timeout: 15000 });
       }
@@ -38,7 +38,7 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
       await press(browser, ["c"], async () => (await text()).includes("REVIEW (yours)"), "claimed Human Detail");
       assert.equal(signoff(fixture).claim?.reviewer, "alice");
       await press(browser, ["g"], () => browser.execute(() => document.activeElement?.id === "field-comment"), "the focused GREEN comment");
-      await browser.$("#field-comment").setValue("checked before closing");
+      await fill(browser, "#field-comment", "checked before closing");
       await press(browser, [primaryModifier, "s"], async () =>
         signoff(fixture).status === "GREEN" && /completed result/i.test(await text()), "the saved, completed Detail");
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "checked before closing" });

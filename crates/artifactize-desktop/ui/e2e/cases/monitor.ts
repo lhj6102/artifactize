@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { artifactize, create, createNavigationFixture, type Fixture, launched, signoff, slowTool } from "../fixture.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { afterRender, press } from "../keys.ts";
+import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
@@ -180,10 +180,15 @@ export const scenarios: Scenario[] = [
       await openReview();
       await selectTool("notes_release");
       await browser.$('//li[@role="option"][.//span[text()="notes_release"]]').click();
-      await browser.waitUntil(async () => {
-        const shown = await toolOutput();
-        return shown.title === "Output · notes_release" && shown.notice === "notes_release finished." && /Ready to ship\./.test(shown.text);
-      }, { timeout: 15000, timeoutMsg: "the selected tool's click alone produced its output" });
+      try {
+        await browser.waitUntil(async () => {
+          const shown = await toolOutput();
+          return shown.title === "Output · notes_release" && shown.notice === "notes_release finished." && /Ready to ship\./.test(shown.text);
+        }, { timeout: 15000, timeoutMsg: "the selected tool's click alone produced its output" });
+      } catch (error) {
+        const commands = (await checkpoint(browser)).activity.commands.humanRun;
+        throw new Error(`the selected tool's click alone produced its output; tool commands ${JSON.stringify(commands)}, output ${JSON.stringify(await toolOutput())}`, { cause: error });
+      }
       assert.equal((await checkpoint(browser)).activity.commands.humanRun?.started, 1, "the pointer activation dispatched exactly one tool command");
       assert.equal(signoff(fixture).status, "WAITING_HUMAN", "clicking a tool is not a verdict");
     },
@@ -268,30 +273,31 @@ export const scenarios: Scenario[] = [
       const { human, openReview } = await monitorUI(browser, fixture);
       await openReview();
       await human().click();
-      const reason = await browser.$("#field-reason");
-      await press(browser, ["r"], () => reason.isExisting(), "the RED reason form");
-      await reason.setValue("no");
+      // Each verdict switch rebuilds the form: the field is found again every time.
+      const reason = () => browser.$("#field-reason");
+      await press(browser, ["r"], () => reason().isExisting(), "the RED reason form");
+      await fill(browser, "#field-reason", "no");
       await browser.keys([primaryModifier, "s"]);
       const alert = await browser.$('[role="alert"]');
       await alert.waitForExist({ timeout: 15000 });
       assert.match(await alert.getText(), /reason/);
       assert.equal(signoff(fixture).status, "WAITING_HUMAN");
       // The form keeps what was entered and stays editable, to be corrected.
-      assert.equal(await reason.getValue(), "no");
-      await reason.setValue("not good enough");
-      assert.equal(await reason.getValue(), "not good enough");
+      assert.equal(await reason().getValue(), "no");
+      await fill(browser, "#field-reason", "not good enough");
+      assert.equal(await reason().getValue(), "not good enough");
       assert.equal(signoff(fixture).result, null, "the invalid RED result was not saved");
       // Continue this rejected submission, without leaving its claimed review. Each verdict
       // must rebuild the owner's corresponding schema, even after validation failed.
       await press(browser, [primaryModifier, "g"], async () =>
-        await browser.$("#field-comment").isExisting() && !(await reason.isExisting()), "the pass-schema form after invalid RED");
+        await browser.$("#field-comment").isExisting() && !(await reason().isExisting()), "the pass-schema form after invalid RED");
       assert.equal(await browser.$("#field-approved").getValue(), "true (fixed)", "the pass schema's approved constant");
-      await browser.$("#field-comment").setValue("checked after rejection");
+      await fill(browser, "#field-comment", "checked after rejection");
       assert.equal(await browser.$("#field-comment").getValue(), "checked after rejection");
       await press(browser, [primaryModifier, "r"], async () =>
-        await reason.isExisting() && !(await browser.$("#field-comment").isExisting()), "the fail-schema form again");
-      await reason.setValue("a correctable reason");
-      assert.equal(await reason.getValue(), "a correctable reason");
+        await reason().isExisting() && !(await browser.$("#field-comment").isExisting()), "the fail-schema form again");
+      await fill(browser, "#field-reason", "a correctable reason");
+      assert.equal(await reason().getValue(), "a correctable reason");
       assert.equal(await browser.$("#field-approved").isExisting(), false, "no pass-schema field in RED");
       const saved = signoff(fixture);
       assert.equal(saved.status, "WAITING_HUMAN");
@@ -319,7 +325,7 @@ export const scenarios: Scenario[] = [
       });
       assert.ok(await comment.isExisting(), "the form stays open");
       const korean = "릴리스 노트를 확인했습니다";
-      await comment.setValue(korean);
+      await fill(browser, "#field-comment", korean);
       assert.equal(await comment.getValue(), korean);
       // Ctrl+E turns the typed form into focused JSON. Edit that text field through
       // WebDriver's text-input API, then Ctrl+S submits it; no click in between.
@@ -328,8 +334,7 @@ export const scenarios: Scenario[] = [
       const json = await browser.$("textarea.json");
       assert.deepEqual(JSON.parse(await json.getValue()), { approved: true, comment: korean });
       const edited = JSON.stringify({ approved: true, comment: `${korean} (JSON)` }, null, 2);
-      await json.setValue(edited);
-      await browser.waitUntil(async () => (await json.getValue()) === edited, { timeout: 15000, timeoutMsg: "the JSON comment edit" });
+      await fill(browser, "textarea.json", edited);
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: `${korean} (JSON)` });

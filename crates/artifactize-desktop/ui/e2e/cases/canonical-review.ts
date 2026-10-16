@@ -1,7 +1,7 @@
 // The real IPC resolves both request IDs to one review and one kept draft, in either order.
 import assert from "node:assert/strict";
 import { artifactize, create, requests, verifyWaiting } from "../fixture.ts";
-import { press } from "../keys.ts";
+import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
 
@@ -29,7 +29,7 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
 
       async function open(id: string) {
         await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the request ID dialog");
-        await browser.$('[aria-label="Request ID"]').setValue(id);
+        await fill(browser, '[aria-label="Request ID"]', id);
         await browser.$('[role="dialog"] button[type="submit"]').click();
         await browser.waitUntil(
           async () => !(await browser.$('[aria-label="Request ID"]').isExisting()) && await human().isExisting(),
@@ -46,12 +46,12 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
       }
 
       await open(ids[0]);
-      await field().setValue("one canonical draft");
+      await fill(browser, "#field-comment", "one canonical draft");
       await browser.waitUntil(async () => (await field().getValue()) === "one canonical draft");
       await close();
       await open(ids[1]);
       assert.equal(await field().getValue(), "one canonical draft");
-      await field().setValue("edited through the other ID");
+      await fill(browser, "#field-comment", "edited through the other ID");
       await browser.waitUntil(async () => (await field().getValue()) === "edited through the other ID");
       await close();
       await open(ids[0]);
