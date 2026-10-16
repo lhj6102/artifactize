@@ -586,7 +586,7 @@ mod ownership_tests {
             .execute_batch("CREATE TABLE unrelated(value TEXT)")
             .unwrap();
         drop(connection);
-        let error = match Receipts::open(&state, &repo).await {
+        let error = match OwnedReceipts::open(&state, &repo).await {
             Ok(_) => panic!("an unversioned nonempty database is not our schema"),
             Err(error) => error,
         };
@@ -601,11 +601,11 @@ mod ownership_tests {
         let state = root.path().join("state");
         let repo = root.path().join("repo");
         std::fs::create_dir(&repo).unwrap();
-        let writer = Receipts::open(&state, &repo).await.unwrap();
-        let retained = writer.clone();
+        let writer = OwnedReceipts::open(&state, &repo).await.unwrap();
+        let retained = Receipts::clone(&writer);
         let database = state.join(DATABASE);
         assert!(!crate::test_os::database_released(&database).unwrap());
-        writer.close().await.unwrap();
+        Receipts::clone(&writer).close().await.unwrap();
         assert!(crate::test_os::database_released(&database).unwrap());
         assert_eq!(retained.state_id().await.unwrap_err(), "ConnectionClosed");
         root.close().unwrap();

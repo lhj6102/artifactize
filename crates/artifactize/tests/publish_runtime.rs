@@ -4,6 +4,7 @@
 mod support;
 
 use artifactize_core::{process, runtime};
+use futures_util::FutureExt;
 use std::{fs, path::PathBuf};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -20,6 +21,29 @@ const CRATES: [&str; 4] = [
 
 #[tokio::test]
 async fn publication_cancellation_reaps_the_build_script_before_releasing_owned_tmp() {
+    let mut released = false;
+    publication_fixture(false, &mut released).await;
+    assert!(released);
+}
+
+#[tokio::test]
+async fn publication_unwind_joins_cancellation_before_releasing_the_fixture() {
+    let mut released = false;
+    let failed = std::panic::AssertUnwindSafe(publication_fixture(true, &mut released))
+        .catch_unwind()
+        .await;
+    // Preserving the original assertion must not hide a failed teardown assertion.
+    assert!(
+        released,
+        "publication teardown must also succeed during unwind"
+    );
+    assert_eq!(
+        failed.unwrap_err().downcast_ref::<&str>(),
+        Some(&"publication fixture assertion")
+    );
+}
+
+async fn publication_fixture(unwind: bool, released: &mut bool) {
     let root = support::os::tempdir();
     let workspace = root.path().join("workspace");
     fs::create_dir(&workspace).unwrap();
@@ -82,42 +106,70 @@ async fn publication_cancellation_reaps_the_build_script_before_releasing_owned_
     command.cwd = cli;
     let scratch = command.directory().join("tmp");
     let cancellation = CancellationToken::new();
-    let _cancel_on_unwind = cancellation.clone().drop_guard();
-    let mut running = support::spawn(runtime::execute(command, cancellation.clone(), |_| async {
-        Ok(())
-    }));
-    let (socket, _) = tokio::select! {
-        connection = listener.accept() => connection.unwrap(),
-        outcome = &mut running => panic!("publication exited before the build script connected: {outcome:?}"),
-    };
-    let mut socket = BufReader::new(socket);
-    let mut line = String::new();
-    tokio::select! {
-        ready = socket.read_line(&mut line) => { ready.unwrap(); },
-        outcome = &mut running => panic!("publication exited before the build script was ready: {outcome:?}"),
-    }
-    let build_output = support::os::canonical(&PathBuf::from(line.trim()));
-    let owned_tmp = support::os::canonical(&scratch);
+    // Cancellation must run the runtime's teardown to completion, not abort its future.
+    let running = runtime::execute(command, cancellation.clone(), |_| async { Ok(()) });
+    tokio::pin!(running);
+    let mut outcome = None;
+    let mut socket = None;
+    let observed = std::panic::AssertUnwindSafe(async {
+        let (connected, _) = tokio::select! {
+            connection = listener.accept() => connection.unwrap(),
+            finished = &mut running => {
+                outcome = Some(finished);
+                panic!("publication exited before the build script connected: {outcome:?}");
+            },
+        };
+        socket = Some(BufReader::new(connected));
+        let mut line = String::new();
+        tokio::select! {
+            ready = socket.as_mut().unwrap().read_line(&mut line) => { ready.unwrap(); },
+            finished = &mut running => {
+                outcome = Some(finished);
+                panic!("publication exited before the build script was ready: {outcome:?}");
+            },
+        }
+        let build_output = support::os::canonical(&PathBuf::from(line.trim()));
+        let owned_tmp = support::os::canonical(&scratch);
+        assert!(build_output.starts_with(owned_tmp));
+        assert!(!unwind, "publication fixture assertion");
+    })
+    .catch_unwind()
+    .await;
     cancellation.cancel();
-    let outcome = running.await.unwrap();
-    // Let an incorrectly surviving script answer and exit, so this negative check
-    // owns its fixture even when the runtime's cancellation contract regresses.
-    let response = support::os::closed_tcp_probe(&mut socket, b"probe")
-        .await
-        .unwrap();
-    assert!(
-        matches!(
-            outcome,
-            runtime::Outcome::OperationalError(runtime::Error::Process(process::Error::Cancelled))
-        ),
-        "{outcome:?}"
-    );
-    assert!(build_output.starts_with(owned_tmp));
-    assert!(
-        response.is_empty(),
-        "the build script survived: {response:?}"
-    );
-    assert!(!scratch.exists(), "runtime-owned tmp must be released");
+    let closed = std::panic::AssertUnwindSafe(async {
+        let outcome = match outcome {
+            Some(outcome) => outcome,
+            None => running.await,
+        };
+        // Let an incorrectly surviving script answer and exit, so this negative check
+        // owns its fixture even when the runtime's cancellation contract regresses.
+        if let Some(socket) = &mut socket {
+            let response = support::os::closed_tcp_probe(socket, b"probe")
+                .await
+                .unwrap();
+            assert!(
+                response.is_empty(),
+                "the build script survived: {response:?}"
+            );
+        }
+        assert!(
+            matches!(
+                outcome,
+                runtime::Outcome::OperationalError(runtime::Error::Process(
+                    process::Error::Cancelled
+                ))
+            ),
+            "{outcome:?}"
+        );
+        assert!(!scratch.exists(), "runtime-owned tmp must be released");
+    })
+    .catch_unwind()
+    .await;
+    *released = closed.is_ok();
+    match (observed, closed) {
+        (Err(panic), _) | (_, Err(panic)) => std::panic::resume_unwind(panic),
+        (Ok(()), Ok(())) => {}
+    }
 }
 
 #[tokio::test]

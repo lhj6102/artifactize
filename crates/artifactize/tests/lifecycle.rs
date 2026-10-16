@@ -105,8 +105,8 @@ async fn owned_root_releases_every_repository_before_removal_on_return_and_unwin
 #[tokio::test]
 async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_scopes() {
     for unwind in [false, true] {
-        let parent = support::os::tempdir();
-        let root = owned_run::Root::from(support::os::tempdir_in(parent.path(), "fixture-"));
+        // No auto-deleting ancestor may remove inputs retained by failed Run cleanup.
+        let root = owned_run::Root::from(support::os::tempdir());
         let directory = root.path().to_owned();
         let broken = root.path().join("a-broken-state");
         let state = root.path().join("z-active-state");
@@ -158,7 +158,8 @@ async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_
         }
         assert_eq!(fs::read(repo.join("input")).unwrap(), b"owned input");
         assert!(directory.exists(), "failed cleanup retains inputs");
-        parent.close().unwrap();
+        // Explicit removal is safe only after every saved worker/supervisor has exited.
+        fs::remove_dir_all(&directory).unwrap();
     }
 }
 

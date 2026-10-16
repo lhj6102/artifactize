@@ -217,7 +217,7 @@ mod tests {
         let repo = root.path().join("repo");
         let state = root.path().join("state");
         std::fs::create_dir(&repo).unwrap();
-        let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+        let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
         let run: store::Run = serde_json::from_value(json!({
             "id":"run-1", "repoPath":repo, "stateDir":state, "status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z", "completedAt":"2026-01-01T00:00:01Z",
@@ -228,7 +228,7 @@ mod tests {
             crate::test_request::request("app/check", "GREEN", json!({"cwd":repo})).request;
         let id = request.id.clone();
         receipts.create_run(&run, &[request]).await.unwrap();
-        receipts.close().await.unwrap();
+        store::Receipts::clone(&receipts).close().await.unwrap();
         let reviewer = Some("alice".parse().unwrap());
         for command in [
             RequestCommand::Claim {
