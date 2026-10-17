@@ -30,8 +30,10 @@ export type Tab = { name: string; glyph: string; tone: string; selected: boolean
 export type Detail = {
   /** The Detail's heading: the shown node's title, or "Human review". */
   title: string;
-  /** The Artifact tab first, then one per eval; empty for the Run's Detail. */
+  /** The Artifact's chip (`Artf:{name}`) first, then one per eval; empty for the Run's Detail. */
   tabs: Tab[];
+  /** The chip row as it reads, glyphs left out: `Artf:{name} / eval eval …`. */
+  path: string;
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
   /** Whether the Detail lies within the graph's area, right of Scope and Runs, with a gap
@@ -58,6 +60,13 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
           selected: tab.getAttribute("aria-selected") === "true",
         };
       }),
+      path: [...(aside.querySelector('[role="tablist"]')?.childNodes ?? [])].flatMap((node) => {
+        const element = node as HTMLElement;
+        const parts = element.matches?.(".head") ? [...element.children] : [element];
+        return parts.map((part) => (part as HTMLElement).matches?.('[role="tab"]')
+          ? [...part.childNodes].filter((child) => !(child as HTMLElement).classList?.contains("glyph")).map((child) => child.textContent ?? "").join("").trim()
+          : part.textContent?.trim() ?? "");
+      }).filter((text) => text !== "").join(" "),
       evals: [...aside.querySelectorAll<HTMLElement>("button[data-eval]")].map((row) => ({
         name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
         status: row.querySelector(".status")?.textContent?.trim() ?? "",

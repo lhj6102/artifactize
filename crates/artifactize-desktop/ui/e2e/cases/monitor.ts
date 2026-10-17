@@ -494,7 +494,7 @@ export const scenarios: Scenario[] = [
       const opened = await openArtifact(browser, "a:subject", "Artifact subject");
       assert.deepEqual(opened.evals.map((row) => row.name), [older.eval], "the older Run's own criterion");
       await openTab(browser, `e:subject/${older.eval}`);
-      const human = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"]');
+      const human = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"][tabindex="0"]');
       await browser.waitUntil(() => browser.execute((name) => document.querySelector('[aria-label="Human review"] h3')?.textContent?.includes(`subject/${name}`) ?? false,
         older.eval), { timeout: 15000, timeoutMsg: "the eval's tab holds this journey's Human review" });
       await human().click();
@@ -518,8 +518,10 @@ export const scenarios: Scenario[] = [
       // A click on release, then on its sign-off's tab, opens the Human Detail.
       await openArtifact(browser, "a:release", "Artifact release");
       await openTab(browser, "e:release/signoff");
-      await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000, timeoutMsg: "Human Detail" });
-      await browser.$('[aria-label="Human review"]').click();
+      const review = () => browser.$('[aria-label="Human review"][tabindex="0"]');
+      await review().waitForExist({ timeout: 15000, timeoutMsg: "Human Detail" });
+      await review().$("button*=Claim").waitForEnabled({ timeout: 15000, timeoutMsg: "the review ready to claim" });
+      await review().click();
       await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
       await browser.keys(["c"]);
       await browser.waitUntil(async () => signoff(fixture).claim?.reviewer === "alice", { timeout: 15000, timeoutMsg: "claimed" });

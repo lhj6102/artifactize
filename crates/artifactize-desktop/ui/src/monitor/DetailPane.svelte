@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Detail of an Artifact or of the Run, floating over the graph. An Artifact's Detail has
-  // tabs, a chip choice: the Artifact's own, which lists its evals with their verdicts, then one
-  // per eval. An eval's tab shows its Summary or its log (an Agent's transcript, a runtime's
+  // tabs, a chip choice that reads as a path: `Artf:{name} / [eval] [eval] …`. The Artifact's
+  // own lists its evals with their verdicts; then comes one per eval. An eval's tab shows its Summary or its log (an Agent's transcript, a runtime's
   // saved output), or the shared Human Detail. Its width is the Detail's: everything in it wraps
   // or scrolls in its own box.
   import type { Attachment } from "svelte/attachments";
@@ -116,7 +116,11 @@
   <div class="detail" class:tabbed>
     {#if tabbed && row}
       <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}">
-        <button class="chip" role="tab" aria-selected={tab === null} onclick={() => ontab(null)}>Artifact</button>
+        <!-- The `/` stays with the Artifact's chip: only eval chips flow onto further lines. -->
+        <span class="head">
+          <button class="chip" role="tab" aria-selected={tab === null} aria-label="Artifact {row.name}" onclick={() => ontab(null)}>Artf:{row.name}</button>
+          {#if evals.length > 0}<span class="slash" aria-hidden="true">/</span>{/if}
+        </span>
         {#each evals as item (item.id)}
           <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
             <span class="glyph {tone(item.tone)}">{item.glyph}</span>{item.name}
@@ -177,8 +181,25 @@
   }
   /* Many tabs wrap onto further lines; they never widen the Detail. */
   .strip {
+    align-items: baseline;
     padding: 2px var(--pad) 8px;
     border-bottom: 1px solid var(--border);
+  }
+  /* The Artifact's chip and its `/` wrap as one; a long name is cut inside the chip. */
+  .head {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .head .chip {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .slash {
+    flex: none;
+    color: var(--muted);
   }
   .content {
     display: grid;

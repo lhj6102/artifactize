@@ -165,8 +165,7 @@ export const scenarios: Scenario[] = [
       // These are the person's commands for this screen, not a registry-derived oracle.
       const expected = [
         "Command palette", "Keyboard shortcuts", "Show Monitor", "Show Review", "Show Settings", "Quit",
-        "Refresh", "Next attention", "Focus Scope", "Focus Runs", "Focus Run graph",
-        "Open Detail of the selected node", "Open the Run's Detail",
+        "Refresh", "Focus Scope", "Focus Runs", "Focus Run graph", "Open the Run's Detail",
       ].sort();
       await waitFor(browser, async () => isDeepStrictEqual(await listed(), expected), "the enabled Monitor commands are rendered");
       assert.deepEqual(await listed(), expected, "all and only the enabled commands of the Monitor");

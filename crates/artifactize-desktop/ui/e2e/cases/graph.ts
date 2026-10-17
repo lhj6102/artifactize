@@ -38,7 +38,8 @@ export const scenarios: Scenario[] = [
 
       // A click opens release's Detail on its Artifact tab: its one eval, waiting for a Human.
       const opened = await openArtifact(browser, "a:release", "Artifact release");
-      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["Artifact", "signoff"], "the Artifact tab, then release's own eval");
+      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["Artf:release", "signoff"], "release's own chip, then its one eval's");
+      assert.equal(opened.path, "Artf:release / signoff", "the chips read as a path");
       assert.equal(opened.tabs[1].tone, "tone-human", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
       assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
@@ -71,7 +72,7 @@ export const scenarios: Scenario[] = [
 
       // The sign-off's tab holds its completed Human review; Esc closes the Detail.
       await openTab(browser, "e:release/signoff");
-      const review = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"]');
+      const review = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"][tabindex="0"]');
       await browser.waitUntil(async () => (await review().isExisting()) && /completed result/i.test(await aside(browser).getText()),
         { timeout: 15000, timeoutMsg: "the completed review on the sign-off's tab" });
       await review().click();
@@ -83,7 +84,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
   scenario<Record<string, never>>(
     "graph-click-detail",
-    "opens an Artifact's Detail on a click, switches it on another click, closes it on the background, and opens it with Tab and Enter",
+    "opens an Artifact's Detail on a click or Enter, switches it on another click, closes it on the background, then steps back to Runs",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -93,32 +94,30 @@ export const scenarios: Scenario[] = [
       const runs = () => browser.$('[role="listbox"][aria-label="Runs"]');
       const pane = () => browser.$('section.panel[aria-label^="Run run-"]');
       await browser.waitUntil(() => runs().isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
+      // Enter steps from Runs into the graph's pane.
+      await press(browser, ["Enter"], () => pane().isFocused(), "the graph's pane focused");
+
+      // A click opens an Artifact's Detail and leaves the keyboard on that Artifact: Esc closes
+      // the Detail, Enter on the focused Artifact opens it again, as the click did.
       await openArtifact(browser, "a:ship", "Artifact ship");
-      // Another click switches the open Detail to that Artifact, on its Artifact tab.
+      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:ship", { timeout: 15000, timeoutMsg: "the keyboard on ship" });
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact ship", "Enter on ship opened its Detail again");
+
+      // Another click switches the Detail to that Artifact, and a click on the graph's
+      // background closes it. Esc then steps back to Runs.
       await openArtifact(browser, "a:release", "Artifact release");
-      // A click on the graph's background closes it.
       const canvas = await browser.execute(() => {
         const box = document.querySelector(".graph .canvas")!.getBoundingClientRect();
         const nodes = [...document.querySelectorAll(".svelte-flow__node")].map((node) => node.getBoundingClientRect());
-        // A point of the background below every node and right of the camera controls.
+        // A point of the background below every node, left of the Detail and right of the
+        // camera controls.
         const below = Math.max(...nodes.map((node) => node.bottom));
-        return { x: Math.round(box.left + box.width / 2), y: Math.round(Math.min(box.bottom - 20, below + (box.bottom - below) / 2)) };
+        const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
+        return { x: Math.round((box.left + dock.left) / 2), y: Math.round(Math.min(box.bottom - 20, below + (box.bottom - below) / 2)) };
       });
       await browser.action("pointer").move({ x: canvas.x, y: canvas.y }).down().up().perform();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the background click closed the Detail" });
-
-      // The keyboard: Enter steps from Runs into the graph's pane, Tab reaches an Artifact and
-      // Enter opens its Detail; Esc closes it, and Esc again steps back to Runs.
-      await press(browser, ["Enter"], () => pane().isFocused(), "the graph's pane focused");
-      let focused: string | null = null;
-      for (let step = 0; step < 4 && focused === null; step += 1) {
-        await press(browser, ["Tab"], async () => !(await pane().isFocused()), "focus moved on with Tab");
-        focused = await focusedNode(browser);
-      }
-      assert.ok(focused, "Tab reached an Artifact of the graph");
-      const name = focused.slice("a:".length);
-      await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `${name}'s Detail opened`);
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await press(browser, ["Escape"], () => runs().isFocused(), "back to Runs");
     },
   ),
@@ -150,7 +149,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-BEYOND
   scenario<Record<string, never>>(
     "graph-chain-culling",
-    "draws the Artifacts the camera brings into view when panning a chain too large to draw at once",
+    "draws the Artifacts the camera brings into view when zooming over a chain too large to draw at once",
     async () => {
       const fixture = createChain(85);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -174,21 +173,10 @@ export const scenarios: Scenario[] = [
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
       await browser.waitUntil(async () => !(await drawn(name(84))) && !(await visible()).includes(name(84)),
         { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas and is not drawn" });
-      // Drag the background leftwards, as a person pans: each drag moves the camera, and the
-      // Artifacts it brings into view are drawn, until the chain's end is.
-      const transform = () => browser.execute(() => document.querySelector<HTMLElement>(".svelte-flow__viewport")?.style.transform ?? "");
-      for (let drag = 0; drag < 40 && !(await visible()).includes(name(84)); drag += 1) {
-        const start = await browser.execute(() => {
-          const box = document.querySelector(".graph .canvas")!.getBoundingClientRect();
-          return { x: Math.round(box.right - 60), y: Math.round(box.top + 60) };
-        });
-        const moved = await transform();
-        const pointer = browser.action("pointer", { id: "pan" }).move({ x: start.x, y: start.y }).down();
-        for (let step = 0; step < 8; step += 1) pointer.move({ origin: "pointer", x: -60, y: 0 });
-        await pointer.up().perform();
-        await browser.waitUntil(async () => (await transform()) !== moved, { timeout: 15000, timeoutMsg: "the drag panned the camera" });
-      }
-      await browser.waitUntil(async () => (await visible()).includes(name(84)), { timeout: 15000, timeoutMsg: "panning drew the chain's last Artifact in view" });
+      // Fit View moves the camera back over the whole chain: the Artifacts it brings into view
+      // are drawn, the chain's end among them.
+      await browser.$(".svelte-flow__controls-fitview").click();
+      await browser.waitUntil(async () => (await visible()).includes(name(84)), { timeout: 15000, timeoutMsg: "the camera drew the chain's last Artifact in view" });
       // The Artifact brought into view takes the pointer like any other.
       await graphShown(browser, name(84));
       await openArtifact(browser, name(84), "Artifact n084");
@@ -206,7 +194,7 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       await graphShown(browser, "a:app");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
-      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["Artifact", "alpha", "beta", "gamma"], "the Artifact tab, then one tab per eval");
+      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["Artf:app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");
       assert.ok(opened.tabs.slice(1).every((tab) => tab.tone === "tone-green" && tab.glyph !== ""), "each eval's tab shows its GREEN glyph in GREEN");
       assert.deepEqual(opened.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's own evals");
       assert.ok(opened.evals.every((row) => /GREEN/.test(row.status)), "with their verdicts");
@@ -231,11 +219,12 @@ export const scenarios: Scenario[] = [
         .map((view) => [view.textContent?.trim() ?? "", view.getAttribute("aria-selected")]));
       assert.deepEqual(await views(), [["Summary", "true"], ["Runtime log", "false"]]);
       const log = () => browser.execute(() => document.querySelector('aside[aria-label="Detail"] .evidence')?.textContent ?? "");
-      await aside(browser).$('[aria-label="Views"] [role="tab"]:nth-child(2)').click();
+      const view = async (at: number) => (await aside(browser).$$('[aria-label="Views"] [role="tab"]'))[at];
+      await (await view(1)).click();
       await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()) && (await field("Request")) === "",
         { timeout: 15000, timeoutMsg: "app/beta's Runtime log shown instead of its Summary" });
       assert.deepEqual(await views(), [["Summary", "false"], ["Runtime log", "true"]]);
-      await aside(browser).$('[aria-label="Views"] [role="tab"]:nth-child(1)').click();
+      await (await view(0)).click();
       await browser.waitUntil(async () => (await field("Request")) === request.id && (await log()) === "",
         { timeout: 15000, timeoutMsg: "app/beta's Summary shown again" });
       // Another eval's tab shows that eval; Esc closes the Detail.

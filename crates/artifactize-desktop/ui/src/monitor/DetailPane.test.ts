@@ -1,4 +1,4 @@
-// An Artifact's Detail against a mocked command boundary: its tabs (the Artifact's own, then one
+// An Artifact's Detail against a mocked command boundary: its tabs (`Artf:{name}`, a `/`, then one
 // per eval with its verdict's glyph and colour), the Artifact tab's eval list that switches to an
 // eval's tab, each tab's own backend Detail, and Close and Esc.
 import { renderHosted } from "../test-host";
@@ -48,7 +48,9 @@ it("shows the Artifact tab first with its evals' verdicts, and switches to an ev
   const { read, ontab, rerender } = setup();
   await screen.findByRole("heading", { name: "Artifact app" });
   const tabs = within(screen.getByRole("tablist", { name: "Tabs of app" })).getAllByRole("tab");
-  expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Artifact", "✓lint", "✗test"]);
+  // It reads as a path: the Artifact's chip, a `/`, then the evals' chips.
+  expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Artf:app", "✓lint", "✗test"]);
+  expect(screen.getByRole("tablist").textContent?.replace(/\s+/g, " ").trim()).toBe("Artf:app / ✓lint✗test");
   expect(tabs[0].getAttribute("aria-selected")).toBe("true");
   // Each eval's tab carries its verdict's glyph in its verdict's colour.
   expect(tabs[2].querySelector(".tone-red")?.textContent).toBe("✗");
@@ -115,4 +117,16 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
   await screen.findByRole("log", { name: "Agent transcript" });
   expect(screen.queryByText("Outcome")).toBeNull();
   await waitFor(() => expect(opened).toEqual(["run-a-7"]));
+});
+
+it("shows only the Artifact's chip, without a `/`, for an Artifact without evals", async () => {
+  mockIPC((command) => (command === "detail" ? view("a:lone", "Artifact lone") : null));
+  renderHosted(DetailPane, {
+    run: "run-a", node: "a:lone", tab: null, tree: [row("a:lone", "artifact", "lone", "✓", "green")], focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
+  });
+  await screen.findByRole("heading", { name: "Artifact lone" });
+  const strip = screen.getByRole("tablist", { name: "Tabs of lone" });
+  expect(within(strip).getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual(["Artf:lone"]);
+  expect(strip.textContent?.trim()).toBe("Artf:lone");
 });

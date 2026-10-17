@@ -16,7 +16,7 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
     `leaves the completed Human Detail with Escape after GREEN submission in ${screen}`,
     async () => ({ fixture: await create(), args: screen === "Review" ? ["review"] : [], data: { screen } }),
     async (browser, { fixture, data: { screen } }) => {
-      const human = () => browser.$('[aria-label="Human review"]');
+      const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
       const text = () => browser.execute(() => document.body.innerText);
       if (screen === "Monitor graph") {
         // A click on release, then on its sign-off's tab, shows the Human Detail.
@@ -24,6 +24,7 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
         await openArtifact(browser, "a:release", "Artifact release");
         await openTab(browser, "e:release/signoff");
         await human().waitForExist({ timeout: 15000, timeoutMsg: "the sign-off's Human Detail" });
+        await human().$("button*=Claim").waitForEnabled({ timeout: 15000, timeoutMsg: "the review ready to claim" });
         await human().click();
       } else {
         await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });

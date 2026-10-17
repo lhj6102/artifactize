@@ -17,8 +17,8 @@ that makes the transition happen and checks where it leads.
   in its header. With no Run, while loading, on an error or with an empty graph, Graph stays and
   says so. The **Detail** floats over the graph docked toward its right edge, with a gap, and
   shows the Run or an Artifact; its left edge takes a drag that sets its width. An Artifact's
-  Detail has tabs, a chip choice: the Artifact's own, listing its evals with their verdicts, then
-  one per eval with its verdict's glyph and colour, showing its Summary (instruction, result and
+  Detail has tabs, a chip choice that reads as a path, `Artf:{name} / [eval] …`: the Artifact's
+  own, listing its evals with their verdicts, then one per eval with its verdict's glyph and colour, showing its Summary (instruction, result and
   request, and with `t` its technical record) or, switched below the tabs, its Agent log or
   Runtime log; for a Human eval the Human review. Hovering only highlights; nothing opens on
   hover.

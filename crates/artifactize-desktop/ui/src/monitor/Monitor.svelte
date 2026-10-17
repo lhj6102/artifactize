@@ -96,23 +96,24 @@
     else void move("runs");
   }
 
-  /** Dragging the Detail's left edge: the pointer stays with the edge until it is released. */
-  function grab(event: PointerEvent) {
+  /** Dragging the Detail's left edge: the mouse moves it wherever it goes until the button is
+   * released, as the pane dividers follow it. */
+  function grab(event: MouseEvent) {
     if (event.button !== 0) return;
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    const stage = (event.currentTarget as HTMLElement).closest(".stage");
+    if (!stage) return;
     event.preventDefault();
-  }
-  function drag(event: PointerEvent) {
-    const edge = event.currentTarget as HTMLElement;
-    if (!edge.hasPointerCapture(event.pointerId)) return;
-    const stage = edge.closest(".stage")?.getBoundingClientRect();
-    if (stage) m.detailWidth = clampWidth(stage.right - GAP - event.clientX, stage.width);
-  }
-  function drop(event: PointerEvent) {
-    const edge = event.currentTarget as HTMLElement;
-    if (!edge.hasPointerCapture(event.pointerId)) return;
-    edge.releasePointerCapture(event.pointerId);
-    if (m.detailWidth !== null) saveWidth(m.detailWidth);
+    const drag = (moved: MouseEvent) => {
+      const room = stage.getBoundingClientRect();
+      m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width);
+    };
+    const drop = () => {
+      window.removeEventListener("mousemove", drag);
+      window.removeEventListener("mouseup", drop);
+      if (m.detailWidth !== null) saveWidth(m.detailWidth);
+    };
+    window.addEventListener("mousemove", drag);
+    window.addEventListener("mouseup", drop);
   }
 
   /** The Runs pane has focus first, as in the terminal monitor. */
@@ -185,8 +186,10 @@
         />
         {#if m.opened && run && m.opened.run === run.id}
           <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
-            <!-- The left edge takes a drag; hovering it shows only the resize cursor. -->
-            <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onpointerdown={grab} onpointermove={drag} onpointerup={drop} onpointercancel={drop}></div>
+            <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
+                 the resize cursor. -->
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onmousedown={grab}></div>
             <DetailPane
               run={m.opened.run}
               node={m.opened.node}

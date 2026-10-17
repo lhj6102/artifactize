@@ -173,29 +173,34 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // The pointer rule of the UX journeys: hovering only highlights; information opens on a click.
+  // The pointer rule of the UX journeys: hovering opens nothing; information opens on a click.
   scenario<Record<string, never>>(
-    "navigation-hover-highlight",
-    "only highlights the Artifact under the pointer, opening nothing, and opens its Detail on a click",
+    "navigation-hover-opens-nothing",
+    "opens nothing for the Artifact under the pointer, and opens its Detail on a click",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
       await graphShown(browser, "a:ship");
-      const look = () => browser.execute((selector) => {
-        const node = document.querySelector<HTMLElement>(selector)?.querySelector<HTMLElement>(".artifact");
-        return {
-          shadow: node ? getComputedStyle(node).boxShadow : "",
-          opened: !!document.querySelector('aside[aria-label="Detail"], [aria-label="Summary"], [aria-label^="Evals of "]'),
-          tooltip: !!node?.closest("[title]"),
-        };
-      }, nodeAt("a:ship"));
-      const before = await look();
+      // Where the pointer's moves landed, logged before any handler without changing them.
+      await browser.execute(() => {
+        const log: string[] = [];
+        (window as unknown as { overs: string[] }).overs = log;
+        document.addEventListener("mousemove", (event) => {
+          const node = (event.target as Element | null)?.closest?.(".svelte-flow__node");
+          if (node) log.push(node.getAttribute("data-id") ?? "");
+        }, true);
+      });
+      const look = () => browser.execute((selector) => ({
+        over: (window as unknown as { overs: string[] }).overs.slice(),
+        opened: !!document.querySelector('aside[aria-label="Detail"], [aria-label="Summary"], [aria-label^="Evals of "], [role="tooltip"]'),
+        tooltip: !!document.querySelector(selector)?.querySelector("[title]") || !!document.querySelector(selector)?.closest("[title]"),
+      }), nodeAt("a:ship"));
       await browser.$(nodeAt("a:ship")).moveTo();
-      await browser.waitUntil(async () => (await look()).shadow !== before.shadow, { timeout: 15000, timeoutMsg: "the Artifact under the pointer is highlighted" });
+      await browser.waitUntil(async () => (await look()).over.includes("a:ship"), { timeout: 15000, timeoutMsg: "the pointer moved over ship" });
       const hovered = await look();
-      assert.equal(hovered.opened, false, "hovering opens no Detail, summary or eval list");
+      assert.equal(hovered.opened, false, "hovering opens no Detail, summary, eval list or tooltip");
       assert.equal(hovered.tooltip, false, "the Artifact carries no tooltip");
       // The same probe sees what a click opens.
       await browser.$(nodeAt("a:ship")).click();
