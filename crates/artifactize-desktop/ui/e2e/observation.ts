@@ -1,5 +1,5 @@
 import { readCandidate } from "./build.ts";
-import { asNativePath, nameOf, nativePath, runProgramOk, variable } from "./platform.ts";
+import { asNativePath, exists, nameOf, nativePath, readJson, runProgramOk, variable, type NativePath } from "./platform.ts";
 import type { Fixture } from "./fixture.ts";
 import type { Identity } from "./runs.ts";
 
@@ -58,4 +58,21 @@ export async function sessionEndedByApp(
 export async function saveEvidence(browser: WebdriverIO.Browser, fixture: Fixture, label: string): Promise<void> {
   const output = variable("HUMAN_FOCUS_EVIDENCE");
   if (output) await browser.saveScreenshot(nativePath(asNativePath(output), `${nameOf(fixture.root)}-${label.replaceAll(" ", "-")}.png`));
+}
+
+/** Service/runner exit alone is not proof that its native apps stopped. Missing birth
+ * records or live owners keep fixture inputs intact; this observes, never signals them. */
+export function assertAppsStopped(observer: NativePath, files: NativePath[]): void {
+  const owners = files.map((file) => {
+    if (!exists(file)) throw new Error(`Native shutdown is unconfirmed; birth record missing: ${file}`);
+    const value = readJson(file) as Partial<Identity>;
+    if (!Number.isSafeInteger(value.pid) || (value.pid ?? 0) <= 0 || typeof value.start_time !== "string" || !/^\d+$/.test(value.start_time)) {
+      throw new Error(`Native shutdown is unconfirmed; invalid birth record: ${file}`);
+    }
+    return value as Identity;
+  });
+  const alive: unknown = JSON.parse(runProgramOk(observer, ["alive"], { input: JSON.stringify(owners), timeout: 5000 }));
+  if (!Array.isArray(alive) || alive.length !== owners.length || alive.some((value) => value !== false)) {
+    throw new Error("Native shutdown is unconfirmed; preserve app fixtures and executable inputs");
+  }
 }

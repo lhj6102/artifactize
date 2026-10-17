@@ -12,10 +12,11 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { create, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
-import { asNativePath, assertHarnessPlatform, embeddedPorts, harnessEnvironment, nativePath, runnerCommand } from "../ui/e2e/platform.ts";
+import { asNativePath, assertHarnessPlatform, embeddedPorts, harnessEnvironment, nativePath, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 import { cargoGate, cleanup, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
+import { assertAppsStopped } from "../ui/e2e/observation.ts";
 
 // Resolve the public package entry from the frontend which declares this dependency.
 const service = createRequire(new URL("../ui/package.json", import.meta.url))("@wdio/tauri-service") as
@@ -126,7 +127,8 @@ async function pressKey(browser: WebdriverIO.Browser, key: string): Promise<void
 
 /** The service merges process.env into the app environment, so sanitize that source too. */
 async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Record<string, string>, args: string[] = []): Promise<Session> {
-  const env = { ...environment(fixture), ...platformEnv };
+  const owner = nativePath(candidate.root, `owner-${randomBytes(16).toString("hex")}.json`);
+  const env: Environment = { ...environment(fixture), ...platformEnv, ARTIFACTIZE_E2E_OWNER_FILE: owner };
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   for (const [name, value] of Object.entries(env)) if (value !== undefined) process.env[name] = value;
   const capabilities = createTauriCapabilities(candidate.app, {
@@ -149,7 +151,10 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Recor
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;
   let ending: Promise<void> | undefined;
-  return { browser, stop: () => ending ??= cleanupWdioSession(browser) };
+  return { browser, stop: () => ending ??= (async () => {
+    await cleanupWdioSession(browser);
+    assertAppsStopped(candidate.observer, [owner]);
+  })() };
 }
 
 async function handle(candidate: Candidate, session: Session, fixture: Fixture, request: Request): Promise<unknown> {
@@ -304,6 +309,11 @@ async function serve(): Promise<void> {
   let candidate: Candidate | undefined;
   let shown: { session: Session; fixture: Fixture } | undefined;
   let fixture: Fixture;
+  let startupFailure: unknown;
+  const acquire = async (...args: Parameters<typeof launch>): Promise<Session> => {
+    try { return await launch(...args); }
+    catch (error) { startupFailure = error; throw error; }
+  };
   let stopping = false;
   let phase: "startup" | "ready" = "startup";
   const outputFailures: Error[] = [];
@@ -315,6 +325,7 @@ async function serve(): Promise<void> {
     if (server.listening) server.close();
     await shown?.session.stop();
     shown = undefined;
+    if (startupFailure !== undefined) throw new Error("App startup cleanup is unconfirmed; preserve fixture and candidate inputs", { cause: startupFailure });
     if (candidate) {
       await releaseFixtures();
       await cleanup(candidate.root);
@@ -372,7 +383,7 @@ async function serve(): Promise<void> {
               shown = undefined;
               const target = request.screen === "graph" ? { ...fixture, state: nativePath(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
               const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
-              const session = await launch(input, target, platformEnv, args);
+              const session = await acquire(input, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.
               shown = { session, fixture: target };
               try {
@@ -420,7 +431,7 @@ async function serve(): Promise<void> {
       if (stopping) return;
       fixture = await create();
       if (stopping) return;
-      const session = await launch(candidate, fixture, platformEnv);
+      const session = await acquire(candidate, fixture, platformEnv);
       shown = { session, fixture };
       if (stopping) return;
       console.log("harness:startup-acquired");

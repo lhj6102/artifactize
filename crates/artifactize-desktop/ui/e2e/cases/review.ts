@@ -7,7 +7,7 @@ import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier } from "../platform.ts";
+import { primaryModifier, requestWindowClose } from "../platform.ts";
 
 async function claimReview(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
@@ -163,8 +163,8 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]')), { timeout: 15000, timeoutMsg: "focus back in the review" });
 
       // The window's own close requests, twice in a row: both wait for the prompt's answer.
-      await browser.closeWindow();
-      await browser.closeWindow();
+      await requestWindowClose(browser);
+      await requestWindowClose(browser);
       await dialog.waitForExist({ timeout: 10000 });
       assert.equal(await browser.execute(() => document.title), "Artifactize", "the window stays");
       assert.equal(signoff(fixture).claim?.reviewer, "alice");

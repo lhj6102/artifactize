@@ -86,6 +86,7 @@ export const config = {
         let env: Environment = {
           ...environment(input.fixture), ...native, ...input.env,
           DESKTOP_TEST_SCENARIO: item.id, DESKTOP_TEST_FIXTURE_ROOT: input.fixture.root,
+          ARTIFACTIZE_E2E_OWNER_FILE: nativePath(outputDir, `${item.id}.owner.json`),
         };
         if (item.id === "accounts") {
           env = accountBrowserEnvironment(input.fixture.root, env);

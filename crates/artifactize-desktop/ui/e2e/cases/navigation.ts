@@ -7,7 +7,7 @@ import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { nativePath } from "../platform.ts";
+import { nativePath, requestWindowClose } from "../platform.ts";
 import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryShows } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
@@ -355,7 +355,7 @@ export const scenarios: Scenario[] = [
     },
     async (browser) => {
       await graphShown(browser, "a:release");
-      await sessionEndedByApp(browser, () => browser.closeWindow());
+      await sessionEndedByApp(browser, () => requestWindowClose(browser));
     },
   ),
 ];

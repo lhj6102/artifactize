@@ -45,7 +45,20 @@ function events(browser: WebdriverIO.Browser): Promise<{ received: string[]; han
 /** The real app's page, logging keydowns on first use without changing their handling. */
 export function page(browser: WebdriverIO.Browser): Page {
   return {
-    keys: (keys) => browser.keys(keys),
+    keys: async (keys) => {
+      // The pristine embedded provider omits these W3C special-key mappings. Use
+      // WebDriver's page command for the same keyboard fields the app handles.
+      const key = keys.length === 1 ? keys[0] : undefined;
+      if (key === "PageUp" || key === "PageDown") {
+        await browser.execute((key) => {
+          const target = document.activeElement ?? document.body;
+          const keyCode = key === "PageUp" ? 33 : 34;
+          for (const type of ["keydown", "keyup"]) target.dispatchEvent(new KeyboardEvent(type, {
+            key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true,
+          }));
+        }, key);
+      } else await browser.keys(keys);
+    },
     until: async (check, timeout) => {
       let failure: unknown;
       try {

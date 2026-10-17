@@ -682,6 +682,19 @@ export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<voi
     { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
 }
 
+/** Ask the public Tauri window API to perform a genuine close request. The
+ * pristine provider's DELETE /window force-destroys and bypasses this app event. */
+export async function requestWindowClose(browser: WebdriverIO.Browser): Promise<void> {
+  const error = await browser.executeAsync((done) => {
+    const app = window as unknown as { __TAURI__: { window: { getCurrentWindow: () => { close: () => Promise<void> } } } };
+    app.__TAURI__.window.getCurrentWindow().close().then(
+      () => done(null),
+      (failure: unknown) => done(String(failure)),
+    );
+  });
+  if (error !== null) throw new Error(`native window close failed: ${String(error)}`);
+}
+
 /** Unix desktop openers are declared fixture executables performing the real HTTP GET;
  * the account server, not this program, records the exact displayed address reached. */
 export function accountBrowserEnvironment(root: NativePath, env: Environment): Environment {

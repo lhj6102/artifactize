@@ -1,9 +1,10 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
 import { inspect } from "node:util";
+import { assertAppsStopped } from "./observation.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
+  nativeCrashReports, nodeProgram, requiredVariable, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -33,7 +34,13 @@ async function batch(): Promise<void> {
     failures.push(configuration.preparationFailure === undefined ? error
       : new Error("Desktop scenario preparation failed", { cause: configuration.preparationFailure }));
   }
-  try { await configuration.releasePrepared(); } catch (error) { failures.push(error); }
+  try {
+    const candidate = readCandidate();
+    const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
+    const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
+    assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+    await configuration.releasePrepared();
+  } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, "desktop WDIO batch failed");
 }
 
@@ -49,6 +56,7 @@ async function suite(ids: string[]): Promise<void> {
   const candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratch) : await prepare();
   console.error(`Desktop E2E diagnostics: ${output}`);
   const failures: unknown[] = [];
+  let confirmed = true;
   try {
     for (let offset = 0; offset < selected.length; offset += CAPABILITIES_PER_INVOCATION) {
       const ids = selected.slice(offset, offset + CAPABILITIES_PER_INVOCATION).map((item) => item.id);
@@ -59,10 +67,17 @@ async function suite(ids: string[]): Promise<void> {
         DESKTOP_TEST_BATCH: JSON.stringify(ids),
         DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${offset / CAPABILITIES_PER_INVOCATION + 1}`),
       };
+      confirmed = false;
       try {
         const code = await execute(nodeProgram, [file, "batch"], env);
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
+      try {
+        const output = asNativePath(env.DESKTOP_TEST_BATCH_OUTPUT);
+        assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+        confirmed = true;
+      } catch (error) { failures.push(error); }
+      if (!confirmed) break;
       if (interrupted) {
         failures.push(new Error("desktop E2E was interrupted; no further batches were started"));
         break;
@@ -73,7 +88,9 @@ async function suite(ids: string[]): Promise<void> {
       try { for (const report of nativeCrashReports(candidate.app)) console.error(report); }
       catch (error) { failures.push(error); }
     }
-    try { await cleanup(candidate.root); } catch (error) { failures.push(error); }
+    if (confirmed) {
+      try { await cleanup(candidate.root); } catch (error) { failures.push(error); }
+    } else failures.push(new Error(`Native shutdown unconfirmed; retained inputs at ${candidate.root}`));
   }
   if (failures.length) throw new AggregateError(failures, "desktop E2E failures");
 }

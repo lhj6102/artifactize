@@ -10,6 +10,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { portablePath, primaryModifier, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
+import { clickAt } from "../pointer.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -315,7 +316,7 @@ export const scenarios: Scenario[] = [
         window.addEventListener("error", (event) => errors.push(event.message));
       });
       await ctrlK("Ctrl+K");
-      await browser.action("pointer").move({ x: 20, y: 600 }).down().up().perform();
+      await clickAt(browser, { x: 20, y: 600 });
       await closed("outside click");
       await ctrlK("after the outside click");
       await escape("Esc");
