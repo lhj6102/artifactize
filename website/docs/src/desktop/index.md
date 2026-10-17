@@ -53,9 +53,9 @@ Artifact or eval. It is read-only and non-interactive, not a clickable preview.
 A single click on an Artifact opens its eval popup; a single click on an eval
 opens its Detail. The explicit keyboard actions are described under Run graph.
 
-`!` jumps to the next ERROR, RED or waiting Human eval. Upstream markers identify
-the selected eval's dependencies; `b` cycles through them, unmet first, then
-completed inputs. Backspace or the palette command **Back to where the blocker
+`!` jumps to the next ERROR, RED or waiting Human eval. Inspect dependencies through
+the graph's input-to-consumer relations and the **Waits for** section. `b` cycles
+through the selected eval's upstream inputs, unmet first, then completed inputs. Backspace or the palette command **Back to where the blocker
 jumps started** returns to the original selection.
 
 ### Detail and conversations

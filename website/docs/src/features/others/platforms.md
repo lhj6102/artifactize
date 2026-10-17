@@ -28,8 +28,9 @@ private temporary or output directories ([Human tools](../tools/human.md)).
 A declared program is found the same way by `tools check`, runtime evals,
 fingerprint scripts and command tools:
 
-- A bare name, such as `python3`, is searched on `PATH`, never in the current folder.
-  On Windows, a name without an extension tries each extension in `PATHEXT`, in order,
+- A bare name, such as `python3`, is searched on `PATH`. Relative and empty `PATH`
+  entries resolve against the command's working directory. On Unix, an unset or
+  empty `PATH` therefore searches that directory. On Windows, a name without an extension tries each extension in `PATHEXT`, in order,
   so `npx` finds `npx.cmd`. Without `PATHEXT`, the order is `.COM;.EXE;.BAT;.CMD`.
 - A relative name containing `/`, such as `./tools/check`, is resolved inside a
   folder Artifact's admitted scope. For a file Artifact, a non-mount relative
