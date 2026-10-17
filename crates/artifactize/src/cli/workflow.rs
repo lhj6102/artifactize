@@ -10,13 +10,34 @@ use std::{
 use super::{PolicyArgs, SelectionArgs, outcome_code};
 use artifactize_core::{config::read_workspace_config, project::selection::Selection};
 
+/// What `verify` does after submitting the Run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Follow {
+    /// Print the Run id and return at once.
+    Submit,
+    /// Observe until the Run ends, then render its result.
+    Wait,
+    /// Stream JSON-line updates until the Run ends.
+    Watch,
+}
+
+impl Follow {
+    /// Normalizes the mutually exclusive `--wait` and `--watch` flags.
+    pub(super) fn from_flags(wait: bool, watch: bool) -> Self {
+        match (wait, watch) {
+            (_, true) => Self::Watch,
+            (true, false) => Self::Wait,
+            (false, false) => Self::Submit,
+        }
+    }
+}
+
 /// Execution-only arguments, separate from selection and dependency policy.
 pub(super) struct VerifyLimits {
     pub modes: artifactize_core::runs::RunModes,
     pub jobs: Option<u32>,
     pub max_executions: Option<u64>,
-    pub wait: bool,
-    pub watch: bool,
+    pub follow: Follow,
     pub request_key: Option<artifactize_core::types::RequestKey>,
     pub reuse_only: Vec<artifactize_core::config::ProfileKind>,
 }
@@ -31,8 +52,7 @@ pub(super) async fn verify(
         modes,
         jobs,
         max_executions,
-        wait,
-        watch,
+        follow,
         request_key,
         reuse_only,
     } = limits;
@@ -52,16 +72,22 @@ pub(super) async fn verify(
     )?;
     let observation =
         artifactize_core::runs::start(&runs, &selection, &options, request_key).await?;
-    if watch {
-        return super::run::watch(context_for_watch(&runs, context.json), observation.run).await;
-    }
-    if !wait {
-        if context.json {
-            print_json(&serde_json::json!({"run": observation.run, "state": observation.state}))?;
-        } else {
-            writeln!(io::stdout().lock(), "{}", observation.run).map_err(|e| e.to_string())?;
+    match follow {
+        Follow::Watch => {
+            return super::run::watch(context_for_watch(&runs, context.json), observation.run)
+                .await;
         }
-        return Ok(0);
+        Follow::Submit => {
+            if context.json {
+                print_json(
+                    &serde_json::json!({"run": observation.run, "state": observation.state}),
+                )?;
+            } else {
+                writeln!(io::stdout().lock(), "{}", observation.run).map_err(|e| e.to_string())?;
+            }
+            return Ok(0);
+        }
+        Follow::Wait => {}
     }
     let (cancellation, listener) = cancellation_listener()?;
     writeln!(
