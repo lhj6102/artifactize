@@ -43,6 +43,8 @@ pub enum Input {
     Text(String),
     Integer(String),
     Number(String),
+    /// An array of strings, one entry per item; empty entries are left out of the result.
+    List(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +81,13 @@ impl Field {
             Input::Integer(text) | Input::Number(text) if text.trim().is_empty() => None,
             Input::Integer(text) => Some(number(text, true)?),
             Input::Number(text) => Some(number(text, false)?),
+            Input::List(items) => {
+                let items: Vec<_> = items
+                    .iter()
+                    .filter(|item| !item.trim().is_empty())
+                    .collect();
+                (self.required || !items.is_empty()).then(|| json!(items))
+            }
         })
     }
 
@@ -92,6 +101,8 @@ impl Field {
                 Value::String(options[*index].clone()).to_string()
             }
             Input::Text(text) | Input::Integer(text) | Input::Number(text) => text.clone(),
+            Input::List(items) if items.iter().all(String::is_empty) => "–".into(),
+            Input::List(items) => items.join("; "),
         }
     }
 
@@ -103,6 +114,20 @@ impl Field {
             }
             (Input::Text(text) | Input::Integer(text) | Input::Number(text), Key::Backspace) => {
                 text.pop();
+            }
+            // A list types into its last item; Enter starts the next, Backspace on an empty
+            // item removes it.
+            (Input::List(items), Key::Char(c)) => match items.last_mut() {
+                Some(item) => item.push(c),
+                None => items.push(c.to_string()),
+            },
+            (Input::List(items), Key::Enter) => items.push(String::new()),
+            (Input::List(items), Key::Backspace) => {
+                if items.last().is_some_and(String::is_empty) && items.len() > 1 {
+                    items.pop();
+                } else if let Some(item) = items.last_mut() {
+                    item.pop();
+                }
             }
             (Input::Bool(value), Key::Char('t' | 'y')) => *value = Some(true),
             (Input::Bool(value), Key::Char('f' | 'n')) => *value = Some(false),
@@ -223,6 +248,20 @@ impl Form {
                 self.error = Some("Human fields exceed 256000 bytes.".into());
             }
         } else if let Some(Field {
+            input: Input::List(items),
+            ..
+        }) = self.fields.get_mut(self.selected)
+        {
+            let size: usize = items.iter().map(String::len).sum();
+            if size.saturating_add(text.len()) <= crate::human::MAX_RESULT_BYTES {
+                match items.last_mut() {
+                    Some(item) => item.push_str(text),
+                    None => items.push(text.to_owned()),
+                }
+            } else {
+                self.error = Some("Human fields exceed 256000 bytes.".into());
+            }
+        } else if let Some(Field {
             input: Input::Text(value) | Input::Integer(value) | Input::Number(value),
             ..
         }) = self.fields.get_mut(self.selected)
@@ -241,7 +280,7 @@ impl Form {
             let text_field = self.fields.get(self.selected).is_some_and(|field| {
                 matches!(
                     field.input,
-                    Input::Text(_) | Input::Integer(_) | Input::Number(_)
+                    Input::Text(_) | Input::Integer(_) | Input::Number(_) | Input::List(_)
                 )
             });
             match key {
@@ -399,6 +438,11 @@ fn input(property: &Value) -> Option<(Input, String)> {
             "string" if only(&["type", "minLength", "maxLength"]) => Input::Text(String::new()),
             "integer" if only(&NUMERIC) => Input::Integer(String::new()),
             "number" if only(&NUMERIC) => Input::Number(String::new()),
+            "array"
+                if only(&["type", "items", "minItems", "maxItems"]) && string_items(property) =>
+            {
+                Input::List(vec![String::new()])
+            }
             _ => return None,
         }
     };
@@ -421,6 +465,20 @@ fn input(property: &Value) -> Option<(Input, String)> {
             .join(" — ");
     }
     Some((input, hint))
+}
+
+/// An array's items are plain strings: `{"type": "string"}` with at most length limits.
+fn string_items(property: &Map<String, Value>) -> bool {
+    property
+        .get("items")
+        .and_then(Value::as_object)
+        .is_some_and(|items| {
+            items.get("type").and_then(Value::as_str) == Some("string")
+                && items.keys().all(|key| {
+                    ["type", "minLength", "maxLength"].contains(&key.as_str())
+                        || NOTES.contains(&key.as_str())
+                })
+        })
 }
 
 /// A JSON skeleton of a schema for `$EDITOR`: constants and first choices filled, the rest empty.

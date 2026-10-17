@@ -5,6 +5,7 @@ export function humanView(stage: HumanView["stage"], overrides: Partial<HumanVie
   return {
     id: "run-a-2",
     title: "release/signoff · A person approves the release",
+    artifact: "release",
     meta: stage === "claim" ? "WAITING_HUMAN · unclaimed · waiting 3s" : "WAITING_HUMAN · claimed by you (alice) · waiting 3s",
     shared: null,
     instruction: "Read the release notes and approve them.",
@@ -14,7 +15,7 @@ export function humanView(stage: HumanView["stage"], overrides: Partial<HumanVie
     claim: stage === "review" ? { reviewer: "alice", mine: true } : null,
     reviewer: "alice",
     tools: [
-      { name: "notes_release", kind: "output", description: "Print the notes.", action: "$ cat notes.md", error: null },
+      { name: "notes_release", artifact: "release", operation: "notes", kind: "output", description: "Print the notes.", action: "$ cat notes.md", error: null },
     ],
     recorded: true,
     result: null,

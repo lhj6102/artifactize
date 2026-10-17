@@ -1,38 +1,39 @@
 <script lang="ts">
-  // The request's Human tools and the last output. Enter or a click on the selected tool
-  // runs it at once; the selected tool shows what it runs.
+  // The request's Human tools, grouped by the Artifact that declares them (the reviewed eval's
+  // own first), and the Tool log of every run in this review. A click runs a tool at once.
+  // The log is plain selectable text: the reviewer copies from it into the result.
   import type { Attachment } from "svelte/attachments";
+  import type { ToolView } from "../ipc/client";
   import type { Review } from "./review.svelte";
-  import { plain } from "../shell/keys";
+  import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let { review }: { review: Review } = $props();
 
   const tools = $derived(review.view?.tools ?? []);
-  const focused = $derived(review.area === "tools");
-  /** `Tab or click: tools` and the `tools` command move focus here. */
-  const takeFocus: Attachment<HTMLElement> = (list) => {
-    if (focused && !list.contains(document.activeElement)) list.focus();
+  /** Tools by Artifact, the reviewed eval's Artifact first, then by name. */
+  const groups = $derived.by(() => {
+    const own = review.view?.artifact ?? "";
+    const names = [...new Set(tools.map((tool) => tool.artifact))].sort(
+      (a, b) => Number(b === own) - Number(a === own) || a.localeCompare(b),
+    );
+    return names.map((artifact) => ({ artifact, tools: tools.filter((tool) => tool.artifact === artifact) }));
+  });
+  const usable = $derived(review.owned && !review.busy && !review.settled);
+
+  function run(tool: ToolView) {
+    void review.run(tools.indexOf(tool));
+  }
+
+  /** The log follows its newest run unless the reviewer scrolled up to read. */
+  const follow: Attachment<HTMLElement> = (log) => {
+    void review.log.length;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+    if (atBottom || review.log.length <= 1) queueMicrotask(() => (log.scrollTop = log.scrollHeight));
   };
-
-  function keydown(event: KeyboardEvent) {
-    if (plain(event, "Enter")) void review.run();
-    else if (plain(event, "ArrowDown") || plain(event, "j")) review.tool = Math.min(review.tool + 1, tools.length - 1);
-    else if (plain(event, "ArrowUp") || plain(event, "k")) review.tool = Math.max(review.tool - 1, 0);
-    else return;
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  function click(index: number) {
-    const run = focused && review.tool === index;
-    review.area = "tools";
-    review.tool = index;
-    if (run) void review.run(index);
-  }
 </script>
 
-<div class="tools" class:focused>
-  <div class="box-title">Tools ({tools.length})</div>
+<section class="tools" aria-label="Tools">
+  <h4>Tools</h4>
   {#if tools.length === 0}
     <p class="muted">
       {review.view?.recorded
@@ -40,143 +41,117 @@
         : "Unknown: no Human definition is recorded."}
     </p>
   {:else}
-    <ul
-      role="listbox"
-      aria-label="Human tools"
-      tabindex="0"
-      aria-activedescendant="tool-{review.tool}"
-      {@attach takeFocus}
-      onfocus={() => (review.area = "tools")}
-      onkeydown={keydown}
-    >
-      {#each tools as tool, index (tool.name)}
-        <li
-          id="tool-{index}"
-          role="option"
-          aria-selected={index === review.tool}
-          class:selected={index === review.tool}
-          onclick={() => click(index)}
-          onkeydown={() => {}}
-        >
-          <span class="name">{tool.name}</span>
-          <span class="kind">{tool.kind}</span>
-        </li>
-      {/each}
-    </ul>
-    <!-- What Enter runs, below the list so selecting never moves the rows. -->
-    {#if tools[review.tool]}
-      {@const tool = tools[review.tool]}
-      <div class="selected-tool" aria-live="polite">
-        <span class="action">{tool.action}</span>
-        {#if tool.error}<span class="reason">{tool.error}</span>{/if}
-        <span class="description">{tool.description}</span>
+    {#if !review.owned && !review.settled}<p class="muted">Claim the review to use its tools.</p>{/if}
+    {#each groups as group (group.artifact)}
+      <div class="group" role="group" aria-label="Tools of {group.artifact}">
+        <p class="artifact"><img class="mark" src={brandMark} alt="" />{group.artifact}</p>
+        {#each group.tools as tool (tool.name)}
+          <div class="tool">
+            <button class="button small" disabled={!usable} onclick={() => run(tool)}>▶ {tool.operation}</button>
+            <span class="description">{tool.description}</span>
+            {#if tool.error}<span class="reason">{tool.error}</span>{/if}
+          </div>
+        {/each}
       </div>
-    {/if}
+    {/each}
   {/if}
-  <!-- Focusable so PgUp/PgDn and arrows scroll long output. -->
+</section>
+
+<section class="logbox" aria-label="Tool log">
+  <h4>Tool log</h4>
+  <!-- Focusable so the keys scroll it; its text selects and copies like any other. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="output" tabindex="0" role="region" aria-label="Tool output">
-    {#if review.output}
-      <div class="box-title" class:error={review.output.error}>Output · {review.output.title}</div>
-      <pre>{review.output.text}</pre>
+  <div class="log" tabindex="0" role="log" aria-label="Tool log" {@attach follow}>
+    {#each review.log as entry, at (at)}
+      <p class="start">{entry.at} ▶ {entry.operation} · {entry.artifact}</p>
+      {#if entry.text}<pre class:error={entry.error}>{entry.text}</pre>{/if}
+      <p class="end" class:error={entry.error}>■ {entry.title}</p>
     {:else}
-      <div class="box-title">Output</div>
-      <p class="muted">Run a tool to see its output here.</p>
-    {/if}
+      <p class="muted">What the tools print shows here while this review is open.</p>
+    {/each}
   </div>
-</div>
+</section>
 
 <style>
-  .tools {
-    display: grid;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px 12px;
-    min-height: 0;
-    min-width: 0;
-    height: 100%;
-  }
-  .focused {
-    border-color: var(--accent);
-  }
-  .box-title {
-    font-size: 11px;
+  h4 {
+    margin: 0 0 6px;
+    font-size: 12px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-    margin-bottom: 4px;
+    color: var(--accent);
   }
-  .box-title.error {
-    color: var(--red);
+  .tools,
+  .logbox {
+    min-width: 0;
   }
-  ul {
-    list-style: none;
-    margin: 0 0 8px;
-    padding: 0;
-    outline: none;
-    max-height: 30vh;
-    overflow: auto;
+  .group {
+    margin-bottom: 8px;
   }
-  li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+  .artifact {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 4px;
+    font-weight: 600;
     overflow-wrap: anywhere;
-    gap: 2px 8px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    cursor: pointer;
   }
-  li:hover {
-    background: var(--surface-2);
+  .mark {
+    flex: none;
+    width: 1.1em;
+    height: 1.1em;
   }
-  .selected {
-    background: var(--selection);
-  }
-  ul:focus-visible .selected {
-    box-shadow: inset 2px 0 0 var(--accent);
-  }
-  .kind {
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .selected-tool {
+  .tool {
     display: grid;
-    gap: 2px;
-    padding: 0 8px 8px;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 2px 0 2px 18px;
   }
-  .action,
-  .reason,
+  .description,
+  .reason {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
   .description {
-    font-size: 12px;
-    overflow-wrap: anywhere;
-  }
-  .action {
-    font-family: var(--mono);
+    color: var(--muted);
   }
   .reason {
+    grid-column: 2;
     color: var(--red);
   }
-  .description {
-    color: var(--muted);
-  }
-  .output {
+  .log {
+    max-height: 260px;
+    min-height: 72px;
     overflow: auto;
-    border-top: 1px solid var(--border);
-    padding-top: 6px;
-    outline: none;
-    min-height: 0;
-  }
-  pre {
-    margin: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    background: var(--surface-2);
     font: 12px/1.5 var(--mono);
+    outline: none;
+    user-select: text;
+  }
+  .log:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--focus);
+  }
+  .log p,
+  .log pre {
+    margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    font: inherit;
+  }
+  .start,
+  .end {
+    color: var(--muted);
+  }
+  .end {
+    margin-bottom: 6px !important;
+  }
+  .error {
+    color: var(--red) !important;
   }
   .muted {
     color: var(--muted);
-    margin: 0;
+    margin: 0 0 6px;
+    font-family: inherit;
   }
 </style>

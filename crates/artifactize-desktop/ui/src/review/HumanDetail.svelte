@@ -1,15 +1,14 @@
 <script lang="ts">
-  // The one Human review component, shared by the monitor's Detail and the Review screen:
-  // instruction first, then CLAIM → REVIEW with tools, output and the GREEN/RED fields.
+  // The one Human review component, shared by the monitor's Detail and the Review screen: its
+  // status and instruction, then the tools to use, their Tool log, and the result to write.
   import { HumanDetailState, setHumanDetailState } from "./human-detail-state.svelte";
   import { onMount, tick } from "svelte";
   import { onStateChanged, type Settled } from "../ipc/client";
   import type { Review } from "./review.svelte";
-  import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import Tools from "./Tools.svelte";
   import VerdictForm from "./VerdictForm.svelte";
   import { useCommands } from "../shell/commands.svelte";
-  import { chord, composing, editable, label, plain } from "../shell/keys";
+  import { chord, composing, editable, plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
   let {
@@ -35,9 +34,6 @@
   
 
   const view = $derived(review.view);
-  const expanded = $derived(review.expanded || review.technical);
-  /** Before a claim the instruction is the body, with the tools in one line below it. */
-  const summary = $derived(view?.stage === "claim" && !expanded && review.area !== "tools");
   const stage = $derived(
     view?.stage === "completed" ? "completed" : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM",
   );
@@ -106,37 +102,16 @@
     else if (chord(event, "r")) void review.choose("RED");
     else if (chord(event, "u")) void review.release();
     else if (chord(event, "s")) void submit();
-    else if (chord(event, "e")) void review.editJson();
     else if (editable(event.target) && review.editing) return;
     else if (plain(event, "c")) void review.claim();
     else if (plain(event, "g")) void review.choose("GREEN");
     else if (plain(event, "r")) void review.choose("RED");
     else if (plain(event, "u")) void review.release();
-    else if (plain(event, "i")) review.expanded = !review.expanded;
     else if (plain(event, "t")) review.technical = !review.technical;
     else if (plain(event, "ArrowLeft") && !review.editing) onback();
     else return;
     handled();
   }
-
-  const hints = $derived.by(() => {
-    if (review.busy) return ["Esc cancel"];
-    if (review.settled) return ["i instruction", "t technical", "Esc back"];
-    const tools = (view?.tools.length ?? 0) > 0;
-    const list: string[] = [];
-    if (review.area === "tools") {
-      if (tools) list.push("↑↓ tool", review.owned ? "Enter run" : review.claimable ? "c claim, then Enter run" : "");
-      else if (review.claimable) list.push("c claim");
-    } else if (review.editing) {
-      list.push("Ctrl+S submit", "Ctrl+G/R verdict", "Ctrl+E JSON", "Esc stop editing");
-    } else if (review.owned) {
-      list.push("g GREEN", "r RED", "u release");
-    } else if (review.claimable) {
-      list.push("c claim");
-    }
-    if (!review.editing) list.push("i instruction", "t technical", "Esc back");
-    return list.filter(Boolean).map(label);
-  });
 
   useCommands(() => {
     if (!active) return [];
@@ -146,12 +121,10 @@
       { id: "human.green", group: "Human review", label: "GREEN form", keys: "g", enabled: () => ready() && review.owned, run: () => void review.choose("GREEN") },
       { id: "human.red", group: "Human review", label: "RED form", keys: "r", enabled: () => ready() && review.owned, run: () => void review.choose("RED") },
       { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => ready() && review.editing, run: () => void submit() },
-      { id: "human.json", group: "Human review", label: "Edit the form as JSON", keys: "Ctrl+E", enabled: () => ready() && review.editing && review.form?.json === null, run: () => void review.editJson() },
       { id: "human.release", group: "Human review", label: "Release the claim", keys: "u", enabled: () => ready() && review.owned, run: () => void review.release() },
       { id: "human.run", group: "Human review", label: "Run the selected tool", keys: "Enter", enabled: () => ready() && review.owned && (view?.tools.length ?? 0) > 0, run: () => void review.run() },
       { id: "human.cancel", group: "Human review", label: "Cancel the running job", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },
       { id: "human.technical", group: "Human review", label: "Toggle Technical", keys: "t", run: () => (review.technical = !review.technical) },
-      { id: "human.instruction", group: "Human review", label: "Expand or fold the instruction", keys: "i", run: () => (review.expanded = !review.expanded) },
     ];
   });
 </script>
@@ -175,11 +148,10 @@
       {#if view.shared}<p class="shared">{view.shared}</p>{/if}
     </header>
 
-    <div class="body" class:summary class:expanded>
+    <div class="body">
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
         class="instruction"
-        class:focused={review.area === "instruction"}
         tabindex="0"
         role="region"
         aria-label="Instruction"
@@ -188,12 +160,6 @@
           if (!review.editing) review.area = "instruction";
         }}
       >
-        <div class="box-title">
-          Instruction
-          <button class="link" onclick={() => (review.expanded = !review.expanded)}>
-            {expanded ? "fold" : "expand"} <kbd>i</kbd>
-          </button>
-        </div>
         <p class="text">{view.instruction}</p>
         {#if review.technical}
           <h4>Technical</h4>
@@ -206,53 +172,25 @@
         {/if}
       </div>
 
-      {#if summary}
-        <div class="oneline">
-          <button class="link tools-line" onclick={() => (review.area = "tools")}>
-            <strong>Tools</strong>
-            {#if view.tools.length === 0}
-              none declared in this eval's scope
-            {:else}
-              {view.tools.map((tool) => `${tool.name} (${tool.kind})`).join(" · ")} · Tab or click: tools
-            {/if}
-          </button>
-          <p class="muted">
-            {view.claim
-              ? `Claimed by ${view.claim.reviewer}. Read-only until released.`
-              : `Unclaimed. c claims it for ${view.reviewer} and starts REVIEW.`}
-          </p>
-        </div>
-      {:else}
-        <PaneGroup direction="horizontal" autoSaveId="human-split" class="split">
-          <Pane defaultSize={45} minSize={25}><Tools {review} /></Pane>
-          <PaneResizer class="resizer gap" />
-          <Pane defaultSize={55} minSize={25}>
-          <div
-            class="fields"
-            class:focused={review.area === "fields"}
-            onfocusin={() => (review.area = "fields")}
-          >
-            {#if review.settled}
-              <div class="box-title">Completed result</div>
-              <pre>{view.result}</pre>
-            {:else if review.owned && review.form}
-              <VerdictForm {review} form={review.form} />
-            {:else if review.owned}
-              <div class="box-title">Result fields</div>
-              <p>REVIEW — press <kbd>g</kbd> for GREEN or <kbd>r</kbd> for RED, fill its fields, then <kbd>{label("Ctrl+S")}</kbd> submits.</p>
-            {:else}
-              <div class="box-title">Human sign-off</div>
-              <p>
-                CLAIM —
-                {view.claim
-                  ? `Claimed by ${view.claim.reviewer}. Read-only until released.`
-                  : `Unclaimed. c claims it for ${view.reviewer} and starts REVIEW.`}
-              </p>
-            {/if}
+      <Tools {review} />
+
+      <section class="result" aria-label="Result" onfocusin={() => (review.area = "fields")}>
+        <h4>{review.settled ? "Completed result" : "Result"}</h4>
+        {#if review.settled}
+          <pre>{view.result}</pre>
+        {:else if review.owned && review.form}
+          <VerdictForm {review} form={review.form} onsubmit={() => void submit()} />
+        {:else if review.owned}
+          <div class="verdicts">
+            <button class="button" onclick={() => void review.choose("GREEN")}>GREEN</button>
+            <button class="button" onclick={() => void review.choose("RED")}>RED</button>
           </div>
-          </Pane>
-        </PaneGroup>
-      {/if}
+        {:else if view.claim}
+          <p class="muted">Claimed by {view.claim.reviewer}. Read-only until released.</p>
+        {:else}
+          <button class="button primary" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
+        {/if}
+      </section>
     </div>
 
     <footer>
@@ -266,25 +204,12 @@
         <p class="notice" class:error={review.notice.error} role="status">{review.notice.text}</p>
       {/if}
       <div class="buttons">
-        {#if !review.busy && !review.settled}
-          {#if review.owned}
-            <button class="button" onclick={() => void review.release()}>Release <kbd>{review.editing ? label("Ctrl+U") : "u"}</kbd></button>
-            <button class="button" aria-pressed={review.form?.verdict === "GREEN"} onclick={() => void review.choose("GREEN")}>
-              GREEN <kbd>{review.editing ? label("Ctrl+G") : "g"}</kbd>
-            </button>
-            <button class="button" aria-pressed={review.form?.verdict === "RED"} onclick={() => void review.choose("RED")}>
-              RED <kbd>{review.editing ? label("Ctrl+R") : "r"}</kbd>
-            </button>
-            <button class="button primary" disabled={!review.form} onclick={() => void submit()}>Submit <kbd>{label("Ctrl+S")}</kbd></button>
-            <button class="button" disabled={view.tools.length === 0} onclick={() => void review.run()}>Run tool <kbd>Enter</kbd></button>
-          {:else}
-            <button class="button primary" disabled={!review.claimable} onclick={() => void review.claim()}>Claim <kbd>c</kbd></button>
-          {/if}
+        {#if !review.busy && !review.settled && review.owned}
+          <button class="button" onclick={() => void review.release()}>Release</button>
         {/if}
         <span class="spacer"></span>
-        <button class="button" onclick={() => void back()}>Close <kbd>Esc</kbd></button>
+        <button class="button" onclick={() => void back()}>Close</button>
       </div>
-      <p class="hints">{hints.join(" · ")}</p>
     </footer>
   {/if}
 </section>
@@ -348,39 +273,28 @@
     font: inherit;
     margin-left: auto;
   }
+  /* One column that scrolls as a whole: instruction, tools, their log, the result. */
   .body {
     display: grid;
-    grid-template-rows: minmax(0, 72px) minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
+    align-content: start;
+    gap: 16px;
     min-height: 0;
-  }
-  .body.summary {
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-  .body.expanded {
-    grid-template-rows: minmax(0, 7fr) minmax(0, 3fr);
-  }
-  .instruction,
-  .fields {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px 12px;
     overflow: auto;
-    min-height: 0;
+  }
+  .instruction {
     outline: none;
   }
-  .focused {
-    border-color: var(--accent);
-  }
-  .box-title {
-    display: flex;
-    font-size: 11px;
+  .result h4,
+  .result :global(h4) {
+    margin: 0 0 6px;
+    font-size: 12px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-    margin-bottom: 4px;
+    color: var(--accent);
+  }
+  .verdicts {
+    display: flex;
+    gap: 6px;
   }
   .text {
     white-space: pre-wrap;
@@ -404,25 +318,6 @@
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-  }
-  .oneline .tools-line {
-    margin: 0;
-    color: var(--text);
-    text-align: left;
-    overflow-wrap: anywhere;
-  }
-  .oneline p {
-    margin: 4px 0 0;
-  }
-  :global(.split) {
-    min-height: 0;
-  }
-  :global(.resizer.gap) {
-    margin: 0 5px;
-    background: transparent;
-  }
-  .fields {
-    height: 100%;
   }
   pre {
     margin: 0;
@@ -459,14 +354,5 @@
   }
   .spacer {
     flex: 1;
-  }
-  .hints {
-    color: var(--muted);
-    font-size: 12px;
-    overflow-wrap: anywhere;
-  }
-  .button[aria-pressed="true"] {
-    border-color: var(--accent);
-    color: var(--accent);
   }
 </style>

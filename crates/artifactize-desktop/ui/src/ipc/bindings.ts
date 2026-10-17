@@ -307,12 +307,14 @@ export type FieldInput =
 /**  A `const`: prefilled and fixed; `value` is its JSON. */
 { kind: "fixed"; value: string } | { kind: "bool" } | 
 /**  String `enum` options, as their JSON text. */
-{ kind: "choice"; options: string[] } | { kind: "text" } | { kind: "integer" } | { kind: "number" };
+{ kind: "choice"; options: string[] } | { kind: "text" } | { kind: "integer" } | { kind: "number" } | 
+/**  An array of strings, entered one item at a time. */
+{ kind: "list" };
 
 /**  A field's draft value, by the field's kind. */
 export type FieldValue = { kind: "fixed" } | { kind: "bool"; value: boolean | null } | 
 /**  The chosen option's index. */
-{ kind: "choice"; value: number | null } | { kind: "text"; value: string } | { kind: "integer"; value: string } | { kind: "number"; value: string };
+{ kind: "choice"; value: number | null } | { kind: "text"; value: string } | { kind: "integer"; value: string } | { kind: "number"; value: string } | { kind: "list"; value: string[] };
 
 /**  What a read-only Codex auth file says of its token. */
 export type FileExpiry = { state: "usable"; expiresAt: UnixSeconds | null } | { state: "expired" };
@@ -355,6 +357,8 @@ export type HumanView = {
 	/**  The request every action goes to: a waiting follower's original. */
 	id: string,
 	title: string,
+	/**  The Artifact the reviewed eval belongs to: its tools come first. */
+	artifact: string,
 	/**  Status, claim and waiting time in one line. */
 	meta: string,
 	/**  For a follower: which request and repository its actions go to. */
@@ -689,6 +693,9 @@ export type ToolRun = {
 
 export type ToolView = {
 	name: string,
+	/**  The Artifact that declares it, and its name there: `open` of `notes` is `open_notes`. */
+	artifact: string,
+	operation: string,
 	kind: ToolKind,
 	description: string,
 	/**  What running it does: the resolved command line, or a builtin's action. */

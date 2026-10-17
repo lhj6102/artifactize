@@ -12,7 +12,6 @@ import type {
   FormView,
   HumanView,
   Notice,
-  Output,
   Settled,
   Verdict,
 } from "../ipc/client";
@@ -88,6 +87,14 @@ export class FormDraft {
 
 type Busy = { label: string; job: number; since: number };
 
+/** One tool run in the review's Tool log: when it started, what ran, and what it printed. */
+export type LogEntry = { at: string; operation: string; artifact: string; title: string; text: string; error: boolean };
+
+/** `HH:MM:SS` of now, as the Tool log stamps a run. */
+function stamp(): string {
+  return new Date().toTimeString().slice(0, 8);
+}
+
 /** One canonical request owns these facts. Alias handles adopt this same instance,
  * never copy its forms, drafts or running work. It is shared through AppState. */
 class ReviewState {
@@ -97,7 +104,8 @@ class ReviewState {
   expanded = $state(false);
   technical = $state(false);
   tool = $state(0);
-  output = $state.raw<Output | null>(null);
+  /** Every tool run of this review, oldest first: kept while the review is open. */
+  log = $state.raw<LogEntry[]>([]);
   busy = $state<Busy | null>(null);
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);
@@ -121,8 +129,8 @@ export class Review {
   set technical(value: boolean) { this.#state.technical = value; }
   get tool(): number { return this.#state.tool; }
   set tool(value: number) { this.#state.tool = value; }
-  get output(): Output | null { return this.#state.output; }
-  set output(value: Output | null) { this.#state.output = value; }
+  get log(): LogEntry[] { return this.#state.log; }
+  set log(value: LogEntry[]) { this.#state.log = value; }
   get busy(): Busy | null { return this.#state.busy; }
   set busy(value: Busy | null) { this.#state.busy = value; }
   get notice(): Notice | null { return this.#state.notice; }
@@ -271,7 +279,7 @@ export class Review {
       form.error = null;
       this.form = null;
       this.#state.drafts.clear();
-      this.output = null;
+      this.log = [];
       this.#acted(submitted);
       return submitted.settled;
     } catch (error) {
@@ -293,12 +301,16 @@ export class Review {
       return;
     }
     this.tool = index;
+    const at = stamp();
     try {
-      const ran = await this.#job(`Running ${tool.name}`, (job) =>
+      const ran = await this.#job(`Running ${tool.operation}`, (job) =>
         call(this.ipc.humanRun(this.id, tool.name, job)),
       );
       if (!ran) return;
-      this.output = ran.output;
+      this.log = [
+        ...this.log,
+        { at, operation: tool.operation, artifact: tool.artifact, title: ran.output.title, text: ran.output.text, error: ran.output.error },
+      ];
       this.notice = ran.notice;
       // Declarations may have changed; show what the next run resolves.
       await this.load();

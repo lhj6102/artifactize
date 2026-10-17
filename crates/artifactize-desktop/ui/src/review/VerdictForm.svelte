@@ -1,12 +1,15 @@
 <script lang="ts">
-  // The chosen verdict's owner fields: typed inputs for a flat schema, JSON text otherwise.
-  // Enter never submits; Ctrl+S does. Values are checked and coerced by the backend's form.
+  // The chosen verdict's owner fields as a person enters them: a text, a choice, or a list of
+  // items to add and remove. Constants are filled in and not shown. Enter never submits; the
+  // Submit button and Ctrl+S do. Values are checked and coerced by the backend's form.
   import type { Attachment } from "svelte/attachments";
   import type { FieldValue } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
-  import { composing, label } from "../shell/keys";
+  import { composing } from "../shell/keys";
 
-  let { review, form }: { review: Review; form: FormDraft } = $props();
+  let { review, form, onsubmit }: { review: Review; form: FormDraft; onsubmit: () => void } = $props();
+  /** What a person enters: constants are the form's own. */
+  const shown = $derived(form.fields.filter((field) => field.input.kind !== "fixed"));
 
   /** Typed fields or JSON text: switching either way moves focus like opening a form does. */
   const mode = $derived(form.json === null ? "fields" : "json");
@@ -33,6 +36,11 @@
   }
 
   const text = (value: FieldValue) => ("value" in value && typeof value.value === "string" ? value.value : "");
+  const items = (value: FieldValue) => (value.kind === "list" ? value.value : []);
+  /** A list's items with one edited, added or removed; it always keeps one item to type in. */
+  function setItems(name: string, next: string[]) {
+    set(name, { kind: "list", value: next.length > 0 ? next : [""] });
+  }
 </script>
 
 <div class="form" {@attach takeFocus}>
@@ -44,14 +52,9 @@
         class="verdict {verdict.toLowerCase()}"
         onclick={() => void review.choose(verdict)}
       >
-        {verdict} <kbd>{label(verdict === "GREEN" ? "Ctrl+G" : "Ctrl+R")}</kbd>
+        {verdict}
       </button>
     {/each}
-    {#if form.json === null}
-      <button class="verdict json" onclick={() => void review.editJson()}>
-        Edit as JSON <kbd>{label("Ctrl+E")}</kbd>
-      </button>
-    {/if}
   </div>
 
   {#if form.json !== null}
@@ -66,10 +69,10 @@
         rows="12"
       ></textarea>
     </label>
-  {:else if form.fields.length === 0}
-    <p class="muted">This verdict has no owner fields. Submit with {label("Ctrl+S")}.</p>
+  {:else if shown.length === 0}
+    <p class="muted">This verdict asks for nothing more.</p>
   {:else}
-    {#each form.fields as field (field.name)}
+    {#each shown as field (field.name)}
       {@const value = form.values[field.name]}
       <div class="field">
         <label class="name" for="field-{field.name}">
@@ -118,6 +121,23 @@
               <option value={String(at)}>{option}</option>
             {/each}
           </select>
+        {:else if field.input.kind === "list"}
+          {@const list = items(value)}
+          <ol class="items" id="field-{field.name}">
+            {#each list as item, at (at)}
+              <li>
+                <textarea
+                  rows="2"
+                  aria-label="{field.name} {at + 1}"
+                  value={item}
+                  oninput={(event) =>
+                    setItems(field.name, list.with(at, (event.currentTarget as HTMLTextAreaElement).value))}
+                ></textarea>
+                <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => setItems(field.name, list.toSpliced(at, 1))}>✕</button>
+              </li>
+            {/each}
+          </ol>
+          <button class="button small add" onclick={() => setItems(field.name, [...list, ""])}>+ Add</button>
         {:else}
           {@const kind = field.input.kind}
           {#if kind === "text"}
@@ -144,6 +164,9 @@
   {#if form.error}
     <div class="error" role="alert">{form.error}</div>
   {/if}
+  <div class="submit">
+    <button class="button primary" disabled={review.busy !== null} onclick={onsubmit}>Submit {form.verdict}</button>
+  </div>
 </div>
 
 <style>
@@ -166,9 +189,6 @@
     border-radius: 6px;
     padding: 3px 12px;
     cursor: pointer;
-  }
-  .verdict.json {
-    margin-left: auto;
   }
   .verdict.green[aria-checked="true"] {
     color: var(--green);
@@ -213,6 +233,36 @@
   }
   .json {
     font: 12px/1.5 var(--mono);
+  }
+  .items {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding-left: 22px;
+  }
+  .items li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 6px;
+  }
+  .remove {
+    border: 0;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    padding: 4px;
+  }
+  .remove:hover {
+    color: var(--text);
+  }
+  .add {
+    justify-self: start;
+  }
+  .submit {
+    display: flex;
+    justify-content: flex-end;
   }
   input:focus,
   textarea:focus,

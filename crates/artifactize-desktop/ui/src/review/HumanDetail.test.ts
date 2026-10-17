@@ -9,6 +9,7 @@ import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
 import { greenForm, humanView, redForm } from "./fixtures";
+import type { FormView, ToolView } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
@@ -58,7 +59,7 @@ describe("HumanDetail", () => {
     const calls = backend("claim");
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText(/Unclaimed\. c claims it for alice/);
+    await screen.findByRole("button", { name: "Claim to review" });
 
     await fireEvent.keyDown(region, { key: "c", isComposing: true });
     await fireEvent.keyDown(region, { key: "c", keyCode: 229 });
@@ -146,20 +147,7 @@ describe("HumanDetail", () => {
     });
   });
 
-  it("moves focus into the JSON text when Ctrl+E turns the typed form into JSON", async () => {
-    backend("review");
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
-    await fireEvent.keyDown(region, { key: "g" });
-    const comment = await screen.findByLabelText(/comment/);
-    await waitFor(() => expect(document.activeElement).toBe(comment));
-    await fireEvent.keyDown(comment, { key: "e", ctrlKey: true });
-    const json = await screen.findByLabelText(/Owner fields \(JSON\)/);
-    await waitFor(() => expect(document.activeElement).toBe(json));
-  });
-
-  it.each(["typed field", "JSON field", "Submit button"])("keeps the completed result keyboard-accessible after submitting from the %s", async (from) => {
+  it.each(["typed field", "Submit button"])("keeps the completed result keyboard-accessible after submitting from the %s", async (from) => {
     backend("review", () => ({
       notice: { text: "Submitted GREEN for release/signoff", error: false },
       view: humanView("completed", { result: '{"verdict":"GREEN","approved":true,"comment":"checked"}' }),
@@ -174,11 +162,6 @@ describe("HumanDetail", () => {
     const comment = await screen.findByLabelText(/comment/);
     await waitFor(() => expect(document.activeElement).toBe(comment));
     await user.type(comment, "checked");
-    if (from === "JSON field") {
-      await user.keyboard("{Control>}e{/Control}");
-      const json = await screen.findByLabelText(/Owner fields \(JSON\)/);
-      await waitFor(() => expect(document.activeElement).toBe(json));
-    }
     if (from === "Submit button") await user.click(screen.getByRole("button", { name: /Submit/ }));
     else await user.keyboard("{Control>}s{/Control}");
 
@@ -229,5 +212,70 @@ describe("HumanDetail", () => {
     await waitFor(() => expect(document.activeElement).toBe(region));
     await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
     expect(left).toBe(1);
+  });
+
+  it("hides constants and enters a list one item at a time, added and removed", async () => {
+    const list: FormView = {
+      verdict: "RED",
+      fields: [
+        { name: "approved", required: true, hint: "", input: { kind: "fixed", value: "false" } },
+        { name: "change", required: true, hint: "array", input: { kind: "list" } },
+      ],
+      json: null,
+      draft: { verdict: "RED", fields: [["approved", { kind: "fixed" }], ["change", { kind: "list", value: [""] }]], json: null },
+    };
+    const calls = backend("review");
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args: args as Record<string, unknown> });
+      if (cmd === "human_open") return humanView("review");
+      if (cmd === "human_form") return list;
+      if (cmd === "human_edit_field") {
+        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
+        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
+      }
+      return null;
+    }, { shouldMockEvents: true });
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await screen.findByText("REVIEW (yours)");
+    await user.click(screen.getByRole("button", { name: "RED" }));
+    const first = await screen.findByLabelText("change 1");
+    // The constant is the form's own: nothing to enter, so nothing shown.
+    expect(screen.queryByText(/approved/)).toBeNull();
+    await user.type(first, "Shorter title");
+    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.type(await screen.findByLabelText("change 2"), "Fix the date");
+    await user.click(screen.getByRole("button", { name: "Remove change 1" }));
+    await waitFor(() => expect((screen.getByLabelText("change 1") as HTMLTextAreaElement).value).toBe("Fix the date"));
+    expect(screen.queryByLabelText("change 2")).toBeNull();
+    expect(screen.getByRole("button", { name: "Submit RED" })).toBeTruthy();
+  });
+
+  it("groups the tools by their Artifact, the reviewed one first, and keeps every run in the Tool log", async () => {
+    const tools: ToolView[] = [
+      { name: "preview_brand", artifact: "brand", operation: "preview", kind: "launch", description: "Show the icon.", action: "preview", error: null },
+      { name: "notes_release", artifact: "release", operation: "notes", kind: "output", description: "Print the notes.", action: "$ cat notes.md", error: null },
+    ];
+    let runs = 0;
+    mockIPC((cmd) => {
+      if (cmd === "human_open") return humanView("review", { tools });
+      if (cmd === "human_run") {
+        runs += 1;
+        return { output: { title: "exited 0", text: `clicked (412, ${runs})`, error: false }, notice: { text: "Ran", error: false } };
+      }
+      return null;
+    }, { shouldMockEvents: true });
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await screen.findByText("REVIEW (yours)");
+    const groups = screen.getAllByRole("group", { name: /^Tools of / });
+    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
+    await user.click(screen.getByRole("button", { name: "▶ notes" }));
+    await user.click(await screen.findByRole("button", { name: "▶ preview" }));
+    const log = screen.getByRole("log", { name: "Tool log" });
+    await waitFor(() => expect(log.textContent).toContain("clicked (412, 2)"));
+    expect(log.textContent).toContain("▶ notes · release");
+    expect(log.textContent).toContain("clicked (412, 1)");
+    expect(log.textContent).toContain("▶ preview · brand");
   });
 });

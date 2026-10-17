@@ -125,6 +125,9 @@ pub enum ToolKind {
 #[serde(rename_all = "camelCase")]
 pub struct ToolView {
     pub name: String,
+    /// The Artifact that declares it, and its name there: `open` of `notes` is `open_notes`.
+    pub artifact: String,
+    pub operation: String,
     pub kind: ToolKind,
     pub description: String,
     /// What running it does: the resolved command line, or a builtin's action.
@@ -147,6 +150,8 @@ pub struct HumanView {
     /// The request every action goes to: a waiting follower's original.
     pub id: RequestKey,
     pub title: String,
+    /// The Artifact the reviewed eval belongs to: its tools come first.
+    pub artifact: String,
     /// Status, claim and waiting time in one line.
     pub meta: String,
     /// For a follower: which request and repository its actions go to.
@@ -228,6 +233,11 @@ fn view(
     HumanView {
         id: request.id.clone().into(),
         title: format!("{} · {}", request.eval_id, request.title),
+        artifact: request
+            .eval_id
+            .as_str()
+            .rsplit_once('/')
+            .map_or_else(String::new, |(artifact, _)| artifact.to_owned()),
         meta: review::meta(view, reviewer, now),
         shared: review::shared(view),
         instruction: request.payload.instruction().to_owned(),
@@ -259,6 +269,13 @@ fn view(
                     action: tool.action(resolved),
                     error: failed
                         .or_else(|| resolved.and_then(|resolved| resolved.as_ref().err().cloned())),
+                    operation: tool
+                        .name
+                        .as_str()
+                        .strip_suffix(&format!("_{}", tool.artifact))
+                        .unwrap_or(tool.name.as_str())
+                        .to_owned(),
+                    artifact: tool.artifact.to_string(),
                     name: tool.name.to_string(),
                     kind: kind(tool.kind),
                     description: tool.description,

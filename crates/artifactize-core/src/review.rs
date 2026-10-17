@@ -196,6 +196,8 @@ impl Outcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
     pub name: ToolName,
+    /// The Artifact that declares the tool.
+    pub artifact: crate::types::ArtifactName,
     pub kind: HumanToolKind,
     pub description: String,
     pub declared: Runs,
@@ -360,6 +362,7 @@ pub fn tools(request: &Request) -> Vec<Tool> {
                     };
                     Some(Tool {
                         name: format!("{operation}_{id}").parse().ok()?,
+                        artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),
                         declared: Runs::parse(artifacts, id, tool),

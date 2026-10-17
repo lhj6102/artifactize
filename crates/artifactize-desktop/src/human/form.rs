@@ -42,6 +42,8 @@ pub enum FieldInput {
     Text,
     Integer,
     Number,
+    /// An array of strings, entered one item at a time.
+    List,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -76,6 +78,7 @@ pub enum FieldValue {
     Text(String),
     Integer(String),
     Number(String),
+    List(Vec<String>),
 }
 
 /// The frontend's draft of one verdict: field values by name, or JSON text.
@@ -124,6 +127,7 @@ pub fn template(
                 Input::Text(_) => FieldInput::Text,
                 Input::Integer(_) => FieldInput::Integer,
                 Input::Number(_) => FieldInput::Number,
+                Input::List(_) => FieldInput::List,
             },
         })
         .collect();
@@ -159,6 +163,7 @@ fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
                     (Input::Text(_), FieldValue::Text(text)) => Input::Text(text.clone()),
                     (Input::Integer(_), FieldValue::Integer(text)) => Input::Integer(text.clone()),
                     (Input::Number(_), FieldValue::Number(text)) => Input::Number(text.clone()),
+                    (Input::List(_), FieldValue::List(items)) => Input::List(items.clone()),
                     // A constant stays fixed; a value of another kind is not this field's.
                     (input, _) => input.clone(),
                 };
@@ -177,6 +182,7 @@ fn value_of(input: &Input) -> FieldValue {
         Input::Text(text) => FieldValue::Text(text.clone()),
         Input::Integer(text) => FieldValue::Integer(text.clone()),
         Input::Number(text) => FieldValue::Number(text.clone()),
+        Input::List(items) => FieldValue::List(items.clone()),
     }
 }
 
