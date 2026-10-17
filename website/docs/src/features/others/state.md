@@ -207,8 +207,10 @@ started.
 
 With every slot of its backend in use, a request waits, as QUEUED, with a reason
 such as `Waiting for a free codex slot: all 4 are in use on this machine
-(limits.json).`, and is retried as slots free up, in selection order. While it waits
-it does not count against an explicit `--jobs` cap and consumes no
+(limits.json).`. As slots free up, retries follow the Run's scheduling priorities:
+READY work first, then the longest remaining dependency path, with selection order
+only breaking ties. A later-selected request can therefore receive the next slot
+first. While waiting, a request does not count against an explicit `--jobs` cap and consumes no
 `--max-executions` start, so runtime evals, Human requests and other backends
 keep running. When admitted, it counts against `--jobs` if given; without that
 cap, only the backend's available slots limit its reviews. Explicit `run cancel RUN_ID` ends
