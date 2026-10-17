@@ -251,6 +251,7 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:docs");
       await browser.$(nodeAt("a:docs")).moveTo();
       await summaryShows(browser, nodeAt("a:docs"), /docs/);
+      await graphShown(browser, "a:ship");
       await browser.$(nodeAt("a:ship")).moveTo();
       await summaryShows(browser, nodeAt("a:ship"), /waits for release/);
       // An eval of a popup under the pointer: its own summary beside its row.

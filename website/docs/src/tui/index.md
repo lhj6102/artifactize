@@ -174,8 +174,11 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   accepts it. Blank file content submits nothing. Monitor never opens `$EDITOR`;
   nested JSON stays in the TUI.
 
-Outside a form or work, `q` quits from Detail too. Ctrl-C quits
-from a form, but first cancels a running tool. Standalone `review` lists claims
+Outside a form or work, `q` quits from Detail too. In either UI, Ctrl-C
+requests cancellation of any active Human lifecycle job: claim, tool, submission
+(including publication) or release. It stays in the UI while that job is busy;
+once no job is busy, Ctrl-C invokes quitting, including from a form.
+Standalone `review` lists claims
 this session took without submitting: `k` keeps them and quits, `u` releases them
 and quits, and Esc stays. The quit prompt sets a form aside without dropping its
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
@@ -322,7 +325,7 @@ not rewritten by this view.
 | `?` | Show help; an ordinary next key dismisses it without acting. Ctrl-C still quits and F2 still toggles mouse capture |
 | `!` | Next ERROR, RED or waiting Human eval in this Run, wrapping around |
 | `r` | Refresh with Scope, Runs or the tree focused; in an owned idle Human Detail it chooses RED, and it does not refresh read-only Detail |
-| `q` / Ctrl-C | `q` quits outside editing/work; Ctrl-C quits or first cancels a running Human tool |
+| `q` / Ctrl-C | `q` quits outside editing/work; Ctrl-C requests cancellation of any busy Human lifecycle job; otherwise it invokes quitting |
 | F2 | Toggle mouse capture for terminal text selection |
 
 From Detail, `!` opens the next attention item's Detail. Human actions work only

@@ -7,12 +7,14 @@ export function focusedNode(browser: WebdriverIO.Browser): Promise<string | null
   return browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
 }
 
-/** Wait until the Run's graph has drawn the node `id`. */
+/** Wait until the live graph draws a visible, hit-testable node `id`, not a retained element. */
 export async function graphShown(browser: WebdriverIO.Browser, id: string, timeout = 15000): Promise<void> {
   await browser.waitUntil(() => browser.execute((want) => {
     const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
     const box = node?.getBoundingClientRect();
-    return !!box && box.width > 0 && box.height > 0;
+    if (!node || !box || box.width <= 0 || box.height <= 0) return false;
+    const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return target?.closest(".svelte-flow__node") === node;
   }, id), { timeout, timeoutMsg: `the Run graph draws ${id}` });
 }
 
