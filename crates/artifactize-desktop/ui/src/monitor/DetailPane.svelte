@@ -66,8 +66,10 @@
   const pending = $derived(d.folds.node === target && d.folds.pending);
   /** The eval's log rather than its Summary. */
   const log = $derived(d.folds.node === target && d.folds.log);
-  function fold(change: Partial<{ technical: boolean; pending: boolean; log: boolean }>) {
-    d.folds = { node: target, technical, pending, log, ...change };
+  /** The eval's Debug facts unfolded. */
+  const debug = $derived(d.folds.node === target && d.folds.debug);
+  function fold(change: Partial<{ technical: boolean; pending: boolean; log: boolean; debug: boolean }>) {
+    d.folds = { node: target, technical, pending, log, debug, ...change };
   }
 
   /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
@@ -165,6 +167,7 @@
           bind:technical={() => technical, (value) => fold({ technical: value })}
           bind:pending={() => pending, (value) => fold({ pending: value })}
           bind:log={() => log, (value) => fold({ log: value })}
+          bind:debug={() => debug, (value) => fold({ debug: value })}
         />
       {/if}
     </div>

@@ -48,6 +48,7 @@ const agentDetail: DetailView = {
   running: false,
   sections: [{ name: "outcome", title: "Outcome", fields: [{ key: "Verdict", value: "GREEN" }], waits: [] }],
   evidence: null,
+  card: null,
 };
 
 function delayedRows() {

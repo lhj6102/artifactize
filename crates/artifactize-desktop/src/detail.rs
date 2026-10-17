@@ -84,6 +84,102 @@ pub struct Evidence {
     pub text: String,
 }
 
+/// One entry of an eval's result, the verdict left out: a text, or a list of findings.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultEntry {
+    pub key: String,
+    pub text: Option<String>,
+    pub items: Vec<ResultItem>,
+}
+
+/// A finding: its rule and place as the head (`item · where`), then its other fields.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultItem {
+    pub head: Option<String>,
+    pub fields: Vec<Field>,
+}
+
+/// An eval at a glance, from the library's [`monitor::Card`].
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CardView {
+    pub instruction: String,
+    /// `None` until the eval has a result.
+    pub result: Option<Vec<ResultEntry>>,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+    pub reused: bool,
+    pub took: Option<String>,
+    pub tokens: Option<u32>,
+    pub model: Option<String>,
+}
+
+fn text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn result_item(value: &serde_json::Value) -> ResultItem {
+    let Some(object) = value.as_object() else {
+        return ResultItem {
+            head: Some(text(value)),
+            fields: Vec::new(),
+        };
+    };
+    let head: Vec<_> = ["item", "where"]
+        .into_iter()
+        .filter_map(|key| object.get(key).map(text))
+        .collect();
+    ResultItem {
+        head: (!head.is_empty()).then(|| head.join(" · ")),
+        fields: object
+            .iter()
+            .filter(|(key, _)| !matches!(key.as_str(), "item" | "where"))
+            .map(|(key, value)| Field {
+                key: key.clone(),
+                value: text(value),
+            })
+            .collect(),
+    }
+}
+
+impl From<monitor::Card> for CardView {
+    fn from(card: monitor::Card) -> Self {
+        Self {
+            instruction: card.instruction,
+            result: card.result.map(|entries| {
+                entries
+                    .iter()
+                    .map(|(key, value)| match value {
+                        serde_json::Value::Array(items) => ResultEntry {
+                            key: key.clone(),
+                            text: None,
+                            items: items.iter().map(result_item).collect(),
+                        },
+                        other => ResultEntry {
+                            key: key.clone(),
+                            text: Some(text(other)),
+                            items: Vec::new(),
+                        },
+                    })
+                    .collect()
+            }),
+            exit_code: card.exit_code,
+            error: card.error,
+            reused: card.reused,
+            took: card.took,
+            tokens: card
+                .tokens
+                .map(|tokens| u32::try_from(tokens).unwrap_or(u32::MAX)),
+            model: card.model,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DetailView {
@@ -100,6 +196,8 @@ pub struct DetailView {
     pub sections: Vec<SectionView>,
     /// Saved runtime stdout/stderr, or why there are none.
     pub evidence: Option<Evidence>,
+    /// An eval's status line, instruction and result; `None` for an Artifact or the Run.
+    pub card: Option<CardView>,
     /// A running request: its Detail follows live changes.
     pub running: bool,
 }
@@ -178,6 +276,7 @@ pub fn view(
         }),
         sections,
         evidence,
+        card: request.map(|view| monitor::card(view, now).into()),
     }
 }
 

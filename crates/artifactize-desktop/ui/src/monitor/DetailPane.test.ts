@@ -24,7 +24,7 @@ const tree: TreeNode[] = [
 
 const view = (node: string, title: string): DetailView => ({
   run: "run-a", node, title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
-  mark: null, sections: [], evidence: null, running: false,
+  mark: null, sections: [], evidence: null, running: false, card: null,
 });
 
 function setup(tab: string | null = null) {

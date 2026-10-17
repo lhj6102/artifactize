@@ -173,6 +173,19 @@ export type BrowseView = {
 	revision: number,
 };
 
+/**  An eval at a glance, from the library's [`monitor::Card`]. */
+export type CardView = {
+	instruction: string,
+	/**  `None` until the eval has a result. */
+	result: ResultEntry[] | null,
+	exitCode: number | null,
+	error: string | null,
+	reused: boolean,
+	took: string | null,
+	tokens: number | null,
+	model: string | null,
+};
+
 export type Claimant = {
 	reviewer: string,
 	mine: boolean,
@@ -247,6 +260,8 @@ export type DetailView = {
 	sections: SectionView[],
 	/**  Saved runtime stdout/stderr, or why there are none. */
 	evidence: Evidence | null,
+	/**  An eval's status line, instruction and result; `None` for an Artifact or the Run. */
+	card: CardView | null,
 	/**  A running request: its Detail follows live changes. */
 	running: boolean,
 };
@@ -491,6 +506,19 @@ export type RepositoryKey =
 { kind: "git"; path: PathKey } | 
 /**  A non-Git workspace. */
 { kind: "workspace"; path: PathKey };
+
+/**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
+export type ResultEntry = {
+	key: string,
+	text: string | null,
+	items: ResultItem[],
+};
+
+/**  A finding: its rule and place as the head (`item · where`), then its other fields. */
+export type ResultItem = {
+	head: string | null,
+	fields: Field[],
+};
 
 /**  A page of what the query found. */
 export type Results = {

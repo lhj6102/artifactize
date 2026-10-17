@@ -1,9 +1,11 @@
 <script lang="ts">
   // The read-only Detail of a request that is not an open Human review. A request with a log
-  // switches between its Summary (sections) and its log: an Agent's live transcript, or a
-  // runtime's saved output. The monitor's opened Detail and the review screen's Detail of any
-  // other request both show it.
-  import type { DetailView } from "../ipc/client";
+  // switches between its Summary and its log: an Agent's live transcript, or a runtime's saved
+  // output. An eval's Summary is its status (with what running it cost, or what reuse saved),
+  // its instruction and its result, then its execution options, metadata and fingerprint; every
+  // other fact folds under Debug. The monitor's opened Detail and the review screen's Detail of
+  // any other request both show it.
+  import type { DetailView, Field } from "../ipc/client";
   import Sections from "./Sections.svelte";
   import Transcript from "./Transcript.svelte";
   import { tone } from "../shell/tone";
@@ -13,21 +15,54 @@
     technical = $bindable(false),
     pending = $bindable(false),
     log = $bindable(false),
+    debug = $bindable(false),
   }: {
     detail: DetailView;
     technical?: boolean;
     pending?: boolean;
     /** The log rather than the Summary. */
     log?: boolean;
+    /** Debug unfolded. */
+    debug?: boolean;
   } = $props();
 
   const agent = $derived(detail.profile === "agent" && detail.request !== null);
   /** The name of the request's log, if it has one. */
   const logName = $derived(agent ? "Agent log" : detail.evidence ? "Runtime log" : null);
   const showLog = $derived(log && logName !== null);
+  const card = $derived(detail.card);
+  /** An Artifact's Detail: its status line, path and what it waits for; the rest under Debug. */
+  const artifact = $derived(detail.node.startsWith("a:"));
+
+  /** The Summary's own blocks, each named by the Detail fields it shows. */
+  const OPTIONS = ["Profile", "Options"];
+  const METADATA = ["Usage", "Timing"];
+  const SHOWN = new Set(["Status", "Instruction", "Result", "Error", "Fingerprint", ...OPTIONS, ...METADATA]);
+  /** An Artifact's evals are listed above its Detail already. */
+  const ARTIFACT_SHOWN = new Set(["Status", "Path", "Evals"]);
+
+  const fields = $derived(detail.sections.flatMap((section) => section.fields));
+  const waits = $derived(detail.sections.flatMap((section) => section.waits));
+  const pick = (keys: string[]): Field[] => fields.filter((field) => keys.includes(field.key));
+  const debugFields = $derived(fields.filter((field) => !(artifact ? ARTIFACT_SHOWN : SHOWN).has(field.key)));
+
+  /** Grey beside the status: what running it took, or what reuse saved. A Human eval has none. */
+  const cost = $derived.by(() => {
+    if (!card || detail.profile === "human") return "";
+    const saved = card.reused ? "saved " : "";
+    return [
+      card.took && `${saved}${card.took}`,
+      card.tokens !== null && `${saved}${card.tokens.toLocaleString("en-US")} tokens`,
+      card.model,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  });
+  const status = $derived(detail.mark ? `${detail.mark.glyph} ${detail.mark.status}${card?.reused ? " · REUSED" : ""}` : "");
+  const hasResult = $derived(card !== null && (card.result !== null || card.error !== null || card.exitCode !== null));
 </script>
 
-<!-- Focusable so the arrows and PgUp/PgDn scroll the sections. -->
+<!-- Focusable so the arrows and PgUp/PgDn scroll the Summary. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="full" tabindex="0" role="document">
   {#if logName}
@@ -37,7 +72,12 @@
       <button class="view" role="tab" aria-selected={showLog} onclick={() => (log = true)}>{logName}</button>
     </div>
   {/if}
-  {#if detail.summary}
+  {#if card}
+    <p class="summary">
+      <span class="status {tone(detail.mark?.status)}">{status}</span>
+      {#if cost}<span class="cost">{cost}</span>{/if}
+    </p>
+  {:else if detail.summary}
     <p class="summary {tone(detail.mark?.status)}">{detail.summary}</p>
   {/if}
   {#if showLog && agent && detail.request}
@@ -50,6 +90,82 @@
     <div class="shown evidence">
       <h3>{detail.evidence.title}</h3>
       <pre>{detail.evidence.text}</pre>
+    </div>
+  {:else if artifact}
+    <div class="shown card">
+      {#each pick(["Path"]) as field (field.key)}<p class="line muted">{field.value}</p>{/each}
+      {#if waits.length > 0}
+        <section class="block">
+          <h3>Waits for</h3>
+          {#each waits.filter((line) => !line.pending) as line, at (at)}<p class="line">{line.text}</p>{/each}
+        </section>
+      {/if}
+      {#if debugFields.length > 0}
+        <section class="block">
+          <button class="fold" aria-expanded={debug} onclick={() => (debug = !debug)}>{debug ? "▾" : "▸"} Debug</button>
+          {#if debug}
+            <dl>
+              {#each debugFields as field, at (at)}
+                <dt>{field.key}</dt>
+                <dd>{field.value}</dd>
+              {/each}
+            </dl>
+          {/if}
+        </section>
+      {/if}
+    </div>
+  {:else if card}
+    <div class="shown card">
+      {#if card.instruction}<p class="instruction">{card.instruction}</p>{/if}
+      {#if hasResult}
+        <section class="block result">
+          <h3>Result</h3>
+          {#if card.error}<p class="error">{card.error}</p>{/if}
+          {#if card.exitCode !== null}<p>exit {card.exitCode}</p>{/if}
+          {#each card.result ?? [] as entry (entry.key)}
+            {#if entry.text !== null}
+              <p class="text">{#if entry.key !== "summary"}<span class="key">{entry.key}</span> {/if}{entry.text}</p>
+            {:else}
+              <p class="count">{entry.items.length} {entry.key}</p>
+              <ol class="items">
+                {#each entry.items as item, at (at)}
+                  <li>
+                    {#if item.head}<p class="head">{item.head}</p>{/if}
+                    {#each item.fields as field, part (part)}
+                      <p class="line">{#if item.fields.length > 1}<span class="key">{field.key}</span> {/if}{field.value}</p>
+                    {/each}
+                  </li>
+                {/each}
+              </ol>
+            {/if}
+          {/each}
+        </section>
+      {/if}
+      {#each [["Execution options", pick(OPTIONS)], ["Execution metadata", pick(METADATA)], ["Fingerprint", pick(["Fingerprint"])]] as const as [title, shown] (title)}
+        {#if shown.length > 0}
+          <section class="block">
+            <h3>{title}</h3>
+            {#each shown as field (field.key)}<p class="line">{field.value}</p>{/each}
+          </section>
+        {/if}
+      {/each}
+      {#if debugFields.length > 0 || waits.length > 0}
+        <section class="block">
+          <button class="fold" aria-expanded={debug} onclick={() => (debug = !debug)}>{debug ? "▾" : "▸"} Debug</button>
+          {#if debug}
+            <dl>
+              {#each debugFields as field, at (at)}
+                <dt>{field.key}</dt>
+                <dd>{field.value}</dd>
+              {/each}
+              {#if waits.length > 0}
+                <dt>Waits for</dt>
+                <dd>{waits.map((line) => line.text).join("\n")}</dd>
+              {/if}
+            </dl>
+          {/if}
+        </section>
+      {/if}
     </div>
   {:else}
     <div class="shown">
@@ -106,6 +222,15 @@
     font-weight: 500;
     overflow-wrap: anywhere;
   }
+  /* The status and REUSED share the status colour; what it cost stays grey. */
+  .status {
+    font-weight: 700;
+    margin-right: 10px;
+  }
+  .cost {
+    color: var(--muted);
+    font-weight: 400;
+  }
   /* Sizes flow from the Detail down: every column is at most the width it is given. The
    * switch and the summary take their rows only when shown. */
   .full {
@@ -120,6 +245,69 @@
     grid-row: 3;
     min-width: 0;
     min-height: 0;
+  }
+  .card {
+    padding: 0 var(--pad) 12px;
+    overflow-wrap: anywhere;
+  }
+  .card p {
+    margin: 0 0 4px;
+    white-space: pre-wrap;
+  }
+  .instruction {
+    margin-bottom: 14px !important;
+  }
+  .block {
+    margin-bottom: 12px;
+  }
+  .block h3,
+  .fold {
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .fold {
+    border: 0;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .key,
+  .muted {
+    color: var(--muted);
+  }
+  .count {
+    color: var(--muted);
+  }
+  .items {
+    margin: 0;
+    padding-left: 20px;
+  }
+  .items li {
+    margin-bottom: 8px;
+  }
+  .head {
+    font-weight: 600;
+  }
+  .error {
+    color: var(--red);
+  }
+  dl {
+    display: grid;
+    grid-template-columns: fit-content(40%) minmax(0, 1fr);
+    gap: 4px 16px;
+    margin: 4px 0 0;
+  }
+  dt {
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  dd {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .evidence {
     padding: 0 var(--pad) 12px;
