@@ -11,8 +11,9 @@ bundle is required for the MCP registration below.
 Give the agent the skill and ask it to inspect your repository and propose
 boundaries **before** changing structure. Agree which parts are independently
 editable, which inputs their consumers really depend on, and which judgments need
-a person. It should preserve your project instructions and existing Human gates,
-not introduce discretionary sign-offs or mark unfinished work as `basis`.
+a person. It should preserve your project instructions and existing Human gates.
+Before adding a discretionary sign-off, it must explain the need and obtain
+agreement. It must never mark unfinished work as `basis`.
 
 ## Register the MCP server
 

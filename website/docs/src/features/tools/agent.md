@@ -212,7 +212,8 @@ accepted. Each Artifact in its admitted scope contributes its Agent declarations
 under `<name>_<artifactId>`; tool-name and session-provenance-name concatenation
 collisions are rejected. Human tools
 are never listed. Listing creates no directories and runs no owner code. Calls
-return normalized `ToolResult {content, is_error}` for successful, authored and
+return normalized `ToolResult` (the `Success` or `Error` variant; read it with `content()` and
+`is_error()`) for successful, authored and
 system-error results. Registry calls do not mutate payloads or declarations. The
 Agent loop calls this registry.
 

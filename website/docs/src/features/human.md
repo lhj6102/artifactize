@@ -27,6 +27,10 @@ settles only its current Run; a later Run asks for a new Human decision. Current
 validation uses the available evidence, but a later submission never rewrites a
 historical Run's recorded verdict.
 
+In the command notation below, square brackets mark optional parts; do not type
+the brackets. Uppercase placeholders are values to replace: use the real
+`REQUEST_ID` returned by `request list`, and a reviewer name for `NAME`.
+
 ```sh
 artifactize verify --all --wait
 # In another terminal, using the same state directory:

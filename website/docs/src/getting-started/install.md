@@ -295,6 +295,13 @@ in a checkout; `ARTIFACTIZE_CODEX_AUTH_FILE` needs no storage
 An Agent eval names exactly one backend and one exact model ID. There is no model
 catalog and no fallback to another backend or model.
 
+A **backend** is the connection Artifactize uses to send an Agent review to a
+model service. An **API key** is that service's secret account credential. For the
+API-key backends, create a key in your [OpenAI account](https://platform.openai.com/api-keys)
+or [Anthropic Console](https://console.anthropic.com/settings/keys), then replace
+`...` in the matching command with that key. Never commit it or put it in an
+Artifact declaration. Codex uses the separate browser sign-in below instead.
+
 | Backend | Setup | List models |
 |---|---|---|
 | `openai` | `export OPENAI_API_KEY=...` | `artifactize models openai` |
