@@ -2,7 +2,7 @@
 // pointer, jumping to what needs attention and to an upstream blocker, and stepping back out of
 // a Detail; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { verifyWaiting, create, createNavigationFixture, createStates, requests } from "../fixture.ts";
+import { verifyWaiting, create, createNavigationFixture, createStates, createUnreadableRuns, requests } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -290,6 +290,52 @@ export const scenarios: Scenario[] = [
       await graphFollows(newer);
       await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "the newer Run's graph focused again");
       await graphShows(newer);
+    },
+  ),
+
+  // UX journey J-MON-CATALOG: the selected Run fills the right side as its graph, also while
+  // other Runs on the page cannot be read and the Run pane says so.
+  scenario<{ readable: string; unreadable: string[] }>(
+    "navigation-unreadable-runs",
+    "shows the selected Run's graph within its pane while the pane names the Runs that cannot be read",
+    async () => {
+      const { fixture, readable, unreadable, restore } = createUnreadableRuns();
+      return { fixture, args: ["--repo", fixture.repo], data: { readable, unreadable }, release: async () => restore() };
+    },
+    async (browser, { data: { readable, unreadable } }) => {
+      const { runTitle } = paneNavigation(browser);
+      await browser.waitUntil(async () => (await runTitle()) === `Run ${readable}`, { timeout: 15000, timeoutMsg: "the readable newest Run is shown" });
+      const pane = () => browser.execute((title) => {
+        const section = document.querySelector<HTMLElement>(`section.panel[aria-label="${title}"]`);
+        const heading = section?.querySelector<HTMLElement>("h2");
+        const notice = section?.querySelector<HTMLElement>('[role="status"]');
+        const node = section?.querySelector<HTMLElement>('.svelte-flow__node[data-id="a:n000"]');
+        if (!section || !heading || !notice || !node) return null;
+        const box = section.getBoundingClientRect();
+        const within = (element: HTMLElement) => {
+          const inner = element.getBoundingClientRect();
+          return inner.width > 0 && inner.left >= box.left && inner.right <= box.right;
+        };
+        return {
+          // The pane stays inside the window, and what it shows stays inside the pane.
+          inWindow: box.left >= 0 && box.right <= window.innerWidth,
+          bodyWithin: [...section.children].every((child) => within(child as HTMLElement)),
+          nodeWithin: within(node),
+          noticeWithin: within(notice),
+          titleWhole: within(heading) && heading.scrollWidth <= heading.clientWidth,
+          tooltip: notice.title,
+        };
+      }, `Run ${readable}`);
+      let last: Awaited<ReturnType<typeof pane>> = null;
+      await browser.waitUntil(async () => {
+        last = await pane();
+        return !!last && last.inWindow && last.bodyWithin && last.nodeWithin && last.noticeWithin && last.titleWhole;
+      }, { timeout: 15000, timeoutMsg: "the Run pane keeps its title, notice and graph within its width" })
+        .catch((error: unknown) => { throw new Error(`${String(error)}; the pane last showed ${JSON.stringify(last)}`); });
+      await graphShown(browser, "a:n000");
+      const { tooltip } = (await pane())!;
+      for (const id of unreadable) assert.match(tooltip, new RegExp(`Unreadable run ${id}: unknown variant \`dependency\``), `the notice names ${id} in full`);
+      assert.doesNotMatch(tooltip, new RegExp(readable), "the readable Run is not named unreadable");
     },
   ),
 

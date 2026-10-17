@@ -59,10 +59,7 @@
   }
 </script>
 
-<Panel title={run ? `Run ${run.id}` : "Run"} {focused} bind:element {onfocus} onkeydown={keydown}>
-  {#snippet actions()}
-    {#if notice}<span class="notice" role="status">{notice}</span>{/if}
-  {/snippet}
+<Panel title={run ? `Run ${run.id}` : "Run"} {focused} {notice} bind:element {onfocus} onkeydown={keydown}>
   {#if !run}
     <p class="empty">Select a Run.</p>
   {:else}
@@ -117,13 +114,6 @@
   .empty {
     color: var(--muted);
     padding: 0 var(--pad);
-  }
-  .notice {
-    color: var(--red);
-    font-weight: 400;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .headline {
     display: flex;

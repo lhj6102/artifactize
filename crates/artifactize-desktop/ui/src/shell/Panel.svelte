@@ -1,5 +1,6 @@
 <script lang="ts">
-  // A titled, focusable pane. Keys reach `onkeydown` while focus is anywhere inside it.
+  // A titled, focusable pane. Keys reach `onkeydown` while focus is anywhere inside it. The pane
+  // is never wider than its place: a long notice is cut to the header's room, not widening it.
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
 
@@ -9,6 +10,7 @@
     element = $bindable(),
     onfocus,
     onkeydown,
+    notice = null,
     actions,
     children,
     label,
@@ -19,6 +21,9 @@
     element?: HTMLElement;
     onfocus?: () => void;
     onkeydown?: (event: KeyboardEvent) => void;
+    /** What went wrong last: it takes the header's room between the title and the actions,
+     * and shows in full on hover. */
+    notice?: string | null;
     actions?: Snippet;
     children: Snippet;
     label?: string;
@@ -41,6 +46,7 @@
 >
   <header>
     <h2>{title}</h2>
+    {#if notice}<span class="notice" role="status" title={notice}>{notice}</span>{/if}
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
   </header>
   <div class="body">{@render children()}</div>
@@ -51,6 +57,7 @@
     height: 100%;
     display: grid;
     grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
     min-height: 0;
     background: var(--surface);
     outline: none;
@@ -70,7 +77,7 @@
     font-size: 12px;
     font-weight: 600;
     color: var(--muted);
-    flex: 1;
+    flex: 0 1 auto;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -78,9 +85,20 @@
   .focused h2 {
     color: var(--text);
   }
+  .notice {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: end;
+    color: var(--red);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .actions {
     display: flex;
+    flex: none;
     gap: 6px;
+    margin-left: auto;
   }
   .body {
     min-height: 0;
