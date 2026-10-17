@@ -8,7 +8,7 @@ import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, requestWindowClose } from "../platform.ts";
-import { detail, graphShown, nodeAt, openArtifact, openTab } from "../graph-view.ts";
+import { aside, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
 function monitorNavigation(browser: WebdriverIO.Browser) {
@@ -147,7 +147,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "navigation-technical-detail",
-    "shows the technical record of an eval's tab with t and closes the Detail back to the graph",
+    "shows the Debug facts of an eval's Summary with t and closes the Detail back to the graph",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -158,15 +158,13 @@ export const scenarios: Scenario[] = [
       await openTab(browser, "e:ship/check");
       const request = requests(fixture).find((saved) => saved.evalId === "ship/check");
       assert.ok(request, "the fixture independently identifies ship/check");
-      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
-        .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
-      await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: "the opened Detail identifies ship/check by default" });
-      const technical = () => browser.$('aside[aria-label="Detail"]').$("button*=Technical").getAttribute("aria-expanded");
-      assert.equal(await technical(), "false");
-      assert.equal(await field("Fingerprint"), "");
-      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "", "the actual additional technical record shown");
-      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "", "the additional technical record hidden");
-      assert.equal(await field("Request"), request.id, "hiding Technical does not hide the default request");
+      await browser.waitUntil(async () => (await summary(browser)).instruction.startsWith("Ship"), { timeout: 15000, timeoutMsg: "ship/check's Summary" });
+      assert.equal((await summary(browser)).debug, false, "Debug starts folded");
+      assert.equal(await fact(browser, "Request"), "");
+      await aside(browser).$('[role="document"]').click();
+      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Request")) === request.id, "the request among the Debug facts");
+      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === "", "the Debug facts hidden");
+      assert.ok((await summary(browser)).instruction.startsWith("Ship"), "folding Debug keeps the Summary");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       // The graph as it was, every Artifact still drawn and reachable.
       for (const id of ["a:release", "a:ship", "a:docs"]) await graphShown(browser, id);

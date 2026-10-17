@@ -2,7 +2,7 @@
 // focus: the next Escape leaves it in both the Monitor's Run graph and the Review screen.
 import assert from "node:assert/strict";
 import { create, signoff } from "../fixture.ts";
-import { reviewing } from "../human-review.ts";
+import { claimable, reviewing } from "../human-review.ts";
 import { saveEvidence } from "../observation.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -33,7 +33,7 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
         await browser.$('[role="dialog"] button[type="submit"]').click();
         await human().waitForExist({ timeout: 15000 });
       }
-      await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000 });
+      await browser.waitUntil(() => claimable(browser), { timeout: 15000, timeoutMsg: "the claim stage" });
       await press(browser, ["c"], () => reviewing(browser), "claimed Human Detail");
       assert.equal(signoff(fixture).claim?.reviewer, "alice");
       await press(browser, ["g"], () => browser.execute(() => document.activeElement?.id === "field-comment"), "the focused GREEN comment");

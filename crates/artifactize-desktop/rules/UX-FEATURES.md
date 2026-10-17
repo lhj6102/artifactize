@@ -44,7 +44,7 @@ The Monitor shows a Run only as its graph. The graph takes the pointer: Tab reac
 
 - **J-HUMAN-CLAIM**: `c` claims a waiting Human review for this reviewer; `u` releases it. A claim made elsewhere shows as taken.
 - **J-HUMAN-LAYOUT**: a Human review reads top to bottom as its instruction, the Tools, their Tool log and the Result.
-- **J-HUMAN-TOOL**: the Tools are grouped by the Artifact that declares them, the reviewed one first, each a `▶` button; a click on it, or Enter on it, runs it at once. A launch tool opens its application and returns at once; a failing tool shows its error.
+- **J-HUMAN-TOOL**: the Tools are grouped by the Artifact that declares them, the reviewed one first, each a `▶` button; a click on it runs it at once. A launch tool opens its application and returns at once; a failing tool shows its error.
 - **J-HUMAN-LOG**: every run of the review shows in the Tool log as it happens: `▶ HH:MM:SS · operation · Artifact`, then each line the tool prints, stderr in red, then its end line (`■ exit 0`, `■ launched`, `■ done`, `■ error: …`). A launched application's lines keep arriving under its own run until it exits. The log is monospace, wraps, scrolls on its own and follows its newest line unless the reader scrolled up; its text can be selected and copied into the result. A submission clears it.
 - **J-HUMAN-GREEN**: after a claim `g` opens the GREEN form built from the eval's pass schema; Ctrl+S submits. The completed result stays open.
 - **J-HUMAN-RED**: `r` opens the RED form; a result that fails its schema is not submitted, the failing path is shown and the form stays correctable. Ctrl+G and Ctrl+R switch the verdict while editing.

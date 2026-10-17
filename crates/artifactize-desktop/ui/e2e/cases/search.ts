@@ -204,18 +204,18 @@ export const scenarios: Scenario[] = [
         const opened = await detail();
         return opened?.title === "docs/lint · Docs build · read-only" && opened.close;
       }, "the non-Human read-only Detail opened");
-      await waitFor(browser, async () => (await detail())?.fields.Request === requestId, "the default Detail identifies the exact opened request without Technical");
+      // Its Summary first; the request and every other fact fold under Debug.
+      await waitFor(browser, async () => (await record().getText()).includes("Build the docs."), "the opened Detail's Summary");
       const opened = await detail();
       assert.ok(opened);
-      assert.equal(opened.fields.Request, requestId, "this opened Detail belongs to the exact listed request by default");
       assert.equal(opened.title, "docs/lint · Docs build · read-only", "this Detail names the eval and its read-only state");
       assert.equal(opened.editable, false, "this non-Human Detail has no review form or editing controls");
       assert.ok(opened.close, "the opened Detail offers Close back to the list");
-      assert.equal(opened.fields.Fingerprint, undefined, "additional technical fields start folded");
-      const technical = () => record().$("button*=Technical");
-      await technical().click();
-      await waitFor(browser, async () => (await technical().getAttribute("aria-expanded")) === "true" && !!(await detail())?.fields.Fingerprint, "the opened Detail renders its additional technical record");
-      assert.equal((await detail())?.fields.Request, requestId, "Technical preserves the opened request's identity");
+      assert.equal(opened.fields.Request, undefined, "the Debug facts start folded");
+      const debug = () => record().$("button*=Debug");
+      await debug().click();
+      await waitFor(browser, async () => (await debug().getAttribute("aria-expanded")) === "true" && (await detail())?.fields.Request === requestId,
+        "Debug identifies the exact opened request");
       await press(browser, ["Escape"], async () => !(await record().isExisting()) && await focused("Requests")(), "the opened Detail closed back to the list");
     },
   ),

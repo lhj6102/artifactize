@@ -6,11 +6,9 @@
 import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
 import { press } from "../keys.ts";
-import { detail, focusedNode, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
+import { aside, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
-
-const aside = (browser: WebdriverIO.Browser) => browser.$('aside[aria-label="Detail"]');
 
 export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-RECOLOUR E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-BACK
@@ -188,7 +186,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "graph-eval-tabs",
-    "lists an Artifact's evals on its Artifact tab, shows one's tab from the list with its technical record and its Runtime log, and another from the tabs",
+    "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, and another from the tabs",
     async () => {
       const fixture = createEvals(["alpha", "beta", "gamma"]);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -200,22 +198,21 @@ export const scenarios: Scenario[] = [
       assert.ok(opened.tabs.slice(1).every((tab) => tab.tone === "tone-green" && tab.glyph !== ""), "each eval's tab shows its GREEN glyph in GREEN");
       assert.deepEqual(opened.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's own evals");
       assert.ok(opened.evals.every((row) => /GREEN/.test(row.status)), "with their verdicts");
-      // A click on an eval of the list shows its tab: its own instruction, result and request.
+      // A click on an eval of the list shows its tab: its own status, instruction and result.
       await openTab(browser, "e:app/beta", { row: true });
       const request = requests(fixture).find((saved) => saved.evalId === "app/beta");
       assert.ok(request?.result, "the real CLI saved app/beta's result");
-      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
-        .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
-      await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: "the Detail is app/beta's" });
-      assert.ok((await aside(browser).$('[role="document"]').getText()).includes("Check beta."), "its instruction");
-      assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "its exact saved result");
+      await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check beta."), { timeout: 15000, timeoutMsg: "the Detail is app/beta's" });
+      const shown = await summary(browser);
+      assert.match(shown.status, /GREEN/, "its status");
+      assert.ok(shown.blocks.includes("Result"), `its result: ${shown.blocks}`);
       assert.equal((await detail(browser))?.evals.length, 0, "an eval's tab does not list the Artifact's evals");
-      const technical = () => aside(browser).$("button*=Technical").getAttribute("aria-expanded");
-      assert.equal(await field("Fingerprint"), "", "the technical record starts folded");
+      // Every other fact folds under Debug, which t shows and hides.
+      assert.equal(shown.debug, false, "Debug starts folded");
       await aside(browser).$('[role="document"]').click();
-      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "", "the technical record shown");
-      assert.equal(await field("Request"), request.id, "the request stays shown beside the technical record");
-      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "", "the technical record hidden");
+      await press(browser, ["t"], async () => (await fact(browser, "Request")) === request.id, "app/beta's Debug facts shown");
+      assert.deepEqual(JSON.parse(await fact(browser, "Raw result")), request.result, "its exact saved result");
+      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === "", "its Debug facts hidden");
       // Below the tabs, the eval switches between its Summary, shown first, and its Runtime log.
       const views = () => browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] [role="tablist"][aria-label="Views"] [role="tab"]')]
         .map((view) => [view.textContent?.trim() ?? "", view.getAttribute("aria-selected")]));
@@ -223,18 +220,44 @@ export const scenarios: Scenario[] = [
       const log = () => browser.execute(() => document.querySelector('aside[aria-label="Detail"] .evidence')?.textContent ?? "");
       const view = async (at: number) => (await aside(browser).$$('[aria-label="Views"] [role="tab"]'))[at];
       await (await view(1)).click();
-      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()) && (await field("Request")) === "",
+      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()) && (await summary(browser)).instruction === "",
         { timeout: 15000, timeoutMsg: "app/beta's Runtime log shown instead of its Summary" });
       assert.deepEqual(await views(), [["Summary", "false"], ["Runtime log", "true"]]);
       await (await view(0)).click();
-      await browser.waitUntil(async () => (await field("Request")) === request.id && (await log()) === "",
+      await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check beta.") && (await log()) === "",
         { timeout: 15000, timeoutMsg: "app/beta's Summary shown again" });
       // Another eval's tab shows that eval; Esc closes the Detail.
       await openTab(browser, "e:app/gamma");
-      const gamma = requests(fixture).find((saved) => saved.evalId === "app/gamma");
-      await browser.waitUntil(async () => (await field("Request")) === gamma?.id, { timeout: 15000, timeoutMsg: "the Detail is app/gamma's" });
+      await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check gamma."), { timeout: 15000, timeoutMsg: "the Detail is app/gamma's" });
       assert.equal(await browser.$(tabAt("e:app/gamma")).getAttribute("aria-selected"), "true");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+    },
+  ),
+
+  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-NEIGHBOUR
+  scenario<Record<string, never>>(
+    "graph-detail-neighbours",
+    "draws an Artifact's Detail between the Artifacts its evals use and those using it, and opens a neighbour's Detail on a click",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      await graphShown(browser, "a:release");
+      // Each node drawn in the Detail's neighbours, left to right: the Artifacts its evals use,
+      // the Artifact itself, then those whose evals use it.
+      const neighbours = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] [role="group"][aria-label="Neighbours"] .svelte-flow__node')]
+        .map((node) => ({ id: node.getAttribute("data-id") ?? "", x: node.getBoundingClientRect().left }))
+        .sort((a, b) => a.x - b.x).map((node) => node.id));
+      await openArtifact(browser, "a:release", "Artifact release");
+      await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "release drawn before ship, which uses it" });
+      const neighbour = (id: string) => aside(browser).$(`[aria-label="Neighbours"] .svelte-flow__node[data-id="${id}"]`);
+      await neighbour("a:ship").click();
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "ship's Detail opened from its neighbour" });
+      assert.equal((await detail(browser))?.tabs[0]?.selected, true, "on its Artifact tab");
+      await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "ship drawn after release, which it uses" });
+      await neighbour("a:release").click();
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact release", { timeout: 15000, timeoutMsg: "release's Detail again" });
     },
   ),
 ];

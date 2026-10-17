@@ -28,6 +28,11 @@ export function launched(fixture: Fixture): boolean {
   return exists(nativePath(fixture.root, "launched"));
 }
 
+/** Let the fixture's `talk` stand-in go on: it prints its last lines and exits. */
+export function finishTalk(fixture: Fixture): void {
+  writeText(nativePath(fixture.root, "talk.gate"), "go");
+}
+
 /** Declared Human content, captured in the request before the app starts. */
 export type SignoffDefinition = { title: string; instruction: string };
 const DEFAULT_SIGNOFF: SignoffDefinition = {
@@ -43,6 +48,7 @@ fingerprint = { files = ["."] }
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", textPath("{artifactPath}", "notes.md"))} }
 open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", portablePath(nativePath(root, "launched")))} }
 fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }
+talk = { description = "Open a stand-in that prints what the reviewer chose.", kind = "launch", ${commandFields("talk", portablePath(nativePath(root, "talk.gate")))} }
 slow = { description = "Wait until cancelled; serve the owned lifetime endpoint.", kind = "output", ${commandFields("slow", portablePath(nativePath(root, "slow.endpoint")))} }
 
 [evals.signoff]
@@ -62,6 +68,7 @@ additionalProperties = false
 [evals.signoff.fail_schema]
 type = "object"
 properties.reason = { type = "string", minLength = 3 }
+properties.findings = { type = "array", items = { type = "object", properties = { problem = { type = "string", minLength = 1 }, severity = { enum = ["low", "high"] } }, required = ["problem"], additionalProperties = false } }
 required = ["reason"]
 additionalProperties = false
 `;

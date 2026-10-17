@@ -102,3 +102,27 @@ export async function openTab(browser: WebdriverIO.Browser, id: string, { row = 
   await browser.waitUntil(() => browser.$(tabAt(id)).getAttribute("aria-selected").then((selected) => selected === "true"),
     { timeout: 15000, timeoutMsg: `${id}'s tab shown` });
 }
+
+/** The open Detail. */
+export const aside = (browser: WebdriverIO.Browser) => browser.$('aside[aria-label="Detail"]');
+
+/** An eval's Summary as read: its status line, instruction, the titles of its blocks (Result,
+ * Execution options, Execution metadata, Fingerprint), whether Debug is unfolded (null when it
+ * has none), and one Debug fact by its name ("" while folded or absent). */
+export type Summary = { status: string; instruction: string; blocks: string[]; debug: boolean | null };
+export function summary(browser: WebdriverIO.Browser): Promise<Summary> {
+  return browser.execute(() => {
+    const shown = document.querySelector('aside[aria-label="Detail"] [role="document"]');
+    const fold = shown?.querySelector("button.fold");
+    return {
+      status: shown?.querySelector(".summary")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      instruction: shown?.querySelector(".instruction")?.textContent?.trim() ?? "",
+      blocks: [...(shown?.querySelectorAll(".block > h3") ?? [])].map((title) => title.textContent?.trim() ?? ""),
+      debug: fold ? fold.getAttribute("aria-expanded") === "true" : null,
+    };
+  });
+}
+export function fact(browser: WebdriverIO.Browser, name: string): Promise<string> {
+  return browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
+    .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
+}

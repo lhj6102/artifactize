@@ -1,11 +1,10 @@
 // The Run graph with every kind of verdict, and the Detail of a finished eval: node and edge
 // colours for RED, ERROR and blocked Artifacts, each eval tab's verdict glyph and colour, and the
-// instruction, request, result and technical record of a completed eval.
+// status, instruction and result of a completed eval's Summary, with the rest under Debug.
 import assert from "node:assert/strict";
-import { isDeepStrictEqual } from "node:util";
 import { createStates, requests } from "../fixture.ts";
 import { press } from "../keys.ts";
-import { detail, graphShown, openArtifact, openTab } from "../graph-view.ts";
+import { aside, detail, fact, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type VerdictLight } from "./graph-appearance.ts";
 
@@ -52,7 +51,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL
   scenario<Record<string, never>>(
     "states-finished-detail",
-    "shows the instruction, the request and the result, and the technical record only on demand",
+    "shows an eval's status, instruction and result in its Summary, and every other fact under Debug only on demand",
     async () => {
       const fixture = await createStates();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -66,28 +65,20 @@ export const scenarios: Scenario[] = [
       assert.ok(request?.result, "the real CLI saved the completed fine/check result");
       assert.equal(request.status, "GREEN");
       assert.equal(request.result.verdict, "GREEN");
-      // Read only the eval's tab, not GREEN text of the graph or the Artifact tab.
-      const detailText = () => browser.$('aside[aria-label="Detail"] [role="document"]').getText();
-      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
-        .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
-      await browser.waitUntil(async () => {
-        if (await field("Request") !== request.id) return false;
-        const raw = await field("Raw result");
-        return raw !== "" && isDeepStrictEqual(JSON.parse(raw), request.result);
-      }, { timeout: 15000, timeoutMsg: "the selected request and its completed result are rendered in Detail" });
-      const shown = await detailText();
-      assert.match(shown, /Pass\./, `the instruction in ${shown.slice(0, 1500)}`);
-      assert.match(shown, /Source\s+executed in this Run/, "where the result came from");
-      assert.match(await field("Result"), new RegExp(`^verdict ${request.result.verdict}(?:\n|$)`), "the selected eval's saved verdict");
-      assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "Detail renders this eval's exact saved result");
-      assert.equal(await field("Request"), request.id, "the opened Detail identifies its exact saved request by default");
-      assert.equal(await field("Fingerprint"), "", "additional technical fields are folded initially");
-      const technical = () => browser.$('aside[aria-label="Detail"]').$("button*=Technical").getAttribute("aria-expanded");
-      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "" && (await field("Key")) !== "", "the additional technical record is actually rendered");
-      assert.equal(await field("Request"), request.id, "showing additional technical fields preserves the default request");
-      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "" && (await field("Key")) === "", "the additional technical record is hidden");
-      assert.equal(await field("Request"), request.id, "hiding technical fields keeps the request visible");
-      assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "hiding technical fields keeps the completed result visible");
+      await browser.waitUntil(async () => (await summary(browser)).instruction === "Pass.", { timeout: 15000, timeoutMsg: "fine/check's Summary rendered" });
+      const shown = await summary(browser);
+      assert.match(shown.status, /^\S+ GREEN\b/, `its status first: ${shown.status}`);
+      assert.ok(shown.blocks.includes("Result"), `its result: ${shown.blocks}`);
+      assert.ok(shown.blocks.includes("Fingerprint"), `its fingerprint: ${shown.blocks}`);
+      // The rest is folded under Debug: the request, its source and its raw result.
+      assert.equal(shown.debug, false, "Debug starts folded");
+      assert.equal(await fact(browser, "Request"), "", "the request is a Debug fact");
+      await aside(browser).$('[role="document"]').click();
+      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Request")) === request.id, "Debug unfolded by t");
+      assert.match(await fact(browser, "Source"), /executed in this Run/, "where the result came from");
+      assert.deepEqual(JSON.parse(await fact(browser, "Raw result")), request.result, "Detail renders this eval's exact saved result");
+      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === "", "Debug folded again by t");
+      assert.equal((await summary(browser)).instruction, "Pass.", "folding Debug keeps the Summary");
     },
   ),
 

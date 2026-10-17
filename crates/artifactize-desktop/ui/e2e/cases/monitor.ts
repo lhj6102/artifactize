@@ -1,10 +1,10 @@
 // The monitor end to end, in the real app on fixture state made by the real CLI: catalog →
 // Run graph → an Artifact's Detail → its Human eval's tab, the shared Human Detail's claim,
-// release, tool, RED validation, Korean text and GREEN submission, and a live update from
-// another process.
+// release, tools and their live Tool log, RED validation, groups of fields, Korean text and
+// GREEN submission, and a live update from another process.
 import assert from "node:assert/strict";
-import { artifactize, create, createNavigationFixture, type Fixture, launched, signoff, slowTool } from "../fixture.ts";
-import { reviewing } from "../human-review.ts";
+import { artifactize, create, createNavigationFixture, finishTalk, type Fixture, launched, signoff, slowTool } from "../fixture.ts";
+import { claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
@@ -12,49 +12,49 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
 import { detail, graphShown, openArtifact, openTab } from "../graph-view.ts";
 
+/** A Tool log row as read: a run's start (its time as HH:MM:SS), a printed line or a run's end,
+ * and whether it is red. */
+type LogRow = { text: string; kind: "start" | "line" | "end"; error: boolean };
+
 async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
-  const toolOutput = () => browser.execute(() => {
+  /** The Tool log's rows and the review's notice. */
+  const toolLog = () => browser.execute(() => {
     const detail = document.querySelector('[aria-label="Human review"]');
     const notice = detail?.querySelector(".notice");
-    const output = detail?.querySelector('[aria-label="Tool output"]');
-    const title = output?.querySelector(".box-title");
+    const log = detail?.querySelector('[role="log"][aria-label="Tool log"]');
     return {
       notice: notice?.textContent?.trim() ?? "",
       noticeError: notice?.classList.contains("error") ?? false,
-      title: title?.textContent?.trim() ?? "",
-      outputError: title?.classList.contains("error") ?? false,
-      text: output?.querySelector("pre")?.textContent ?? "",
+      rows: [...(log?.querySelectorAll("p:not(.muted)") ?? [])].map((row) => ({
+        text: (row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS "),
+        kind: row.classList.contains("start") ? "start" : row.classList.contains("end") ? "end" : "line",
+        error: row.classList.contains("error"),
+      })),
     };
-  });
+  }) as Promise<{ notice: string; noticeError: boolean; rows: LogRow[] }>;
+  /** The rows of the last run of release's tool `operation`, from its start line on. */
+  const runOf = async (operation: string): Promise<LogRow[] | null> => {
+    const { rows } = await toolLog();
+    const at = rows.findLastIndex((row) => row.kind === "start" && row.text === `▶ HH:MM:SS · ${operation} · release`);
+    if (at < 0) return null;
+    const next = rows.findIndex((row, index) => index > at && row.kind === "start");
+    return rows.slice(at, next < 0 ? rows.length : next);
+  };
   const toolRuns = async () => {
     const probe = (await checkpoint(browser)).activity.commands.humanRun;
     assert.ok(probe, "the wrapped humanRun observation is available before any tool action");
     return probe.started;
   };
-  /** Clicking a selected tool runs it. Click only the focusable list container, then
-   * select with arrows: neither action runs a tool; only the later Enter does.
-   * The returned read-only check proves this same probe observes the explicit run. */
-  async function selectTool(name: string) {
+  /** Release's tool `operation`, its `▶` button usable after the claim. The returned check
+   * proves this same probe observes the run the button starts. */
+  async function tool(operation: string) {
     const runsBefore = await toolRuns();
-    const tools = () => browser.$('[aria-label="Human tools"]');
-    await tools().click();
-    await browser.waitUntil(() => tools().isFocused(), { timeout: 15000, timeoutMsg: "the Human tools focused without running a tool" });
-    const rows = await browser.execute(() => [...document.querySelectorAll('[aria-label="Human tools"] [role="option"] .name')]
-      .map((row) => row.textContent?.trim() ?? ""));
-    const target = rows.indexOf(name);
-    assert.ok(target >= 0, `this review declares ${name}`);
-    const selected = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human tools"] [role="option"]')]
-      .findIndex((row) => row.getAttribute("aria-selected") === "true"));
-    while ((await selected()) !== target) {
-      const before = await selected();
-      const direction = before < target ? 1 : -1;
-      await press(browser, [direction > 0 ? "ArrowDown" : "ArrowUp"], async () => (await selected()) === before + direction, "the next tool selected without running it");
-    }
-    await afterRender(browser);
-    assert.equal(await toolRuns(), runsBefore, "focusing and selecting Tools starts no tool command");
-    return async () => assert.ok(await toolRuns() > runsBefore, "the same probe observes the explicitly run tool, not a missing-as-zero counter");
+    const button = await human().$(`button=▶ ${operation}`);
+    await button.waitForEnabled({ timeout: 15000, timeoutMsg: `release's ${operation} tool usable` });
+    assert.equal(await toolRuns(), runsBefore, "finding a tool starts no tool command");
+    return { button, observed: async () => assert.ok(await toolRuns() > runsBefore, "the same probe observes the explicitly run tool, not a missing-as-zero counter") };
   }
 
   async function openReview(claim = true) {
@@ -67,17 +67,20 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
     });
     assert.equal(await human().$(".instruction .text").getText(), "Read the release notes and approve them.", "the selected Human eval's default instruction");
     assert.equal(await human().$("button*=Technical").getAttribute("aria-expanded"), "false", "request and instruction are visible before Technical");
+    // It reads top to bottom as the instruction, the Tools, their Tool log and the Result.
+    const order = await browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] .body > *')]
+      .map((part) => part.getAttribute("aria-label") ?? "").filter((label) => label !== ""));
+    assert.deepEqual(order, ["Instruction", "Tools", "Tool log", "Result"]);
     if (claim) {
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "this case's claim");
       assert.equal(await toolRuns(), 0, "this fresh session has dispatched no tool");
-      const initial = await toolOutput();
-      assert.equal(initial.title, "Output", "this case has no prior tool title");
-      assert.equal(initial.text, "", "this case has no prior tool output");
+      const initial = await toolLog();
+      assert.deepEqual(initial.rows, [], "this case's Tool log starts empty");
       assert.equal(initial.noticeError, false, "this case's claim did not inherit a tool error");
     }
   }
   await graphShown(browser, "a:release");
-  return { text, human, toolOutput, selectTool, openReview };
+  return { text, human, toolLog, runOf, tool, openReview };
 }
 
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
@@ -128,7 +131,8 @@ export const scenarios: Scenario[] = [
       const meta = () => human().$(".meta").getText();
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
       await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · WAITING_HUMAN · claimed by bob · read-only · waiting `) &&
-        !(await human().$("button*=Claim").isEnabled()), { timeout: 12000, timeoutMsg: "the opened Human Detail displays bob's exact claim and is read-only" });
+        (await human().getText()).includes("Claimed by bob. Read-only until released.") && !(await human().$("button*=Claim").isExisting()),
+      { timeout: 12000, timeoutMsg: "the opened Human Detail displays bob's exact claim and is read-only" });
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
       await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `) &&
         await human().$("button*=Claim").isEnabled(), { timeout: 12000, timeoutMsg: "bob's release is rendered in the same open Human Detail and Claim is offered again" });
@@ -150,24 +154,23 @@ export const scenarios: Scenario[] = [
   // UX edges: E-HUMAN-TOOL
   scenario<null>(
     "monitor-tool-output",
-    "runs an output tool and shows its output",
+    "runs an output tool with a click and logs its run: its start, each line it printed and its exit",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
-      const { human, toolOutput, selectTool, openReview } = await monitorUI(browser, fixture);
+      const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
-      const observed = await selectTool("notes_release");
-      assert.doesNotMatch((await toolOutput()).text, /Ready to ship\./, "this case has not produced the notes output yet");
-      await press(browser, ["Enter"], async () => {
-        const shown = await toolOutput();
-        return shown.title === "Output · notes_release" && shown.notice === "notes_release finished." && /Ready to ship\./.test(shown.text);
-      }, "the selected notes tool's completed output and notice");
-      await observed();
-      const shown = await toolOutput();
-      assert.equal(shown.title, "Output · notes_release");
-      assert.match(shown.text, /Ready to ship\./);
-      assert.equal(shown.notice, "notes_release finished.");
-      assert.equal(shown.outputError, false);
-      assert.equal(shown.noticeError, false);
+      const notes = await tool("notes");
+      await notes.button.click();
+      await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end" && (await toolLog()).notice === "notes_release finished.",
+        { timeout: 15000, timeoutMsg: "the notes tool's run ended in the Tool log" });
+      await notes.observed();
+      assert.deepEqual(await runOf("notes"), [
+        { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
+        { text: "# Release notes", kind: "line", error: false },
+        { text: "- Ready to ship.", kind: "line", error: false },
+        { text: "■ exit 0", kind: "end", error: false },
+      ]);
+      assert.equal((await toolLog()).noticeError, false);
       const saved = signoff(fixture);
       assert.equal(saved.status, "WAITING_HUMAN", "tool output is not a Human verdict");
       assert.equal(saved.claim?.reviewer, "alice");
@@ -175,81 +178,83 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  scenario<null>(
-    "monitor-tool-click",
-    "runs a selected tool with a click, without an Enter",
-    async () => ({ fixture: await create(), data: null }),
-    async (browser, { fixture }) => {
-      const { toolOutput, selectTool, openReview } = await monitorUI(browser, fixture);
-      await openReview();
-      const observed = await selectTool("notes_release");
-      // What the click reached, for a run that does not start.
-      await browser.execute(() => {
-        const clicks: string[] = [];
-        (window as unknown as { clicks: string[] }).clicks = clicks;
-        const describe = (node: Element | null) => node ? `${node.tagName}${node.id ? `#${node.id}` : ""} ${node.textContent?.trim().slice(0, 30) ?? ""}` : "none";
-        window.addEventListener("pointerdown", (event) => clicks.push(`pointerdown ${describe(event.target as Element)}`), true);
-        window.addEventListener("click", (event) => clicks.push(`click ${describe(event.target as Element)}; focus ${describe(document.activeElement)}`), true);
-      });
-      await browser.$('//li[@role="option"][.//span[text()="notes_release"]]').click();
-      try {
-        await browser.waitUntil(async () => {
-          const shown = await toolOutput();
-          return shown.title === "Output · notes_release" && shown.notice === "notes_release finished." && /Ready to ship\./.test(shown.text);
-        }, { timeout: 15000, timeoutMsg: "the selected tool's click alone produced its output" });
-      } catch (error) {
-        const commands = (await checkpoint(browser)).activity.commands.humanRun;
-        const clicks = await browser.execute(() => (window as unknown as { clicks?: string[] }).clicks ?? []);
-        throw new Error(`the selected tool's click alone produced its output; tool commands ${JSON.stringify(commands)}, output ${JSON.stringify(await toolOutput())}, events ${JSON.stringify(clicks)}`, { cause: error });
-      }
-      await observed();
-      assert.equal(signoff(fixture).status, "WAITING_HUMAN", "clicking a tool is not a verdict");
-    },
-  ),
-
   // UX edges: E-HUMAN-TOOL-LAUNCH
   scenario<null>(
     "monitor-tool-launch",
-    "runs a launch tool and says the application was opened",
+    "runs a launch tool, says the application was opened, and logs it until it exits",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
-      const { text, selectTool, openReview } = await monitorUI(browser, fixture);
+      const { toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
-      const observed = await selectTool("open_release");
-      assert.equal(launched(fixture), false, "selection did not launch this case's application");
-      await press(browser, ["Enter"], async () => /open_release (launched|started|opened)/i.test(await text()), "the launch notice");
-      // The application stand-in really ran.
+      const open = await tool("open");
+      assert.equal(launched(fixture), false, "finding the tool did not launch this case's application");
+      await open.button.click();
+      await browser.waitUntil(async () => (await toolLog()).notice === "open_release launched.", { timeout: 15000, timeoutMsg: "the launch notice" });
+      // The application stand-in really ran, and its exit ends its run in the log.
       await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application" });
-      await observed();
+      await browser.waitUntil(async () => (await runOf("open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "the launched application's exit logged" });
+      await open.observed();
+    },
+  ),
+
+  // UX edges: E-HUMAN-TOOL-LAUNCH E-HUMAN-LOG-LIVE E-HUMAN-GREEN E-HUMAN-TEXT
+  scenario<null>(
+    "monitor-tool-log-live",
+    "keeps logging a launched application under its own run after its button returned, its stderr in red, while the reviewer writes the result",
+    async () => ({ fixture: await create(), data: null }),
+    async (browser, { fixture }) => {
+      const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      const talk = await tool("talk");
+      await talk.button.click();
+      // The button returns at once; the application is still running and has said one line.
+      await browser.waitUntil(async () => (await toolLog()).notice === "talk_release launched." &&
+        (await runOf("talk"))?.some((row) => row.text === "opened the stand-in") === true && await reviewing(browser),
+      { timeout: 15000, timeoutMsg: "the launched stand-in's first line, with the review idle" });
+      assert.ok(!(await runOf("talk"))!.some((row) => row.kind === "end"), "the launched application has not ended");
+      await talk.observed();
+      // The result can be written meanwhile. The button let go of the keyboard while it ran.
+      await human().$('[aria-label="Instruction"]').click();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      await fill(browser, "#field-comment", "chose B");
+      // What the application prints next joins the same run, then its exit ends it.
+      finishTalk(fixture);
+      await browser.waitUntil(async () => (await runOf("talk"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the stand-in's exit logged" });
+      assert.deepEqual(await runOf("talk"), [
+        { text: "▶ HH:MM:SS · talk · release", kind: "start", error: false },
+        { text: "opened the stand-in", kind: "line", error: false },
+        { text: "chose: B", kind: "line", error: false },
+        { text: "warning: B is slower", kind: "line", error: true },
+        { text: "■ exit 0", kind: "end", error: false },
+      ]);
+      assert.equal(await browser.$("#field-comment").getValue(), "chose B", "the form kept what was typed while the log grew");
+      // The log follows its newest line.
+      const followed = await browser.execute(() => {
+        const log = document.querySelector('[role="log"][aria-label="Tool log"]')!;
+        return log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+      });
+      assert.ok(followed, "the Tool log shows its newest line");
     },
   ),
 
   // UX edges: E-HUMAN-TOOL-FAIL
   scenario<null>(
     "monitor-tool-failure",
-    "shows the error of a tool that fails",
+    "says a tool failed and ends its run red in the Tool log",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
-      const { human, toolOutput, selectTool, openReview } = await monitorUI(browser, fixture);
+      const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
-      const observed = await selectTool("fail_release");
-      const diagnostic = /Human tool exited unsuccessfully \([^)]*\b1\)\./;
-      const before = await toolOutput();
-      assert.doesNotMatch(before.text, diagnostic, "this case has not produced the failing tool's exit diagnostic yet");
-      assert.doesNotMatch(before.notice, /fail_release failed/);
-      await press(browser, ["Enter"], async () => {
-        const shown = await toolOutput();
-        return shown.noticeError && shown.outputError &&
-          shown.notice === "fail_release failed; a tool error is not a verdict." &&
-          shown.title === "Output · fail_release · tool error" && diagnostic.test(shown.text);
-      }, "the selected failing tool's actual exit diagnostic and error notice");
-      await observed();
-      const shown = await toolOutput();
-      assert.equal(shown.notice, "fail_release failed; a tool error is not a verdict.");
-      assert.equal(shown.title, "Output · fail_release · tool error");
-      assert.match(shown.text, diagnostic);
-      assert.equal(shown.noticeError, true);
-      assert.equal(shown.outputError, true);
+      const fail = await tool("fail");
+      await fail.button.click();
+      await browser.waitUntil(async () => (await runOf("fail"))?.at(-1)?.kind === "end" && (await toolLog()).noticeError,
+        { timeout: 15000, timeoutMsg: "the failing tool's end and error notice" });
+      await fail.observed();
+      assert.deepEqual(await runOf("fail"), [
+        { text: "▶ HH:MM:SS · fail · release", kind: "start", error: false },
+        { text: "■ exit 1", kind: "end", error: true },
+      ]);
+      assert.equal((await toolLog()).notice, "fail_release failed; a tool error is not a verdict.");
       const saved = signoff(fixture);
       assert.equal(saved.status, "WAITING_HUMAN", "a failed tool is not a Human verdict");
       assert.equal(saved.result, null);
@@ -261,21 +266,25 @@ export const scenarios: Scenario[] = [
   // UX edges: E-HUMAN-ESC-CANCEL
   scenario<null>(
     "monitor-tool-cancel",
-    "cancels a running tool with Esc",
+    "cancels a running tool with Esc and ends its run as cancelled",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
-      const { text, human, selectTool, openReview } = await monitorUI(browser, fixture);
+      const { text, human, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
-      const observed = await selectTool("slow_release");
-      assert.equal(slowTool(fixture), null, "selection did not start this case's cancellable tool");
-      await press(browser, ["Enter"], async () => /Running slow_release/.test(await text()), "the tool running");
+      const slow = await tool("slow");
+      assert.equal(slowTool(fixture), null, "finding the tool did not start this case's cancellable tool");
+      await slow.button.click();
+      await browser.waitUntil(async () => /Running slow/.test(await text()), { timeout: 15000, timeoutMsg: "the tool running" });
       await browser.waitUntil(() => slowTool(fixture) !== null, { timeout: 15000, timeoutMsg: "the owned tool process started" });
       const alive = slowTool(fixture);
       assert.ok(alive && await alive(), "the cancellation target is an actual running process");
+      // The disabled button let go of the keyboard: the instruction takes it, inside the review.
+      await human().$('[aria-label="Instruction"]').click();
       await browser.keys(["Escape"]);
-      await browser.waitUntil(async () => !/Running slow_release/.test(await text()), { timeout: 15000, timeoutMsg: "the tool cancelled" });
+      await browser.waitUntil(async () => !/Running slow/.test(await text()), { timeout: 15000, timeoutMsg: "the tool cancelled" });
       await browser.waitUntil(async () => !(await alive()), { timeout: 15000, timeoutMsg: "Esc terminated the owned tool process" });
-      await observed();
+      await browser.waitUntil(async () => (await runOf("slow"))?.at(-1)?.text === "■ cancelled", { timeout: 15000, timeoutMsg: "the run ended as cancelled" });
+      await slow.observed();
       assert.ok(await human().isExisting(), "Esc cancelled the job and left the Detail open");
     },
   ),
@@ -307,14 +316,13 @@ export const scenarios: Scenario[] = [
       // must rebuild the owner's corresponding schema, even after validation failed.
       await press(browser, [primaryModifier, "g"], async () =>
         await browser.$("#field-comment").isExisting() && !(await reason().isExisting()), "the pass-schema form after invalid RED");
-      assert.equal(await browser.$("#field-approved").getValue(), "true (fixed)", "the pass schema's approved constant");
+      assert.equal(await browser.$("#field-approved").isExisting(), false, "the pass schema's approved constant is filled in, not shown");
       await fill(browser, "#field-comment", "checked after rejection");
       assert.equal(await browser.$("#field-comment").getValue(), "checked after rejection");
       await press(browser, [primaryModifier, "r"], async () =>
         await reason().isExisting() && !(await browser.$("#field-comment").isExisting()), "the fail-schema form again");
       await fill(browser, "#field-reason", "a correctable reason");
       assert.equal(await reason().getValue(), "a correctable reason");
-      assert.equal(await browser.$("#field-approved").isExisting(), false, "no pass-schema field in RED");
       const saved = signoff(fixture);
       assert.equal(saved.status, "WAITING_HUMAN");
       assert.equal(saved.result, null, "switching did not submit the rejected draft");
@@ -322,10 +330,39 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX edges: E-HUMAN-RED E-HUMAN-GROUP-ADD E-HUMAN-GROUP-REMOVE E-HUMAN-SUBMIT
+  scenario<null>(
+    "monitor-red-groups",
+    "enters a list of findings as groups of fields, added and removed, and submits them",
+    async () => ({ fixture: await create(), data: null }),
+    async (browser, { fixture }) => {
+      const { human, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      await press(browser, ["r"], () => browser.$("#field-reason").isExisting(), "the RED form");
+      await fill(browser, "#field-reason", "two problems found");
+      const group = (at: number) => human().$(`[role="group"][aria-label="findings ${at}"]`);
+      // One empty group is there to type in.
+      assert.ok(await group(1).isExisting(), "the first findings group");
+      await fill(browser, "#field-findings-0-problem", "typo");
+      await human().$("button=+ Add").click();
+      await group(2).waitForExist({ timeout: 15000, timeoutMsg: "a second findings group added" });
+      await fill(browser, "#field-findings-1-problem", "date");
+      // An optional choice left empty stays out of the result. (A native select's options are
+      // not reachable through this WebDriver's page input; the form's unit tests choose one.)
+      assert.equal(await browser.$("#field-findings-1-severity").getValue(), "", "the severity left empty");
+      await human().$('button[aria-label="Remove findings 1"]').click();
+      await group(2).waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the first group removed" });
+      assert.equal(await browser.$("#field-findings-0-problem").getValue(), "date", "the second group moved up");
+      await browser.keys([primaryModifier, "s"]);
+      await browser.waitUntil(() => signoff(fixture).status === "RED", { timeout: 15000, timeoutMsg: "RED saved" });
+      assert.deepEqual(signoff(fixture).result, { verdict: "RED", reason: "two problems found", findings: [{ problem: "date" }] });
+    },
+  ),
+
   // UX edges: E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
   scenario<null>(
-    "monitor-green-json-korean",
-    "submits GREEN with Korean text edited as JSON and keeps the completed result open",
+    "monitor-green-korean",
+    "submits GREEN with Korean text typed into its form and keeps the completed result open",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       const { human, openReview } = await monitorUI(browser, fixture);
@@ -336,17 +373,12 @@ export const scenarios: Scenario[] = [
       const korean = "릴리스 노트를 확인했습니다";
       await fill(browser, "#field-comment", korean);
       assert.equal(await comment.getValue(), korean);
-      // Ctrl+E turns the typed form into focused JSON. Edit that text field through
-      // WebDriver's text-input API, then Ctrl+S submits it; no click in between.
-      await browser.keys([primaryModifier, "e"]);
-      await browser.waitUntil(() => browser.execute(() => document.activeElement?.matches("textarea.json") ?? false), { timeout: 15000, timeoutMsg: "focus in the JSON text" });
-      const json = await browser.$("textarea.json");
-      assert.deepEqual(JSON.parse(await json.getValue()), { approved: true, comment: korean });
-      const edited = JSON.stringify({ approved: true, comment: `${korean} (JSON)` }, null, 2);
-      await fill(browser, "textarea.json", edited);
+      // The form is the only way in: there is no JSON editor to switch to.
+      assert.equal(await human().$("textarea.json").isExisting(), false);
+      assert.equal(await human().$("button*=JSON").isExisting(), false);
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
-      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: `${korean} (JSON)` });
+      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: korean });
       const run = signoff(fixture).runId;
       await browser.waitUntil(() => browser.execute((id) => {
         const row = [...document.querySelectorAll('.monitor [aria-label="Runs"] [role="option"]')]
@@ -513,7 +545,6 @@ export const scenarios: Scenario[] = [
     "asks before quitting with a claim taken here: Esc stays, u releases and quits",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
-      const text = () => browser.execute(() => document.body.innerText);
       await graphShown(browser, "a:release");
       // A click on release, then on its sign-off's tab, opens the Human Detail.
       await openArtifact(browser, "a:release", "Artifact release");
@@ -522,7 +553,7 @@ export const scenarios: Scenario[] = [
       await review().waitForExist({ timeout: 15000, timeoutMsg: "Human Detail" });
       await review().$("button*=Claim").waitForEnabled({ timeout: 15000, timeoutMsg: "the review ready to claim" });
       await review().click();
-      await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
+      await browser.waitUntil(() => claimable(browser), { timeout: 15000, timeoutMsg: "the claim stage" });
       await browser.keys(["c"]);
       await browser.waitUntil(async () => signoff(fixture).claim?.reviewer === "alice", { timeout: 15000, timeoutMsg: "claimed" });
       await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
