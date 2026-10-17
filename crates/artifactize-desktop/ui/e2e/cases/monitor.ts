@@ -258,6 +258,10 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const { human, toolLog, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
+      // A normal smaller window makes the result form scroll the log out of view,
+      // as on shorter desktops. Every copy action must bring its own target back.
+      await browser.setWindowSize(1100, 720);
+      await afterRender(browser);
       const notes = await tool("notes");
       const ends = async () => (await toolLog()).rows.filter((row) => row.kind === "end").length;
       /** One more notes run, until its end line is logged and its button is usable again. */
@@ -315,6 +319,8 @@ export const scenarios: Scenario[] = [
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       // Select All is real WebDriver keyboard input. It includes the log along with the
       // surrounding review; the selection is only observed, never installed by page script.
+      await browser.$(LOG).scrollIntoView({ block: "nearest" });
+      await afterRender(browser);
       const logPoint = await visibleCenter(browser, await browser.$(LOG).getElement());
       await dispatchInput(browser, { kind: "text-click", ...logPoint });
       await browser.keys([primaryModifier, "a"]);

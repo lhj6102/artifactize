@@ -92,9 +92,10 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
         while (selecting.parentElement && getComputedStyle(selecting).userSelect === "auto") selecting = selecting.parentElement;
         const selection = getSelection();
         if (selection && getComputedStyle(selecting).userSelect !== "none") {
-          target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus();
-          if (getComputedStyle(selecting).userSelect === "all") selection.selectAllChildren(selecting);
-          else {
+          if (getComputedStyle(selecting).userSelect === "all") {
+            target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus();
+            selection.selectAllChildren(selecting);
+          } else {
             // A real text mousedown places its caret. el.click()/focus() alone leaves
             // Blink's old textarea selection context active, making Select All a no-op.
             const engine = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null };
@@ -103,6 +104,9 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
             const node = caret?.offsetNode ?? range?.startContainer;
             const offset = caret?.offset ?? range?.startOffset;
             if (!node || offset === undefined || !target.contains(node)) throw new Error("the clicked text has no native caret position");
+            // Focus can scroll its container. Capture the clicked caret before that
+            // native focus step, rather than hit-testing the old point after a scroll.
+            target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus();
             selection.collapse(node, offset);
           }
         }
