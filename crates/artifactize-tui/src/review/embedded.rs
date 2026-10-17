@@ -17,8 +17,7 @@ pub enum Control {
 }
 
 impl Review {
-    /// Monitor's single-request review: monitor owns the terminal, so no `$EDITOR`, and the
-    /// waiting list is not read.
+    /// Monitor's single-request review: the waiting list is not read.
     pub(crate) fn load_single(&mut self, view: RequestView) {
         self.standalone = false;
         self.open = Some(view.request.id.clone());
@@ -60,12 +59,16 @@ impl Review {
     pub(crate) fn scroll_instruction(&mut self, delta: i16) {
         self.instruction_scroll = self.instruction_scroll.saturating_add_signed(delta);
     }
+    /// Scroll the fields, or the Tool log: scrolled up it stays where the reader left it;
+    /// back at the bottom it follows new lines again.
     pub(crate) fn scroll_single(&mut self, delta: i16, fields: bool) {
         if fields {
             self.field_scroll = self.field_scroll.saturating_add_signed(delta);
-        } else {
-            self.scroll = self.scroll.saturating_add_signed(delta);
+            return;
         }
+        let bottom = self.log_bottom.get();
+        let top = self.scroll.unwrap_or(bottom).saturating_add_signed(delta);
+        self.scroll = (top < bottom).then_some(top);
     }
     pub(crate) fn paste_single(&mut self, text: &str) {
         if !self.busy()
@@ -87,7 +90,7 @@ impl Review {
     }
     pub(crate) fn select_field(&mut self, index: usize) {
         if let Mode::Form(form) = &mut self.mode {
-            form.selected = index.min(form.fields.len().saturating_sub(1));
+            form.selected = index.min(form.rows().len().saturating_sub(1));
         }
     }
 
@@ -137,11 +140,13 @@ impl Review {
                     Ok(schema) => schema,
                     Err(error) => return self.notify(error, true),
                 };
-                let schema = schema.as_ref();
-                let form = self
-                    .drafts
-                    .remove(&verdict)
-                    .unwrap_or_else(|| Form::new(verdict, schema));
+                let form = match self.drafts.remove(&verdict) {
+                    Some(form) => form,
+                    None => match Form::new(verdict, schema.as_ref()) {
+                        Ok(form) => form,
+                        Err(error) => return self.notify(error, true),
+                    },
+                };
                 if let Mode::Form(previous) = &self.mode {
                     self.drafts.insert(previous.verdict, previous.clone());
                 }

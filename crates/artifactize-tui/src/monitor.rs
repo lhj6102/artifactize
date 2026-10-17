@@ -28,7 +28,7 @@ mod view;
 pub use artifactize_core::monitor::*;
 pub(crate) use rows::{fit, width};
 pub use terminal::run;
-pub(crate) use terminal::{InputGuard, repaint, suspend};
+pub(crate) use terminal::{InputGuard, repaint};
 pub(crate) use view::{clock, crumbs, section_lines, transcript_lines};
 
 use crate::{

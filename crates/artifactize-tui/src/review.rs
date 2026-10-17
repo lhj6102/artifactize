@@ -1,7 +1,6 @@
 //! Human review TUI: claim, run Human tools and submit, in-process like `request`.
 
 mod detail;
-mod editor;
 mod embedded;
 #[cfg(test)]
 mod embedded_tests;
@@ -18,8 +17,6 @@ mod view;
 
 pub use artifactize_core::review::*;
 pub(crate) use detail::{Handled, Hits};
-#[cfg(test)]
-use editor::edit;
 pub(crate) use embedded::Control;
 pub use terminal::run;
 
@@ -105,8 +102,6 @@ pub enum Action {
     Refresh,
     Quit,
     Start(Job),
-    /// Suspend the screen and edit this JSON in `$EDITOR`.
-    Edit(String),
     /// The standalone review turned mouse capture on or off (F2).
     Capture(bool),
 }
@@ -194,7 +189,7 @@ pub struct Review {
     area: Area,
     /// The folded Technical section is shown.
     technical: bool,
-    /// The standalone `review` owns the waiting list and may suspend for `$EDITOR`.
+    /// The standalone `review` owns the waiting list.
     standalone: bool,
     /// The requests the query found on the current page, and their searchable facts.
     listed: Vec<RequestView>,
@@ -205,8 +200,15 @@ pub struct Review {
     /// What the Detail holds: the open Human request, or a read-only record of another kind.
     shown: Shown,
     tool: usize,
-    output: Option<Output>,
-    scroll: u16,
+    /// The Tool log of the open request's runs, kept while it stays open.
+    log: log::ToolLog,
+    /// Where this review's runs log, and where their events arrive.
+    sink: log::Sink,
+    events: log::Events,
+    /// The Tool log's top row while the reader has scrolled up; `None` follows the bottom.
+    scroll: Option<u16>,
+    /// The Tool log's last top row that still fills its pane, as last drawn.
+    log_bottom: std::cell::Cell<u16>,
     /// Requests this session claimed and has neither submitted nor released.
     taken: Vec<RequestId>,
     /// Resolved command lines of the open request's tools, by tool name, and the request
@@ -240,6 +242,7 @@ impl Review {
     ) -> Self {
         let repo = repo.map(|path| crate::workspace::canonical_target(&path).unwrap_or(path));
         let query = search::Query::text_for(repo.as_deref());
+        let (sink, events) = log::channel();
         Self {
             state,
             filter: query.parse(),
@@ -266,8 +269,11 @@ impl Review {
             open,
             shown: Shown::Nothing,
             tool: 0,
-            output: None,
-            scroll: 0,
+            log: log::ToolLog::default(),
+            sink,
+            events,
+            scroll: None,
+            log_bottom: std::cell::Cell::new(0),
             taken: Vec::new(),
             commands: None,
             busy: None,
@@ -596,8 +602,8 @@ impl Review {
             self.mode = Mode::Request;
             self.area = Area::Fields;
             self.tool = 0;
-            self.output = None;
-            self.scroll = 0;
+            self.log.clear();
+            self.scroll = None;
             self.field_scroll = 0;
             self.instruction_scroll = 0;
             self.drafts.clear();
@@ -689,7 +695,34 @@ impl Review {
         });
         let state = self.state.clone();
         let reviewer = self.reviewer.clone();
-        async move { job.run(state, reviewer, cancel).await }
+        let sink = self.sink.clone();
+        async move { job.run(state, reviewer, cancel, sink).await }
+    }
+
+    /// The next Tool log event of this review's runs, for the screen's event loop.
+    pub(crate) async fn log_event(&mut self) -> log::Event {
+        self.events
+            .recv()
+            .await
+            .expect("the review holds its own sink")
+    }
+
+    /// Take a Tool log event in, and any others already waiting. Events of a request this
+    /// review no longer shows are dropped.
+    pub(crate) fn logged(&mut self, event: log::Event) {
+        if self.open.as_ref() == Some(&event.request) {
+            self.log.apply(event);
+        }
+        self.drain_log();
+    }
+
+    /// Take in the Tool log events already waiting.
+    pub(crate) fn drain_log(&mut self) {
+        while let Ok(event) = self.events.try_recv() {
+            if self.open.as_ref() == Some(&event.request) {
+                self.log.apply(event);
+            }
+        }
     }
 
     /// Remember a claim this session took on the open request.
@@ -729,17 +762,11 @@ impl Review {
                 self.notice = Some(notice);
                 Action::Refresh
             }
-            Outcome::Ran {
-                tool,
-                claimed,
-                result,
-            } => {
+            Outcome::Ran { claimed, .. } => {
                 self.took(claimed);
                 // Declarations may have changed; show the command the next run resolves.
                 self.commands = None;
                 self.notice = Some(notice);
-                self.output = Some(output(&tool, result));
-                self.scroll = 0;
                 Action::Refresh
             }
             Outcome::Submitted {
@@ -754,7 +781,7 @@ impl Review {
                         self.notice = Some(notice);
                         self.open = None;
                         self.shown = Shown::Nothing;
-                        self.output = None;
+                        self.log.clear();
                         self.mode = Mode::Request;
                         self.focus = Focus::List;
                         self.submitted = true;
@@ -793,27 +820,6 @@ impl Review {
         }
         if self.focus == Focus::Detail && self.area == Area::Fields {
             self.paste_single(text);
-        }
-        Action::None
-    }
-
-    /// Feed back the text `$EDITOR` saved; a non-empty object is submitted at once.
-    pub fn edited(&mut self, text: Result<String, String>) -> Action {
-        let Mode::Form(form) = &mut self.mode else {
-            return Action::None;
-        };
-        match text {
-            Err(error) => form.error = Some(error),
-            Ok(text) if text.trim().is_empty() => {
-                form.error = Some("The edited file was empty; nothing was submitted.".into())
-            }
-            Ok(text) => {
-                form.set_json(text);
-                match form.result() {
-                    Ok(result) => return self.submit(result),
-                    Err(error) => form.error = Some(error),
-                }
-            }
         }
         Action::None
     }

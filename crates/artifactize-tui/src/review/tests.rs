@@ -19,30 +19,6 @@ pub(crate) fn now() -> OffsetDateTime {
     .unwrap()
 }
 
-#[tokio::test]
-async fn visual_precedes_editor_and_reads_the_saved_review() {
-    if crate::platform::environment::var("ARTIFACTIZE_EDITOR_SEAM").is_some() {
-        assert_eq!(edit("original".into()).await.unwrap(), "edited by visual");
-        return;
-    }
-    let root = crate::test_os::tempdir();
-    let editor = crate::test_os::editor_command(root.path(), "edited by visual");
-    let output = crate::test_os::run_test(
-        "review::tests::visual_precedes_editor_and_reads_the_saved_review",
-        &[
-            ("ARTIFACTIZE_EDITOR_SEAM", "1".into()),
-            ("VISUAL", editor.into()),
-            ("EDITOR", "artifactize-editor-that-must-not-run".into()),
-        ],
-    );
-    assert!(
-        output.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 #[test]
 fn spinner_cycles_every_hundred_milliseconds() {
     assert_eq!(view::spinner(Duration::from_millis(0)), "⠋");
@@ -219,7 +195,7 @@ pub(crate) fn opened(reviewer: Option<&str>, definition: Value) -> Review {
     review
 }
 
-/// The same request as monitor opens it: a single-request review without `$EDITOR`.
+/// The same request as monitor opens it: a single-request review.
 pub(crate) fn embedded(reviewer: Option<&str>, definition: Value) -> Review {
     let mut review = opened(reviewer, definition);
     let view = review.shown.request().cloned().unwrap();
@@ -268,6 +244,18 @@ fn printed(text: &str, is_error: bool) -> Result<ToolResult, String> {
     } else {
         ToolResult::success(Content::Text { text: text.into() })
     })
+}
+
+/// One run of the notes tool in the review's Tool log, as the library logs it: its start, what
+/// it printed and its exit.
+fn logged(review: &mut Review, stdout: &str, stderr: &str, code: i32) {
+    let run = review.sink.start(&ID.parse().unwrap(), "notes", "release");
+    run.text(log::Stream::Stdout, stdout);
+    run.text(log::Stream::Stderr, stderr);
+    run.end(log::End::Exited {
+        code: Some(code),
+        text: format!("exit status: {code}"),
+    });
 }
 
 fn screen(review: &mut Review) -> String {
@@ -454,8 +442,15 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
         result: printed("# Release notes\n", false),
     });
     assert_eq!(ran, Action::Refresh);
+    logged(&mut review, "# Release notes\n", "", 0);
     let text = screen(&mut review);
-    assert!(text.contains("Output · notes_release") && text.contains("# Release notes"));
+    assert!(
+        text.contains("Tool log")
+            && text.contains(" · notes · release")
+            && text.contains("# Release notes")
+            && text.contains("■ exit 0"),
+        "{text}"
+    );
     assert!(text.contains("claimed by you (alice)"), "{text}");
     assert_eq!(press(&mut review, KeyCode::Enter), run("notes_release"));
     // A run drops the resolved commands until the next refresh resolves them again; a tool
@@ -477,12 +472,12 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
         claimed: None,
         result: printed("Human tool exited unsuccessfully (exit status: 1).\n", true),
     });
+    logged(&mut review, "", "notes are missing\n", 1);
     let text = screen(&mut review);
     assert!(
-        text.contains("Output · notes_release · tool error"),
+        text.contains("notes are missing") && text.contains("■ exit 1"),
         "{text}"
     );
-    assert!(text.contains("exited unsuccessfully"), "{text}");
     assert!(
         text.contains("notes_release failed; a tool error is not a verdict."),
         "{text}"
@@ -670,9 +665,13 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     assert_eq!(green.fields.len(), 1);
     assert_eq!(green.fields[0].input, Input::Fixed(json!(true)));
     let text = screen(&mut review);
-    assert!(text.contains("approved*: true (fixed)"), "{text}");
+    // A constant is filled in, not shown.
+    assert!(
+        text.contains("This verdict asks for nothing more") && !text.contains("approved*:"),
+        "{text}"
+    );
     assert!(text.contains("REVIEW (yours)"), "{text}");
-    // A fixed field ignores typing.
+    // Typing changes nothing.
     press(&mut review, KeyCode::Char('x'));
     let submit = |_verdict: crate::runtime::Verdict, result: Value| {
         Action::Start(Job::Submit {
@@ -742,91 +741,67 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
 }
 
 #[test]
-fn other_schemas_edit_inline_and_ctrl_e_opens_the_editor() {
-    let nested = definition(
+fn lists_of_flat_objects_are_groups_to_add_fill_and_remove_and_ctrl_e_does_nothing() {
+    let groups = definition(
         json!({
             "type":"object",
-            "properties":{
-                "approved":{"const":true},
-                "checks":{"type":"array","items":{"type":"string"}},
-                "meta":{
-                    "type":"object",
-                    "properties":{"ticket":{"type":"string"},"size":{"type":"integer"}},
-                },
-            },
+            "properties":{"approved":{"const":true}},
             "required":["approved"],
-            "additionalProperties":false,
         }),
         json!({
             "type":"object",
-            "properties":{"reason":{"$ref":"#/$defs/text"}},
-            "$defs":{"text":{"type":"string"}},
+            "properties":{"findings":{"type":"array","minItems":1,"items":{
+                "type":"object",
+                "properties":{"line":{"type":"integer"},"problem":{"type":"string"}},
+                "required":["problem"],
+            }}},
+            "required":["findings"],
         }),
     );
-    let mut review = opened(Some("alice"), nested);
-    assert_eq!(press(&mut review, KeyCode::Char('g')), Action::None);
-    let template = json!({"approved":true,"checks":[],"meta":{"size":0,"ticket":""}});
-    let text = form(&review)
-        .json
-        .clone()
-        .expect("a nested schema edits JSON");
-    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), template);
-    assert!(screen(&mut review).contains("GREEN JSON · Enter newline · Ctrl-S submit"));
-    let Action::Edit(draft) = control(&mut review, 'e') else {
-        panic!("Ctrl-E opens the editor");
-    };
-    assert_eq!(draft, text);
-    for (edited, error) in [
-        (
-            Err("The editor exited unsuccessfully".into()),
-            "editor exited",
-        ),
-        (Ok(" \n".into()), "was empty"),
-        (Ok("[]".into()), "must be a JSON object"),
-        (Ok("{".into()), "not valid JSON"),
-        (
-            Ok(r#"{"verdict":"RED"}"#.into()),
-            "not inside the owner fields",
-        ),
-    ] {
-        assert_eq!(review.edited(edited), Action::None);
-        assert!(form(&review).error.as_ref().unwrap().contains(error));
+    let mut review = opened(Some("alice"), groups);
+    press(&mut review, KeyCode::Char('r'));
+    assert!(screen(&mut review).contains("findings 1 · line: "));
+    // The constant of GREEN is filled in and has no row; RED's group rows come first.
+    for c in "12".chars() {
+        press(&mut review, KeyCode::Char(c));
     }
+    press(&mut review, KeyCode::Down);
+    review.paste("typo");
+    press(&mut review, KeyCode::Down);
+    assert!(review.detail_hints().contains("Enter add group"));
+    press(&mut review, KeyCode::Enter);
+    assert!(screen(&mut review).contains("findings 2 · line: "));
+    review.paste("x");
+    assert!(review.detail_hints().contains("Ctrl-D remove group"));
+    assert_eq!(control(&mut review, 'e'), Action::None);
+    assert_eq!(control(&mut review, 'd'), Action::None);
+    assert!(!screen(&mut review).contains("findings 2 · line: "));
     assert_eq!(
-        review.edited(Ok(r#"{"approved":true,"checks":["a"]}"#.into())),
+        control(&mut review, 's'),
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
-            result: json!({"approved":true,"checks":["a"],"verdict":"GREEN"})
+            result: json!({"verdict":"RED","findings":[{"line":12,"problem":"typo"}]})
                 .try_into()
                 .unwrap(),
             claim: false
         })
     );
-    // Ctrl-E reopens the edited JSON; RED's $ref is not a flat form either.
-    assert_eq!(
-        control(&mut review, 'e'),
-        Action::Edit(r#"{"approved":true,"checks":["a"]}"#.into())
-    );
-    press(&mut review, KeyCode::Esc);
-    press(&mut review, KeyCode::Char('r'));
-    assert!(form(&review).json.is_some());
+}
 
-    // Ctrl-E turns a flat form into JSON with the values entered so far.
-    let mut review = opened(Some("alice"), demo());
-    press(&mut review, KeyCode::Char('r'));
-    press(&mut review, KeyCode::Char('x'));
-    let Action::Edit(draft) = control(&mut review, 'e') else {
-        panic!("Ctrl-E opens the editor");
-    };
-    assert_eq!(
-        serde_json::from_str::<Value>(&draft).unwrap(),
-        json!({"reason":"x"})
+#[test]
+fn a_recorded_schema_no_form_can_enter_is_refused_with_its_reason() {
+    let nested = definition(
+        json!({
+            "type":"object",
+            "properties":{"meta":{"type":"object","properties":{"ticket":{"type":"string"}}}},
+        }),
+        json!({"type":"object"}),
     );
-    assert_eq!(form(&review).json.as_deref(), Some(draft.as_str()));
-    // Monitor owns its terminal, so the same key never asks for an editor there.
-    let mut embedded = embedded(Some("alice"), demo());
-    press(&mut embedded, KeyCode::Char('r'));
-    assert_eq!(control(&mut embedded, 'e'), Action::None);
+    let mut review = opened(Some("alice"), nested);
+    press(&mut review, KeyCode::Char('g'));
+    assert_eq!(review.mode, Mode::Request);
+    let (notice, error) = review.notice.clone().unwrap();
+    assert!(error && notice.contains("properties.meta"), "{notice}");
 }
 
 #[test]
@@ -844,8 +819,7 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
             "seen":{"type":"boolean"},
         },
     });
-    let mut form = Form::new(crate::runtime::Verdict::Green, Some(&schema));
-    assert!(form.json.is_none());
+    let mut form = Form::new(crate::runtime::Verdict::Green, Some(&schema)).unwrap();
     let names: Vec<_> = form
         .fields
         .iter()
@@ -899,7 +873,7 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
         "optional booleans can be unset"
     );
 
-    for (schema, flat) in [
+    for (schema, enterable) in [
         (
             json!({"properties":{"a":{"type":"string","pattern":"x"}}}),
             false,
@@ -924,25 +898,13 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
         (json!({}), true),
     ] {
         assert_eq!(
-            Form::new(crate::runtime::Verdict::Red, Some(&schema))
-                .json
-                .is_none(),
-            flat,
+            Form::new(crate::runtime::Verdict::Red, Some(&schema)).is_ok(),
+            enterable,
             "{schema}"
         );
     }
-    let empty = Form::new(crate::runtime::Verdict::Green, None);
+    let empty = Form::new(crate::runtime::Verdict::Green, None).unwrap();
     assert_eq!(empty.result().unwrap(), json!({"verdict":"GREEN"}));
-    assert_eq!(
-        template(&json!({
-            "properties":{
-                "a":{"enum":["x"]},
-                "b":{"type":["integer","null"]},
-                "c":{"$ref":"#/x"},
-            },
-        })),
-        json!({"a":"x","b":0,"c":null})
-    );
 }
 
 #[test]
@@ -1022,11 +984,7 @@ fn a_running_job_only_scrolls_or_cancels() {
     let output = (0..30)
         .map(|index| format!("output-{index:03}\n"))
         .collect::<String>();
-    review.finish(Outcome::Ran {
-        tool: "notes_release".parse().unwrap(),
-        claimed: None,
-        result: printed(&output, false),
-    });
+    logged(&mut review, &output, "", 0);
     drop(review.start(Job::Run {
         id: ID.parse().unwrap(),
         tool: "notes_release".parse().unwrap(),
@@ -1048,16 +1006,27 @@ fn a_running_job_only_scrolls_or_cancels() {
         assert_eq!(review.mode(), &Mode::Request);
         assert_eq!(review.focus(), Focus::Detail);
     }
-    assert!(text.contains("output-000"), "{text}");
-    press(&mut review, KeyCode::PageDown);
-    let text = screen(&mut review);
+    // The log follows its newest line; scrolled up it stays put while lines arrive, and
+    // back at the bottom it follows again.
     assert!(
-        text.contains("output-010") && !text.contains("output-000"),
+        text.contains("■ exit 0") && !text.contains("output-000"),
         "{text}"
     );
-    press(&mut review, KeyCode::PageUp);
+    for _ in 0..3 {
+        press(&mut review, KeyCode::PageUp);
+    }
     let text = screen(&mut review);
-    assert!(text.contains("output-000"), "{text}");
+    assert!(
+        text.contains("output-000") && !text.contains("■ exit 0"),
+        "{text}"
+    );
+    logged(&mut review, "newest\n", "", 0);
+    assert!(!screen(&mut review).contains("newest"));
+    for _ in 0..10 {
+        press(&mut review, KeyCode::PageDown);
+    }
+    logged(&mut review, "latest\n", "", 0);
+    assert!(screen(&mut review).contains("latest"));
     let cancel = review.busy.as_ref().unwrap().cancel.clone();
     press(&mut review, KeyCode::Esc);
     assert!(cancel.is_cancelled());
@@ -1123,19 +1092,20 @@ fn list_opens_requests_and_esc_steps_back_without_quitting() {
     // Opening another request starts it fresh.
     let mut review = listed();
     press(&mut review, KeyCode::Enter);
-    review.output = Some(Output {
-        title: "notes".into(),
-        text: "old".into(),
-        error: false,
-    });
+    let open = review.open.clone().unwrap();
+    drop(review.sink.start(&open, "notes", "release"));
+    review.drain_log();
     press(&mut review, KeyCode::Esc);
     press(&mut review, KeyCode::Enter);
-    assert!(review.output.is_some(), "the same request keeps its output");
+    assert!(
+        !review.log.is_empty(),
+        "the same request keeps its Tool log"
+    );
     press(&mut review, KeyCode::Esc);
     press(&mut review, KeyCode::Char('j'));
     press(&mut review, KeyCode::Right);
     assert_eq!(review.open.as_deref(), Some(ID));
-    assert!(review.output.is_none());
+    assert!(review.log.is_empty());
 }
 
 #[test]
@@ -1160,16 +1130,14 @@ fn a_tool_run_never_claims_once_the_claim_is_gone() {
     press(&mut review, KeyCode::Tab);
     review.show(view("GREEN", None, demo()));
     assert_eq!(press(&mut review, KeyCode::Enter), Action::None);
-    // No job ever claims: an unclaimed submission from $EDITOR is refused too.
+    // No job ever claims: an unclaimed submission is refused too.
     let mut review = opened(Some("alice"), demo());
     press(&mut review, KeyCode::Char('r'));
+    press(&mut review, KeyCode::Char('x'));
     review.show(view("WAITING_HUMAN", None, demo()));
+    assert_eq!(control(&mut review, 's'), Action::None);
     assert_eq!(
-        review.edited(Ok(r#"{"reason":"late"}"#.into())),
-        Action::None
-    );
-    assert_eq!(
-        form(&review).error.as_deref(),
+        review.notice.as_ref().map(|(notice, _)| notice.as_str()),
         Some("Claim this request before reviewing it.")
     );
 }
@@ -1226,42 +1194,6 @@ fn a_refresh_never_drops_the_quit_prompt() {
             quit: true
         })
     );
-}
-
-#[test]
-fn json_cursors_stay_on_utf8_boundaries_when_the_text_is_replaced() {
-    let nested = definition(
-        json!({"type":"object","properties":{"meta":{"type":"object"}}}),
-        json!({"type":"object","properties":{"meta":{"type":"object"}}}),
-    );
-    let mut review = opened(Some("alice"), nested);
-    press(&mut review, KeyCode::Char('g'));
-    let Action::Edit(draft) = control(&mut review, 'e') else {
-        panic!("Ctrl-E opens the editor");
-    };
-    // The editor saves invalid JSON whose multibyte text spans the old cursor position.
-    let old = form(&review).cursor;
-    assert_eq!(old, draft.len());
-    let edited = format!("{}한한 not json", "x".repeat(old - 1));
-    assert!(!edited.is_char_boundary(old));
-    assert_eq!(review.edited(Ok(edited.clone())), Action::None);
-    assert!(form(&review).error.is_some());
-    assert_eq!(form(&review).cursor, edited.len());
-    let text = screen(&mut review);
-    assert!(text.contains(" not json") && text.contains('한'), "{text}");
-    press(&mut review, KeyCode::Char('!'));
-    assert!(form(&review).json.as_ref().unwrap().ends_with("json!"));
-    // The renderer, keys and paste are boundary-safe even for a cursor left mid-character.
-    if let Mode::Form(form) = &mut review.mode {
-        form.set_json("{\"note\":\"한글\"}".into());
-        form.cursor = 10;
-    }
-    screen(&mut review);
-    press(&mut review, KeyCode::Left);
-    review.paste_single("é");
-    let form = form(&review);
-    assert!(form.json.as_ref().unwrap().is_char_boundary(form.cursor));
-    assert!(form.json.as_ref().unwrap().contains('é'), "{form:?}");
 }
 
 #[test]

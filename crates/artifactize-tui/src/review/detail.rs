@@ -24,7 +24,7 @@ use time::OffsetDateTime;
 const EXPANDED: u16 = 70;
 /// A bordered box never shrinks below one line of text between its borders.
 const MIN_BOX: u16 = 3;
-/// Reserve at least half of the tools pane for the selected tool's output.
+/// Reserve at least half of the tools pane for the Tool log.
 const TOOL_LIST_HEIGHT_DIVISOR: u16 = 2;
 /// Instruction rows kept above the tools and fields once the review is claimed or completed.
 const FOLDED: u16 = 2;
@@ -197,7 +197,7 @@ impl Review {
     /// including how to reach the tools and run one.
     pub(crate) fn detail_hints(&self) -> String {
         if self.busy() {
-            return "Esc or Ctrl-C cancel · PgUp/PgDn scroll output".into();
+            return "Esc or Ctrl-C cancel · PgUp/PgDn scroll the Tool log".into();
         }
         if self.settled() {
             return "PgUp/PgDn scroll · i instruction · t technical · Esc back · q quit".into();
@@ -222,8 +222,12 @@ impl Review {
             hints.push("Tab fields".into());
         } else if editing {
             hints.extend(["Ctrl-S submit".into(), "Ctrl-G/R verdict".into()]);
-            if self.standalone {
-                hints.push("Ctrl-E $EDITOR".into());
+            if let Mode::Form(form) = &self.mode {
+                match form.row() {
+                    Some(super::Row::Item { .. }) => hints.push("Ctrl-D remove group".into()),
+                    Some(super::Row::Add(_)) => hints.push("Enter add group".into()),
+                    _ => {}
+                }
             }
         } else if owned {
             hints.extend(["g GREEN".into(), "r RED".into(), "u release".into()]);
@@ -352,14 +356,12 @@ impl Review {
                 KeyCode::Char('r') => self.control(Control::Red),
                 KeyCode::Char('u') => self.control(Control::Release),
                 KeyCode::Char('s') => self.control(Control::Submit),
-                KeyCode::Char('e') if self.standalone && self.owned() => match &mut self.mode {
-                    Mode::Form(form) => {
-                        let draft = form.draft();
-                        form.set_json(draft.clone());
-                        Action::Edit(draft)
+                KeyCode::Char('d') if self.owned() && self.area == Area::Fields => {
+                    if let Mode::Form(form) = &mut self.mode {
+                        form.remove_selected();
                     }
-                    _ => Action::None,
-                },
+                    Action::None
+                }
                 _ => Action::None,
             };
             return Handled::Action(action);
@@ -423,6 +425,8 @@ impl Review {
 
     /// Draw the Full Detail of the open request into `area`, borders included.
     pub(crate) fn draw_detail(&mut self, frame: &mut Frame, area: Rect, focused: bool) -> Hits {
+        // Lines that arrived while another Detail was shown.
+        self.drain_log();
         let mut hits = Hits::default();
         let Some(view) = self.shown.request().cloned() else {
             let text = self.error.clone().unwrap_or_else(|| "Loading…".into());
@@ -633,10 +637,10 @@ impl Review {
                     .block(block),
                 list,
             );
-            self.draw_output(frame, output);
+            self.draw_log(frame, output);
             return hits;
         }
-        self.draw_output(frame, output);
+        self.draw_log(frame, output);
         Vec::new()
     }
 
