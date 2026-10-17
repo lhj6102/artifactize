@@ -1,4 +1,4 @@
-//! Portable boundaries for path identity and interactive editing.
+//! Portable boundaries for path identity and owner-only scratch files.
 use std::{io, path::Path, sync::OnceLock};
 
 /// Compare opened identities, not spelling: case aliases and system directory aliases
@@ -26,58 +26,10 @@ pub(crate) fn label() -> &'static str {
     LABEL.get_or_init(|| format!("{} {}", std::env::consts::OS, std::env::consts::ARCH))
 }
 
-pub fn selected_editor() -> String {
-    ["VISUAL", "EDITOR"]
-        .into_iter()
-        .find_map(|name| {
-            super::environment::var_text(name).filter(|value| !value.trim().is_empty())
-        })
-        .unwrap_or_else(|| super::DEFAULT_EDITOR.into())
-}
-
-/// An editor draft is owner-only even on platforms where tempfile's default ACL inherits.
-pub fn private_temp_file(prefix: &str) -> io::Result<PrivateTempFile> {
-    // Build the protected ACL/mode at creation, not after creating a public draft.
-    let root = super::canonicalize(&std::env::temp_dir())?;
-    let directory = super::private_tempdir_in(prefix, &root)?;
-    let file = tempfile::Builder::new()
-        .prefix(prefix)
-        .suffix(".json")
-        .tempfile_in(directory.path())?;
-    super::restrict_file(file.as_file())?;
-    Ok(PrivateTempFile {
-        file,
-        _directory: directory,
-    })
-}
-
 /// An unnamed owner-only scratch file in the system temporary directory, removed when
 /// closed.
 pub(crate) fn private_anonymous_file() -> io::Result<std::fs::File> {
     let file = tempfile::tempfile()?;
     super::restrict_file(&file)?;
     Ok(file)
-}
-
-/// Do not expose signal-specific process statuses outside the platform boundary.
-pub async fn run_editor(command: &str, file: &Path) -> io::Result<()> {
-    let status = super::editor(command, file).status().await?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!(
-            "The editor exited unsuccessfully ({status}); nothing was submitted."
-        )))
-    }
-}
-
-/// Keep the protected parent alive until its editor draft has been removed.
-pub struct PrivateTempFile {
-    file: tempfile::NamedTempFile,
-    _directory: super::PrivateTempDir,
-}
-impl PrivateTempFile {
-    pub fn path(&self) -> &Path {
-        self.file.path()
-    }
 }

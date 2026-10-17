@@ -2199,28 +2199,6 @@ pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> C
     command
 }
 
-/// An external editor fixture, compiled rather than relying on a Python installation or
-/// shell shebang. The platform editor receives its quoted path as a command.
-pub fn editor_command(directory: &Path, text: &str) -> String {
-    let source = directory.join("draft-editor.rs");
-    std::fs::write(&source, format!("fn main() {{ std::fs::write(std::env::args_os().nth(1).unwrap(), {text:?}).unwrap(); }}")).unwrap();
-    let executable = directory.join(format!("draft-editor{}", std::env::consts::EXE_SUFFIX));
-    let rustc = fixture_compiler();
-    let output = Command::new(rustc)
-        .args(["--edition", "2024", "-o"])
-        .arg(&executable)
-        .arg(&source)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    // cmd, which runs the editor on Windows, cannot start a `\\?\` verbatim path.
-    format!("\"{}\"", canonical(&executable).to_string_lossy())
-}
-
 /// Create or replace an owner-only fixture file. Replacement keeps the inode for tests
 /// of same-sized rewrites; atomic replacement is set up explicitly by those tests.
 pub fn rewrite_private_file(path: &Path, contents: impl AsRef<[u8]>) {
@@ -3031,13 +3009,6 @@ pub fn stdin_waiter() -> tokio::process::Command {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     command
-}
-
-/// A Windows editor command with an argument of its own: copy this source over its operand.
-/// Only Windows has the cmd built-in used by this editor fixture.
-#[cfg(windows)]
-pub fn copy_editor_command(source: &Path) -> String {
-    format!("copy /y \"{}\"", source.display())
 }
 
 /// Run a relative script file through the platform's shared shell fixture, as argv.

@@ -1,5 +1,7 @@
 //! Predefined reviewer commands, deliberately outside Agent runtime isolation.
 
+pub mod log;
+
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -12,6 +14,7 @@ use crate::{
 };
 
 use super::{DEFAULT_TIMEOUT, executable};
+use log::{End, Run, Stream};
 
 /// Keep Human tool transcripts readable and bounded in CLI/TUI output; truncation is explicit.
 const TEXT_LIMIT: usize = 64 * 1024;
@@ -272,33 +275,51 @@ impl<'a> Registry<'a> {
         name: &crate::config::ToolName,
         cancellation: CancellationToken,
     ) -> ToolResult {
+        self.call_logged(name, cancellation, Run::unwatched()).await
+    }
+
+    /// Run tool `name`, its output reaching `run`'s Tool log while it runs, and end the run:
+    /// a launched program's when it exits.
+    pub async fn call_logged(
+        &self,
+        name: &crate::config::ToolName,
+        cancellation: CancellationToken,
+        run: Run,
+    ) -> ToolResult {
+        let failed = |run: Run, message: String| {
+            run.end(End::Failed(message.clone()));
+            ToolResult::error(message)
+        };
         let Some(tool) = self.tools.get(name) else {
-            return ToolResult::error("Unknown registered Human tool.");
+            return failed(run, "Unknown registered Human tool.".into());
         };
         if cancellation.is_cancelled() {
+            run.end(End::Cancelled);
             return ToolResult::error("Human tool call was cancelled.");
         }
-        if let HumanTool::Builtin(declaration) = tool.declaration {
-            return self
-                .call_builtin(&tool.definition.artifact_id, declaration, cancellation)
-                .await;
-        }
-        let HumanTool::Command(declaration) = tool.declaration else {
-            unreachable!()
+        let declaration = match tool.declaration {
+            HumanTool::Builtin(declaration) => {
+                return self
+                    .call_builtin(&tool.definition.artifact_id, declaration, cancellation, run)
+                    .await;
+            }
+            HumanTool::Command(declaration) => declaration,
         };
         let Ok(CommandLine {
             program, args, cwd, ..
         }) = self.command(name)
         else {
-            return ToolResult::error("Human tool preparation failed.");
+            return failed(run, "Human tool preparation failed.".into());
         };
         if cancellation.is_cancelled() {
+            run.end(End::Cancelled);
             return ToolResult::error("Human tool call was cancelled.");
         }
         match declaration.kind {
-            HumanToolKind::Launch => match process::launch_detached(&program, &args, &cwd) {
+            HumanToolKind::Launch => match process::launch_watched(&program, &args, &cwd, run) {
                 Ok(()) => ToolResult::success(Content::Launch { launched: true }),
-                Err(error) => ToolResult::error(
+                Err((error, run)) => failed(
+                    run,
                     error
                         .argument_refusal()
                         .unwrap_or_else(|| "Human tool could not be launched.".into()),
@@ -312,13 +333,21 @@ impl<'a> Registry<'a> {
                     env: crate::platform::environment::snapshot(),
                     timeout: declaration.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
                 };
-                match process::run(command, cancellation, |_| async { Ok(()) }).await {
-                    Ok(output) => output_result(&output),
-                    Err(process::Error::Timeout) => ToolResult::error("Human tool timed out."),
+                match process::run_watched(command, cancellation, &run).await {
+                    Ok(output) => {
+                        run.end(End::exited(&output.status));
+                        output_result(&output)
+                    }
+                    Err(process::Error::Timeout) => {
+                        run.end(End::TimedOut);
+                        ToolResult::error("Human tool timed out.")
+                    }
                     Err(process::Error::Cancelled) => {
+                        run.end(End::Cancelled);
                         ToolResult::error("Human tool call was cancelled.")
                     }
-                    Err(error) => ToolResult::error(
+                    Err(error) => failed(
+                        run,
                         error
                             .argument_refusal()
                             .unwrap_or_else(|| "Human tool execution failed.".into()),
@@ -327,27 +356,34 @@ impl<'a> Registry<'a> {
             }
         }
     }
+
     async fn call_builtin(
         &self,
         owner: &crate::config::ArtifactName,
         declaration: &crate::config::HumanBuiltinTool,
         cancellation: CancellationToken,
+        run: Run,
     ) -> ToolResult {
+        let failed = |run: Run, message: String| {
+            run.end(End::Failed(message.clone()));
+            ToolResult::error(message)
+        };
         for artifact in self.scope.artifacts.values() {
             if let Err(error) = scope::validate_file_target(&self.config.root, artifact) {
-                return ToolResult::error(error.to_string());
+                return failed(run, error.to_string());
             }
         }
         if declaration.builtin == crate::config::Builtin::Graph {
-            return match crate::graph_structure::launch(&self.config.root) {
+            // The graph viewer's own output is logged until it exits.
+            return match crate::graph_structure::launch(&self.config.root, run) {
                 Ok(()) => ToolResult::success(Content::Launch { launched: true }),
-                Err(error) => ToolResult::error(error),
+                Err((error, run)) => failed(run, error),
             };
         }
         let (owner, args) = match scope::builtin_args(self.config, &self.scope, owner, declaration)
         {
             Ok(args) => args,
-            Err(error) => return ToolResult::error(error.to_string()),
+            Err(error) => return failed(run, error.to_string()),
         };
         let owner = scope::tool_id(&owner);
         let tool_scope = self.scope.tool_scope();
@@ -357,14 +393,21 @@ impl<'a> Registry<'a> {
             } else {
                 match tool_scope.resolve_input(&self.config.root, &owner, &args[0]) {
                     Ok(path) => path.into_os_string(),
-                    Err(error) => return ToolResult::error(error.to_string()),
+                    Err(error) => return failed(run, error.to_string()),
                 }
             };
+            // The desktop's opener takes the file; what it prints is not the tool's.
             return tokio::select! {
-                _ = cancellation.cancelled() => ToolResult::error("Human tool call was cancelled."),
+                _ = cancellation.cancelled() => {
+                    run.end(End::Cancelled);
+                    ToolResult::error("Human tool call was cancelled.")
+                }
                 result = crate::platform::program::open_desktop(std::ffi::OsStr::new(&target)) => match result {
-                    Ok(()) => ToolResult::success(Content::Launch { launched: true }),
-                    Err(error) => ToolResult::error(error.to_string()),
+                    Ok(()) => {
+                        run.end(End::Launched);
+                        ToolResult::success(Content::Launch { launched: true })
+                    }
+                    Err(error) => failed(run, error.to_string()),
                 }
             };
         }
@@ -387,7 +430,7 @@ impl<'a> Registry<'a> {
             &cancellation,
         )
         .await;
-        let failed = result.is_error();
+        let error = result.is_error();
         let output = result
             .into_content()
             .into_iter()
@@ -403,9 +446,13 @@ impl<'a> Registry<'a> {
             .collect::<Vec<_>>()
             .join("\n");
         let text = text(output.as_bytes(), String::new(), false);
-        if failed {
+        if error {
+            run.text(Stream::Stderr, &text);
+            run.end(End::Failed("the builtin failed".into()));
             ToolResult::error(text)
         } else {
+            run.text(Stream::Stdout, &text);
+            run.end(End::Done);
             ToolResult::success(Content::Text { text })
         }
     }

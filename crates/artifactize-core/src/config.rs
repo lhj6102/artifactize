@@ -472,6 +472,12 @@ impl EvalDeclaration {
                 location
                     .child(key)
                     .check(crate::agent::verdict::validate_schema(schema))?;
+                // A person enters a Human result in a form: only shapes it can enter.
+                if self.profile().kind() == ProfileKind::Human {
+                    location
+                        .child(key)
+                        .check(crate::review::check_schema(schema))?;
+                }
             }
         }
         if self.profile_variants().len() > MAX_DECLARED_ITEMS {

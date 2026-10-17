@@ -338,6 +338,124 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
     }
 }
 
+/// Every event a watched run has logged so far, waiting for at most a generous bound so a
+/// broken stream fails the test instead of hanging it.
+async fn next(
+    events: &mut artifactize_core::review::log::Events,
+) -> artifactize_core::review::log::Kind {
+    tokio::time::timeout(Duration::from_secs(60), events.recv())
+        .await
+        .expect("the run logs its next event")
+        .expect("the sink is alive")
+        .kind
+}
+
+/// Lets a launched fixture program finish, also when an assertion unwinds first.
+struct Release(std::path::PathBuf);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.0, "");
+    }
+}
+
+#[tokio::test]
+async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_program_exits() {
+    use artifactize_core::review::log::{End, Kind, Stream, channel};
+    let repo = support::os::tempdir();
+    write_artifact(
+        repo.path(),
+        "a",
+        json!({
+            "inspect":tool(
+                "output",
+                support::os::python_program(),
+                &python("import sys; print('one'); print('oops', file=sys.stderr); print('two'); sys.exit(2)"),
+            ),
+        }),
+        "Review.",
+    );
+    let config = read_workspace_config(repo.path()).unwrap();
+    let (sink, mut events) = channel();
+    let request = "run-1-1".parse().unwrap();
+    let name = "inspect_a".parse().unwrap();
+    let registry = Registry::new(&config, "a/review").unwrap();
+    let result = registry
+        .call_logged(
+            &name,
+            CancellationToken::new(),
+            sink.start(&request, "inspect", "a"),
+        )
+        .await;
+    assert!(result.is_error());
+    assert!(
+        matches!(next(&mut events).await, Kind::Start { operation, .. } if operation == "inspect")
+    );
+    let mut lines = Vec::new();
+    let end = loop {
+        match next(&mut events).await {
+            Kind::Line { stream, text } => lines.push((stream, text)),
+            Kind::End(end) => break end,
+            other => panic!("{other:?}"),
+        }
+    };
+    // Each stream keeps its own order; the two pipes interleave as they arrive.
+    let of = |wanted: Stream| -> Vec<&str> {
+        lines
+            .iter()
+            .filter(|(stream, _)| *stream == wanted)
+            .map(|(_, text)| text.as_str())
+            .collect()
+    };
+    assert_eq!(of(Stream::Stdout), ["one", "two"]);
+    assert_eq!(of(Stream::Stderr), ["oops"]);
+    assert_eq!(end.text(), "■ exit 2");
+
+    // A launch returns at once; what its program prints keeps arriving in the same run until
+    // it exits, here once the test lets it.
+    let release = Release(repo.path().join("release"));
+    let waits = format!(
+        "import os, sys, time\nprint('started', flush=True)\nfor _ in range(6000):\n    if os.path.exists({:?}): break\n    time.sleep(0.01)\nprint('after', file=sys.stderr, flush=True)",
+        release.0.to_string_lossy()
+    );
+    write_artifact(
+        repo.path(),
+        "a",
+        json!({"inspect":tool("launch", support::os::python_program(), &python(&waits))}),
+        "Review.",
+    );
+    let config = read_workspace_config(repo.path()).unwrap();
+    let registry = Registry::new(&config, "a/review").unwrap();
+    let result = registry
+        .call_logged(
+            &name,
+            CancellationToken::new(),
+            sink.start(&request, "inspect", "a"),
+        )
+        .await;
+    assert_eq!(result.content(), [Content::Launch { launched: true }]);
+    assert!(matches!(next(&mut events).await, Kind::Start { .. }));
+    assert_eq!(
+        next(&mut events).await,
+        Kind::Line {
+            stream: Stream::Stdout,
+            text: "started".into()
+        }
+    );
+    drop(release);
+    assert_eq!(
+        next(&mut events).await,
+        Kind::Line {
+            stream: Stream::Stderr,
+            text: "after".into()
+        }
+    );
+    assert!(matches!(
+        next(&mut events).await,
+        Kind::End(End::Exited { code: Some(0), .. })
+    ));
+}
+
 #[tokio::test]
 async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     let repo = support::os::tempdir();

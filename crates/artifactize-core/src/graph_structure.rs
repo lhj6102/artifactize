@@ -257,13 +257,24 @@ impl Structure {
 
 /// The existing desktop application's detached launch path, with a current-project graph
 /// screen rather than a historical Run. No shell or second renderer is involved.
-pub fn launch(repo: &Path) -> Result<(), String> {
+/// Open the graph viewer on `repo`; its output reaches `run`'s Tool log until it exits. A
+/// failure hands the run back to be ended.
+pub(crate) fn launch(
+    repo: &Path,
+    run: crate::tools::human::log::Run,
+) -> Result<(), (String, crate::tools::human::log::Run)> {
     // Validate the same structure before handing it to the desktop viewer.
-    read(repo)?;
-    let program =
-        crate::platform::program::resolve(std::ffi::OsStr::new("artifactize-desktop"), repo)
-            .map_err(|error| format!("Cannot find artifactize-desktop: {error}"))?;
-    crate::process::launch_detached(
+    if let Err(error) = read(repo) {
+        return Err((error, run));
+    }
+    let program = match crate::platform::program::resolve(
+        std::ffi::OsStr::new("artifactize-desktop"),
+        repo,
+    ) {
+        Ok(program) => program,
+        Err(error) => return Err((format!("Cannot find artifactize-desktop: {error}"), run)),
+    };
+    crate::process::launch_watched(
         program.as_os_str(),
         &[
             "graph".into(),
@@ -271,8 +282,9 @@ pub fn launch(repo: &Path) -> Result<(), String> {
             crate::platform::path_text(repo),
         ],
         repo,
+        run,
     )
-    .map_err(|error| error.to_string())
+    .map_err(|(error, run)| (error.to_string(), run))
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ use windows_sys::Win32::{
 
 pub(crate) use process::{
     Child, kill_saved_group, kill_saved_session, process_start_time, running_process_start_time,
-    spawn_detached, spawn_gated, spawn_run,
+    spawn_detached, spawn_gated, spawn_run, spawn_watched,
 };
 pub(crate) use security::{
     PrivateTempDir, create_private_dir, create_private_dir_all, is_private_dir, is_private_file,
@@ -131,18 +131,6 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = true;
 /// console echo to turn off.
 pub const VISIBLE_INPUT_FALLBACK: bool = true;
 
-/// The editor a review opens fields in when `EDITOR` is unset.
-pub(crate) const DEFAULT_EDITOR: &str = "notepad";
-
-/// Run `$EDITOR file` through cmd, not a Unix shell: `EDITOR` may hold arguments, such as
-/// `code --wait`, or name a `.cmd` shim, which only cmd finds. `/s` strips only the outer
-/// quotes, so the file stays one quoted word; `/d` skips AutoRun commands.
-pub(crate) fn editor(editor: &str, file: &Path) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("cmd");
-    command.raw_arg(format!("/d /s /c \"{editor} \"{}\"\"", file.display()));
-    command
-}
-
 /// Windows processes end with an exit code, never a signal.
 pub(crate) fn exit_signal(_status: &ExitStatus) -> Option<i32> {
     None
@@ -216,8 +204,6 @@ impl Drop for HiddenInput {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Stdio;
-
     use super::*;
 
     #[test]
@@ -250,26 +236,5 @@ mod tests {
         // A regressed fixture must fail the assertion without destroying its evidence.
         assert!(std::panic::catch_unwind(|| crate::test_os::assert_delete_blocked(&path)).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "owned content");
-    }
-
-    #[tokio::test]
-    async fn the_editor_runs_through_cmd_and_gets_the_file_as_one_word() {
-        let directory = crate::test_os::tempdir();
-        let file = directory.path().join("fields file.json");
-        std::fs::write(&file, "{}").unwrap();
-        let edited = directory.path().join("edited.json");
-        std::fs::write(&edited, r#"{"approved":true}"#).unwrap();
-        // An editor command line with arguments of its own, which copies over what it opens.
-        let command_line = crate::test_os::copy_editor_command(&edited);
-        let status = editor(&command_line, &file)
-            .stdout(Stdio::null())
-            .status()
-            .await
-            .unwrap();
-        assert!(status.success());
-        assert_eq!(
-            std::fs::read_to_string(&file).unwrap(),
-            r#"{"approved":true}"#
-        );
     }
 }

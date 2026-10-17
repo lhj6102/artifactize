@@ -21,7 +21,7 @@ use tokio::signal::unix::{SignalKind, signal};
 
 pub(crate) use process::{
     Child, kill_saved_group, kill_saved_session, process_start_time, running_process_start_time,
-    spawn_detached, spawn_gated, spawn_run,
+    spawn_detached, spawn_gated, spawn_run, spawn_watched,
 };
 
 /// No Windows-style pending sharing disposition survives group cleanup.
@@ -170,20 +170,6 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = false;
 /// Whether a terminal that cannot hide input is still read, visibly, after a warning. A Unix
 /// terminal always can; failing to hide input is an error.
 pub const VISIBLE_INPUT_FALLBACK: bool = false;
-
-/// The editor a review opens fields in when `EDITOR` is unset.
-pub(crate) const DEFAULT_EDITOR: &str = "vi";
-
-/// Run `$EDITOR file` through `sh`, as `EDITOR` may hold arguments, such as `code --wait`.
-pub(crate) fn editor(editor: &str, file: &Path) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("sh");
-    command
-        .arg("-c")
-        .arg(format!("{editor} \"$1\""))
-        .arg("sh")
-        .arg(file);
-    command
-}
 
 /// The signal that ended a process, if one did.
 pub(crate) fn exit_signal(status: &ExitStatus) -> Option<i32> {
