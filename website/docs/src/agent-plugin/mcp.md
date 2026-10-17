@@ -10,7 +10,8 @@ to that repository; cache records are reusable across repositories in the state.
 The pinned rmcp transport supports the 2026-07-28 discovery/per-request-metadata
 lifecycle and legacy `initialize`/`notifications/initialized` clients. Stdout is
 JSON-RPC only; diagnostics go to stderr. There is no HTTP port, new token,
-Tasks extension, progress stream or subscription API.
+Tasks extension or durable transport-owned subscription. Bounded `verify_watch` calls
+can deliver standard MCP progress notifications.
 
 ## Register the MCP server
 
@@ -66,6 +67,7 @@ Registration supplies tools, not the [Hey Arti skill](hey-arti.md).
 | `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate`, `defer_human` | Submit via `runs::start`; compact Run observation, not approval |
 | `verify_status` | `run` | `runs::status`: saved state, counts, elapsed seconds and `next_check` |
 | `verify_wait` | `run`, optional `seconds` | `runs::wait`: Run end or bound; default 30, integer 0–40, whole call under 45 seconds |
+| `verify_watch` | `run`; optional standard `_meta.progressToken` on the tool call | Change-driven `runs::watch`, up to 30 seconds; progress messages contain JSON Run events; compact observation at return |
 | `verify_result` | `run`, optional `cursor` | `runs::result`: verdict and up to 20 concise findings, `next_cursor`; `ready:false` while active |
 | `verify_cancel` | `run` | `runs::cancel`: explicit cancellation acknowledgement; observe settlement for cleanup |
 
@@ -124,6 +126,8 @@ CLI counterpart; MCP adds only a bounded, lossless transport page.
 | --- | --- | --- |
 | `status` | `scope` (defaults all) | `status --all` or selected status |
 | `config_check` | none | `config check` |
+| `config_graph` | `scope` (defaults all), `impact` (false) | `config graph [ARTIFACT] [--impact]`; MCP also accepts eval/multi-selection |
+| `request_logs` | **`id`**, `stream` (`stdout`/`stderr`/`both`), `tail`, `start`, `end`, `search` | `request logs ID` with matching flags |
 | `run_list` | `limit` (0–20, default 20), `offset` | `run list --limit 20 --offset N` for this repository |
 | `run_show` | **`run`** | `run show RUN` |
 | `request_list` | `run` | `request list [--run RUN]`, restricted to this repository |
@@ -178,3 +182,64 @@ remote push, interactive monitor/review, store server, project-tool execution or
 Agent-session follow-ups. The CLI and normal Human review interfaces remain the
 entry points for these actions. A client cannot cancel a Run by cancelling the
 MCP request that watches it.
+
+
+## Streaming and focused diagnosis
+
+Submit with `verify_start`, retain the Run ID, then call `verify_watch` with the
+standard tool-call metadata `{"progressToken":"your-observer"}` in `_meta`.
+While this call is pending, artifactize subscribes to shared state changes and
+sends `notifications/progress`. The notification's `message` is a JSON envelope:
+
+- `{"kind":"update","data":...}`: compact live state/counts, **not approval**.
+- `{"kind":"eval_result","data":...}`: one saved request/eval status and concise
+  summary, including reused and provisional results, **not the Run verdict**.
+- `{"kind":"outcome","data":...}`: final Run validation, using `verify_result`'s
+  schema. Follow its `next_cursor` through `verify_result` for remaining findings.
+
+Each attachment replays its baseline and already completed evals; deduplicate
+across attachments by request ID and status if needed. A terminal observation
+returned at a bound does not guarantee that the client received an outcome
+notification; use `verify_result` for authoritative final validation. Without a
+progress token, the same call waits but sends no notifications; prefer
+`verify_wait` in clients that do not consume progress. No rapid polling is needed.
+Subscriptions end with the call (30-second bound), client cancellation or
+connection closure; none cancels execution. A later call reattaches to the saved
+Run. Lost/coalesced invalidations reconcile from saved state rather than inventing
+a complete event history.
+
+The **client/agent host** must display progress or route it into its own task
+queue/conversation. MCP notifications do not themselves create model turns, keep
+inference caches alive, or deliver after the call/connection ends. Artifactize
+cannot inject messages into an arbitrary host. For a shell-capable host,
+`artifactize verify --all --watch` or `artifactize run watch RUN` streams the same
+JSON-line events until terminal; the host can supervise that process and route
+its output. These are implemented transports, not a claim that every coding host
+supports live conversation delivery.
+
+From a failed finding, use its `request` ID with `request_logs`, not `run_show`'s
+entire audit. `stream` defaults to both. Without a range, the last 50 matching
+lines are returned; `tail` selects 1–200 matching lines. `start`/`end` are inclusive
+one-based original line numbers and exclude `tail`. `search` is a case-sensitive
+literal (1–2048 UTF-8 bytes), applied before the tail selection. Forward queries
+are bounded to 200 lines and a byte budget per stream; `next_start` continues the
+query with the same stream/search/end. Lines longer than 2048 raw bytes are
+explicitly `clipped` with bounded head/tail text; the full local bytes remain on disk. A search can match past
+the displayed head/tail of a clipped line. Results are cleaned UTF-8 diagnostic text,
+not a byte-for-byte export. Normal detail paging still wraps the bounded answer.
+
+Each stream's `evidence` says `complete` (full local capture, including the tail),
+`partial` (no confirmed EOF, such as active/interrupted capture), `saved_audit`
+(older/remote/pruned local capture; possibly only the first 128 KiB), `missing`,
+or `not_runtime` (use request/session evidence instead). Empty is not missing.
+A reused request follows its original local producer; remote records do not
+promise locally retained logs. Full raw stdout/stderr belong to the Run output,
+not SQLite/remote result JSON, and disappear with normal output pruning. The
+128 KiB cleaned per-stream audit remains compatible and bounded; pagination
+cannot recover a tail when only that old/truncated audit survives.
+
+`config_graph` discovers static definitions, evals, cycle peers and input-to-consumer
+relations without invoking hooks. Select an Artifact/eval for its required closure;
+add `impact:true` to include reachable downstream consumers and their required
+inputs. This is conservative structural reachability, not proof that every
+included eval's reuse key changed. Use `status` to inspect actual reuse decisions.

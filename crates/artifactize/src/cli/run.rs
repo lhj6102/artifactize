@@ -115,3 +115,29 @@ pub(super) async fn cancel(
     print_json(&artifactize_core::runs::cancel(&runs, &id).await?)?;
     Ok(0)
 }
+
+/// One JSON object per line, flushed immediately for pipes and background-agent hosts.
+pub(super) async fn watch(context: Context, id: artifactize_core::types::RunId) -> Result<u8, String> {
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
+    let view = artifactize_core::store::read_run(&state, &id).await?;
+    let runs = artifactize_core::runs::Context::new(
+        &view.run.repo_path,
+        Some(&state),
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+    )?;
+    let (cancellation, listener) = super::cancellation_listener()?;
+    let result = artifactize_core::runs::watch(&runs, &id, None, cancellation.clone(), |event| async move {
+        let mut out = io::stdout().lock();
+        serde_json::to_writer(&mut out, &event).map_err(|e| e.to_string())?;
+        writeln!(out)
+            .and_then(|()| out.flush())
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    listener.abort();
+    if cancellation.is_cancelled() {
+        return Ok(INTERRUPTED_EXIT);
+    }
+    result?;
+    Ok(outcome_code(&artifactize_core::runs::view(&runs, &id).await?.run))
+}

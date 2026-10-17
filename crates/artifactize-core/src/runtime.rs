@@ -208,7 +208,8 @@ where
     // The command's temporary directory is only its own scratch space: it goes with the run,
     // while the output directory stays for receipts and pruning.
     let scratch = command.directory.join("tmp");
-    let result = process::run(command.command, cancellation, register).await;
+    let result =
+        process::run_logged(command.command, command.directory, cancellation, register).await;
     let _ = std::fs::remove_dir_all(scratch);
     match result {
         Ok(mut output) => {

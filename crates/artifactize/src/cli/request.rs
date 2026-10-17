@@ -23,6 +23,12 @@ pub enum RequestCommand {
     },
     /// Read full saved audit, claim and summary as JSON.
     Show { id: RequestId },
+    /// Read bounded runtime evidence without loading the full request audit.
+    Logs {
+        id: RequestId,
+        #[command(flatten)]
+        query: artifactize_core::inspect::LogQuery,
+    },
     /// Acquire the Human reviewer lock.
     Claim {
         id: RequestId,
@@ -108,6 +114,9 @@ pub(super) async fn execute(
                 )
                 .await?,
             )?;
+        }
+        RequestCommand::Logs { id, query } => {
+            print_json(&artifactize_core::inspect::logs(state, &id, query).await?)?;
         }
         RequestCommand::Claim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;

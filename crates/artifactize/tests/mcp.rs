@@ -151,7 +151,11 @@ impl Client {
     async fn request(&mut self, method: &str, mut params: Value) -> u64 {
         self.id += 1;
         if self.modern {
+            let progress_token = params["_meta"]["progressToken"].clone();
             params["_meta"] = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28", "io.modelcontextprotocol/clientInfo":{"name":"seam","version":"1"}, "io.modelcontextprotocol/clientCapabilities":{}});
+            if !progress_token.is_null() {
+                params["_meta"]["progressToken"] = progress_token;
+            }
         }
         self.send(json!({"jsonrpc":"2.0","id":self.id,"method":method,"params":params}))
             .await;
@@ -323,10 +327,12 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         [
             "cache_show",
             "config_check",
+            "config_graph",
             "doctor",
             "models",
             "remote_status",
             "request_list",
+            "request_logs",
             "request_show",
             "run_list",
             "run_show",
@@ -338,6 +344,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
             "verify_start",
             "verify_status",
             "verify_wait",
+            "verify_watch",
         ],
         "the public surface exposes no credentials or Human sign-off actions"
     );
@@ -784,4 +791,243 @@ fn b2_claude_code_registration_lists_tools() {
 #[ignore = "manual: requires an installed Codex CLI host"]
 fn b2_codex_registration_lists_tools() {
     host_smoke("codex");
+}
+
+#[tokio::test]
+async fn runtime_log_queries_retain_tail_and_report_pruned_evidence() {
+    let project = Project::new(json!([]));
+    let script = project._root.path().join("logs.py");
+    support::os::write_python_script(
+        &script,
+        "import sys\nfor n in range(6000): print(f'line-{n:04d} ' + 'x' * 40)\nprint('final diagnostic', file=sys.stderr)\nsys.exit(7)\n",
+    );
+    support::declaration::write(
+        project.repo.join("index.artf"),
+        json!({
+            "name":"app", "evals":[runtime("logs", support::os::python_program(), json!(["-I",support::os::path_text(&script)]))]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut client = Client::new(project.command(), "2026-07-28").await;
+    let started = client
+        .call("verify_start", json!({"scope":{"kind":"all"}}))
+        .await;
+    let run = started["run"].as_str().unwrap().parse().unwrap();
+    let view = project.settled(&run).await;
+    assert_eq!(view.run.status(), RunStatus::Red);
+    let request = &view.requests[0];
+    let stdout = client
+        .inspect(
+            "request_logs",
+            json!({"id":request.id,"stream":"stdout","tail":2}),
+        )
+        .await;
+    assert_eq!(stdout["streams"][0]["evidence"], "complete");
+    assert_eq!(stdout["streams"][0]["lines"][1]["number"], 6000);
+    assert!(
+        stdout["streams"][0]["lines"][1]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("line-5999")
+    );
+    let search = client
+        .inspect(
+            "request_logs",
+            json!({"id":request.id,"stream":"stdout","start":5900,"search":"line-5998"}),
+        )
+        .await;
+    assert_eq!(search["streams"][0]["lines"][0]["number"], 5999);
+    let cli = support::os::run(project.command().args([
+        "request",
+        "logs",
+        request.id.as_str(),
+        "--stream",
+        "stdout",
+        "--start",
+        "2",
+        "--end",
+        "3",
+    ]));
+    assert!(
+        cli.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+    let cli: Value = serde_json::from_slice(&cli.stdout).unwrap();
+    let mcp = client
+        .inspect(
+            "request_logs",
+            json!({"id":request.id,"stream":"stdout","start":2,"end":3}),
+        )
+        .await;
+    assert_eq!(cli, mcp);
+    let stderr = client
+        .inspect("request_logs", json!({"id":request.id,"stream":"stderr"}))
+        .await;
+    assert_eq!(stderr["streams"][0]["lines"][0]["text"], "final diagnostic");
+    let forward = client
+        .inspect(
+            "request_logs",
+            json!({"id":request.id,"stream":"stdout","start":1}),
+        )
+        .await;
+    assert!(forward["streams"][0]["next_start"].as_u64().unwrap() > 1);
+    let reused = client
+        .call("verify_start", json!({"scope":{"kind":"all"}}))
+        .await;
+    let reused_run = reused["run"].as_str().unwrap().parse().unwrap();
+    let reused_view = project.settled(&reused_run).await;
+    let reused_log = client
+        .inspect(
+            "request_logs",
+            json!({"id":reused_view.requests[0].id,"stream":"stdout","tail":2}),
+        )
+        .await;
+    assert_eq!(reused_log["producer"], json!(request.id));
+    assert_eq!(reused_log["streams"], stdout["streams"]);
+    fs::remove_dir_all(request.run_dir.as_ref().unwrap()).unwrap();
+    let pruned = client
+        .inspect(
+            "request_logs",
+            json!({"id":request.id,"stream":"stdout","tail":1}),
+        )
+        .await;
+    assert_eq!(pruned["streams"][0]["evidence"], "saved_audit");
+    assert!(
+        pruned["streams"][0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("Missing tail")
+    );
+    client.close().await;
+}
+
+#[tokio::test]
+async fn watch_stream_separates_live_eval_and_final_outcome_without_polling() {
+    let project = Project::new(json!([]));
+    let script = project._root.path().join("watch.py");
+    support::os::write_python_script(
+        &script,
+        "import pathlib,time\npathlib.Path('ready').write_text('ready')\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)\n",
+    );
+    support::declaration::write(
+        project.repo.join("index.artf"),
+        json!({
+            "name":"app", "fingerprint":{"files":["content.txt"]},
+            "evals":[runtime("controlled",support::os::python_program(),json!(["-I",support::os::path_text(&script)])),
+                runtime("fast",support::os::true_program(),json!([]))]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut client = Client::new(project.command(), "2026-07-28").await;
+    let started = client
+        .call("verify_start", json!({"scope":{"kind":"all"}}))
+        .await;
+    let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
+    marker(&project.repo.join("ready"), "ready").await;
+    project
+        .state(
+            &run,
+            "app/fast",
+            artifactize_core::types::RequestStatus::Green,
+        )
+        .await;
+    let call = client.request("tools/call",json!({"name":"verify_watch","arguments":{"run":run},"_meta":{"progressToken":"watch-seam"}})).await;
+    let mut events = Vec::new();
+    loop {
+        let mut line = String::new();
+        tokio::time::timeout(
+            support::os::patience(PROTOCOL_BOUND),
+            client.output.read_line(&mut line),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(line.len() <= RESPONSE_BYTES);
+        let message: Value = serde_json::from_str(&line).unwrap();
+        if message["id"] == call {
+            assert_eq!(
+                Client::tool_result("verify_watch", message)["state"],
+                "green"
+            );
+            break;
+        }
+        assert_eq!(message["method"], "notifications/progress");
+        assert_eq!(message["params"]["progressToken"], "watch-seam");
+        let event: Value =
+            serde_json::from_str(message["params"]["message"].as_str().unwrap()).unwrap();
+        if events.is_empty() {
+            assert_eq!(event["kind"], "update");
+            assert!(!["green", "red", "error"].contains(&event["data"]["state"].as_str().unwrap()));
+        }
+        if event["kind"] == "eval_result" && event["data"]["eval"] == "app/fast" {
+            assert!(!events.iter().any(|e: &Value| e["kind"] == "outcome"));
+            fs::write(project.repo.join("release"), "release").unwrap();
+        }
+        events.push(event);
+    }
+    assert_eq!(
+        events.iter().filter(|e| e["kind"] == "eval_result").count(),
+        2
+    );
+    let final_event = events.last().unwrap();
+    assert_eq!(final_event["kind"], "outcome");
+    assert_eq!(final_event["data"]["satisfied"], true);
+    assert_eq!(project.settled(&run).await.run.status(), RunStatus::Green);
+    let replay = support::os::run(project.command().args(["run", "watch", run.as_str()]));
+    assert!(replay.status.success());
+    let replay: Vec<Value> = String::from_utf8(replay.stdout)
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(
+        replay
+            .iter()
+            .map(|e| e["kind"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["update", "eval_result", "eval_result", "outcome"]
+    );
+    client.close().await;
+}
+
+#[tokio::test]
+async fn graph_discovery_and_conservative_impact_match_cli() {
+    let project = Project::new(json!([]));
+    fs::remove_file(project.repo.join("index.artf")).unwrap();
+    for (name, declaration) in [
+        ("input", json!({"name":"input","basis":true})),
+        (
+            "consumer",
+            json!({"name":"consumer","basis":true,"mounts":{"data":"input"}}),
+        ),
+        ("independent", json!({"name":"independent","basis":true})),
+    ] {
+        fs::create_dir(project.repo.join(name)).unwrap();
+        support::declaration::write(
+            project.repo.join(name).join("index.artf"),
+            declaration.to_string(),
+        )
+        .unwrap();
+    }
+    let mut client = Client::new(project.command(), "2026-07-28").await;
+    let arguments = json!({"scope":{"kind":"artifact","artifactId":"input"},"impact":true});
+    let mcp = client.inspect("config_graph", arguments).await;
+    let cli = support::os::run(
+        project
+            .command()
+            .args(["config", "graph", "input", "--impact", "--json"]),
+    );
+    assert!(
+        cli.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+    assert_eq!(mcp, serde_json::from_slice::<Value>(&cli.stdout).unwrap());
+    assert!(mcp["artifacts"].get("consumer").is_some());
+    assert!(mcp["artifacts"].get("input").is_some());
+    assert!(mcp["artifacts"].get("independent").is_none());
+    client.close().await;
 }

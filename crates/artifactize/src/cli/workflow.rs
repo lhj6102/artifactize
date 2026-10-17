@@ -16,6 +16,7 @@ pub(super) struct VerifyLimits {
     pub jobs: Option<u32>,
     pub max_executions: Option<u64>,
     pub wait: bool,
+    pub watch: bool,
     pub request_key: Option<artifactize_core::types::RequestKey>,
     pub reuse_only: Vec<artifactize_core::config::ProfileKind>,
 }
@@ -31,6 +32,7 @@ pub(super) async fn verify(
         jobs,
         max_executions,
         wait,
+        watch,
         request_key,
         reuse_only,
     } = limits;
@@ -48,8 +50,10 @@ pub(super) async fn verify(
         context.state_dir.as_deref(),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;
-    let observation =
-        artifactize_core::runs::start(&runs, &selection, &options, request_key).await?;
+    let observation = artifactize_core::runs::start(&runs, &selection, &options, request_key).await?;
+    if watch {
+        return super::run::watch(context_for_watch(&runs, context.json), observation.run).await;
+    }
     if !wait {
         if context.json {
             print_json(&serde_json::json!({"run": observation.run, "state": observation.state}))?;
@@ -121,12 +125,18 @@ pub(super) async fn status(
 pub(super) async fn graph(
     context: Context,
     artifact: Option<artifactize_core::types::ArtifactName>,
+    impact: bool,
 ) -> Result<u8, String> {
     let config = read_workspace_config(&context.repo.unwrap_or_else(|| PathBuf::from(".")))
         .map_err(|error| error.to_string())?;
     let selection = artifact.map_or(Selection::All, |artifact_id| Selection::Artifact {
         artifact_id,
     });
+    let selection = if impact {
+        artifactize_core::query::impact(&config, &selection)?
+    } else {
+        selection
+    };
     let view = artifactize_core::query::graph(&config, &selection)?;
     if context.json {
         print_json(&view)?;
@@ -146,4 +156,12 @@ pub(super) async fn check(context: Context) -> Result<u8, String> {
             .map_err(|error| error.to_string())?;
     }
     Ok(0)
+}
+
+fn context_for_watch(runs: &artifactize_core::runs::Context, json: bool) -> Context {
+    Context {
+        repo: Some(runs.repo().to_path_buf()),
+        state_dir: Some(runs.state().to_path_buf()),
+        json,
+    }
 }

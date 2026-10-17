@@ -255,7 +255,10 @@ states as they stand now, including later Human submissions. Its headline keeps
 changed since that end, not files changed. See [Monitor](../tui/index.md#monitor).
 
 `config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
-including cycle peers. Text lists Artifacts with tags and file-kind markers, evals, components and
+including cycle peers. `--impact` includes downstream consumers and their required
+inputs: conservative structural reachability, not an exact reuse-key prediction.
+MCP `config_graph` exposes the same definitions with single/multiple Artifact or
+eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
 child/mount/instruction/argv relation metadata, cycle markers and

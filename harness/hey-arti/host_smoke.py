@@ -13,8 +13,8 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import driver
 
-TOOLS = {"verify_start", "verify_status", "verify_wait", "verify_result", "verify_cancel",
-         "status", "config_check", "run_list", "run_show", "request_list", "request_show",
+TOOLS = {"verify_start", "verify_status", "verify_wait", "verify_watch", "verify_result", "verify_cancel",
+         "status", "config_check", "config_graph", "request_logs", "run_list", "run_show", "request_list", "request_show",
          "session_show", "tools_check", "doctor", "models", "remote_status", "cache_show"}
 
 
@@ -138,9 +138,9 @@ def inventory(host, candidate, output, model):
                         (output / "transcript.jsonl").write_text(
                             "".join(json.dumps(message) + "\n" for message in messages))
     if names != TOOLS:
-        raise RuntimeError(f"{host}: expected 17 tools, got {sorted(names)}")
+        raise RuntimeError(f"{host}: expected 20 tools, got {sorted(names)}")
     (output / "result.json").write_text(json.dumps({"host": host, "tools": sorted(names), "passed": True}, indent=2))
-    print(f"{host}: all 17 tools listed; {output.as_posix()}")
+    print(f"{host}: all 20 tools listed; {output.as_posix()}")
 
 
 if __name__ == "__main__":

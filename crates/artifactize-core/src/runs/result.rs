@@ -157,6 +157,24 @@ impl Serialize for RunResultPage {
         output.end()
     }
 }
+pub(super) fn finding(request: &crate::store::Request) -> Finding {
+    let summary = if let Some(error) = request.error() {
+        error.to_owned()
+    } else if let Some(crate::store::ExecutionResult::Runtime(result)) = request.result() {
+        match result.exit_code.value() {
+            Some(code) => format!("Runtime check exited {code}."),
+            None => format!("Runtime check: {}.", request.status()),
+        }
+    } else {
+        request.status().to_string()
+    };
+    Finding {
+        request: request.id.clone(),
+        eval: request.eval_id.clone(),
+        state: request.status(),
+        summary: summary.chars().take(SUMMARY_CHARS).collect(),
+    }
+}
 pub async fn result(
     context: &Context,
     id: &RunId,
@@ -207,26 +225,7 @@ pub async fn result(
             .iter()
             .skip(offset)
             .take(PAGE_SIZE)
-            .map(|request| {
-                let summary = if let Some(error) = request.error() {
-                    error.to_owned()
-                } else if let Some(crate::store::ExecutionResult::Runtime(result)) =
-                    request.result()
-                {
-                    match result.exit_code.value() {
-                        Some(code) => format!("Runtime check exited {code}."),
-                        None => format!("Runtime check: {}.", request.status()),
-                    }
-                } else {
-                    request.status().to_string()
-                };
-                Finding {
-                    request: request.id.clone(),
-                    eval: request.eval_id.clone(),
-                    state: request.status(),
-                    summary: summary.chars().take(SUMMARY_CHARS).collect(),
-                }
-            })
+            .map(finding)
             .scan(0, |bytes, finding| {
                 let size = serde_json::to_vec(&finding)
                     .expect("typed finding serializes")

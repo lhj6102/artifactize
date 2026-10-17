@@ -43,6 +43,27 @@ pub(super) async fn inspect(
                 .await?,
             )?
         }
+        "config_graph" => {
+            let args: GraphInput = parse(arguments)?;
+            let config = artifactize_core::config::read_workspace_config(repo).map_err(|e| e.to_string())?;
+            let selection = if args.impact {
+                artifactize_core::query::impact(&config, &args.scope.0)?
+            } else {
+                args.scope.0
+            };
+            encode(artifactize_core::query::graph(&config, &selection)?)?
+        }
+        "request_logs" => {
+            let args: LogInput = parse(arguments)?;
+            if artifactize_core::store::read_request_repo(context.state(), &args.id)
+                .await?
+                .1
+                != *repo
+            {
+                return Err("Request not found in this repository.".into());
+            }
+            encode(artifactize_core::inspect::logs(context.state(), &args.id, args.query).await?)?
+        }
         "config_check" => {
             let _: Empty = parse(arguments)?;
             encode(artifactize_core::inspect::config_check(repo)?)?

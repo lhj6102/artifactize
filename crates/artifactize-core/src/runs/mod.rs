@@ -3,6 +3,7 @@
 mod lifetime_tests;
 mod observe;
 mod result;
+mod watch;
 mod worker;
 use crate::{
     process,
@@ -14,6 +15,7 @@ pub use observe::{Counts, RunObservation, State, status, view, wait};
 pub use result::{Finding, ResultCursor, ResultState, RunResultPage, RunVerdict, result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+pub use watch::{RunEvent, watch};
 #[doc(hidden)]
 pub use worker::{execute, supervise};
 

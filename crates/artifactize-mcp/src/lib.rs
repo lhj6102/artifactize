@@ -34,6 +34,45 @@ impl Server {
         Self { context }
     }
 
+    async fn watch(
+        &self,
+        arguments: Value,
+        context: RequestContext<rmcp::RoleServer>,
+    ) -> Result<Value, String> {
+        let args: Run = parse(arguments)?;
+        let token = context.meta.get_progress_token();
+        let mut sequence = 0_u32;
+        let observed = tokio::time::timeout(
+            WAIT_CALL_LIMIT,
+            runs::watch(
+                &self.context,
+                &args.run,
+                Some(Duration::from_secs(DEFAULT_WAIT_SECONDS)),
+                context.ct,
+                |event| {
+                    sequence += 1;
+                    let notification = token.clone().map(|token| {
+                        ProgressNotificationParam::new(token, f64::from(sequence)).with_message(
+                            serde_json::to_string(&event).expect("Run event serializes"),
+                        )
+                    });
+                    let peer = context.peer.clone();
+                    async move {
+                        if let Some(notification) = notification {
+                            peer.notify_progress(notification)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                        }
+                        Ok(())
+                    }
+                },
+            ),
+        )
+        .await
+        .map_err(|_| "State unavailable within the MCP observation deadline.")??;
+        encode(observed)
+    }
+
     async fn invoke(&self, name: &str, arguments: Value) -> Result<Value, String> {
         let context = &self.context;
         match name {
@@ -95,7 +134,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("artifactize", env!("CARGO_PKG_VERSION")))
-            .with_instructions("Runs belong to artifactize, never the MCP connection. Retain the Run ID; use verify_wait rather than short polling. Human sign-offs belong to people. Read tools page the exact CLI JSON as UTF-8 text; append entries.text until next_cursor is null.")
+            .with_instructions("Runs belong to artifactize, never the MCP connection. Retain the Run ID; use verify_watch with _meta.progressToken for bounded live notifications, or verify_wait rather than short polling. Notifications require client display/queue support, never inject conversation turns. Human sign-offs belong to people. Read tools page the exact CLI JSON as UTF-8 text; append entries.text until next_cursor is null.")
     }
     async fn list_tools(
         &self,
@@ -113,10 +152,15 @@ impl ServerHandler for Server {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _: RequestContext<rmcp::RoleServer>,
+        context: RequestContext<rmcp::RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let arguments = Value::Object(request.arguments.unwrap_or_default());
-        let result = match self.invoke(&request.name, arguments).await {
+        let operation = if request.name == "verify_watch" {
+            self.watch(arguments, context).await
+        } else {
+            self.invoke(&request.name, arguments).await
+        };
+        let result = match operation {
             Ok(value) => CallToolResult::structured(value),
             Err(error) => CallToolResult::structured_error(
                 json!({"code":"operation_failed", "message":error.chars().take(ERROR_CHARS).collect::<String>()}),

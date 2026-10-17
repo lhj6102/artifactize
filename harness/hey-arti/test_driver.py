@@ -814,8 +814,8 @@ payload.instruction = "Keep this request pending; the fixture cancels without ap
     # executes shebang fixtures; portable host lifecycle tests above run on every OS.
     @unittest.skipUnless(os.name == "posix", "Native Codex inventory uses POSIX pipe observation and shebang fixtures")
     def test_codex_host_is_joined_and_transcript_preserved_on_success_rpc_error_and_broken_input(self):
-        tool_names = ["verify_start", "verify_status", "verify_wait", "verify_result", "verify_cancel",
-                      "status", "config_check", "run_list", "run_show", "request_list", "request_show",
+        tool_names = ["verify_start", "verify_status", "verify_wait", "verify_watch", "verify_result", "verify_cancel",
+                      "status", "config_check", "config_graph", "request_logs", "run_list", "run_show", "request_list", "request_show",
                       "session_show", "tools_check", "doctor", "models", "remote_status", "cache_show"]
         # Execute a genuinely renamed candidate through the registered command,
         # with an executable artifactize on PATH that must never be selected.
