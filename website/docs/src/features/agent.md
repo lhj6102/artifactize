@@ -52,6 +52,27 @@ the backend formats, owner-field validation, repair and limits.
 The rig adapter, retries, tool results and usage counters are in
 [Agent backends](#agent-backends).
 
+## Agent profile limits
+
+An Agent profile can bound its review with `max_tokens` and `max_tool_calls`:
+
+```toml
+profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", max_tokens = 100000, max_tool_calls = 100 }
+```
+
+Each optional budget accepts an integer from 1 through 9007199254740991.
+Omission leaves that budget unlimited. These are client-side review budgets,
+not provider generation parameters. `max_tokens` adds each successful response's
+reported `total_tokens`, including reported cache reads/writes, across every
+turn and the repair turn. Missing totals count as zero for enforcement. The check
+runs after a response and fails only when the total exceeds the limit: it can
+overshoot, and is not a hard generation or spending cap.
+
+`max_tool_calls` counts attempted calls before invocation, including unknown,
+invalid or failed calls, not only successful tools. Exceeding either budget stops
+further work with `PROVIDER_BUDGET_EXCEEDED`. Repair remains within the original
+review deadline and budgets; it never adds a fresh allowance.
+
 ## Agent tools
 
 Declare the read-only tools the reviewer needs. The [Tools](tools/index.md) area

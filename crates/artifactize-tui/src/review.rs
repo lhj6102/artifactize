@@ -186,7 +186,7 @@ pub struct Review {
     pages: Vec<u64>,
     next: Option<u64>,
     /// Numbers each session reader, so a stale reader job is recognised.
-    serial: u64,
+    serial: crate::monitor::session::ReaderId,
     reviewer: crate::types::ReviewerId,
     mode: Mode,
     /// The standalone level with focus; the Monitor keeps its own panes.
@@ -249,7 +249,7 @@ impl Review {
             completing: false,
             pages: vec![0],
             next: None,
-            serial: 0,
+            serial: crate::monitor::session::ReaderId::default(),
             reviewer,
             mode: Mode::Request,
             focus: if open.is_some() {
@@ -325,7 +325,7 @@ impl Review {
                     Ok(())
                 }
                 Ok(view) => {
-                    self.serial += 1;
+                    self.serial = self.serial.next();
                     let previous = self.shown.take_record();
                     Box::pin(record::Record::load(
                         &self.state,

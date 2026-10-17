@@ -125,7 +125,7 @@ pub async fn transcript_open(
         Ok(live::Resolution::Local(source)) => {
             let handle = TranscriptHandle::allocate(&app.transcripts.next);
             let session = source.reference.session_id.clone().into();
-            let live = Live::new(handle.number(), source);
+            let live = Live::new(handle.number().into(), source);
             open.insert(
                 handle,
                 Entry {

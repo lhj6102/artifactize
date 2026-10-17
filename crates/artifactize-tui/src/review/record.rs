@@ -46,7 +46,7 @@ impl Record {
         state: &Path,
         view: RequestView,
         previous: Option<Self>,
-        serial: u64,
+        serial: crate::monitor::session::ReaderId,
     ) -> Result<Self, String> {
         let (run, requests) = store::read_run_requests(state, &view.request.run_id).await?;
         let target = Target::Eval(view.request.eval_id.clone());
@@ -202,7 +202,7 @@ async fn evidence(
     state: &Path,
     view: &RequestView,
     kept: Option<Live>,
-    serial: u64,
+    serial: crate::monitor::session::ReaderId,
 ) -> (Evidence, Option<Live>) {
     if view.request.profile.kind() != ProfileKind::Agent {
         return (monitor::evidence(state, view), None);

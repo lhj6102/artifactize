@@ -173,7 +173,8 @@ class HarnessTests(OwnedTestCase):
         with ThreadPoolExecutor() as executor:
             try:
                 ready = executor.submit(process.stdout.readline).result(timeout=10)
-            except TimeoutError:
+            except BaseException:
+                # Release the pipe reader before the executor joins, even on interruption.
                 driver.stop_child(process)
                 raise
         self.assertEqual(ready, "ready\n")
@@ -392,7 +393,8 @@ sys.stdin.read()
         with ThreadPoolExecutor() as executor:
             try:
                 ready = executor.submit(process.stdout.readline).result(timeout=10)
-            except TimeoutError:
+            except BaseException:
+                # Release the pipe reader before the executor joins, even on interruption.
                 driver.stop_child(process)
                 raise
             self.assertEqual(ready, "ready\n")

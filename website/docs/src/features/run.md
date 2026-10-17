@@ -18,13 +18,6 @@ See [Eval dependencies](artifact.md#eval-dependencies).
 `--artifacts-file PATH`, or `--all`. Eval IDs are qualified (`green/check`).
 Selection preserves first occurrences and removes duplicates. Artifacts expand
 to their evals in ID order; selection order defines saved requests, not dispatch.
-An Artifact selector starts with its evals; an individual selector starts with
-that eval. Both retain the full dependency closure as a final obligation.
-`--recursive` includes every eval in that closure, including other evals on the
-target and cycle peers, in configuration order. `--all` includes every eval and
-all no-eval Artifact obligations. A file
-Artifact selector never selects the surrounding folder's evals.
-
 An Artifact selector asks to run that piece's checks; an individual eval selector
 asks to run just that check. The Run still needs valid results for every piece
 those checks rely on, following their links as far as needed. This linked group is
@@ -34,7 +27,8 @@ when you did not ask to execute them in this Run.
 `--recursive` also selects every check in that group, including other checks on
 the selected Artifact, in configuration order. Pieces that depend on one another
 in a loop are **cycle peers**, and are included together. `--all` already selects
-every check and the obligations of pieces that have no checks.
+every check and the obligations of pieces that have no checks. A file Artifact
+selector selects its own evals, never those of the surrounding folder.
 
 For example, suppose `code/tests` relies on `plan`, which needs a person's
 `plan/signoff`. `verify --eval code/tests` selects the test, but cannot finish GREEN

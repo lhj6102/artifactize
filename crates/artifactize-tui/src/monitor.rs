@@ -187,7 +187,7 @@ pub struct Monitor {
     /// The cached tree it was built from, and that tree with the Run row above it.
     framed: Option<(Rows, Rows)>,
     detail: Option<DetailPane>,
-    serial: u64,
+    serial: crate::monitor::session::ReaderId,
     peek: Option<Peek>,
     reviews: std::collections::BTreeMap<RequestId, Review>,
     help: bool,
@@ -227,7 +227,7 @@ impl Monitor {
             folds: folds::Folds::default(),
             framed: None,
             detail: None,
-            serial: 0,
+            serial: crate::monitor::session::ReaderId::default(),
             peek: None,
             reviews: std::collections::BTreeMap::new(),
             help: false,
@@ -397,7 +397,7 @@ impl Monitor {
             _ => None,
         };
         let saved_detail = model::detail(run, requests, &target, OffsetDateTime::now_utc());
-        self.serial += 1;
+        self.serial = self.serial.next();
         let mut pane = DetailPane {
             run_id: run.run.id.clone(),
             target,
@@ -464,7 +464,7 @@ impl Monitor {
     async fn load_evidence(
         state: &std::path::Path,
         identity: Option<&crate::types::StateId>,
-        serial: u64,
+        serial: crate::monitor::session::ReaderId,
         pane: &mut DetailPane,
         view: &RequestView,
     ) {
@@ -552,7 +552,7 @@ impl Monitor {
                         (Some(live), String::new())
                     }
                     _ => {
-                        self.serial += 1;
+                        self.serial = self.serial.next();
                         (Some(session::Live::new(self.serial, source)), String::new())
                     }
                 },

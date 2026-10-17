@@ -22,8 +22,11 @@ executable lookup and portable commands.
 
 Exit 0 is **GREEN**; another exit code is **RED**. Failure to start, a timeout,
 interruption or invalid inputs produce operational errors instead. Runtime commands do not return Agent/Human owner fields. Saved results include the
-exit code and bounded stdout/stderr; runtime output is available after completion, not as a
-live log stream. The CLI, [TUI](../tui/index.md) and [Desktop](../desktop/index.md)
+exit code and bounded stdout/stderr after completion. While execution is still
+appending output, `artifactize request logs REQUEST_ID` can read bounded snapshots;
+unconfirmed captures are explicitly marked partial. This is snapshot inspection,
+not an automatic streaming log feed. The [runtime-log CLI reference](../cli/index.md#agent-streaming-and-runtime-logs)
+explains tail/range/search, capture evidence and retention. The CLI, [TUI](../tui/index.md) and [Desktop](../desktop/index.md)
 read the same saved evidence.
 
 References such as `{spec}/requirements.json` in the declared operands admit those

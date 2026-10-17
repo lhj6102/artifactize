@@ -7,6 +7,11 @@ use serde_json::{Value, json};
 /// Match core's ASCII RequestKey bound, keeping retry identities compact in stored receipts.
 const REQUEST_KEY_CHARS: usize = 128;
 
+/// Match the core log snapshot bound so one MCP response stays bounded.
+const LOG_TAIL_LINES: usize = 200;
+/// Match the core literal-search bound to limit scanning input per request.
+const LOG_SEARCH_CHARS: usize = 2048;
+
 pub(super) fn tools() -> Vec<Tool> {
     let scope = json!({"oneOf": [
         {"type":"object","properties":{"kind":{"const":"all"}},"required":["kind"],"additionalProperties":false},
@@ -76,7 +81,7 @@ pub(super) fn tools() -> Vec<Tool> {
         tool(
             "request_logs",
             "Inspect runtime stdout/stderr without the full request. Defaults to last 50 lines per stream; explicit evidence distinguishes full local capture, partial, saved audit and missing. Search is literal. Tail/range exclusive. next_start continues forward queries.",
-            json!({"id":string,"stream":{"enum":["stdout","stderr","both"],"default":"both"},"tail":{"type":"integer","minimum":1,"maximum":200},"start":{"type":"integer","minimum":1},"end":{"type":"integer","minimum":1},"search":{"type":"string","minLength":1,"maxLength":2048}}),
+            json!({"id":string,"stream":{"enum":["stdout","stderr","both"],"default":"both"},"tail":{"type":"integer","minimum":1,"maximum":LOG_TAIL_LINES},"start":{"type":"integer","minimum":1},"end":{"type":"integer","minimum":1},"search":{"type":"string","minLength":1,"maxLength":LOG_SEARCH_CHARS}}),
             &["id"],
             true,
         ),

@@ -188,6 +188,11 @@ historical records; submission does not restart them.
 
 ## Runtime CLI
 
+These development examples require a source checkout, Rust and the platform
+build prerequisites from [Installation](../getting-started/install.md#build-from-source-all-platforms).
+Run them from the repository root; `cargo run` builds the CLI from that checkout.
+For an installed CLI, use `artifactize` directly with your own project's path.
+
 ```sh
 cargo run -q -p artifactize -- --repo crates/artifactize-core/tests/fixtures/runtime verify --all --wait
 cargo run -q -p artifactize -- run show RUN_ID
