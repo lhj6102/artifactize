@@ -4,9 +4,32 @@
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import type { DetailView, TreeNode } from "../ipc/client";
 import DetailPane from "./DetailPane.svelte";
+
+beforeAll(() => {
+  // jsdom lays nothing out; the neighbours' small graph only observes sizes and reads transforms.
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
+  window.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+  globalThis.DOMMatrixReadOnly ??= class {
+    m22 = 1;
+    constructor() {}
+  } as unknown as typeof DOMMatrixReadOnly;
+});
 
 afterEach(() => {
   cleanup();
@@ -36,6 +59,22 @@ const view = (node: string, title: string): DetailView => ({
 function setup(tab: string | null = null) {
   const read: string[] = [];
   mockIPC((command, args) => {
+    if (command === "run_graph") {
+      return {
+        run: "run-a",
+        nodes: [
+          { id: "a:core", name: "core", light: "green" },
+          { id: "a:app", name: "app", light: "red" },
+          { id: "a:docs", name: "docs", light: "green" },
+          { id: "a:far", name: "far", light: "green" },
+        ],
+        edges: [
+          { source: "a:core", target: "a:app", light: "green" },
+          { source: "a:app", target: "a:docs", light: "red" },
+          { source: "a:docs", target: "a:far", light: "green" },
+        ],
+      };
+    }
     if (command !== "detail") return null;
     const { node } = args as { node: string };
     read.push(node);
@@ -141,14 +180,17 @@ it("shows only the Artifact's chip, without a `/`, for an Artifact without evals
   expect(strip.textContent?.trim()).toBe("lone");
 });
 
-it("shows the Artifact between the Artifacts its evals use and those that use it, and opens a neighbour on a click", async () => {
+it("draws the Artifact between the Artifacts its evals use and those that use it, and opens a neighbour on a click", async () => {
   const { onopen } = setup();
-  const group = await screen.findByRole("group", { name: "Neighbours of app" });
-  const uses = within(within(group).getByRole("list", { name: "Used by its evals" })).getAllByRole("button");
-  const usedBy = within(within(group).getByRole("list", { name: "Uses it" })).getAllByRole("button");
-  expect(uses.map((chip) => chip.getAttribute("aria-label"))).toEqual(["Artifact core"]);
-  expect(usedBy.map((chip) => chip.getAttribute("aria-label"))).toEqual(["Artifact docs"]);
-  expect(group.textContent?.replace(/\s+/g, " ").trim()).toBe("✓core → app → ✓docs");
-  await fireEvent.click(usedBy[0]);
+  const group = await screen.findByRole("group", { name: "Neighbours" });
+  const node = (id: string) => group.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
+  await waitFor(() => expect(node("a:app")).not.toBeNull());
+  // Only the Artifact's own neighbours, with an edge into it and one out of it.
+  expect(node("a:core")).not.toBeNull();
+  expect(node("a:docs")).not.toBeNull();
+  expect(node("a:far")).toBeNull();
+  await fireEvent.click(node("a:docs")!);
   expect(onopen).toHaveBeenCalledWith("a:docs");
+  await fireEvent.click(node("a:app")!);
+  expect(onopen).toHaveBeenCalledTimes(1);
 });
