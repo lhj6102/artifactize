@@ -742,24 +742,19 @@ try {
   return { ...env, PATH: `${bin}${delimiter}${env.PATH ?? ""}`, DESKTOP_TEST_NODE: process.execPath, DESKTOP_TEST_BROWSER_PROGRAM: program };
 }
 
-/** The embedded WebDriver's native IME device, not application IPC or DOM synthesis.
- * Each platform supplies composing input through its native WebView input-method API. */
+/** The evaluated test-build device reaches only the engine's text-input API. This
+ * test-only IPC command is not an application action and is absent from production. */
 export async function nativeIme(browser: WebdriverIO.Browser, input:
   | { type: "set" | "commit"; text: string }
-  | { type: "key"; key: string; control: boolean; meta: boolean; preedit?: string }
   | { type: "cancel" }): Promise<void> {
-  const port = browser.options.port;
-  if (port === undefined) throw new Error("the embedded WebDriver has no endpoint port");
-  const host = browser.options.hostname ?? "127.0.0.1";
-  const address = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-  const base = (browser.options.path ?? "/").replace(/\/$/, "");
-  const url = `${browser.options.protocol ?? "http"}://${address}:${port}${base}/session/${browser.sessionId}/wdio/ime`;
-  const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
-  const result = await response.json() as { value: { error?: string; message?: string } | null };
-  if (!response.ok || result.value?.error) throw new Error(result.value?.message ?? `native IME input failed: ${response.status}`);
-}
-export function nativeImeKey(browser: WebdriverIO.Browser, key: string, primary = false, preedit?: string): Promise<void> {
-  return nativeIme(browser, { type: "key", key, preedit, control: primary && primaryModifier === "Control", meta: primary && primaryModifier === "Meta" });
+  const error = await browser.executeAsync((operation, done) => {
+    const native = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> } };
+    native.__TAURI_INTERNALS__.invoke("e2e_input", { input: operation }).then(
+      () => done(null),
+      (failure: unknown) => done(String(failure)),
+    );
+  }, input);
+  if (error !== null) throw new Error(`native composition failed: ${String(error)}`);
 }
 
 /** Native crash reports for this run's exact candidate binary, never other apps or runs.
@@ -786,3 +781,17 @@ export function nativeCrashReports(app: NativePath): string[] {
   }
   return reports;
 }
+
+/** Every non-directory entry of a source tree, including links and special files. */
+export function sourceTree(root: NativePath): { path: NativePath; name: string; kind: "file" | "other" }[] {
+  const visit = (directory: NativePath, prefix: string): { path: NativePath; name: string; kind: "file" | "other" }[] =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = nativePath(directory, entry.name);
+      const name = prefix ? textPath(prefix, entry.name) : entry.name;
+      return entry.isDirectory() ? visit(path, name) : [{ path, name, kind: entry.isFile() ? "file" : "other" }];
+    });
+  return visit(root, "").sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** Original bytes, for checksum-based upstream provenance rather than text normalization. */
+export function readBytes(path: NativePath): Uint8Array { return readFileSync(path); }

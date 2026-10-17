@@ -7,6 +7,8 @@
 
 mod browse;
 mod detail;
+#[cfg(feature = "e2e")]
+mod e2e_input;
 mod failure;
 mod generation;
 mod graph;
@@ -127,9 +129,16 @@ impl App {
 pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tauri::Builder<R> {
     let specta = bindings::<R>();
     let state = launch.state.clone();
+    let commands = specta.invoke_handler();
     builder
         .manage(App::new(launch))
-        .invoke_handler(specta.invoke_handler())
+        .invoke_handler(move |invoke| {
+            #[cfg(feature = "e2e")]
+            if invoke.message.command() == "e2e_input" {
+                return e2e_input::handle(invoke);
+            }
+            commands(invoke)
+        })
         .setup(move |app| {
             specta.mount_events(app);
             watch::spawn(app.handle().clone(), state);

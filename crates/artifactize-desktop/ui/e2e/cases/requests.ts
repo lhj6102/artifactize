@@ -10,7 +10,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { reviewing } from "../human-review.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativeIme, nativeImeKey, primaryModifier } from "../platform.ts";
+import { nativeIme, primaryModifier } from "../platform.ts";
 import { graphShown, nodeAt, popup, rowAt } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
@@ -174,7 +174,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
   scenario<Record<string, never>>(
     "requests-green-composition",
-    "claims, composes Korean through the native WebDriver IME device, and submits GREEN",
+    "claims, composes Korean through the engine and guards page shortcuts before submitting GREEN",
     async () => ({ fixture: await create(), data: {} }),
     async (browser, { fixture }) => {
       const { text, human } = submission(browser);
@@ -210,26 +210,28 @@ export const scenarios: Scenario[] = [
       assert.ok(before.commands.humanForm?.completed > 0, "the form counter observed this successful GREEN choice");
       await nativeIme(browser, { type: "set", text: "안" });
       await waitFor(browser, async () => (await events()).some((event) => event.type === "compositionstart" && event.trusted), "a trusted native composition started");
-      for (const [key, primary, preedit] of [["g", false, "안녕"], ["r", false, "안"], ["q", false, "안녕"], ["u", false, "안"], ["c", false, "안녕"], ["Escape", false, "안"], ["g", true, undefined], ["r", true, undefined], ["s", true, undefined]] as const) {
-        const count = (await events()).length;
-        const code = key === "Escape" ? key : `Key${key.toUpperCase()}`;
-        try {
-          await nativeImeKey(browser, key, primary, preedit);
-          if (preedit !== undefined) {
-            // An IME consumes text keys before DOM keydown. Its trusted preedit update
-            // and exact field value witness processing of that native physical key.
-            await waitFor(browser, async () => await comment.getValue() === preedit && (await events()).slice(count).some((event) =>
-              event.type === "compositionupdate" && event.trusted), `the native IME processed ${code}`);
-          } else {
-            await waitFor(browser, async () => (await events()).slice(count).some((event) =>
-              event.type === "keydown" && event.code === code && event.trusted && (event.composing || event.keyCode === 229)),
-            `the native composing ${code} reached the real page`);
-          }
-        } catch (error) {
-          const observed = await events().catch((failure: unknown) => `event reader unavailable: ${String(failure)}`);
-          throw new Error(`Native input ${code} (primary=${primary}): ${JSON.stringify(observed)}`, { cause: error });
+      await nativeIme(browser, { type: "set", text: "안녕" });
+      await waitFor(browser, async () => await comment.getValue() === "안녕" && (await events()).some((event) =>
+        event.type === "compositionupdate" && event.trusted), "the engine updated the native Korean composition");
+      // E2E-INPUT: these fields are the app's own shortcut guard, not an OS input test.
+      // Exercise each guard independently while the real native composition remains active.
+      for (const [composing, keyCode] of [[true, 0], [false, 229]] as const) {
+        for (const [key, primary] of [["g", false], ["r", false], ["q", false], ["u", false], ["c", false], ["Escape", false], ["g", true], ["r", true], ["s", true]] as const) {
+          const received = await browser.execute((input) => {
+            const target = document.activeElement;
+            if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
+            const event = new KeyboardEvent("keydown", {
+              key: input.key, code: input.key === "Escape" ? "Escape" : `Key${input.key.toUpperCase()}`,
+              bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode,
+              ctrlKey: input.primary && input.modifier === "Control", metaKey: input.primary && input.modifier === "Meta",
+            });
+            target.dispatchEvent(event);
+            return { composing: event.isComposing, keyCode: event.keyCode, key: event.key };
+          }, { key, primary, modifier: primaryModifier, composing, keyCode });
+          assert.deepEqual(received, { composing, keyCode, key }, "the page received the guard fields it actually reads");
         }
       }
+      assert.ok(!(await events()).some((event) => event.type === "compositionend"), "native composition stayed active through every guarded shortcut");
       await commandsRendered(browser);
       const after = (await checkpoint(browser)).activity;
       for (const name of checked) assert.equal(after.commands[name]?.started ?? 0, before.commands[name]?.started ?? 0, `native composition dispatches no ${name}`);

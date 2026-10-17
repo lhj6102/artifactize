@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint --no-inline-config . && tsc -p ."
+    "lint": "node check-integrity.ts && node --test ../lint/e2e-integrity.test.js && eslint --no-inline-config . && tsc -p ."
   }
 }
