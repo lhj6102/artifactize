@@ -7,6 +7,7 @@
   import { call, useIpc, type RunGraph } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
+  import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
 
   let { run, node, onopen }: { run: string; node: string; onopen: (node: string) => void } = $props();
@@ -16,15 +17,16 @@
   /** Room between columns and between stacked neighbours. */
   const GAP = { x: 72, y: 16 };
 
-  let graph = $state.raw<RunGraph | null>(null);
+  const n = new NeighboursState();
+  setNeighboursState(n);
   /** Read the graph again for every accepted snapshot: it may relight the neighbours. */
   const reread: Attachment<HTMLElement> = () => {
     void browse.revision;
     const at = run;
     let current = true;
     call(commands.runGraph(at)).then(
-      (next) => current && (graph = next),
-      () => current && (graph = null),
+      (next: RunGraph) => current && (n.graph = next),
+      () => current && (n.graph = null),
     );
     return () => {
       current = false;
@@ -32,6 +34,7 @@
   };
 
   const shown = $derived.by(() => {
+    const graph = n.graph;
     if (!graph) return null;
     const uses = graph.edges.filter((edge) => edge.target === node);
     const usedBy = graph.edges.filter((edge) => edge.source === node);

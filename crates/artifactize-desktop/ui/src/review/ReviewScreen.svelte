@@ -206,6 +206,7 @@
         r.technical = false;
         r.pending = false;
         r.log = false;
+        r.debug = false;
       }
       r.record = view;
       r.focus = "detail";
@@ -286,6 +287,7 @@
   function recordKey(event: KeyboardEvent) {
     if (plain(event, "Escape") || plain(event, "ArrowLeft")) void back();
     else if (r.log) return;
+    else if (plain(event, "t") && r.record?.card) r.debug = !r.debug;
     else if (plain(event, "t")) r.technical = !r.technical;
     else if (plain(event, "w")) r.pending = !r.pending;
     else return;
@@ -419,7 +421,7 @@
         {/snippet}
         {#if r.focus === "detail" && r.record}
           {#key r.record.request}
-            <RecordDetail detail={r.record} bind:technical={r.technical} bind:pending={r.pending} bind:log={r.log} />
+            <RecordDetail detail={r.record} bind:technical={r.technical} bind:pending={r.pending} bind:log={r.log} bind:debug={r.debug} />
           {/key}
         {:else if r.focus === "detail" && r.review}
           {#key r.review}

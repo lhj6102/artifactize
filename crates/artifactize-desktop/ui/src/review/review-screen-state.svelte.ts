@@ -16,6 +16,8 @@ export class ReviewScreenState {
   pending = $state(false);
   /** The record's log rather than its Summary. */
   log = $state(false);
+  /** The record's Debug facts unfolded. */
+  debug = $state(false);
   focus = $state<"list" | "detail">("list");
   preview = $state.raw<{ human: HumanView } | { record: DetailView } | null>(null);
   asking = $state(false);
