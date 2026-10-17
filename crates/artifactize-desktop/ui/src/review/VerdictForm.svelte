@@ -73,7 +73,7 @@
       {@const value = form.values[field.name]}
       <div class="field">
         <label class="name" for="field-{field.name}">
-          {field.name}{#if field.required}<span class="required" title="required">*</span>{/if}
+          {field.name}{#if field.required}<span class="required" aria-label="required">*</span>{/if}
         </label>
         {#if field.input.kind === "fixed"}
           <input id="field-{field.name}" readonly value="{field.input.value} (fixed)" />
@@ -149,10 +149,13 @@
 <style>
   .form {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+    overflow-wrap: anywhere;
   }
   .verdicts {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
   }
   .verdict {
@@ -179,6 +182,7 @@
   }
   .field {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 4px;
   }
   .name {
@@ -218,6 +222,7 @@
   }
   .choices {
     display: flex;
+    flex-wrap: wrap;
     gap: 16px;
   }
   .choices input {

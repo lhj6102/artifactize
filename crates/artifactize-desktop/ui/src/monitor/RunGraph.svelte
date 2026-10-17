@@ -5,7 +5,7 @@
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
-  import { call, useIpc, message, type RunGraph, type TreeNode } from "../ipc/client";
+  import { call, useIpc, message, type RunGraph } from "../ipc/client";
   import { RunGraphState, setRunGraphState } from "./run-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
   import { LIMIT, shape } from "./graph";
@@ -13,29 +13,19 @@
   let {
     run,
     revision,
-    tree,
-    selected,
-    popup = $bindable(null),
-    active = true,
-    onselect,
+    opened = null,
     onopen,
-    onready,
-    onhover,
+    onclose,
   }: {
     run: string;
     /** The browse revision: a new one means a new snapshot to read the graph from. */
     revision: number;
-    tree: TreeNode[];
-    selected: string[];
-    /** The Artifact whose evals pop up beside it. */
-    popup?: string | null;
-    /** The graph's screen is shown; a hidden graph holds no keyboard focus. */
-    active?: boolean;
-    onselect: (path: string[]) => void;
-    onopen: () => void;
-    /** A way to give the graph keyboard focus while it is mounted, `null` once it is not. */
-    onready?: (focus: (() => boolean) | null) => void;
-    onhover?: (path: string[] | null) => void;
+    /** The Artifact whose Detail is open. */
+    opened?: string | null;
+    /** Open the Detail of an Artifact. */
+    onopen: (id: string) => void;
+    /** Close the open Detail. */
+    onclose: () => void;
   } = $props();
   const commands = useIpc();
   const g = new RunGraphState();
@@ -105,7 +95,7 @@
 {:else}
   {#key g.shown.graph.run}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:popup {active} {onselect} {onopen} {onready} {onhover} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {opened} {onopen} {onclose} />
     </SvelteFlowProvider>
   {/key}
 {/if}

@@ -32,7 +32,15 @@ const HUMAN: Section = {
 
 export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]> = {
   graph: [
-    { title: "Current Artifact graph", keys: [["← / →", "Upstream / downstream Artifact"], ["↑ / ↓", "Artifact above / below; select an eval in the popup"], ["Enter / click", "Pop up an Artifact's evals"], ["Enter / click on eval", "Expand structure and evaluation criteria"], ["Esc", "Close the evals"], ["Ctrl+R / F5", "Reload current declarations"]] },
+    {
+      title: "Current Artifact graph",
+      keys: [
+        ["Click an Artifact", "Show its evals over the graph's right side"],
+        ["Click an eval", "Expand structure and evaluation criteria"],
+        ["Esc · click the background", "Close the evals"],
+        ["Ctrl+R / F5", "Reload current declarations"],
+      ],
+    },
     COMMON,
   ],
   monitor: [
@@ -43,20 +51,16 @@ export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]
         ["Enter / →", "Next level: Scope, Runs, the Run's graph"],
         ["← / Esc", "Step back"],
         ["Space", "Worktrees without Runs"],
-        ["b / Backspace", "Upstream blocker / back"],
-        ["!", "Next ERROR, RED or waiting Human eval"],
       ],
     },
     {
       title: "Run graph",
       keys: [
-        ["← / →", "Upstream / downstream Artifact"],
-        ["↑ / ↓", "Artifact above / below in the same column"],
-        ["Enter / click", "Pop up the Artifact's evals"],
-        ["↑ / ↓ · Enter / click", "In the evals: select (its summary shows) / open Detail"],
-        ["o", "Open the Detail of the selected Artifact or eval"],
+        ["Click an Artifact", "Open its Detail; another Artifact switches it"],
         ["Click the headline", "Open the Run's Detail"],
-        ["Esc", "Close the evals, then step back"],
+        ["Click the background", "Close the Detail"],
+        ["Tab · Enter", "Focus an Artifact · open its Detail"],
+        ["Esc", "Close the Detail, then step back"],
         [
           "Colours",
           "green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked by an upstream RED, ERROR or block",
@@ -66,8 +70,9 @@ export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]
     {
       title: "Detail",
       keys: [
+        ["Click a tab or an eval", "Show the Artifact or that eval"],
         ["t / w / d", "Technical / pending evals / Agent details"],
-        ["Esc / ←", "Close the Detail"],
+        ["Esc / ← · Close", "Close the Detail"],
       ],
     },
     HUMAN,

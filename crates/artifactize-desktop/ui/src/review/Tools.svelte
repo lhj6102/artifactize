@@ -90,6 +90,7 @@
   .tools {
     display: grid;
     grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 8px 12px;
@@ -121,7 +122,8 @@
   }
   li {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    overflow-wrap: anywhere;
     gap: 2px 8px;
     padding: 4px 8px;
     border-radius: 6px;
@@ -171,6 +173,7 @@
     margin: 0;
     font: 12px/1.5 var(--mono);
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .muted {
     color: var(--muted);

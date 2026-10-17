@@ -1,6 +1,7 @@
 <script lang="ts">
   // A titled, focusable pane. Keys reach `onkeydown` while focus is anywhere inside it. The pane
-  // is never wider than its place: a long notice is cut to the header's room, not widening it.
+  // is never wider than its place: a long notice is cut to the header's room, not widening it,
+  // and a click on it shows it in full.
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
 
@@ -11,6 +12,7 @@
     onfocus,
     onkeydown,
     notice = null,
+    noticeOpen = $bindable(false),
     actions,
     children,
     label,
@@ -21,9 +23,10 @@
     element?: HTMLElement;
     onfocus?: () => void;
     onkeydown?: (event: KeyboardEvent) => void;
-    /** What went wrong last: it takes the header's room between the title and the actions,
-     * and shows in full on hover. */
+    /** What went wrong last: it takes the header's room between the title and the actions. */
     notice?: string | null;
+    /** The notice shows in full rather than cut to one line. */
+    noticeOpen?: boolean;
     actions?: Snippet;
     children: Snippet;
     label?: string;
@@ -46,7 +49,11 @@
 >
   <header>
     <h2>{title}</h2>
-    {#if notice}<span class="notice" role="status" title={notice}>{notice}</span>{/if}
+    {#if notice}
+      <div class="notice" class:open={noticeOpen} role="status">
+        <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>
+      </div>
+    {/if}
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
   </header>
   <div class="body">{@render children()}</div>
@@ -69,6 +76,9 @@
     padding: 10px var(--pad) 6px;
     border-top: 2px solid transparent;
   }
+  header:has(> .notice.open) {
+    align-items: flex-start;
+  }
   .focused header {
     border-top-color: var(--accent);
   }
@@ -88,11 +98,28 @@
   .notice {
     flex: 1 1 0;
     min-width: 0;
-    text-align: end;
+  }
+  .notice button {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
     color: var(--red);
+    text-align: end;
+    cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .notice.open button {
+    max-height: 40vh;
+    overflow: auto;
+    text-align: start;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .actions {
     display: flex;

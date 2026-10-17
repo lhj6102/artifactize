@@ -12,9 +12,8 @@ export class CurrentGraphState {
 
   shown = $state.raw<{ view: CurrentGraph; positions: Map<string, Point> } | null>(null);
   error = $state<string | null>(null);
-  selected = $state<string[]>([]);
-  /** The Artifact whose evals pop up beside it. */
-  popup = $state<string | null>(null);
+  /** The Artifact whose evals show docked over the graph's right side. */
+  opened = $state<string | null>(null);
   reading = $state(false);
   details = $state(false);
   #read = 0;
@@ -28,8 +27,7 @@ export class CurrentGraphState {
       if (read !== this.#read) return;
       this.shown = { view, positions };
       this.error = null;
-      this.selected = [];
-      this.popup = null;
+      this.opened = null;
     } catch (error) {
       if (read === this.#read) this.error = message(error);
     } finally {

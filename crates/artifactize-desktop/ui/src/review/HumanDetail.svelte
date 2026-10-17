@@ -290,9 +290,12 @@
 </section>
 
 <style>
+  /* Sizes flow from the parent down: every column is at most the width it is given, and long
+   * text wraps inside it. */
   .human {
     display: grid;
     grid-template-rows: auto 1fr auto;
+    grid-template-columns: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
     outline: none;
@@ -302,10 +305,13 @@
   header h3 {
     margin: 0;
     font-size: 14px;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .title {
     display: flex;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 4px 10px;
     align-items: center;
   }
   .stage {
@@ -323,10 +329,12 @@
   .meta {
     margin: 4px 0 0;
     font-weight: 600;
+    overflow-wrap: anywhere;
   }
   .shared {
     margin: 2px 0 0;
     color: var(--human);
+    overflow-wrap: anywhere;
   }
   .muted {
     color: var(--muted);
@@ -343,6 +351,7 @@
   .body {
     display: grid;
     grid-template-rows: minmax(0, 72px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
     min-height: 0;
   }
@@ -375,6 +384,7 @@
   }
   .text {
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     margin: 0;
   }
   h4 {
@@ -382,12 +392,13 @@
   }
   dl {
     display: grid;
-    grid-template-columns: max-content 1fr;
+    grid-template-columns: fit-content(40%) minmax(0, 1fr);
     gap: 2px 12px;
     margin: 0;
   }
   dt {
     color: var(--muted);
+    overflow-wrap: anywhere;
   }
   dd {
     margin: 0;
@@ -398,6 +409,7 @@
     margin: 0;
     color: var(--text);
     text-align: left;
+    overflow-wrap: anywhere;
   }
   .oneline p {
     margin: 4px 0 0;
@@ -416,9 +428,11 @@
     margin: 0;
     font: 12px/1.5 var(--mono);
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   footer {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
   footer p {
@@ -433,6 +447,7 @@
   .notice {
     color: var(--green);
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .notice.error {
     color: var(--red);
@@ -448,6 +463,7 @@
   .hints {
     color: var(--muted);
     font-size: 12px;
+    overflow-wrap: anywhere;
   }
   .button[aria-pressed="true"] {
     border-color: var(--accent);

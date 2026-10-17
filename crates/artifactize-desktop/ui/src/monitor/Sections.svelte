@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Outcome → Waits for → What → Provenance → Technical. A peek shows Outcome and Waits for.
+  // Outcome → Waits for → What → Provenance → Technical, wrapped to the width they get. A peek
+  // shows Outcome and Waits for.
   import type { SectionView } from "../ipc/client";
 
   let {
@@ -96,12 +97,13 @@
   }
   dl {
     display: grid;
-    grid-template-columns: max-content 1fr;
+    grid-template-columns: fit-content(40%) minmax(0, 1fr);
     gap: 4px 16px;
     margin: 0;
   }
   dt {
     color: var(--muted);
+    overflow-wrap: anywhere;
   }
   dd {
     margin: 0;
@@ -112,6 +114,7 @@
     list-style: none;
     margin: 0;
     padding: 0;
+    overflow-wrap: anywhere;
   }
   .pending {
     padding-left: 18px;

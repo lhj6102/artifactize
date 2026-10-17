@@ -108,14 +108,13 @@
     <div class="spacer"></div>
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
     <Badge counts={browse.view?.badge ?? []} />
-    {#if app.launch}<span class="muted" title="Reviewer">{app.launch.reviewer}</span>{/if}
+    {#if app.launch}<span class="muted" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
     <button
       class="button"
       aria-pressed={app.screen === "settings"}
-      onclick={() => app.show("settings")}
-      title="Accounts, keys, models and the remote store (Ctrl+,)">Settings</button
+      onclick={() => app.show("settings")}>Settings</button
     >
-    <button class="button" onclick={() => (app.palette = true)} title="Command palette">
+    <button class="button" onclick={() => (app.palette = true)}>
       Commands <kbd>Ctrl+K</kbd>
     </button>
   </header>
@@ -146,9 +145,11 @@
 />
 
 <style>
+  /* Nothing a screen shows widens the window's layout. */
   .app {
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     height: 100%;
   }
   .bar {

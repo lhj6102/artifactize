@@ -59,21 +59,28 @@
     margin: 0 0 10px;
     padding: 0 var(--pad);
     font-weight: 500;
+    overflow-wrap: anywhere;
   }
+  /* Sizes flow from the Detail down: every column is at most the width it is given. */
   .full {
     height: 100%;
     display: grid;
     grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
     outline: none;
     min-height: 0;
   }
   .split {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--gap);
     min-height: 0;
   }
   .split.logs {
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  }
+  .split > div {
+    min-width: 0;
   }
   .evidence {
     padding: 0 var(--pad) 12px;
@@ -83,11 +90,13 @@
     margin: 0 0 6px;
     font-size: 12px;
     color: var(--accent);
+    overflow-wrap: anywhere;
   }
   pre {
     margin: 0;
     font: 12px/1.5 var(--mono);
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     background: var(--surface-2);
     border-radius: var(--radius);
     padding: 10px 12px;

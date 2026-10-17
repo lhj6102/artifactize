@@ -346,8 +346,8 @@
       >
         {#snippet actions()}
           {#if page > 1 || next !== null}
-            <button class="button small" disabled={r.previous.length === 0} onclick={newer} title="Newer requests (PgUp)">‹ Newer</button>
-            <button class="button small" disabled={next === null} onclick={older} title="Older requests (PgDn)">Older ›</button>
+            <button class="button small" disabled={r.previous.length === 0} onclick={newer}>‹ Newer</button>
+            <button class="button small" disabled={next === null} onclick={older}>Older ›</button>
           {/if}
           <button class="button small" onclick={() => (r.asking = true)}>Open ID <kbd>Ctrl+O</kbd></button>
         {/snippet}
@@ -420,7 +420,7 @@
             {#if r.record.profile === "agent"}
               <button class="button small" onclick={() => (r.details = !r.details)} aria-pressed={r.details}>Details <kbd>d</kbd></button>
             {/if}
-            <button class="button small" onclick={() => void back()} title="Back to the list">Close <kbd>Esc</kbd></button>
+            <button class="button small" onclick={() => void back()}>Close <kbd>Esc</kbd></button>
           {/if}
         {/snippet}
         {#if r.focus === "detail" && r.record}

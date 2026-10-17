@@ -14,13 +14,11 @@
   } from "../ipc/client";
   import { plain } from "../shell/keys";
 
-  let { id, peek = false }: { id: string; peek?: boolean } = $props();
+  let { id }: { id: string } = $props();
   const commands = useIpc();
   const t = new TranscriptState();
   setTranscriptState(t);
 
-  /** Rows of a peek: enough to find the last line of a running Agent. */
-  const PEEK_ROWS = 6;
   /** How often a missed append or removal is checked, as in the terminal monitor. */
   const PROBE_MS = 5000;
   /** A wheel step moves three rows, like the terminal's. */
@@ -34,7 +32,7 @@
     const height = cell.height || 18;
     const box = t.pane.getBoundingClientRect();
     const columns = Math.max(Math.floor(box.width / width) - 1, 10) || 10;
-    const rows = peek ? PEEK_ROWS : Math.max(Math.floor(box.height / height), 3);
+    const rows = Math.max(Math.floor(box.height / height), 3);
     const changed = columns !== t.size.columns || rows !== t.size.rows;
     t.size = { columns, rows };
     return changed;
@@ -154,63 +152,53 @@
   }
 
   function wheel(event: WheelEvent) {
-    if (peek || event.deltaY === 0) return;
+    if (event.deltaY === 0) return;
     event.preventDefault();
     void ask({ kind: event.deltaY > 0 ? "down" : "up", rows: WHEEL_ROWS });
   }
-
-  const last = $derived(
-    t.view?.status ?? t.view?.rows.map((row) => row.text.trim()).findLast((text) => text) ?? "reading the session…",
-  );
 </script>
 
-{#if peek}
-  <p class="last" bind:this={t.pane}>
+<div class="transcript">
+  <!-- A live log that scrolls by keys and wheel, since it holds only the visible rows. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="window"
+    tabindex="0"
+    role="log"
+    aria-label="Agent transcript"
+    bind:this={t.pane}
+    onkeydown={keydown}
+    onwheel={wheel}
+  >
     <span class="probe" bind:this={t.probe} aria-hidden="true">MMMMMMMMMM</span>
-    <strong>Last:</strong> {t.unavailable ?? last}
-  </p>
-{:else}
-  <div class="transcript">
-    <!-- A live log that scrolls by keys and wheel, since it holds only the visible rows. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-    <div
-      class="window"
-      tabindex="0"
-      role="log"
-      aria-label="Agent transcript"
-      bind:this={t.pane}
-      onkeydown={keydown}
-      onwheel={wheel}
-    >
-      <span class="probe" bind:this={t.probe} aria-hidden="true">MMMMMMMMMM</span>
-      {#if t.unavailable}
-        <p class="status">{t.unavailable}</p>
-      {:else if t.view?.status && t.view.rows.length === 0}
-        <p class="status">{t.view.status}</p>
-      {:else if t.view}
-        {#each t.view.rows as row, at (at)}
-          {#if row.group}
-            <button class="row group" onclick={() => void ask(null, at)}>{row.text || " "}</button>
-          {:else}
-            <div class="row" class:thinking={row.thinking}>{row.text || " "}</div>
-          {/if}
-        {/each}
-      {:else}
-        <p class="status">Loading session…</p>
-      {/if}
-    </div>
-    <footer>
-      <button class="button small" onclick={() => void ask({ kind: "top" })}>Top <kbd>Home</kbd></button>
-      <button class="button small" onclick={() => void ask({ kind: "bottom" })}>Bottom <kbd>End</kbd></button>
-      <span class="indicator">{t.view?.indicator ?? ""}</span>
-    </footer>
+    {#if t.unavailable}
+      <p class="status">{t.unavailable}</p>
+    {:else if t.view?.status && t.view.rows.length === 0}
+      <p class="status">{t.view.status}</p>
+    {:else if t.view}
+      {#each t.view.rows as row, at (at)}
+        {#if row.group}
+          <button class="row group" onclick={() => void ask(null, at)}>{row.text || " "}</button>
+        {:else}
+          <div class="row" class:thinking={row.thinking}>{row.text || " "}</div>
+        {/if}
+      {/each}
+    {:else}
+      <p class="status">Loading session…</p>
+    {/if}
   </div>
-{/if}
+  <footer>
+    <button class="button small" onclick={() => void ask({ kind: "top" })}>Top <kbd>Home</kbd></button>
+    <button class="button small" onclick={() => void ask({ kind: "bottom" })}>Bottom <kbd>End</kbd></button>
+    <span class="indicator">{t.view?.indicator ?? ""}</span>
+  </footer>
+</div>
 
 <style>
   .transcript {
     display: grid;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
   }
@@ -267,13 +255,5 @@
     margin-left: auto;
     color: var(--muted);
     font: 11px var(--mono);
-  }
-  .last {
-    position: relative;
-    margin: 0;
-    padding: 0 var(--pad) 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 </style>

@@ -1,48 +1,40 @@
 <script lang="ts">
   // The selected Run: its headline (a click opens the Run's Detail), what needs attention, and
-  // the graph of its Artifacts. The graph takes the keys it moves and pops up evals with; what it
-  // leaves reaches here.
+  // the graph of its Artifacts (a click on one opens its Detail). Esc closes an open Detail,
+  // else steps back to the Runs.
   import { getAppState } from "../shell/app.svelte";
-  import type { Tree } from "./tree.svelte";
   import Panel from "../shell/Panel.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
   let {
-    tree,
     focused,
     notice,
-    popup = $bindable(null),
-    active = true,
+    noticeOpen = $bindable(false),
+    opened = null,
     element = $bindable(),
     onfocus,
     onopen,
+    onclose,
     onrun,
     onback,
-    onblocker,
-    onjumpback,
-    onready,
-    onhover,
   }: {
-    tree: Tree;
     focused: boolean;
     /** What went wrong last, shown above the graph. */
     notice: string | null;
-    /** The Artifact whose evals pop up beside it. */
-    popup?: string | null;
-    /** The Monitor is the shown screen. */
-    active?: boolean;
+    /** The notice shows in full. */
+    noticeOpen?: boolean;
+    /** The Artifact whose Detail is open. */
+    opened?: string | null;
     element?: HTMLElement;
     onfocus: () => void;
-    /** Open the Detail of the selection. */
-    onopen: () => void;
+    /** Open the Detail of an Artifact. */
+    onopen: (id: string) => void;
+    /** Close the open Detail. */
+    onclose: () => void;
     /** Open the Detail of the Run. */
     onrun: () => void;
     onback: () => void;
-    onblocker: () => void;
-    onjumpback: () => void;
-    onready: (focus: (() => boolean) | null) => void;
-    onhover: (path: string[] | null) => void;
   } = $props();
   const { browse } = getAppState();
 
@@ -50,21 +42,18 @@
 
   function keydown(event: KeyboardEvent) {
     if (plain(event, "Escape")) onback();
-    else if (plain(event, "o")) onopen();
-    else if (plain(event, "b")) onblocker();
-    else if (plain(event, "Backspace")) onjumpback();
     else if (plain(event, "r")) browse.refresh();
     else return;
     event.preventDefault();
   }
 </script>
 
-<Panel title={run ? `Run ${run.id}` : "Run"} {focused} {notice} bind:element {onfocus} onkeydown={keydown}>
+<Panel title={run ? `Run ${run.id}` : "Run"} {focused} {notice} bind:noticeOpen bind:element {onfocus} onkeydown={keydown}>
   {#if !run}
     <p class="empty">Select a Run.</p>
   {:else}
     <div class="run">
-      <button class="headline" onclick={onrun} title="Open the Run's Detail">
+      <button class="headline" onclick={onrun}>
         <span class="status {tone(run.mark.status)}">{run.mark.glyph} {run.mark.status}</span>
         <span class="text">{run.headline}</span>
       </button>
@@ -74,7 +63,7 @@
             <li><span class={tone(line.mark.status)}>{line.mark.glyph}</span> {line.text}</li>
           {/each}
           {#if run.more > 0}
-            <li class="more">+{run.more} more · <kbd>!</kbd> visits each</li>
+            <li class="more">+{run.more} more</li>
           {/if}
         </ul>
       {/if}
@@ -83,18 +72,7 @@
         {#await import("./RunGraph.svelte")}
           <p class="empty">Loading the graph…</p>
         {:then { default: RunGraph }}
-          <RunGraph
-            run={run.id}
-            revision={browse.revision}
-            tree={run.tree}
-            selected={tree.selected}
-            bind:popup
-            {active}
-            onselect={(path) => tree.select(path)}
-            {onopen}
-            {onready}
-            {onhover}
-          />
+          <RunGraph run={run.id} revision={browse.revision} {opened} {onopen} {onclose} />
         {/await}
       </div>
     </div>
