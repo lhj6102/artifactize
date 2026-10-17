@@ -704,6 +704,9 @@ export type TranscriptView = {
 	rows: Row[],
 	/**  Row position, bottom or history, following or paused. */
 	indicator: string,
+	/**  The first shown row and how many laid-out rows there are: the scrollbar's position. */
+	top: number,
+	total: number,
 	status: string | null,
 	following: boolean,
 	/**  More indexing or layout is pending; ask again for the rest. */

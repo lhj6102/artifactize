@@ -155,6 +155,54 @@
     event.stopPropagation();
   }
 
+  /** The scrollbar: the shown rows' share of every laid-out row, and where they start. It is
+   * drawn here because the pane holds only the visible rows. */
+  const bar = $derived.by(() => {
+    const view = t.view;
+    const shown = t.size.rows;
+    if (!view || view.total <= shown || shown === 0) return null;
+    const size = Math.max(shown / view.total, 0.05);
+    const start = (view.top / (view.total - shown)) * (1 - size);
+    return { size, start: Math.min(Math.max(start, 0), 1 - size) };
+  });
+
+  /** Move the shown rows so they start at `row`. */
+  function scrollTo(row: number) {
+    const view = t.view;
+    if (!view) return;
+    const target = Math.round(Math.min(Math.max(row, 0), Math.max(view.total - t.size.rows, 0)));
+    const delta = target - view.top;
+    if (delta > 0) void ask({ kind: "down", rows: delta });
+    else if (delta < 0) void ask({ kind: "up", rows: -delta });
+  }
+
+  /** Drag the thumb, or press the track to move there: the row under the pointer's share. */
+  function drag(event: PointerEvent) {
+    const track = event.currentTarget as HTMLElement;
+    const view = t.view;
+    if (!view || !bar) return;
+    event.preventDefault();
+    track.setPointerCapture(event.pointerId);
+    const box = track.getBoundingClientRect();
+    const thumb = bar.size * box.height;
+    const onThumb = (event.target as HTMLElement).classList.contains("thumb");
+    // A press on the thumb keeps its grip; one on the track centres the thumb there.
+    const grip = onThumb ? event.clientY - box.top - bar.start * box.height : thumb / 2;
+    const follow = (move: PointerEvent) => {
+      const share = (move.clientY - box.top - grip) / Math.max(box.height - thumb, 1);
+      scrollTo(share * (view.total - t.size.rows));
+    };
+    follow(event);
+    const stop = () => {
+      track.removeEventListener("pointermove", follow);
+      track.removeEventListener("pointerup", stop);
+      track.removeEventListener("pointercancel", stop);
+    };
+    track.addEventListener("pointermove", follow);
+    track.addEventListener("pointerup", stop);
+    track.addEventListener("pointercancel", stop);
+  }
+
   function wheel(event: WheelEvent) {
     if (event.deltaY === 0) return;
     event.preventDefault();
@@ -189,6 +237,11 @@
       {/each}
     {:else}
       <p class="status">Loading session…</p>
+    {/if}
+    {#if bar}
+      <div class="track" aria-hidden="true" onpointerdown={drag}>
+        <div class="thumb" style:top="{bar.start * 100}%" style:height="{bar.size * 100}%"></div>
+      </div>
     {/if}
   </div>
   <footer>
@@ -257,6 +310,25 @@
     align-items: center;
     padding: 6px var(--pad);
     border-top: 1px solid var(--border);
+  }
+  /* Thin like the other panes' scrollbars; the thumb darkens under the pointer. */
+  .track {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 10px;
+    cursor: default;
+  }
+  .thumb {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    border-radius: 4px;
+    background: var(--border);
+  }
+  .track:hover .thumb {
+    background: var(--muted);
   }
   .indicator {
     margin-left: auto;

@@ -34,7 +34,7 @@ describe("Transcript", () => {
         }
         if (cmd === "transcript_window") {
           windows.push(args);
-          return { rows: [{ text: "Reviewing the input…", group: false, thinking: false }], indicator: "1/1 bottom following", status: null, following: true, loading: false };
+          return { rows: [{ text: "Reviewing the input…", group: false, thinking: false }], indicator: "1/1 bottom following", top: 0, total: 1, status: null, following: true, loading: false };
         }
         return null;
       },
@@ -59,11 +59,11 @@ describe("Transcript", () => {
           if ((args as { handle: number }).handle === 7) {
             oldWindows += 1;
             if (oldWindows === 1) {
-              return { rows: [{ text: "Rows of the old session", group: false, thinking: false }], indicator: "1/1 bottom following", status: null, following: true, loading: false };
+              return { rows: [{ text: "Rows of the old session", group: false, thinking: false }], indicator: "1/1 bottom following", top: 0, total: 1, status: null, following: true, loading: false };
             }
             return new Promise((_, reject) => pending.push({ reject }));
           }
-          return { rows: [{ text: "Fresh rows of the new session", group: false, thinking: false }], indicator: "1/1 bottom following", status: null, following: true, loading: false };
+          return { rows: [{ text: "Fresh rows of the new session", group: false, thinking: false }], indicator: "1/1 bottom following", top: 0, total: 1, status: null, following: true, loading: false };
         }
         return null;
       },
@@ -103,7 +103,7 @@ describe("Transcript", () => {
           // The backend lays the line out in the columns asked for, as a terminal does.
           asked = (args as { columns: number }).columns;
           const rows = line.match(new RegExp(`.{1,${asked}}`, "g"))!.map((text) => ({ text, group: false, thinking: false }));
-          return { rows, indicator: "1/1 bottom following", status: null, following: true, loading: false };
+          return { rows, indicator: "1/1 bottom following", top: 0, total: 1, status: null, following: true, loading: false };
         }
         return null;
       },
@@ -120,5 +120,34 @@ describe("Transcript", () => {
       boxes.mockRestore();
       sheet.remove();
     }
+  });
+
+  it("draws a scrollbar for the rows it holds out of all laid-out rows, and none when they all fit", async () => {
+    let total = 300;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "transcript_open") return { kind: "local", handle: 11, session: "s-11" };
+        if (cmd === "transcript_window") {
+          // The pane holds three rows here (jsdom lays nothing out); the log has `total`.
+          const rows = ["a", "b", "c"].map((text) => ({ text, group: false, thinking: false }));
+          return { rows, indicator: "", top: 150, total, status: null, following: false, loading: false };
+        }
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    const { unmount } = render(Transcript, { id: "run-a-5" });
+    const log = await screen.findByRole("log", { name: "Agent transcript" });
+    await waitFor(() => expect(log.querySelector(".thumb")).not.toBeNull());
+    const thumb = log.querySelector<HTMLElement>(".thumb")!;
+    // A short share keeps a thumb that can be grabbed; it sits halfway down.
+    expect(thumb.style.height).toBe("5%");
+    expect(parseFloat(thumb.style.top)).toBeCloseTo(47.98, 1);
+    unmount();
+    total = 3;
+    render(Transcript, { id: "run-a-5" });
+    const fitting = await screen.findByRole("log", { name: "Agent transcript" });
+    await waitFor(() => expect(fitting.querySelectorAll(".row").length).toBe(3));
+    expect(fitting.querySelector(".track")).toBeNull();
   });
 });

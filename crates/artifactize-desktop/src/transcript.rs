@@ -65,6 +65,9 @@ pub struct TranscriptView {
     pub rows: Vec<Row>,
     /// Row position, bottom or history, following or paused.
     pub indicator: String,
+    /// The first shown row and how many laid-out rows there are: the scrollbar's position.
+    pub top: u32,
+    pub total: u32,
     pub status: Option<String>,
     pub following: bool,
     /// More indexing or layout is pending; ask again for the rest.
@@ -214,6 +217,8 @@ pub async fn transcript_window(
             })
             .collect(),
         indicator: live.indicator(),
+        top: u32::try_from(live.scroll.top).unwrap_or(u32::MAX),
+        total: u32::try_from(live.scroll.total).unwrap_or(u32::MAX),
         status: window.status.clone(),
         following: live.scroll.mode == artifactize_core::agent::session::document::Mode::Following,
         loading: window.loading,
