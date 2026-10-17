@@ -41,7 +41,7 @@ pub(super) fn machines<'a>(
 }
 
 /// Longest remaining dependency path is counted in eval obligations, not wall-clock
-/// guesses. Eval SCC peers do not gate one another; each Eval uses its own references.
+/// guesses. Artifact cycle peers do not gate one another; each Eval uses its own references.
 pub(super) fn order(
     graph: &Graph<'_>,
     requests: &[Request],

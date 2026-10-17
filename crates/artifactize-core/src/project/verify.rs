@@ -344,6 +344,11 @@ pub(crate) async fn execute(
         let eval = &evaluation.evals[request.eval_id.as_str()];
         if request.status() == crate::types::RequestStatus::Blocked && !cancellation.is_cancelled()
         {
+            // A block saved mid-Run named the causes known then; the settled Run names all.
+            if eval.status == EvalStatus::Blocked {
+                request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
+                request.blocked_reason = Some(gate_reason(eval));
+            }
             continue;
         }
         if cancellation.is_cancelled() {
@@ -555,19 +560,16 @@ pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {
 
 /// The same gate explanation is saved during scheduling and at Run settlement.
 pub(crate) fn gate_reason(eval: &crate::graph::EvalEvaluation<'_>) -> String {
-    format!(
-        "{}: {}",
-        if eval.status == EvalStatus::Blocked {
-            "Dependency verdict RED"
-        } else {
-            "Waiting for current GREEN dependency evidence"
-        },
-        eval.unmet_gates
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
+    eval.blocked_reason().unwrap_or_else(|| {
+        format!(
+            "Waiting for current GREEN dependency evidence: {}",
+            eval.unmet_gates
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })
 }
 
 /// Fingerprints and remote I/O can take time; check the accepted declarations again at the

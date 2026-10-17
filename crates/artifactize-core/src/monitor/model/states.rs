@@ -1,7 +1,8 @@
 //! Eval view states: what one tree row shows, derived from the saved definitions and the
 //! current request states with the readiness rules of [`crate::graph`].
 //!
-//! Each Eval has its own references and gates; only actual Eval-cycle peers bypass one another.
+//! Each Eval has its own references and gates; its own Artifact and that Artifact's cycle
+//! peers never gate it.
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -261,7 +262,7 @@ impl<'a> Index<'a> {
                 (eval, deps)
             })
             .collect();
-        let execution_order = schedule.components.into_iter().flatten().collect();
+        let execution_order = schedule.order;
         Self {
             order,
             position,
@@ -277,7 +278,7 @@ impl<'a> Index<'a> {
     }
 }
 
-/// Lazily derived views over one Run, using the same Eval condensation as live scheduling.
+/// Lazily derived views over one Run, using the same Eval gates as live scheduling.
 pub(super) struct States<'a> {
     run: &'a crate::store::Run,
     #[cfg(any(test, feature = "test-support"))]
@@ -430,7 +431,7 @@ impl<'a> States<'a> {
     /// gates are unmet still waits or is blocked, and never fulfils a downstream gate.
     pub fn effective(&self, eval: &'a EvalId) -> EvalStatus {
         if let Some(status) = self.effective.borrow().get(eval) {
-            // The Eval condensation is acyclic; a revisit cannot supply a verdict.
+            // Eval gates are acyclic; a revisit cannot supply a verdict.
             return status.unwrap_or(EvalStatus::Wait);
         }
         self.effective.borrow_mut().insert(eval, None);
@@ -561,7 +562,7 @@ impl<'a> States<'a> {
         ))
     }
 
-    /// Only this Eval's external gates contribute waits; internal cycle references do not.
+    /// Only this Eval's gates contribute waits; its own Artifact and cycle peers never do.
     fn unmet(&self, eval: &EvalId) -> Vec<ArtifactName> {
         let mut artifacts: Vec<_> = self
             .index
