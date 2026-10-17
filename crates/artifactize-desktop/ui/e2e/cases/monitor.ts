@@ -220,13 +220,15 @@ export const scenarios: Scenario[] = [
       // What the application prints next joins the same run, then its exit ends it.
       finishTalk(fixture);
       await browser.waitUntil(async () => (await runOf("talk"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the stand-in's exit logged" });
-      assert.deepEqual(await runOf("talk"), [
-        { text: "▶ HH:MM:SS · talk · release", kind: "start", error: false },
-        { text: "opened the stand-in", kind: "line", error: false },
-        { text: "chose: B", kind: "line", error: false },
-        { text: "warning: B is slower", kind: "line", error: true },
-        { text: "■ exit 0", kind: "end", error: false },
-      ]);
+      // stdout and stderr are separate pipes: each keeps its own order, but nothing orders
+      // one against the other, so the lines are compared per stream.
+      const rows = (await runOf("talk"))!;
+      assert.deepEqual(rows.at(0), { text: "▶ HH:MM:SS · talk · release", kind: "start", error: false });
+      assert.deepEqual(rows.at(-1), { text: "■ exit 0", kind: "end", error: false });
+      const lines = rows.slice(1, -1);
+      assert.ok(lines.every((row) => row.kind === "line"), "only output lines between the run's start and end");
+      assert.deepEqual(lines.filter((row) => !row.error).map((row) => row.text), ["opened the stand-in", "chose: B"]);
+      assert.deepEqual(lines.filter((row) => row.error).map((row) => row.text), ["warning: B is slower"]);
       assert.equal(await browser.$("#field-comment").getValue(), "chose B", "the form kept what was typed while the log grew");
       // The log follows its newest line.
       const followed = await browser.execute(() => {
