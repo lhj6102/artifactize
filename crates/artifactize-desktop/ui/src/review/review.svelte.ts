@@ -58,6 +58,16 @@ export class FormDraft {
     await this.#ask((draft) => call(this.ipc.humanEditField(this.id, draft, name, value)));
   }
 
+  /** Add an empty item to the list field `name`; the library builds it. */
+  async add(name: string): Promise<void> {
+    await this.#ask((draft) => call(this.ipc.humanAddItem(this.id, draft, name)));
+  }
+
+  /** Remove item `item` of the list field `name`; the library keeps one to type in. */
+  async remove(name: string, item: number): Promise<void> {
+    await this.#ask((draft) => call(this.ipc.humanRemoveItem(this.id, draft, name, item)));
+  }
+
   async #ask(edit: (draft: Draft) => Promise<Draft>): Promise<void> {
     const mine = ++this.#edits;
     try {

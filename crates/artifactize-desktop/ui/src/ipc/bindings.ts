@@ -32,6 +32,16 @@ export const commands = {
 	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
 	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
 	/**
+	 *  `draft` of request `id` with an empty item added to its list field `name`, as the library's
+	 *  form adds it.
+	 */
+	humanAddItem: (id: string, draft: Draft, name: string) => typedError<Draft, Failure>(__TAURI_INVOKE("human_add_item", { id, draft, name })),
+	/**
+	 *  `draft` of request `id` with item `item` removed from its list field `name`; the library's
+	 *  form keeps one empty item.
+	 */
+	humanRemoveItem: (id: string, draft: Draft, name: string, item: number) => typedError<Draft, Failure>(__TAURI_INVOKE("human_remove_item", { id, draft, name, item })),
+	/**
 	 *  Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
 	 *  for release on quit, whichever screen took it.
 	 */

@@ -530,6 +530,35 @@ pub async fn human_edit_field(
     form::edit_field(&opened(&app, &id)?.request, draft, &name, value)
 }
 
+/// `draft` of request `id` with an empty item added to its list field `name`, as the library's
+/// form adds it.
+#[tauri::command]
+#[specta::specta]
+pub async fn human_add_item(
+    app: tauri::State<'_, App>,
+    id: RequestKey,
+    draft: Draft,
+    name: String,
+) -> Result<Draft, Failure> {
+    let id = id.into_inner();
+    form::add_item(&opened(&app, &id)?.request, draft, &name)
+}
+
+/// `draft` of request `id` with item `item` removed from its list field `name`; the library's
+/// form keeps one empty item.
+#[tauri::command]
+#[specta::specta]
+pub async fn human_remove_item(
+    app: tauri::State<'_, App>,
+    id: RequestKey,
+    draft: Draft,
+    name: String,
+    item: u32,
+) -> Result<Draft, Failure> {
+    let id = id.into_inner();
+    form::remove_item(&opened(&app, &id)?.request, draft, &name, item)
+}
+
 /// Submit `draft` for request `id` and publish it like `request submit`. A result the
 /// schema rejects keeps the request waiting and fails as `invalid`.
 #[tauri::command]

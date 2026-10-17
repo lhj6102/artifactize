@@ -232,6 +232,44 @@ pub fn edit_field(
     Ok(draft_of(verdict, &filled(request, draft)?))
 }
 
+/// `draft` with an empty item added to the list field `name`: an empty text, or a group of
+/// the list's fields as the library's form builds it.
+pub fn add_item(request: &Request, draft: Draft, name: &str) -> Result<Draft, Failure> {
+    edit_list(request, draft, name, |form, index| form.add(index))
+}
+
+/// `draft` with item `item` removed from the list field `name`; the library's form keeps one
+/// empty item to type in.
+pub fn remove_item(
+    request: &Request,
+    draft: Draft,
+    name: &str,
+    item: u32,
+) -> Result<Draft, Failure> {
+    edit_list(request, draft, name, |form, index| {
+        form.remove(index, item as usize)
+    })
+}
+
+fn edit_list(
+    request: &Request,
+    draft: Draft,
+    name: &str,
+    edit: impl FnOnce(&mut Form, usize),
+) -> Result<Draft, Failure> {
+    let verdict = draft.verdict;
+    let mut form = filled(request, draft)?;
+    let index = form
+        .fields
+        .iter()
+        .position(|field| {
+            field.name == name && matches!(field.input, Input::List(_) | Input::Groups { .. })
+        })
+        .ok_or_else(|| Failure::Missing(format!("{name} is not a list of this form.")))?;
+    edit(&mut form, index);
+    Ok(draft_of(verdict, &form))
+}
+
 /// The complete result of `draft`, or the form's own error for it.
 pub fn result(request: &Request, draft: Draft) -> Result<serde_json::Value, Failure> {
     filled(request, draft)?.result().map_err(Failure::Invalid)

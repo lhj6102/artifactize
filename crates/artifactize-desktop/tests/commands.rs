@@ -38,6 +38,7 @@ additionalProperties = false
 [evals.signoff.fail_schema]
 type = "object"
 properties.reason = { type = "string", minLength = 3 }
+properties.steps = { type = "array", items = { type = "string" } }
 required = ["reason"]
 additionalProperties = false
 "#;
@@ -326,6 +327,30 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let red = invoke(&window, "human_form", json!({"id": id, "verdict": "RED"})).unwrap();
     assert_eq!(red["fields"][0]["name"], "reason");
     assert_eq!(red["fields"][0]["input"], json!({"kind": "text"}));
+    // The library's form adds and removes a list's items and keeps one to type in.
+    let steps = |draft: &Value| draft["fields"][1][1].clone();
+    let draft = json!({"verdict": "RED", "fields": [["reason", {"kind": "text", "value": ""}], ["steps", {"kind": "list", "value": ["a"]}]]});
+    let added = invoke(
+        &window,
+        "human_add_item",
+        json!({"id": id, "draft": draft, "name": "steps"}),
+    )
+    .unwrap();
+    assert_eq!(steps(&added), json!({"kind": "list", "value": ["a", ""]}));
+    let removed = invoke(
+        &window,
+        "human_remove_item",
+        json!({"id": id, "draft": added, "name": "steps", "item": 0}),
+    )
+    .unwrap();
+    assert_eq!(steps(&removed), json!({"kind": "list", "value": [""]}));
+    let removed = invoke(
+        &window,
+        "human_remove_item",
+        json!({"id": id, "draft": removed, "name": "steps", "item": 0}),
+    )
+    .unwrap();
+    assert_eq!(steps(&removed), json!({"kind": "list", "value": [""]}));
     let invalid = invoke(
         &window,
         "human_submit",

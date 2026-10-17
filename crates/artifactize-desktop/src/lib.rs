@@ -45,6 +45,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             human::human_open,
             human::human_form,
             human::human_edit_field,
+            human::human_add_item,
+            human::human_remove_item,
             human::human_claim,
             human::human_run,
             human::human_cancel,

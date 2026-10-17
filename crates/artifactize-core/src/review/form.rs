@@ -356,34 +356,44 @@ impl Form {
         }
     }
 
-    /// Add an empty item to the group list of field `index`; the selection moves into it.
+    /// Add an empty item to the list of field `index`: an empty text to a list of strings, an
+    /// empty group to a list of groups, which the selection moves into.
     pub fn add(&mut self, index: usize) {
-        let Some(Input::Groups { fields, items }) =
-            self.fields.get_mut(index).map(|field| &mut field.input)
-        else {
-            return;
-        };
-        items.push(fields.clone());
-        let item = items.len() - 1;
-        if let Some(at) = self.rows().iter().position(
-            |row| matches!(row, Row::Item { field, item: i, .. } if *field == index && *i == item),
-        ) {
-            self.selected = at;
+        match self.fields.get_mut(index).map(|field| &mut field.input) {
+            Some(Input::List(items)) => items.push(String::new()),
+            Some(Input::Groups { fields, items }) => {
+                items.push(fields.clone());
+                let item = items.len() - 1;
+                if let Some(at) = self.rows().iter().position(
+                    |row| matches!(row, Row::Item { field, item: i, .. } if *field == index && *i == item),
+                ) {
+                    self.selected = at;
+                }
+            }
+            _ => {}
         }
     }
 
-    /// Remove item `item` of the group list of field `index`; one empty item always stays.
+    /// Remove item `item` of the list of field `index`; one empty item always stays to type in.
     pub fn remove(&mut self, index: usize, item: usize) {
-        let Some(Input::Groups { fields, items }) =
-            self.fields.get_mut(index).map(|field| &mut field.input)
-        else {
-            return;
-        };
-        if item < items.len() {
-            items.remove(item);
-        }
-        if items.is_empty() {
-            items.push(fields.clone());
+        match self.fields.get_mut(index).map(|field| &mut field.input) {
+            Some(Input::List(items)) => {
+                if item < items.len() {
+                    items.remove(item);
+                }
+                if items.is_empty() {
+                    items.push(String::new());
+                }
+            }
+            Some(Input::Groups { fields, items }) => {
+                if item < items.len() {
+                    items.remove(item);
+                }
+                if items.is_empty() {
+                    items.push(fields.clone());
+                }
+            }
+            _ => return,
         }
         self.selected = self.selected.min(self.rows().len().saturating_sub(1));
     }
@@ -800,6 +810,30 @@ mod tests {
             form.result().unwrap(),
             json!({"kind": "review", "verdict": "RED", "findings": []})
         );
+    }
+
+    #[test]
+    fn a_list_of_strings_adds_and_removes_items_and_keeps_one_to_type_in() {
+        let mut form = Form::new(
+            Verdict::Green,
+            Some(&json!({"properties": {"notes": {"type": "array", "items": {"type": "string"}}}})),
+        )
+        .unwrap();
+        form.paste("a");
+        form.add(0);
+        form.paste("b");
+        assert_eq!(
+            form.fields[0].input,
+            Input::List(vec!["a".into(), "b".into()])
+        );
+        form.remove(0, 0);
+        assert_eq!(
+            form.result().unwrap(),
+            json!({"verdict": "GREEN", "notes": ["b"]})
+        );
+        form.remove(0, 0);
+        assert_eq!(form.fields[0].input, Input::List(vec![String::new()]));
+        assert_eq!(form.result().unwrap(), json!({"verdict": "GREEN"}));
     }
 
     #[test]

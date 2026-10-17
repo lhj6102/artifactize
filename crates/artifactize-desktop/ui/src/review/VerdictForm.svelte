@@ -26,35 +26,16 @@
   /** An optional field says so in grey inside its empty input. */
   const placeholder = (required: boolean) => (required ? undefined : "Optional");
   const items = (value: FieldValue | undefined) => (value?.kind === "list" ? value.value : []);
-  /** A list's items with one edited, added or removed; it always keeps one item to type in. */
+  /** A list with one item edited; adding and removing items is the library's. */
   function setItems(name: string, next: string[]) {
-    set(name, { kind: "list", value: next.length > 0 ? next : [""] });
+    set(name, { kind: "list", value: next });
   }
 
   type Group = [string, FieldValue][];
   const groups = (value: FieldValue | undefined): Group[] => (value?.kind === "groups" ? value.value : []);
-  /** A group's empty value of `field`, before the form answers with its own. */
-  function blank(field: FormField): FieldValue {
-    switch (field.input.kind) {
-      case "fixed":
-        return { kind: "fixed" };
-      case "bool":
-        return { kind: "bool", value: null };
-      case "choice":
-        return { kind: "choice", value: null };
-      case "list":
-        return { kind: "list", value: [""] };
-      case "groups":
-        return { kind: "groups", value: [] };
-      default:
-        return { kind: field.input.kind, value: "" };
-    }
-  }
-  /** The groups with one edited, added or removed; one empty group always stays to type in. */
-  function setGroups(field: FormField, next: Group[]) {
-    const fields = field.input.kind === "groups" ? field.input.fields : [];
-    const empty: Group = fields.map((sub) => [sub.name, blank(sub)]);
-    set(field.name, { kind: "groups", value: next.length > 0 ? next : [empty] });
+  /** The groups with one group's field edited. */
+  function setGroups(name: string, next: Group[]) {
+    set(name, { kind: "groups", value: next });
   }
   /** `group` with field `name` set to `value`. */
   const within = (group: Group, name: string, value: FieldValue): Group => {
@@ -154,11 +135,11 @@
                   oninput={(event) =>
                     setItems(field.name, list.with(at, (event.currentTarget as HTMLTextAreaElement).value))}
                 ></textarea>
-                <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => setItems(field.name, list.toSpliced(at, 1))}>✕</button>
+                <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}>✕</button>
               </li>
             {/each}
           </ol>
-          <button class="button small add" onclick={() => setItems(field.name, [...list, ""])}>+ Add</button>
+          <button class="button small add" onclick={() => void form.add(field.name)}>+ Add</button>
         {:else if field.input.kind === "groups"}
           {@const subs = entered(field.input.fields)}
           {@const list = groups(value)}
@@ -167,7 +148,7 @@
               <div class="group" role="group" aria-label="{field.name} {at + 1}">
                 <div class="group-head">
                   <span>{field.name} {at + 1}</span>
-                  <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => setGroups(field, list.toSpliced(at, 1))}>✕</button>
+                  <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}>✕</button>
                 </div>
                 {#each subs as sub (sub.name)}
                   {@const id = `field-${field.name}-${at}-${sub.name}`}
@@ -175,17 +156,14 @@
                     <label class="name" for={id} id={sub.input.kind === "bool" ? id : undefined}>
                       {sub.name}{#if sub.required}<span class="required" aria-label="required">*</span>{/if}
                     </label>
-                    {@render scalar(sub, valueIn(group, sub.name), id, (next) => setGroups(field, list.with(at, within(group, sub.name, next))))}
+                    {@render scalar(sub, valueIn(group, sub.name), id, (next) => setGroups(field.name, list.with(at, within(group, sub.name, next))))}
                     {#if sub.hint}<span class="hint">{sub.hint}</span>{/if}
                   </div>
                 {/each}
               </div>
             {/each}
           </div>
-          <button
-            class="button small add"
-            onclick={() => setGroups(field, [...list, (field.input.kind === "groups" ? field.input.fields : []).map((sub) => [sub.name, blank(sub)] as [string, FieldValue])])}
-          >+ Add</button>
+          <button class="button small add" onclick={() => void form.add(field.name)}>+ Add</button>
         {:else}
           {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next))}
         {/if}

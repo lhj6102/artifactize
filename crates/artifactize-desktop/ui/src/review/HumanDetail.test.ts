@@ -45,6 +45,22 @@ function backend(stage: "claim" | "review", submit?: (args: Record<string, unkno
   return calls;
 }
 
+type Edited = { draft: { fields: [string, { kind: string; value: unknown[] }][] }; name: string; item?: number };
+
+/** The library's answer to adding or removing an item of a list: `empty` is the list's new
+ * item, and one is always left to type in. */
+function listed(cmd: string, args: unknown, empty: unknown): unknown {
+  const edit = args as Edited;
+  const items = (value: unknown[]) => {
+    const next = cmd === "human_add_item" ? [...value, empty] : value.toSpliced(edit.item!, 1);
+    return next.length > 0 ? next : [empty];
+  };
+  return {
+    ...edit.draft,
+    fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? { ...value, value: items(value.value) } : value]),
+  };
+}
+
 afterEach(() => {
   cleanup();
   clearMocks();
@@ -224,6 +240,7 @@ describe("HumanDetail", () => {
       calls.push({ cmd, args: args as Record<string, unknown> });
       if (cmd === "human_open") return humanView("review");
       if (cmd === "human_form") return list;
+      if (cmd === "human_add_item" || cmd === "human_remove_item") return listed(cmd, args, "");
       if (cmd === "human_edit_field") {
         const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
         return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
@@ -243,6 +260,11 @@ describe("HumanDetail", () => {
     await user.click(screen.getByRole("button", { name: "Remove change 1" }));
     await waitFor(() => expect((screen.getByLabelText("change 1") as HTMLTextAreaElement).value).toBe("Fix the date"));
     expect(screen.queryByLabelText("change 2")).toBeNull();
+    // The library adds and removes the items; the form asked it each time.
+    expect(calls.filter(({ cmd }) => cmd === "human_add_item" || cmd === "human_remove_item").map(({ cmd, args }) => [cmd, args.name, args.item])).toEqual([
+      ["human_add_item", "change", undefined],
+      ["human_remove_item", "change", 0],
+    ]);
     expect(screen.getByRole("button", { name: "Submit RED" })).toBeTruthy();
   });
 
@@ -312,6 +334,9 @@ describe("HumanDetail", () => {
     mockIPC((cmd, args) => {
       if (cmd === "human_open") return humanView("review");
       if (cmd === "human_form") return findings;
+      if (cmd === "human_add_item" || cmd === "human_remove_item") {
+        return listed(cmd, args, [["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "" }], ["severity", { kind: "choice", value: null }]]);
+      }
       if (cmd === "human_edit_field") {
         const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
         return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
