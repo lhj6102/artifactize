@@ -166,6 +166,8 @@ with the same `--request-key` retains the first request's modes.
 | `--speculate` | Start all requested kinds before unresolved gates; wait for people |
 | Both | Start machine reviews speculatively; ask for deferrable sign-offs last |
 
+In every mode, a Human eval is asked only once every other non-Human eval of its
+own Artifact is GREEN, and is BLOCKED when one of them is RED or ERROR.
 These modes change execution order, not approval. `verify --wait` uses the
 ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5
 SIGNOFFS_PENDING. [Execution modes](../features/run.md#speculation-and-deferred-sign-offs)

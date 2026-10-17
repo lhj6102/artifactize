@@ -5,14 +5,26 @@
 //! eval's result would not be fresh. Its own Artifact and the Artifacts in a dependency cycle
 //! with it are evaluated together, so their evals never gate it.
 //!
-//! Dependencies are eval references, so cycles are the Artifact cycles those references
-//! form. Mounts and children make material visible but, like owning a sibling eval, never
-//! gate; a cycle they close in the material graph does not make Artifacts peers here.
+//! An eval depends on the Artifacts it references and on its target's children. A child
+//! folder's files are part of its parent's content, so a child counts exactly as if every
+//! eval of the parent referenced it. Cycles are the Artifact cycles these links form.
+//!
+//! A Human eval also waits for every non-Human eval of its own Artifact: a person signs off
+//! only on what the machine evals already pass. Other Human evals never gate it.
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::{algo::kosaraju_scc, graph::DiGraph};
 
 use crate::types::{ArtifactName, EvalId};
+
+/// One eval as the Schedule sees it.
+pub(crate) struct Input<'a> {
+    pub id: &'a EvalId,
+    pub target: &'a ArtifactName,
+    /// The Artifacts it references.
+    pub deps: Vec<&'a ArtifactName>,
+    pub human: bool,
+}
 
 #[derive(Debug)]
 pub(crate) struct Schedule<'a> {
@@ -22,23 +34,44 @@ pub(crate) struct Schedule<'a> {
 }
 
 impl<'a> Schedule<'a> {
-    /// `evals` are `(eval, target, references)`. A reference names material, and its gates
-    /// are all evals of that material's cycle. A reference into the eval's own cycle brings
-    /// the gates the cycle's evals reference outside it, since that is what the referenced
+    /// `children` are `(parent, child)`. A reference names material, and its gates are all
+    /// evals of that material's cycle. A reference into the eval's own cycle brings the
+    /// gates the cycle's evals reference outside it, since that is what the referenced
     /// peer's content depends on.
     pub fn new(
-        evals: impl IntoIterator<Item = (&'a EvalId, &'a ArtifactName, Vec<&'a ArtifactName>)>,
+        evals: impl IntoIterator<Item = Input<'a>>,
+        children: impl IntoIterator<Item = (&'a ArtifactName, &'a ArtifactName)>,
     ) -> Self {
-        let evals: Vec<_> = evals.into_iter().collect();
-        // Consumer -> input, so the SCC traversal yields dependencies first.
-        let edges: BTreeSet<(&ArtifactName, &ArtifactName)> = evals
-            .iter()
-            .flat_map(|(_, target, deps)| deps.iter().map(|dep| (*target, *dep)))
+        let mut links: BTreeMap<&ArtifactName, BTreeSet<&ArtifactName>> = BTreeMap::new();
+        for (parent, child) in children {
+            links.entry(parent).or_default().insert(child);
+        }
+        // A child is a reference every eval of its parent makes.
+        let evals: Vec<_> = evals
+            .into_iter()
+            .map(|mut eval| {
+                eval.deps
+                    .extend(links.get(eval.target).into_iter().flatten().copied());
+                eval.deps.sort_unstable();
+                eval.deps.dedup();
+                eval
+            })
             .collect();
+        // Consumer -> input, so the SCC traversal yields dependencies first.
+        // Children link their parent whether or not it owns evals, so the cycles are the
+        // Artifact cycles of the content.
+        let edges: BTreeSet<(&ArtifactName, &ArtifactName)> =
+            evals
+                .iter()
+                .flat_map(|eval| eval.deps.iter().map(|dep| (eval.target, *dep)))
+                .chain(links.iter().flat_map(|(&parent, children)| {
+                    children.iter().map(move |&child| (parent, child))
+                }))
+                .collect();
         let mut graph = DiGraph::<&ArtifactName, ()>::new();
         let nodes: BTreeMap<_, _> = evals
             .iter()
-            .map(|(_, target, _)| *target)
+            .map(|eval| eval.target)
             .chain(
                 edges
                     .iter()
@@ -60,36 +93,46 @@ impl<'a> Schedule<'a> {
             .collect();
         let mut members = vec![Vec::new(); cycles.len()];
         let mut outside = vec![BTreeSet::new(); cycles.len()];
-        for (id, target, deps) in &evals {
-            let own = cycle_of[target];
-            members[own].push(*id);
+        for eval in &evals {
+            let own = cycle_of[eval.target];
+            members[own].push(eval);
             outside[own].extend(
-                deps.iter()
+                eval.deps
+                    .iter()
                     .map(|dep| cycle_of[dep])
                     .filter(|&cycle| cycle != own),
             );
         }
-        for ids in &mut members {
-            ids.sort_unstable();
+        // Within a cycle, machine evals come before the Human evals that wait for them.
+        for evals in &mut members {
+            evals.sort_unstable_by_key(|eval| (eval.human, eval.id));
         }
         let gates = evals
             .iter()
-            .map(|(id, target, deps)| {
-                let own = cycle_of[target];
-                let mut sources: BTreeSet<_> = deps.iter().map(|dep| cycle_of[dep]).collect();
+            .map(|eval| {
+                let own = cycle_of[eval.target];
+                let mut sources: BTreeSet<_> = eval.deps.iter().map(|dep| cycle_of[dep]).collect();
                 if sources.remove(&own) {
                     sources.extend(&outside[own]);
                 }
                 let mut gates: Vec<_> = sources
                     .into_iter()
-                    .flat_map(|cycle| members[cycle].iter().copied())
+                    .flat_map(|cycle| members[cycle].iter().map(|eval| eval.id))
                     .collect();
+                if eval.human {
+                    gates.extend(
+                        members[own]
+                            .iter()
+                            .filter(|sibling| sibling.target == eval.target && !sibling.human)
+                            .map(|sibling| sibling.id),
+                    );
+                }
                 gates.sort_unstable();
-                (*id, gates)
+                (eval.id, gates)
             })
             .collect();
         Self {
-            order: members.into_iter().flatten().collect(),
+            order: members.into_iter().flatten().map(|eval| eval.id).collect(),
             gates,
         }
     }

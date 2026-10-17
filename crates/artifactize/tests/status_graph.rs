@@ -252,10 +252,6 @@ fn profiles_rebuild_static_gates_without_running_commands() {
 #[test]
 fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     let fixture = Fixture::new("runtime");
-    let path = fixture.repo.join("review/index.artf");
-    let mut review: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
-    review["mounts"] = json!({"source":"input"});
-    support::declaration::write(path, review.to_string()).unwrap();
     support::declaration::write(
         fixture.repo.join("index.artf"),
         r#"{"name":"project","basis":true}"#,
@@ -266,7 +262,6 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     let relations = graph["relations"].as_array().unwrap();
     for (kind, field, value) in [
         ("child", "path", "review"),
-        ("mount", "alias", "source"),
         ("instruction", "evalId", "cycle-a/check"),
         ("argv", "evalId", "green/check"),
     ] {
@@ -347,7 +342,8 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
     assert_eq!(row(&view, "evals", "review/agent")["action"], "execute");
-    assert_eq!(row(&view, "evals", "review/human")["action"], "execute");
+    // A Human eval waits for the machine evals of its own Artifact.
+    assert_eq!(row(&view, "evals", "review/human")["action"], "wait");
     assert_eq!(row(&view, "evals", "review/runtime")["action"], "execute");
     assert!(!marker.exists());
     assert!(!fixture.state.join("state.sqlite").exists());

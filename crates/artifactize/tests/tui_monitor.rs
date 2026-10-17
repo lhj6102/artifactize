@@ -55,7 +55,7 @@ fn runtime(command: &str, args: &[&str]) -> Value {
 }
 
 impl Fixture {
-    /// Repository alpha has a cycle, a child, a mount, and fingerprint-cached GREEN/RED results;
+    /// Repository alpha has a cycle, a child, and fingerprint-cached GREEN/RED results;
     /// beta has a long-running eval gated on a release file and a Human eval.
     fn new() -> Self {
         let root = owned_run::Root::from(support::os::tempdir());
@@ -81,9 +81,9 @@ impl Fixture {
         );
         declare(
             &alpha.join("cycle-b"),
-            json!({"name":"cycle-b","mounts":{"base":"input"},
+            json!({"name":"cycle-b",
                 "fingerprint":{"script":{"command":support::os::echo_program(),"args":["b-v1"]}},
-                "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-a}.")]}),
+                "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-a} against {input}.")]}),
         );
         declare(
             &alpha.join("red"),
@@ -451,16 +451,16 @@ async fn saved_tree_details_without_repository_or_writes() {
     // Peers are marked, and the cycle is never a wait between them.
     assert_eq!(node("a:cycle-a").marks, "  ↻ cycle-b");
     assert_eq!(node("a:cycle-b").marks, "  ↻ cycle-a");
-    for (id, input) in [
-        ("e:cycle-a/check", "cycle-b"),
-        ("e:cycle-b/check", "cycle-a"),
+    for (id, inputs) in [
+        ("e:cycle-a/check", &["cycle-b"][..]),
+        ("e:cycle-b/check", &["input", "cycle-a"]),
     ] {
         let upstream: Vec<_> = node(id)
             .upstream
             .iter()
             .map(|up| up.artifact.as_str())
             .collect();
-        assert_eq!(upstream, [input], "{id}");
+        assert_eq!(upstream, inputs, "{id}");
     }
     // One row per eval: relations live in the Artifact detail, not in the tree.
     assert!(all.iter().all(|node| !node.id.starts_with("r:")));
@@ -550,7 +550,7 @@ async fn saved_tree_details_without_repository_or_writes() {
         artifact
             .field("Inputs")
             .unwrap()
-            .contains("input — mount base")
+            .contains("input — {input} in cycle-b/check")
     );
     assert!(
         artifact

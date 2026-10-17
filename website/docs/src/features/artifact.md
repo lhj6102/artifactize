@@ -8,12 +8,12 @@ these declarations into one dependency graph.
 
 The **Artifact Graph** connects inputs to the evals that consume them. A reference
 such as `{spec}` admits that Artifact to an eval; changes to its fingerprint
-invalidate only reviews whose keys cover it. Child folders and mount aliases
-organize inputs, but sharing a repository alone does not make every Artifact a
-dependency of every check.
+invalidate only reviews whose keys cover it. Child folders organize inputs, but
+sharing a repository alone does not make every Artifact a dependency of every check.
 
-Execution gates belong to each eval’s own references. Mounts and children alone
-do not block sibling evals. See [Eval dependencies](#eval-dependencies).
+Execution gates belong to each eval’s own references. A child folder is part of its
+parent's content, so it counts as a reference of every eval of the parent. See
+[Eval dependencies](#eval-dependencies).
 
 The graph itself can be reviewed: a nameless root `.artf` declares the Graph
 Artifact. Its fingerprint covers extracted criteria and labeled relations, not
@@ -24,8 +24,8 @@ structure to an agent or opens it in Desktop for a person.
 
 ## Folder configuration
 
-A folder with an `index.artf` is an Artifact. `name` is required; `mounts`,
-`basis`, `views`, `fingerprint` and `tags` are optional. For older declarations,
+A folder with an `index.artf` is an Artifact. `name` is required; `basis`,
+`views`, `fingerprint` and `tags` are optional. For older declarations,
 see the [legacy policy upgrade reference](../getting-started/install.md#removed-gate-bypass-settings).
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
@@ -35,19 +35,19 @@ or `human`. All evals require `payload.instruction` and
 may have `pass_schema`, `fail_schema` and `profile_variants`.
 
 A runtime eval's exit code is its verdict (0 is GREEN); an Agent or a Human returns
-GREEN or RED with owner fields. Dependencies come from each eval’s own references.
+GREEN or RED with owner fields. Dependencies come from each eval’s own references
+and its Artifact's children.
 
 This is the `guide` Artifact of the [runtime-relations example](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), whose README explains children,
-mounts, `{artifact}` references and basis Artifacts:
+`{artifact}` references and basis Artifacts:
 
 ```toml
 name = "guide"
-mounts = { terms = "glossary" }
 
 [evals.terms]
 title = "Every bold term is defined in the glossary"
-profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{terms}/terms.txt", "{guide}/intro/page.md", "{usage}/page.md"], timeout_ms = 10000 }
-payload.instruction = "Check that every bold term in {intro} and {usage} is defined in {terms}."
+profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{glossary}/terms.txt", "{guide}/intro/page.md", "{usage}/page.md"], timeout_ms = 10000 }
+payload.instruction = "Check that every bold term in {intro} and {usage} is defined in {glossary}."
 ```
 
 Declaration keys are snake_case. JSON Schema keywords such as `minLength` and
@@ -83,9 +83,13 @@ fingerprint forms, virtual paths and invalid-target/revalidation rules.
 
 A dependency belongs to the Eval that uses the input, not every Eval on its
 Artifact. A `{name}` reference in `payload.instruction` or a runtime `args` operand
-names an input Artifact; that Eval depends on the Evals judging the input.
-Mount aliases resolve to their named Artifacts. Mounts and children define visible
-material and fingerprint inputs; visibility alone does not gate sibling Evals.
+names an input Artifact; that Eval depends on the Evals judging the input. If an
+Artifact uses another one, the eval that checks that use names it as `{name}`;
+nothing else adds a dependency.
+
+A child is the one link no eval writes. A folder Artifact's files include its child
+folders, so a child counts exactly as if every eval of its parent referenced it:
+each eval of the parent depends on the evals of its nearest marked children.
 
 For example, application E2E execution belongs to the application:
 
@@ -111,16 +115,18 @@ Final GREEN still requires all required evidence, including upstream reviews.
 
 An Eval is blocked, never an Artifact. An Eval is BLOCKED when an Artifact it
 depends on has a RED Eval: that content will change, so the Eval's result would
-not be fresh, and it does not run. The Eval depends on the Artifacts it references
-and on everything upstream of them, so a BLOCKED input Eval blocks it in turn: a
-RED sits further upstream.
+not be fresh, and it does not run. The Eval depends on the Artifacts it references,
+on its Artifact's children and on everything upstream of them, so a BLOCKED input
+Eval blocks it in turn: a RED sits further upstream. A RED Eval of a child blocks
+every Eval of its parent.
 
 Its own Artifact and the Artifacts in a dependency cycle with it are excluded.
 Cycle peers are evaluated together: none can be fixed first. Cycles are the ones
-Eval references form; a mount or child alone never makes Artifacts cycle peers,
-just as it never gates. A RED sibling Eval on the same Artifact or a
-RED Eval of a cycle peer never blocks an Eval or replaces its actual verdict, and
-peers never wait for one another. A reference to a cycle peer stands for what the
+Eval references and children form: a child that references its parent, directly
+or through a chain, is its parent's cycle peer. A RED sibling Eval on the same
+Artifact or a RED Eval of a cycle peer never blocks an Eval or replaces its actual
+verdict, and peers never wait for one another. A Human Eval is the one exception
+for siblings; see [Human sign-offs](#human-sign-offs). A reference to a cycle peer stands for what the
 cycle references outside itself; a reference to an Artifact in another cycle
 stands for every Eval of that cycle. Waiting follows the same set: plain `verify`
 holds an Eval only for those Evals, and `--speculate` cancels only Evals that a
@@ -132,6 +138,17 @@ A BLOCKED Eval's reason names the RED Evals at the root of the block, for exampl
 In a speculative Run an upstream ERROR blocks too and is named as
 `Dependency ERROR: …`. `blockedBy` lists the same Evals, and the settled Run names
 every one of them.
+
+### Human sign-offs
+
+A Human Eval starts only when every other non-Human Eval of its own Artifact is
+GREEN, on top of its dependency gates: a person signs off only on what the machine
+Evals already pass. Until then it waits. When one of those machine Evals is RED or
+ERROR, the Human Eval does not start and is BLOCKED, and its reason names them, for
+example `Sibling machine eval RED: spec/review`. Other Human Evals of the same
+Artifact are not part of this condition, so two sign-offs never wait for each other.
+The rule is the same in plain `verify`, with `--speculate` and with `--defer-human`:
+even a speculative Run does not ask a person before those machine Evals are GREEN.
 
 ## The fingerprint field
 

@@ -159,10 +159,15 @@ impl<'a> Graph<'a> {
             components[index].gates = gates;
         }
         let schedule = schedule::Schedule::new(
-            config
-                .evals
-                .iter()
-                .map(|eval| (&eval.id, &eval.target, eval.deps.iter().collect())),
+            config.evals.iter().map(|eval| schedule::Input {
+                id: &eval.id,
+                target: &eval.target,
+                deps: eval.deps.iter().collect(),
+                human: eval.declaration.profile().kind() == crate::config::ProfileKind::Human,
+            }),
+            config.artifacts.iter().flat_map(|(parent, artifact)| {
+                artifact.children.values().map(move |child| (parent, child))
+            }),
         );
         Ok(Self {
             artifacts,
@@ -228,15 +233,23 @@ impl<'a> Graph<'a> {
                 .copied()
                 .filter(|id| !evals[id.as_str()].status.passes_gate())
                 .collect();
+            // Only a Human eval's sibling machine evals share its Artifact; their ERROR blocks
+            // it too, since a person signs off only on passing machine evals.
+            let target = self.evals[id.as_str()];
             // A BLOCKED gate passes on its own causes: the root is always a RED upstream.
             let causes: Vec<_> = unmet_gates
                 .iter()
                 .flat_map(|&gate| {
                     let eval = &evals[gate.as_str()];
+                    let sibling = self.evals[gate.as_str()] == target;
                     match eval.status {
+                        EvalStatus::Red if sibling => vec![Cause::SiblingRed(gate)],
                         EvalStatus::Red => vec![Cause::Red(gate)],
+                        EvalStatus::Error if sibling => vec![Cause::SiblingError(gate)],
                         EvalStatus::Error if errors_block => vec![Cause::Error(gate)],
-                        EvalStatus::Blocked => eval.causes.clone(),
+                        EvalStatus::Blocked => {
+                            eval.causes.iter().map(|cause| cause.upstream()).collect()
+                        }
                         _ => Vec::new(),
                     }
                 })
@@ -449,17 +462,29 @@ pub struct EvalEvaluation<'a> {
 }
 
 /// The failed eval at the root of a block: a RED verdict, or in a Run that treats
-/// operational failures as blockers (`--speculate`), an ERROR.
+/// operational failures as blockers (`--speculate`), an ERROR. A Human eval is also blocked
+/// by a RED or ERROR machine eval of its own Artifact, its sibling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Cause<'a> {
     Red(&'a EvalId),
     Error(&'a EvalId),
+    SiblingRed(&'a EvalId),
+    SiblingError(&'a EvalId),
 }
 
 impl<'a> Cause<'a> {
     pub fn eval(self) -> &'a EvalId {
         match self {
-            Self::Red(id) | Self::Error(id) => id,
+            Self::Red(id) | Self::Error(id) | Self::SiblingRed(id) | Self::SiblingError(id) => id,
+        }
+    }
+
+    /// The same failure as seen from downstream, where it is an upstream dependency.
+    fn upstream(self) -> Self {
+        match self {
+            Self::SiblingRed(id) => Self::Red(id),
+            Self::SiblingError(id) => Self::Error(id),
+            cause => cause,
         }
     }
 }
@@ -499,17 +524,31 @@ impl EvalEvaluation<'_> {
     /// Names the failed evals that block this one, RED verdicts first; `None` unless BLOCKED.
     /// Each cause is final within a Run, but more can follow, so settlement saves it again.
     pub fn blocked_reason(&self) -> Option<String> {
-        let names = |error: bool| {
+        let names = |kind: fn(&Cause<'_>) -> bool| {
             self.causes
                 .iter()
-                .filter(|cause| matches!(cause, Cause::Error(_)) == error)
+                .filter(|cause| kind(cause))
                 .map(|cause| cause.eval().as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
         };
         let parts: Vec<_> = [
-            ("Dependency verdict RED", names(false)),
-            ("Dependency ERROR", names(true)),
+            (
+                "Sibling machine eval RED",
+                names(|cause| matches!(cause, Cause::SiblingRed(_))),
+            ),
+            (
+                "Sibling machine eval ERROR",
+                names(|cause| matches!(cause, Cause::SiblingError(_))),
+            ),
+            (
+                "Dependency verdict RED",
+                names(|cause| matches!(cause, Cause::Red(_))),
+            ),
+            (
+                "Dependency ERROR",
+                names(|cause| matches!(cause, Cause::Error(_))),
+            ),
         ]
         .into_iter()
         .filter(|(_, names)| !names.is_empty())

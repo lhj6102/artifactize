@@ -1,4 +1,5 @@
-//! C1–C3: observable cancellation, deferred sign-offs and scheduling seams.
+//! C1–C4: observable cancellation, deferred sign-offs and scheduling seams, including the
+//! hidden eval link from a parent Artifact to its children.
 #[path = "support/run.rs"]
 mod owned_run;
 
@@ -53,7 +54,10 @@ impl Fixture {
         json!({"id":id,"title":id,"profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&self.script),id]},"payload":{"instruction":format!("Check {}.", deps.iter().map(|name| format!("{{{name}}}")).collect::<Vec<_>>().join(" "))}})
     }
     fn declare(&self, name: &str, evals: Vec<Value>) {
-        let folder = self.repo.join(name);
+        self.declare_at(name, name, evals);
+    }
+    fn declare_at(&self, path: &str, name: &str, evals: Vec<Value>) {
+        let folder = self.repo.join(path);
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("fingerprint"), name).unwrap();
         support::declaration::write(folder.join("index.artf"), json!({"name":name,"fingerprint":{"script":{"command":support::os::cat_program(),"args":["fingerprint"]}},"evals":evals}).to_string()).unwrap();
@@ -206,6 +210,8 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
         fixture.declare("down", vec![fixture.runtime("runtime", &["up"]),
             json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},"payload":{"instruction":"Review {up}."}}), human_eval(&["up"], false)]);
         fixture.declare("leaf", vec![fixture.runtime("check", &["down"])]);
+        // A sign-off without machine siblings is asked speculatively.
+        fixture.declare("notes", vec![human_eval(&["up"], false)]);
         let run = fixture.submit(&["--speculate", "--jobs", "5"], Some(&provider));
         let active = fixture
             .until(&run, |view| {
@@ -219,13 +225,18 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
                     && view.requests.iter().any(|request| {
                         request.eval_id.as_str() == "down/runtime" && request.child.is_some()
                     })
-                    && status(view, "down/sign") == RequestStatus::WaitingHuman
+                    && status(view, "notes/sign") == RequestStatus::WaitingHuman
             })
             .await;
         assert_eq!(
             status(&active, "up/check"),
             RequestStatus::Running,
             "downstream started before upstream ended"
+        );
+        assert_ne!(
+            status(&active, "down/sign"),
+            RequestStatus::WaitingHuman,
+            "no person is asked before the Artifact's other machine evals are GREEN"
         );
         let runtime_child = active
             .requests
@@ -236,18 +247,29 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
             .clone()
             .unwrap();
         if verdict == "GREEN" {
-            fixture.sign(&active, "down/sign", "GREEN").await;
+            fixture.sign(&active, "notes/sign", "GREEN").await;
             fixture.release("down", "runtime", 0);
             fixture.release("leaf", "check", 0);
             gate.open();
-            fixture
+            let speculated = fixture
                 .until(&run, |view| {
                     status(view, "down/agent") == RequestStatus::Green
                         && status(view, "down/runtime") == RequestStatus::Green
                         && status(view, "leaf/check") == RequestStatus::Green
                 })
                 .await;
+            // Speculative GREENs still wait for up, so no person is asked yet.
+            assert_ne!(
+                status(&speculated, "down/sign"),
+                RequestStatus::WaitingHuman
+            );
             fixture.release("up", "check", 0);
+            let signoff = fixture
+                .until(&run, |view| {
+                    status(view, "down/sign") == RequestStatus::WaitingHuman
+                })
+                .await;
+            fixture.sign(&signoff, "down/sign", "GREEN").await;
             let ended = fixture.settled(&run).await;
             assert_eq!(ended.run.status(), RunStatus::Green);
             assert_eq!(
@@ -259,27 +281,35 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
                     .await
                     .unwrap()
                     .len(),
-                5
+                6
             );
         } else {
             fixture.release("up", "check", 1);
             let ended = fixture.settled(&run).await;
             gate.open();
             assert_eq!(ended.run.status(), RunStatus::Red);
-            for eval in ["down/runtime", "down/agent", "down/sign", "leaf/check"] {
+            for eval in [
+                "down/runtime",
+                "down/agent",
+                "down/sign",
+                "leaf/check",
+                "notes/sign",
+            ] {
                 assert_eq!(status(&ended, eval), RequestStatus::Blocked);
             }
             let receipts = Receipts::open(&fixture.state, &fixture.repo).await.unwrap();
-            let sign = ended
-                .requests
-                .iter()
-                .find(|request| request.eval_id.as_str() == "down/sign")
-                .unwrap();
-            assert!(
-                human::claim(&receipts, &sign.id, &"reviewer".parse().unwrap())
-                    .await
-                    .is_err()
-            );
+            for eval in ["down/sign", "notes/sign"] {
+                let sign = ended
+                    .requests
+                    .iter()
+                    .find(|request| request.eval_id.as_str() == eval)
+                    .unwrap();
+                assert!(
+                    human::claim(&receipts, &sign.id, &"reviewer".parse().unwrap())
+                        .await
+                        .is_err()
+                );
+            }
             assert!(
                 store::read_waiting(&fixture.state, None)
                     .await
@@ -604,5 +634,74 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
     assert_eq!(
         ended.run.executions_started, 3,
         "yielded executor starts still consume the cap"
+    );
+}
+
+#[tokio::test]
+async fn c4_a_parent_waits_for_its_children_and_speculation_cancels_it_on_a_red_child() {
+    let fixture = Fixture::new();
+    fixture.declare("app", vec![fixture.runtime("check", &[])]);
+    fixture.declare_at("app/lib", "lib", vec![fixture.runtime("check", &[])]);
+    let run = fixture.submit(&["--jobs", "2"], None);
+    fixture
+        .until(&run, |view| {
+            fixture.ready("app/lib", "check") && status(view, "lib/check") == RequestStatus::Running
+        })
+        .await;
+    assert!(
+        !fixture.ready("app", "check"),
+        "a parent eval waits for its child's evals"
+    );
+    fixture.release("app/lib", "check", 0);
+    fixture
+        .until(&run, |view| {
+            fixture.ready("app", "check") && status(view, "app/check") == RequestStatus::Running
+        })
+        .await;
+    fixture.release("app", "check", 0);
+    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
+
+    let fixture = Fixture::new();
+    fixture.declare("app", vec![fixture.runtime("check", &[])]);
+    fixture.declare_at("app/lib", "lib", vec![fixture.runtime("check", &[])]);
+    let run = fixture.submit(&["--speculate", "--jobs", "2"], None);
+    let active = fixture
+        .until(&run, |view| {
+            fixture.ready("app/lib", "check")
+                && fixture.ready("app", "check")
+                && view.requests.iter().any(|request| {
+                    request.eval_id.as_str() == "app/check" && request.child.is_some()
+                })
+        })
+        .await;
+    let parent = active
+        .requests
+        .iter()
+        .find(|request| request.eval_id.as_str() == "app/check")
+        .unwrap()
+        .child
+        .clone()
+        .unwrap();
+    fixture.release("app/lib", "check", 1);
+    let ended = fixture.settled(&run).await;
+    assert_eq!(ended.run.status(), RunStatus::Red);
+    assert_eq!(status(&ended, "app/check"), RequestStatus::Blocked);
+    let blocked = ended
+        .requests
+        .iter()
+        .find(|request| request.eval_id.as_str() == "app/check")
+        .unwrap();
+    assert_eq!(
+        blocked.blocked_reason.as_deref(),
+        Some("Dependency verdict RED: lib/check")
+    );
+    assert!(!support::os::running(parent.pid.get()));
+    assert!(
+        artifactize_core::cache::list(&fixture.state, false)
+            .await
+            .unwrap()
+            .iter()
+            .all(|entry| entry.eval_id.as_str() == "lib/check"),
+        "cancelled work has no reusable record"
     );
 }
