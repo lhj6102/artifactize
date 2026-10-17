@@ -170,8 +170,9 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   `$VISUAL`, else `$EDITOR` (default `vi`, Notepad on Windows) on the owner-fields JSON.
   Ctrl-E converts a typed draft to inline JSON first; that JSON mode remains if
   external editing fails or does not submit. Any nonblank file containing valid
-  owner-fields JSON attempts immediate submission, including `{}` when the schema
-  accepts it. Blank file content submits nothing. Monitor never opens `$EDITOR`;
+  owner-fields JSON within the 256000-byte Human fields limit attempts immediate
+  submission, including `{}` when the schema accepts it. Oversized edited files
+  are rejected before parsing or submission. Blank file content submits nothing. Monitor never opens `$EDITOR`;
   nested JSON stays in the TUI.
 
 Outside a form or work, `q` quits from Detail too. In either UI, Ctrl-C
@@ -180,7 +181,8 @@ requests cancellation of any active Human lifecycle job: claim, tool, submission
 once no job is busy, Ctrl-C invokes quitting, including from a form.
 Standalone `review` lists claims
 this session took without submitting: `k` keeps them and quits, `u` releases them
-and quits, and Esc stays. The quit prompt sets a form aside without dropping its
+and quits, and Esc stays. Ctrl-C again at this standalone quit prompt exits while
+keeping outstanding claims. The quit prompt sets a form aside without dropping its
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
 one back. Esc never quits either UI.
 
@@ -388,11 +390,13 @@ settings are restored on exit. See the
 [local reader reference](../features/others/state.md#local-readers) for
 subscription and recovery behavior.
 
-A refresh failure displays a timestamped **read failed at …** notice and retains
-the last successfully loaded data. Visible requests, results and claims can be
-stale, not current authority. In Review, return to the request list and press `r`;
-in Monitor, request refresh from Scope, Runs or the tree. A successful read clears
-the failure notice.
+A refresh failure records a timestamped **read failed at …** notice. Monitor and
+the Review list retain last-known data, so visible requests, results and claims
+can be stale, not current authority. Standalone non-Human Detail can hide the
+notice until you return to the list, and a failed Record reload can clear that
+previous Detail instead of retaining it. In Review, return to the request list
+and press `r`; in Monitor, request refresh from Scope, Runs or the tree.
+A successful read clears the failure notice.
 
 Draft retention applies only within the same state identity. If Monitor detects
 that a replacement state database has a different identity, it cancels active

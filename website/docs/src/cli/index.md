@@ -200,12 +200,9 @@ published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
 Speculation and deferral never waive final requirements.
 
-Concurrent Runs on the same machine share an in-flight eval when its reuse key
-and effective profile match, including across worktrees. The waiting request names
-the execution; its GREEN, RED or ERROR is joined reuse. Cancellation or an owner
-process crash lets one waiter take over. Different profiles and forced evals execute
-independently; completed GREEN/RED reuse rules are unchanged. This needs no option
-and does not share in-flight work through a remote store.
+[In-flight sharing](../features/others/state.md#state) explains when concurrent
+Runs join the same execution, and how profile identity, takeover and `--force`
+affect that automatic sharing.
 
 There is no default eval-concurrency cap: every READY eval starts as soon as it is
 ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it

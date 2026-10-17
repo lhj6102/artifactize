@@ -155,7 +155,9 @@ After claiming, `g` opens GREEN and `r` RED. Flat owner schemas get typed fields
 complex schemas open an owner-fields JSON editor. **Edit as JSON** or Ctrl+E turns
 a typed form into JSON. Include only owner fields, not a `verdict` wrapper. Tab
 indents JSON; Shift+Tab leaves that editor. In typed forms, Tab moves between
-controls. Ctrl+G/Ctrl+R switches verdicts; Ctrl+S submits, never plain Enter.
+controls. Ctrl+G/Ctrl+R switches verdicts. Enter inside owner-field editors does
+not implicitly submit; Ctrl+S or activating the **Submit** button submits,
+including Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
 composition, including Korean, belongs to the text field and never fires shortcuts.
 Esc cancels active work, then leaves the form, then leaves Detail.

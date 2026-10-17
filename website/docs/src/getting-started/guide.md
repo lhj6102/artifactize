@@ -75,8 +75,10 @@ distinction.
 
 A sidecar such as `hero.png.artf` declares the neighboring file as an independent
 Artifact. It requires a `name`, uses the same TOML schema as a folder and hashes
-only that file by default. Built-in tools see the file and admitted mounts and
-references, not siblings. The [posts example](https://github.com/lhj6102/artifactize/tree/main/examples/posts)
+only that file by default. Built-in tools see that file and the inputs explicitly
+made available to its evals, not unrelated sibling files. A **mount** gives another
+Artifact a local alias, such as `house-style` for a shared checker; see
+[Artifact declarations](../features/artifact.md#folder-configuration). The [posts example](https://github.com/lhj6102/artifactize/tree/main/examples/posts)
 uses three Markdown sidecars and one shared style checker. From the previous
 example's directory:
 
@@ -90,11 +92,14 @@ cd ../runtime-relations    # continue the tour below
 ```
 
 Each file hashes only itself. The mounted `house-style` Artifact covers the
-checker and banned words, so a shared change invalidates all three post keys.
+checker and banned words, so a shared change invalidates all three post reviews'
+[reuse keys](../features/fingerprint.md#the-reuse-key): the recorded identity of a
+check's criteria and reviewed inputs that decides whether its old result applies.
 Its README shows how to make one post RED while the other two reuse.
 
 A runtime Eval references its inputs directly in its instruction or arguments. For
-example, the application can run its E2E suite using `{e2e-tests}` while the test-code
+example, the application can run its end-to-end (E2E) test suite, which exercises
+the working application, using `{e2e-tests}` while the test-code
 Artifact reviews its own style and feature coverage. Only that application Eval
 waits for the test-code reviews; unrelated application Evals remain runnable.
 See [Eval dependencies](../features/artifact.md#eval-dependencies).
