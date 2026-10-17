@@ -120,22 +120,58 @@ pub enum CasePolicy {
     Insensitive,
 }
 
-pub fn case_policy(root: &Path) -> CasePolicy {
-    let probe = tempfile::Builder::new()
-        .prefix("case-Probe-")
-        .tempfile_in(root)
-        .unwrap();
-    let name = probe.path().file_name().unwrap().to_str().unwrap();
-    if root.join(name.to_ascii_uppercase()).exists() {
+pub fn case_policy(root: &Path, existing: &str) -> CasePolicy {
+    // The caller owns this pre-existing fixture entry and has not created its alias.
+    // Looking up that alias observes the namespace without changing the directory.
+    assert!(root.join(existing).exists());
+    let alias = existing.to_ascii_uppercase();
+    assert_ne!(alias, existing);
+    if root.join(alias).exists() {
         CasePolicy::Insensitive
     } else {
         CasePolicy::Sensitive
     }
 }
 
+pub fn executable_name(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// A file used only for executable lookup, never launched by a test.
+pub fn lookup_program(directory: &Path, name: &str, extension: Option<&str>) -> PathBuf {
+    let name = extension.map_or_else(
+        || executable_name(name),
+        |extension| format!("{name}.{extension}"),
+    );
+    let path = directory.join(name);
+    fs::write(&path, "lookup fixture").unwrap();
+    make_executable(&path);
+    path
+}
+
+/// Change only a fixture entry's spelling, including on systems whose direct case-only
+/// rename would keep the old spelling. Setup owns the temporary intermediate name.
+pub fn rename_case(root: &Path, from: &str, to: &str) {
+    let staging = tempfile::Builder::new()
+        .prefix("case-rename-")
+        .tempdir_in(root)
+        .unwrap();
+    fs::remove_dir(staging.path()).unwrap();
+    fs::rename(root.join(from), staging.path()).unwrap();
+    fs::rename(staging.path(), root.join(to)).unwrap();
+}
+
 /// The command Cargo built, with native process setup kept in the OS fixture layer.
 pub fn tools(binary: &str) -> Command {
     Command::new(binary)
+}
+
+pub fn succeeded(status: &std::process::ExitStatus) -> bool {
+    status.success()
+}
+
+pub fn tools_output(binary: &str, args: &[&str]) -> std::process::Output {
+    tools(binary).args(args).output().unwrap()
 }
 
 pub fn call(binary: &str, root: &Path, args: &[&str]) -> std::process::Output {

@@ -6,8 +6,15 @@
 
 #[path = "os/checkpoints.rs"]
 mod checkpoints;
+#[path = "os/creation.rs"]
+mod creation;
 #[path = "os/files.rs"]
 mod files;
+
+/// Reject new files in a fixture directory, restoring its permissions before teardown.
+pub fn deny_creates(directory: &Path) -> creation::CreationDenied {
+    creation::deny_creates(directory)
+}
 
 /// Choose a fixture directory spelling supported by its volume.
 pub fn case_alias_or_original(directory: &Path, alternate_name: &str) -> std::path::PathBuf {
@@ -2154,6 +2161,19 @@ mod acl {
 /// parallel test runner's environment.
 pub fn run_test(test: &str, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
     test_command(test, environment).output().unwrap()
+}
+
+/// Run one exact probe without selected inherited variables; the parent environment stays intact.
+pub fn run_test_without(
+    test: &str,
+    environment: &[(&str, std::ffi::OsString)],
+    without: &[&str],
+) -> std::process::Output {
+    let mut command = test_command(test, environment);
+    for name in without {
+        command.env_remove(name);
+    }
+    command.output().unwrap()
 }
 
 /// The same isolated probe, started in the directory whose CLI behavior it checks.

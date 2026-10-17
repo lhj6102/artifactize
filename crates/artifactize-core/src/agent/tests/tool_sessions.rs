@@ -3,6 +3,9 @@ use crate::test_os as os;
 #[path = "../../../tests/support/tool_sessions.rs"]
 mod harness;
 
+mod fixture;
+use fixture::OwnedFixture;
+
 static CLOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn advance_lifecycle_clock() {
@@ -17,7 +20,7 @@ async fn advance_lifecycle_clock() {
         .unwrap();
 }
 
-fn fixture(stop: &str) -> Fixture {
+fn fixture(stop: &str) -> OwnedFixture {
     let mut fixture = Fixture::new("openai");
     let log = fixture.directory.path().join("log");
     fs::create_dir(&log).unwrap();
@@ -29,15 +32,11 @@ fn fixture(stop: &str) -> Fixture {
     crate::test_declaration::write(&path, definition.to_string()).unwrap();
     fs::write(fixture.config.root.join("harness.py"), harness::script()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
-    fixture
+    OwnedFixture::new(fixture)
 }
 
-async fn owned_review(fixture: &Fixture, cancellation: CancellationToken) -> Review {
-    let registry = Registry::new(&fixture.config, &fixture.config.evals[0].id).unwrap();
-    let sessions = registry
-        .start_sessions(&fixture.state(), None, cancellation.clone())
-        .await
-        .unwrap();
+async fn owned_review(fixture: &OwnedFixture, cancellation: CancellationToken) -> Review {
+    let sessions = fixture.start_sessions(cancellation.clone()).await.unwrap();
     let http = SequencedHttpClient::new(vec![
         openai_response(
             "exact-model",
@@ -140,9 +139,8 @@ async fn readiness_timeout_cleans_a_started_but_unready_harness() {
     declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!("unready");
     crate::test_declaration::write(&path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
-    let registry = Registry::new(&fixture.config, &fixture.config.evals[0].id).unwrap();
     let state = fixture.state();
-    let mut start = Box::pin(registry.start_sessions(&state, None, CancellationToken::new()));
+    let mut start = fixture.start_sessions(CancellationToken::new());
     tokio::select! {
         _ = reached(|| !harness::records(&log, "start").is_empty()) => {},
         _ = &mut start => panic!("unready session was admitted"),
@@ -159,7 +157,7 @@ fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
         let fixture = fixture("stop");
         let log = fixture.directory.path().join("log");
         let config = read_workspace_config(&fixture.config.root).unwrap();
-        let state = fixture.state();
+        let starting = fixture.start_sessions(CancellationToken::new());
         let output = fixture.output.clone();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -167,10 +165,7 @@ fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
             .unwrap();
         let review = runtime.spawn(async move {
             let registry = Registry::new(&config, &config.evals[0].id).unwrap();
-            let sessions = registry
-                .start_sessions(&state, None, CancellationToken::new())
-                .await
-                .unwrap();
+            let sessions = starting.await.unwrap();
             if panic {
                 panic!("review panic after owning a session");
             }
@@ -206,9 +201,8 @@ async fn directory_cleanup_failure_is_recovered_after_lease_release_even_with_a_
     let mut fixture = fixture("readonly-stop");
     let log = fixture.directory.path().join("log");
     let state = fixture.state();
-    let registry = Registry::new(&fixture.config, &fixture.config.evals[0].id).unwrap();
-    let sessions = registry
-        .start_sessions(&state, None, CancellationToken::new())
+    let sessions = fixture
+        .start_sessions(CancellationToken::new())
         .await
         .unwrap();
     assert!(sessions.close().await.is_err());
@@ -226,12 +220,40 @@ async fn directory_cleanup_failure_is_recovered_after_lease_release_even_with_a_
     declaration["views"]["agent_sessions"]["app"]["stop"]["args"][1] = json!("stop");
     crate::test_declaration::write(&path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
-    let registry = Registry::new(&fixture.config, &fixture.config.evals[0].id).unwrap();
-    let next = registry
-        .start_sessions(&state, None, CancellationToken::new())
+    let next = fixture
+        .start_sessions(CancellationToken::new())
         .await
         .unwrap();
     assert!(!directory.exists());
     next.close().await.unwrap();
     harness::assert_cleaned(&state, &log, 2);
+}
+
+#[test]
+fn fixture_unwind_joins_sessions_before_removing_their_inputs() {
+    let _clock = CLOCK.blocking_lock();
+    let mut observed = None;
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let fixture = fixture("hang-stop");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _sessions = runtime
+            .block_on(fixture.start_sessions(CancellationToken::new()))
+            .unwrap();
+        let start = harness::records(&fixture.directory.path().join("log"), "start")
+            .pop()
+            .unwrap();
+        observed = Some((fixture.directory.path().to_owned(), start));
+        panic!("fixture assertion after native readiness");
+    }));
+    assert!(failed.is_err());
+    let (directory, start) = observed.unwrap();
+    assert!(
+        !directory.exists(),
+        "the fixture was released only after its session close joined"
+    );
+    assert!(!os::running(start["pid"].as_u64().unwrap() as u32));
+    assert!(!os::running(start["child"].as_u64().unwrap() as u32));
 }

@@ -7,7 +7,8 @@ pub use fixed::{
 pub use input::Input;
 
 mod output;
-use output::{Entry, EntryKind, GrepMatch, Line, Output};
+mod scan;
+use output::{Entry, EntryKind, Output};
 
 /// Bound the compiled regex automaton to limit search memory.
 const REGEX_BYTES: usize = 2 * 1024 * 1024;
@@ -20,7 +21,6 @@ use std::{
 };
 
 use globset::{GlobBuilder, GlobMatcher};
-use regex::RegexBuilder;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -151,10 +151,7 @@ pub fn call(
                 reader.list(reader.root_path(&input.path), input.offset, input.limit)
             }
             Input::Glob(input) => reader.glob(reader.root_path(&input.path), &input.pattern),
-            Input::Grep(mut input) => {
-                input.path = reader.root_path(&input.path).to_owned();
-                reader.grep(&input)
-            }
+            Input::Grep(input) => reader.grep(reader.root_path(&input.path), &input),
             Input::ViewImage(input) => return reader.view_image(&input.path),
         }?;
         if serde_json::to_vec(&data).unwrap().len() > RESULT_BYTES {
@@ -168,13 +165,6 @@ pub fn call(
         Ok(content) => ToolResult::success(content),
         Err(message) => ToolResult::error(message),
     }
-}
-
-/// EOF is distinct from a budget stop: only EOF makes totalLines available.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ReadEnd {
-    Bounded,
-    Complete,
 }
 
 struct Reader<'a> {
@@ -230,72 +220,35 @@ impl Reader<'_> {
             return Err("Reading requires a regular file; list the directory first.".into());
         }
         let mut reader = BufReader::new(file);
-        let mut lines = Vec::new();
-        let mut line = Vec::new();
-        let mut current = 1;
-        let mut returned_bytes = 0;
-        let mut read_end = ReadEnd::Bounded;
-        let mut partial_line = false;
-        loop {
+        let mut scan = scan::Read::new(offset, limit);
+        let end = loop {
             self.check_cancelled()?;
-            let bytes = reader.fill_buf().map_err(|e| e.to_string())?;
+            let bytes = reader.fill_buf().map_err(|error| error.to_string())?;
             if bytes.is_empty() {
-                if !line.is_empty() {
-                    lines.push(text_line(current, &line)?);
-                }
-                read_end = ReadEnd::Complete;
-                break;
+                break scan::ReadEnd::Complete;
             }
-            let end = bytes
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map(|index| index + 1);
-            let fragment = &bytes[..end.unwrap_or(bytes.len())];
-            if current >= offset {
-                if returned_bytes + line.len() + fragment.len() > READ_BYTES {
-                    if lines.is_empty() {
-                        return Err(format!(
-                            "Artifact line {current} exceeds the {READ_BYTES}-byte read limit."
-                        ));
-                    }
-                    break;
+            match scan.push(bytes)? {
+                scan::ReadStep::More(consumed) => reader.consume(consumed),
+                scan::ReadStep::Full(consumed) => {
+                    reader.consume(consumed);
+                    break if reader
+                        .fill_buf()
+                        .map_err(|error| error.to_string())?
+                        .is_empty()
+                    {
+                        scan::ReadEnd::Complete
+                    } else {
+                        scan::ReadEnd::Bounded
+                    };
                 }
-                if fragment.contains(&0) {
-                    return Err("Binary text (NUL) cannot be read.".into());
-                }
-                line.extend_from_slice(fragment);
+                scan::ReadStep::Bounded => break scan::ReadEnd::Bounded,
             }
-            let consumed = fragment.len();
-            partial_line = end.is_none();
-            reader.consume(consumed);
-            if end.is_some() {
-                if current >= offset {
-                    lines.push(text_line(current, &line)?);
-                    returned_bytes += line.len();
-                    line.clear();
-                }
-                current += 1;
-                if lines.len() == limit || returned_bytes == READ_BYTES {
-                    if reader.fill_buf().map_err(|e| e.to_string())?.is_empty() {
-                        read_end = ReadEnd::Complete;
-                    }
-                    break;
-                }
-            }
-        }
-        let count = lines.len();
+        };
         Ok(Output::Read(output::Read {
             artifact_id: self.owner.clone(),
             resolved_artifact_id: location.artifact_id,
             path: path.to_owned(),
-            lines,
-            start_line: offset,
-            end_line: (count != 0).then(|| offset + count - 1),
-            line_count: count,
-            truncated: read_end == ReadEnd::Bounded,
-            next_offset: (read_end == ReadEnd::Bounded).then_some(offset + count),
-            total_lines: (read_end == ReadEnd::Complete)
-                .then(|| current - 1 + usize::from(partial_line)),
+            rows: scan.finish(end)?,
         }))
     }
 
@@ -381,29 +334,7 @@ impl Reader<'_> {
 
     fn list(&self, path: &str, offset: usize, limit: usize) -> Result<Output, String> {
         let entries = self.entries(path)?;
-        let total = entries.len();
-        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
-        let entries: Vec<_> = entries
-            .into_iter()
-            .skip(offset)
-            .take(limit)
-            .take_while(|entry| {
-                bytes += serde_json::to_vec(entry).unwrap().len() + 1;
-                bytes <= RESULT_BYTES
-            })
-            .collect();
-        if entries.is_empty() && offset < total {
-            return Err("Listing entry exceeds 512 KiB; narrow the path.".into());
-        }
-        let next = offset + entries.len();
-        Ok(Output::List(output::List {
-            artifact_id: self.owner.clone(),
-            path: path.to_owned(),
-            entries,
-            total_entries: total,
-            truncated: next < total,
-            next_offset: (next < total).then_some(next),
-        }))
+        scan::list(self.owner.clone(), path, entries, offset, limit).map(Output::List)
     }
 
     fn files(&self, path: &str) -> Result<(BTreeSet<String>, bool), String> {
@@ -451,127 +382,77 @@ impl Reader<'_> {
         Ok((files, truncated))
     }
 
-    fn glob(&self, path: &str, pattern: &str) -> Result<Output, String> {
-        let matcher = glob(pattern)?;
+    fn glob(&self, path: &str, matcher: &GlobMatcher) -> Result<Output, String> {
         let location = self.location(path)?;
         if !self
             .open(path, &location)?
             .metadata()
-            .map_err(|e| e.to_string())?
+            .map_err(|error| error.to_string())?
             .is_dir()
         {
             return Err("Glob path must be a directory.".into());
         }
-        let (files, mut truncated) = self.files(path)?;
-        let mut matches = Vec::new();
-        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
+        let (files, truncated) = self.files(path)?;
+        let mut scan = scan::Glob::new(path, matcher, truncated);
         for file in files {
             self.check_cancelled()?;
-            if !matcher.is_match(relative(path, &file)) {
-                continue;
+            match scan.push(&file) {
+                scan::Selection::Skip => continue,
+                scan::Selection::Full => break,
+                scan::Selection::Added => {}
             }
-            bytes += serde_json::to_vec(&file).unwrap().len() + 1;
-            if matches.len() == MAX_RESULTS || bytes > RESULT_BYTES {
-                truncated = true;
-                break;
-            }
-            // Recheck entries that may have changed since enumeration.
+            // The selected file can have changed since directory enumeration.
             if !self
                 .open(&file, &self.location(&file)?)?
                 .metadata()
-                .map_err(|e| e.to_string())?
+                .map_err(|error| error.to_string())?
                 .is_file()
             {
                 return Err("Glob target is no longer a regular file.".into());
             }
-            matches.push(file);
         }
-        Ok(Output::Glob(output::Glob {
-            path: path.to_owned(),
-            files: matches,
-            truncated,
-        }))
+        Ok(Output::Glob(scan.finish()))
     }
 
-    fn grep(&self, input: &input::Grep) -> Result<Output, String> {
-        let path = input.path.as_str();
-        let regex = RegexBuilder::new(&input.pattern)
-            .case_insensitive(input.case_insensitive)
-            .size_limit(REGEX_BYTES)
-            .build()
-            .map_err(|_| "Invalid or oversized regex pattern.")?;
-        let filter = input.glob.as_deref().map(glob).transpose()?;
-        let (files, mut truncated) = self.files(path)?;
-        let mut matches = Vec::new();
-        let mut searched = 0;
-        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
-        let limit = input.max_results;
+    fn grep(&self, path: &str, input: &input::Grep) -> Result<Output, String> {
+        let (files, truncated) = self.files(path)?;
+        let mut scan = scan::Grep::new(path, input, truncated);
         'files: for file in files {
             self.check_cancelled()?;
-            if filter
-                .as_ref()
-                .is_some_and(|filter| !filter.is_match(relative(path, &file)))
-            {
+            if !scan.allows(&file) {
                 continue;
             }
             let input = self.open(&file, &self.location(&file)?)?;
-            let metadata = input.metadata().map_err(|e| e.to_string())?;
+            let metadata = input.metadata().map_err(|error| error.to_string())?;
             if !metadata.is_file() {
                 return Err("Grep requires regular files.".into());
             }
-            if metadata.len() > SEARCH_FILE_BYTES as u64 {
-                truncated = true;
-                continue;
-            }
-            if searched + metadata.len() as usize > SEARCH_BYTES {
-                truncated = true;
-                break;
-            }
+            let limit = match scan.file(metadata.len()) {
+                scan::FileRead::Read(limit) => limit,
+                scan::FileRead::Skip => continue,
+                scan::FileRead::Full => break,
+            };
             let mut contents = Vec::new();
             input
-                .take((SEARCH_FILE_BYTES.min(SEARCH_BYTES - searched) + 1) as u64)
+                .take(limit)
                 .read_to_end(&mut contents)
                 .map_err(|_| "Cannot read Artifact file.")?;
-            searched += contents.len();
-            if searched > SEARCH_BYTES {
-                truncated = true;
-                break;
+            match scan.received(contents.len()) {
+                scan::Received::Skip => continue,
+                scan::Received::Full => break,
+                scan::Received::Text => {}
             }
-            if contents.len() > SEARCH_FILE_BYTES {
-                truncated = true;
-                continue;
-            }
-            if contents.contains(&0) {
-                continue;
-            }
-            let Ok(contents) = std::str::from_utf8(&contents) else {
+            let Some(text) = scan::text(&contents) else {
                 continue;
             };
-            for (index, line) in contents.split_inclusive('\n').enumerate() {
+            for (index, line) in text.split_inclusive('\n').enumerate() {
                 self.check_cancelled()?;
-                let line = line.strip_suffix('\n').unwrap_or(line);
-                let line = line.strip_suffix('\r').unwrap_or(line);
-                if !regex.is_match(line) {
-                    continue;
-                }
-                let entry = GrepMatch {
-                    path: file.clone(),
-                    line: index + 1,
-                    text: line.to_owned(),
-                };
-                bytes += serde_json::to_vec(&entry).unwrap().len() + 1;
-                if matches.len() == limit || bytes > RESULT_BYTES {
-                    truncated = true;
+                if !scan.line(&file, index, line) {
                     break 'files;
                 }
-                matches.push(entry);
             }
         }
-        Ok(Output::Grep(output::Grep {
-            path: path.to_owned(),
-            matches,
-            truncated,
-        }))
+        Ok(Output::Grep(scan.finish()))
     }
 }
 
@@ -587,15 +468,6 @@ fn missing(owner: &ArtifactId, path: &str) -> String {
         ),
         _ => format!("No {path:?} in Artifact {owner}."),
     }
-}
-
-fn text_line(number: usize, line: &[u8]) -> Result<Line, String> {
-    let text = std::str::from_utf8(line)
-        .map_err(|_| "Artifact contains invalid UTF-8 in the requested lines.")?;
-    Ok(Line {
-        number,
-        text: text.to_owned(),
-    })
 }
 
 fn join(base: &str, name: &str) -> String {

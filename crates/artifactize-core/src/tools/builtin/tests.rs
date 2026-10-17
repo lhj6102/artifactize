@@ -114,7 +114,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
             result.content(),
             vec![Content::Image {
                 data: STANDARD.encode(&bytes),
-                mime_type: mime.into()
+                mime_type: mime.parse().unwrap()
             }]
         );
     }

@@ -1,124 +1,23 @@
-//! Fixed declarations shared by the Agent/Human registries and standalone CLI.
-use std::{
-    ffi::{OsStr, OsString},
-    io::Read,
-    path::Path,
-    time::Duration,
-};
-
-use pulldown_cmark::{Event, Parser, Tag, TagEnd};
-use serde::Deserialize;
-use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
-
+//! Fixed tool parsing and scoped text execution shared by every caller.
 use crate::{
     Builtin, Content, ToolResult,
-    launch::{Launch, LaunchError, Launcher},
-    program,
+    launch::Launcher,
     scope::{self, ArtifactId, Scope},
 };
-
+use serde::Deserialize;
+use serde_json::Value;
+use std::{io::Read, path::Path};
+use tokio_util::sync::CancellationToken;
+mod declaration;
+mod help;
+mod markdown;
+pub use declaration::{fixed_description, fixed_schema, is_url, validate_args, validate_target};
+use help::help;
+use markdown::section;
 /// Fixed text tools contribute at most one 64 KiB block to a review.
 const TEXT_BYTES: usize = 64 * 1024;
 /// Bound Markdown parsing, including a section near the end of the document.
 const DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
-/// Help is documentation, not a long-running owner command.
-const HELP_TIMEOUT: Duration = Duration::from_secs(10);
-
-pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> Result<(), String> {
-    let Some(args) = args else {
-        return if !human
-            && matches!(
-                builtin,
-                Builtin::Read | Builtin::List | Builtin::Glob | Builtin::Grep | Builtin::ViewImage
-            ) {
-            Ok(())
-        } else {
-            Err("This builtin requires fixed args.".into())
-        };
-    };
-    let valid = match builtin {
-        Builtin::Graph => args.is_empty(),
-        Builtin::Read | Builtin::List => args.len() == 1,
-        Builtin::Section => args.len() == 2 || !human && args.len() == 1,
-        Builtin::Help => !args.is_empty(),
-        Builtin::Open => human && args.len() == 1,
-        Builtin::Glob | Builtin::Grep | Builtin::ViewImage => false,
-    };
-    if !valid
-        || args.iter().any(|arg| arg.contains('\0'))
-        || builtin == Builtin::Help && args.first().is_some_and(|arg| arg.trim().is_empty())
-    {
-        return Err("Invalid fixed args for this builtin/kind.".into());
-    }
-    if builtin == Builtin::Section && args.get(1).is_some_and(|heading| heading.trim().is_empty()) {
-        return Err("Section heading must not be blank.".into());
-    }
-    Ok(())
-}
-
-pub fn fixed_description(builtin: Builtin, args: &[String]) -> &'static str {
-    match builtin {
-        Builtin::Read => {
-            "Read the declared UTF-8 file in {artifactName}, up to 64 KiB. No input arguments; no symlinks or binary data."
-        }
-        Builtin::List => {
-            "List the declared directory in {artifactName}. No input arguments; returns sorted entries and truncation metadata."
-        }
-        Builtin::Section if args.len() == 1 => {
-            "Read the declared Markdown file in {artifactName} by exact heading. Supply only heading; includes nested sections until the next same or higher level heading. Missing headings list available titles."
-        }
-        Builtin::Section => {
-            "Read the declared Markdown section in {artifactName}. No input arguments; includes nested sections until the next same or higher level heading."
-        }
-        Builtin::Help => {
-            "Read the declared program/subcommand --help output. No input arguments; limited to 10 seconds and 64 KiB."
-        }
-        _ => super::description(builtin),
-    }
-}
-
-pub fn fixed_schema(builtin: Builtin, args: &[String]) -> Value {
-    if builtin == Builtin::Section && args.len() == 1 {
-        super::input_schema(builtin)
-    } else {
-        json!({"type":"object", "properties":{}, "required":[], "additionalProperties":false})
-    }
-}
-
-/// Only explicit HTTP(S) URLs bypass filesystem scope; local file URLs do not.
-pub fn is_url(target: &str) -> bool {
-    target.starts_with("https://") || target.starts_with("http://")
-}
-
-pub fn validate_target(
-    builtin: Builtin,
-    args: &[String],
-    root: &Path,
-    scope: &Scope,
-    owner: &ArtifactId,
-) -> Result<(), String> {
-    if builtin == Builtin::Graph
-        || builtin == Builtin::Help
-        || builtin == Builtin::Open && is_url(&args[0])
-    {
-        return Ok(());
-    }
-    // Existing targets are validated without following any symlink.
-    let location = scope
-        .resolve_path(owner, &args[0])
-        .map_err(|error| error.to_string())?;
-    let artifact = &scope.artifacts[&location.artifact_id];
-    let base = scope::scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
-    let path = if location.path.is_empty() {
-        artifact.file_name().unwrap_or("")
-    } else {
-        &location.path
-    };
-    scope::scoped_path(&base, Path::new(path))
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
 
 /// Where a fixed built-in runs: the workspace root, the scope it may read, the Artifact
 /// that declares it, and the launcher that starts a `help` program.
@@ -184,9 +83,14 @@ struct SectionInput {
 /// Parsed fixed declarations and model input. Execution cannot index an absent argument
 /// or combine a heading with a tool that does not accept one.
 enum FixedInput {
-    Read { path: String },
+    Read {
+        path: super::input::LogicalPath,
+    },
     List(super::input::List),
-    Section { path: String, heading: String },
+    Section {
+        path: super::input::LogicalPath,
+        heading: String,
+    },
     Help(Vec<String>),
 }
 
@@ -197,10 +101,10 @@ impl FixedInput {
         crate::schema::validate(&validator, &value)?;
         match builtin {
             Builtin::Read => Ok(Self::Read {
-                path: args[0].clone(),
+                path: super::input::LogicalPath::parse(args[0].clone())?,
             }),
             Builtin::List => Ok(Self::List(super::input::List {
-                path: args[0].clone(),
+                path: super::input::LogicalPath::parse(args[0].clone())?,
                 offset: 0,
                 limit: super::MAX_RESULTS,
             })),
@@ -213,7 +117,7 @@ impl FixedInput {
                     .or(input.heading)
                     .ok_or("Section requires heading.")?;
                 Ok(Self::Section {
-                    path: args[0].clone(),
+                    path: super::input::LogicalPath::parse(args[0].clone())?,
                     heading,
                 })
             }
@@ -315,88 +219,4 @@ fn bounded(text: &str) -> String {
         end -= 1;
     }
     format!("{}{suffix}", &text[..end])
-}
-
-fn section(text: &str, wanted: &str) -> Result<String, String> {
-    let mut headings = Vec::new();
-    let mut heading = None;
-    for (event, range) in Parser::new(text).into_offset_iter() {
-        match event {
-            Event::Start(Tag::Heading { level, .. }) => {
-                heading = Some((level, range.start, String::new()))
-            }
-            Event::Text(value) | Event::Code(value) => {
-                if let Some((_, _, title)) = &mut heading {
-                    title.push_str(&value);
-                }
-            }
-            Event::SoftBreak | Event::HardBreak => {
-                if let Some((_, _, title)) = &mut heading {
-                    title.push(' ');
-                }
-            }
-            Event::End(TagEnd::Heading(_)) => {
-                if let Some(heading) = heading.take() {
-                    headings.push(heading);
-                }
-            }
-            _ => {}
-        }
-    }
-    let Some(index) = headings.iter().position(|(_, _, title)| title == wanted) else {
-        return Err(bounded(&format!(
-            "No matching heading: {wanted}. Available headings:\n{}",
-            headings
-                .iter()
-                .map(|(_, _, title)| title.as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
-        )));
-    };
-    let (level, start, _) = &headings[index];
-    let end = headings[index + 1..]
-        .iter()
-        .find(|(next, _, _)| next <= level)
-        .map_or(text.len(), |(_, start, _)| *start);
-    Ok(bounded(&text[*start..end]))
-}
-
-async fn help(
-    args: &[String],
-    cwd: &Path,
-    launcher: &dyn Launcher,
-    cancellation: &CancellationToken,
-) -> Result<String, String> {
-    let program = program::resolve(OsStr::new(&args[0]), cwd).map_err(|error| error.to_string())?;
-    let launch = Launch {
-        program,
-        args: args[1..]
-            .iter()
-            .map(OsString::from)
-            .chain([OsString::from("--help")])
-            .collect(),
-        cwd: cwd.to_owned(),
-        timeout: HELP_TIMEOUT,
-        output_limit: TEXT_BYTES,
-    };
-    let finished = launcher
-        .run(launch, cancellation)
-        .await
-        .map_err(|error| match error {
-            LaunchError::TimedOut => "Help timed out.".to_owned(),
-            error => error.to_string(),
-        })?;
-    if !finished.status.success() {
-        return Err(format!(
-            "Help exited unsuccessfully ({}).\n{}",
-            crate::platform::exit_description(&finished.status),
-            String::from_utf8_lossy(&finished.stderr)
-        ));
-    }
-    let mut bytes = finished.stdout;
-    bytes.extend(finished.stderr);
-    if finished.truncated || bytes.len() > TEXT_BYTES {
-        return Err("Help output exceeds 64 KiB.".into());
-    }
-    Ok(String::from_utf8(crate::result::clean_output(&bytes)).expect("clean output is UTF-8"))
 }

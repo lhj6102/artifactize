@@ -154,7 +154,10 @@ async fn help_maps_the_launcher_deadline_to_a_tool_error() {
         started: Mutex::new(Some(started)),
     };
     let cancellation = CancellationToken::new();
-    let args = [program.to_str().unwrap().to_owned(), "subcommand".into()];
+    let args = [
+        artifactize_tools::files::path_text(&program),
+        "subcommand".into(),
+    ];
     let mut running = Box::pin(builtin::call_fixed(
         Builtin::Help,
         &args,
@@ -174,7 +177,10 @@ async fn help_maps_the_launcher_deadline_to_a_tool_error() {
     // The documented help budget is independent of implementation constants.
     const HELP_BUDGET: Duration = Duration::from_secs(10);
     assert_eq!(launch.timeout, HELP_BUDGET);
-    assert_eq!(launch.program, program);
+    assert_eq!(
+        artifactize_tools::files::path_text(&launch.program),
+        artifactize_tools::files::path_text(&program)
+    );
     assert_eq!(launch.cwd, root.path());
     assert_eq!(launch.args, ["subcommand", "--help"]);
     assert_eq!(launch.output_limit, 64 * 1024);

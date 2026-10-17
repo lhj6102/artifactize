@@ -523,14 +523,15 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
         "{outcome:?}"
     );
     review.finish_single(outcome);
+    // Before reconciliation, the refused run leaves the user's visible draft intact.
+    let Mode::Form(form) = review.mode() else {
+        panic!("the refused run dropped the form");
+    };
+    assert_eq!(form.fields[0].display(), "draft with 한글");
     review.refresh().await;
     assert!(review.settled());
     assert_eq!(review.control(Control::RunTool), Action::None);
     assert_eq!(review.mode(), &Mode::Request);
-    assert_eq!(
-        review.drafts[&crate::runtime::Verdict::Red].fields[0].display(),
-        "draft with 한글"
-    );
 }
 
 #[tokio::test]

@@ -66,6 +66,11 @@ function paneNavigation(browser: WebdriverIO.Browser) {
 
   /** Moving in Runs replaces the Tree with the newly selected Run while Runs keeps the focus. */
   async function treeFollows(run: { id: string; eval: string }) {
+    await browser.waitUntil(async () => {
+      const shown = await tree();
+      return await runTitle() === `Run ${run.id}` && shown.artifact !== null &&
+        JSON.stringify(shown.evals) === JSON.stringify(shown.artifact === "true" ? [run.eval] : []);
+    }, { timeout: 15000, timeoutMsg: `the Tree finished replacing its content with ${run.id}` });
     const shown = await tree();
     assert.equal(await runTitle(), `Run ${run.id}`, "the Run pane shows the selected Run");
     assert.notEqual(shown.artifact, null, "the selected Run's Artifact is in the Tree");

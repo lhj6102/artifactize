@@ -1193,8 +1193,11 @@ fn a_bracketed_paste_reaches_only_the_focused_field() {
     press(&mut review, KeyCode::Esc);
     assert_eq!(review.focus(), Focus::List);
     review.paste("ignored");
+    review.set_listed(vec![view("WAITING_HUMAN", Some("alice"), demo())]);
+    assert_eq!(press(&mut review, KeyCode::Enter), Action::Refresh);
+    press(&mut review, KeyCode::Char('r'));
     assert_eq!(
-        review.drafts[&crate::runtime::Verdict::Red].fields[0].display(),
+        form(&review).fields[0].display(),
         "needs 한글\nwork q\u{1b}"
     );
 }

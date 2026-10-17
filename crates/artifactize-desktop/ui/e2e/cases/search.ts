@@ -99,7 +99,9 @@ export const scenarios: Scenario[] = [
       await press(browser, ["/"], focused("Search requests"), "search focused without a Requests list");
       assert.equal(await query(), kept, "the shortcut focuses search without typing a slash");
       await press(browser, ["Escape"], holds(""), "the waiting query cleared for typing");
+      const beforeTyped = await checkpoint(browser);
       await type("release/signoff ");
+      await commandsRendered(browser, beforeTyped);
       assert.equal(await query(), "release/signoff ", "a slash typed in the field remains part of the query");
       await waitFor(browser, async () => (await rows()).length === 3 &&
         (await rows()).every((row) => row.includes("release/signoff")), "the typed query searches the saved sign-offs");
@@ -126,8 +128,11 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], holds(""), "the query cleared");
       await type("kind:hu");
       await waitFor(browser, async () => (await suggestions()).includes("kind:human"), "the kind suggestion again");
+      const beforeKind = await checkpoint(browser);
       await press(browser, ["Tab"], holds("kind:human "), "the kind taken");
-      await waitFor(browser, async () => (await rows()).length === 3, "the three sign-offs");
+      await commandsRendered(browser, beforeKind);
+      await waitFor(browser, async () => (await rows()).length === 3 &&
+        (await rows()).every((row) => row.includes("release/signoff")), "the accepted kind's three sign-offs");
 
       await type("rep");
       await waitFor(browser, async () => (await suggestions()).includes("repo:"), "the repo key");
@@ -139,7 +144,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the repository values");
       await type("oth");
       await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the other repository");
+      const beforeRepository = await checkpoint(browser);
       await press(browser, ["Tab"], holds("kind:human repo:other "), "the repository taken");
+      await commandsRendered(browser, beforeRepository);
       await waitFor(browser, async () => {
         const shown = await rows();
         return shown.length === 1 && /release\/signoff/.test(shown[0]) && /other/.test(shown[0]);

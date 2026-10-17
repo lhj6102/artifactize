@@ -84,6 +84,10 @@ fn command_output_and_saved_results_share_shape_validation() {
         ),
         (json!({"content":[],"isError":true}), None),
         (
+            json!({"content":[{"type":"image","data":"bytes","mimeType":"image/gif"}]}),
+            None,
+        ),
+        (
             json!({"content":[{"type":"json","data":42}],"isError":true}),
             None,
         ),

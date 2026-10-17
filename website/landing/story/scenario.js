@@ -17,16 +17,16 @@ import { evalEnds, evalId } from './model.js';
 /** The project: one repository. People are not nodes; they appear as reviewer marks and labels. @type {StoryNode[]} */
 const project = [
   { id: 'idea', label: 'Idea', kind: 'idea', parent: 'app' },
-  { id: 'spec', label: 'Spec', kind: 'doc', parent: 'app' },
+  { id: 'spec', label: 'Plan details', kind: 'doc', parent: 'app' },
   { id: 'code', label: 'Code', kind: 'code', parent: 'app' },
-  { id: 'src', label: 'src', kind: 'code', parent: 'code' },
-  { id: 'tests', label: 'tests', kind: 'runtime', parent: 'code' },
-  { id: 'core', label: 'core', kind: 'module', parent: 'code' },
-  { id: 'api', label: 'api', kind: 'module', parent: 'code' },
-  { id: 'cli', label: 'cli', kind: 'module', parent: 'code' },
-  { id: 'sync', label: 'sync', kind: 'module', parent: 'code' },
-  { id: 'style', label: 'Style sheet', kind: 'sheet', parent: 'app' },
-  { id: 'docs', label: 'Docs pages', kind: 'docs', parent: 'app' },
+  { id: 'src', label: 'Source code', kind: 'code', parent: 'code' },
+  { id: 'tests', label: 'Tests', kind: 'runtime', parent: 'code' },
+  { id: 'core', label: 'Core code', kind: 'module', parent: 'code' },
+  { id: 'api', label: 'App links', kind: 'module', parent: 'code' },
+  { id: 'cli', label: 'Text app', kind: 'module', parent: 'code' },
+  { id: 'sync', label: 'Sharing', kind: 'module', parent: 'code' },
+  { id: 'style', label: 'Style guide', kind: 'sheet', parent: 'app' },
+  { id: 'docs', label: 'Guides', kind: 'docs', parent: 'app' },
   { id: 'site', label: 'Website', kind: 'website', parent: 'app' },
   { id: 'brand', label: 'Brand guide', kind: 'sheet', parent: 'app' },
 ];
@@ -84,13 +84,18 @@ const carol = { nodes: copyNodes('c-', 'app-c'), evals: copyEvals('c-') };
 /** @type {StoryNode[]} */
 const nodes = [
   ...project,
-  { id: 'app', label: 'app · main', kind: 'repo' },
-  { id: 'app-b', label: 'app · bob/api', kind: 'repo' },
+  { id: 'app', label: 'Team project', kind: 'repo' },
+  { id: 'app-b', label: 'Bob’s copy', kind: 'repo' },
   ...bob.nodes,
-  { id: 'app-c', label: 'app · carol/cli', kind: 'repo' },
+  { id: 'app-c', label: 'Carol’s copy', kind: 'repo' },
   ...carol.nodes,
+<<<<<<< HEAD
   { id: 'store', label: 'Review store', kind: 'store', sub: 'artifactize server' },
   { id: 'ci', label: 'Checks', kind: 'ci', sub: 'reads saved reviews' },
+=======
+  { id: 'store', label: 'Shared reviews', kind: 'store', sub: 'Team’s saved results' },
+  { id: 'ci', label: 'Team checks', kind: 'ci', sub: 'Can read, not publish' },
+>>>>>>> origin/feat/evaluator-prompt
 ];
 
 /** @type {StoryEval[]} */
@@ -102,7 +107,7 @@ const overlays = {
   'flow-b': { type: 'flow', from: 'app-b', to: 'store', tone: 'publish', back: 'reuse' },
   'flow-c': { type: 'flow', from: 'app-c', to: 'store', tone: 'publish', back: 'reuse', bend: 0 },
   'flow-ci': { type: 'flow', from: 'store', to: 'ci', tone: 'reuse', bend: 0.2 },
-  'ci-lane': { type: 'lane', y: 93, label: 'verify --all', text: 'executed {executed} · reused {reused}' },
+  'ci-lane': { type: 'lane', y: 93, label: 'Check whole project', text: 'new checks {executed} · reused results {reused}' },
 };
 
 /** Where the grown project sits; the copies reuse it. @type {Record<string, Pos>} */
@@ -172,7 +177,7 @@ const steps = [
     // A copy starts with the verdicts already in the store.
     connect: [...bob.evals, ...carol.evals].map(evalId), connectAs: 'reused',
     show: ['flow-a', 'flow-b', 'flow-c'],
-    relabel: { app: 'app · alice/docs' },
+    relabel: { app: 'Alice’s copy' },
     ripple: ['docs', 'b-api', 'c-cli'],
   },
   {

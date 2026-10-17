@@ -1,5 +1,6 @@
 pub(crate) mod alert_state;
 mod executor;
+pub(crate) mod native_ime;
 
 pub use alert_state::AlertStateManager;
 pub use executor::*;

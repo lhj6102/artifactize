@@ -12,9 +12,9 @@ import sys
 import zlib
 
 CAPTURES = {
-    "monitor.png": (1440, 760),
+    "monitor.png": (1440, 520),
     "monitor-narrow.png": (760, 760),
-    "review.png": (1440, 760),
+    "review.png": (1440, 520),
     "review-narrow.png": (760, 760),
 }
 
@@ -91,8 +91,18 @@ def check(directory):
         data = path.read_bytes()
         require(hashlib.sha256(data).hexdigest() == frame["sha256"], f"capture hash mismatch: {path.name}")
         require(png_size(data) == CAPTURES[path.name], f"wrong capture dimensions: {path.name}")
-        require("Artifactize" in frame["visibleText"] and "WAITING_HUMAN" in frame["visibleText"],
-                "capture evidence lacks the real app's waiting preview")
+        text = frame["visibleText"]
+        require("Artifactize" in text and "release/signoff" in text and "unclaimed" in text,
+                "capture evidence lacks the real app's unclaimed review")
+        if path.name.startswith("monitor"):
+            require("docs/lint · Documentation can be read" in text and "exitCode 0" in text
+                    and "GREEN — criteria met" in text and "waits for release" in text,
+                    "Monitor must show the completed command result and its waiting dependency")
+        else:
+            require("WAITING_HUMAN" in text and "Requests (3)" in text
+                    and "No approval has been submitted." in text
+                    and "Check the release notes and the documentation result" in text,
+                    "Review must show the real requests and expanded pending instruction")
     return {"captures": len(frames), "buildCommit": evidence["buildCommit"], "run": run}
 
 

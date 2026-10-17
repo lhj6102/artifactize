@@ -58,7 +58,7 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
     // changing its case on an insensitive volume; distinct names remain usable otherwise.
     fs::create_dir(root.join("remote")).unwrap();
     fs::write(root.join("remote/x"), "physical").unwrap();
-    let insensitive = os::case_policy(&root) == os::CasePolicy::Insensitive;
+    let insensitive = os::case_policy(&root, "public") == os::CasePolicy::Insensitive;
     let result = call(Builtin::Read, json!({"path":"remote/x"}));
     assert_eq!(result.is_error(), insensitive, "{result:?}");
     if !insensitive {
@@ -70,8 +70,7 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
     // A stale scope still reserves the excluded child after a case-only rename. Use an
     // intermediate name because Windows may otherwise leave the old spelling unchanged.
     if insensitive {
-        fs::rename(root.join("Secret"), root.join("renamed")).unwrap();
-        fs::rename(root.join("renamed"), root.join("secret")).unwrap();
+        os::rename_case(&root, "Secret", "secret");
         let result = call(Builtin::Read, json!({"path":"secret/x"}));
         assert!(result.is_error(), "{result:?}");
     }

@@ -203,6 +203,27 @@ impl Client {
         })
     }
 
+    /// Structured output constrains the final answer only; tool calls keep their contract.
+    /// Merge Anthropic's format with the reasoning effort already in output_config.
+    pub fn output_format(backend: Backend, parameters: &mut Value, schema: Value) {
+        match backend {
+            Backend::Openai | Backend::Codex => {
+                parameters["text"] = json!({"format":{
+                    "type":"json_schema", "name":"artifactize_verdict", "strict":true,
+                    "schema":schema,
+                }});
+            }
+            Backend::Anthropic => {
+                let config = parameters
+                    .as_object_mut()
+                    .expect("parameters object")
+                    .entry("output_config")
+                    .or_insert_with(|| json!({}));
+                config["format"] = json!({"type":"json_schema", "schema":schema});
+            }
+        }
+    }
+
     async fn stream(
         &self,
         mut request: CompletionRequest,

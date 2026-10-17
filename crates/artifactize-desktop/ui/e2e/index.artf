@@ -17,9 +17,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.covers-journeys.payload]
 instruction = """
-Read the journeys {ux-features} with read_features_ux-features and the graph {ux-graph} with \
-read_graph_ux-graph. Review the tests of {desktop-e2e} using list_desktop-e2e, glob_desktop-e2e, \
-grep_desktop-e2e and read_desktop-e2e. Evaluate UX coverage only: every journey (J- id) has a test \
+Read the journeys {ux-features} and the graph {ux-graph}. Review the tests of {desktop-e2e}. Evaluate UX coverage only: every journey (J- id) has a test \
 that performs its prescribed actions and checks its final outcome; every edge (E- id) has an \
 assertion that the transition happens, not only a comment naming it. Check that the assertions \
 express the actual feature and graph requirements, neither a weaker substitute nor an invented \
@@ -58,9 +56,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-style.payload]
 instruction = """
-Read {code-style} with read_style_code-style. Review all TypeScript tests, helpers and runner \
-code owned by {desktop-e2e}, using list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and \
-read_desktop-e2e. Apply every language-neutral TEST- rule and M-TAUTOLOGICAL-TESTS: exact async \
+Read {code-style}. Review all TypeScript tests, helpers and runner \
+code owned by {desktop-e2e}. Apply every language-neutral TEST- rule and M-TAUTOLOGICAL-TESTS: exact async \
 states, controlled ordering and expiry, read-only observation, fixture ownership and cleanup, \
 self-contained build inputs, observable seams without over-verification, and independent expected \
 results. The other Rust-specific checklist items do not apply to TypeScript. Judge the code \
@@ -88,7 +85,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-e2e-rules.payload]
 instruction = """
-Review all specs, fixtures, runner configuration and build/run code owned by {desktop-e2e}, using list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and read_desktop-e2e. These are this Artifact's E2E-writing rules. Their reference is Tauri's WebDriver guide (https://v2.tauri.app/develop/tests/webdriver/) and the WebdriverIO Tauri service docs (https://webdriver.io/docs/desktop-testing/tauri/).
+Review all specs, fixtures, runner configuration and build/run code owned by {desktop-e2e}. These are this Artifact's E2E-writing rules. Their reference is Tauri's WebDriver guide (https://v2.tauri.app/develop/tests/webdriver/) and the WebdriverIO Tauri service docs (https://webdriver.io/docs/desktop-testing/tauri/).
 
 - E2E-WDIO-SERVICE: the suite runs on the WebdriverIO test runner with @wdio/tauri-service and the embedded WebDriver provider (tauri-plugin-wdio-webdriver), the same provider on Linux, Windows and macOS. The runner and service own app launch, WebDriver provisioning and shutdown, with capability-specific endpoints declared only in runner configuration. Specs and helpers do not spawn or kill the app or a WebDriver server, and do not wrap or re-wire the service's launcher lifecycle. When a journey's expected outcome is the app quitting, the spec observes the real exit and then marks that WebDriver session ended through one shared helper; this is the only session bookkeeping specs may do. On headless Linux, the whole runner runs under dbus-run-session and xvfb-run -a with X11, never on the user's desktop. Platforms differ only inside the suite's platform layer (E2E-PLATFORM); specs contain no OS branches.
 - E2E-PLATFORM: e2e/platform.ts is the suite's only platform layer and the first place to look for an OS difference. Only it names an operating system, reads or changes the process environment, builds native paths, touches the file system, starts, observes or stops processes, opens sockets, or chooses OS-specific values such as executable names, OS user directories and the primary shortcut modifier. It exposes portable functions that behave the same on Linux, Windows and macOS: native paths flow only into file system and process calls, including a path that a started program opens itself (a Tauri build input in its configuration variable); a path written into a file, a declaration or an argument template, or compared with what the app shows, uses '/'. Every other spec, fixture, helper, fixture program and runner configuration file uses those functions instead. The lint eval enforces the import, process-value and OS-literal restrictions mechanically; judge what lint cannot: that platform.ts returns normalized values rather than leaking OS-shaped ones, and that no other file reproduces OS-dependent behavior by other means.

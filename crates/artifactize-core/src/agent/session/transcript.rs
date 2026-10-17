@@ -164,8 +164,8 @@ pub struct Transcript {
     expanded: BTreeSet<BlockId>,
     assistant: Option<crate::types::Sha256Bytes>,
     question: Option<(Option<usize>, crate::types::Sha256Bytes)>,
-    /// A JSON-looking assistant message is unchanged until an identical authoritative End arrives.
-    result_candidate: Option<(BlockId, crate::types::Sha256Bytes)>,
+    /// A JSON-looking assistant message is unchanged until its authoritative End arrives.
+    result_candidate: Option<(BlockId, serde_json::Value)>,
     deliveries: BTreeMap<
         (
             Option<usize>,
@@ -179,6 +179,62 @@ pub struct Transcript {
     delivered_turns: BTreeSet<(Option<usize>, usize)>,
     thinking: BTreeSet<BlockId>,
 }
+/// Provider envelopes, null placeholders and JSON-encoded fields are presentation details.
+/// Only a matching validated End replaces the raw answer; examples and failed answers stay.
+fn candidate(text: &str) -> Option<serde_json::Value> {
+    if text.len() > crate::agent::verdict::MAX_RESPONSE_BYTES {
+        return None;
+    }
+    let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
+    if value.get("verdict").is_none() && value.as_object()?.len() == 1 {
+        value = value.get("result")?.clone();
+        if let Some(text) = value.as_str() {
+            value = serde_json::from_str(text).ok()?;
+        }
+        if value.as_object()?.len() == 2 && value.get("verdictFields").is_some() {
+            let verdict = value.get("verdict")?.clone();
+            let mut fields = value.get("verdictFields")?.clone();
+            if let Some(text) = fields.as_str() {
+                fields = serde_json::from_str(text).ok()?;
+            }
+            let object = fields.as_object_mut()?;
+            if object.get("verdict").is_some_and(|value| value != &verdict) {
+                return None;
+            }
+            object.insert("verdict".into(), verdict);
+            value = fields;
+        }
+    }
+    matches!(value.get("verdict")?.as_str()?, "GREEN" | "RED").then_some(value)
+}
+
+fn same_result(wire: &serde_json::Value, result: &serde_json::Value) -> bool {
+    if wire == result {
+        return true;
+    }
+    match (wire, result) {
+        (serde_json::Value::String(text), _) => {
+            serde_json::from_str(text).is_ok_and(|decoded| same_result(&decoded, result))
+        }
+        (serde_json::Value::Object(wire), serde_json::Value::Object(result)) => {
+            result
+                .iter()
+                .all(|(key, value)| wire.get(key).is_some_and(|wire| same_result(wire, value)))
+                && wire
+                    .iter()
+                    .all(|(key, value)| result.contains_key(key) || value.is_null())
+        }
+        (serde_json::Value::Array(wire), serde_json::Value::Array(result)) => {
+            wire.len() == result.len()
+                && wire
+                    .iter()
+                    .zip(result)
+                    .all(|(wire, result)| same_result(wire, result))
+        }
+        _ => false,
+    }
+}
+
 impl Transcript {
     fn slot(&mut self) -> BlockId {
         let id = BlockId(self.blocks);
@@ -190,25 +246,13 @@ impl Transcript {
             return;
         }
         self.active = None;
-        let candidate = if !user {
-            serde_json::from_str::<serde_json::Value>(text)
-                .ok()
-                .filter(|value| {
-                    value
-                        .get("verdict")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|verdict| matches!(verdict, "GREEN" | "RED"))
-                })
-                .map(|value| crate::types::Sha256Bytes::of(value.to_string().as_bytes()))
-        } else {
-            None
-        };
+        let candidate = if !user { candidate(text) } else { None };
         let text = markdown(text);
         if !user {
             self.assistant = Some(crate::types::Sha256Bytes::of(text.trim().as_bytes()));
         }
         let id = self.slot();
-        self.result_candidate = candidate.map(|digest| (id, digest));
+        self.result_candidate = candidate.map(|value| (id, value));
         patches.push(Patch {
             id,
             text: format!("{}{text}\n\n", if user { "You\n" } else { "" }),
@@ -347,20 +391,7 @@ impl Transcript {
             self.delivered_turns.insert((send, delivery.turn));
         }
         if delivery.kind == DeliveryKind::Text && delivery.state == DeliveryState::Complete {
-            let value = serde_json::from_str::<serde_json::Value>(&text)
-                .ok()
-                .filter(|value| {
-                    value
-                        .get("verdict")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|verdict| matches!(verdict, "GREEN" | "RED"))
-                });
-            self.result_candidate = value.map(|value| {
-                (
-                    id,
-                    crate::types::Sha256Bytes::of(value.to_string().as_bytes()),
-                )
-            });
+            self.result_candidate = candidate(&text).map(|value| (id, value));
             self.assistant = Some(crate::types::Sha256Bytes::of(
                 markdown(&text).trim().as_bytes(),
             ));
@@ -469,11 +500,10 @@ impl Transcript {
             Kind::End(end) => {
                 self.stopped(&mut dirty);
                 if let Some(result) = end.result() {
-                    let digest =
-                        crate::types::Sha256Bytes::of(result.to_json().to_string().as_bytes());
+                    let value = result.to_json();
                     let text = result_text(result);
                     if let Some((id, candidate)) = self.result_candidate.take()
-                        && candidate == digest
+                        && same_result(&candidate, &value)
                     {
                         patches.push(Patch {
                             id,

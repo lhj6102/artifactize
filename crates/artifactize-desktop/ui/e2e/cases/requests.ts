@@ -2,14 +2,15 @@
 // Tools focused, switching the verdict being edited, and paging through more requests than one
 // page holds.
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { artifactize, create, createPagedRequests, signoff } from "../fixture.ts";
-import { afterRender, fill, press } from "../keys.ts";
+import { fill, press } from "../keys.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
-import { checkpoint } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { reviewing } from "../human-review.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier } from "../platform.ts";
+import { nativeIme, nativeImeKey, primaryModifier } from "../platform.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -50,12 +51,7 @@ function submission(browser: WebdriverIO.Browser) {
   const text = () => browser.execute(() => document.body.innerText);
   // The surrounding Monitor panel shares this label but does not own the Human keys.
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
-  /** A key typed while an input method composes: the page marks it so. */
-  const composing = (key: string) =>
-    browser.execute((name) => {
-      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: name, isComposing: true, bubbles: true }));
-    }, key);
-  return { text, human, composing };
+  return { text, human };
 }
 
 export const scenarios: Scenario[] = [
@@ -134,12 +130,14 @@ export const scenarios: Scenario[] = [
       await browser.$('[aria-label="Search requests"]').click();
       await press(browser, ["Escape"], async () => (await browser.$('[aria-label="Search requests"]').getValue()) === "", "the query cleared");
       await press(browser, ["Enter"], () => browser.$('[aria-label="Requests"]').isFocused(), "focus on the list");
-      await waitFor(browser, async () => (await count()) === 100 && /page 1/.test(await title()), "the first page");
       const identities = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Requests"] [role="option"] .mono')].map((cell) => cell.innerText));
+      const page = async (number: number, ids: string[]) =>
+        (await count()) === ids.length && new RegExp(`page ${number}`).test(await title()) && isDeepStrictEqual(await identities(), ids);
+      await waitFor(browser, () => page(1, expected.slice(0, 100)), "the first page's exact identities");
       assert.deepEqual(await identities(), expected.slice(0, 100), "the newest batch precedes the older batch");
-      await press(browser, ["PageDown"], async () => (await count()) === 3 && /page 2/.test(await title()), "the older page");
+      await press(browser, ["PageDown"], () => page(2, expected.slice(100)), "the older page's exact identities");
       assert.deepEqual(await identities(), expected.slice(100), "older request identities and order");
-      await press(browser, ["PageUp"], async () => (await count()) === 100 && /page 1/.test(await title()), "the newer page");
+      await press(browser, ["PageUp"], () => page(1, expected.slice(0, 100)), "the newer page's exact identities");
       assert.deepEqual(await identities(), expected.slice(0, 100), "paging back restores the identical newer order");
     },
   ),
@@ -175,10 +173,10 @@ export const scenarios: Scenario[] = [
   // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
   scenario<Record<string, never>>(
     "requests-green-composition",
-    "claims, fills the schema's form with Korean text composed in the field, and submits GREEN",
+    "claims, composes Korean through the native WebDriver IME device, and submits GREEN",
     async () => ({ fixture: await create(), data: {} }),
     async (browser, { fixture }) => {
-      const { text, human, composing } = submission(browser);
+      const { text, human } = submission(browser);
       await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
       await browser.$('[role="tree"]').click();
       await browser.$('//li[@role="treeitem"][@aria-level="2"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "signoff")]]').click();
@@ -192,36 +190,62 @@ export const scenarios: Scenario[] = [
       assert.ok(await browser.$("#field-approved").isExisting(), "the schema's approved field");
       const comment = browser.$("#field-comment");
       await comment.click();
-      // Composition: shortcut letters, chords and Esc belong to the input method. Observe
-      // dispatch, not only a still-unchanged database while an accidental command is pending.
-      const writes = ["humanForm", "humanClaim", "humanRelease", "humanRun", "humanSubmit", "humanCancel", "humanJson"];
-      const before = (await checkpoint(browser)).activity;
-      assert.ok(before.commands.humanClaim?.completed > 0, "the same read-only activity probe observes this case's successful claim");
-      await browser.execute(() => document.activeElement?.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
-      for (const key of ["g", "r", "q", "u", "c", "Escape"]) await composing(key);
-      // The chords carry this platform's primary modifier, the one the shortcuts use.
-      await browser.execute((modifier) => {
-        for (const key of ["g", "r", "u", "s", "e"]) {
-          document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", {
-            key, ctrlKey: modifier === "Control", metaKey: modifier === "Meta", isComposing: true, bubbles: true,
-          }));
-        }
-      }, primaryModifier);
-      await afterRender(browser);
-      const after = (await checkpoint(browser)).activity;
-      for (const command of writes) assert.equal(after.commands[command]?.started ?? 0, before.commands[command]?.started ?? 0, `composition dispatches no ${command}`);
-      assert.ok(await comment.isExisting(), "the form stays open");
-      assert.equal(signoff(fixture).claim?.reviewer, "alice", "nothing was released");
-      assert.equal(signoff(fixture).status, "WAITING_HUMAN");
-      // The composition commits: the field holds the Korean text.
+      type ImeEvent = { type: string; code: string; composing: boolean; keyCode: number; trusted: boolean };
       await browser.execute(() => {
-        const field = document.querySelector<HTMLInputElement>("#field-comment")!;
-        field.value = "안녕";
-        field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "안녕" }));
-        field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "안녕" }));
+        const log: { type: string; code: string; composing: boolean; keyCode: number; trusted: boolean }[] = [];
+        (window as unknown as { imeEvents: typeof log }).imeEvents = log;
+        for (const type of ["compositionstart", "compositionupdate", "compositionend", "keydown"]) {
+          window.addEventListener(type, (event) => {
+            const key = event as KeyboardEvent;
+            log.push({ type, code: key.code ?? "", composing: key.isComposing ?? false, keyCode: key.keyCode ?? 0, trusted: event.isTrusted });
+          }, { capture: true });
+        }
       });
-      assert.equal(await comment.getValue(), "안녕");
+      const events = () => browser.execute(() => (window as unknown as { imeEvents: ImeEvent[] }).imeEvents);
+      const checked = ["humanForm", "humanClaim", "humanSubmit"];
+      const before = (await checkpoint(browser)).activity;
+      assert.ok(before.commands.humanClaim?.completed > 0, "the claim counter observed this successful claim");
+      assert.ok(before.commands.humanForm?.completed > 0, "the form counter observed this successful GREEN choice");
+      await nativeIme(browser, { type: "set", text: "안" });
+      await waitFor(browser, async () => (await events()).some((event) => event.type === "compositionstart" && event.trusted), "a trusted native composition started");
+      for (const [key, primary, preedit] of [["g", false, "안녕"], ["r", false, "안"], ["q", false, "안녕"], ["u", false, "안"], ["c", false, "안녕"], ["Escape", false, "안"], ["g", true, undefined], ["r", true, undefined], ["s", true, undefined]] as const) {
+        const count = (await events()).length;
+        const code = key === "Escape" ? key : `Key${key.toUpperCase()}`;
+        try {
+          await nativeImeKey(browser, key, primary, preedit);
+          if (preedit !== undefined) {
+            // An IME consumes text keys before DOM keydown. Its trusted preedit update
+            // and exact field value witness processing of that native physical key.
+            await waitFor(browser, async () => await comment.getValue() === preedit && (await events()).slice(count).some((event) =>
+              event.type === "compositionupdate" && event.trusted), `the native IME processed ${code}`);
+          } else {
+            await waitFor(browser, async () => (await events()).slice(count).some((event) =>
+              event.type === "keydown" && event.code === code && event.trusted && (event.composing || event.keyCode === 229)),
+            `the native composing ${code} reached the real page`);
+          }
+        } catch (error) {
+          const observed = await events().catch((failure: unknown) => `event reader unavailable: ${String(failure)}`);
+          throw new Error(`Native input ${code} (primary=${primary}): ${JSON.stringify(observed)}`, { cause: error });
+        }
+      }
+      await commandsRendered(browser);
+      const after = (await checkpoint(browser)).activity;
+      for (const name of checked) assert.equal(after.commands[name]?.started ?? 0, before.commands[name]?.started ?? 0, `native composition dispatches no ${name}`);
+      assert.ok(await comment.isExisting(), "the GREEN form stays open");
+      assert.ok(!(await browser.$("#field-reason").isExisting()), "composition did not switch the verdict");
+      assert.ok(!(await browser.$('[role="alertdialog"]').isExisting()), "composition did not leave or quit");
+      assert.equal(signoff(fixture).claim?.reviewer, "alice", "composition did not release the claim");
+      assert.equal(signoff(fixture).status, "WAITING_HUMAN", "composition submitted nothing");
+      await nativeIme(browser, { type: "commit", text: "안녕" });
+      try {
+        // The engine's commit API can mark compositionend untrusted. Native
+        // composing start/update/key events above must be trusted; completion is
+        // witnessed by compositionend, the exact committed text and real submit.
+        await waitFor(browser, async () => await comment.getValue() === "안녕" && (await events()).some((event) => event.type === "compositionend"), "the native input method committed Korean text");
+      } catch (error) { throw new Error(`Native commit: ${JSON.stringify({ value: await comment.getValue(), events: await events() })}`, { cause: error }); }
+      await commandsRendered(browser);
       await press(browser, [primaryModifier, "s"], async () => signoff(fixture).status === "GREEN", "GREEN saved");
+      await waitFor(browser, async () => ((await checkpoint(browser)).activity.commands.humanSubmit?.completed ?? 0) > (before.commands.humanSubmit?.completed ?? 0), "the submit counter observes this real successful submission");
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "안녕" });
       await waitFor(browser, async () => /completed result/i.test(await text()), "the completed result stays open");
     },

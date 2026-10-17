@@ -16,6 +16,8 @@ describe("command activity", () => {
     const native = deferred<string>();
     const source = { claim: (_id: string) => native.promise };
     const commands = observeCommands(source, activity);
+    expect(activity.snapshot().commands.claim).toEqual({ started: 0, completed: 0, pending: 0 });
+    expect(activity.snapshot().commands.unregistered).toBeUndefined();
     const pending = commands.claim("private request");
     const dispatched = activity.snapshot();
     expect(dispatched.commands.claim).toEqual({ started: 1, completed: 0, pending: 1 });

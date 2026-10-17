@@ -17,6 +17,10 @@ pub mod files;
 pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {
     status.to_string()
 }
+/// Whether a native process exited successfully, including Unix signal termination.
+pub(crate) fn succeeded(status: &std::process::ExitStatus) -> bool {
+    status.success()
+}
 pub(crate) mod process;
 pub mod program;
 

@@ -32,7 +32,10 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { key } }) => {
       await browser.$("button=Settings").waitForExist({ timeout: 15000 });
       await browser.$("button=Settings").click();
-      await browser.$('[data-testid="key-openai"]').waitForExist({ timeout: 15000 });
+      await browser.waitUntil(() => browser.execute(() =>
+        document.querySelector('[data-testid="key-openai"]')?.textContent === "Set"
+        && document.querySelector('[data-testid="key-anthropic"]')?.textContent === "Not set"),
+      { timeout: 15000, timeoutMsg: "the loaded Settings key statuses" });
       const keys = await browser.execute(() => ({
         openai: document.querySelector('[data-testid="key-openai"]')?.textContent,
         anthropic: document.querySelector('[data-testid="key-anthropic"]')?.textContent,
@@ -48,6 +51,7 @@ export const scenarios: Scenario[] = [
     "settings: remote sign-in, shared CLI status, fresh identity, dry run and sign-out",
     async () => {
       const fixture = createOutside();
+      const env = settingsEnvironment(fixture);
       // The outer owner serves HTTP while WDIO runs elsewhere. Only this fixture's
       // domain state crosses that process boundary, never a server or live closure.
       const principalFile = nativePath(fixture.root, "remote-principal");
@@ -60,7 +64,7 @@ export const scenarios: Scenario[] = [
       });
       return {
         fixture,
-        env: settingsEnvironment(fixture),
+        env,
         data: { url: `${store.url}/`, principalFile, token: TOKEN },
         release: () => store.close(),
       };

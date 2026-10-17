@@ -1,5 +1,6 @@
-//! Test desktop handoff in a subprocess so PATH never races other tests.
-// Windows opens through ShellExecute, which runs no program a test can stand in for.
+//! Test the Unix opener-process argument boundary without racing the process PATH.
+// Only Unix starts an opener process. Windows tests the same literal-target contract
+// through its injected native ShellExecute handoff in platform/windows.rs instead.
 #![cfg(unix)]
 
 #[path = "support/os.rs"]
@@ -32,7 +33,7 @@ fn target_is_one_literal_argument() {
     os::recording_program(root.path(), os::OPENER);
     let output = os::rerun_recording(root.path(), "target_is_one_literal_argument");
     assert!(
-        output.status.success(),
+        os::succeeded(&output.status),
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)

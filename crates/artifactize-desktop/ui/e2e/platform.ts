@@ -404,14 +404,20 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand>, s
   };
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
-  const outcome = await closed;
-  signal.removeEventListener("abort", cancel);
-  await cancellation;
-  if (signal.aborted) failures.unshift(signal.reason);
-  else if (outcome.signal) failures.push(new Error(`fixture runner terminated by ${outcome.signal}`));
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, "fixture runner failed or could not be cancelled");
-  return { code: outcome.code, stdout, stderr };
+  try {
+    const outcome = await closed;
+    // A closed wrapper can leave descendants that closed their inherited pipes.
+    // Always settle its owned tree; an abort remains attached throughout teardown.
+    cancel();
+    await cancellation;
+    if (signal.aborted) failures.unshift(signal.reason);
+    else if (outcome.signal) failures.push(new Error(`fixture runner terminated by ${outcome.signal}`));
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, "fixture runner failed or could not be cancelled");
+    return { code: outcome.code, stdout, stderr };
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
 }
 
 /** Stop a child started with its own process tree, and every descendant of it. */
@@ -652,18 +658,13 @@ export function assertHarnessPlatform(): void {
   }
 }
 
-/** Stop the system browser that Windows' default URL handler started for the account
- * journey. It inherits the fixture's environment, so its profile lives in the fixture and
- * it would hold the fixture until the machine ends; the suite runs on Windows only on a
- * disposable runner (assertRunnerMachine), whose default browser is Edge. Unix openers are
- * fixture programs that have already exited. */
-export async function releaseAccountBrowser(): Promise<void> {
+/** Close only the browser tree whose native launch command names this fixture's auth
+ * origin. Existing browser processes are rejected during setup, never adopted or killed. */
+export async function releaseAccountBrowser(root: NativePath, origin: string | undefined): Promise<void> {
   if (!WINDOWS) return;
-  const root = variable("SystemRoot");
-  if (!root) throw new Error("SystemRoot is required to stop the Windows account browser");
-  const stopped = await runProgramAsync(join(root, "System32", "taskkill.exe") as NativePath, ["/IM", "msedge.exe", "/T", "/F"]);
-  // 128: no such process, the browser already exited.
-  if (stopped.status !== 0 && stopped.status !== 128) throw new Error(`taskkill exited ${stopped.status}: ${stopped.stderr}`);
+  if (!origin) throw new Error("the account browser requires its fixture's auth origin");
+  const stopped = await runProgramAsync("pwsh", ["-NoProfile", "-NonInteractive", "-File", nativePath(root, "account-browser.ps1"), "-Mode", "release", "-Origin", origin]);
+  if (stopped.status !== 0) throw new Error(`owned account browser cleanup failed: ${stopped.stderr}`);
 }
 
 /** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
@@ -676,8 +677,7 @@ export const appsAtOnce = WINDOWS ? 1 : 2;
  * appsAtOnce); other systems deliver focus events to a page in any window. */
 export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<void> {
   if (!WINDOWS) return;
-  await browser.execute(() => (window as unknown as { __TAURI__: { window: { getCurrentWindow(): { setFocus(): Promise<void> } } } })
-    .__TAURI__.window.getCurrentWindow().setFocus());
+  await browser.switchToWindow(await browser.getWindowHandle());
   await browser.waitUntil(() => browser.execute(() => document.hasFocus()),
     { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
 }
@@ -685,7 +685,54 @@ export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<voi
 /** Unix desktop openers are declared fixture executables performing the real HTTP GET;
  * the account server, not this program, records the exact displayed address reached. */
 export function accountBrowserEnvironment(root: NativePath, env: Environment): Environment {
-  if (WINDOWS) return env;
+  if (WINDOWS) {
+    const origin = env.ARTIFACTIZE_CODEX_AUTH_URL;
+    if (!origin || new URL(origin).hostname !== "127.0.0.1") throw new Error("the account browser requires a private loopback auth origin");
+    const script = nativePath(root, "account-browser.ps1");
+    writeText(script, `param([ValidateSet('check','release')][string]$Mode, [string]$Origin)
+$ErrorActionPreference = 'Stop'
+$all = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'")
+if ($Mode -eq 'check') {
+  if ($all.Count) { throw 'Account E2E requires no pre-existing Edge processes; none will be killed.' }
+  return
+}
+$roots = @($all | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Origin + '/oauth/authorize') })
+if (!$roots.Count) {
+  if ($all.Count) { throw 'No Edge process is attributable to this account fixture; refusing image-wide cleanup.' }
+  return
+}
+$ids = [System.Collections.Generic.HashSet[int]]::new()
+foreach ($record in $roots) { $null = $ids.Add([int]$record.ProcessId) }
+do {
+  $added = $false
+  foreach ($record in $all) {
+    if ($ids.Contains([int]$record.ParentProcessId) -and $ids.Add([int]$record.ProcessId)) { $added = $true }
+  }
+} while ($added)
+$owned = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
+try {
+  foreach ($record in $all) {
+    if (!$ids.Contains([int]$record.ProcessId)) { continue }
+    $process = Get-Process -Id $record.ProcessId -ErrorAction SilentlyContinue
+    if (!$process) { continue }
+    $owned.Add($process)
+    # StartTime pins its native handle and guards PID reuse between the snapshot and open.
+    # CIM records microseconds; compare at that resolution, not .NET's finer ticks.
+    if ($process.StartTime.ToUniversalTime().ToString('yyyyMMddHHmmss.ffffff') -ne $record.CreationDate.ToUniversalTime().ToString('yyyyMMddHHmmss.ffffff')) { throw 'Browser process identity changed; refusing to terminate it.' }
+  }
+  foreach ($record in $roots) {
+    $process = $owned | Where-Object { $_.Id -eq $record.ProcessId }
+    if ($process -and !$process.HasExited) { $process.Kill($true) }
+  }
+  # A watchdog bounds failed teardown; it does not decide whether cleanup succeeded.
+  foreach ($process in $owned) { if (!$process.WaitForExit(10000)) { throw 'Owned browser process did not exit.' } }
+} finally {
+  foreach ($process in $owned) { $process.Dispose() }
+}
+`);
+    runProgramOk("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-Mode", "check", "-Origin", origin]);
+    return env;
+  }
   const bin = makeDirectory(nativePath(root, "browser-bin"));
   const program = nativePath(bin, "open-url.mjs");
   writeText(program, `const response = await fetch(process.argv[2]);\nawait response.arrayBuffer();\nif (!response.ok) throw new Error(\`browser HTTP \${response.status}\`);\n`);
@@ -693,4 +740,24 @@ export function accountBrowserEnvironment(root: NativePath, env: Environment): E
   const opener = MACOS ? "open" : "xdg-open";
   writeFileSync(join(bin, opener), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
   return { ...env, PATH: `${bin}${delimiter}${env.PATH ?? ""}`, DESKTOP_TEST_NODE: process.execPath, DESKTOP_TEST_BROWSER_PROGRAM: program };
+}
+
+/** The embedded WebDriver's native IME device, not application IPC or DOM synthesis.
+ * Each platform supplies composing input through its native WebView input-method API. */
+export async function nativeIme(browser: WebdriverIO.Browser, input:
+  | { type: "set" | "commit"; text: string }
+  | { type: "key"; key: string; control: boolean; meta: boolean; preedit?: string }
+  | { type: "cancel" }): Promise<void> {
+  const port = browser.options.port;
+  if (port === undefined) throw new Error("the embedded WebDriver has no endpoint port");
+  const host = browser.options.hostname ?? "127.0.0.1";
+  const address = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  const base = (browser.options.path ?? "/").replace(/\/$/, "");
+  const url = `${browser.options.protocol ?? "http"}://${address}:${port}${base}/session/${browser.sessionId}/wdio/ime`;
+  const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
+  const result = await response.json() as { value: { error?: string; message?: string } | null };
+  if (!response.ok || result.value?.error) throw new Error(result.value?.message ?? `native IME input failed: ${response.status}`);
+}
+export function nativeImeKey(browser: WebdriverIO.Browser, key: string, primary = false, preedit?: string): Promise<void> {
+  return nativeIme(browser, { type: "key", key, preedit, control: primary && primaryModifier === "Control", meta: primary && primaryModifier === "Meta" });
 }
