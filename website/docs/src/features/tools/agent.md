@@ -25,10 +25,21 @@ program); `view_image` applies the same image checks as `json` image results.
 | Built-in | Arguments | Result |
 |---|---|---|
 | `graph` | Fixed declaration `args = []`; call `{}` | Complete name-based Artifact/eval tree, extracted criteria, graph fingerprint and input → consumer relations |
-| `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1), limit defaults to 80, max 500 | `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
-| `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | Sorted `entries: [{name, path, kind, ...}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
-| `glob` | `{pattern, path?}` | Up to 200 sorted logical `files`, `truncated` |
-| `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`; case-sensitive by default, maxResults defaults to/max 200 | `matches: [{path, line, text}]` (one per matching line, sorted by path then line), `truncated` |
+| `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1), limit defaults to 80, max 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
+| `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | `artifactId`, `path`, sorted `entries: [{name, path, kind, artifactId?}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
+| `glob` | `{pattern, path?}` | Searched `path`, up to 200 sorted logical `files`, `truncated` |
+| `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`; case-sensitive by default, maxResults defaults to/max 200 | Searched `path`, `matches: [{path, line, text}]` (one per matching line, sorted by path then line), `truncated` |
+
+`read.artifactId` identifies the Artifact that **declared the tool**;
+`resolvedArtifactId` identifies the Artifact reached through a child or mount.
+For example, if app declares `mounts = { rules = "spec" }`, its read tool called
+with `{"path":"rules/requirements.md"}` returns ownership metadata
+`{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`
+alongside the line data. `path` remains the logical request path, not a physical
+machine path. List's top-level `artifactId` likewise names the declaring Artifact.
+Entry kinds are `file`, `directory`, `symlink`, `other` or `mount`; only a mount
+entry adds `artifactId`, naming its target Artifact. Glob/grep return the searched
+logical `path`, and grep's matching line numbers start at 1.
 
 Paths are relative logical paths from the tool's declaring Artifact, including
 children and mount aliases; omitted paths mean its root. They never accept
@@ -171,13 +182,9 @@ with an explicit truncation marker; nonzero exit marks that bounded stdout as a
 tool error. Stderr is not included. Commands such as `rg` that exit nonzero for
 no matches need an owner wrapper if that should count as successful empty output.
 
-Bare executables use PATH only (with PATHEXT on Windows; see
-[Program lookup](../others/platforms.md#program-lookup)), never implicit owner or
-`node_modules/.bin` lookup. Commands containing `/` resolve within a folder
-Artifact's admitted scope (`./tool` is accepted). For a file Artifact, a non-mount
-relative executable resolves beneath the containing folder, including unrelated
-siblings; a mount-prefixed executable still uses the admitted scope. Traversal
-and symlinks are rejected in both cases. Absolute commands run as given. JSON-protocol argv may use existing scoped Artifact references, but
+Command executables follow the shared [Program lookup](../others/platforms.md#program-lookup)
+rules, including the file-Artifact exception and rejection of scoped traversal.
+JSON-protocol argv may use existing scoped Artifact references, but
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
 Command calls use the owner's working directory (the containing folder for a file

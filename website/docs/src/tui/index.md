@@ -96,9 +96,11 @@ it while not editing; the expanded instruction takes 70% of the body and ↑/↓
 scrolls it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens Tools/Output
 to 60% of the available width;
-the selected tool shows the command Enter runs, resolved from the current
-declarations (or as declared, with the reason, when it cannot be resolved), and
-its description.
+the selected tool shows its action and description. A command tool shows its
+resolved command line, or its declaration and the reason resolution failed.
+A built-in shows an action on a logical target instead: for example, opening
+`notes.md`, printing a Markdown section, or listing a directory, not a shell
+command line.
 
 The way to the tools is always on screen: the footer lists the keys of the
 focused area (for example `Tab tools, Enter run`, or `↑↓ tool · Enter run · Tab
@@ -149,6 +151,9 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   selected GREEN/RED choice automatically; an explicit `verdict` field is rejected.
   Enter inserts a JSON newline and Tab indents; Enter never submits a flat form. Ctrl-S or Submit submits. A
   validation error keeps the request waiting and shows the failing paths.
+  A saved request **without a recorded Human definition** is not an empty-schema
+  review: its tools display as unknown and GREEN/RED forms are refused. Browsing
+  that old request does not invent missing tool or schema declarations.
 - **Editing.** Ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and Tab belong to the
   fields, not navigation. A bracketed keyboard paste goes into the focused field as
   one edit, in standalone `review` as in the monitor. Ctrl-G/Ctrl-R switches

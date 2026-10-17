@@ -257,16 +257,24 @@ $STATE/agent-sessions/
   e83bf374-5136-484c-8d2f-2ce38ee4ca57.lock    held while a session send appends to it
 ```
 
-Every event has its `kind` and its time in `at`:
+Events identify their `kind` and normally record their time in `at`; older
+records can omit optional timestamps or header metadata. New records use:
 
 | `kind` | Holds |
 |---|---|
 | `review` | First line: `version` (1), `sessionId`, `runId`, `requestId`, `evalId`, `target`, `producer`, `state`, `backend`, `model`, `reasoning`, `parameters` (as sent, with `prompt_cache_key`), `budgets` (`timeoutMs`, `maxToolCalls`, `maxTokens`) and `tools` (the definitions offered) |
 | `message` | One message as the provider received or sent it (`message`, a rig message: `role` `system`, `user` or `assistant`, with text, tool calls, tool results and reasoning, encrypted content and signatures included), and the `turn` (provider request) that carried it; a message of tool results has `isError`, whether each result failed, in order; the repair prompt has `"repair": true`, and a follow-up's framed question has the person's own words in `question` |
+| `delivery` | Display-only streaming data: `turn`, `attempt`, nonempty `block` identifier, `contentKind` (`text` or `summary`), `text`, and `state` (`delta`, `complete` or `interrupted`) |
 | `attempt` | One provider attempt of a `turn`: its `attempt` number, the `usage` counters the provider reported (`inputTokens`, `outputTokens`, `totalTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens`, where reported), and its `error` and `errorCode` when it failed |
 | `end` | The review's `result`, or its `errorCode` and `error` |
 | `send` | A follow-up starts: its `send` number, the person's `text`, the `framing` sent before it, `filesChanged` and the `tools` offered |
 | `answer` | The follow-up's answer `text`, or its `errorCode` and `error` |
+
+Delivery `delta` records carry incremental text, `complete` marks a completed
+block, and `interrupted` marks delivery that ended before completion (including
+an interrupted attempt). They drive the live display only: they never add to
+conversation replay history or usage totals, which come from semantic messages
+and attempt records.
 
 The events of a follow-up also carry its `send` number. When a budget, the deadline or
 a repeated call ID stops a turn's tool calls, the results of the calls that ran are
@@ -361,8 +369,11 @@ artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 ```
 
 `prune` operates on the selected state's Runs across repositories, not the current
-repository. It skips unfinished Runs, nonterminal/waiting requests and live execution
-owners (PID plus process start time). `--older-than` compares Run completion time;
+repository. Eligible Run statuses are exactly **GREEN, RED, ERROR and INCOMPLETE**,
+with a completion timestamp, only terminal requests, and no live execution owner
+(PID plus process start time). SIGNOFFS_PENDING Runs are **always skipped**, even
+after their Human requests settle: later submissions do not rewrite that historical
+Run status. Other unfinished Runs are also skipped. `--older-than` compares Run completion time;
 use a whole-number `s`, `m`, `h`, `d` or `w` duration. With no age filter, every
 eligible Run is considered. `--dry-run` returns `wouldRemove` without deleting;
 normal JSON returns `removed`, and both include `skippedRuns`. `prune` also collects
