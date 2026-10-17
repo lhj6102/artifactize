@@ -36,8 +36,7 @@
 
   /** The Summary's own blocks, each named by the Detail fields it shows. */
   const OPTIONS = ["Profile", "Options"];
-  const METADATA = ["Usage", "Timing"];
-  const SHOWN = new Set(["Status", "Instruction", "Result", "Error", "Fingerprint", ...OPTIONS, ...METADATA]);
+  const SHOWN = new Set(["Status", "Instruction", "Result", "Error", "Fingerprint", ...OPTIONS]);
   /** An Artifact's evals are listed above its Detail already. */
   const ARTIFACT_SHOWN = new Set(["Status", "Path", "Evals"]);
 
@@ -46,18 +45,22 @@
   const pick = (keys: string[]): Field[] => fields.filter((field) => keys.includes(field.key));
   const debugFields = $derived(fields.filter((field) => !(artifact ? ARTIFACT_SHOWN : SHOWN).has(field.key)));
 
-  /** Grey beside the status: what running it took, or what reuse saved. A Human eval has none. */
-  const cost = $derived.by(() => {
-    if (!card || detail.profile === "human") return "";
+  /** Tokens in thousands or millions: `48.2k`, `1.3M` (a lone `m` would read as minutes). */
+  function count(tokens: number): string {
+    if (tokens < 1000) return String(tokens);
+    if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+    return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  /** What running it took and spent, or what reuse saved. A Human eval has none. */
+  const spent = $derived.by(() => {
+    if (!card || detail.profile === "human") return [];
     const saved = card.reused ? "saved " : "";
-    return [
-      card.took && `${saved}${card.took}`,
-      card.tokens !== null && `${saved}${card.tokens.toLocaleString("en-US")} tokens`,
-      card.model,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    return [card.took && `${saved}${card.took}`, card.tokens !== null && `${saved}${count(card.tokens)} tokens`].filter(
+      (part): part is string => Boolean(part),
+    );
   });
+  /** Grey beside the status: the time, tokens and model. */
+  const cost = $derived([...spent, ...(card?.model && detail.profile !== "human" ? [card.model] : [])].join(" · "));
   const status = $derived(detail.mark ? `${detail.mark.glyph} ${detail.mark.status}${card?.reused ? " · REUSED" : ""}` : "");
   const hasResult = $derived(card !== null && (card.result !== null || card.error !== null || card.exitCode !== null));
 </script>
@@ -141,11 +144,11 @@
           {/each}
         </section>
       {/if}
-      {#each [["Execution options", pick(OPTIONS)], ["Execution metadata", pick(METADATA)], ["Fingerprint", pick(["Fingerprint"])]] as const as [title, shown] (title)}
-        {#if shown.length > 0}
+      {#each [["Execution options", pick(OPTIONS).map((field) => field.value)], ["Execution metadata", spent.length > 0 ? [spent.join(" · ")] : []], ["Fingerprint", pick(["Fingerprint"]).map((field) => field.value)]] as const as [title, lines] (title)}
+        {#if lines.length > 0}
           <section class="block">
             <h3>{title}</h3>
-            {#each shown as field (field.key)}<p class="line">{field.value}</p>{/each}
+            {#each lines as line, at (at)}<p class="line">{line}</p>{/each}
           </section>
         {/if}
       {/each}

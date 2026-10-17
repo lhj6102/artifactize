@@ -84,7 +84,7 @@ it("shows the status with what running it cost, the instruction and the result's
   });
   const status = screen.getByText("✗ RED");
   expect(status.classList.contains("tone-red")).toBe(true);
-  expect(screen.getByText("3m 12s · 48,200 tokens · gpt-6.1-sol")).toBeTruthy();
+  expect(screen.getByText("3m 12s · 48.2k tokens · gpt-6.1-sol")).toBeTruthy();
   expect(screen.getByText("Check that the tests follow the test rules.")).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Result" })).toBeTruthy();
   expect(screen.getByText("1 violations")).toBeTruthy();
@@ -96,16 +96,17 @@ it("marks a reused result REUSED in the status colour and shows what reuse saved
   render(RecordDetail, { detail: detail({ mark: { status: "GREEN", glyph: "✓" }, card: card({ reused: true }) }) });
   const status = screen.getByText("✓ GREEN · REUSED");
   expect(status.classList.contains("tone-green")).toBe(true);
-  expect(screen.getByText("saved 3m 12s · saved 48,200 tokens · gpt-6.1-sol")).toBeTruthy();
+  expect(screen.getByText("saved 3m 12s · saved 48.2k tokens · gpt-6.1-sol")).toBeTruthy();
 });
 
-it("shows execution options, metadata and the fingerprint, and folds every other fact under Debug", async () => {
-  render(RecordDetail, { detail: detail() });
-  for (const name of ["Execution options", "Execution metadata", "Fingerprint"]) {
-    expect(screen.getByRole("heading", { name })).toBeTruthy();
-  }
+it("shows execution options, what running it took and spent, and the fingerprint; every other fact folds under Debug", async () => {
+  render(RecordDetail, { detail: detail({ card: card({ tokens: 1_250_000 }) }) });
+  const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+  expect(headings).toEqual(["Execution options", "Execution metadata", "Fingerprint"]);
   expect(screen.getByText("timeoutMs 60000")).toBeTruthy();
-  expect(screen.getByText("complete · attempts 1")).toBeTruthy();
+  // Time and tokens in k or M, not the per-turn usage or timestamps.
+  expect(screen.getByText("3m 12s · 1.3M tokens")).toBeTruthy();
+  expect(screen.queryByText("complete · attempts 1")).toBeNull();
   expect(screen.getByText("9f3c1e")).toBeTruthy();
   // Debug starts folded: the request's other facts are not shown until it is opened.
   const fold = screen.getByRole("button", { name: "▸ Debug" });
@@ -114,6 +115,7 @@ it("shows execution options, metadata and the fingerprint, and folds every other
   await fireEvent.click(fold);
   expect(screen.getByText("run-a-1")).toBeTruthy();
   expect(screen.getByText("k-1")).toBeTruthy();
+  expect(screen.getByText("complete · attempts 1")).toBeTruthy();
   // What the Summary shows is not repeated under Debug.
   expect(screen.getAllByText("9f3c1e")).toHaveLength(1);
 });
@@ -122,7 +124,9 @@ it("shows a runtime eval's exit code and no tokens or model", () => {
   render(RecordDetail, {
     detail: detail({ profile: "runtime", mark: { status: "GREEN", glyph: "✓" }, card: card({ exitCode: 0, tokens: null, model: null, took: "41s" }) }),
   });
-  expect(screen.getByText("41s")).toBeTruthy();
+  // Beside the status and in the metadata: the time only.
+  expect(screen.getAllByText("41s")).toHaveLength(2);
+  expect(screen.queryByText(/tokens/)).toBeNull();
   expect(screen.getByText("exit 0")).toBeTruthy();
 });
 
