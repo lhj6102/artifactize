@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { CommandActivity } from "../src/ipc/activity.ts";
 import { afterRender } from "./keys.ts";
 
-export type Checkpoint = { activity: CommandActivity; query: string | null; error?: string | null };
+export type Checkpoint = { activity: CommandActivity; query: string | null; queryFailure?: string | null };
 
 export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
   return browser.execute(() => {
@@ -12,7 +12,7 @@ export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
     return {
       activity: window.artifactizeCommands,
       query: input && input.getBoundingClientRect().height > 0 ? input.value : null,
-      error: input && input.getBoundingClientRect().height > 0
+      queryFailure: input && input.getBoundingClientRect().height > 0
         ? document.querySelector(".review > nav .notice.error, .review .empty.error")?.textContent ?? null : null,
     };
   });
@@ -37,7 +37,7 @@ export async function reviewRefreshed(browser: WebdriverIO.Browser, before: Chec
 /** Query-changing actions need a *new* matching search, not an older A after A → B → A.
  * A background reload of the new query also qualifies: it rendered that exact query. */
 export function completed(current: Checkpoint, before?: Checkpoint): boolean {
-  if (current.activity.pending !== 0 || current.error) return false;
+  if (current.activity.pending !== 0 || current.queryFailure) return false;
   if (current.query === null) return true;
   const search = current.activity.search;
   if (!search?.completed || search.query !== current.query) return false;

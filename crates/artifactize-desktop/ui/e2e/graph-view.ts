@@ -28,7 +28,7 @@ export const evalAt = (id: string) => `aside[aria-label="Detail"] button[data-ev
 
 /** A chip as read: its visible text without the glyph, what a screen reader names it, its verdict
  * glyph and colour, whether an icon is drawn in it, and whether it is the chosen one. */
-export type Tab = { name: string; label: string; glyph: string; tone: string; icon: boolean; selected: boolean };
+export type Tab = { name: string; label: string; glyph: string; tone: string; colour: string; painted: boolean; icon: boolean; selected: boolean };
 export type Detail = {
   /** The Detail's heading: the shown node's title, or "Human review". */
   title: string;
@@ -64,6 +64,9 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
           icon: !!icon && icon.complete && icon.naturalWidth > 0 && !!drawn && drawn.width > 0 && drawn.height > 0,
           glyph: glyph?.textContent?.trim() ?? "",
           tone: tone(glyph),
+          colour: glyph ? getComputedStyle(glyph).color : "",
+          painted: !!glyph && glyph.getBoundingClientRect().width > 0 && glyph.getBoundingClientRect().height > 0
+            && getComputedStyle(glyph).visibility === "visible" && Number(getComputedStyle(glyph).opacity) > 0,
           selected: tab.getAttribute("aria-selected") === "true",
         };
       }),
@@ -78,7 +81,8 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
         name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
         status: row.querySelector(".status")?.textContent?.trim() ?? "",
       })),
-      docked: box.left > stage.left && box.right < stage.right - 4 && box.top >= stage.top && box.bottom <= stage.bottom,
+      docked: box.left > stage.left && box.right < stage.right && box.top >= stage.top && box.bottom <= stage.bottom
+        && stage.right - box.right + 1 < box.left - stage.left,
     };
   });
 }

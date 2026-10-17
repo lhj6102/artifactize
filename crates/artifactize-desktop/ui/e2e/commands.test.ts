@@ -28,7 +28,7 @@ it("requires pending commands to finish even when the query already matches", ()
 
 it("a completed failed query cannot reuse rows left by a successful query", () => {
   const before = searched("reviewer:alice", 1);
-  const failed = { ...searched("is:mine", 2), error: "Search read failed" };
+  const failed = { ...searched("is:mine", 2), queryFailure: "Search read failed" };
   assert.equal(completed(failed, before), false);
-  assert.equal(completed({ ...failed, error: null }, before), true);
+  assert.equal(completed({ ...failed, queryFailure: null }, before), true);
 });

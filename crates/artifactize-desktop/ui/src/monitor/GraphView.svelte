@@ -73,15 +73,14 @@
    * rather than clipping it below the new canvas; the Run view keeps its own camera. */
   const structuralSize: Attachment<HTMLElement> = (canvas) => {
     if (!structural) return;
-    let previous = "";
     const resized = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (width === 0 || height === 0) return;
-      const size = `${width}:${height}`;
-      if (previous && previous !== size) {
+      const previous = v.lastSize;
+      if (previous && (previous.width !== width || previous.height !== height)) {
         void fit({ duration: 0, maxZoom: 1.6, padding: 0.6 });
       }
-      previous = size;
+      v.lastSize = { width, height };
     });
     resized.observe(canvas);
     return () => resized.disconnect();

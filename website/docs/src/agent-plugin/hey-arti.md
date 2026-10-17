@@ -2,7 +2,7 @@
 
 **Arti is the Artifactizer**: an agent role that finds review and reuse boundaries,
 declares them, validates them and evolves them with the team. It does not take over
-building or running your project. The canonical portable skill is
+building or running your project. Its reusable instruction guide, called a **skill**, is
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/crates/artifactize-core/integrations/hey-arti/SKILL.md),
 inside the published core crate. There is one body, not separate instructions per
 host. Plugin-marketplace installation is separate; no plugin exporter or release
@@ -18,9 +18,11 @@ agreement. It must never mark unfinished work as `basis`.
 ## Register the MCP server
 
 Follow [MCP setup](mcp.md#register-the-mcp-server) to connect your coding host.
-Registration supplies tools; it does not install the skill. Give the agent the
-canonical body through its normal skill/instruction mechanism until marketplace
-packaging is provided. Do not maintain a second edited copy.
+Registration supplies tools; it does not install those instructions. For example,
+open the linked `SKILL.md`, attach the unchanged file to your assistant's conversation and
+ask: "Follow this guide. Inspect this repository and propose Artifact boundaries
+before editing." Use that canonical guide rather than maintaining a second edited
+copy.
 
 ## Use MCP first
 

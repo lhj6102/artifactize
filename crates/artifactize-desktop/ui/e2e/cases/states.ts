@@ -95,20 +95,32 @@ export const scenarios: Scenario[] = [
       // Each Artifact's one eval, in the colour of its own verdict. Each Detail closes before the
       // next Artifact's click, so it covers none of it.
       const expected = [
-        ["a:red", "red", "tone-red", /RED/],
-        ["a:crash", "crash", "tone-error", /ERROR/],
-        ["a:down", "down", "tone-blocked", /blocked by red/],
-        ["a:gate", "gate", "tone-human", /Human/],
-        ["a:fine", "fine", "tone-green", /GREEN/],
+        ["a:red", "red", "tone-red", /RED/, "✗", "RED"],
+        ["a:crash", "crash", "tone-error", /ERROR/, "!", "ERROR"],
+        ["a:down", "down", "tone-blocked", /blocked by red/, "⊘", "BLOCKED"],
+        ["a:gate", "gate", "tone-human", /Human/, "?", "WAITING_HUMAN"],
+        ["a:fine", "fine", "tone-green", /GREEN/, "✓", "GREEN"],
       ] as const;
-      for (const [id, name, tone, status] of expected) {
+      const painted = new Set<string>();
+      for (const [id, name, tone, status, glyph, shownStatus] of expected) {
         const shown = await openArtifact(browser, id, `Artifact ${name}`);
         assert.equal(shown.tabs.length, 2, `${name}'s Artifact tab and its one eval's tab`);
         assert.equal(shown.tabs[1].tone, tone, `${name}'s eval tab shows its verdict's colour`);
-        assert.notEqual(shown.tabs[1].glyph, "", `${name}'s eval tab shows its verdict's glyph`);
+        assert.equal(shown.tabs[1].glyph, glyph, `${name}'s eval tab shows its exact visible verdict glyph`);
+        const row = await browser.execute(() => {
+          const glyph = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .evals button .glyph');
+          return glyph && glyph.getClientRects().length > 0 ? { glyph: glyph.textContent?.trim(), colour: getComputedStyle(glyph).color, ink: getComputedStyle(document.body).color } : null;
+        });
+        assert.ok(row, `the visible ${shownStatus} eval row independently identifies its status colour`);
+        assert.equal(row.glyph, glyph);
+        assert.ok(shown.tabs[1].painted, `${name}'s glyph actually paints`);
+        assert.equal(shown.tabs[1].colour, row.colour, `${name}'s chip is painted in the same colour as its visible verdict row`);
+        assert.notEqual(shown.tabs[1].colour, row.ink, `${name}'s glyph is not uncoloured body text`);
+        painted.add(shown.tabs[1].colour);
         assert.match(shown.evals[0]?.status ?? "", status, `${name}'s Artifact tab lists its eval's verdict`);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closed`);
       }
+      assert.equal(painted.size, expected.length, "the five status glyphs have distinct actual colours");
     },
   ),
 ];
