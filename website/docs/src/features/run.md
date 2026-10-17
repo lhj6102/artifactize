@@ -6,16 +6,9 @@ the next `verify` will execute, reuse, wait for or block, without running evals.
 
 ## Eval execution gates
 
-Each eval waits for the actual evals of its own referenced Artifacts and its
-Artifact's children; RED or BLOCKED gates block it in turn. A child counts as if
-every eval of its parent referenced it. An intermediate Artifact with no evals
-supplies no execution gates, though its inputs remain final approval obligations.
-Its own Artifact and the Artifacts in a dependency cycle with it never gate it:
-a RED sibling or cycle peer neither blocks it nor makes it wait. A Human eval also
-starts only once every other non-Human eval of its Artifact is GREEN, and is
-BLOCKED when one of them is RED or ERROR; see
-[Human sign-offs](artifact.md#human-sign-offs).
-See [Eval dependencies](artifact.md#eval-dependencies).
+`verify` schedules each eval from its own [execution gates](artifact.md#eval-dependencies),
+including the [machine prerequisites of a Human sign-off](artifact.md#human-sign-offs).
+`status` shows those gates without executing evals.
 
 ## Verify and Runs
 

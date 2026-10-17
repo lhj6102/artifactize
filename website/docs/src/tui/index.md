@@ -147,8 +147,9 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   PgDn back to the bottom follows again. With mouse capture off (F2), the terminal
   selects and copies its text. Standalone Review clears the log when another request
   opens. Monitor keeps each request's log in memory and restores it when its Detail
-  reopens, even after another request was viewed. Submission clears that request's
-  log in either UI; neither saves it to disk.
+  reopens, even after another request was viewed. A normal successful submission in
+  either UI clears that request's log. Settlement elsewhere, or a local save whose
+  publication fails, leaves it in memory. Neither UI saves the log to disk.
 - **Form.** The chosen verdict opens its schema-backed form without an intermediate
   verdict popup. A Human schema holds only [form shapes](../features/declarations.md#human-result-schemas):
   text, integer and number fields, booleans, string choices, constants, lists of
