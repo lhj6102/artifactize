@@ -83,8 +83,11 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 Monitor always displays the selected Run as an Artifact graph; there is no
 Run-tree mode. Node and relation colors show review states and update as results
 arrive. ←/→ moves upstream or downstream; ↑/↓ selects a neighbor in the same
-column. Enter or a single click on an Artifact opens its eval popup; `o` opens
-that Artifact's Detail instead.
+column. Enter or a single click on an Artifact opens its eval popup. `o` opens
+Detail for the selected node, not necessarily the Artifact that has keyboard
+focus: a newly entered Run can still select its initial attention eval before
+its popup is visible. To select an Artifact for its own Detail, navigate onto it,
+or open and then close its eval popup with Esc, then press `o`.
 
 In the popup, ↑/↓ selects an eval and updates its floating Summary without
 opening or retargeting full Detail. Enter, `o`, → or a click on the eval explicitly
