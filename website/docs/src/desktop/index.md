@@ -155,9 +155,9 @@ reviewer locks, not authenticated accounts; only the claimant can run tools or
 submit. See [Human](../features/human.md) for shared lifecycle and deferred sign-offs.
 
 A Human review reads top to bottom as its instruction, the **Tools** to use, their
-**Tool log**, and the **Result** to write. The instruction comes first. `i` or its
-expand/fold button changes how much is shown; Ctrl+PgUp/PgDn scrolls long criteria
-from any sub-area. `t` toggles the Human request's Technical record. Tab or a click
+**Tool log**, and the **Result** to write. The instruction is shown in full within
+the review body's shared scroller; scroll that body to read long criteria.
+`t` toggles the Human request's Technical record. Tab or a click
 moves to Tools; Ctrl+U releases your claim even while editing.
 
 Tools are grouped under the Artifact that declares them, the reviewed one first.
