@@ -3,7 +3,6 @@ name = "artifactize"
 description = "The AI-native collaboration layer for one-of-a-kind teammates and their agents: split a project into Artifacts with their own evals, and reuse every review while it still holds."
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true

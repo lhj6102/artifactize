@@ -3,7 +3,6 @@ name = "artifactize-core"
 description = "The library behind artifactize: Artifacts, evals, reviews, the monitor and review models, and the shared operations every interface calls."
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
