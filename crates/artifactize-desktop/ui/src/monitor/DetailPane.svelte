@@ -1,6 +1,6 @@
 <script lang="ts">
   // The Detail of an Artifact or of the Run, floating over the graph. An Artifact's Detail has
-  // tabs, a chip choice that reads as a path: `Artf:{name} / [eval] [eval] …`. The Artifact's
+  // tabs, a chip choice that reads as a path: `[Artifact icon] {name} / [eval] [eval] …`. The Artifact's
   // own lists its evals with their verdicts; then comes one per eval. An eval's tab shows its Summary or its log (an Agent's transcript, a runtime's
   // saved output), or the shared Human Detail. Its width is the Detail's: everything in it wraps
   // or scrolls in its own box.
@@ -14,6 +14,7 @@
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
+  import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let {
     run,
@@ -118,7 +119,9 @@
       <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}">
         <!-- The `/` stays with the Artifact's chip: only eval chips flow onto further lines. -->
         <span class="head">
-          <button class="chip" role="tab" aria-selected={tab === null} aria-label="Artifact {row.name}" onclick={() => ontab(null)}>Artf:{row.name}</button>
+          <button class="chip" role="tab" aria-selected={tab === null} aria-label="Artifact {row.name}" onclick={() => ontab(null)}>
+            <img class="mark" src={brandMark} alt="" /><span class="label">{row.name}</span>
+          </button>
           {#if evals.length > 0}<span class="slash" aria-hidden="true">/</span>{/if}
         </span>
         {#each evals as item (item.id)}
@@ -193,9 +196,21 @@
     max-width: 100%;
     min-width: 0;
   }
+  /* The icon always shows; only the name is cut short. */
   .head .chip {
     flex: 0 1 auto;
     min-width: 0;
+    align-items: center;
+  }
+  .mark {
+    flex: none;
+    width: 1.1em;
+    height: 1.1em;
+  }
+  .label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .slash {
     flex: none;

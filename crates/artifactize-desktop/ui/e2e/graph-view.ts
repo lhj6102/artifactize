@@ -26,13 +26,15 @@ export const nodeAt = (id: string) => `.svelte-flow__node[data-id="${id}"]`;
 export const tabAt = (id: string) => `aside[aria-label="Detail"] [role="tab"][data-tab="${id}"]`;
 export const evalAt = (id: string) => `aside[aria-label="Detail"] button[data-eval="${id}"]`;
 
-export type Tab = { name: string; glyph: string; tone: string; selected: boolean };
+/** A chip as read: its visible text without the glyph, what a screen reader names it, its verdict
+ * glyph and colour, whether an icon is drawn in it, and whether it is the chosen one. */
+export type Tab = { name: string; label: string; glyph: string; tone: string; icon: boolean; selected: boolean };
 export type Detail = {
   /** The Detail's heading: the shown node's title, or "Human review". */
   title: string;
-  /** The Artifact's chip (`Artf:{name}`) first, then one per eval; empty for the Run's Detail. */
+  /** The Artifact's chip (its icon and name) first, then one per eval; empty for the Run's Detail. */
   tabs: Tab[];
-  /** The chip row as it reads, glyphs left out: `Artf:{name} / eval eval …`. */
+  /** The chip row as it reads, glyphs and icon left out: `{name} / eval eval …`. */
   path: string;
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
@@ -53,8 +55,13 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
       title: aside.querySelector("h2")?.textContent?.trim() ?? "",
       tabs: [...aside.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => {
         const glyph = tab.querySelector(".glyph");
+        const name = [...tab.childNodes].filter((node) => node !== glyph).map((node) => node.textContent ?? "").join("").trim();
+        const icon = tab.querySelector("img");
+        const drawn = icon?.getBoundingClientRect();
         return {
-          name: [...tab.childNodes].filter((node) => node !== glyph).map((node) => node.textContent ?? "").join("").trim(),
+          name,
+          label: tab.getAttribute("aria-label") ?? name,
+          icon: !!icon && icon.complete && icon.naturalWidth > 0 && !!drawn && drawn.width > 0 && drawn.height > 0,
           glyph: glyph?.textContent?.trim() ?? "",
           tone: tone(glyph),
           selected: tab.getAttribute("aria-selected") === "true",

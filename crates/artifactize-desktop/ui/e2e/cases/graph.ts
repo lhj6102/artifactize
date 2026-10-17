@@ -38,8 +38,10 @@ export const scenarios: Scenario[] = [
 
       // A click opens release's Detail on its Artifact tab: its one eval, waiting for a Human.
       const opened = await openArtifact(browser, "a:release", "Artifact release");
-      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["Artf:release", "signoff"], "release's own chip, then its one eval's");
-      assert.equal(opened.path, "Artf:release / signoff", "the chips read as a path");
+      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"], "release's own chip, then its one eval's");
+      assert.equal(opened.path, "release / signoff", "the chips read as a path");
+      assert.equal(opened.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
+      assert.ok(opened.tabs[0].icon, "release's chip draws the Artifact icon before its name");
       assert.equal(opened.tabs[1].tone, "tone-human", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
       assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
@@ -194,7 +196,7 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       await graphShown(browser, "a:app");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
-      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["Artf:app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");
+      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");
       assert.ok(opened.tabs.slice(1).every((tab) => tab.tone === "tone-green" && tab.glyph !== ""), "each eval's tab shows its GREEN glyph in GREEN");
       assert.deepEqual(opened.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's own evals");
       assert.ok(opened.evals.every((row) => /GREEN/.test(row.status)), "with their verdicts");

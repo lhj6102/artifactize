@@ -1,4 +1,4 @@
-// An Artifact's Detail against a mocked command boundary: its tabs (`Artf:{name}`, a `/`, then one
+// An Artifact's Detail against a mocked command boundary: its tabs (the Artifact icon and name, a `/`, then one
 // per eval with its verdict's glyph and colour), the Artifact tab's eval list that switches to an
 // eval's tab, each tab's own backend Detail, and Close and Esc.
 import { renderHosted } from "../test-host";
@@ -49,8 +49,11 @@ it("shows the Artifact tab first with its evals' verdicts, and switches to an ev
   await screen.findByRole("heading", { name: "Artifact app" });
   const tabs = within(screen.getByRole("tablist", { name: "Tabs of app" })).getAllByRole("tab");
   // It reads as a path: the Artifact's chip, a `/`, then the evals' chips.
-  expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Artf:app", "✓lint", "✗test"]);
-  expect(screen.getByRole("tablist").textContent?.replace(/\s+/g, " ").trim()).toBe("Artf:app / ✓lint✗test");
+  expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["app", "✓lint", "✗test"]);
+  expect(screen.getByRole("tablist").textContent?.replace(/\s+/g, " ").trim()).toBe("app / ✓lint✗test");
+  // The Artifact's chip shows the Artifact icon before its name and is read as "Artifact app".
+  expect(tabs[0].getAttribute("aria-label")).toBe("Artifact app");
+  expect(tabs[0].querySelector("img")?.getAttribute("src")).toMatch(/artifactize-icon-mark/);
   expect(tabs[0].getAttribute("aria-selected")).toBe("true");
   // Each eval's tab carries its verdict's glyph in its verdict's colour.
   expect(tabs[2].querySelector(".tone-red")?.textContent).toBe("✗");
@@ -127,6 +130,6 @@ it("shows only the Artifact's chip, without a `/`, for an Artifact without evals
   });
   await screen.findByRole("heading", { name: "Artifact lone" });
   const strip = screen.getByRole("tablist", { name: "Tabs of lone" });
-  expect(within(strip).getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual(["Artf:lone"]);
-  expect(strip.textContent?.trim()).toBe("Artf:lone");
+  expect(within(strip).getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(["Artifact lone"]);
+  expect(strip.textContent?.trim()).toBe("lone");
 });
