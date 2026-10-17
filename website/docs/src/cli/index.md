@@ -120,8 +120,8 @@ Both exit 2 for a reference to another machine or state, a session the GC remove
 that was not saved, a request that is still running (`send`), and a failed follow-up.
 
 Commands opening an existing state apply supported additive schema upgrades with write
-access. Schema 6 upgrades to 7 while preserving Runs, cache and Human approvals;
-unsupported earlier and newer versions are refused ([State](../features/others/state.md#state)).
+access. Schemas 6 and 7 upgrade to 8 (6 → 7 → 8 or 7 → 8) while preserving Runs,
+cache and Human approvals; schemas 1–5 and versions above 8 are refused ([State](../features/others/state.md#state)).
 `doctor` reports an incompatible schema as a hard error and exits 1.
 
 ## Submission and watching
@@ -207,6 +207,13 @@ executions; a forced GREEN or RED is added as the key's newest record, and
 published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
 Speculation and deferral never waive final requirements.
+
+Concurrent Runs on the same machine share an in-flight eval when its reuse key
+and effective profile match, including across worktrees. The waiting request names
+the execution; its GREEN, RED or ERROR is joined reuse. Cancellation or an owner
+process crash lets one waiter take over. Different profiles and forced evals execute
+independently; completed GREEN/RED reuse rules are unchanged. This needs no option
+and does not share in-flight work through a remote store.
 
 There is no default eval-concurrency cap: every READY eval starts as soon as it is
 ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it

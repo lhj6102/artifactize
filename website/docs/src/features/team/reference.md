@@ -69,7 +69,8 @@ together.
 0.9 uses reuse-key v2, so it reuses no pre-0.9 record, including script-fingerprint
 results and Human sign-offs. Existing store records cannot satisfy the new keys;
 clients review once and publish new records. This is separate from local state
-schema 6, which requires a new state without migration.
+upgrades: schemas 1–5 need replacement, while existing schemas 6 and 7 upgrade
+automatically to schema 8 with Runs, cache records and Human approvals preserved.
 
 ## Remote review store client
 

@@ -837,7 +837,13 @@ pub fn fifo(path: &Path) {
 /// A bound Unix socket at `path`, another special entry; it stays bound while held.
 #[cfg(unix)]
 pub fn socket(path: &Path) -> std::os::unix::net::UnixListener {
-    std::os::unix::net::UnixListener::bind(path).unwrap()
+    // Evaluations put TMPDIR under their private run output. That full path can exceed
+    // sockaddr_un even though the filesystem accepts it. Bind through a short, owned
+    // alias; the actual socket entry remains at `path` after the alias is removed.
+    let alias = tempfile::tempdir_in("/tmp").unwrap();
+    let parent = alias.path().join("parent");
+    std::os::unix::fs::symlink(path.parent().unwrap().canonicalize().unwrap(), &parent).unwrap();
+    std::os::unix::net::UnixListener::bind(parent.join(path.file_name().unwrap())).unwrap()
 }
 
 /// Special native entries held for tool input/output rejection tests. Windows has no
@@ -3150,6 +3156,32 @@ pub fn drive_relative() -> &'static str {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    // Filesystem Unix sockets have no Windows equivalent.
+    #[cfg(unix)]
+    #[test]
+    fn special_files_remain_native_entries_under_long_review_output_paths() {
+        use std::os::unix::fs::FileTypeExt;
+        let root = super::tempdir();
+        let directory = root.path().join("review-output-".repeat(12));
+        std::fs::create_dir(&directory).unwrap();
+        let files = super::special_files(&directory);
+        assert!(
+            std::fs::symlink_metadata(directory.join("socket"))
+                .unwrap()
+                .file_type()
+                .is_socket()
+        );
+        assert!(
+            std::fs::symlink_metadata(directory.join("pipe"))
+                .unwrap()
+                .file_type()
+                .is_fifo()
+        );
+        drop(files);
+        assert!(!directory.join("socket").exists());
+        assert!(!directory.join("pipe").exists());
+    }
+
     use super::*;
 
     const DIRECTORY_RECORD: &str = "ARTIFACTIZE_TEST_FIXTURE_DIRECTORY_RECORD";

@@ -155,14 +155,21 @@ pub async fn status(
         .filter(|(id, _)| !(options.force && selected_ids.contains(*id)))
         .map(|(id, key)| (*id, key))
         .collect();
-    let mut cached = store::read_keyed_executions(
+    let mut cached = store::read_profiled_executions(
         &state,
-        &keys
-            .values()
-            .map(|key| key.value.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>(),
+        config
+            .evals
+            .iter()
+            .filter_map(|eval| {
+                keys.get(&eval.id).map(|key| {
+                    (
+                        eval.id.clone(),
+                        key.value.clone(),
+                        eval.declaration.profile().into(),
+                    )
+                })
+            })
+            .collect(),
     )
     .await?;
     // Read-only: a store record that completed after the local latest counts as reuse without
@@ -179,16 +186,18 @@ pub async fn status(
             .collect();
         for execution in remote.lookup(&all).await? {
             let key = execution.key.clone().expect("remote key");
-            let newer = match cached.get(&key) {
-                Some(Claim::Reuse(local)) => execution.completed_after(local),
-                _ => true,
-            };
-            if newer {
-                cached.insert(key, Claim::Reuse(Box::new(execution)));
+            for (id, _) in keys.iter().filter(|(_, candidate)| candidate.value == key) {
+                let newer = match cached.get(*id) {
+                    Some(Claim::Reuse(local)) => execution.completed_after(local),
+                    _ => true,
+                };
+                if newer {
+                    cached.insert((*id).clone(), Claim::Reuse(Box::new(execution.clone())));
+                }
             }
         }
     }
-    let claim = |id: &crate::types::EvalId| keys.get(id).and_then(|key| cached.get(&key.value));
+    let claim = |id: &crate::types::EvalId| cached.get(id);
     // Explain changed keys against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()

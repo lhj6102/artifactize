@@ -6,7 +6,7 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 7),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 8),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
@@ -34,11 +34,11 @@ four tables:
 |---|---|---|
 | `runs` | Run | `id`, `repo`, `status`, nullable `request_key` |
 | `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, and `claimed_by` and `claimed_at`, the Human claim of a waiting request |
-| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
+| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), `profile_identity` (the effective profile of a keyed claim), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
 | `state_meta` | named value of the state | `name`, `value` |
 
 A Run has one request per eval and per ordinal.
-One execution per reuse key can be
+One execution per (reuse key, effective evaluation profile) can be
 active (RUNNING or WAITING_HUMAN) at a time; a forced (`--force`) execution bypasses this claim and
 never holds its key's active slot. `state_meta` holds the state's stable
 id, a random UUID made when the database is created (row `id`), which
@@ -49,7 +49,9 @@ conversation and its tool calls, is not in the state: it is in the review's
 Supported upgrades are ordered additive steps applied together with `user_version` in one
 opening write transaction; the version is read again under that lock. Schema 6 upgrades
 to 7 by adding nullable `runs.request_key` and a partial unique index on `(repo, request_key)`
-where the key is not NULL. Existing Runs keep NULL keys. Run/request/execution IDs, cache,
+where the key is not NULL. Existing Runs keep NULL keys. Schema 7 upgrades to 8 by
+adding `executions.profile_identity`, filling it from saved profiles and replacing
+the active-key uniqueness index with `(key, profile_identity)`. Run/request/execution IDs, cache,
 state identity and Human approvals survive; repeated opens do not remigrate. Existing-state
 readers and `doctor` use the same preflight without creating an absent database. Migration
 requires write access; a failed transaction rolls back rather than bypassing version checks.
@@ -63,8 +65,8 @@ Dead-worker recovery keeps committed evidence, cleans only identity-checked owne
 and releases dead slots. It records OWNER_DIED instead of replaying work; unconfirmed
 cleanup retains its journal records.
 
-**Downgrade boundary:** artifactize 0.11 cannot open a schema-7 state after upgrade. Its
-version guard refuses it. Unknown/newer versions and schemas 1–5 remain unsupported;
+**Downgrade boundary:** Binaries that only support schema 6 or 7 cannot open a schema-8
+state after upgrade; their version guards refuse it. Unknown/newer versions and schemas 1–5 remain unsupported;
 commands exit 2 and `doctor` reports a hard error (exit 1). The older-schema message is:
 
 ```text
@@ -74,8 +76,8 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 A new 0.9 state reviews every executable eval once, Human sign-offs included,
 and then reuses as before. Reuse-key v2 matches no earlier records, including
 script fingerprints and team-store records. See
-[Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
-A schema-6 state from 0.9 is supported: it upgrades additively to schema 7 and
+[Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
+A schema-6 state from 0.9 is supported: it upgrades additively to schema 8 and
 passes [`doctor`](#doctor-models-and-prune)'s schema check. Unsupported earlier
 schemas and newer schemas remain hard errors.
 
@@ -95,8 +97,17 @@ Use a state directory outside the repository, or `ARTIFACTIZE_CODEX_AUTH_FILE` a
 warning while nothing is stored there, and as a hard error once a sign-in is (for
 example, after `git init` above an existing state). No writer transaction spans a
 subprocess or async suspension. Completed results with a reuse key are shared
-within this database; cross-process claims and polling waiters prevent duplicate
-execution for the same key.
+within this database. Concurrent Runs, including other worktrees and processes,
+automatically join an in-flight execution only when both its reuse key and its
+complete effective evaluation profile match. The queued request names the execution
+it waits for; it takes no execution start or backend slot. Completion delivers that
+execution's GREEN, RED or ERROR to its waiters as joined reuse. An ERROR is not a
+new cache entry for later Runs. Cancellation or a dead owner (checked by PID and
+process start time) releases the claim: one waiter starts a replacement, and the
+others join it. Cancelling a waiter does not cancel the owner. `--force` always runs
+its own execution and never joins. There are no sharing settings, and in-flight
+sharing never crosses a remote store. Completed GREEN/RED reuse remains keyed by
+the reuse key alone, even if the producing profile differs.
 
 ## Unreadable records
 

@@ -264,6 +264,14 @@ Every READY eval can start without a default Run-concurrency cap; backend limits
 in `limits.json` still apply. Add the optional MCP `jobs` argument (CLI `--jobs N`)
 only when unrestricted concurrency causes trouble. Omit it otherwise.
 
+Separate Runs automatically share a live execution on this machine when its reuse
+key and effective evaluation profile match, even across worktrees. A queued request
+names the execution it waits for and reuses that execution's GREEN, RED or ERROR.
+Cancellation or process death lets one waiter take over; cancelling just a waiting
+Run leaves its owner alone. Different profiles do not join, and CLI `--force` always
+runs its own execution. Completed GREEN/RED reuse still follows the reuse key alone.
+No sharing switch or remote in-flight coordination is needed.
+
 A caller `request_key` is optional, retained per retry-safe attempt. It is 1–128
 ASCII letters/digits/`._:-`. Same repository + same key returns the **same Run**,
 even after completion or checkout edits; it never updates/re-executes the original
