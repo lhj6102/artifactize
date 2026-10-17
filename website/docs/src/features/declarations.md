@@ -43,6 +43,7 @@ by ID, not by their position in the TOML source.
 | `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
 | `evals.<id>.title` | Required nonblank title |
 | `evals.<id>.gate` | Optional `"blocking"`; keeps a Human sign-off strict under `--defer-human`. Omission follows the request mode; no other values |
+| `evals.<id>.mutex` | Optional list of at most 64 unique hierarchical mutex tags; runtime and Agent evals only; no default |
 | `evals.<id>.profile` | Required `runtime`, `agent` or `human` profile |
 | `evals.<id>.payload.instruction` | Required nonblank instruction for runtime, Agent and Human evals |
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals |
@@ -54,7 +55,7 @@ no lifecycle or cleanup-timing options. The linked reference gives the full cont
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
-`profile_variants` and `gate`.
+`profile_variants`, `gate` and `mutex`.
 Unknown fields and camelCase spellings at these typed boundaries are rejected.
 JSON Schema keywords such as `additionalProperties`, `minLength` and `maxItems`
 keep their standard names. Owner-defined payload fields keep their chosen names.
@@ -268,6 +269,47 @@ or execution; tool calls return an error without running the tool.
 empty policy table. Configuration validation rejects them as unknown fields. Choose
 `--speculate` and `--defer-human` per verify request, never a declaration-level
 bypass. Old saved keys are ignored on read; no state migration is needed.
+
+## Eval mutex tags
+
+A runtime or Agent eval can declare `mutex` beside `gate` and `profile`:
+
+```toml
+[evals.suite-passes]
+title = "The end-to-end suite passes"
+mutex = ["use-computer:display", "use-computer:callback"]
+profile = { kind = "runtime", command = "pnpm", args = ["e2e"], timeout_ms = 1800000 }
+payload.instruction = "Run the end-to-end suite."
+```
+
+A tag is `use-computer` or a colon-separated descendant such as
+`use-computer:display`. Each descendant segment matches
+`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Other roots, empty segments, invalid segments,
+duplicate tags and declarations on Human or dependency evals are errors.
+Omitting `mutex` (or declaring `mutex = []`) adds no constraint.
+
+Two evals conflict if any of their tags are equal or one is an ancestor of the
+other. `use-computer` conflicts with every descendant;
+`use-computer:db` conflicts with `use-computer:db:users`, but not with
+`use-computer:browser` or `use-computer:database`. All an eval's tags are acquired
+together, so partial acquisition cannot deadlock. It waits until no conflicting
+eval is running. This rule adds no priority, ordering or scheduling optimization.
+
+Held tags are recorded atomically with execution ownership in the machine's
+shared state store. They apply across Runs, worktrees and verify processes using
+that store, not only within a Run. A waiting request stays `QUEUED`; its
+`blockedReason` identifies the holding eval and Run. Waiting consumes no execution
+budget, backend slot or job slot. `timeout_ms` starts when the eval actually
+starts, not while it waits. Tags are released on completion or cancellation, and
+dead process owners or ended Runs cannot retain them. Separate explicitly chosen
+state directories are isolated stores, not a shared lock namespace.
+
+Tags describe the eval's own command or tools, never its Artifact: an Agent that
+only reads test code need not wait because another eval runs those tests. There
+are no implicit tags. Mutex tags are execution options, not evaluation criteria;
+changing them changes neither fingerprints nor reuse keys, and cached results
+can still be reused while a conflicting eval runs. Human try-claim behavior is
+not implemented.
 
 ## Human gate policy
 

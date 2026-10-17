@@ -185,7 +185,7 @@ folder locations and repository paths are not identities. Extraction includes:
 
 Excluded are evaluation execution options (backend, model, reasoning, all
 `timeout_ms` values including fingerprint-script timeouts, `max_tool_calls`,
-`max_tokens`, `profile_variants`), all tool views and sessions, tags, repository
+`max_tokens`, `profile_variants`, eval `mutex` tags), all tool views and sessions, Artifact tags, repository
 paths and source file contents. Declared coverage paths and scoped argument
 suffixes remain meaningful; a relocation that preserves those logical declarations
 and ownership does not change the graph fingerprint. Execution options are still

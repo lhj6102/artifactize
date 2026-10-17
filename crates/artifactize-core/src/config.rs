@@ -16,9 +16,11 @@ use thiserror::Error;
 
 mod discovery;
 mod location;
+mod mutex;
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;
 use discovery::{logical_join, read_regular_text};
+pub use mutex::MutexTag;
 mod plain;
 mod stored;
 mod tools;
@@ -341,6 +343,8 @@ pub struct EvalDeclaration {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gate: Option<Gate>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mutex: Vec<MutexTag>,
     #[serde(flatten)]
     body: EvalBody,
 }
@@ -402,6 +406,8 @@ struct EvalFields {
     title: String,
     #[serde(default)]
     gate: Option<Gate>,
+    #[serde(default, deserialize_with = "present")]
+    mutex: Option<Vec<MutexTag>>,
     profile: Profile,
     #[serde(default, deserialize_with = "present")]
     profile_variants: Option<BTreeMap<ProfileVariantName, Profile>>,
@@ -416,6 +422,14 @@ struct EvalFields {
 impl EvalDeclaration {
     /// Check the fields of the `[evals.<id>]` table that every profile needs together.
     fn new(id: LocalEvalId, fields: EvalFields) -> Result<Self, String> {
+        if fields.mutex.is_some()
+            && !matches!(
+                fields.profile.kind(),
+                ProfileKind::Runtime | ProfileKind::Agent
+            )
+        {
+            return Err("mutex is supported only on runtime and agent Evals.".into());
+        }
         let body = EvalBody {
             profile: fields.profile,
             profile_variants: fields.profile_variants.unwrap_or_default(),
@@ -429,6 +443,7 @@ impl EvalDeclaration {
             id,
             title: fields.title,
             gate: fields.gate,
+            mutex: fields.mutex.unwrap_or_default(),
             body,
         })
     }
@@ -445,6 +460,9 @@ impl EvalDeclaration {
                 .child("instruction")
                 .check(text(&payload.instruction, "Eval payload.instruction"))?;
         }
+        location
+            .child("mutex")
+            .check(mutex::validate(&self.mutex))?;
         self.profile().validate(&location.child("profile"))?;
         for (key, schema) in [
             ("pass_schema", self.pass_schema()),

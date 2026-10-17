@@ -197,6 +197,7 @@ enum Admission {
     /// Joining a live execution uses a job slot; awaiting backend capacity does not.
     Joining,
     Capacity,
+    Mutex,
     Blocked,
 }
 
@@ -221,7 +222,7 @@ impl Admission {
     }
 
     fn waiting(&self) -> bool {
-        matches!(self, Self::Joining | Self::Capacity)
+        matches!(self, Self::Joining | Self::Capacity | Self::Mutex)
     }
 
     fn stop(&mut self, reason: modes::Stop) {
@@ -705,6 +706,23 @@ impl Scheduler<'_, '_> {
                         };
                     }
                     match claim {
+                        Claim::Mutex { eval_id, run_id } => {
+                            admissions[index] = Admission::Mutex;
+                            let reason = format!(
+                                "Waiting for mutex tags held by eval {eval_id} in Run {run_id}."
+                            );
+                            if request.blocked_reason.as_ref() != Some(&reason) {
+                                request.state = crate::store::RequestState::pending(
+                                    crate::types::RequestStatus::Queued,
+                                    None,
+                                )
+                                .expect("mutex waiter is queued");
+                                request.queue = None;
+                                request.blocked_reason = Some(reason);
+                                self.receipts.save_request(request).await?;
+                            }
+                            continue;
+                        }
                         Claim::Full => {
                             let (backend, limit) = limited.as_ref().expect("a limited backend");
                             full.insert(*backend);

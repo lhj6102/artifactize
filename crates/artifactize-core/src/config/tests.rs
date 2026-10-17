@@ -22,6 +22,61 @@ fn parse(value: Value) -> Result<ArtifactDeclaration, String> {
 }
 
 #[test]
+fn eval_mutex_declarations_are_typed_and_excluded_from_criteria() {
+    let declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
+    let baseline = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
+    for tags in [
+        json!([]),
+        json!(["use-computer"]),
+        json!(["use-computer:db:users", "use-computer:browser"]),
+    ] {
+        let mut changed = declared.clone();
+        changed["mutex"] = tags.clone();
+        let parsed = parse(json!({"name":"a","evals":[changed]})).unwrap();
+        assert_eq!(serde_json::to_value(&parsed.evals[0].mutex).unwrap(), tags);
+        assert_eq!(
+            crate::cache::eval_definition_hash(&parsed.evals[0]),
+            crate::cache::eval_definition_hash(&baseline.evals[0])
+        );
+    }
+    for tags in [
+        json!("use-computer"),
+        json!([7]),
+        json!(["other"]),
+        json!([""]),
+        json!(["use-computer:"]),
+        json!(["use-computer::db"]),
+        json!(["use-computer:db:"]),
+        json!(["use-computer:bad segment"]),
+        json!(["use-computer:db/users"]),
+        json!(["use-computer", "use-computer"]),
+        json!(vec!["use-computer:db"; 65]),
+    ] {
+        let mut changed = declared.clone();
+        changed["mutex"] = tags.clone();
+        assert!(
+            parse(json!({"name":"a","evals":[changed]})).is_err(),
+            "accepted {tags}"
+        );
+    }
+    for profile in [
+        json!({"kind":"human"}),
+        json!({"kind":"dependency","depends_on":["input"]}),
+    ] {
+        let mut changed = eval(profile.clone());
+        if profile["kind"] == "dependency" {
+            changed.as_object_mut().unwrap().remove("payload");
+        }
+        changed["mutex"] = json!([]);
+        let error = parse(json!({"name":"a","evals":[changed]})).unwrap_err();
+        assert!(
+            error.contains("mutex is supported only on runtime and agent"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn defaults_and_payload_are_preserved_without_interpolation() {
     let empty = parse(json!({ "name": "input" })).unwrap();
     assert!(empty.evals.is_empty());

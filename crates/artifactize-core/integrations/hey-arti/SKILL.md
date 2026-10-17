@@ -120,6 +120,18 @@ external gates still hold the cycle and a failed cycle cannot release downstream
 consumers. `basis = true` waives an input’s own reviews, not its dependencies, and
 cannot own Evals.
 
+For runtime or Agent evals whose own command or tools use the machine, put
+`mutex = ["use-computer:display"]` beside `profile`, not on the Artifact. Tags
+are `use-computer` or colon-separated descendants whose segments match the ID
+syntax above; declare at most 64 unique tags. Equal and ancestor/descendant tags
+exclude each other across all Runs using the same machine state store; siblings
+and untagged evals remain concurrent. All tags are acquired together, and an eval
+waits without consuming its execution budget, job/backend slot or timeout. The
+wait identifies the holding eval and Run. Completion, cancellation, owner death
+or an ended Run frees the tags. There is no default, priority or ordering policy;
+Human evals cannot declare mutex tags. Changing mutex tags does
+not invalidate fingerprints or reuse keys.
+
 Mount aliases and explicit `{name}` references resolve to declared Artifacts.
 Instruction references and runtime argv references make real consumer relations;
 references do not paste file content into instructions. Folder operands may use
