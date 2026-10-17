@@ -58,6 +58,13 @@ ERROR/CANCELLED without erasing committed evidence. It does not kill an executio
 this Run joined from another Run. Dead workers reconcile as ERROR/OWNER_DIED;
 interrupted work is not replayed automatically.
 
+Acceptance saves the resolved definitions for the selected scope. Before execution,
+Artifactize checks those definitions twice: before preparing fingerprints, and
+again after fingerprint and remote-evidence preparation, at the scheduling boundary.
+If relevant declarations changed since acceptance, the Run ends **ERROR/INPUT_CHANGED**
+instead of silently executing different criteria or profiles. Finish editing the
+declarations and submit a new Run; the accepted Run is not retargeted.
+
 In strict mode, the Run waits for WAITING_HUMAN requests like other reviews.
 A submission unblocks dependents in that same Run. There is no Human wait deadline
 or `verify --timeout-ms`; all eval kinds share the settlement rule. The optional
