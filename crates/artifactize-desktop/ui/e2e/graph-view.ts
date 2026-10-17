@@ -67,7 +67,10 @@ export async function summaryShows(browser: WebdriverIO.Browser, anchor: string,
       return !!shown && shown.beside && text.test(shown.text);
     }, { timeout: 15000, timeoutMsg: `the summary shows ${text} beside ${anchor}` });
   } catch (error) {
-    const state = { summary: await summary(browser, anchor), focused: await focusedNode(browser), popup: await popup(browser) };
+    const state = {
+      summary: await summary(browser, anchor), focused: await focusedNode(browser), popup: await popup(browser),
+      pointer: await browser.execute(() => (window as unknown as { pointerTrace?: unknown[] }).pointerTrace ?? []),
+    };
     throw new Error(`the summary shows ${text} beside ${anchor}: ${JSON.stringify(state)}`, { cause: error });
   }
 }
@@ -75,4 +78,25 @@ export async function summaryShows(browser: WebdriverIO.Browser, anchor: string,
 /** Whether a summary is shown at all. */
 export function summaryOpen(browser: WebdriverIO.Browser): Promise<boolean> {
   return browser.$('[aria-label="Summary"]').isExisting();
+}
+
+/** Read-only pointer evidence for diagnosing a hover lost between real UI actions. */
+export async function tracePointer(browser: WebdriverIO.Browser): Promise<void> {
+  await browser.execute(() => {
+    const trace: unknown[] = [];
+    (window as unknown as { pointerTrace: unknown[] }).pointerTrace = trace;
+    const observe = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const hit = document.elementFromPoint(event.clientX, event.clientY);
+      trace.push({
+        type: event.type, trusted: event.isTrusted, x: event.clientX, y: event.clientY,
+        target: target?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? target?.tagName,
+        hit: hit?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? hit?.tagName,
+      });
+      // Only the most recent input transitions are relevant to one missing summary.
+      if (trace.length > 32) trace.shift();
+    };
+    document.addEventListener("mousemove", observe, true);
+    document.documentElement.addEventListener("mouseleave", observe);
+  });
 }

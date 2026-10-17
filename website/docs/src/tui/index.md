@@ -96,8 +96,9 @@ it while not editing; the expanded instruction takes 70% of the body and ↑/↓
 scrolls it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens Tools/Output
 to 60% of the available width;
-the selected tool shows its action and description. A command tool shows its
-resolved command line, or its declaration and the reason resolution failed.
+the selected tool shows its action and description. A command tool shows its resolved command line. A recorded per-tool resolution
+error shows the declaration and its reason; a request-wide resolution failure
+instead falls back to the declared command without displaying that explanation.
 A built-in shows an action on a logical target instead: for example, opening
 `notes.md`, printing a Markdown section, or listing a directory, not a shell
 command line.

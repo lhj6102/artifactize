@@ -8,7 +8,7 @@ import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, requestWindowClose } from "../platform.ts";
-import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryShows } from "../graph-view.ts";
+import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryShows, tracePointer } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
 function monitorNavigation(browser: WebdriverIO.Browser) {
@@ -248,6 +248,7 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
+      await tracePointer(browser);
       await graphShown(browser, "a:docs");
       await browser.$(nodeAt("a:docs")).moveTo();
       await summaryShows(browser, nodeAt("a:docs"), /docs/);
