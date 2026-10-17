@@ -145,8 +145,10 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   own run until the program exits. The log wraps and follows its newest line;
   PgUp with Tools focused scrolls back and holds the view while lines arrive, and
   PgDn back to the bottom follows again. With mouse capture off (F2), the terminal
-  selects and copies its text. It is kept while the request stays open and cleared
-  by a submission or by opening another request; nothing is saved.
+  selects and copies its text. Standalone Review clears the log when another request
+  opens. Monitor keeps each request's log in memory and restores it when its Detail
+  reopens, even after another request was viewed. Submission clears that request's
+  log in either UI; neither saves it to disk.
 - **Form.** The chosen verdict opens its schema-backed form without an intermediate
   verdict popup. A Human schema holds only [form shapes](../features/declarations.md#human-result-schemas):
   text, integer and number fields, booleans, string choices, constants, lists of

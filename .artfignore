@@ -10,3 +10,4 @@ crates/artifactize-desktop/vendor/
 
 # Build output, including the end-to-end fixtures the desktop tests leave there.
 /target/
+/website/dist/

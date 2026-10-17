@@ -140,8 +140,8 @@ Enter (or a click) runs one at once. `g`/`r` opens the GREEN/RED fields; Ctrl-S
 submits. Esc stops editing before returning to the list, keeping the draft.
 The artifactize-owned Run waits for Human results like any other, so dependents
 continue in the same Run. Plain `verify` submits and returns; `verify --wait`
-follows the Run in the foreground and exits 4 here once the sign-off arrives,
-because `spec/review` has no result yet.
+follows the Run in the foreground and exits 0 here once the GREEN sign-off arrives,
+provided the preceding machine review is still valid.
 
 For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
 then run `artifactize verify --eval spec/review --wait`, adding `--profile anthropic` or `--profile codex` for the other backends. Without
