@@ -151,7 +151,8 @@ export const scenarios: Scenario[] = [
     "graph-chain-culling",
     "draws the Artifacts the camera brings into view when zooming over a chain too large to draw at once",
     async () => {
-      const fixture = createChain(85);
+      // Even a wide desktop needs a scale below 5% to fit this chain in the split canvas.
+      const fixture = createChain(125);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
@@ -171,15 +172,15 @@ export const scenarios: Scenario[] = [
       // Zoom in until the chain extends beyond the canvas and its last Artifact is not drawn.
       const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
-      await browser.waitUntil(async () => !(await drawn(name(84))) && !(await visible()).includes(name(84)),
+      await browser.waitUntil(async () => !(await drawn(name(124))) && !(await visible()).includes(name(124)),
         { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas and is not drawn" });
       // Fit View moves the camera back over the whole chain: the Artifacts it brings into view
       // are drawn, the chain's end among them.
       await browser.$(".svelte-flow__controls-fitview").click();
-      await browser.waitUntil(async () => (await visible()).includes(name(84)), { timeout: 15000, timeoutMsg: "the camera drew the chain's last Artifact in view" });
+      await browser.waitUntil(async () => (await visible()).includes(name(124)), { timeout: 15000, timeoutMsg: "the camera drew the chain's last Artifact in view" });
       // The Artifact brought into view takes the pointer like any other.
-      await graphShown(browser, name(84));
-      await openArtifact(browser, name(84), "Artifact n084");
+      await graphShown(browser, name(124));
+      await openArtifact(browser, name(124), "Artifact n124");
     },
   ),
 

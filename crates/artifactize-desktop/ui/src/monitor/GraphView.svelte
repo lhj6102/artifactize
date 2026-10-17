@@ -35,8 +35,9 @@
 
   const flow = useSvelteFlow();
   const nodeTypes = { artifact: ArtifactNode };
-  /** The camera and its controls share the same zoom limits. */
-  const MIN_ZOOM = 0.05;
+  /** A positive zoom floor clips sufficiently long graphs in the split canvas. Zero lets
+   * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
+  const MIN_ZOOM = 0;
   const MAX_ZOOM = 2;
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() =>
