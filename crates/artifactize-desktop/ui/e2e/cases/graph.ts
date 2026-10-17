@@ -184,18 +184,8 @@ export const scenarios: Scenario[] = [
     async (browser) => {
       const { focused, nodeView } = chainGraph(browser);
       const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), { timeout: 30000, timeoutMsg: "the Run tree" });
-      await browser.$("button*=Graph").click();
-      await browser.$(".graph .svelte-flow__node").waitForDisplayed({ timeout: 30000 });
-      // Make the chain extend beyond the visible canvas, independently of whether the
-      // renderer keeps offscreen nodes mounted.
-      const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
-      for (let step = 0; step < 12; step += 1) await zoomIn.click();
-      await browser.waitUntil(async () => !(await nodeView(name(0))).visible || !(await nodeView(name(84))).visible,
-        { timeout: 15000, timeoutMsg: "the chain extends beyond the graph viewport" });
-      // Culling mounts a margin outside the canvas too. A mounted node (such as n039
-      // at the left edge) is not necessarily a pointer target: choose a wholly visible,
-      // hit-testable node through read-only geometry, then use the real WebDriver click.
+      // Culling also mounts endpoints outside the canvas. Choose a wholly visible,
+      // hit-testable node from the current drawing, not a retained WebDriver element.
       const visible = () => browser.execute(() => {
         const canvas = document.querySelector(".graph .canvas")?.getBoundingClientRect();
         if (!canvas) return null;
@@ -209,6 +199,18 @@ export const scenarios: Scenario[] = [
           document.elementFromPoint(x, y)?.closest(".svelte-flow__node") === node)
           .sort((a, b) => a.distance - b.distance)[0]?.node.dataset.id ?? null;
       });
+      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), { timeout: 30000, timeoutMsg: "the Run tree" });
+      await browser.$("button*=Graph").click();
+      // The initial fit can cull the first mounted node. Waiting on that element holds a
+      // detached reference forever in the embedded driver; observe the live drawing instead.
+      await browser.waitUntil(async () => (await visible()) !== null,
+        { timeout: 30000, timeoutMsg: "a graph node is visible and hit-testable after the initial fit" });
+      // Make the chain extend beyond the visible canvas, independently of whether the
+      // renderer keeps offscreen nodes mounted.
+      const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
+      for (let step = 0; step < 12; step += 1) await zoomIn.click();
+      await browser.waitUntil(async () => !(await nodeView(name(0))).visible || !(await nodeView(name(84))).visible,
+        { timeout: 15000, timeoutMsg: "the chain extends beyond the graph viewport" });
       await browser.waitUntil(async () => (await visible()) !== null, { timeout: 15000, timeoutMsg: "a zoomed graph node is actually hit-testable" });
       const first = await visible();
       assert.ok(first, "a real visible node can receive the pointer");
