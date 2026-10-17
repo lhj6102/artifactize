@@ -31,9 +31,10 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="full" tabindex="0" role="document">
   {#if logName}
-    <div class="chips small views" role="tablist" aria-label="Views">
-      <button class="chip" role="tab" aria-selected={!showLog} onclick={() => (log = false)}>Summary</button>
-      <button class="chip" role="tab" aria-selected={showLog} onclick={() => (log = true)}>{logName}</button>
+    <div class="views" role="tablist" aria-label="Views">
+      <button class="view" role="tab" aria-selected={!showLog} onclick={() => (log = false)}>Summary</button>
+      <span class="bar" aria-hidden="true">|</span>
+      <button class="view" role="tab" aria-selected={showLog} onclick={() => (log = true)}>{logName}</button>
     </div>
   {/if}
   {#if detail.summary}
@@ -64,9 +65,39 @@
 </div>
 
 <style>
+  /* A plain text switch, a level below the Detail's chips: the chosen view dark and bold, the
+   * other light. Hover only highlights. */
   .views {
     grid-row: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
     padding: 0 var(--pad) 8px;
+  }
+  .view {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--muted);
+    font-weight: 400;
+    cursor: pointer;
+  }
+  .view:hover {
+    color: var(--text);
+  }
+  .view[aria-selected="true"] {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .view:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .bar {
+    color: var(--faint);
   }
   .summary {
     grid-row: 2;

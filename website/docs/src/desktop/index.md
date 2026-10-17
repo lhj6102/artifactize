@@ -62,9 +62,10 @@ Run's own Detail: saved validation and unmet obligations, request counts, waitin
 work, timing, budgets, executed/reused work and usage. Drag the Detail's left edge
 to resize it; it keeps that width, also in the next launch.
 
-An Artifact's Detail has a row of chips: **Artifact** first, then one per eval
-with its verdict's glyph and colour. Many chips scroll sideways. The Artifact chip
-lists the Artifact's evals with their verdicts; click one to show its chip.
+An Artifact's Detail has chips: **Artifact** first, then one per eval with its
+verdict's glyph and colour. Chips that do not fit wrap onto the next line. The
+Artifact chip lists the Artifact's evals with their verdicts; click one to show
+its chip.
 
 An eval's chip shows its **Summary**: Outcome, Waits for, What, Provenance and
 Technical when applicable. `t` toggles Technical. In Waits for, `w` or the

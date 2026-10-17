@@ -96,14 +96,6 @@
   const detail = $derived(d.detail?.run === run && d.detail.node === target ? d.detail : null);
   const human = $derived(detail?.profile === "human" && detail.request !== null);
 
-  /** The wheel scrolls the tab strip sideways when its tabs overflow it. */
-  function wheel(event: WheelEvent) {
-    const strip = event.currentTarget as HTMLElement;
-    if (event.deltaY === 0 || strip.scrollWidth <= strip.clientWidth) return;
-    strip.scrollLeft += event.deltaY;
-    event.preventDefault();
-  }
-
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
     if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
@@ -123,7 +115,7 @@
   {/snippet}
   <div class="detail" class:tabbed>
     {#if tabbed && row}
-      <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}" onwheel={wheel}>
+      <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}">
         <button class="chip" role="tab" aria-selected={tab === null} onclick={() => ontab(null)}>Artifact</button>
         {#each evals as item (item.id)}
           <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
@@ -183,7 +175,7 @@
   .detail.tabbed {
     grid-template-rows: auto minmax(0, 1fr);
   }
-  /* Many tabs scroll sideways in their own row; they never widen the Detail. */
+  /* Many tabs wrap onto further lines; they never widen the Detail. */
   .strip {
     padding: 2px var(--pad) 8px;
     border-bottom: 1px solid var(--border);
