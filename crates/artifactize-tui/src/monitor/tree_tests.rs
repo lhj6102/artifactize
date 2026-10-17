@@ -1670,7 +1670,7 @@ fn an_artifact_without_evals_is_green() {
 }
 
 #[test]
-fn an_internal_red_does_not_turn_a_peers_unresolved_external_gate_into_a_blocker() {
+fn a_cycle_peer_neither_blocks_nor_holds_an_eval() {
     let definitions = definitions(
         &[(&["a", "b"], &[])],
         vec![
@@ -1687,7 +1687,11 @@ fn an_internal_red_does_not_turn_a_peers_unresolved_external_gate_into_a_blocker
     let (run, requests) = saved(definitions, true, requests);
     let nodes = tree(&run, &requests, now());
     assert_eq!(view(&nodes, "a/cycle"), &EvalView::Failed { verdict: true });
-    assert!(matches!(view(&nodes, "b/cycle"), EvalView::WaitingOn(_)));
+    // Neither the peer's RED nor its running sibling holds b/cycle: it only awaits admission.
+    assert!(matches!(
+        view(&nodes, "b/cycle"),
+        EvalView::InProgress(Activity::Queued(_))
+    ));
     let graph = graph(&nodes);
     assert_eq!(
         graph

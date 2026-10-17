@@ -137,6 +137,34 @@ fn visible_mounts_are_not_implicit_eval_gates() {
     assert!(evaluation.evals["app/check"].can_execute());
 }
 
+#[test]
+fn a_mount_never_makes_artifacts_cycle_peers() {
+    let fixture = Fixture::new();
+    fixture.declare("app", vec![runtime("check", "Inspect the app.", true)]);
+    fixture.declare("input", vec![runtime("check", "Check {app}.", true)]);
+    fixture.declare("consumer", vec![runtime("check", "Check {input}.", true)]);
+    let declaration = fixture.repo.join("app/index.artf");
+    let source = fs::read_to_string(&declaration).unwrap();
+    fs::write(
+        declaration,
+        format!("mounts = {{ input = 'input' }}\n{source}"),
+    )
+    .unwrap();
+    let config = read_workspace_config(&fixture.repo).unwrap();
+    let graph = Graph::new(&config).unwrap();
+    let evaluation = graph.evaluate(&BTreeMap::from([(
+        "app/check".parse().unwrap(),
+        Evidence::Current(Verdict::Red),
+    )]));
+    // Only references gate, so the mounted input still depends on the app it references.
+    for eval in ["input/check", "consumer/check"] {
+        assert_eq!(
+            evaluation.evals[eval].blocked_reason().unwrap(),
+            "Dependency verdict RED: app/check"
+        );
+    }
+}
+
 #[tokio::test]
 async fn default_verify_executes_independent_siblings_after_an_input_fails() {
     let fixture = Fixture::new();
@@ -250,4 +278,153 @@ fn external_gates_still_hold_cycles_without_gating_unrelated_sibling_evals() {
     assert_eq!(evaluation.evals["a/check"].status, EvalStatus::Blocked);
     assert_eq!(evaluation.evals["b/check"].status, EvalStatus::Blocked);
     assert_eq!(evaluation.evals["a/independent"].status, EvalStatus::Green);
+}
+
+/// The cycle of #261: `cli/clippy` references tui, `tui/tests` references cli, and only
+/// `cli/clippy` reaches outside the cycle, to core. `cli/follows` is a sibling without
+/// references; docs consumes the cycle.
+fn cycle_with_siblings(fixture: &Fixture, failing: &str) {
+    let green = |id: &str| id != failing;
+    fixture.declare(
+        "core",
+        vec![runtime("check", "Check core.", green("core/check"))],
+    );
+    fixture.declare(
+        "cli",
+        vec![
+            runtime("clippy", "Lint {tui} against {core}.", green("cli/clippy")),
+            runtime("follows", "Check the rules.", green("cli/follows")),
+        ],
+    );
+    fixture.declare(
+        "tui",
+        vec![runtime("tests", "Test with {cli}.", green("tui/tests"))],
+    );
+    fixture.declare(
+        "docs",
+        vec![runtime("check", "Describe {cli}.", green("docs/check"))],
+    );
+}
+
+#[test]
+fn only_a_red_outside_the_evals_own_cycle_blocks_it() {
+    let fixture = Fixture::new();
+    cycle_with_siblings(&fixture, "");
+    let config = read_workspace_config(&fixture.repo).unwrap();
+    let graph = Graph::new(&config).unwrap();
+    let evaluate = |entries: &[(&str, Verdict)]| {
+        graph.evaluate(
+            &entries
+                .iter()
+                .map(|&(id, verdict)| (id.parse().unwrap(), Evidence::Current(verdict)))
+                .collect(),
+        )
+    };
+
+    // Waiting follows the same set: the cycle waits only for what it references outside.
+    let waiting = evaluate(&[]);
+    assert_eq!(waiting.evals["cli/clippy"].unmet_gates, ["core/check"]);
+    assert_eq!(waiting.evals["tui/tests"].unmet_gates, ["core/check"]);
+    assert!(waiting.evals["cli/follows"].can_execute());
+    assert_eq!(
+        waiting.evals["docs/check"].unmet_gates,
+        ["cli/clippy", "cli/follows", "tui/tests"]
+    );
+
+    for failed in ["cli/follows", "tui/tests"] {
+        let evaluation = evaluate(&[("core/check", Verdict::Green), (failed, Verdict::Red)]);
+        for eval in ["cli/clippy", "cli/follows", "tui/tests"] {
+            if eval != failed {
+                assert!(evaluation.evals[eval].can_execute(), "{failed} RED: {eval}");
+            }
+        }
+        let docs = &evaluation.evals["docs/check"];
+        assert_eq!(docs.status, EvalStatus::Blocked);
+        assert_eq!(
+            docs.blocked_reason().unwrap(),
+            format!("Dependency verdict RED: {failed}")
+        );
+    }
+
+    let external = evaluate(&[("core/check", Verdict::Red)]);
+    assert_eq!(external.evals["cli/clippy"].status, EvalStatus::Blocked);
+    assert_eq!(external.evals["tui/tests"].status, EvalStatus::Blocked);
+    assert!(external.evals["cli/follows"].can_execute());
+    // A BLOCKED dependency blocks in turn, and the reason names the RED at the root.
+    assert_eq!(
+        external.evals["docs/check"].blocked_reason().unwrap(),
+        "Dependency verdict RED: core/check"
+    );
+}
+
+#[tokio::test]
+async fn verify_runs_every_valid_eval_and_names_the_red_that_blocks_the_rest() {
+    for speculate in [false, true] {
+        for (failing, expected, reason) in [
+            (
+                "cli/follows",
+                [
+                    ("cli/clippy", "GREEN"),
+                    ("cli/follows", "RED"),
+                    ("core/check", "GREEN"),
+                    ("docs/check", "BLOCKED"),
+                    ("tui/tests", "GREEN"),
+                ],
+                "Dependency verdict RED: cli/follows",
+            ),
+            (
+                "core/check",
+                [
+                    ("cli/clippy", "BLOCKED"),
+                    ("cli/follows", "GREEN"),
+                    ("core/check", "RED"),
+                    ("docs/check", "BLOCKED"),
+                    ("tui/tests", "BLOCKED"),
+                ],
+                "Dependency verdict RED: core/check",
+            ),
+        ] {
+            let fixture = Fixture::new();
+            cycle_with_siblings(&fixture, failing);
+            let run = fixture.verify(speculate).await;
+            let context = format!("speculate={speculate}, {failing} RED");
+            assert_eq!(statuses(&run), BTreeMap::from(expected), "{context}");
+            for request in &run.requests {
+                if request.status().as_str() == "BLOCKED" {
+                    assert_eq!(
+                        request.blocked_reason.as_deref(),
+                        Some(reason),
+                        "{context}: {}",
+                        request.eval_id
+                    );
+                }
+            }
+            // The saved Run view derives the same blocks from the same gates.
+            let requests = store::read_requests(&fixture.state, Some(run.run.id.as_str()))
+                .await
+                .unwrap();
+            let tree = monitor::tree(&run, &requests, OffsetDateTime::now_utc());
+            let view = |eval: &str| {
+                tree.iter()
+                    .flat_map(|node| &node.children)
+                    .find(|node| Target::from(&node.id) == Target::Eval(eval.parse().unwrap()))
+                    .map(|node| node.kind.clone())
+                    .unwrap()
+            };
+            for (eval, status) in expected {
+                let kind = view(eval);
+                match status {
+                    "GREEN" => assert!(
+                        matches!(kind, monitor::Kind::Eval(monitor::EvalView::Done(_))),
+                        "{context}: {eval} {kind:?}"
+                    ),
+                    "BLOCKED" => assert!(
+                        matches!(kind, monitor::Kind::Eval(monitor::EvalView::BlockedBy(_))),
+                        "{context}: {eval} {kind:?}"
+                    ),
+                    _ => {}
+                }
+            }
+        }
+    }
 }
