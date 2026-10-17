@@ -36,6 +36,8 @@
   }
 
   const text = (value: FieldValue) => ("value" in value && typeof value.value === "string" ? value.value : "");
+  /** An optional field says so in grey inside its empty input. */
+  const placeholder = (required: boolean) => (required ? undefined : "Optional — leave empty if nothing to add");
   const items = (value: FieldValue) => (value.kind === "list" ? value.value : []);
   /** A list's items with one edited, added or removed; it always keeps one item to type in. */
   function setItems(name: string, next: string[]) {
@@ -129,6 +131,7 @@
                 <textarea
                   rows="2"
                   aria-label="{field.name} {at + 1}"
+                  placeholder={placeholder(field.required)}
                   value={item}
                   oninput={(event) =>
                     setItems(field.name, list.with(at, (event.currentTarget as HTMLTextAreaElement).value))}
@@ -144,12 +147,14 @@
             <textarea
               id="field-{field.name}"
               rows="2"
+              placeholder={placeholder(field.required)}
               value={text(value)}
               oninput={(event) => set(field.name, { kind, value: (event.currentTarget as HTMLTextAreaElement).value })}
             ></textarea>
           {:else}
             <input
               id="field-{field.name}"
+              placeholder={placeholder(field.required)}
               inputmode={kind === "integer" ? "numeric" : "decimal"}
               value={text(value)}
               oninput={(event) => set(field.name, { kind, value: (event.currentTarget as HTMLInputElement).value })}
@@ -230,6 +235,9 @@
   }
   textarea {
     resize: vertical;
+  }
+  ::placeholder {
+    color: var(--faint);
   }
   .json {
     font: 12px/1.5 var(--mono);

@@ -278,4 +278,15 @@ describe("HumanDetail", () => {
     expect(log.textContent).toContain("clicked (412, 1)");
     expect(log.textContent).toContain("▶ preview · brand");
   });
+
+  it("says in grey that an optional field may stay empty", async () => {
+    const optional: FormView = { ...greenForm, fields: greenForm.fields.map((field) => ({ ...field, required: field.name !== "comment" })) };
+    mockIPC((cmd) => (cmd === "human_open" ? humanView("review") : cmd === "human_form" ? optional : null), { shouldMockEvents: true });
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await screen.findByText("REVIEW (yours)");
+    await user.click(screen.getByRole("button", { name: "GREEN" }));
+    const comment = await screen.findByLabelText(/comment/);
+    expect(comment.getAttribute("placeholder")).toMatch(/^Optional/);
+  });
 });
