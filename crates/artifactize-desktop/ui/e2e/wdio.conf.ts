@@ -5,7 +5,7 @@ import { selectedScenarios } from "./catalog.ts";
 import { environment, releaseFixtures } from "./fixture.ts";
 import {
   accountBrowserEnvironment, asNativePath, releaseAccountBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
-  makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
+  assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
   type Environment,
 } from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
@@ -84,6 +84,7 @@ export const config = {
       const endpoints = await embeddedPorts(selected.length);
       for (let index = 0; index < selected.length; index++) {
         const item = selected[index];
+        if (item.id === "monitor-tool-log-scroll") assertClipboardDesktop();
         const input = variable("DESKTOP_TEST_RELAUNCH") === "1" ? prepared[index] : await item.prepare();
         if (!input) throw new Error("the relaunched case lost its owning fixture");
         if (variable("DESKTOP_TEST_RELAUNCH") !== "1") prepared.push(input);

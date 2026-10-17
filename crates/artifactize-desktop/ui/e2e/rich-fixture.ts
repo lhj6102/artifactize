@@ -12,8 +12,8 @@ export const OWNER = "Orchard reviewer";
 export const FINDING = "The displayed receipt includes its price.";
 export const MODEL = "fixture-review-model";
 
-export async function createRich(): Promise<{ fixture: Fixture; release: () => Promise<void> }> {
-  const answer = JSON.stringify({ verdict: "GREEN", owner: OWNER, summary: `Reviewed content.\n${LONG_WORD}`, findings: [
+export async function createRich(): Promise<{ fixture: Fixture; runs: string[]; release: () => Promise<void> }> {
+  const answer = JSON.stringify({ verdict: "GREEN", owner: OWNER, summary: `Reviewed content.\n${LONG_WORD}\nReceipt review complete.`, findings: [
     { item: "R-RECEIPT", where: "receipt.md:12", change: FINDING },
     { item: "R-TOTAL", where: "receipt.md:18", change: "The total matches the line items." },
   ] });
@@ -30,6 +30,7 @@ export async function createRich(): Promise<{ fixture: Fixture; release: () => P
     response.writeHead(200, { "content-type": "text/event-stream" });
     response.end(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""));
   });
+  const runs: string[] = [];
   try {
     const fixture = await prepareFixture(async (root) => {
       const repo = makeDirectory(nativePath(root, "repo"));
@@ -60,10 +61,11 @@ ${other}`);
       for (let run = 0; run < 2; run += 1) {
         const result = await runProgramAsync(cli(), ["--repo", repo, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json"], { env });
         if (result.status !== 0) throw new Error(`rich fixture verification failed: ${result.stdout}\n${result.stderr}`);
+        runs.push((JSON.parse(result.stdout) as { id: string }).id);
       }
       return fixture;
     });
-    return { fixture, release: () => provider.close() };
+    return { fixture, runs, release: () => provider.close() };
   } catch (error) {
     await provider.close();
     throw error;

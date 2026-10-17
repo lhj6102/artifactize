@@ -11,8 +11,9 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, primaryModifier } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
-import { clickOption } from "../input.ts";
+import { clickOption, tab } from "../input.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
+import { textContrast } from "../rendering.ts";
 import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
 
 /** A Tool log row as read: a run's start (its time as HH:MM:SS), a printed line or a run's end,
@@ -474,9 +475,12 @@ export const scenarios: Scenario[] = [
       await fill(browser, "#field-findings-0-problem", "typo");
       await human().$("#field-findings + button").click();
       await group(2).waitForExist({ timeout: 15000, timeoutMsg: "a second findings group added" });
+      assert.equal(await browser.$("#field-findings-1-problem").getValue(), "", "the added group's text starts empty");
+      assert.equal(await browser.$("#field-findings-1-severity").getValue(), "", "the added group's choice starts empty");
+      assert.equal(await browser.$("#field-findings-0-problem").getValue(), "typo", "adding a group preserves the original group's text");
+      assert.equal(await browser.$("#field-findings-0-severity").getValue(), "", "adding a group preserves the original group's unset choice");
       await fill(browser, "#field-findings-1-problem", "date");
-      // An optional choice left empty stays out of the result. (A native select's options are
-      // not reachable through this WebDriver's page input; the form's unit tests choose one.)
+      // An optional choice left empty stays out of the result.
       assert.equal(await browser.$("#field-findings-1-severity").getValue(), "", "the severity left empty");
       await human().$('button[aria-label="Remove findings 1"]').click();
       await group(2).waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the first group removed" });
@@ -503,17 +507,14 @@ export const scenarios: Scenario[] = [
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the scalar GREEN form");
       assert.ok(await human().$('label[for="field-comment"] [aria-label="required"]').isExisting(), "the required comment has its star");
       assert.equal(await browser.$("#field-score").getAttribute("placeholder"), "Optional");
-      const hint = await browser.execute(() => {
-        const field = document.querySelector<HTMLElement>("#field-score")!;
-        // WebKit's CSSOM reports the originating input for ::placeholder. Read the
-        // matching, scoped pseudo rule as well; never change the field to measure it.
-        const rules = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
-          .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText.includes("::placeholder")
-            && field.matches(rule.selectorText.replaceAll("::placeholder", "")))
-          .map((rule) => rule.style.color);
-        return { rules, faint: getComputedStyle(field).getPropertyValue("--faint").trim(), ink: getComputedStyle(field).color };
-      });
-      assert.ok(hint.rules.includes("var(--faint)") && hint.faint !== "", `Optional uses the grey hint colour: ${JSON.stringify(hint)}`);
+      await browser.$("#field-score").scrollIntoView({ block: "nearest" });
+      const placeholder = await textContrast(browser, "#field-score");
+      await fill(browser, "#field-score", "Optional");
+      await tab(browser);
+      const entered = await textContrast(browser, "#field-score");
+      assert.ok(placeholder > entered * 0.1 && placeholder < entered * 0.9,
+        `the painted Optional hint is visible and greyer than the same glyphs entered normally: ${placeholder}/${entered}`);
+      await fill(browser, "#field-score", "");
       await fill(browser, "#field-comment", "checked typed fields");
       await fill(browser, "#field-score", "7.5");
       await human().$('input[name="field-confirmed"]').click();
@@ -522,8 +523,10 @@ export const scenarios: Scenario[] = [
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "the scalar result saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "checked typed fields", score: 7.5, confirmed: true, channel: "preview" });
-      assert.match(await human().getText(), /7\.5/);
-      assert.match(await human().getText(), /preview/);
+      await browser.waitUntil(async () => {
+        const text = await human().getText();
+        return /completed result/i.test(text) && text.includes("7.5") && text.includes("preview");
+      }, { timeout: 15000, timeoutMsg: "the completed scalar result rendered with its submitted number and choice" });
     },
   ),
 
@@ -723,13 +726,26 @@ export const scenarios: Scenario[] = [
         return { left: box.left, right: box.right, width: box.width };
       });
       await dragEdge(Math.round(room.right - 1));
-      await browser.waitUntil(async () => (await placed())?.width === 320, { timeout: 15000, timeoutMsg: "the Detail stops at a readable 320px minimum" });
+      const minimum = (await placed())!;
+      const readable = await browser.execute(() => {
+        const dock = document.querySelector<HTMLElement>('aside[aria-label="Detail"]')!;
+        const heading = dock.querySelector<HTMLElement>("h2")!;
+        const tab = dock.querySelector<HTMLElement>('[role="tab"] .label')!;
+        return dock.scrollWidth <= dock.clientWidth && heading.scrollWidth <= heading.clientWidth && tab.scrollWidth <= tab.clientWidth;
+      });
+      assert.ok(readable && minimum.width <= before.width && minimum.left > 0 && minimum.right > 0, "the minimum is a readable, contained column, not collapsed text");
+      await dragEdge(Math.round(room.right - 1));
+      assert.equal((await placed())?.width, minimum.width, "dragging past the minimum cannot shrink the column further");
       await dragEdge(Math.round(room.left + 1));
-      await browser.waitUntil(async () => (await placed())!.left >= 95 && (await placed())!.width > 320,
-        { timeout: 15000, timeoutMsg: "the widest Detail leaves graph visible at its left" });
       const maximum = (await placed())!;
-      assert.ok(Math.abs(maximum.width - Math.round(room.width - 108)) <= 1, "the maximum leaves the graph and its right gap");
-      await dragEdge(Math.round(room.right - 12 - width));
+      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right > 0, "the widest Detail stays in its graph area");
+      const graphVisible = await browser.execute(() => {
+        const stage = document.querySelector(".stage")!.getBoundingClientRect();
+        const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
+        return !!document.elementFromPoint((stage.left + dock.left) / 2, stage.top + stage.height / 2)?.closest(".graph");
+      });
+      assert.ok(graphVisible, "some actual graph remains visible beside the maximum-width Detail");
+      await dragEdge(Math.round(room.right - maximum.right - width));
       await browser.waitUntil(async () => Math.abs((await placed())!.width - width) <= 1, { timeout: 15000, timeoutMsg: "the independently chosen persisted width" });
       const cursor = await browser.execute(() => ({
         edge: getComputedStyle(document.querySelector('aside[aria-label="Detail"] [aria-label="Detail width"]')!).cursor,

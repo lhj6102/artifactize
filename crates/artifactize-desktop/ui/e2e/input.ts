@@ -7,16 +7,63 @@ type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "click"; x: n
  * action: W3C Element Click's selectedness, input, change steps. A conforming provider
  * already selected it and needs no second input. App state and handlers are never touched. */
 export async function clickOption(browser: WebdriverIO.Browser, target: WebdriverIO.Element): Promise<void> {
-  await target.click();
-  await browser.execute((option: HTMLOptionElement) => {
+  const eligible = await browser.execute((option: HTMLOptionElement) => {
     if (option.tagName !== "OPTION") throw new Error("option-click requires an option element");
     const select = option.closest("select");
     if (!select || select.multiple) throw new Error("option-click requires a single-choice select");
-    if (select.disabled || option.disabled || option.closest("optgroup")?.disabled || option.selected) return;
+    if (select.disabled || option.disabled || option.closest("optgroup")?.disabled || option.selected) return false;
+    const page = window as unknown as { optionClicks?: WeakMap<HTMLOptionElement, Event> };
+    page.optionClicks ??= new WeakMap();
+    option.addEventListener("click", (event) => page.optionClicks!.set(option, event), { once: true, capture: true });
+    return true;
+  }, target as unknown as HTMLOptionElement);
+  await target.click();
+  if (!eligible) return;
+  await browser.execute((option: HTMLOptionElement) => {
+    const page = window as unknown as { optionClicks?: WeakMap<HTMLOptionElement, Event> };
+    const event = page.optionClicks?.get(option);
+    page.optionClicks?.delete(option);
+    if (!event) throw new Error("the option click did not reach its target");
+    const select = option.closest("select");
+    if (!select || event.defaultPrevented || select.disabled || option.disabled || option.closest("optgroup")?.disabled || option.selected) return;
     option.selected = true;
     select.dispatchEvent(new Event("input", { bubbles: true }));
     select.dispatchEvent(new Event("change", { bubbles: true }));
   }, target as unknown as HTMLOptionElement);
+}
+
+/** Supply only Tab's omitted browser default, after the page has had its keydown. */
+export async function tab(browser: WebdriverIO.Browser, shift = false): Promise<void> {
+  await browser.execute((shift) => {
+    const active = document.activeElement as HTMLElement | null;
+    const key = { key: "Tab", code: "Tab", keyCode: 9, which: 9, shiftKey: shift, bubbles: true, cancelable: true, composed: true };
+    const allowed = (active ?? document.body).dispatchEvent(new KeyboardEvent("keydown", key));
+    if (allowed) {
+      const visible = (element: HTMLElement) => {
+        if (element.matches(":disabled") || element.closest("[inert], [hidden], dialog:not([open])") || element.getClientRects().length === 0) return false;
+        const style = getComputedStyle(element);
+        if (style.visibility === "hidden" || style.visibility === "collapse" || style.display === "none") return false;
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          if (parent.tagName === "DETAILS" && !(parent as HTMLDetailsElement).open
+            && ![...parent.children].find((child) => child.tagName === "SUMMARY")?.contains(element)) return false;
+        }
+        return true;
+      };
+      const ordered = [...document.querySelectorAll<HTMLElement>("a[href], area[href], input, select, textarea, button, iframe, object, embed, summary, [tabindex], [contenteditable]")]
+        .map((element) => ({ element, order: element.hasAttribute("tabindex") ? element.tabIndex : element.isContentEditable ? 0 : element.tabIndex }))
+        .filter(({ element, order }) => order >= 0 && visible(element))
+        // sort is stable, so equal tab indices retain document tree order.
+        .sort((a, b) => a.order > 0 && b.order > 0 ? a.order - b.order : a.order > 0 ? -1 : b.order > 0 ? 1 : 0)
+        .map(({ element }) => element);
+      const index = ordered.indexOf(active!);
+      const after = active && active !== document.body && index < 0 ? ordered.filter((element) => active.compareDocumentPosition(element)
+        & (shift ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING)) : [];
+      const next = index >= 0 ? ordered[(index + (shift ? -1 : 1) + ordered.length) % ordered.length]
+        : shift ? after.at(-1) ?? ordered.at(-1) : after[0] ?? ordered[0];
+      next?.focus();
+    }
+    (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keyup", key));
+  }, shift);
 }
 
 export async function dispatchInput(browser: WebdriverIO.Browser, input: Input): Promise<void> {

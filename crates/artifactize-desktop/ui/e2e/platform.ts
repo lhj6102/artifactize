@@ -643,6 +643,13 @@ export function harnessEnvironment(): Record<string, string> {
   return env;
 }
 
+/** The general pasteboard on macOS cannot be redirected into a fixture's profile. */
+export function assertClipboardDesktop(): void {
+  if (MACOS && !(variable("GITHUB_ACTIONS") === "true" && variable("RUNNER_ENVIRONMENT") === "github-hosted" && variable("RUNNER_OS") === "macOS")) {
+    throw new Error("Native clipboard E2E requires a disposable GitHub-hosted macOS runner; the user's general pasteboard must stay untouched");
+  }
+}
+
 export function assertRunnerMachine(): void {
   if (WINDOWS && !(variable("GITHUB_ACTIONS") === "true"
     && variable("RUNNER_ENVIRONMENT") === "github-hosted" && variable("RUNNER_OS") === "Windows")) {
@@ -760,6 +767,7 @@ try {
 export async function nativeInput(browser: WebdriverIO.Browser, input:
   | { type: "set" | "commit"; text: string }
   | { type: "cancel" | "copy" | "paste" }): Promise<void> {
+  if (input.type === "copy" || input.type === "paste") assertClipboardDesktop();
   const error = await browser.executeAsync((operation, done) => {
     const native = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> } };
     native.__TAURI_INTERNALS__.invoke("e2e_input", { input: operation }).then(

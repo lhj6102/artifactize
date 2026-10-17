@@ -89,6 +89,26 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX edges: E-HELP-OPEN E-HELP-CLOSE
+  scenario<Record<string, never>>(
+    "navigation-review-help",
+    "opens Review-specific search, request-opening and paging Help with the question key",
+    async () => ({ fixture: await create(), args: ["review"], data: {} }),
+    async (browser) => {
+      const list = () => browser.$('[aria-label="Requests"]');
+      await list().waitForExist({ timeout: 15000 });
+      await list().click();
+      const opened = () => browser.$('[role="dialog"]').isExisting();
+      await press(browser, ["?"], opened, "Review's Help dialog");
+      const shortcuts = await browser.execute(() => [...document.querySelectorAll('[role="dialog"] dt')].map((key) => ({ keys: key.textContent ?? "", action: key.nextElementSibling?.textContent ?? "" })));
+      for (const [keys, action] of [[/Ctrl\+F/, /Search requests/], [/Ctrl\+O/, /Open a request by ID/], [/PgDn.*PgUp/, /Older.*newer page/]] as const) {
+        assert.ok(shortcuts.some((entry) => keys.test(entry.keys) && action.test(entry.action)), `Review Help pairs ${keys} with ${action}`);
+      }
+      assert.ok(!shortcuts.some((entry) => entry.keys.includes("Click an Artifact")), "Monitor Help is not reused for Review");
+      await press(browser, ["Escape"], async () => !(await opened()), "Review Help closed");
+    },
+  ),
+
   // UX edges: E-MON-LIVE
   scenario<Record<string, never>>(
     "navigation-live-run",
@@ -162,9 +182,13 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await summary(browser)).instruction.startsWith("Ship"), { timeout: 15000, timeoutMsg: "ship/check's Summary" });
       assert.equal((await summary(browser)).debug, false, "Debug starts folded");
       assert.equal(await fact(browser, "Request"), "");
+      assert.equal(await fact(browser, "Waits for"), "", "the waiting eval's input facts start hidden");
       await aside(browser).$('[role="document"]').click();
-      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Request")) === request.id, "the request among the Debug facts");
-      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === "", "the Debug facts hidden");
+      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Request")) === request.id
+        && (await fact(browser, "Waits for")).includes("release"), "the request and its waiting input inside Debug");
+      assert.match(await fact(browser, "Waits for"), /signoff/);
+      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === ""
+        && (await fact(browser, "Waits for")) === "", "the Debug facts and waits hidden again");
       assert.ok((await summary(browser)).instruction.startsWith("Ship"), "folding Debug keeps the Summary");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       // The graph as it was, every Artifact still drawn and reachable.

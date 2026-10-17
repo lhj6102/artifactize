@@ -90,6 +90,12 @@ mod windows {
     };
     use windows_core::{HSTRING, PCWSTR};
 
+    /// CDP's Control modifier occupies bit 1 of its modifier mask.
+    const CONTROL_MODIFIER: u8 = 2;
+    /// Windows virtual-key values for the C/V editing shortcuts use their ASCII capitals.
+    const COPY_KEY: u8 = b'C';
+    const PASTE_KEY: u8 = b'V';
+
     type Completion = Rc<RefCell<Option<oneshot::Sender<Result<(), String>>>>>;
     fn finish(sender: &Completion, result: Result<(), String>) {
         if let Some(sender) = sender.borrow_mut().take() {
@@ -113,11 +119,11 @@ mod windows {
             ),
             Input::Copy => (
                 "Input.dispatchKeyEvent",
-                json!({"type":"keyDown","key":"c","code":"KeyC","modifiers":2,"windowsVirtualKeyCode":67,"commands":["Copy"]}),
+                json!({"type":"keyDown","key":"c","code":"KeyC","modifiers":CONTROL_MODIFIER,"windowsVirtualKeyCode":COPY_KEY,"commands":["Copy"]}),
             ),
             Input::Paste => (
                 "Input.dispatchKeyEvent",
-                json!({"type":"keyDown","key":"v","code":"KeyV","modifiers":2,"windowsVirtualKeyCode":86,"commands":["Paste"]}),
+                json!({"type":"keyDown","key":"v","code":"KeyV","modifiers":CONTROL_MODIFIER,"windowsVirtualKeyCode":PASTE_KEY,"commands":["Paste"]}),
             ),
         };
         let sender = Rc::new(RefCell::new(Some(sender)));

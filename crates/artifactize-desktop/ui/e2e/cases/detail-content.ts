@@ -5,14 +5,27 @@ import { createRich, FINDING, LONG_NAME, LONG_WORD, MODEL, OWNER } from "../rich
 import { aside, detail, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { subdued } from "../rendering.ts";
 
 export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-LOG E-MON-DETAIL-BACK
-  scenario<Record<string, never>>(
+  scenario<{ runs: string[] }>(
     "graph-rich-detail",
     "contains long names, wrapped eval chips, rich Summary findings and actual saved Agent and runtime logs within its width",
-    async () => ({ ...(await createRich()), data: {} }),
-    async (browser) => {
+    async () => {
+      const { fixture, release, runs } = await createRich();
+      return { fixture, release, data: { runs } };
+    },
+    async (browser, { data: { runs } }) => {
+      const selectRun = async (id: string) => {
+        await browser.$('[aria-label="Runs"]').waitForExist({ timeout: 15000 });
+        const index = await browser.execute((id) => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')]
+          .find((row) => row.querySelector(".id")?.textContent?.split(/\s/)[0] === id)?.dataset.index ?? null, id);
+        assert.notEqual(index, null, "the requested fixture Run is in the Runs pane");
+        await browser.$(`[aria-label="Runs"] [data-index="${index}"]`).click();
+        await browser.waitUntil(() => browser.$('section.panel[aria-label="Run ' + id + '"]').isExisting(), { timeout: 15000, timeoutMsg: `Run ${id} selected` });
+      };
+      await selectRun(runs[1]);
       await graphShown(browser, `a:${LONG_NAME}`);
       const opened = await openArtifact(browser, `a:${LONG_NAME}`, `Artifact ${LONG_NAME}`);
       assert.equal(opened.tabs.length, 17, "the Artifact and every one of its sixteen criteria");
@@ -49,7 +62,10 @@ export const scenarios: Scenario[] = [
         return {
           result: block("Result"), numbered: shown.querySelectorAll(".result ol > li").length,
           options: block("Execution options"), metadata: block("Execution metadata"), fingerprint: block("Fingerprint"),
-          cost: cost.textContent ?? "", grey: getComputedStyle(cost).color !== getComputedStyle(status).color,
+          cost: cost.textContent ?? "",
+          grey: getComputedStyle(cost).color.match(/[\d.]+/g)!.slice(0, 3).map(Number),
+          ink: getComputedStyle(shown).color.match(/[\d.]+/g)!.slice(0, 3).map(Number),
+          background: getComputedStyle(status.closest("section.panel")!).backgroundColor.match(/[\d.]+/g)!.slice(0, 3).map(Number),
         };
       });
       const saved = await record();
@@ -66,7 +82,7 @@ export const scenarios: Scenario[] = [
       assert.match(saved.fingerprint, /artifactsum:/);
       assert.match(saved.cost, /saved.*48\.2k tokens/);
       assert.match(saved.cost, new RegExp(MODEL));
-      assert.ok(saved.grey, "saved time/token/model information is grey beside the verdict");
+      assert.ok(subdued(saved.grey, saved.ink, saved.background), "saved time/token/model information is subdued neutral grey beside the verdict");
       const containment = () => browser.execute(() => {
         const dock = document.querySelector<HTMLElement>('aside[aria-label="Detail"]')!;
         const box = dock.getBoundingClientRect();
@@ -84,7 +100,7 @@ export const scenarios: Scenario[] = [
       assert.ok(views[0].weight > views[1].weight && views[0].colour !== views[1].colour, "the selected Summary choice is darker and bold");
       assert.ok(views.every((view) => view.radius === 0 && (view.fill === "rgba(0, 0, 0, 0)" || view.fill === "transparent")), "view choices are plain text rather than chips");
       await aside(browser).$('[aria-label="Views"]').$('button=Agent log').click();
-      await browser.waitUntil(async () => (await aside(browser).getText()).includes("summary: Reviewed content."), { timeout: 15000, timeoutMsg: "the actual saved Agent answer in its transcript" });
+      await browser.waitUntil(async () => (await aside(browser).getText()).includes("Receipt review complete."), { timeout: 15000, timeoutMsg: "the actual saved Agent answer in its transcript" });
       const transcript = () => browser.execute(() => {
         const pane = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .transcript')!;
         const content = pane.closest<HTMLElement>(".content")!;
@@ -110,11 +126,29 @@ export const scenarios: Scenario[] = [
         return { own: getComputedStyle(pane).overflowY, long: pane.scrollHeight > pane.clientHeight };
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the rich Detail closed");
+      // While the old eval's log is still open, a different Artifact replaces it with its
+      // own Artifact tab. No stale Summary or log is allowed to survive the switch.
       await graphShown(browser, "a:basis");
       const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
       assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);
       assert.equal(basis.path, "basis", "an eval-free Artifact has no trailing slash");
+      assert.ok(basis.tabs[0].selected && basis.evals.length === 0);
+      assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log was replaced");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the replacement Detail closed back to the graph");
+      // The other saved Run actually executed the Agent, rather than reusing its result.
+      await selectRun(runs[0]);
+      await graphShown(browser, `a:${LONG_NAME}`);
+      await openArtifact(browser, `a:${LONG_NAME}`, `Artifact ${LONG_NAME}`);
+      await openTab(browser, `e:${LONG_NAME}/agent`);
+      await browser.waitUntil(async () => { const status = (await summary(browser)).status; return status.includes("GREEN") && !status.includes("REUSED"); },
+        { timeout: 15000, timeoutMsg: "the executed, non-reused Agent Summary" });
+      const executed = await record();
+      assert.match(executed.cost, /\b\d+(?:ms|s|m)\b/);
+      assert.match(executed.cost, /48\.2k tokens/);
+      assert.match(executed.cost, new RegExp(MODEL));
+      assert.doesNotMatch(executed.cost, /saved/);
+      assert.ok(subdued(executed.grey, executed.ink, executed.background), "actual elapsed time, tokens and model are neutral grey");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the executed Summary closed");
     },
   ),
 ];

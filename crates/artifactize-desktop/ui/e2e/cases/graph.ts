@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
 import { afterRender, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
-import { dispatchInput } from "../input.ts";
+import { dispatchInput, tab } from "../input.ts";
 import { aside, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
@@ -121,6 +121,34 @@ export const scenarios: Scenario[] = [
       await browser.action("pointer").move({ x: canvas.x, y: canvas.y }).down().up().perform();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the background click closed the Detail" });
       await press(browser, ["Escape"], () => runs().isFocused(), "back to Runs");
+    },
+  ),
+
+  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
+  scenario<Record<string, never>>(
+    "graph-keyboard-artifacts",
+    "Tabs from the graph pane to every Artifact and opens the corresponding Detail with Enter, without clicking a node",
+    async () => ({ fixture: await create(), data: {} }),
+    async (browser) => {
+      await graphShown(browser, "a:release");
+      await browser.waitUntil(() => browser.$('[aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "Runs initially has the keyboard" });
+      await press(browser, ["Enter"], () => browser.$('section.panel[aria-label^="Run run-"]').isFocused(), "the graph pane reached by keyboard");
+      const expected = new Map([["a:release", "release"], ["a:ship", "ship"], ["a:docs", "docs"]]);
+      const visited = new Set<string>();
+      // A bound on traversing this small fixture's controls, not a claimed tab order.
+      const TAB_ATTEMPTS = 40;
+      for (let attempt = 0; attempt < TAB_ATTEMPTS && visited.size < expected.size; attempt += 1) {
+        await tab(browser);
+        const id = await focusedNode(browser);
+        if (!id || visited.has(id)) continue;
+        const name = expected.get(id);
+        assert.ok(name, `Tab reached the expected Artifact ${id}`);
+        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail`);
+        assert.equal((await detail(browser))?.tabs[0]?.name, name);
+        visited.add(id);
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the keyboard-opened Detail closes");
+      }
+      assert.deepEqual([...visited].sort(), [...expected.keys()].sort(), "every Artifact is reachable with Tab and Enter alone");
     },
   ),
 
@@ -275,8 +303,12 @@ export const scenarios: Scenario[] = [
       await openArtifact(browser, "a:release", "Artifact release");
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "release drawn before ship, which uses it" });
       const drawing = '[aria-label="Detail"] [aria-label="Neighbours"]';
-      const edges = await browser.execute((selector) => [...document.querySelectorAll(`${selector} .svelte-flow__edge`)].map((edge) => edge.getAttribute("data-id")), drawing);
-      assert.deepEqual(edges, ["a:release>a:ship"], "the neighbour drawing contains the genuine input-to-consumer relation");
+      let edges: (string | null)[] = [];
+      await browser.waitUntil(async () => {
+        edges = await browser.execute((selector) => [...document.querySelectorAll(`${selector} .svelte-flow__edge`)].map((edge) => edge.getAttribute("data-id")), drawing);
+        return JSON.stringify(edges) === JSON.stringify(["a:release>a:ship"]);
+      }, { timeout: 15000, timeoutMsg: "the neighbour drawing renders its actual input-to-consumer relation" });
+      assert.deepEqual(edges, ["a:release>a:ship"]);
       const fixed = await geometry(drawing);
       const point = await background(drawing);
       await move(point);
