@@ -23,9 +23,9 @@ person to claim the request before acting.
 Sign-offs reuse by default when their [reviewed inputs](fingerprint.md) still
 match. A later `verify` can reuse the submitted result and review its consumers.
 If the target or a covered dependency has `fingerprint = false`, the sign-off
-settles only its current Run; a later Run asks for a new Human decision. Automatic
-readiness checks (dependency evals) derive current readiness from that evidence;
-they do not rewrite historical Run records after a later submission.
+settles only its current Run; a later Run asks for a new Human decision. Current
+validation uses the available evidence, but a later submission never rewrites a
+historical Run's recorded verdict.
 
 ```sh
 artifactize verify --all --wait

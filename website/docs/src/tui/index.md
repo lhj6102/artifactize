@@ -162,7 +162,7 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   button is an exception: when idle it returns directly to the tree with the form
   retained; while busy it cancels the work first. Esc closes
   one thing at a time: cancel a job, then stop editing with its
-  draft kept, then leave Detail. The same verdict reopens the draft. Refresh and
+  draft kept, then leave Detail. The same verdict reopens the draft. Within the same state identity, refresh and
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
@@ -328,12 +328,9 @@ not rewritten by this view.
 | `q` / Ctrl-C | `q` quits outside editing/work; Ctrl-C requests cancellation of any busy Human lifecycle job; otherwise it invokes quitting |
 | F2 | Toggle mouse capture for terminal text selection |
 
-From Detail, `!` opens the next attention item's Detail. Human actions work only
-with Detail focused; ordinary letters are field input while editing. Review work
-and editing normally lock focus moves to other panes. Esc cancels work first, then
-stops form editing with the draft kept, then leaves Detail. The Monitor Close
-button instead leaves idle Detail immediately, retaining its form; during work
-it cancels that work first.
+From Detail, `!` opens the next attention item's Detail. Human actions require
+Detail focus; [Shared Human Detail](#shared-human-detail) owns its focus locks,
+Esc and Close behavior and retained drafts.
 
 Click focuses and selects. Double-click opens a tree row's Detail; clicking the
 peek opens it Full. In a Human Detail, a click on the selected tool runs it. The wheel scrolls the pane under the pointer without moving
@@ -379,8 +376,6 @@ Detail depends on the eval kind:
   outer borders); in a narrower pane the evidence stacks below. Running,
   timeout/cancellation and remote summary-only results show logs as unavailable;
   there is no live-log recorder.
-- **Dependency:** the saved derived state and `blockedBy` requirements, marked
-  `derived (no execution)`. It has no claim, tools or verdict form.
 - **Human:** use the [Shared Human Detail](#shared-human-detail) controls for claims,
   tools, verdict forms and stepping back. Monitor-specific differences: it keeps
   the completed result open and never opens `$EDITOR`. Outside editing or work,
@@ -392,3 +387,14 @@ and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. See the
 [local reader reference](../features/others/state.md#local-readers) for
 subscription and recovery behavior.
+
+A refresh failure displays a timestamped **read failed at …** notice and retains
+the last successfully loaded data. Visible requests, results and claims can be
+stale, not current authority. In Review, return to the request list and press `r`;
+in Monitor, request refresh from Scope, Runs or the tree. A successful read clears
+the failure notice.
+
+Draft retention applies only within the same state identity. If Monitor detects
+that a replacement state database has a different identity, it cancels active
+Human work, closes Detail and clears cached reviews and in-memory drafts before
+showing the replacement state. Do not expect the old state's draft to carry over.

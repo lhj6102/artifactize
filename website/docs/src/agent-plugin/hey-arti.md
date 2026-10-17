@@ -180,18 +180,8 @@ indefinite polling or fake progress are needed, and yielding is not cancellation
 
 ## Team and CI
 
-Use the existing [team review store](../features/team/index.md) login/environment flow.
-Keep credentials out of declarations, skill copies, transcripts and MCP
-registration. Human authority stays with people. CI gets a read-only token and
-must **wait for validation**:
-
-```yaml
-- run: artifactize verify --all --wait --reuse-only agent,human
-  env:
-    ARTIFACTIZE_REMOTE: https://reviews.example/
-    ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}
-```
-
-Runtime checks execute; Agent and Human verdicts must be reusable. Missing evidence
-is INCOMPLETE, not permission for CI to call a model or wait for a new sign-off.
-See [CI](../features/team/ci.md). Submission acceptance alone must never pass the job.
+Use the existing [team review store](../features/team/index.md) login/environment
+flow and keep credentials out of declarations, skill copies, transcripts and MCP
+registration. Human authority stays with people. Follow the dedicated [CI
+guide](../features/team/ci.md) for the read-only-token verification step: CI must
+wait for validation, not merely accept a submitted Run.
