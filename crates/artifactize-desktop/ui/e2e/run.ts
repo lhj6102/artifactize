@@ -1,10 +1,11 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
 import { inspect } from "node:util";
 import { assertAppsStopped } from "./observation.ts";
+import { checkIntegrity } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, requiredVariable, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
+  nativeCrashReports, nodeProgram, readJson, requiredVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -38,8 +39,15 @@ async function batch(): Promise<void> {
     const candidate = readCandidate();
     const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
     const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
-    assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
-    await configuration.releasePrepared();
+    if (configuration.preparationFailure !== undefined) {
+      // SevereServiceError refused app admission. Release domain workers acquired
+      // during preparation, then attest that no native-app ownership was acquired.
+      await configuration.releasePrepared();
+      writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
+    } else {
+      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+      await configuration.releasePrepared();
+    }
   } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, "desktop WDIO batch failed");
 }
@@ -74,7 +82,10 @@ async function suite(ids: string[]): Promise<void> {
       } catch (error) { failures.push(error); }
       try {
         const output = asNativePath(env.DESKTOP_TEST_BATCH_OUTPUT);
-        assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+        const refused = nativePath(output, "prelaunch-refused.json");
+        if (!exists(refused) || (readJson(refused) as { refused?: boolean }).refused !== true) {
+          assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+        }
         confirmed = true;
       } catch (error) { failures.push(error); }
       if (!confirmed) break;
@@ -104,6 +115,7 @@ async function unit(): Promise<void> {
 
 const mode = process.argv[2] ?? "suite";
 try {
+  if (mode === "suite" || mode === "prepare") checkIntegrity();
   if (mode === "suite" || mode === "batch") assertRunnerMachine();
   if (mode === "prepare") console.log((await prepare()).manifest);
   else if (mode === "cleanup") await cleanup(readCandidate(process.argv[3]).root);
