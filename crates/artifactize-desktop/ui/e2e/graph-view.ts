@@ -9,7 +9,11 @@ export function focusedNode(browser: WebdriverIO.Browser): Promise<string | null
 
 /** Wait until the Run's graph has drawn the node `id`. */
 export async function graphShown(browser: WebdriverIO.Browser, id: string, timeout = 15000): Promise<void> {
-  await browser.$(`.svelte-flow__node[data-id="${id}"]`).waitForExist({ timeout, timeoutMsg: `the Run graph draws ${id}` });
+  await browser.waitUntil(() => browser.execute((want) => {
+    const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
+    const box = node?.getBoundingClientRect();
+    return !!box && box.width > 0 && box.height > 0;
+  }, id), { timeout, timeoutMsg: `the Run graph draws ${id}` });
 }
 
 /** The node selector of the Artifact `id`, and the popup row selector of its eval `path`. */
