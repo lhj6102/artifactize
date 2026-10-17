@@ -134,7 +134,22 @@ the Agent description rules, including `{artifactName}`.
 edit = { description = "Open {artifactName} in VS Code.", kind = "launch", command = "code", args = ["{artifactPath}"] }
 ```
 
+What a tool prints shows live in the reviewer's **Tool log** while the review is
+open: each run's start line, its stdout and stderr (stderr in red) line by line,
+and its end line. A launch tool returns at once, and its program's output keeps
+arriving under the same run until it exits. A tool can therefore print what the
+person did in it, such as the choices made or a measured value, for the reviewer to
+copy from the log into the result. Nothing in the log is saved.
+
 Placeholders, executable resolution and the `launch` and `output` kinds are in the
 [reference](tools/human.md#human-tools).
+
+## Result forms
+
+The reviewer enters the result in a form built from the eval's `pass_schema`
+(GREEN) or `fail_schema` (RED): text, numbers, true/false, choices, lists of text
+and repeated groups of fields. Constants are filled in. A Human eval's schemas
+may use only those shapes; the [declaration reference](declarations.md#human-result-schemas)
+lists them and how each shows.
 
 Use [TUI](../tui/index.md) or [Desktop](../desktop/index.md) for interactive review.

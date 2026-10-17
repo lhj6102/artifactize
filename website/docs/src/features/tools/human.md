@@ -31,24 +31,46 @@ every variable, `ARTIFACTIZE_*` included.
 Only declare trusted commands: they have the reviewer's ordinary permissions and
 environment, including any credentials already present there.
 
-- `launch` starts a new session/process group with stdin/stdout/stderr disconnected
-  and returns `{"content":[{"type":"launch","launched":true}],"isError":false}`
-  immediately after spawn succeeds. There is no readiness wait or content capture.
-  Spawn failure is an error; a later exit (even nonzero) does not undo the handoff.
-  The program intentionally survives artifactize exit or later cancellation; the
-  reviewer owns its lifetime. `timeout_ms` does not limit the handed-off program.
-  A launch is neither a verdict nor proof of observation.
-- `output` waits for completion, with a default 120000 ms timeout. Stdout and stderr
-  are each captured up to 128 KiB and cleaned like runtime output. Each becomes a
+- `launch` starts a new session/process group with stdin disconnected and returns
+  `{"content":[{"type":"launch","launched":true}],"isError":false}` immediately
+  after spawn succeeds. There is no readiness wait or content capture in the result.
+  In a review (`review`, monitor, desktop) its stdout and stderr are pipes that
+  artifactize drains line by line into the reviewer's Tool log until the program
+  closes them and exits; the end line gives its exit code. They are drained, and
+  what nobody shows discarded, even after the review closes, so the program never
+  blocks on a full pipe; on Unix it ignores SIGPIPE, so a write after artifactize
+  exited fails instead of ending it. `request tool` and `tool check` keep stdout
+  and stderr disconnected. Spawn failure is an error; a later exit (even nonzero)
+  does not undo the handoff. The program intentionally survives artifactize exit
+  or later cancellation; the reviewer owns its lifetime. `timeout_ms` does not
+  limit the handed-off program. A launch is neither a verdict nor proof of
+  observation.
+- `output` waits for completion, with a default 120000 ms timeout. In a review
+  its lines reach the Tool log as they are printed. Stdout and stderr are also
+  each captured up to 128 KiB and cleaned like runtime output. Each becomes a
   text block capped at 64 KiB with an explicit truncation marker; nonempty stderr
   has a `stderr:` label. Nonzero/signal exit sets `isError: true`, includes the exit
   status, and retains the bounded text. Timeout, cancellation and dropped calls
   use normal process-group cleanup, not intentional handoff.
 
+A tool's stdout and stderr appear live in the reviewer's Tool log, so a tool may
+print what the person did in it (a choice made, a value measured, a file saved)
+for the reviewer to copy into the result. The log shows each run as
+`▶ HH:MM:SS · operation · Artifact`, then its lines (stderr in red), then
+`■ exit CODE` (or `launched`, `done`, `cancelled`, `timed out`, `error: …`).
+A built-in's text appears when it finishes and ends `■ done`; `open` hands the
+file to the desktop's opener and ends `■ launched`; `graph` logs the viewer's
+output until it exits. One run shows at most 1 MiB of output, then says the rest
+is not shown, and a line longer than 4096 bytes shows in pieces. The log lives in
+memory while the review is open; nothing is saved.
+
 Internal callers use `tools::human::Registry::new(&config, "artifact/eval")` for a
 Human eval scope or `for_artifact(&config, "artifact")` for its child/mount scope,
 then `list()`, `command(name)` (the resolved program, argv and directory, without
-running it) and `call(name, cancellation).await`. Names are
+running it) and `call(name, cancellation).await`, or
+`call_logged(name, cancellation, run).await` to log the run to a Tool log
+(`review::log`: a `channel()` gives a `Sink` whose `start` opens a `Run`, and the
+`Events` a screen files into a `ToolLog`). Names are
 `<operation>_<artifactId>`, with collision rejection. Agent tools are never listed,
 and Agent evals cannot construct a Human eval registry. Listing executes nothing.
 Human results use a separate text/launch type; Agent results cannot include launch
@@ -72,8 +94,8 @@ The internal library exposes asynchronous operations with an open `store::Receip
 - `human::unclaim(receipts, request_id, reviewer)` releases that lock without a
   verdict, so another reviewer can claim the request. Only the claimant can release,
   and only while the request still waits.
-- `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
-  authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
+- `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation, run)`
+  logs to `run` (`Run::unwatched()` for none) and authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
   and, only when the request has a reuse key, checks the fingerprint before invoking a
   registered Human tool; requests without a reuse key skip the fingerprint-value
   check, not the file-target validation on each tool call. The tool takes

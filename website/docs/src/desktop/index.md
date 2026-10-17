@@ -64,18 +64,28 @@ to resize it; it keeps that width, also in the next launch.
 
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`:
 the Artifact's own chip, the Artifact icon before its name (a long name is cut
-short; the Detail's title shows it whole), then one per eval with its verdict's glyph and colour. Eval chips that
-do not fit wrap onto the next line. The Artifact's chip lists its evals with
-their verdicts; click one to show its chip.
+short; the Detail's title shows it whole), then one per eval with its verdict's
+glyph and colour. Eval chips that do not fit wrap onto the next line.
 
-An eval's chip shows its **Summary**: Outcome, Waits for, What, Provenance and
-Technical when applicable. `t` toggles Technical. In Waits for, `w` or the
-pending-evals control reveals the unfinished checks behind an upstream wait. An
-eval with a log switches below the chips between its Summary, shown first, and
-its log: an Agent eval's **Agent log** (its conversation) or a runtime eval's
-**Runtime log** (saved stdout/stderr, not a live log stream). Missing or remote
-conversations explain why they are unavailable on this machine. A Human eval's
-chip holds its review and sign-off, with the controls described below.
+The Artifact's chip shows it between its neighbours, drawn with the Run graph's
+nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
+use it on the right. The drawing holds still; a click on a neighbour opens that
+neighbour's Detail. Below it are its evals with their verdicts (click one to show
+its chip), its path, what it waits for, and the rest folded under **Debug**.
+
+An eval's chip shows its **Summary**: its status, with what running it took and
+spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
+result, each owner field by name and a list as numbered items; then **Execution
+options**, **Execution metadata** and **Fingerprint** when it has them. Every other
+fact, including what it waits for, folds under **Debug**. An eval with a log switches
+below the chips between its Summary, shown first, and its log, a plain-text choice
+whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
+with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
+not a live log stream). Missing or remote conversations explain why they are
+unavailable on this machine. A Human eval's chip holds its review and sign-off, with
+the controls described below. A Run's Detail keeps its sections, where `t` toggles
+Technical and `w` or the pending-evals control reveals the unfinished checks behind
+an upstream wait.
 
 Agent logs update live. In a focused Agent log, ↑/↓ or `j`/`k` moves by row,
 PgUp/PgDn by page, Home/End or **Top/Bottom** goes to either end, and the mouse wheel
@@ -144,31 +154,46 @@ release. Another person's claim prevents your actions. Claims are cooperative
 reviewer locks, not authenticated accounts; only the claimant can run tools or
 submit. See [Human](../features/human.md) for shared lifecycle and deferred sign-offs.
 
-The instruction comes first. `i` or its expand/fold button changes how much is
-shown; Ctrl+PgUp/PgDn scrolls long criteria from any sub-area. `t` toggles the
-Human request's Technical record. Tab or a click moves to Tools; Ctrl+U releases
-your claim even while editing.
+A Human review reads top to bottom as its instruction, the **Tools** to use, their
+**Tool log**, and the **Result** to write. The instruction comes first. `i` or its
+expand/fold button changes how much is shown; Ctrl+PgUp/PgDn scrolls long criteria
+from any sub-area. `t` toggles the Human request's Technical record. Tab or a click
+moves to Tools; Ctrl+U releases your claim even while editing.
 
-In Tools, ↑/↓ or `j`/`k` selects an action and previews its resolved command,
-description or reason it cannot run. A click focuses and selects a tool. **Enter,
-or a second click on the selected tool while Tools is focused, runs it immediately**.
-Output tools show captured text, launch tools open an application, and failures
-show an error without a verdict. The saved definition must still match before an
-action runs.
+Tools are grouped under the Artifact that declares them, the reviewed one first.
+Each is a `▶ operation` button with its description, and the reason when it cannot
+run. **A click, or Enter or Space on the focused button, runs it immediately**; Tab
+moves between them. Opened with Tools focused (from the Review list's context menu or
+palette), the Tools take the keyboard. A launch tool opens its application and
+returns at once; a failing tool says so without a verdict. The saved definition must
+still match before an action runs.
 
-After claiming, `g` opens GREEN and `r` RED. Flat owner schemas get typed fields;
-complex schemas open an owner-fields JSON editor. **Edit as JSON** or Ctrl+E turns
-a typed form into JSON. Include only owner fields, not a `verdict` wrapper. Tab
-indents JSON; Shift+Tab leaves that editor. In typed forms, Tab moves between
-controls. Ctrl+G/Ctrl+R switches verdicts. Enter inside owner-field editors does
-not implicitly submit; Ctrl+S or activating the **Submit** button submits,
-including Enter while that button has keyboard focus.
+The Tool log shows every run of this review as it happens: `▶ HH:MM:SS · operation ·
+Artifact` in local time, then each line the tool prints to stdout, or in red to
+stderr, then its end line, such as `■ exit 0`, `■ launched`, `■ done`,
+`■ cancelled` or `■ error: …`. A launched application's output keeps arriving
+under its own run until it exits, even while you write the result. The log wraps,
+scrolls on its own and follows the newest line; scroll up to read and it stays,
+scroll back to the bottom and it follows again. Its text is ordinary selectable
+text, so copy what a tool printed into the result. It lasts while the app runs and
+is cleared by a submission; nothing is saved.
+
+After claiming, `g` opens GREEN and `r` RED, each a form built from the eval's
+schema ([the shapes it may use](../features/declarations.md#human-result-schemas)):
+a text box, a number box, true/false, a choice, a list of text with **+ Add** and
+✕ per item, or repeated groups of fields with **+ Add** for a group and ✕ per
+group (one empty group always stays to type in). Constants are filled in and not
+shown; `*` marks a required field and an empty optional one says *Optional* in
+grey. Tab moves between controls. Ctrl+G/Ctrl+R switches verdicts. Enter in a field
+does not submit; Ctrl+S or activating the **Submit** button submits, including
+Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
 composition, including Korean, belongs to the text field and never fires shortcuts.
 Esc cancels active work, then leaves the form, then leaves Detail.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
 GREEN and RED keep separate drafts. Monitor and Review share the same request's
-review state within this app session, rather than creating independent forms.
+review state, Tool log included, within this app session, rather than creating
+independent forms.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.

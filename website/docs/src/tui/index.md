@@ -91,11 +91,11 @@ Run, repository, full claim details, shared execution, creation time and GREEN/R
 owner schemas. For a follower, the destination request and repository stay visible.
 
 Before claim, the instruction fills the body and tools appear on one line. After
-claim, it folds to two rows above Tools/Output and the fields. `i` expands or folds
+claim, it folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds
 it while not editing; the expanded instruction takes 70% of the body and ↑/↓
 scrolls it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
-the wheel over the instruction scrolls it too. Tools focus widens Tools/Output
-to 60% of the available width;
+the wheel over the instruction scrolls it too. Tools focus widens the Tools and
+Tool log column to 60% of the available width;
 the selected tool shows its action and description. A command tool shows its resolved command line. A recorded per-tool resolution
 error shows the declaration and its reason; a request-wide resolution failure
 instead falls back to the declared command without displaying that explanation.
@@ -117,13 +117,13 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
 | `u` | Release your claim without a verdict |
 | Ctrl-G / Ctrl-R | Choose or switch verdict while editing |
 | Ctrl-S | Submit the chosen form |
-| PgUp / PgDn | Scroll the focused fields or completed-result viewport; Tab/arrows still select fields |
+| PgUp / PgDn | Scroll the focused fields or completed-result viewport, or the Tool log with Tools focused; Tab/arrows still select fields |
 | Ctrl-U | Release while editing |
-| Tab / Shift-Tab | Switch Tools and Fields; in edited Fields, Tab moves fields or indents JSON and Shift-Tab switches to Tools |
+| Tab / Shift-Tab | Switch Tools and Fields; in edited Fields, Tab moves between fields and Shift-Tab switches to Tools |
 | `i` / `t` | Expand the instruction / toggle Technical, while not editing |
 | Enter | With Tools focused, run the selected tool at once (after claim) |
 | Esc | Cancel work, then stop editing, then leave Detail |
-| Ctrl-E | Standalone only: edit the form in `$EDITOR` |
+| Enter on `+ Add` / Ctrl-D | In a list of groups, add a group / remove the selected group |
 
 - **Claim.** The reviewer defaults to `$USER` unless selected with `--reviewer`.
   Tool and verdict actions never claim implicitly. A request claimed by someone
@@ -137,20 +137,30 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   It does not accept an updated command in place of the recorded review definition.
   An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
-  Ctrl-C cancels. Its stdout/stderr fill Output; PgUp/PgDn scroll. A nonzero exit
-  is a tool error, not a verdict.
+  Ctrl-C cancels. A nonzero exit is a tool error, not a verdict.
+- **Tool log.** Under the tools, every run of this review: `▶ HH:MM:SS · operation
+  · Artifact` (UTC), then what it prints, line by line as it arrives, stderr in red,
+  then its end line, `■ exit CODE` (or `launched`, `done`, `cancelled`,
+  `timed out`, `error: …`). A launched program's output keeps arriving under its
+  own run until the program exits. The log wraps and follows its newest line;
+  PgUp with Tools focused scrolls back and holds the view while lines arrive, and
+  PgDn back to the bottom follows again. With mouse capture off (F2), the terminal
+  selects and copies its text. It is kept while the request stays open and cleared
+  by a submission or by opening another request; nothing is saved.
 - **Form.** The chosen verdict opens its schema-backed form without an intermediate
-  verdict popup. A flat object with `const`, `boolean`, `string` (`minLength`,
-  `maxLength`, `enum`), `integer` or `number` properties gets typed fields. `const`
-  fields are prefilled and fixed; `*` marks required fields. Blank optional fields
-  are omitted from submission. Optional booleans cycle through true, false and
-  unset; required booleans have only true/false. Tab or ↑/↓ moves between fields,
-  Space or ←/→ chooses, and typing edits. Other schemas (nested objects, arrays, composition,
-  `$ref`) open a JSON template inside the TUI. Both inline and external JSON
-  editors take **only owner fields**: omit `verdict`, which is inserted from the
-  selected GREEN/RED choice automatically; an explicit `verdict` field is rejected.
-  Enter inserts a JSON newline and Tab indents; Enter never submits a flat form.
-  A validation error keeps the request waiting and shows the failing paths.
+  verdict popup. A Human schema holds only [form shapes](../features/declarations.md#human-result-schemas):
+  text, integer and number fields, booleans, string choices, constants, lists of
+  text, and lists of groups of those scalars. Constants are filled in and get no
+  row; `*` marks required fields. Blank optional fields are omitted from
+  submission. Optional booleans cycle through true, false and unset; required
+  booleans have only true/false. Tab or ↑/↓ moves between rows, Space or ←/→
+  chooses, and typing edits. A list of text types into its last item; Enter starts
+  the next and Backspace on an empty item removes it. A list of groups shows a row
+  per field of each group (`findings 2 · problem`) and a `+ Add findings` row:
+  Enter there adds a group, Ctrl-D removes the group of the selected row, and a
+  group with nothing entered is left out. Enter never submits. A validation error
+  keeps the request waiting and shows the failing paths. A recorded schema no form
+  can enter (saved before this rule) is refused with its reason.
   A saved request **without a recorded Human definition** is not an empty-schema
   review: its tools display as unknown and GREEN/RED forms are refused. Browsing
   that old request does not invent missing tool or schema declarations.
@@ -166,14 +176,6 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
-- **External editor.** Only standalone `review` offers Ctrl-E in a form. It opens
-  `$VISUAL`, else `$EDITOR` (default `vi`, Notepad on Windows) on the owner-fields JSON.
-  Ctrl-E converts a typed draft to inline JSON first; that JSON mode remains if
-  external editing fails or does not submit. Any nonblank file containing valid
-  owner-fields JSON within the 256000-byte Human fields limit attempts immediate
-  submission, including `{}` when the schema accepts it. Oversized edited files
-  are rejected before parsing or submission. Blank file content submits nothing. Monitor never opens `$EDITOR`;
-  nested JSON stays in the TUI.
 
 Outside a form or work, `q` quits from Detail too. In either UI, Ctrl-C
 requests cancellation of any active Human lifecycle job: claim, tool, submission
@@ -380,7 +382,7 @@ Detail depends on the eval kind:
   there is no live-log recorder.
 - **Human:** use the [Shared Human Detail](#shared-human-detail) controls for claims,
   tools, verdict forms and stepping back. Monitor-specific differences: it keeps
-  the completed result open and never opens `$EDITOR`. Outside editing or work,
+  the completed result open. Outside editing or work,
   `q` quits, `?` shows monitor help and `!` opens the next attention item.
 
 Browsing is read-only. If publishing to the team store fails after submission,

@@ -80,12 +80,6 @@ WSL behaves as Linux: there is no fallback to `wslview` or Windows programs. If
 `xdg-open` is missing or opens nothing, install your distribution's `xdg-utils` and
 set a default application. `login codex` also prints its sign-in URL for any browser.
 
-## Editor
-
-Standalone `artifactize review` edits the owner fields in `$VISUAL`, else `$EDITOR`,
-else `vi` (Notepad on Windows). The variable may hold arguments, such as
-`code --wait`.
-
 ## Desktop console launches
 
 On Windows, launching `artifactize` without arguments from Start or Explorer shows
