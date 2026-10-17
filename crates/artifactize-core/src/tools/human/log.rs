@@ -168,12 +168,21 @@ impl Shared {
         let text =
             String::from_utf8(crate::runtime::clean_output(bytes)).expect("clean output is UTF-8");
         let size = text.len().max(1);
-        let kept = self
-            .left
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
-                left.checked_sub(size)
-            })
-            .is_ok();
+        // A compare-and-swap loop rather than `fetch_update`, which newer toolchains
+        // deprecate under another name.
+        let mut left = self.left.load(Ordering::Relaxed);
+        let kept = loop {
+            let Some(next) = left.checked_sub(size) else {
+                break false;
+            };
+            match self
+                .left
+                .compare_exchange_weak(left, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => break true,
+                Err(current) => left = current,
+            }
+        };
         if kept {
             self.send(Kind::Line { stream, text });
         } else if !self.dropped.swap(true, Ordering::Relaxed) {
