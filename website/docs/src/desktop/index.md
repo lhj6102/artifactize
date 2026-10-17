@@ -30,29 +30,33 @@ Drag the dividers to resize panes.
 
 ## Monitor
 
-Navigate **Scope → Runs → Run tree → Detail** with Enter or → to move deeper and
-← or Esc to return. Arrow keys or `j`/`k` select rows; Space or `h`/`l` folds tree
-rows. Scope remains navigable back to ALL even after an initial `--repo` selection.
-Worktrees without Runs can be folded into a group: Space or a click reveals or
-hides them. Runs appear newest first. Move past the list's first or last row to
-load newer or older pages, or use its newer/older arrow buttons.
+Navigate **Scope → Runs → Run graph** with Enter to move deeper and Esc to
+return. Arrow keys or `j`/`k` select Scope and Runs rows. Scope remains navigable
+back to ALL even after an initial `--repo` selection. Worktrees without Runs can
+be folded into a group: Space or a click reveals or hides them. Runs appear
+newest first. Move past the list's first or last row to load newer or older
+pages, or use its newer/older arrow buttons.
 
-With the mouse, one click selects a Monitor row and a double-click opens it or
-its Detail. Clicking the read-only preview also opens full Detail.
-
-Enter or `o` opens Detail for a **Run, Artifact or eval**. The Run row shows saved
-validation and unmet obligations, request counts, waiting work, timing, budgets,
-executed/reused/derived work and usage. Artifact Detail summarizes that Artifact's
-review state. New Runs, claims and submissions made elsewhere appear without a
-manual reload. Run-end validation stays historical: a later Human submission can
-change the current request display without rewriting the old verdict. Damaged
+Selecting a Run updates its graph while Runs keeps the keyboard. Enter focuses
+the selected Artifact in that graph; double-clicking a Run does the same. The
+Run headline's Detail button or the palette command **Open the Run's Detail**
+opens the Run's full Detail overlay. It shows saved validation and unmet
+obligations, request counts, waiting work, timing, budgets, executed/reused work
+and usage. New Runs, claims and submissions made elsewhere appear without a
+manual reload. Run-end validation stays historical: a later Human submission
+can change the current request display without rewriting the old verdict. Damaged
 records are [marked unreadable](../features/others/state.md#unreadable-records),
 not treated as successful evidence.
 
+Graph hover or keyboard selection shows a floating **Summary** beside the
+Artifact or eval. It is read-only and non-interactive, not a clickable preview.
+A single click on an Artifact opens its eval popup; a single click on an eval
+opens its Detail. The explicit keyboard actions are described under Run graph.
+
 `!` jumps to the next ERROR, RED or waiting Human eval. Upstream markers identify
-the selected row's dependencies; `b` cycles through them, unmet first, then
-completed inputs. Backspace or the context menu's return action goes back to the
-original row.
+the selected eval's dependencies; `b` cycles through them, unmet first, then
+completed inputs. Backspace or the palette command **Back to where the blocker
+jumps started** returns to the original selection.
 
 ### Detail and conversations
 
@@ -76,18 +80,23 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 
 ### Run graph
 
-`v` switches the selected Run between tree and Artifact graph. Node and relation
-colors show review states and update as results arrive. ←/→ moves upstream or
-downstream; ↑/↓ selects a neighbor in the same column. Enter or a click opens an
-Artifact's evals; ↑/↓ selects an eval and Detail follows; Esc zooms out of that
-Artifact.
+Monitor always displays the selected Run as an Artifact graph; there is no
+Run-tree mode. Node and relation colors show review states and update as results
+arrive. ←/→ moves upstream or downstream; ↑/↓ selects a neighbor in the same
+column. Enter or a single click on an Artifact opens its eval popup; `o` opens
+that Artifact's Detail instead.
 
-This opening of an Artifact is separate from camera zoom: **Zoom In**, **Zoom Out**
-and **Fit View** change the viewport in both graph modes. Above 40 nodes, a pannable,
-zoomable minimap helps navigate the whole graph. Runs with **more than 300
-Artifacts** ask before layout: choose **Lay out all** to lay out the whole graph,
-or keep using the tree. Only visible elements are rendered, but the layout is not
-an incrementally loaded neighborhood.
+In the popup, ↑/↓ selects an eval and updates its floating Summary without
+opening or retargeting full Detail. Enter, `o`, → or a click on the eval explicitly
+opens its Detail overlay. Esc leaves Detail for the same popup and selection;
+Esc again closes the popup and focuses its Artifact. This is not a camera zoom
+or a separate graph view. Scope and Runs remain visible behind the Detail overlay.
+
+**Zoom In**, **Zoom Out** and **Fit View** change the camera viewport. Above 40
+nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
+than 300 Artifacts** ask before layout: choose **Lay out all** to display the
+whole graph. Only visible elements are rendered, but layout is not an
+incrementally loaded neighborhood, and there is no tree fallback.
 
 `artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
 without needing a Run or showing saved verdicts. Expand **Structure and evaluation

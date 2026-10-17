@@ -167,9 +167,12 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
 - **External editor.** Only standalone `review` offers Ctrl-E in a form. It opens
-  `$VISUAL`, else `$EDITOR` (default `vi`, Notepad on Windows) on the owner-fields JSON. Saving a valid nonempty object
-  submits it immediately; an empty file submits nothing. Monitor never opens
-  `$EDITOR`; nested JSON stays in the TUI.
+  `$VISUAL`, else `$EDITOR` (default `vi`, Notepad on Windows) on the owner-fields JSON.
+  Ctrl-E converts a typed draft to inline JSON first; that JSON mode remains if
+  external editing fails or does not submit. Any nonblank file containing valid
+  owner-fields JSON attempts immediate submission, including `{}` when the schema
+  accepts it. Blank file content submits nothing. Monitor never opens `$EDITOR`;
+  nested JSON stays in the TUI.
 
 Outside a form or work, `q` quits from Detail too. Ctrl-C quits
 from a form, but first cancels a running tool. Standalone `review` lists claims
@@ -349,6 +352,8 @@ identifiers and hashes; it starts folded (`t` toggles it). Waits for lists the s
 upstream Artifacts as the tree, with their completion state and reference origin;
 `w` shows or hides their pending evals. Empty sections are omitted. Tab switches
 between sections and evidence; ↑/↓ and PgUp/PgDn scroll the focused area.
+Home jumps to the top of Monitor's focused read-only sections or Runtime evidence,
+and to the top of standalone Review's read-only sections.
 
 Detail depends on the eval kind:
 

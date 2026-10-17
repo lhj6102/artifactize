@@ -90,9 +90,6 @@ export const scenarios: Scenario[] = [
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       const { text } = await monitorUI(browser, fixture);
-      await browser.waitUntil(async () => (await text()).includes("WAITING_HUMAN — waiting for a Human submission"), {
-        timeout: 15000, timeoutMsg: "the selected sign-off's waiting-Human peek is rendered",
-      });
       const shown = await text();
       assert.equal(await browser.$(".brand").getText(), "Artifactize");
       await browser.waitUntil(() => browser.execute(() => {
