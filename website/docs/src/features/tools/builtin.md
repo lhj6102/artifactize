@@ -65,9 +65,11 @@ block; fixed `read`, `section` and `help` return text blocks:
   When no heading matches, the error lists the headings the file has. The file may
   be up to 8 MiB; the printed section, up to 64 KiB.
 - **`help`** runs `program subcommand... --help` and prints its output. The program is
-  a literal program or path. Bare names use `PATH` (with `PATHEXT` on Windows);
-  relative program paths start at the declaring Artifact's folder and absolute
-  paths run as given. The program runs in that folder with empty stdin. It must finish within 10 seconds, exit 0 and
+  a literal program or path. Bare names use `PATH` (with `PATHEXT` on Windows).
+  Unlike scoped command-tool executables, help uses ordinary program lookup:
+  absolute paths, parent-relative paths and executable symlinks are accepted.
+  Relative paths start at the declaring Artifact's folder; subcommand arguments
+  are forwarded unchanged, without scope resolution. The program runs in that folder with empty stdin. It must finish within 10 seconds, exit 0 and
   print at most 64 KiB, stdout and stderr together. It runs a real program, so name
   only programs you trust.
 - **`open`** (Human only) opens one file, folder or `http://`/`https://` URL in the
@@ -172,9 +174,12 @@ artifactize-tools open notes.md             # or an http(s) URL
 ```
 
 There is no Artifact scope outside a review, so the current directory is the scope.
-Every path is relative to it and must stay below it; `.` names the directory itself
-and is the default for `list`, `glob` and `grep`. Absolute paths, `..` and symlinks are
-refused, even when the link points inside the directory. Only `open` accepts a URL,
+Filesystem targets for read/list/glob/grep/section/open must be relative and stay
+below it; `.` names the directory itself and is the default for list/glob/grep.
+Absolute targets, `..` and symlinks are refused, even when a link points inside.
+This is **not** a restriction on help's literal executable or subcommand arguments:
+its ordinary lookup accepts absolute/parent paths and executable symlinks as
+explained above. Only `open` accepts a URL,
 and only `http://` or `https://`.
 
 `read`, `section` and `help` print text with the limits above; `list`, `glob` and

@@ -37,6 +37,9 @@ Worktrees without Runs can be folded into a group: Space or a click reveals or
 hides them. Runs appear newest first. Move past the list's first or last row to
 load newer or older pages, or use its newer/older arrow buttons.
 
+With the mouse, one click selects a Monitor row and a double-click opens it or
+its Detail. Clicking the read-only preview also opens full Detail.
+
 Enter or `o` opens Detail for a **Run, Artifact or eval**. The Run row shows saved
 validation and unmet obligations, request counts, waiting work, timing, budgets,
 executed/reused/derived work and usage. Artifact Detail summarizes that Artifact's
@@ -99,13 +102,20 @@ A selected request previews read-only; Enter opens it. Other eval kinds and
 settled requests remain read-only. The context menu or palette can open a Human
 request with Tools focused; Ctrl+O opens a request by ID. PgDn/PgUp pages older
 and newer requests. Waiting followers open the original review, not another sign-off.
+One click selects a request; clicking an already-selected request opens it, as
+does a double-click. Clicking its preview also opens Detail.
 
 `/` or Ctrl+F edits the search. Free text and `key:value` terms must all match:
 `repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`.
 `is:mine`, `is:claimed` and `is:unclaimed` filter Human claims. Suggestions complete
-keys and values. Esc closes suggestions, then clears the search, then returns to
-the list. An explicit `--repo` supplies the initial repository search term. Use
+keys and values. ↑/↓ selects a suggestion (↓ can also open suggestions); Tab or
+Enter accepts it, and a click accepts it with the mouse. Enter without an open
+suggestion returns focus to the list. Esc closes suggestions, then clears the
+search, then returns to the list. An empty search includes all request kinds,
+not just waiting Human reviews. An explicit `--repo` supplies the initial repository search term. Use
 `r` in the Review list, or **Refresh the list** in the palette, to reload that list.
+The palette's **Show waiting Human reviews** restores the launch search,
+including the initial repository restriction when the app was started with `--repo`.
 
 ### Human sign-offs
 

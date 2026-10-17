@@ -4,26 +4,28 @@ A Human eval asks a person for a GREEN or RED sign-off. The reviewer claims the
 waiting request, runs the Human tools you declared and submits a verdict, either
 with `artifactize request` commands or in the `artifactize review` terminal UI.
 
-READY Human evals persist WAITING_HUMAN and no longer count against an explicit
-`--jobs` cap. They consume
-no `maxExecutions` budget, so even a zero budget admits a Human review. Artifactize's
-Run waits for Human results exactly as for runtime and Agent evals; there is no Human wait
-timeout and no fabricated verdict. Plain `verify` submits and returns its ID; `--wait`
-observes settlement. Closing or interrupting that watcher leaves the Run and waiting
-requests alive. A waiting keyed execution retains its exclusive claim; forced waits
-(`--force`) hold no claim on their key. Only `run cancel RUN_ID` cancels a Run.
-Cross-repository followers refer to the claiming
-execution and forward Human actions to its original request and repository.
+When the check is ready, artifactize saves a **WAITING_HUMAN request**: work
+waiting for a person's decision. Waiting for that person uses neither a Run's
+`--jobs` execution slot nor its `--max-executions` budget, even if that budget is
+zero. In the normal mode, the Run waits without a Human timeout; a submitted
+sign-off lets dependent checks continue in the same Run. Watching or closing a
+terminal does not make the decision. The [Run lifecycle](run.md#submit-observe-and-cancel)
+explains submission, watching and explicit cancellation.
 
-A submission that arrives while the Run waits runs the Human eval's dependents in
-the same Run. Human sign-offs reuse by default: artifactsum supplies the target and
-dependency fingerprints. A later `verify` reuses the submitted result and runs its
-dependents. **`fingerprint = false` means no reuse** when declared by the target or any
-dependency: submission settles only that Run, and a later `verify` asks for a new
-Human review. Those dependents continue only in the Run that waits for it.
-Dependency evals wait with WAIT_DEPENDENCY while required Human evidence waits, then
-derive GREEN or BLOCKED from the submission. Later submissions never rewrite a
-historical derived request; a new `status` or `verify` derives current evidence.
+A **reviewer claim** reserves the request for the person reviewing it. This is
+different from artifactize's automatic **reuse-key lock**, which prevents two Runs
+from starting the same matching review simultaneously. Another Run, even from a
+different checkout, can join the existing waiting review; its request is called
+a **follower**. Human actions on a follower go to the original request and
+repository. `--force` bypasses that automatic reuse-key lock, not the need for a
+person to claim the request before acting.
+
+Sign-offs reuse by default when their [reviewed inputs](fingerprint.md) still
+match. A later `verify` can reuse the submitted result and review its consumers.
+If the target or a covered dependency has `fingerprint = false`, the sign-off
+settles only its current Run; a later Run asks for a new Human decision. Automatic
+readiness checks (dependency evals) derive current readiness from that evidence;
+they do not rewrite historical Run records after a later submission.
 
 ```sh
 artifactize verify --all --wait
@@ -55,10 +57,8 @@ at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
 leave the request correctable. A successful submission exits 0, even for RED;
 it does not start a separate verifier.
 
-Interrupting the watcher exits 130 without affecting the Run described above.
-Explicit `run cancel RUN_ID` stops owned work and withdraws pending requests while
-preserving committed evidence. Missing non-Human obligations without a pending
-Human request end INCOMPLETE (4).
+The [Run exit codes](../cli/index.md#command-reference) distinguish interrupted
+observation, explicit cancellation and missing review obligations.
 `verify --reuse-only human`
 never records a Human request or waits: a Human eval reuses a sign-off or is
 [not executed](../cli/index.md#reuse-only), as CI wants.

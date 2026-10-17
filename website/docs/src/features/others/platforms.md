@@ -26,7 +26,7 @@ private temporary or output directories ([Human tools](../tools/human.md)).
 ## Program lookup
 
 A declared program is found the same way by `tools check`, runtime evals,
-fingerprint scripts, command tools and the built-in `help`:
+fingerprint scripts and command tools:
 
 - A bare name, such as `python3`, is searched on `PATH`, never in the current folder.
   On Windows, a name without an extension tries each extension in `PATHEXT`, in order,
@@ -38,6 +38,11 @@ fingerprint scripts, command tools and the built-in `help`:
   scope. `..` and symlinks are refused in both cases. This executable lookup does
   not make sibling files visible to built-in tools or scoped argv references.
 - An absolute path runs as given.
+
+Built-in **help** is different: its literal executable uses ordinary cwd/PATH
+lookup, including absolute paths, parent-relative paths and executable symlinks.
+Its subcommand arguments are forwarded unchanged, not resolved as scoped file
+operands. It runs a trusted program, not an operation confined to Artifact files.
 
 Windows batch files (`.cmd`, `.bat`) run directly, without a shell string: the Rust
 standard library quotes each argument for `cmd.exe` and refuses an argument it cannot

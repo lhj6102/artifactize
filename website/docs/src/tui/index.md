@@ -48,7 +48,8 @@ or value is an error that names the choices, and lists nothing.
 after a key a value of the requests the rest of the search finds (repository folders, evals,
 requests, claimants, tags), or a kind, status or `is:` value; the footer names the
 candidates. Enter keeps the
-search, Esc restores the one before editing, and Ctrl-U clears it. A page lists 100 requests;
+search, Esc restores the one before editing, and Ctrl-U clears it. Empty search
+includes every request kind, not just the initial waiting Humans. A page lists 100 requests;
 PgDn shows older ones and PgUp newer.
 
 The list holds one entry per waiting sign-off: followers that later Runs join to a waiting
@@ -60,11 +61,10 @@ other request opens a read-only Detail: the monitor's sections of its eval in it
 saved runtime output, or its Agent session read as the monitor reads it (`d` shows the
 sections); it has no claim, tools or forms.
 
-The list and Detail use the monitor's reactive layout. With the list focused, it is Full and
-the selected request has a read-only Preview. Enter or → opens Detail. With Detail focused,
-the Compact list sits beside it. Both panes remain at every terminal width: the side pane
-takes 16 columns below 100, 28 at 100–139, and 36 at 140 or more, borders included; Full
-fills the rest. Extremely small terminals clip the side pane rather than dropping a level.
+The list and Detail use [Reactive panes](#reactive-panes). With the list focused,
+it is Full and the selected request has a read-only Preview; Enter or → opens
+Detail beside a Compact list. The linked layout reference gives the widths and
+small-terminal behavior.
 The breadcrumb is `artifactize review › search › eval`. ↑/↓ or `j`/`k` selects a request;
 `r` refreshes the list. Tab opens the selected request with its Tools focused. Esc on the
 list stays there, never quits. The standalone UI has no `?` help overlay or `!` attention
@@ -365,14 +365,8 @@ Detail depends on the eval kind:
   there is no live-log recorder.
 - **Dependency:** the saved derived state and `blockedBy` requirements, marked
   `derived (no execution)`. It has no claim, tools or verdict form.
-- **Human:** the same [Human Detail](#shared-human-detail) as standalone `review`,
-  with explicit **CLAIM → REVIEW**, instruction first, folded Technical (`t`),
-  instruction expansion (`i`), tools/output and GREEN/RED fields. `c` claims only
-  in focused Detail; tools and submission never claim implicitly. `g`/`r` opens
-  forms, Ctrl-G/Ctrl-R switches verdicts and Ctrl-S submits. Esc cancels work,
-  then stops editing with the draft kept, then returns to the tree.
-  Monitor never opens `$EDITOR`. Outside editing or work, `q` quits,
-  `?` shows monitor help and `!` opens the next attention item.
+- **Human:** opens the [Shared Human Detail](#shared-human-detail); that section
+  owns the claim, tool, form, editing and exit controls for both terminal screens.
 
 Browsing is read-only. Only explicit Human actions claim work, run tools or submit
 results. Leaving Human Detail keeps its claim; Release gives it back. If publishing

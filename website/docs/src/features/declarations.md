@@ -115,6 +115,19 @@ own project generator and commit its `.artf` output. Older fields such as
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
 option is also rejected.
 
+## Mounts
+
+`mounts = { rules = "shared-rules" }` gives a local alias to an existing Artifact.
+The target must exist. If an alias is also a globally declared Artifact name, it
+must target **that same Artifact**, not another one; otherwise references would
+be ambiguous. For folder and Graph Artifacts, an alias must not collide with any
+physical file, directory or link in the owner's folder.
+
+A file Artifact's virtual root is the exception to the physical-entry check: its
+mount may shadow an unrelated sibling, because siblings are not visible through
+that root. It may never shadow the file target itself, and the global-name rule
+still applies. See [File Artifacts](#file-artifacts) for the virtual path behavior.
+
 ## Owner-result schemas
 
 Agent and Human results contain a `verdict` plus the owner's fields. Declare only
@@ -359,11 +372,14 @@ Before executing evals, `verify` computes fingerprints in their selected require
 dependency closure, including dependencies whose evals are not selected. Derived
 evals alone need no fingerprint preparation. Up to `--fingerprint-jobs N`
 fingerprints are computed at once (default: the CPUs available to the process),
-in `status` as in `verify`; the same bound covers end-of-review rechecks.
+in `status` as in `verify`. A Run shares that bound between preparation and its
+Runtime/Agent end-of-review rechecks. **Human tool actions and submissions are
+separate operations**: each creates its own CPU-sized fingerprint parallelism,
+independent of the Run's `--fingerprint-jobs` setting.
 Values are keyed by Artifact, not completion order. A failure reports the first
 failing Artifact in name order and cancels fingerprints after it. Scripts run in
-separate private output directories; a script that must run alone needs
-`--fingerprint-jobs 1`.
+separate private output directories. `--fingerprint-jobs 1` serializes that Run's
+preparation and Runtime/Agent rechecks, not all Human checks or other Runs.
 
 Every executable eval on an Artifact receives the same literal value, saved on
 its request and in the Run's Artifact validation. artifactize adds no repository,

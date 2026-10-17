@@ -213,9 +213,11 @@ holds no optional `--jobs` slot and no executor start.
 
 `--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
 fingerprints are computed at once; the default is the number of CPUs available to
-the process. In `verify` the one bound covers preparation and the end-of-review
-rechecks of all concurrent reviews, independently of `--jobs`, which bounds evals.
-Results and output do not depend on the bound or on completion order.
+the process. In `verify`, one shared bound covers preparation and Runtime/Agent
+end-of-review rechecks, independently of `--jobs`, which bounds evals. Human tool
+actions and submissions separately use CPU-sized fingerprint parallelism and do
+not inherit this setting. Results and output do not depend on the bound or on
+completion order.
 
 `verify --max-executions N` sets a nonnegative, shared per-Run executor-start
 budget (unlimited when omitted); it is not an Artifact declaration field.
