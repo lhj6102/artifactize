@@ -202,6 +202,7 @@
               bind:element={panes.detail}
               onfocus={() => (m.focus = "detail")}
               ontab={showTab}
+              onopen={openNode}
               onback={closeDetail}
             />
           </aside>

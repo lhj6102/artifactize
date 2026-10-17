@@ -18,8 +18,14 @@ const row = (id: string, kind: TreeNode["kind"], name: string, glyph: string, to
   right: "", changed: false, done: false, attention: false, urgent: false, upstream: [], children,
 });
 
+// `app`'s evals use `core`; `docs` uses `app`.
 const tree: TreeNode[] = [
-  row("a:app", "artifact", "app", "✗", "red", [row("e:app/lint", "eval", "lint", "✓", "green"), row("e:app/test", "eval", "test", "✗", "red")]),
+  row("a:core", "artifact", "core", "✓", "green"),
+  {
+    ...row("a:app", "artifact", "app", "✗", "red", [row("e:app/lint", "eval", "lint", "✓", "green"), row("e:app/test", "eval", "test", "✗", "red")]),
+    upstream: [{ node: "a:core", complete: true }],
+  },
+  { ...row("a:docs", "artifact", "docs", "✓", "green"), upstream: [{ node: "a:app", complete: false }] },
 ];
 
 const view = (node: string, title: string): DetailView => ({
@@ -36,12 +42,13 @@ function setup(tab: string | null = null) {
     return view(node, node === "a:app" ? "Artifact app" : `app/${node.slice("e:app/".length)} · Check`);
   });
   const ontab = vi.fn();
+  const onopen = vi.fn();
   const onback = vi.fn();
   const shown = renderHosted(DetailPane, {
     run: "run-a", node: "a:app", tab, tree, focused: false, active: true,
-    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab, onback,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab, onopen, onback,
   });
-  return { ...shown, read, ontab, onback };
+  return { ...shown, read, ontab, onopen, onback };
 }
 
 it("shows the Artifact tab first with its evals' verdicts, and switches to an eval's tab from the list or the tabs", async () => {
@@ -132,4 +139,16 @@ it("shows only the Artifact's chip, without a `/`, for an Artifact without evals
   const strip = screen.getByRole("tablist", { name: "Tabs of lone" });
   expect(within(strip).getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(["Artifact lone"]);
   expect(strip.textContent?.trim()).toBe("lone");
+});
+
+it("shows the Artifact between the Artifacts its evals use and those that use it, and opens a neighbour on a click", async () => {
+  const { onopen } = setup();
+  const group = await screen.findByRole("group", { name: "Neighbours of app" });
+  const uses = within(within(group).getByRole("list", { name: "Used by its evals" })).getAllByRole("button");
+  const usedBy = within(within(group).getByRole("list", { name: "Uses it" })).getAllByRole("button");
+  expect(uses.map((chip) => chip.getAttribute("aria-label"))).toEqual(["Artifact core"]);
+  expect(usedBy.map((chip) => chip.getAttribute("aria-label"))).toEqual(["Artifact docs"]);
+  expect(group.textContent?.replace(/\s+/g, " ").trim()).toBe("✓core → app → ✓docs");
+  await fireEvent.click(usedBy[0]);
+  expect(onopen).toHaveBeenCalledWith("a:docs");
 });

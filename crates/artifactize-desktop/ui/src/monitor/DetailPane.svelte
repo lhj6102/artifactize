@@ -28,6 +28,7 @@
     element = $bindable(),
     onfocus,
     ontab,
+    onopen,
     onback,
   }: {
     run: string;
@@ -47,6 +48,8 @@
     onfocus: () => void;
     /** Show the tab of an eval, or the Artifact's own for `null`. */
     ontab: (tab: string | null) => void;
+    /** Open another Artifact's Detail: a neighbour in the Artifact tab. */
+    onopen: (node: string) => void;
     onback: () => void;
   } = $props();
   const commands = useIpc();
@@ -57,6 +60,12 @@
   const row = $derived(tree.find((top) => top.id === node) ?? null);
   const evals = $derived(row?.kind === "artifact" ? row.children : []);
   const tabbed = $derived(row?.kind === "artifact");
+  /** The Artifact's neighbours: those its evals use, and those whose evals use it. */
+  const artifacts = $derived(tree.filter((top) => top.kind === "artifact"));
+  const uses = $derived(
+    (row?.upstream ?? []).flatMap((mark) => artifacts.find((top) => top.id === mark.node) ?? []),
+  );
+  const usedBy = $derived(artifacts.filter((top) => top.upstream.some((mark) => mark.node === node)));
   /** The node whose Detail is read: the shown eval, else the Artifact or the Run. */
   const target = $derived(tab ?? node);
 
@@ -135,6 +144,22 @@
     {/if}
     <div class="content" class:listing={tabbed && tab === null} role={tabbed ? "tabpanel" : undefined}>
       {#if tabbed && row && tab === null}
+        {#snippet neighbour(item: TreeNode)}
+          <button class="chip neighbour" data-node={item.id} aria-label="Artifact {item.name}" onclick={() => onopen(item.id)}>
+            <span class="glyph {tone(item.tone)}">{item.glyph}</span><span class="label">{item.name}</span>
+          </button>
+        {/snippet}
+        <div class="neighbours" aria-label="Neighbours of {row.name}" role="group">
+          <div class="side" aria-label="Used by its evals" role="list">
+            {#each uses as item (item.id)}<span role="listitem">{@render neighbour(item)}</span>{:else}<span class="muted">—</span>{/each}
+          </div>
+          <span class="arrow" aria-hidden="true">→</span>
+          <span class="chip current" aria-current="true"><img class="mark" src={brandMark} alt="" /><span class="label">{row.name}</span></span>
+          <span class="arrow" aria-hidden="true">→</span>
+          <div class="side" aria-label="Uses it" role="list">
+            {#each usedBy as item (item.id)}<span role="listitem">{@render neighbour(item)}</span>{:else}<span class="muted">—</span>{/each}
+          </div>
+        </div>
         <ul class="evals" aria-label="Evals of {row.name}">
           {#each evals as item (item.id)}
             <li>
@@ -217,6 +242,48 @@
   }
   .slash {
     flex: none;
+    color: var(--muted);
+  }
+  /* Upstream → this Artifact → downstream, each side a column of chips cut to its width. */
+  .neighbours {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, max-content) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 0 var(--pad) 12px;
+  }
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .side:last-child {
+    align-items: flex-start;
+  }
+  .side:first-child {
+    align-items: flex-end;
+  }
+  .side > span {
+    display: flex;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .neighbour,
+  .current {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .current {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    color: var(--text);
+    border-color: var(--accent);
+    cursor: default;
+  }
+  .arrow {
     color: var(--muted);
   }
   .content {
