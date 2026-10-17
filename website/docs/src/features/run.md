@@ -96,8 +96,9 @@ The two [per-request verify modes](../cli/index.md#verify-modes),
 The same request key keeps its original choices.
 
 Speculation starts requested runtime, Agent and Human evals before unresolved
-gates, within all scheduling limits. Ready work has priority; speculative work
-uses spare capacity and yields first. Upstream RED/ERROR immediately cancels
+gates, within `--jobs`, backend capacity and `--max-executions` limits. Ready work
+has priority; speculative work uses spare capacity and yields first. Redispatch
+consumes another executor start. Upstream RED/ERROR immediately cancels
 transitively blocked work and marks it BLOCKED without a reusable cancelled
 result. GREEN keeps results already produced for the same files.
 

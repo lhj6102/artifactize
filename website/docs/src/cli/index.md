@@ -165,29 +165,11 @@ with the same `--request-key` retains the first request's modes.
 | `--speculate` | Start all requested kinds before unresolved gates; wait for people |
 | Both | Start machine reviews speculatively; ask for deferrable sign-offs last |
 
-Speculation respects `--jobs`, backend capacity and `--max-executions`. Ready,
-unblockable work is dispatched first, longest remaining dependency paths next,
-with selection order breaking ties. Speculative work uses leftover capacity and
-is cancelled first when ready work needs that capacity; redispatch consumes
-another executor start. An upstream RED or ERROR cancels its transitive blocked
-work: runtime process groups, Agent reviews and their tool sessions end, Human
-requests are withdrawn, and not-started requests never start. Those requests end
-BLOCKED with no cancelled result eligible for reuse. An upstream GREEN retains
-speculative results: fingerprints cover files, not upstream verdicts.
-
-With `--defer-human`, pending deferrable Human gates count as passing **for
-execution**, never for final approval. Human requests are recorded as DEFERRED
-only after their Artifact's machine evals finish and nothing blocks them.
-Dependent results are PROVISIONAL. When every machine obligation passes and only
-these sign-offs remain, the Run ends SIGNOFFS_PENDING; `--wait` returns 5.
-Missing results, exhausted budgets, RED and ERROR retain their ordinary outcomes.
-`gate = "blocking"` on an eval retains its pending Human gate and the owned Run
-waits for it. CI's `--reuse-only agent,human` remains strict even with these flags.
-
-A later Human GREEN reruns nothing: the next `verify` reuses machine evidence and
-the sign-off and is SATISFIED, provided its fingerprints enable reuse and are
-unchanged. A RED blocks dependents on the next verification. Completed Runs remain
-historical records; submission does not restart them.
+These modes change execution order, not approval. `verify --wait` uses the
+ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5
+SIGNOFFS_PENDING. [Execution modes](../features/run.md#speculation-and-deferred-sign-offs)
+explains scheduling, cancellation, provisional results, strict Human gates and
+later sign-off reuse.
 
 ## Runtime CLI
 
@@ -378,6 +360,8 @@ queries return at most 200 lines per stream and a bounded byte budget, with
 `next_start` for continuation. Tail and range are exclusive. `search` is a literal,
 case-sensitive 1–2048-byte string. Lines longer than 2048 raw bytes are marked
 `clipped` with bounded head/tail text. Full raw runtime streams, including tails beyond the 128 KiB saved
-audit, stay in Run output until pruning; older/remote/pruned evidence may have
-only the saved audit and says so. See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
+audit, stay in Run output. Current `prune` leaves raw stream files and completion
+markers in invocation roots; it supplies no raw-log retention policy. Missing or
+older/remote audit-only evidence is labeled explicitly. See the shared
+[runtime retention reference](../features/declarations.md#runtime-execution-library). See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
 for the shared evidence/event schemas and client delivery limits.

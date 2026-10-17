@@ -89,10 +89,16 @@ that Artifact's Detail instead.
 In the popup, ↑/↓ selects an eval and updates its floating Summary without
 opening or retargeting full Detail. Enter, `o`, → or a click on the eval explicitly
 opens its Detail overlay. Esc leaves Detail for the same popup and selection;
-Esc again closes the popup and focuses its Artifact. This is not a camera zoom
+Esc again closes the popup and focuses its Artifact. For an Agent whose saved
+Details sections are open, Esc first returns to its transcript (in Monitor and
+Review); another Esc closes Detail, and in Monitor a further Esc closes the popup.
+This is not a camera zoom
 or a separate graph view. Scope and Runs remain visible behind the Detail overlay.
 
-**Zoom In**, **Zoom Out** and **Fit View** change the camera viewport. Above 40
+Drag the graph background to pan; wheel, pinch or a background double-click
+zooms the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its
+viewport. These gestures move the camera, not the pane dividers or an Artifact's
+eval popup. Above 40
 nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
 than 300 Artifacts** ask before layout: choose **Lay out all** to display the
 whole graph. Only visible elements are rendered, but layout is not an
@@ -187,12 +193,12 @@ refresh, not a settings reload.
   Sign-out removes local tokens and warns when server revocation cannot be confirmed.
 - **Models:** lists model IDs offered by the chosen backend.
 - **Review store:** signs in with URL, token and sharing level, displays status,
-  pushes results (or a dry run) and signs out. **Summary** excludes argv, captured
-  output, tool calls and paths; **Full** also sends the saved execution. Summary
-  still shares review metadata and owner results, so choose according to the
-  team's privacy needs. It is not secret redaction: a Runtime profile's command
-  and arguments remain in the shared profile and can themselves contain paths
-  or sensitive literals. Signing out removes local configuration, **not the server
+  pushes results (or a dry run) and signs out. **Summary** omits invocation details,
+  captured output and tool-call history; **Full** also sends the saved execution.
+  Summary still shares review metadata, owner results, declared Runtime commands
+  and arguments, and Agent execution-path metadata. Those declarations can contain
+  paths or sensitive literals: Summary is not secret redaction. Choose according
+  to the team's privacy needs. Signing out removes local configuration, **not the server
   token**; a store administrator must [revoke it](../features/team/reference.md#review-store-server).
   See [sharing and push behavior](../features/team/reference.md#remote-review-store-client).
 

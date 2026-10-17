@@ -27,7 +27,7 @@ program); `view_image` applies the same image checks as `json` image results.
 | `graph` | Fixed declaration `args = []`; call `{}` | Complete name-based Artifact/eval tree, extracted criteria, graph fingerprint and input → consumer relations |
 | `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1), limit defaults to 80, max 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
 | `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | `artifactId`, `path`, sorted `entries: [{name, path, kind, artifactId?}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
-| `glob` | `{pattern, path?}` | Searched `path`, up to 200 sorted logical `files`, `truncated` |
+| `glob` | `{pattern, path?}`; `path` must name a directory | Searched `path`, up to 200 sorted logical `files`, `truncated` |
 | `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`; case-sensitive by default, maxResults defaults to/max 200 | Searched `path`, `matches: [{path, line, text}]` (one per matching line, sorted by path then line), `truncated` |
 
 `read.artifactId` identifies the Artifact that **declared the tool**;
@@ -67,14 +67,19 @@ file returns zero lines and `totalLines: 0`; a page past EOF returns zero lines
 with the actual nonzero total. Concatenating returned `text` values reproduces
 the source range without added line-number prefixes.
 
-Globs use `*` within a component and `**` across directories, relative to `path`.
+The `glob` built-in requires a directory `path`; it selects matching filenames
+without inspecting contents, including binary filenames. `grep` accepts a file
+or directory and skips binary (NUL) or invalid-UTF-8 contents in their entirety.
+Its optional `glob` argument is a filename filter, not a call to the `glob` tool.
+
+Glob patterns use `*` within a component and `**` across directories, relative to `path`.
 Glob and grep patterns (including grep's optional `glob`) must be nonempty and at
 most 4096 characters. Globs must be relative, with no leading slash,
 backslashes, colons, NUL, or empty/`.`/`..` path components. Grep uses Rust `regex`
 syntax, with a 2 MiB compiled-regex size ceiling; an empty, invalid or oversized
-regex is an error. `glob` filters relative file paths (or the basename when `path`
-names a file). Hidden files are included; git ignore rules do not
-filter results. Binary (NUL) and invalid UTF-8 files are skipped in their entirety.
+regex is an error. Grep's optional `glob` filter matches relative file paths
+(or the basename when `path` names a file). Hidden files are included; git ignore
+rules do not filter results.
 Search follows logical mounts without repeating a mount cycle. Bounds are 10,000
 traversed entries, 8 MiB per grep file, 64 MiB searched,
 and 512 KiB per JSON result. Search limits or skipped oversized files set

@@ -26,7 +26,9 @@ exit code and bounded stdout/stderr after completion. While execution is still
 appending output, `artifactize request logs REQUEST_ID` can read bounded snapshots;
 unconfirmed captures are explicitly marked partial. This is snapshot inspection,
 not an automatic streaming log feed. The [runtime-log CLI reference](../cli/index.md#agent-streaming-and-runtime-logs)
-explains tail/range/search, capture evidence and retention. The CLI, [TUI](../tui/index.md) and [Desktop](../desktop/index.md)
+explains tail/range/search and capture evidence; the shared
+[runtime execution reference](declarations.md#runtime-execution-library) owns
+retention details, including the raw captures current pruning leaves intact. The CLI, [TUI](../tui/index.md) and [Desktop](../desktop/index.md)
 read the same saved evidence.
 
 References such as `{spec}/requirements.json` in the declared operands admit those
