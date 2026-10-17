@@ -1,4 +1,4 @@
-//! Native WebView differences for the test-only composition device.
+//! Native WebView differences for the test-only text-input and editing device.
 use super::Input;
 use tauri::{Runtime, WebviewWindow};
 use tokio::sync::oneshot;
@@ -54,6 +54,8 @@ unsafe fn native(view: *mut std::ffi::c_void, input: Input) -> Result<(), String
         fn arti_ime_set(view: *mut c_void, text: *const c_char) -> *const c_char;
         fn arti_ime_commit(view: *mut c_void, text: *const c_char) -> *const c_char;
         fn arti_ime_cancel(view: *mut c_void) -> *const c_char;
+        fn arti_edit_copy(view: *mut c_void) -> *const c_char;
+        fn arti_edit_paste(view: *mut c_void) -> *const c_char;
     }
     let text =
         |value| CString::new(value).map_err(|_| "Native composition text contains NUL".to_owned());
@@ -64,6 +66,8 @@ unsafe fn native(view: *mut std::ffi::c_void, input: Input) -> Result<(), String
             Input::Set { text: value } => arti_ime_set(view, text(value)?.as_ptr()),
             Input::Commit { text: value } => arti_ime_commit(view, text(value)?.as_ptr()),
             Input::Cancel => arti_ime_cancel(view),
+            Input::Copy => arti_edit_copy(view),
+            Input::Paste => arti_edit_paste(view),
         }
     };
     if error.is_null() {
@@ -106,6 +110,14 @@ mod windows {
             Input::Cancel => (
                 "Input.imeSetComposition",
                 json!({"text":"","selectionStart":0,"selectionEnd":0}),
+            ),
+            Input::Copy => (
+                "Input.dispatchKeyEvent",
+                json!({"type":"keyDown","key":"c","code":"KeyC","modifiers":2,"windowsVirtualKeyCode":67,"commands":["Copy"]}),
+            ),
+            Input::Paste => (
+                "Input.dispatchKeyEvent",
+                json!({"type":"keyDown","key":"v","code":"KeyV","modifiers":2,"windowsVirtualKeyCode":86,"commands":["Paste"]}),
             ),
         };
         let sender = Rc::new(RefCell::new(Some(sender)));

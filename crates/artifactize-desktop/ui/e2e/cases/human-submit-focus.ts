@@ -42,6 +42,11 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
         signoff(fixture).status === "GREEN" && /completed result/i.test(await text()), "the saved, completed Detail");
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "checked before closing" });
       assert.equal(await browser.$("#field-comment").isExisting(), false, "the completed result replaced the form");
+      const completed = await human().getText();
+      assert.match(completed, /GREEN/);
+      assert.match(completed, /checked before closing/);
+      assert.match(completed, /approved/);
+      assert.match(completed, /true/);
       assert.ok(await human().isExisting(), "submission leaves the completed Detail open");
       await saveEvidence(browser, fixture, `${screen}-completed`);
       // No click or scripted focus between submitting from the field and pressing Escape.

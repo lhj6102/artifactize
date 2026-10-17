@@ -15,12 +15,12 @@ function fixture(root: NativePath) {
   return { root: nativePath(root, "owner"), repo: nativePath(root, "owner", "repo"), state: nativePath(root, "owner", "state") };
 }
 
-async function launch(root: NativePath, id: string, signal: AbortSignal) {
+async function launch(root: NativePath, id: string, signal: AbortSignal, output = `${id}-logs`) {
   const env = {
     ...environment(fixture(root)),
     DESKTOP_TEST_CANDIDATE: nativePath(root, "candidate.json"),
     DESKTOP_TEST_BATCH: JSON.stringify([id]),
-    DESKTOP_TEST_BATCH_OUTPUT: nativePath(root, `${id}-logs`),
+    DESKTOP_TEST_BATCH_OUTPUT: nativePath(root, output),
   };
   const command = runnerCommand([suitePath("run.ts"), "batch"], env);
   return await fixtureRunner(command, signal);
@@ -47,7 +47,7 @@ it("a failed preparation stops the real service before its executable boundary",
     // Positive control: fixing only that input must reach the same real service's
     // executable boundary, proving the first rejection was before app admission.
     removeTree(context);
-    const admitted = await launch(directory, "settings-remote", test.signal);
+    const admitted = await launch(directory, "settings-remote", test.signal, "settings-remote-retry-logs");
     assert.equal(admitted.code, 1, admitted.stdout + admitted.stderr);
     assert.match(admitted.stderr, /Failed to start embedded WebDriver/);
     assert.match(admitted.stderr, /EACCES|EINVAL|ENOEXEC|spawn/);

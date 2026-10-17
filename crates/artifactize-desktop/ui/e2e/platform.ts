@@ -757,9 +757,9 @@ try {
 
 /** The evaluated test-build device reaches only the engine's text-input API. This
  * test-only IPC command is not an application action and is absent from production. */
-export async function nativeIme(browser: WebdriverIO.Browser, input:
+export async function nativeInput(browser: WebdriverIO.Browser, input:
   | { type: "set" | "commit"; text: string }
-  | { type: "cancel" }): Promise<void> {
+  | { type: "cancel" | "copy" | "paste" }): Promise<void> {
   const error = await browser.executeAsync((operation, done) => {
     const native = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> } };
     native.__TAURI_INTERNALS__.invoke("e2e_input", { input: operation }).then(
@@ -767,7 +767,7 @@ export async function nativeIme(browser: WebdriverIO.Browser, input:
       (failure: unknown) => done(String(failure)),
     );
   }, input);
-  if (error !== null) throw new Error(`native composition failed: ${String(error)}`);
+  if (error !== null) throw new Error(`native engine input failed: ${String(error)}`);
 }
 
 /** Native crash reports for this run's exact candidate binary, never other apps or runs.

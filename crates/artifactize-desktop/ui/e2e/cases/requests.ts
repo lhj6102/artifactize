@@ -10,7 +10,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { reviewing } from "../human-review.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativeIme, primaryModifier } from "../platform.ts";
+import { nativeInput, primaryModifier } from "../platform.ts";
 import { graphShown, openArtifact, openTab } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
@@ -209,9 +209,9 @@ export const scenarios: Scenario[] = [
       const before = (await checkpoint(browser)).activity;
       assert.ok(before.commands.humanClaim?.completed > 0, "the claim counter observed this successful claim");
       assert.ok(before.commands.humanForm?.completed > 0, "the form counter observed this successful GREEN choice");
-      await nativeIme(browser, { type: "set", text: "안" });
+      await nativeInput(browser, { type: "set", text: "안" });
       await waitFor(browser, async () => (await events()).some((event) => event.type === "compositionstart" && event.trusted), "a trusted native composition started");
-      await nativeIme(browser, { type: "set", text: "안녕" });
+      await nativeInput(browser, { type: "set", text: "안녕" });
       await waitFor(browser, async () => await comment.getValue() === "안녕" && (await events()).some((event) =>
         event.type === "compositionupdate" && event.trusted), "the engine updated the native Korean composition");
       // E2E-INPUT: these fields are the app's own shortcut guard, not an OS input test.
@@ -241,7 +241,7 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.$('[role="alertdialog"]').isExisting()), "composition did not leave or quit");
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "composition did not release the claim");
       assert.equal(signoff(fixture).status, "WAITING_HUMAN", "composition submitted nothing");
-      await nativeIme(browser, { type: "commit", text: "안녕" });
+      await nativeInput(browser, { type: "commit", text: "안녕" });
       try {
         // The engine's commit API can mark compositionend untrusted. Native
         // composing start/update/key events above must be trusted; completion is

@@ -270,6 +270,7 @@ export const scenarios: Scenario[] = [
           // The pane stays inside the window, and what it shows stays inside the pane.
           inWindow: box.left >= 0 && box.right <= window.innerWidth,
           bodyWithin: [...section.children].every((child) => within(child as HTMLElement)),
+          graph: (() => { const at = section.querySelector(".graph")!.getBoundingClientRect(); return [at.left, at.top, at.width, at.height].map(Math.round); })(),
           nodeWithin: within(node),
           noticeWithin: within(notice),
           titleWhole: within(heading) && heading.scrollWidth <= heading.clientWidth,
@@ -278,7 +279,7 @@ export const scenarios: Scenario[] = [
           text: toggle.textContent ?? "",
           cut: toggle.scrollWidth > toggle.clientWidth,
           open: toggle.getAttribute("aria-expanded") === "true",
-          tall: notice.getBoundingClientRect().height > heading.getBoundingClientRect().height * 2,
+          tall: toggle.getBoundingClientRect().height > heading.getBoundingClientRect().height * 2,
         };
       }, `Run ${readable}`);
       let last: Awaited<ReturnType<typeof pane>> = null;
@@ -298,11 +299,14 @@ export const scenarios: Scenario[] = [
         const shown = await pane();
         return !!shown && shown.open && !shown.cut && shown.tall && shown.bodyWithin && shown.inWindow;
       }, { timeout: 15000, timeoutMsg: "the whole notice shown, wrapped within the pane" });
+      assert.deepEqual((await pane())?.graph, folded.graph, "opening the full notice does not move or resize the graph");
+      await graphShown(browser, "a:n000");
       await browser.$(`section.panel[aria-label="Run ${readable}"] [role="status"] button`).click();
       await browser.waitUntil(async () => {
         const shown = await pane();
         return !!shown && !shown.open && shown.cut;
       }, { timeout: 15000, timeoutMsg: "the notice folded back to one line" });
+      assert.deepEqual((await pane())?.graph, folded.graph, "collapsing the notice keeps the same graph geometry");
       await graphShown(browser, "a:n000");
     },
   ),

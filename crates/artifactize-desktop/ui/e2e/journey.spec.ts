@@ -22,7 +22,10 @@ describe(item.title, () => {
       await browser.waitUntil(() => browser.execute(() => (document.getElementById("app")?.childElementCount ?? 0) > 0),
         { timeout: 30000, timeoutMsg: "setup failed: the test app did not load its frontend" });
       await takeSystemFocus(browser);
-      await item.run(browser, input);
+      if (variable("DESKTOP_TEST_RELAUNCH") === "1") {
+        if (!item.relaunched) throw new Error("this scenario has no relaunch assertion");
+        await item.relaunched(browser, input);
+      } else await item.run(browser, input);
     } catch (error) {
       // CI keeps no screenshots: a failure carries what the window showed when it failed.
       const shown = await browser.execute(() => document.body.innerText)

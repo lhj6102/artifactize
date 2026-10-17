@@ -65,3 +65,13 @@ const char *arti_ime_commit(void *raw, const char *text) {
     return NULL;
 }
 const char *arti_ime_cancel(void *raw) { return arti_ime_commit(raw, ""); }
+
+/* Editing commands use the engine's clipboard handling, never OS input injection. */
+const char *arti_edit_copy(void *raw) {
+    webkit_web_view_execute_editing_command(WEBKIT_WEB_VIEW(raw), "Copy");
+    return NULL;
+}
+const char *arti_edit_paste(void *raw) {
+    webkit_web_view_execute_editing_command(WEBKIT_WEB_VIEW(raw), "Paste");
+    return NULL;
+}
