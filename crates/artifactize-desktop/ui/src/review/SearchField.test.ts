@@ -14,7 +14,7 @@ function complete(query: string): Promise<Completion> {
   const keep = query.slice(0, space);
   const term = query.slice(space);
   const all = term.startsWith("kind:")
-    ? ["kind:agent", "kind:dependency", "kind:human", "kind:runtime"]
+    ? ["kind:agent", "kind:human", "kind:runtime"]
     : ["repo:", "eval:", "kind:", "status:"];
   return Promise.resolve({ keep, candidates: all.filter((candidate) => candidate.startsWith(term)) });
 }
@@ -40,8 +40,8 @@ describe("SearchField", () => {
     expect(field.getAttribute("aria-expanded")).toBe("true");
     await fireEvent.keyDown(field, { key: "Tab" });
     expect(field.value).toBe("kind:");
-    // A key keeps the dropdown open for its values.
-    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(4));
+    // A key keeps the dropdown open for the three supported reviewer kinds.
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3));
     await fireEvent.keyDown(field, { key: "ArrowDown" });
     await fireEvent.keyDown(field, { key: "ArrowDown" });
     expect(screen.getAllByRole("option")[1].getAttribute("aria-selected")).toBe("true");

@@ -76,8 +76,8 @@ automatic child/dependency relation to a surrounding folder, and its target stil
 appears in the surrounding folder's default fingerprint. A growing Artifact can
 be split into child folders or explicitly related file Artifacts, preserving
 independent reuse. `basis = true` is an agreed no-eval input, not a shortcut past
-mandatory reviews. Dependency evals derive readiness from their listed Artifacts;
-they have no command or cached verdict.
+mandatory reviews. Each Eval’s instruction and runtime arguments name its own
+inputs; independent sibling Evals do not inherit its dependency gates.
 
 Changing an eval's instruction, result schema or runtime command changes its
 judgment identity; covered content changes its fingerprint. Tool execution paths

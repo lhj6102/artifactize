@@ -18,7 +18,6 @@ pub enum Profile {
     Runtime,
     Agent,
     Human,
-    Dependency,
 }
 
 impl From<ProfileKind> for Profile {
@@ -27,7 +26,6 @@ impl From<ProfileKind> for Profile {
             ProfileKind::Runtime => Self::Runtime,
             ProfileKind::Agent => Self::Agent,
             ProfileKind::Human => Self::Human,
-            ProfileKind::Dependency => Self::Dependency,
         }
     }
 }

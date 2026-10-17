@@ -145,7 +145,7 @@
             <li><a href="#step-ripple" data-short="A change">A change</a></li>
             <li><a href="#step-grows" data-short="It keeps growing">It keeps growing</a></li>
             <li><a href="#step-parallel" data-short="Work in parallel">Work in parallel</a></li>
-            <li><a href="#step-merge" data-short="Merge and CI">Merge and CI</a></li>
+            <li><a href="#step-merge" data-short="Merge and check">Merge and check</a></li>
           </ol>
         </nav>
       </div>
@@ -217,10 +217,10 @@
         </section>
 
         <section class="story-step" data-step="merge" id="step-merge" aria-labelledby="step-merge-h">
-          <p class="step-k"><b>10</b>Merge and CI</p>
+          <p class="step-k"><b>10</b>Merge and check</p>
           <h3 id="step-merge-h">Bring changes together and check only what is new.</h3>
           <p>Bring the changes together. Automatic checks reuse the results from each teammate’s copy and review only the new combinations created by the merge.</p>
-          <p class="sr">The copies merge back into app · main, so api and cli take their new fingerprints. The evals the copies already reviewed, api's sign-off included, are reused from the store; the three that see two changes at once execute. CI reads verdicts from the store: executed 3, reused 18.</p>
+          <p class="sr">The copies merge back into app · main, so api and cli take their new fingerprints. The evals the copies already reviewed, api's sign-off included, are reused from the store; the three that see two changes at once execute. Automatic checks read saved review results from the store: executed 3, reused 18.</p>
         </section>
       </div>
     </div>
@@ -236,7 +236,7 @@
         <div class="demo-tabs" role="group" aria-label="Choose a recording">
           <button type="button" class="demo-tab" aria-pressed="true" data-name="change" data-height="830" data-label="After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.">Change one file</button>
           <button type="button" class="demo-tab" aria-pressed="false" data-name="reuse" data-height="830" data-label="artifactize status predicts five evals; the first verify executes all five and the second reuses all five.">Run it twice</button>
-          <button type="button" class="demo-tab" aria-pressed="false" data-name="team" data-height="900" data-label="On Alice's laptop verify executes five evals and publishes them to the review store; on Bob's laptop, with his own checkout of the same project, status predicts five reuses and verify reuses all five from remote: alice@laptop.">Two checkouts, one store</button>
+          <button type="button" class="demo-tab" aria-pressed="false" data-name="team" data-height="900" data-label="On Alice's laptop verify executes five evals and publishes them to the review store; on Bob's laptop, with his own copy of the same project, status predicts five reuses and verify reuses all five from remote: alice@laptop.">Two project copies, one store</button>
         </div>
         <div class="demo-frame" style="aspect-ratio: 1000 / 830">
           <video class="demo-video" muted loop playsinline preload="none" width="1000" height="830" aria-label="Terminal recording"

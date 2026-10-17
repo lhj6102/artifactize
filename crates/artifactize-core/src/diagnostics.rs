@@ -229,7 +229,7 @@ pub async fn check_tools(
                     Audience::Human,
                     human::Registry::new(&config, &eval.id).map(Catalog::Human),
                 ),
-                Profile::Runtime { .. } | Profile::Dependency { .. } => continue,
+                Profile::Runtime { .. } => continue,
             };
             catalogs.push((Some(&eval.id), None, audience, catalog));
         }

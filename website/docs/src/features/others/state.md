@@ -37,10 +37,7 @@ four tables:
 | `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
 | `state_meta` | named value of the state | `name`, `value` |
 
-A Run has one request per eval and per ordinal. Dependency requests save their
-derived state and `blockedBy`, but have no execution row, key, run output, usage
-or backend-capacity slot. They count under `summary.derived`, not executed or
-reused work. They never enter cache inspection or team-store lookup/publication.
+A Run has one request per eval and per ordinal.
 One execution per reuse key can be
 active (RUNNING or WAITING_HUMAN) at a time; a forced (`--force`) execution bypasses this claim and
 never holds its key's active slot. `state_meta` holds the state's stable
@@ -76,9 +73,8 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 
 A new 0.9 state reviews every executable eval once, Human sign-offs included,
 and then reuses as before. Reuse-key v2 matches no earlier records, including
-script fingerprints and team-store records. Dependency evals derive current
-evidence; they have no execution or reusable record. See
-[Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
+script fingerprints and team-store records. See
+[Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 A schema-6 state from 0.9 is supported: it upgrades additively to schema 7 and
 passes [`doctor`](#doctor-models-and-prune)'s schema check. Unsupported earlier
 schemas and newer schemas remain hard errors.

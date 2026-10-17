@@ -418,7 +418,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     let (view, requests) = fixture.load(&second).await;
     let work = monitor::progress(&view, &requests, now).work;
     // Alpha declares five evals; this second Run must reuse all five without execution.
-    assert_eq!(work, "executed 0 · reused 5 · derived 0");
+    assert_eq!(work, "executed 0 · reused 5");
     let nodes = monitor::tree(&view, &requests, now);
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
@@ -451,13 +451,16 @@ async fn saved_tree_details_without_repository_or_writes() {
     // Peers are marked, and the cycle is never a wait between them.
     assert_eq!(node("a:cycle-a").marks, "  ↻ cycle-b");
     assert_eq!(node("a:cycle-b").marks, "  ↻ cycle-a");
-    for id in ["e:cycle-a/check", "e:cycle-b/check"] {
+    for (id, input) in [
+        ("e:cycle-a/check", "cycle-b"),
+        ("e:cycle-b/check", "cycle-a"),
+    ] {
         let upstream: Vec<_> = node(id)
             .upstream
             .iter()
             .map(|up| up.artifact.as_str())
             .collect();
-        assert_eq!(upstream, ["input"], "{id}");
+        assert_eq!(upstream, [input], "{id}");
     }
     // One row per eval: relations live in the Artifact detail, not in the tree.
     assert!(all.iter().all(|node| !node.id.starts_with("r:")));
@@ -479,7 +482,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     );
     assert_eq!(
         waits.field("Waits for"),
-        Some("↑ input ✓ complete · mount base → cycle-b")
+        Some("↑ cycle-b ✓ complete · {cycle-b} in cycle-a/check ↻")
     );
 
     let red = monitor::detail(

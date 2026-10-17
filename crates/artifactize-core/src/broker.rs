@@ -16,7 +16,7 @@ use crate::{
     agent::error::Code,
     cache,
     config::{ProfileKind, RepoConfig},
-    graph::{EvalEvaluation, EvalStatus, Evidence, Graph},
+    graph::{EvalStatus, Evidence, Graph},
     limits::Limits,
     process,
     remote::Session,
@@ -246,58 +246,6 @@ struct Scheduler<'a, 'g> {
     remote: Option<Arc<Session>>,
     cancellation: CancellationToken,
     tasks: &'a mut JoinSet<Result<(usize, Request), String>>,
-}
-
-/// A dependency request is audit-only: no execution, claim, capacity or cache evidence.
-/// A GREEN or BLOCKED request completes at `at`.
-pub(crate) fn derive(
-    request: &mut Request,
-    eval: &EvalEvaluation<'_>,
-    at: crate::types::Timestamp,
-) {
-    request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
-    request.queue = None;
-    request.blocked_reason = (!request.blocked_by.is_empty()).then(|| {
-        format!(
-            "Derived dependency verdict: waiting for current GREEN evidence from {}.",
-            request
-                .blocked_by
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    });
-    request.state = if eval.status.passes_gate() {
-        crate::store::RequestState::completed(
-            crate::agent::verdict::ValidatedResult {
-                verdict: crate::runtime::Verdict::Green,
-                fields: serde_json::Map::from_iter([(
-                    "derived".into(),
-                    serde_json::Value::Bool(true),
-                )]),
-            }
-            .into(),
-            at,
-        )
-    } else {
-        crate::store::RequestState::pending(
-            crate::project::verify::status(eval.status),
-            (eval.status == EvalStatus::Blocked).then_some(at),
-        )
-        .expect("derived pending state")
-    };
-    if eval.status == EvalStatus::Provisional
-        && let crate::store::RequestState::Completed { result, at } = &request.state
-    {
-        request.state = crate::store::RequestState::Provisional {
-            result: result
-                .clone()
-                .try_into()
-                .expect("provisional evidence is GREEN"),
-            at: *at,
-        };
-    }
 }
 
 impl Scheduler<'_, '_> {
@@ -584,33 +532,6 @@ impl Scheduler<'_, '_> {
                         || request.status().is_human_wait()
                         || matches!(evidence.get(&request.eval_id), Some(value) if *value != Evidence::Deferred)
                     {
-                        continue;
-                    }
-                    if request.profile.kind() == ProfileKind::Dependency {
-                        let declared = self
-                            .config
-                            .evals
-                            .iter()
-                            .find(|eval| eval.id == request.eval_id)
-                            .expect("included Eval");
-                        if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
-                            request.state = crate::store::RequestState::failed(
-                                error,
-                                Some(crate::types::FailureCode::PreparationFailed),
-                                now(),
-                            );
-                            self.receipts.save_request(request).await?;
-                            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
-                            continue;
-                        }
-                        let eval = &evaluation.evals[request.eval_id.as_str()];
-                        let status = crate::project::verify::status(eval.status);
-                        let blocked_by: Vec<_> =
-                            eval.blocked_by.iter().copied().map(Into::into).collect();
-                        if request.status() != status || request.blocked_by != blocked_by {
-                            derive(request, eval, now());
-                            self.receipts.save_request(request).await?;
-                        }
                         continue;
                     }
                     let eval = &evaluation.evals[request.eval_id.as_str()];

@@ -163,6 +163,9 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
       await browser.$("button*=Graph").click();
       await browser.$('.svelte-flow__node[data-id="a:release"]').click();
+      await browser.$('[role="listbox"][aria-label="Evals"]').waitForDisplayed({ timeout: 15000 });
+      await browser.waitUntil(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
+        { timeout: 15000, timeoutMsg: "the clicked release's Evals list is focused" });
       await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "this case's whole graph");
       await browser.waitUntil(() => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === "a:release"), { timeout: 15000, timeoutMsg: "focus back on release" });
       const on = (id: string) => () =>
@@ -186,7 +189,10 @@ export const scenarios: Scenario[] = [
       const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
       await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), { timeout: 30000, timeoutMsg: "the Run tree" });
       await browser.$("button*=Graph").click();
-      await browser.$(".graph .svelte-flow__node").waitForDisplayed({ timeout: 30000 });
+      await browser.waitUntil(async () => {
+        const nodes = await browser.$$(".graph .svelte-flow__node");
+        return (await nodes.map((node) => node.isDisplayed())).some(Boolean);
+      }, { timeout: 30000, timeoutMsg: "a visible node in the drawn chain" });
       // Make the chain extend beyond the visible canvas, independently of whether the
       // renderer keeps offscreen nodes mounted.
       const zoomIn = await browser.$(".svelte-flow__controls-zoomin");

@@ -36,7 +36,7 @@ impl Fixture {
             json!({
                 "name":"parent","fingerprint":false,"evals":[{"id":"check","title":"Dependent",
                     "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
-                    "payload":{"instruction":"Check child."}}]
+                    "payload":{"instruction":"Check {child}."}}]
             })
             .to_string(),
         )

@@ -33,8 +33,7 @@ project checkout (`/srv/backups` in this example). `-readonly` prevents a mistyp
 source path from silently creating a new empty source database.
 
 Upgrade the server and its clients together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
-Human sign-offs included, needs one new review. Dependency evals have no store
-records: each client derives them from current required evidence. See [Review store server](reference.md#review-store-server) for
+Human sign-offs included, needs one new review. See [Review store server](reference.md#review-store-server) for
 the full reference.
 
 Share reusable results through the team review store, then let [CI](ci.md) reuse

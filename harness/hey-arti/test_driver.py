@@ -65,11 +65,7 @@ payload.instruction = {json.dumps(instruction)}
         write("site/theme/index.artf", runtime("theme"))
         write("assets/LICENSE.txt.artf", 'name = "license"\nbasis = true\n')
         write("assets/banner.svg.artf", runtime("banner", "Check {banner} against {license}."))
-        write("site/index.artf", '''name = "site"
-[evals.ready]
-title = "Site inputs are ready"
-profile = { kind = "dependency", depends_on = ["content", "theme", "banner"] }
-''')
+        write("site/index.artf", runtime("site", "Check {content}, {theme} and {banner}.").replace('"site"]', '"all"]'))
     else:
         write("api/index.artf", runtime("api", "Check API against {contract}."))
         write("contract/index.artf", runtime("contract"))
@@ -123,8 +119,6 @@ def skill_examples(body):
             role = "application"
         elif "human" in kinds:
             role = "human"
-        elif "dependency" in kinds:
-            role = "dependency"
         elif declaration.get("views", {}).get("agent_sessions"):
             role = "preview"
         else:
@@ -199,14 +193,10 @@ class HarnessTests(OwnedTestCase):
         self.assertEqual(frontmatter["name"].strip(), "hey-arti")
         self.assertTrue(frontmatter["description"].strip())
         roles = skill_examples(body)
-        self.assertTrue({"basis", "application", "human", "dependency", "preview"} <= roles.keys())
+        self.assertTrue({"basis", "application", "human", "preview"} <= roles.keys())
         basis = roles["basis"][1]["name"]
         application = roles["application"][1]["name"]
         human = roles["human"][1]["name"]
-        dependency = roles["dependency"][1]["name"]
-        readiness = roles["dependency"][1]["evals"]
-        self.assertTrue(any(set(evaluation["profile"]["depends_on"]) == {application, human}
-                            for evaluation in readiness.values()))
         self.assertIn("{" + application + "}", roles["preview"][0])
         if CANDIDATE is None:
             self.skipTest("explicit candidate validates example references")
@@ -214,7 +204,6 @@ class HarnessTests(OwnedTestCase):
         products = {f"{basis}/index.artf": roles["basis"][0],
                     f"{application}/index.artf": roles["application"][0] + roles["preview"][0],
                     f"{human}.svg.artf": roles["human"][0],
-                    f"{dependency}/index.artf": roles["dependency"][0],
                     f"{basis}/requirements.md": "Fixture requirements.\n", f"{human}.svg": "<svg/>\n",
                     f"{application}/src/lib.rs": "// Source fixture.\n",
                     f"{application}/tools/preview.py": "# Static example only.\n"}
@@ -232,8 +221,8 @@ class HarnessTests(OwnedTestCase):
         changed = "\n".join("```toml\n" + snippet + "```" for snippet in reversed(snippets))
         changed += '\n```toml\nfingerprint = false\n```\n'
         roles = skill_examples(changed)
-        self.assertEqual({role: roles[role][1]["name"] for role in ("basis", "application", "human", "dependency")},
-                         {"basis": "spec", "application": "app", "human": "logo", "dependency": "delivery"})
+        self.assertEqual({role: roles[role][1]["name"] for role in ("basis", "application", "human")},
+                         {"basis": "spec", "application": "app", "human": "logo"})
         self.assertIn("preview", roles["preview"][1]["views"]["agent_sessions"])
 
     def test_check_keeps_suite_in_process_and_cleans_interrupted_fixtures(self):
@@ -451,7 +440,7 @@ sys.stdin.read()
             after_edit = status_keys()
             changed = {key for key in baseline if baseline[key] != after_edit[key]}
             expected = {"library-consumer": {"pricing/check", "receipt/check"},
-                        "docs-assets": {"content/check"},
+                        "docs-assets": {"content/check", "site/check"},
                         "monorepo": {"api/check", "ui/check", "ui/review", "integration/signoff"}}
             self.assertEqual(changed, expected[case_id], "real consumers, not independent inputs, must invalidate")
             declaration = {"library-consumer": "independent/index.artf", "docs-assets": "site/theme/index.artf",

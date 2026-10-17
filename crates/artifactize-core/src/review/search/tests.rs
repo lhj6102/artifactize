@@ -103,10 +103,7 @@ fn unknown_keys_values_and_empty_values_are_errors_that_name_the_choices() {
         "{error}"
     );
     let error = "kind:robot".parse::<Query>().unwrap_err();
-    assert!(
-        error.contains("runtime, agent, human or dependency"),
-        "{error}"
-    );
+    assert!(error.contains("runtime, agent or human"), "{error}");
     let error = "status:waiting".parse::<Query>().unwrap_err();
     assert!(error.contains("waiting_human"), "{error}");
     let error = "is:urgent".parse::<Query>().unwrap_err();
@@ -190,12 +187,7 @@ fn completion_offers_keys_then_values_of_the_listed_requests() {
     );
     assert_eq!(
         complete("kind:", &entries).candidates,
-        [
-            "kind:agent",
-            "kind:dependency",
-            "kind:human",
-            "kind:runtime"
-        ]
+        ["kind:agent", "kind:human", "kind:runtime"]
     );
     assert!(
         complete("status:wait", &entries)

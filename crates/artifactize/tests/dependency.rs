@@ -1,14 +1,11 @@
-#[path = "support/run.rs"]
-mod owned_run;
-
-use std::{fs, path::PathBuf, process::Command, time::Duration};
+//! Runtime references are Eval dependencies, never Artifact-wide execution gates.
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use artifactize_core::{
-    cache,
-    config::{ProfileKind, parse_declaration, read_workspace_config},
-    graph::{EvalStatus, Evidence, Graph},
+    config::{ProfileKind, read_workspace_config},
+    graph::{EvalStatus, Evidence, Graph, Readiness},
     monitor::{self, Target},
-    project::{self, VerifyOptions, selection::Selection},
+    project::{VerifyOptions, selection::Selection},
     runtime::Verdict,
     store,
 };
@@ -18,7 +15,6 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
-use support::runs::RecordOutput;
 
 struct Fixture {
     _root: support::runs::RepoLease,
@@ -26,35 +22,12 @@ struct Fixture {
     state: PathBuf,
 }
 
-fn parse(value: &Value) -> Result<artifactize_core::config::ArtifactDeclaration, String> {
-    parse_declaration(
-        &support::declaration::to_toml(value.clone())
-            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
-    )
-}
-
-fn dependency(targets: &[&str]) -> Value {
-    json!({
-        "id":"ready",
-        "title":"Inputs are ready",
-        "profile":{"kind":"dependency","depends_on":targets},
-    })
-}
-
-fn runtime(command: &str) -> Value {
-    json!({
-        "id":"check",
-        "title":"Check input",
-        "profile":{"kind":"runtime","command":command,"args":[]},
-        "payload":{"instruction":"Check the input."},
-    })
-}
-
 impl Fixture {
     fn new() -> Self {
         let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let state = root.path().join("state");
+        fs::create_dir(&repo).unwrap();
         Self {
             _root: support::runs::RepoLease::new(root, &state, &repo),
             repo,
@@ -63,55 +36,27 @@ impl Fixture {
     }
 
     fn declare(&self, name: &str, evals: Vec<Value>) {
-        self.write(name, json!({"name":name,"fingerprint":{},"evals":evals}));
-    }
-
-    fn write(&self, name: &str, value: Value) {
         let folder = self.repo.join(name);
         fs::create_dir_all(&folder).unwrap();
-        support::declaration::write(folder.join("index.artf"), value.to_string()).unwrap();
+        support::declaration::write(
+            folder.join("index.artf"),
+            json!({"name":name,"evals":evals}).to_string(),
+        )
+        .unwrap();
     }
 
-    fn command(&self) -> Command {
-        let mut command = Command::new(support::os::cli());
-        command
-            .env("ARTIFACTIZE_REMOTE", "off")
-            .env("ARTIFACTIZE_STATE_HOME", self.state.with_extension("home"))
-            .args(["--repo"])
-            .arg(&self.repo)
-            .arg("--state-dir")
-            .arg(&self.state);
-        command
-    }
-
-    fn config(&self) -> artifactize_core::config::RepoConfig {
-        read_workspace_config(&self.repo).unwrap()
-    }
-
-    fn selection() -> Selection {
-        Selection::Eval {
-            eval_id: "player/ready".parse().unwrap(),
-        }
-    }
-
-    async fn verify(&self, options: &VerifyOptions) -> store::RunView {
+    async fn verify(&self, speculate: bool) -> store::RunView {
         support::runs::record(
             &self.repo,
             Some(&self.state),
-            &Self::selection(),
-            options,
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap()
-    }
-
-    async fn status(&self, options: &VerifyOptions) -> project::StatusView {
-        project::status(
-            &self.repo,
-            Some(&self.state),
-            &Self::selection(),
-            options,
+            &Selection::All,
+            &VerifyOptions {
+                modes: artifactize_core::runs::RunModes {
+                    speculate,
+                    defer_human: false,
+                },
+                ..Default::default()
+            },
             CancellationToken::new(),
         )
         .await
@@ -119,889 +64,190 @@ impl Fixture {
     }
 }
 
-/// A request ID parsed once, where a test names one.
-fn rid(id: &str) -> artifactize_core::types::RequestId {
-    id.parse().unwrap()
+fn runtime(id: &str, instruction: &str, green: bool) -> Value {
+    json!({
+        "id":id,"title":"Check behavior",
+        "profile":{"kind":"runtime","command":if green {support::os::true_program()} else {support::os::false_program()},"args":[]},
+        "payload":{"instruction":instruction},
+    })
 }
 
-#[test]
-fn dependency_declarations_are_strict_and_other_profiles_still_require_payload() {
-    let valid = json!({"name":"player","evals":[dependency(&["movement", "art"])]});
-    let declaration = parse(&valid).unwrap();
-    assert!(declaration.evals[0].payload().is_none());
-    for targets in [
-        json!([]),
-        json!(["art", "art"]),
-        json!([""]),
-        json!(["bad/name"]),
-        json!(vec!["art"; 65]),
-    ] {
-        let mut invalid = valid.clone();
-        invalid["evals"][0]["profile"]["depends_on"] = targets;
-        assert!(parse(&invalid).is_err(), "{invalid}");
-    }
-    let mut missing = valid.clone();
-    missing["evals"][0]["profile"]
-        .as_object_mut()
-        .unwrap()
-        .remove("depends_on");
-    assert!(parse(&missing).is_err());
-    for (field, value) in [
-        ("payload", json!({"instruction":"No."})),
-        ("pass_schema", json!({})),
-        ("fail_schema", json!({})),
-        ("profile_variants", json!({})),
-    ] {
-        let mut invalid = valid.clone();
-        invalid["evals"][0][field] = value;
-        assert!(parse(&invalid).is_err(), "{invalid}");
-    }
-    for profile in [
-        json!({"kind":"human"}),
-        json!({"kind":"agent","backend":"openai","model":"offline"}),
-        json!({"kind":"runtime","command":"missing","args":[]}),
-    ] {
-        let invalid =
-            json!({"name":"player","evals":[{"id":"check","title":"Check","profile":profile}]});
-        assert!(parse(&invalid).is_err());
-    }
-    let mut max = valid;
-    max["evals"][0]["profile"]["depends_on"] =
-        json!((0..64).map(|i| format!("a{i}")).collect::<Vec<_>>());
-    assert!(parse(&max).is_ok());
-}
-
-#[test]
-fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicate_targets() {
-    let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime(&support::os::true_program())]);
-    fixture.write(
-        "player",
-        json!({"name":"player","mounts":{"sprite":"art"},"evals":[dependency(&["sprite"])]}),
-    );
-    let config = fixture.config();
-    let relation = config
-        .relations
+fn statuses(run: &store::RunView) -> BTreeMap<&str, &str> {
+    run.requests
         .iter()
-        .find(|relation| {
-            matches!(
-                relation.kind,
-                artifactize_core::scope::RelationKind::Dependency { .. }
-            )
-        })
-        .unwrap();
-    assert_eq!(
-        serde_json::to_value(relation).unwrap(),
-        json!({
-            "source":"art",
-            "target":"player",
-            "kind":"dependency",
-            "evalId":"player/ready",
-            "name":"sprite",
-        })
-    );
-    for (targets, error) in [
-        (vec!["missing"], "missing"),
-        (vec!["player"], "own Artifact"),
-        (vec!["sprite", "art"], "unique Artifacts"),
-    ] {
-        fixture.write(
-            "player",
-            json!({"name":"player","mounts":{"sprite":"art"},"evals":[dependency(&targets)]}),
-        );
-        assert!(
-            read_workspace_config(&fixture.repo)
-                .unwrap_err()
-                .to_string()
-                .contains(error)
-        );
-    }
+        .map(|request| (request.eval_id.as_str(), request.status().as_str()))
+        .collect()
 }
 
 #[test]
-fn dependency_verdicts_are_derived_from_required_evidence() {
+fn instructions_and_argv_gate_only_the_eval_that_references_the_input() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime(&support::os::true_program())]);
-    fixture.declare("movement", vec![runtime(&support::os::true_program())]);
-    fixture.declare("player", vec![dependency(&["art", "movement"])]);
-    let config = fixture.config();
-    let graph = Graph::new(&config).unwrap();
-    for (evidence, status) in [
-        (None, EvalStatus::Wait),
-        (Some(Evidence::Stale), EvalStatus::Wait),
-        (Some(Evidence::OperationalError), EvalStatus::Wait),
-        (Some(Evidence::Current(Verdict::Red)), EvalStatus::Blocked),
-        (Some(Evidence::Current(Verdict::Green)), EvalStatus::Green),
-    ] {
-        let mut evidence_map = std::collections::BTreeMap::from([
-            (
-                "movement/check".parse().unwrap(),
-                Evidence::Current(Verdict::Green),
-            ),
-            (
-                "player/ready".parse().unwrap(),
-                Evidence::Current(Verdict::Green),
-            ),
-        ]);
-        if let Some(evidence) = evidence {
-            evidence_map.insert("art/check".parse().unwrap(), evidence);
-        }
-        let result = graph.evaluate(&evidence_map);
-        let derived = &result.evals["player/ready"];
-        assert_eq!(derived.status, status);
-        assert!(!derived.can_execute());
-        assert_eq!(
-            derived
-                .blocked_by
-                .iter()
-                .map(|id| id.as_str())
-                .collect::<Vec<_>>(),
-            if status == EvalStatus::Green {
-                vec![]
-            } else {
-                vec!["art", "art/check"]
-            }
-        );
-    }
-}
-
-#[test]
-fn basis_and_other_targets_without_evals_fulfill_dependency_verdict() {
-    let fixture = Fixture::new();
-    fixture.declare("empty", vec![]);
-    fixture.write("basis", json!({"name":"basis","basis":true}));
-    fixture.declare("player", vec![dependency(&["basis", "empty"])]);
-    let config = fixture.config();
-    let graph = Graph::new(&config).unwrap();
-    assert_eq!(
-        graph.evaluate(&Default::default()).evals["player/ready"].status,
-        EvalStatus::Green
-    );
-}
-
-#[test]
-fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
-    let fixture = Fixture::new();
-    for (name, target) in [("a", "b"), ("b", "c"), ("c", "a")] {
-        fixture.declare(name, vec![dependency(&[target])]);
-    }
-    let output = fixture
-        .command()
-        .args(["config", "check", "--json"])
-        .record_output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(2));
-    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(
-        output["error"]
-            .as_str()
-            .unwrap()
-            .contains("Dependency Eval cycle: a/ready, b/ready, c/ready.")
-    );
-    for (name, target) in [("a", "b"), ("b", "c"), ("c", "a")] {
-        let mut eval = runtime(&support::os::true_program());
-        eval["payload"]["instruction"] = json!(format!("Check {{{target}}}."));
-        fixture.declare(name, vec![eval]);
-    }
-    let checked = fixture
-        .command()
-        .args(["config", "check", "--json"])
-        .record_output()
-        .unwrap();
-    assert!(checked.status.success(), "{checked:?}");
-    let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
-    assert_eq!(checked["ok"], true);
-}
-
-#[test]
-fn selecting_dependency_eval_includes_required_evals_and_their_graph_closure() {
-    let fixture = Fixture::new();
-    let mut movement = runtime(&support::os::true_program());
-    movement["payload"]["instruction"] = json!("Check {source}.");
-    fixture.declare("source", vec![runtime(&support::os::true_program())]);
-    fixture.declare("movement", vec![movement]);
-    fixture.declare("other", vec![runtime(&support::os::false_program())]);
+    fixture.declare("input", vec![runtime("check", "Inspect input.", true)]);
+    let mut argv = runtime("argv", "Inspect the operand.", true);
+    argv["profile"]["args"] = json!(["{input}/data"]);
     fixture.declare(
-        "player",
+        "app",
         vec![
-            dependency(&["movement"]),
-            runtime(&support::os::false_program()),
+            runtime("instruction", "Check {input}.", true),
+            argv,
+            runtime("independent", "Check only this target.", true),
         ],
     );
-    let config = fixture.config();
-    let included: Vec<_> = Fixture::selection()
-        .included_evals(&config, false)
-        .unwrap()
-        .iter()
-        .map(|eval| eval.id.as_str())
-        .collect();
-    assert_eq!(
-        included,
-        vec!["player/ready", "movement/check", "source/check"]
-    );
-    let selection = Fixture::selection();
-    let view = artifactize_core::query::graph(&config, &selection).unwrap();
-    assert_eq!(
-        view.artifacts.keys().copied().collect::<Vec<_>>(),
-        vec!["movement", "player", "source"]
-    );
-    assert!(view.relations.iter().any(|relation| matches!(
-        relation.relation.kind,
-        artifactize_core::scope::RelationKind::Dependency { .. }
-    )));
+    let config = read_workspace_config(&fixture.repo).unwrap();
+    let graph = Graph::new(&config).unwrap();
+    for evidence in [None, Some(Evidence::Current(Verdict::Red))] {
+        let evidence = evidence
+            .into_iter()
+            .map(|value| ("input/check".parse().unwrap(), value))
+            .collect();
+        let evaluation = graph.evaluate(&evidence);
+        for eval in ["app/instruction", "app/argv"] {
+            assert_eq!(
+                evaluation.evals[eval].readiness,
+                if evidence.is_empty() {
+                    Readiness::Wait
+                } else {
+                    Readiness::Blocked
+                }
+            );
+            assert_eq!(evaluation.evals[eval].unmet_gates, ["input/check"]);
+        }
+        assert!(evaluation.evals["app/independent"].can_execute());
+    }
+}
+
+#[test]
+fn visible_mounts_are_not_implicit_eval_gates() {
+    let fixture = Fixture::new();
+    fixture.declare("input", vec![runtime("check", "Inspect input.", true)]);
+    fixture.declare("app", vec![runtime("check", "Inspect only the app.", true)]);
+    let declaration = fixture.repo.join("app/index.artf");
+    let source = fs::read_to_string(&declaration).unwrap();
+    fs::write(
+        declaration,
+        format!("mounts = {{ input = 'input' }}\n{source}"),
+    )
+    .unwrap();
+    let config = read_workspace_config(&fixture.repo).unwrap();
+    let graph = Graph::new(&config).unwrap();
+    let evaluation = graph.evaluate(&BTreeMap::from([(
+        "input/check".parse().unwrap(),
+        Evidence::Current(Verdict::Red),
+    )]));
+    assert!(evaluation.evals["app/check"].can_execute());
 }
 
 #[tokio::test]
-async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entry() {
+async fn default_verify_executes_independent_siblings_after_an_input_fails() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime(&support::os::true_program())]);
-    fixture.declare("player", vec![dependency(&["art"])]);
-    let options = VerifyOptions::default();
-    let before = fixture.status(&options).await;
-    let ready = before
-        .evals
-        .iter()
-        .find(|eval| eval.id == "player/ready")
-        .unwrap();
-    assert_eq!(ready.state, project::EvalCondition::WaitDependency);
-    assert_eq!(ready.action, project::VerifyAction::Derive);
-    assert_eq!(
-        ready
-            .blocked_by
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>(),
-        vec!["art", "art/check"]
+    fixture.declare("input", vec![runtime("check", "Check input.", false)]);
+    fixture.declare(
+        "app",
+        vec![
+            runtime("dependent", "Check {input}.", true),
+            runtime("independent", "Check only the app.", true),
+        ],
     );
-    assert!(ready.key.is_none());
-    let first = fixture.verify(&options).await;
-    assert_eq!(first.run.status().as_str(), "GREEN");
-    assert_eq!(first.run.executions_started, 1);
-    let derived = first
+    let run = fixture.verify(false).await;
+    assert_eq!(
+        statuses(&run),
+        BTreeMap::from([
+            ("app/dependent", "BLOCKED"),
+            ("app/independent", "GREEN"),
+            ("input/check", "RED")
+        ])
+    );
+    let blocked = run
         .requests
         .iter()
-        .find(|request| request.eval_id == "player/ready")
+        .find(|request| request.eval_id == "app/dependent")
         .unwrap();
-    assert_eq!(derived.status().as_str(), "GREEN");
-    assert!(derived.execution_id.is_none());
-    assert!(derived.key.is_none());
-    assert!(derived.started_at.is_none());
-    assert!(derived.run_dir.is_none());
-    assert!(derived.argv.is_none());
-    assert!(derived.provenance.is_none());
-    assert!(derived.blocked_by.is_empty());
-    assert!(!artifactize_core::query::reused(derived));
-    let output = artifactize_core::query::run_output(&first, OffsetDateTime::now_utc());
-    assert_eq!(output["requests"][0]["source"]["kind"], "derived");
-    assert_eq!(output["summary"]["executed"]["total"], 1);
-    let cached = cache::list(&fixture.state, true).await.unwrap();
-    assert_eq!(
-        cached
-            .iter()
-            .map(|entry| entry.eval_id.as_str())
-            .collect::<Vec<_>>(),
-        ["art/check"]
-    );
-    let config = fixture.config();
-    assert_eq!(
-        cache::eval_key(&config, &config.evals[1], &Default::default()),
-        Err(cache::Unkeyed::Derived)
-    );
-    let after = fixture.status(&options).await;
-    assert!(after.satisfied);
-    assert_eq!(
-        after
-            .evals
-            .iter()
-            .find(|eval| eval.id == "player/ready")
-            .unwrap()
-            .state,
-        project::EvalCondition::Pass
-    );
-    let reuse = VerifyOptions {
-        reuse_only: std::collections::BTreeSet::from([
-            ProfileKind::Runtime,
-            ProfileKind::Dependency,
-        ]),
-        force: true,
-        ..options
-    };
-    let second = fixture.verify(&reuse).await;
-    assert_eq!(second.run.status().as_str(), "GREEN");
-    assert_eq!(second.run.executions_started, 0);
-    assert!(!second.requests[0].force);
-    assert_eq!(second.requests[0].status().as_str(), "GREEN");
-    assert_eq!(
-        cache::list(&fixture.state, true)
+    assert!(blocked.execution_id.is_none());
+    let tree = monitor::tree(
+        &run,
+        &store::read_requests(&fixture.state, Some(run.run.id.as_str()))
             .await
-            .unwrap()
-            .iter()
-            .map(|entry| entry.execution_id.as_str())
-            .collect::<Vec<_>>(),
-        cached
-            .iter()
-            .map(|entry| entry.execution_id.as_str())
-            .collect::<Vec<_>>()
+            .unwrap(),
+        OffsetDateTime::now_utc(),
     );
-    let text = fixture
-        .command()
-        .args(["verify", "--wait", "player/ready"])
-        .record_output()
+    let independent = tree
+        .iter()
+        .flat_map(|node| &node.children)
+        .find(|node| Target::from(&node.id) == Target::Eval("app/independent".parse().unwrap()))
         .unwrap();
-    assert!(text.status.success());
-    assert!(String::from_utf8_lossy(&text.stdout).contains("(derived)"));
+    assert!(matches!(
+        independent.kind,
+        monitor::Kind::Eval(monitor::EvalView::Done(_))
+    ));
 }
 
 #[tokio::test]
-async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_evals() {
-    for (command, reuse_only, expected) in [
-        (support::os::false_program(), false, "BLOCKED"),
-        (support::os::true_program(), true, "WAIT_DEPENDENCY"),
-    ] {
+async fn cycle_peers_keep_their_real_verdicts_and_do_not_release_downstream_on_red() {
+    for (speculate, green) in [(false, false), (true, false), (false, true), (true, true)] {
         let fixture = Fixture::new();
-        fixture.declare("art", vec![runtime(&command)]);
-        fixture.declare("player", vec![dependency(&["art"])]);
-        let options = VerifyOptions {
-            modes: artifactize_core::runs::RunModes {
-                speculate: true,
-                defer_human: false,
-            },
-            reuse_only: if reuse_only {
-                std::collections::BTreeSet::from([ProfileKind::Runtime])
-            } else {
-                Default::default()
-            },
-            ..Default::default()
-        };
-        let run = fixture.verify(&options).await;
-        let request = &run.requests[0];
-        assert_eq!(request.status().as_str(), expected);
+        fixture.declare("a", vec![runtime("check", "Check {b}.", green)]);
+        fixture.declare("b", vec![runtime("check", "Check {a}.", true)]);
+        fixture.declare("consumer", vec![runtime("check", "Check {b}.", true)]);
+        let run = fixture.verify(speculate).await;
         assert_eq!(
-            request
-                .blocked_by
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-            vec!["art", "art/check"]
+            statuses(&run),
+            BTreeMap::from([
+                ("a/check", if green { "GREEN" } else { "RED" }),
+                ("b/check", "GREEN"),
+                ("consumer/check", if green { "GREEN" } else { "BLOCKED" })
+            ]),
+            "speculate={speculate}"
         );
-        assert!(request.execution_id.is_none());
-        let output = artifactize_core::query::run_output(&run, OffsetDateTime::now_utc());
         assert_eq!(
-            output["requests"][0]["blockedBy"],
-            json!(["art", "art/check"])
+            run.run.status().as_str(),
+            if green { "GREEN" } else { "RED" }
         );
-        let text = fixture
-            .command()
-            .args(["status", "player/ready", "--json"])
-            .record_output()
-            .unwrap();
-        let status: Value = serde_json::from_slice(&text.stdout).unwrap();
-        let derived = status["evals"]
-            .as_array()
-            .unwrap_or_else(|| panic!("{status}"))
-            .iter()
-            .find(|eval| eval["id"] == "player/ready")
-            .unwrap();
-        assert_eq!(derived["blockedBy"], json!(["art", "art/check"]));
         let requests = store::read_requests(&fixture.state, Some(run.run.id.as_str()))
             .await
             .unwrap();
-        let detail = monitor::detail(
-            &run,
-            &requests,
-            &Target::Eval("player/ready".parse().unwrap()),
-            OffsetDateTime::now_utc(),
-        );
-        assert_eq!(detail.field("Source"), Some("derived (no execution)"));
-        assert_eq!(detail.field("Blocked by"), Some("art, art/check"));
-        let progress = monitor::progress(&run, &requests, OffsetDateTime::now_utc());
-        assert!(progress.work.contains("derived 1"));
         let tree = monitor::tree(&run, &requests, OffsetDateTime::now_utc());
-        let player = tree.iter().find(|node| node.id == "a:player").unwrap();
+        let peer = tree
+            .iter()
+            .flat_map(|node| &node.children)
+            .find(|node| Target::from(&node.id) == Target::Eval("b/check".parse().unwrap()))
+            .unwrap();
+        assert!(matches!(
+            peer.kind,
+            monitor::Kind::Eval(monitor::EvalView::Done(_))
+        ));
         assert!(
-            player
-                .children
+            run.requests
                 .iter()
-                .any(|node| node.id == "e:player/ready" && node.marks.contains("[dep]"))
+                .all(|request| request.profile.kind() == ProfileKind::Runtime)
         );
     }
 }
 
-#[tokio::test]
-async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
+#[test]
+fn external_gates_still_hold_cycles_without_gating_unrelated_sibling_evals() {
     let fixture = Fixture::new();
+    fixture.declare("external", vec![runtime("check", "Inspect.", true)]);
     fixture.declare(
-        "art",
-        vec![json!({
-            "id":"approve",
-            "title":"Approve art",
-            "profile":{"kind":"human"},
-            "payload":{"instruction":"Inspect art."},
-        })],
+        "a",
+        vec![
+            runtime("check", "Check {b} and {external}.", true),
+            runtime("independent", "Inspect.", true),
+        ],
     );
-    fixture.declare("player", vec![dependency(&["art"])]);
-    let options = VerifyOptions {
-        ..Default::default()
-    };
-    let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status().as_str(), "RUNNING");
-    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(
-        run.requests[0]
-            .blocked_by
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>(),
-        vec!["art", "art/approve"]
-    );
-    assert_eq!(run.requests[1].status().as_str(), "WAITING_HUMAN");
-    let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
-    assert_eq!(waiting.len(), 1);
-    assert_eq!(waiting[0].request.eval_id, "art/approve");
-    let review = fixture
-        .command()
-        .args(["review", run.requests[0].id.as_str(), "--json"])
-        .record_output()
-        .unwrap();
-    assert!(!review.status.success());
-    let receipts = store::OwnedReceipts::open(&fixture.state, &fixture.repo)
-        .await
-        .unwrap();
-    assert!(
-        artifactize_core::human::claim(
-            &receipts,
-            &rid(run.requests[0].id.as_str()),
-            &"tester".parse().unwrap()
-        )
-        .await
-        .is_err()
-    );
-    artifactize_core::human::claim(
-        &receipts,
-        &rid(run.requests[1].id.as_str()),
-        &"tester".parse().unwrap(),
-    )
-    .await
-    .unwrap();
-    artifactize_core::human::submit(
-        &receipts,
-        &rid(run.requests[1].id.as_str()),
-        &"tester".parse().unwrap(),
-        &json!({"verdict":"GREEN"}),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    let current = fixture.status(&VerifyOptions::default()).await;
-    assert_eq!(
-        current
-            .evals
-            .iter()
-            .find(|eval| eval.id == "player/ready")
-            .unwrap()
-            .state,
-        project::EvalCondition::Pass
-    );
-    let next = fixture.verify(&VerifyOptions::default()).await;
-    assert_eq!(next.requests[0].status().as_str(), "GREEN");
-    // The original owned Run continues and derives the newly submitted evidence.
-    owned_run::terminal(&fixture.state, &run.run.id).await;
-    assert_eq!(
-        store::read_run(&fixture.state, &run.run.id)
-            .await
-            .unwrap()
-            .requests[0]
-            .status()
-            .as_str(),
-        "GREEN"
-    );
-    let root = fixture._root.path().to_owned();
-    drop(receipts);
-    drop(fixture);
-    assert!(
-        !root.exists(),
-        "completed dependency Runs and their review writer release temporary state"
-    );
-}
-
-#[tokio::test]
-async fn dependency_chains_derive_without_job_or_execution_budget() {
-    let fixture = Fixture::new();
-    fixture.write("basis", json!({"name":"basis","basis":true}));
-    fixture.declare("mid", vec![dependency(&["basis"])]);
-    fixture.declare("player", vec![dependency(&["mid"])]);
-    let options = VerifyOptions {
-        jobs: Some(1),
-        max_executions: Some(0),
-        reuse_only: std::collections::BTreeSet::from([ProfileKind::Dependency]),
-        ..Default::default()
-    };
-    let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status().as_str(), "GREEN");
-    assert_eq!(run.run.executions_started, 0);
-    assert_eq!(run.requests.len(), 2);
-    assert!(
-        run.requests
-            .iter()
-            .all(|request| request.execution_id.is_none() && request.status().as_str() == "GREEN")
-    );
-}
-
-#[tokio::test]
-async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
-    let fixture = Fixture::new();
-    fixture.write(
-        "basis",
-        json!({
-            "name":"basis",
-            "basis":true,
-            "fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}},
-        }),
-    );
-    fixture.write(
-        "player",
-        json!({
-            "name":"player",
-            "fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}},
-            "evals":[dependency(&["basis"])],
-        }),
-    );
-    let remote =
-        support::FakeProvider::start(|_| panic!("dependency-only Run contacted the team store"));
-    let output = fixture
-        .command()
-        .env("ARTIFACTIZE_REMOTE", &remote.url)
-        .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_offline-fixture")
-        .args([
-            "verify",
-            "--wait",
-            "player/ready",
-            "--reuse-only",
-            "dependency",
-            "--force",
-            "--json",
-        ])
-        .record_output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let run: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(run["summary"]["derived"], 1);
-    assert_eq!(run["summary"]["executorStarts"], 0);
-    assert_eq!(run["requests"][0]["source"]["kind"], "derived");
-    let status = fixture
-        .command()
-        .env("ARTIFACTIZE_REMOTE", &remote.url)
-        .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_offline-fixture")
-        .args(["status", "player/ready", "--json"])
-        .record_output()
-        .unwrap();
-    assert!(status.status.success());
-    assert!(remote.requests().is_empty());
-    assert!(cache::list(&fixture.state, true).await.unwrap().is_empty());
-    assert!(
-        run["requests"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|request| { request["executionId"].is_null() && request["key"].is_null() })
-    );
-}
-
-#[tokio::test]
-async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_verdict() {
-    let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime("missing-runtime-command")]);
-    fixture.declare("player", vec![dependency(&["art"])]);
-    let run = fixture.verify(&VerifyOptions::default()).await;
-    assert_eq!(run.run.status().as_str(), "ERROR");
-    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(
-        run.requests[0]
-            .blocked_by
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>(),
-        vec!["art", "art/check"]
-    );
-    assert_eq!(run.requests[1].status().as_str(), "ERROR");
-    let config = fixture.config();
+    fixture.declare("b", vec![runtime("check", "Check {a}.", true)]);
+    let config = read_workspace_config(&fixture.repo).unwrap();
     let graph = Graph::new(&config).unwrap();
-    let cancelled = std::collections::BTreeMap::from([(
-        "art/check".parse().unwrap(),
-        Evidence::OperationalError,
-    )]);
-    assert_eq!(
-        graph.evaluate(&cancelled).evals["player/ready"].status,
-        EvalStatus::Wait
-    );
-    let script = fixture._root.path().join("controlled.py");
-    support::os::write_python_script(
-        &script,
-        "import pathlib,time\npathlib.Path('started').write_text('runtime-started')\nwhile True: time.sleep(0.01)\n",
-    );
-    let mut slow = runtime(support::os::python_program());
-    slow["profile"]["args"] = json!(["-I", support::os::path_text(&script)]);
-    fixture.write(
-        "art",
-        json!({"name":"art","fingerprint":false,"evals":[slow]}),
-    );
-    let token = CancellationToken::new();
-    let started = fixture.repo.join("art/started");
-    let cancellation = async {
-        tokio::time::timeout(support::os::patience(Duration::from_secs(10)), async {
-            while fs::read_to_string(&started).ok().as_deref() != Some("runtime-started") {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("runtime started");
-        support::runs::cancel_active(&fixture.state, &fixture.repo);
-    };
-    let selection = Fixture::selection();
-    let options = VerifyOptions::default();
-    let (run, ()) = tokio::join!(
-        support::runs::record(
-            &fixture.repo,
-            Some(&fixture.state),
-            &selection,
-            &options,
-            token
+    let evaluation = graph.evaluate(&BTreeMap::from([
+        (
+            "external/check".parse().unwrap(),
+            Evidence::Current(Verdict::Red),
         ),
-        cancellation
-    );
-    let run = run.unwrap();
-    assert_eq!(run.requests[1].error_code().as_deref(), Some("CANCELLED"));
-    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(
-        run.requests[0]
-            .blocked_by
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>(),
-        vec!["art", "art/check"]
-    );
-}
-
-#[tokio::test]
-async fn speculation_preserves_dependency_verdict_and_final_obligations() {
-    let fixture = Fixture::new();
-    fs::create_dir_all(&fixture.repo).unwrap();
-    support::declaration::write(
-        fixture.repo.join("index.artf"),
-        json!({"name":"root","basis":true}).to_string(),
-    )
-    .unwrap();
-    fixture.declare("art", vec![runtime(&support::os::false_program())]);
-    fixture.declare("player", vec![dependency(&["art"])]);
-    let run = fixture
-        .verify(&VerifyOptions {
-            modes: artifactize_core::runs::RunModes {
-                speculate: true,
-                defer_human: false,
-            },
-            ..Default::default()
-        })
-        .await;
-    assert_eq!(run.requests[0].status().as_str(), "BLOCKED");
-    assert_eq!(
-        serde_json::to_value(&run.run.validation).unwrap()["satisfied"],
-        false
-    );
-    assert!(
-        serde_json::to_value(&run.run.validation).unwrap()["obligations"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("player"))
-    );
-    let text = fixture
-        .command()
-        .args(["status", "player/ready"])
-        .record_output()
-        .unwrap();
-    let text = String::from_utf8_lossy(&text.stdout);
-    assert!(text.contains("player/ready: BLOCKED — derive"));
-    assert!(text.contains("art, art/check"));
-}
-
-#[test]
-fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
-    let fixture = Fixture::new();
-    let mut art = runtime(&support::os::true_program());
-    art["payload"]["instruction"] = json!("Check {player}.");
-    fixture.declare("art", vec![art]);
-    fixture.declare("player", vec![dependency(&["art"])]);
-    let config = fixture.config();
-    let graph = Graph::new(&config).unwrap();
-    let evidence = std::collections::BTreeMap::from([(
-        "art/check".parse().unwrap(),
-        Evidence::Current(Verdict::Green),
-    )]);
-    assert_eq!(
-        graph.evaluate(&evidence).evals["player/ready"].status,
-        EvalStatus::Green
-    );
-}
-
-#[test]
-fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
-    let fixture = Fixture::new();
-    fixture.write(
-        "leaf",
-        json!({
-            "name":"leaf",
-            "basis":true,
-            "fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}},
-        }),
-    );
-    fixture.write(
-        "basis",
-        json!({"name":"basis","basis":true,"mounts":{"leaf":"leaf"}}),
-    );
-    fixture.declare("player", vec![dependency(&["basis"])]);
-    for args in [
-        &["verify", "--wait", "player/ready", "--json"][..],
-        &["status", "player/ready", "--json"][..],
-    ] {
-        let output = fixture.command().args(args).record_output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}: {}",
-            args[0],
-            String::from_utf8_lossy(&output.stdout)
-        );
-    }
-    // An ordinary consumer still needs the dependency Artifact fingerprint for its key.
-    fixture.write(
-        "player",
-        json!({
-            "name":"player",
-            "mounts":{"basis":"basis"},
-            "evals":[dependency(&["basis"]), runtime(&support::os::true_program())],
-        }),
-    );
-    let output = fixture
-        .command()
-        .args(["verify", "--wait", "player", "--json"])
-        .record_output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let view: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let ordinary = view["requests"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|request| request["evalId"] == "player/check")
-        .unwrap();
-    assert!(ordinary["key"].is_string());
-    assert!(ordinary["fingerprints"]["basis"].is_string());
-}
-
-#[test]
-fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
-    let fixture = Fixture::new();
-    let mut eval = runtime(&support::os::false_program());
-    eval["profile_variants"] =
-        json!({"fast":{"kind":"runtime","command":support::os::true_program(),"args":[]}});
-    fixture.declare("art", vec![eval]);
-    for derived in [false, true] {
-        if derived {
-            fixture.declare("player", vec![dependency(&["art"])]);
-        }
-        let output = fixture
-            .command()
-            .args(["verify", "--wait", "--all", "--profile", "fast", "--json"])
-            .record_output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "derived={derived}: {}",
-            String::from_utf8_lossy(&output.stdout)
-        );
-        let run: Value = serde_json::from_slice(&output.stdout).unwrap();
-        let ordinary = run["requests"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|request| request["evalId"] == "art/check")
-            .unwrap();
-        assert_eq!(ordinary["options"]["variant"], "fast");
-        for command in ["verify", "status"] {
-            let output = fixture
-                .command()
-                .args([command, "--all", "--profile", "missing", "--json"])
-                .record_output()
-                .unwrap();
-            assert!(!output.status.success());
-            let error: Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert!(
-                error["error"]
-                    .as_str()
-                    .unwrap()
-                    .contains("Unknown profile variant for art/check: missing")
-            );
-        }
-        let status = fixture
-            .command()
-            .args(["status", "--all", "--profile", "fast", "--json"])
-            .record_output()
-            .unwrap();
-        assert!(
-            status.status.success(),
-            "{}",
-            String::from_utf8_lossy(&status.stdout)
-        );
-        if derived {
-            let output = fixture
-                .command()
-                .args([
-                    "verify",
-                    "--wait",
-                    "player/ready",
-                    "--profile",
-                    "fast",
-                    "--json",
-                ])
-                .record_output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stdout)
-            );
-            let output = fixture
-                .command()
-                .args(["status", "player/ready", "--profile", "fast", "--json"])
-                .record_output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stdout)
-            );
-        }
-    }
-    let mapping =
-        project::selection::ProfileSelection::Evals(std::collections::BTreeMap::from([(
-            "player/ready".parse().unwrap(),
-            "fast".parse().unwrap(),
-        )]));
-    let error = project::selection::select_profiles(
-        fixture.config(),
-        &Selection::All,
-        Some(&mapping),
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(
-        error,
-        "Dependency Eval player/ready cannot select a profile variant."
-    );
+        (
+            "a/independent".parse().unwrap(),
+            Evidence::Current(Verdict::Green),
+        ),
+    ]));
+    assert_eq!(evaluation.evals["a/check"].status, EvalStatus::Blocked);
+    assert_eq!(evaluation.evals["b/check"].status, EvalStatus::Blocked);
+    assert_eq!(evaluation.evals["a/independent"].status, EvalStatus::Green);
 }

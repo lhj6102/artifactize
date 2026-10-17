@@ -21,7 +21,7 @@ as soon as they build.
   Both commands must be available in your terminal. Projects run their declared
   commands as given on every OS; see [Operating systems](../features/others/platforms.md).
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
-  `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime, Human and dependency evals
+  `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime and Human evals
   need none.
 
 `PATH` is the list of directories your terminal searches for commands. Before
@@ -255,8 +255,7 @@ State schema 6 requires a new state. Earlier state is refused with exit 2;
 `artifactize doctor` reports a hard error and exits 1. Set `ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new
 directory, or move the old one away. Reuse-key v2 matches no earlier result, even in
 a team review store or with a script fingerprint. The first full `verify` reviews
-every executable eval once, Human sign-offs included. Dependency evals derive
-current evidence without execution. See [Upgrading to 0.9](../features/fingerprint.md#upgrading-to-09).
+every eval once, Human sign-offs included. See [Upgrading to 0.9](../features/fingerprint.md#upgrading-to-09).
 
 Monitor now opens an eval's Detail in its pane rather than a modal. Standalone
 Review shares that Human Detail: claims are explicit, and tools and submission

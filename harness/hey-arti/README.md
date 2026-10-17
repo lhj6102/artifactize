@@ -126,6 +126,5 @@ are not an OS sandbox.
 
 `builder-quality` must be RED for missing/blocked evidence and judges actual
 builder behavior in all three fixtures, not one preferred partition. Neither
-deterministic checks nor a host exit-zero record establish skill quality. The
-`arti-onramp/ready` dependency requires the skill and harness judgments, without
-a discretionary Human gate or plugin-distribution dependency.
+deterministic checks nor a host exit-zero record establish skill quality. The full verification includes the skill and harness judgments without an
+additional readiness Eval or a discretionary Human gate.

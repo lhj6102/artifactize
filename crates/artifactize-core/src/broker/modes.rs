@@ -36,17 +36,12 @@ pub(super) fn machines<'a>(
         .evals
         .iter()
         .filter(move |eval| eval.target == target)
-        .filter(|eval| {
-            !matches!(
-                eval.declaration.profile().kind(),
-                ProfileKind::Human | ProfileKind::Dependency
-            )
-        })
+        .filter(|eval| !matches!(eval.declaration.profile().kind(), ProfileKind::Human))
         .map(|eval| &eval.id)
 }
 
 /// Longest remaining dependency path is counted in eval obligations, not wall-clock
-/// guesses. SCC peers do not gate one another; derived evals use their explicit targets.
+/// guesses. Eval SCC peers do not gate one another; each Eval uses its own references.
 pub(super) fn order(
     graph: &Graph<'_>,
     requests: &[Request],
@@ -78,7 +73,6 @@ pub(super) fn order(
         let eval = &evaluation.evals[id.as_str()];
         usize::from(
             eval.status != crate::graph::EvalStatus::Blocked
-                && !(eval.derived && eval.status.passes_gate())
                 && !matches!(
                     evidence.get(id),
                     Some(Evidence::Current(_)) | Some(Evidence::OperationalError)

@@ -326,8 +326,6 @@ export type GraphEdge = {
 	source: string,
 	target: string,
 	light: Light,
-	/**  A dependency eval of the target names the source and lights the edge. */
-	dependency: boolean,
 };
 
 export type GraphNode = {
@@ -470,7 +468,7 @@ export type Paging = "older" | "newer";
  */
 export type PathKey = string;
 
-export type Profile = "runtime" | "agent" | "human" | "dependency";
+export type Profile = "runtime" | "agent" | "human";
 
 /**  A backend, as the CLI names it. */
 export type Provider = "openai" | "anthropic" | "codex";
@@ -693,7 +691,7 @@ export type TreeNode = {
 	tone: Tone,
 	weight: Weight,
 	name: string,
-	/**  Dim markers after the name: `↻ peer`, `[file]`, `[dep]`. */
+	/**  Dim markers after the name: `↻ peer`, `[file]`. */
 	marks: string,
 	text: Segment[],
 	/**  Elapsed time of an eval, `passed/total` of an Artifact. */

@@ -304,7 +304,7 @@ pub struct Request {
     pub argv: Option<Vec<String>>,
     pub child: Option<super::ChildIdentity>,
     pub blocked_reason: Option<String>,
-    /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
+    /// Unfulfilled Evals behind this request’s dependency gates.
     pub blocked_by: Vec<super::Blocker>,
     /// What a queued request waits for besides a job; `blocked_reason` says it in words.
     pub queue: Option<QueueReason>,
@@ -391,7 +391,7 @@ pub(crate) struct RequestWire {
     pub error: Option<String>,
     pub error_code: Option<crate::types::FailureCode>,
     pub blocked_reason: Option<String>,
-    /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
+    /// Unfulfilled Evals behind this request’s dependency gates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked_by: Vec<super::Blocker>,
     /// Absent from requests saved before it existed, which read as waiting for a job.

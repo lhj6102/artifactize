@@ -4,7 +4,7 @@ use std::fs;
 use tokio_util::sync::CancellationToken;
 
 const GRAPH: &str = "name = 'graph'\n[evals.review]\ntitle = 'Review graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review the project structure.' }\n";
-const APP: &str = "name = 'app'\ntags = ['code']\nmounts = { input = 'leaf' }\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {input} and {app}.', context = 'criteria' }\npass_schema = { type = 'object' }\nfail_schema = { type = 'object' }\n[evals.ready]\ntitle = 'Inputs ready'\nprofile = { kind = 'dependency', depends_on = ['input'] }\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{input}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
+const APP: &str = "name = 'app'\ntags = ['code']\nmounts = { input = 'leaf' }\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {input} and {app}.', context = 'criteria' }\npass_schema = { type = 'object' }\nfail_schema = { type = 'object' }\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{input}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
 
 fn fixture() -> tempfile::TempDir {
     let repo = crate::test_os::tempdir();
@@ -30,7 +30,6 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
         APP.replace("context = 'criteria'", "context = 'different criteria'"),
         APP.replace("Review {input} and {app}.", "Review {app}."),
         APP.replace("pass_schema = { type = 'object' }", "pass_schema = { type = 'object', required = ['summary'] }"),
-        APP.replace("depends_on = ['input']", "depends_on = ['graph']"),
         APP.replace("kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000", "kind = 'human'"),
     ] {
         fs::write(repo.path().join("index.artf"), changed).unwrap();

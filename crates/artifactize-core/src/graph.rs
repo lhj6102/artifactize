@@ -1,13 +1,12 @@
 //! Dependency edges, strongly connected components, gates, and obligations.
 
-use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::{algo::kosaraju_scc, graph::DiGraph};
 use thiserror::Error;
 
 use crate::{
-    config::{ArtifactName, EvalId, Profile, RepoConfig},
+    config::{ArtifactName, EvalId, RepoConfig},
     runtime::Verdict,
 };
 
@@ -54,7 +53,8 @@ pub struct Component<'a> {
     pub artifacts: Vec<&'a ArtifactName>,
     /// Direct condensation dependencies, always earlier in the component list.
     pub dependencies: Vec<ComponentId>,
-    /// External Eval gates shared by every member; never includes SCC peers.
+    /// Aggregate external obligations for the material projection, not execution gates.
+    /// Each Eval’s actual gates come from the Eval-level schedule.
     pub gates: Vec<&'a EvalId>,
 }
 
@@ -63,8 +63,7 @@ pub struct Graph<'a> {
     artifacts: BTreeMap<ArtifactName, ArtifactNode<'a>>,
     evals: BTreeMap<EvalId, &'a ArtifactName>,
     components: Vec<Component<'a>>,
-    derived: BTreeMap<EvalId, Vec<&'a ArtifactName>>,
-    derived_order: Vec<&'a EvalId>,
+    schedule: schedule::Schedule<'a>,
 }
 
 impl<'a> Graph<'a> {
@@ -159,59 +158,17 @@ impl<'a> Graph<'a> {
             components[index].dependencies = dependencies.into_iter().collect();
             components[index].gates = gates;
         }
-        let derived: BTreeMap<_, _> = config
-            .evals
-            .iter()
-            .filter(|eval| matches!(eval.declaration.profile(), Profile::Dependency { .. }))
-            .map(|eval| (eval.id.clone(), eval.deps.iter().collect::<Vec<_>>()))
-            .collect();
-        let mut waits = DiGraph::<&EvalId, ()>::new();
-        let waiting: BTreeMap<_, _> = derived.keys().map(|id| (id, waits.add_node(id))).collect();
-        for (id, targets) in &derived {
-            for target in targets {
-                for dependency in &artifacts[target.as_str()].evals {
-                    if let Some(&node) = waiting.get(dependency) {
-                        waits.add_edge(waiting[id], node, ());
-                    }
-                }
-            }
-        }
-        let derived_order = petgraph::algo::toposort(&waits, None)
-            .map_err(|_| {
-                let mut cycles: Vec<_> = kosaraju_scc(&waits)
-                    .into_iter()
-                    .filter(|members| members.len() > 1)
-                    .flatten()
-                    .map(|node| waits[node])
-                    .collect();
-                cycles.sort_unstable();
-                GraphError(format!(
-                    "Dependency Eval cycle: {}. Dependency Evals cannot wait on each other.",
-                    cycles
-                        .iter()
-                        .map(|id| id.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-            })?
-            .into_iter()
-            .rev()
-            .map(|node| {
-                config
-                    .evals
-                    .iter()
-                    .find(|eval| eval.id == *waits[node])
-                    .expect("derived Eval exists")
-                    .id
-                    .borrow()
-            })
-            .collect();
+        let schedule = schedule::Schedule::new(
+            config
+                .evals
+                .iter()
+                .map(|eval| (&eval.id, &eval.target, eval.deps.iter().collect())),
+        );
         Ok(Self {
             artifacts,
             evals,
             components,
-            derived,
-            derived_order,
+            schedule,
         })
     }
 
@@ -264,9 +221,9 @@ impl<'a> Graph<'a> {
         errors_block: bool,
     ) -> Evaluation<'_> {
         let mut evals: BTreeMap<EvalId, EvalEvaluation<'_>> = BTreeMap::new();
-        for component in &self.components {
-            let unmet_gates: Vec<_> = component
-                .gates
+        for component in &self.schedule.components {
+            let gates = &self.schedule.gates[component[0]];
+            let unmet_gates: Vec<_> = gates
                 .iter()
                 .copied()
                 .filter(|id| !evals[id.as_str()].status.passes_gate())
@@ -283,98 +240,8 @@ impl<'a> Graph<'a> {
             } else {
                 Readiness::Wait
             };
-            let ordinary = component
-                .artifacts
-                .iter()
-                .flat_map(|id| &self.artifacts[id.as_str()].evals)
-                .copied()
-                .filter(|id| !self.derived.contains_key(id.as_str()));
-            let derived = self
-                .derived_order
-                .iter()
-                .copied()
-                .filter(|id| component.artifacts.contains(&self.evals[id.as_str()]));
-            for id in ordinary.chain(derived) {
-                if let Some(targets) = self.derived.get(id.as_str()) {
-                    if evidence.get(id.as_str()) == Some(&Evidence::OperationalError) {
-                        evals.insert(
-                            id.clone(),
-                            EvalEvaluation {
-                                status: EvalStatus::Error,
-                                readiness: Readiness::Ready,
-                                evidence: Some(Evidence::OperationalError),
-                                unmet_gates: Vec::new(),
-                                blocked_by: Vec::new(),
-                                derived: true,
-                            },
-                        );
-                        continue;
-                    }
-                    let unmet: Vec<_> = targets
-                        .iter()
-                        .flat_map(|target| &self.artifacts[target.as_str()].evals)
-                        .copied()
-                        .filter(|id| !evals[id.as_str()].status.passes_gate())
-                        .collect();
-                    let mut blocked_by = Vec::new();
-                    for target in targets {
-                        let pending: Vec<_> = self.artifacts[target.as_str()]
-                            .evals
-                            .iter()
-                            .copied()
-                            .filter(|id| !evals[id.as_str()].status.passes_gate())
-                            .collect();
-                        if !pending.is_empty() {
-                            blocked_by.push(BlockedReference::Artifact(target));
-                            blocked_by.extend(pending.into_iter().map(BlockedReference::Eval));
-                        }
-                    }
-                    let readiness = if unmet.iter().any(|id| {
-                        matches!(
-                            evals[id.as_str()].status,
-                            EvalStatus::Red | EvalStatus::Blocked
-                        ) || (errors_block && evals[id.as_str()].status == EvalStatus::Error)
-                    }) {
-                        Readiness::Blocked
-                    } else if unmet.is_empty() {
-                        Readiness::Ready
-                    } else {
-                        Readiness::Wait
-                    };
-                    evals.insert(
-                        id.clone(),
-                        EvalEvaluation {
-                            status: match readiness {
-                                Readiness::Ready
-                                    if unmet.is_empty()
-                                        && targets
-                                            .iter()
-                                            .flat_map(|target| {
-                                                &self.artifacts[target.as_str()].evals
-                                            })
-                                            .any(|id| {
-                                                matches!(
-                                                    evals[id.as_str()].status,
-                                                    EvalStatus::Deferred | EvalStatus::Provisional
-                                                )
-                                            }) =>
-                                {
-                                    EvalStatus::Provisional
-                                }
-                                Readiness::Ready => EvalStatus::Green,
-                                Readiness::Blocked => EvalStatus::Blocked,
-                                Readiness::Wait => EvalStatus::Wait,
-                            },
-                            readiness,
-                            evidence: None,
-                            unmet_gates: unmet,
-                            blocked_by,
-                            derived: true,
-                        },
-                    );
-                    continue;
-                }
-                let provisional = component.gates.iter().any(|id| {
+            for &id in component {
+                let provisional = gates.iter().any(|id| {
                     matches!(
                         evals[id.as_str()].status,
                         EvalStatus::Deferred | EvalStatus::Provisional
@@ -412,7 +279,6 @@ impl<'a> Graph<'a> {
                             .copied()
                             .map(BlockedReference::Eval)
                             .collect(),
-                        derived: false,
                     },
                 );
             }
@@ -512,16 +378,7 @@ impl<'a> Graph<'a> {
     }
 
     pub(crate) fn gates(&self, id: &EvalId) -> Vec<&'a EvalId> {
-        if let Some(targets) = self.derived.get(id) {
-            targets
-                .iter()
-                .flat_map(|target| self.artifacts[target.as_str()].evals.iter().copied())
-                .collect()
-        } else {
-            self.components[self.artifacts[self.evals[id].as_str()].component.index()]
-                .gates
-                .clone()
-        }
+        self.schedule.gates[id].clone()
     }
 
     pub fn eval_target(&self, id: &str) -> Option<&'a ArtifactName> {
@@ -568,7 +425,6 @@ pub struct EvalEvaluation<'a> {
     pub evidence: Option<Evidence>,
     pub unmet_gates: Vec<&'a EvalId>,
     pub blocked_by: Vec<BlockedReference<'a>>,
-    pub derived: bool,
 }
 
 /// A blocked dependency names either material or an Eval, never an unclassified string.
@@ -600,9 +456,7 @@ impl EvalStatus {
 impl EvalEvaluation<'_> {
     /// Operational errors require an explicit retry, not automatic redispatch.
     pub fn can_execute(&self) -> bool {
-        !self.derived
-            && self.readiness == Readiness::Ready
-            && matches!(self.evidence, None | Some(Evidence::Stale))
+        self.readiness == Readiness::Ready && matches!(self.evidence, None | Some(Evidence::Stale))
     }
 }
 
@@ -684,3 +538,5 @@ impl From<BlockedReference<'_>> for crate::store::Blocker {
         }
     }
 }
+
+pub(crate) mod schedule;

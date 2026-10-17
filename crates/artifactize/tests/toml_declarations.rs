@@ -362,73 +362,6 @@ fn individually_ignored_legacy_markers_do_not_fail_discovery() {
 }
 
 #[test]
-fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel_case() {
-    let source = "name = 'release'\n[evals.ready]\ntitle = 'Inputs are ready'\nprofile = { kind = 'dependency', depends_on = ['input'] }";
-    let declaration = parse_declaration(source).unwrap();
-    assert_eq!(declaration.evals[0].id, "ready");
-    assert!(declaration.evals[0].payload().is_none());
-    assert!(matches!(
-        &declaration.evals[0].profile(),
-        Profile::Dependency { depends_on } if depends_on == &["input"]
-    ));
-    let expected = json!({"kind":"dependency","dependsOn":["input"]});
-    assert_eq!(
-        serde_json::to_value(declaration.evals[0].profile()).unwrap(),
-        expected
-    );
-    let stored = artifactize_core::config::StoredProfile::from(declaration.evals[0].profile());
-    let stored_value = serde_json::to_value(&stored).unwrap();
-    assert_eq!(stored_value, expected);
-    assert_eq!(
-        serde_json::to_value(
-            serde_json::from_value::<artifactize_core::config::StoredProfile>(stored_value)
-                .unwrap()
-        )
-        .unwrap(),
-        expected
-    );
-    let error = parse_declaration(&source.replace("depends_on", "dependsOn")).unwrap_err();
-    assert!(error.contains("unknown field `dependsOn`"), "{error}");
-    for extra in [
-        "payload = { instruction = 'Inspect.' }",
-        "pass_schema = {}",
-        "fail_schema = {}",
-        "profile_variants = {}",
-    ] {
-        let error = parse_declaration(&format!("{source}\n{extra}")).unwrap_err();
-        assert!(error.contains("Dependency Evals cannot declare"), "{error}");
-    }
-    let root = support::os::tempdir();
-    write(root.path(), "index.artf", source);
-    write(
-        root.path(),
-        "input/index.artf",
-        "name = 'input'\nbasis = true",
-    );
-    let config = read_workspace_config(root.path()).unwrap();
-    let view = artifactize_core::query::graph(
-        &config,
-        &artifactize_core::project::selection::Selection::All,
-    )
-    .unwrap();
-    let wire = serde_json::to_value(&view).unwrap();
-    let saved = artifactize_core::store::definitions::Definitions::from_view(&view).unwrap();
-    let saved = serde_json::to_value(saved).unwrap();
-    let output = std::process::Command::new(support::os::cli())
-        .arg("--repo")
-        .arg(root.path())
-        .args(["config", "graph", "--json"])
-        .record_output()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
-    let cli: Value = serde_json::from_slice(&output.stdout).unwrap();
-    for wire in [&wire, &saved, &cli] {
-        assert_eq!(wire["evals"][0]["declaration"]["profile"], expected);
-        assert!(wire["evals"][0]["declaration"].get("payload").is_none());
-    }
-}
-
-#[test]
 fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
     let root = support::os::tempdir();
     write(root.path(), "index.artf", "name = 'root'");
@@ -607,7 +540,6 @@ fn null_syntax_is_rejected_by_the_production_toml_parser_at_every_boundary() {
         "views.agent_tools.read.timeout_ms",
         "views.human_tools.open.timeout_ms",
         "evals.check.profile.reasoning",
-        "evals.check.profile.depends_on",
         "evals.check.payload",
         "evals.check.payload.instruction",
         "evals.check.pass_schema",
@@ -661,11 +593,6 @@ fn cross_artifact_validation_errors_keep_the_referencing_field_position() {
         (
             "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'runtime', command = 'check', args = ['{missing}'] }\npayload = { instruction = 'Check.' }",
             "evals.check.profile.args",
-            4,
-        ),
-        (
-            "name = 'a'\n[evals.ready]\ntitle = 'Ready'\nprofile = { kind = 'dependency', depends_on = ['missing'] }",
-            "evals.ready.profile.depends_on",
             4,
         ),
         (

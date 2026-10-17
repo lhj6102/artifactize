@@ -1,7 +1,7 @@
 //! Profiles saved by schema 5. Unlike declarations, their optional fields may be null.
 //! Missing and null remain distinct: profile comparison drives the otherProfile tally.
 
-use super::{ArtifactName, Backend, ModelId, Profile, ProfileKind, Reasoning};
+use super::{Backend, ModelId, Profile, ProfileKind, Reasoning};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::time::Duration;
 
@@ -107,10 +107,6 @@ pub enum StoredProfile {
         max_tokens: Field<u64>,
     },
     Human {},
-    Dependency {
-        #[serde(rename = "dependsOn")]
-        depends_on: Vec<ArtifactName>,
-    },
     Runtime {
         command: String,
         args: Vec<String>,
@@ -128,7 +124,6 @@ impl StoredProfile {
         match self {
             Self::Agent { .. } => ProfileKind::Agent,
             Self::Human {} => ProfileKind::Human,
-            Self::Dependency { .. } => ProfileKind::Dependency,
             Self::Runtime { .. } => ProfileKind::Runtime,
         }
     }
@@ -152,9 +147,6 @@ impl From<&Profile> for StoredProfile {
                 max_tokens: (*max_tokens).into(),
             },
             Profile::Human {} => Self::Human {},
-            Profile::Dependency { depends_on } => Self::Dependency {
-                depends_on: depends_on.clone(),
-            },
             Profile::Runtime {
                 command,
                 args,

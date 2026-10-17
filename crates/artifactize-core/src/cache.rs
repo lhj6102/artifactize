@@ -49,7 +49,6 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionH
     let kind = match &eval.profile() {
         Profile::Agent { .. } => "agent",
         Profile::Human {} => "human",
-        Profile::Dependency { .. } => "dependency",
         Profile::Runtime { .. } => "runtime",
     };
     let mut criteria = json!({
@@ -61,9 +60,6 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionH
     if let Profile::Runtime { command, args, .. } = &eval.profile() {
         criteria["command"] = json!(command);
         criteria["args"] = json!(args);
-    }
-    if let Profile::Dependency { depends_on } = &eval.profile() {
-        criteria["dependsOn"] = json!(depends_on);
     }
     criteria.sort_all_objects();
     content::hex(&Sha256::digest(
@@ -105,8 +101,6 @@ pub struct Key {
 /// Why an eval has no reuse key: an Artifact it depends on declares `fingerprint: false`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unkeyed {
-    /// Dependency Evals are always derived, never cached.
-    Derived,
     /// The eval's own target.
     Target,
     /// A mount, child or referenced Artifact.
@@ -142,8 +136,7 @@ pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a 
         .collect()
 }
 
-/// Only executable Evals need fingerprints; a derived verdict never runs a fingerprint
-/// script solely for its own request. Restrict preparation to the required key inputs.
+/// Restrict fingerprint preparation to the required Eval key inputs.
 pub(crate) fn fingerprint_targets<'a>(
     config: &'a RepoConfig,
     required: &BTreeSet<&'a ArtifactName>,
@@ -151,10 +144,7 @@ pub(crate) fn fingerprint_targets<'a>(
     config
         .evals
         .iter()
-        .filter(|eval| {
-            required.contains(&eval.target)
-                && !matches!(eval.declaration.profile(), Profile::Dependency { .. })
-        })
+        .filter(|eval| required.contains(&eval.target))
         .flat_map(|eval| dependencies(config, eval))
         .collect()
 }
@@ -200,9 +190,6 @@ pub fn eval_key(
     eval: &Eval,
     fingerprints: &BTreeMap<&ArtifactName, PreparedFingerprint>,
 ) -> Result<Key, Unkeyed> {
-    if matches!(eval.declaration.profile(), Profile::Dependency { .. }) {
-        return Err(Unkeyed::Derived);
-    }
     if !fingerprints.contains_key(&eval.target) {
         return Err(Unkeyed::Target);
     }

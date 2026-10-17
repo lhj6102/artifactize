@@ -152,7 +152,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
         [("p2/check".into(), "[SPAWN] spawn failed".into())]
     );
     assert_eq!(progress.budget, "executions 2/5 · jobs unlimited");
-    assert_eq!(progress.work, "executed 0 · reused 0 · derived 0");
+    assert_eq!(progress.work, "executed 0 · reused 0");
     assert_eq!(
         progress.counts.iter().map(|(_, n)| n).sum::<u64>(),
         4,
@@ -536,10 +536,7 @@ fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_deta
         detail.field("Budget"),
         Some("executions 2/5 · jobs unlimited")
     );
-    assert_eq!(
-        detail.field("Work"),
-        Some("executed 2 · reused 0 · derived 0")
-    );
+    assert_eq!(detail.field("Work"), Some("executed 2 · reused 0"));
     assert!(
         detail
             .field("Usage")

@@ -470,7 +470,7 @@ async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
                     "id":"test",
                     "title":"Dependent",
                     "profile":{"kind":"runtime","command":true_program(),"args":[]},
-                    "payload":{"instruction":"Check child."},
+                    "payload":{"instruction":"Check {review}."},
                 },
             ],
         })

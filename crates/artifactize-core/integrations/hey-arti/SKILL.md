@@ -109,22 +109,16 @@ success is exit zero; Agent/Human fields must satisfy the declared schema.
 An Agent profile requires an exact model ID appropriate to the team's configured
 backend. Use its existing authentication flow; do not put credentials in TOML.
 
-A downstream folder may derive readiness without a command or provider:
-
-```toml
-name = "delivery"
-
-[evals.ready]
-title = "Application and logo are ready"
-profile = { kind = "dependency", depends_on = ["app", "logo"] }
-```
-
-Dependency evals accept no payload or result schemas. They require every required
-eval on each listed Artifact: GREEN fulfills; missing/stale/error/waiting evidence
-waits in default Runs; RED/BLOCKED blocks. Speculation also blocks on ERROR.
-Deferred sign-offs allow PROVISIONAL execution, not final approval. They are derived, not cached. `basis = true` waives an
-input's own review obligations, not its dependencies, and cannot own evals.
-Avoid dependency-eval wait cycles.
+Dependencies belong to the Eval that uses the material. Put an application’s E2E
+execution on that application, with `{test-code}` in its instruction or runtime
+arguments; the test-code Artifact’s own Evals review style and feature coverage.
+An independent sibling Eval does not inherit another Eval’s references. All Evals
+can judge their targets independently of upstream verdicts. Plain verify schedules
+dependency-first for efficiency; `--speculate` starts unresolved work early, not
+approval. Eval-cycle peers do not wait for or cancel each other on an internal RED;
+external gates still hold the cycle and a failed cycle cannot release downstream
+consumers. `basis = true` waives an input’s own reviews, not its dependencies, and
+cannot own Evals.
 
 Mount aliases and explicit `{name}` references resolve to declared Artifacts.
 Instruction references and runtime argv references make real consumer relations;

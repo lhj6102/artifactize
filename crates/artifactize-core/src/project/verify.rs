@@ -151,12 +151,7 @@ pub(crate) async fn reserve(
                 payload: eval.declaration.payload().into(),
                 references: eval.references.clone(),
                 deps: eval.deps.clone(),
-                force: options.force
-                    && selected_ids.contains(&eval.id)
-                    && !matches!(
-                        eval.declaration.profile(),
-                        crate::config::Profile::Dependency { .. }
-                    ),
+                force: options.force && selected_ids.contains(&eval.id),
                 fingerprint: None,
                 key: None,
                 fingerprints: Default::default(),
@@ -338,13 +333,6 @@ pub(crate) async fn execute(
     };
     let evaluation = graph.evaluate_for_run(&evidence, run.modes.speculate);
     for request in &mut requests {
-        if request.profile.kind() == ProfileKind::Dependency {
-            if request.status() == crate::types::RequestStatus::Error {
-                continue;
-            }
-            broker::derive(request, &evaluation.evals[request.eval_id.as_str()], now());
-            continue;
-        }
         if evidence.contains_key(request.eval_id.as_str())
             || (request.status().is_human_wait() && !cancellation.is_cancelled())
         {

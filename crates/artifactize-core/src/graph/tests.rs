@@ -39,7 +39,11 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 id: format!("{name}/{}", eval.id).parse().unwrap(),
                 target: name.parse().unwrap(),
                 references: BTreeMap::new(),
-                deps: Vec::new(),
+                deps: edges
+                    .iter()
+                    .filter(|(_, target)| *target == name)
+                    .map(|(source, _)| source.parse().unwrap())
+                    .collect(),
                 declaration: eval,
                 variant: None,
             });

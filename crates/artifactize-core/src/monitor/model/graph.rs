@@ -1,6 +1,6 @@
 //! A Run as a graph of Artifacts: one node per Artifact of the tree, one edge per Artifact an
 //! Artifact's evals depend on, each with one of six lights taken from the tree's own states.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     NodeId, Target,
@@ -65,30 +65,18 @@ impl From<&EvalView> for Light {
     }
 }
 
-impl Light {
-    /// A RED, ERROR or blocked Artifact holds everything downstream.
-    fn holds(self) -> bool {
-        matches!(self, Self::Red | Self::Error | Self::Blocked)
+/// Gate failures come from the Eval-level schedule, never an Artifact-wide inference.
+fn eval_light(eval: &Node, view: &EvalView) -> Light {
+    if eval.held
+        && matches!(
+            view,
+            EvalView::WaitingOn(_) | EvalView::NotRun(NotRun::Dependency(_))
+        )
+    {
+        Light::Blocked
+    } else {
+        Light::from(view)
     }
-}
-
-/// An eval row's light. An eval waiting for an upstream Artifact that is RED, ERROR (which the
-/// tree shows as "waits for … (retry … first)") or itself blocked cannot proceed in this Run:
-/// blocked. `lights` holds the Artifacts already lit, upstream first.
-fn eval_light(eval: &Node, view: &EvalView, lights: &BTreeMap<ArtifactName, Light>) -> Light {
-    let light = Light::from(view);
-    let waits = matches!(
-        view,
-        EvalView::WaitingOn(_) | EvalView::NotRun(NotRun::Dependency(_))
-    );
-    let held = eval.upstream.iter().any(|upstream| {
-        lights
-            .get(&upstream.artifact)
-            .copied()
-            .unwrap_or(upstream.completion.into())
-            .holds()
-    });
-    if waits && held { Light::Blocked } else { light }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,11 +92,8 @@ pub struct GraphNode {
 pub struct GraphEdge {
     pub from: ArtifactName,
     pub to: ArtifactName,
-    /// The most urgent light of `to`'s dependency evals naming `from`, or without one
-    /// `from`'s own light.
+    /// The input Artifact's current light.
     pub light: Light,
-    /// A dependency eval of `to` names `from`.
-    pub dependency: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -139,7 +124,7 @@ pub fn graph(tree: &[Node]) -> Graph {
             .children
             .iter()
             .filter_map(|eval| match &eval.kind {
-                Kind::Eval(view) => Some(eval_light(eval, view, &lights)),
+                Kind::Eval(view) => Some(eval_light(eval, view)),
                 Kind::Artifact { .. } => None,
             })
             .min()
@@ -158,29 +143,19 @@ pub fn graph(tree: &[Node]) -> Graph {
         .collect();
     let mut edges = Vec::new();
     for (name, node, _) in &artifacts {
-        // Each upstream Artifact, with the most urgent light of the dependency evals naming it.
-        let mut upstream: BTreeMap<&ArtifactName, Option<Light>> = BTreeMap::new();
-        for eval in &node.children {
-            let Kind::Eval(view) = &eval.kind else {
-                continue;
-            };
-            for dependency in &eval.upstream {
-                let lit = upstream.entry(&dependency.artifact).or_default();
-                if eval.dependency {
-                    let light = eval_light(eval, view, &lights);
-                    *lit = Some(lit.map_or(light, |lit| lit.min(light)));
-                }
-            }
-        }
-        for (from, lit) in upstream {
+        let upstream: BTreeSet<_> = node
+            .children
+            .iter()
+            .flat_map(|eval| eval.upstream.iter().map(|dependency| &dependency.artifact))
+            .collect();
+        for from in upstream {
             let Some(&own) = lights.get(from).filter(|_| from != name) else {
                 continue;
             };
             edges.push(GraphEdge {
                 from: from.clone(),
                 to: name.clone(),
-                light: lit.unwrap_or(own),
-                dependency: lit.is_some(),
+                light: own,
             });
         }
     }

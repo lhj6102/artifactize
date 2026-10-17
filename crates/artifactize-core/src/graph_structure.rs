@@ -65,9 +65,6 @@ pub struct Eval {
 pub enum Criteria {
     Agent,
     Human,
-    Dependency {
-        depends_on: Vec<ArtifactName>,
-    },
     Runtime {
         command: String,
         args: Vec<Argument>,
@@ -88,10 +85,6 @@ pub enum Edge {
     Child,
     Mount {
         alias: crate::config::MountAlias,
-    },
-    Dependency {
-        eval_id: EvalId,
-        name: crate::config::ReferenceName,
     },
     Instruction {
         eval_id: EvalId,
@@ -146,9 +139,6 @@ pub fn extract(config: &RepoConfig) -> Structure {
             let criteria = match declaration.profile() {
                 Profile::Agent { .. } => Criteria::Agent,
                 Profile::Human {} => Criteria::Human,
-                Profile::Dependency { depends_on } => Criteria::Dependency {
-                    depends_on: depends_on.clone(),
-                },
                 Profile::Runtime { command, args, .. } => Criteria::Runtime {
                     command: command.clone(),
                     args: args.clone(),
@@ -178,10 +168,6 @@ pub fn extract(config: &RepoConfig) -> Structure {
                 RelationKind::Child { .. } => Edge::Child,
                 RelationKind::Mount { alias } => Edge::Mount {
                     alias: alias.clone(),
-                },
-                RelationKind::Dependency { eval_id, name } => Edge::Dependency {
-                    eval_id: eval_id.clone(),
-                    name: name.clone(),
                 },
                 RelationKind::Instruction { eval_id, name } => Edge::Instruction {
                     eval_id: eval_id.clone(),

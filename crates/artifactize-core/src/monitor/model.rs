@@ -113,7 +113,7 @@ pub struct Progress {
     pub counts: Vec<(Status, u64)>,
     /// Executions against their budget, and jobs.
     pub budget: String,
-    /// Executed, reused and derived requests.
+    /// Executed and reused requests.
     pub work: String,
     /// Every spent token counter, and the counters reuse saved.
     pub usage: String,
@@ -287,9 +287,6 @@ fn reused(view: &RequestView) -> bool {
 
 fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
     let request = &view.request;
-    if view.request.profile.kind() == crate::config::ProfileKind::Dependency {
-        return Some("derived".into());
-    }
     if reused(view) {
         return Some("reused".into());
     }
@@ -384,8 +381,8 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                 .map_or("unlimited".into(), |limit| limit.to_string()),
         ),
         work: format!(
-            "executed {} · reused {} · derived {}",
-            summary.executed.total, summary.reused.kinds.total, summary.derived,
+            "executed {} · reused {}",
+            summary.executed.total, summary.reused.kinds.total,
         ),
         usage,
         saved,
@@ -504,7 +501,7 @@ pub fn run_node(run: &RunView) -> Node {
         compact: String::new(),
         changed: false,
         upstream: Vec::new(),
-        dependency: false,
+        held: false,
         children: Vec::new(),
     }
 }
@@ -676,12 +673,6 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
                 alias.value().map_or("", crate::config::MountAlias::as_str)
             )
         }
-        RelationKind::Dependency { name, eval_id } => format!(
-            "dependency {} in {}",
-            name.value()
-                .map_or("", crate::config::ReferenceName::as_str),
-            eval_id.value().map_or("", crate::types::EvalId::as_str)
-        ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,
@@ -722,7 +713,6 @@ fn profile(profile: &crate::config::StoredProfile) -> String {
             format!("runtime {command} {}", args.join(" "))
         }
         StoredProfile::Human {} => "human".into(),
-        StoredProfile::Dependency { depends_on } => format!("dependency {}", depends_on.join(", ")),
     }
 }
 
@@ -781,18 +771,6 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     );
     detail.push("Request", request.id.as_str());
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
-    if request.profile.kind() == crate::config::ProfileKind::Dependency {
-        detail.push("Source", "derived (no execution)");
-        detail.push(
-            "Blocked by",
-            request
-                .blocked_by
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
     detail.push("Error", error(view).unwrap_or_default());
     detail.push("Instruction", request.payload.instruction());
     detail.push("Profile", profile(&request.profile));
