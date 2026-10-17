@@ -123,7 +123,9 @@ and newer requests. Waiting followers open the original review, not another sign
 One click selects a request; clicking an already-selected request opens it, as
 does a double-click. Clicking its preview also opens Detail.
 
-`/` or Ctrl+F edits the search. Free text and `key:value` terms must all match:
+`/` edits search from the Review request list. Ctrl+F also returns to search from
+an idle open request Detail; editing or busy review work keeps its focus lock.
+Free text and `key:value` terms must all match:
 `repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`.
 `is:mine`, `is:claimed` and `is:unclaimed` filter Human claims. Suggestions complete
 keys and values. ↑/↓ selects a suggestion (↓ can also open suggestions); Tab or

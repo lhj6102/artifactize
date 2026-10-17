@@ -113,7 +113,8 @@ export const scenarios: Scenario[] = [
       await summaryShows(browser, nodeAt("a:ship"), /ship/);
       // `o` opens the selected Artifact's own Detail; Esc puts the keyboard back on it.
       await press(browser, ["o"], () => detail(browser).isExisting(), "ship's Detail opened");
-      await browser.waitUntil(async () => /ship/.test(await detail(browser).$("h2").getText()), { timeout: 15000, timeoutMsg: "the Detail is ship's" });
+      await browser.waitUntil(async () => await detail(browser).$("h2").getText() === "Artifact ship", { timeout: 15000, timeoutMsg: "the Artifact-level Detail is ship's" });
+      assert.equal(await detail(browser).$("h2").getText(), "Artifact ship", "Artifact Detail, not ship/check's eval Detail");
       await press(browser, ["Escape"], async () => !(await detail(browser).isExisting()) && (await focusedNode(browser)) === "a:ship", "Detail closed, ship focused");
       await press(browser, ["ArrowLeft"], async () => (await focusedNode(browser)) === "a:release", "release focused upstream");
       await press(browser, ["Escape"], () => runs().isFocused(), "back to Runs");
@@ -134,8 +135,9 @@ export const scenarios: Scenario[] = [
       const run = await browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
       assert.match(run, /^run-/);
       await browser.$('button[title="Open the Run\'s Detail"]').click();
-      await browser.waitUntil(async () => (await detail(browser).isExisting()) && (await detail(browser).getText()).includes(run),
-        { timeout: 15000, timeoutMsg: "the Run's own Detail" });
+      await browser.waitUntil(async () => (await detail(browser).isExisting()) && await detail(browser).$("h2").getText() === `Run ${run}`,
+        { timeout: 15000, timeoutMsg: "the selected Run's own Detail heading" });
+      assert.equal(await detail(browser).$("h2").getText(), `Run ${run}`, "Run Detail, not an Artifact or eval from that Run");
       await detail(browser).$("button*=Close").click();
       await browser.waitUntil(async () => !(await detail(browser).isExisting()), { timeout: 15000, timeoutMsg: "the Detail closed" });
       await graphShown(browser, "a:release");
