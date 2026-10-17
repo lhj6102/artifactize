@@ -89,13 +89,15 @@ const char *wdio_ime_key(void *raw, const char *key, int control, int meta, cons
     NSEvent *down = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:modifiers
         timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:view.window.windowNumber context:nil
         characters:characters charactersIgnoringModifiers:characters isARepeat:NO keyCode:(unsigned short)code];
-    /* WebKit's keyboard path reads NSApp.currentEvent. Dispatch through AppKit,
-     * not a direct responder call that leaves that native event context unset. */
-    [NSApp sendEvent:down];
+    /* The event-loop dequeue establishes NSApp.currentEvent before WebKit handles
+     * the key. Calling sendEvent: directly from a WebDriver callback bypasses that
+     * step and lets WebKit's input-method path dereference an absent current event.
+     * Queue both events in order; the scenario observes their actual DOM outcome. */
+    [NSApp postEvent:down atStart:NO];
     NSEvent *up = [NSEvent keyEventWithType:NSEventTypeKeyUp location:NSZeroPoint modifierFlags:modifiers
         timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:view.window.windowNumber context:nil
         characters:characters charactersIgnoringModifiers:characters isARepeat:NO keyCode:(unsigned short)code];
-    [NSApp sendEvent:up];
+    [NSApp postEvent:up atStart:NO];
     return NULL;
 }
 const char *wdio_ime_commit(void *raw, const char *text) {
