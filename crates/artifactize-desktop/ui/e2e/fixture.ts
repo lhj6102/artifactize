@@ -69,6 +69,7 @@ additionalProperties = false
 type = "object"
 properties.reason = { type = "string", minLength = 3 }
 properties.findings = { type = "array", items = { type = "object", properties = { problem = { type = "string", minLength = 1 }, severity = { enum = ["low", "high"] } }, required = ["problem"], additionalProperties = false } }
+properties.steps = { type = "array", items = { type = "string" } }
 required = ["reason"]
 additionalProperties = false
 `;

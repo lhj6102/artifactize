@@ -234,10 +234,10 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-NEIGHBOUR
+  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TECHNICAL E-MON-DETAIL-NEIGHBOUR E-MON-DETAIL-TAB
   scenario<Record<string, never>>(
     "graph-detail-neighbours",
-    "draws an Artifact's Detail between the Artifacts its evals use and those using it, and opens a neighbour's Detail on a click",
+    "draws an Artifact's Detail between the Artifacts its evals use and those using it, then its evals, path and Debug, and opens a neighbour's Detail on a click",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -251,6 +251,15 @@ export const scenarios: Scenario[] = [
         .sort((a, b) => a.x - b.x).map((node) => node.id));
       await openArtifact(browser, "a:release", "Artifact release");
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "release drawn before ship, which uses it" });
+      // Below the drawing: its evals with their verdicts, then its path; every other fact folds
+      // under Debug, unfolded with t.
+      const path = () => browser.execute(() =>
+        document.querySelector('aside[aria-label="Detail"] [role="document"] .card > p.line')?.textContent?.trim() ?? "");
+      await browser.waitUntil(async () => (await path()) === "release", { timeout: 15000, timeoutMsg: "release's path below its evals" });
+      assert.deepEqual((await detail(browser))?.evals.map((row) => row.name), ["signoff"], "release's one eval listed");
+      assert.equal((await summary(browser)).debug, false, "the Artifact's Debug starts folded");
+      await aside(browser).$('[role="document"]').click();
+      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Tags")) !== "", "the Artifact's Debug unfolded by t");
       const neighbour = (id: string) => aside(browser).$(`[aria-label="Neighbours"] .svelte-flow__node[data-id="${id}"]`);
       await neighbour("a:ship").click();
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "ship's Detail opened from its neighbour" });
@@ -258,6 +267,8 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "ship drawn after release, which it uses" });
       await neighbour("a:release").click();
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact release", { timeout: 15000, timeoutMsg: "release's Detail again" });
+      // A click on an eval listed on the Artifact tab shows that eval's tab.
+      await openTab(browser, "e:release/signoff", { row: true });
     },
   ),
 ];

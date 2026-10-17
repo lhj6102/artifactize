@@ -10,7 +10,7 @@ import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
-import { detail, graphShown, openArtifact, openTab } from "../graph-view.ts";
+import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
 
 /** A Tool log row as read: a run's start (its time as HH:MM:SS), a printed line or a run's end,
  * and whether it is red. */
@@ -239,6 +239,85 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX edges: E-HUMAN-TOOL E-HUMAN-LOG-UP E-HUMAN-LOG-FOLLOW E-HUMAN-GREEN E-HUMAN-LOG-COPY E-HUMAN-SUBMIT
+  scenario<null>(
+    "monitor-tool-log-scroll",
+    "scrolls the Tool log in its own box, holds it while scrolled up, follows again from its bottom, gives its text to the result and clears on submission",
+    async () => ({ fixture: await create(), data: null }),
+    async (browser, { fixture }) => {
+      const { human, toolLog, tool, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      const notes = await tool("notes");
+      const ends = async () => (await toolLog()).rows.filter((row) => row.kind === "end").length;
+      /** One more notes run, until its end line is logged and its button is usable again. */
+      const runNotes = async () => {
+        const before = await ends();
+        await notes.button.waitForEnabled({ timeout: 15000, timeoutMsg: "the notes tool usable" });
+        await notes.button.click();
+        await browser.waitUntil(async () => (await ends()) === before + 1 && await notes.button.isEnabled(),
+          { timeout: 15000, timeoutMsg: "another notes run logged" });
+      };
+      const LOG = '[role="log"][aria-label="Tool log"]';
+      /** Where the log is scrolled, whether it is longer than its box, and where the rest of
+       * the review is scrolled. */
+      const box = () => browser.execute((selector) => {
+        const log = document.querySelector<HTMLElement>(selector)!;
+        return {
+          top: log.scrollTop,
+          below: log.scrollHeight - log.scrollTop - log.clientHeight,
+          overflows: log.scrollHeight > log.clientHeight + 24,
+          review: log.closest<HTMLElement>(".body")!.scrollTop,
+        };
+      }, LOG);
+      // Runs until the log is longer than its box: it shows its newest line.
+      for (let run = 0; run < 8 && !(await box()).overflows; run += 1) await runNotes();
+      assert.ok((await box()).overflows, "the Tool log is longer than its box");
+      assert.ok((await box()).below < 24, "the Tool log follows its newest line");
+      // Scrolled up to its first line, it stays there while the next run's lines arrive below,
+      // and the rest of the review stays where it was.
+      await browser.$(`${LOG} p.start`).scrollIntoView({ block: "nearest" });
+      // Its first line sits at the top of the box, below the box's own padding.
+      await browser.waitUntil(async () => { const at = await box(); return at.top < 24 && at.below >= 24; },
+        { timeout: 15000, timeoutMsg: "the Tool log scrolled up" });
+      const up = await box();
+      await runNotes();
+      const held = await box();
+      assert.equal(held.top, up.top, "new lines do not move a log scrolled up");
+      assert.ok(held.below > up.below, "the new lines arrived below");
+      assert.equal(held.review, up.review, "the rest of the review did not scroll");
+      // Back at its bottom, it follows each newest line again.
+      await browser.$(`${LOG} p.end:last-child`).scrollIntoView({ block: "nearest" });
+      await browser.waitUntil(async () => (await box()).below < 24, { timeout: 15000, timeoutMsg: "the Tool log at its bottom" });
+      await runNotes();
+      assert.ok((await box()).below < 24, "the Tool log follows its newest line again");
+      await notes.observed();
+      // Its text is plain page text: a selection of one line reads exactly as shown. (This
+      // WebDriver provider has no OS clipboard; the selection is the page's own, and the copied
+      // text is entered through WebDriver's text input, as a paste enters it.)
+      // The tool buttons let go of the keyboard while they ran: the instruction takes it.
+      await human().$('[aria-label="Instruction"]').click();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      const copied = await browser.execute((selector) => {
+        const line = [...document.querySelectorAll(`${selector} p`)].find((row) => row.textContent === "- Ready to ship.");
+        if (!line || getComputedStyle(line).userSelect === "none") return null;
+        const range = document.createRange();
+        range.selectNodeContents(line);
+        const selection = getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return selection.toString();
+      }, LOG);
+      assert.equal(copied, "- Ready to ship.", "a selected log line copies as it reads");
+      await fill(browser, "#field-comment", copied);
+      // A submission clears the Tool log; the completed result stays open.
+      await browser.keys([primaryModifier, "s"]);
+      await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
+      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "- Ready to ship." });
+      await browser.waitUntil(async () => (await toolLog()).rows.length === 0, { timeout: 15000, timeoutMsg: "the Tool log cleared by the submission" });
+      await browser.waitUntil(async () => /completed result/i.test(await human().getText()), { timeout: 15000, timeoutMsg: "the completed result open" });
+    },
+  ),
+
   // UX edges: E-HUMAN-TOOL-FAIL
   scenario<null>(
     "monitor-tool-failure",
@@ -265,14 +344,16 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-ESC-CANCEL
+  // UX edges: E-HUMAN-GREEN E-HUMAN-TOOL E-HUMAN-ESC-CANCEL E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL E-MON-DETAIL-BACK
   scenario<null>(
     "monitor-tool-cancel",
-    "cancels a running tool with Esc and ends its run as cancelled",
+    "steps back one thing per Esc from the Detail's tabs: cancels a running tool, then leaves the form, then closes the Detail",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       const { text, human, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      await fill(browser, "#field-comment", "kept while stepping back");
       const slow = await tool("slow");
       assert.equal(slowTool(fixture), null, "finding the tool did not start this case's cancellable tool");
       await slow.button.click();
@@ -280,14 +361,27 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => slowTool(fixture) !== null, { timeout: 15000, timeoutMsg: "the owned tool process started" });
       const alive = slowTool(fixture);
       assert.ok(alive && await alive(), "the cancellation target is an actual running process");
-      // The disabled button let go of the keyboard: the instruction takes it, inside the review.
-      await human().$('[aria-label="Instruction"]').click();
-      await browser.keys(["Escape"]);
-      await browser.waitUntil(async () => !/Running slow/.test(await text()), { timeout: 15000, timeoutMsg: "the tool cancelled" });
+      // The keyboard goes to the eval's own chip, outside the review: a click on the shown tab
+      // keeps it shown.
+      const chip = browser.$(tabAt("e:release/signoff"));
+      await chip.click();
+      await browser.waitUntil(() => chip.isFocused(), { timeout: 15000, timeoutMsg: "the eval's chip focused" });
+      await press(browser, ["Escape"], async () => !/Running slow/.test(await text()), "the tool cancelled by Esc on the tabs");
       await browser.waitUntil(async () => !(await alive()), { timeout: 15000, timeoutMsg: "Esc terminated the owned tool process" });
       await browser.waitUntil(async () => (await runOf("slow"))?.at(-1)?.text === "■ cancelled", { timeout: 15000, timeoutMsg: "the run ended as cancelled" });
       await slow.observed();
       assert.ok(await human().isExisting(), "Esc cancelled the job and left the Detail open");
+      assert.equal(await browser.$("#field-comment").getValue(), "kept while stepping back", "the form stays open while the job is cancelled");
+      await press(browser, ["Escape"], async () => !(await browser.$("#field-comment").isExisting()), "the form left by the next Esc");
+      assert.ok(await human().isExisting(), "leaving the form left the Detail open");
+      assert.equal(signoff(fixture).claim?.reviewer, "alice", "the review stays claimed");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed by the third Esc");
+      // The draft was kept: the same verdict reopens it.
+      await openArtifact(browser, "a:release", "Artifact release");
+      await openTab(browser, "e:release/signoff");
+      await human().waitForExist({ timeout: 15000, timeoutMsg: "the Human Detail again" });
+      await human().click();
+      await press(browser, ["g"], async () => (await browser.$("#field-comment").isExisting()) && (await browser.$("#field-comment").getValue()) === "kept while stepping back", "the kept GREEN draft");
     },
   ),
 
@@ -332,21 +426,32 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-RED E-HUMAN-GROUP-ADD E-HUMAN-GROUP-REMOVE E-HUMAN-SUBMIT
+  // UX edges: E-HUMAN-RED E-HUMAN-LIST-ADD E-HUMAN-LIST-REMOVE E-HUMAN-GROUP-ADD E-HUMAN-GROUP-REMOVE E-HUMAN-SUBMIT
   scenario<null>(
     "monitor-red-groups",
-    "enters a list of findings as groups of fields, added and removed, and submits them",
+    "enters a list of steps one text at a time and a list of findings as groups of fields, each added and removed, and submits them",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       const { human, openReview } = await monitorUI(browser, fixture);
       await openReview();
       await press(browser, ["r"], () => browser.$("#field-reason").isExisting(), "the RED form");
       await fill(browser, "#field-reason", "two problems found");
+      // A list of text: one empty item to type in, another added, the first removed.
+      const step = (at: number) => `#field-steps textarea[aria-label="steps ${at}"]`;
+      assert.ok(await browser.$(step(1)).isExisting(), "the first step to type in");
+      await fill(browser, step(1), "check the date");
+      await human().$("#field-steps + button").click();
+      await browser.$(step(2)).waitForExist({ timeout: 15000, timeoutMsg: "a second step added" });
+      assert.equal(await browser.$(step(2)).getValue(), "", "the added step is empty");
+      await fill(browser, step(2), "check the title");
+      await human().$('button[aria-label="Remove steps 1"]').click();
+      await browser.$(step(2)).waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the first step removed" });
+      assert.equal(await browser.$(step(1)).getValue(), "check the title", "the second step moved up");
       const group = (at: number) => human().$(`[role="group"][aria-label="findings ${at}"]`);
       // One empty group is there to type in.
       assert.ok(await group(1).isExisting(), "the first findings group");
       await fill(browser, "#field-findings-0-problem", "typo");
-      await human().$("button=+ Add").click();
+      await human().$("#field-findings + button").click();
       await group(2).waitForExist({ timeout: 15000, timeoutMsg: "a second findings group added" });
       await fill(browser, "#field-findings-1-problem", "date");
       // An optional choice left empty stays out of the result. (A native select's options are
@@ -357,7 +462,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$("#field-findings-0-problem").getValue(), "date", "the second group moved up");
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "RED", { timeout: 15000, timeoutMsg: "RED saved" });
-      assert.deepEqual(signoff(fixture).result, { verdict: "RED", reason: "two problems found", findings: [{ problem: "date" }] });
+      assert.deepEqual(signoff(fixture).result, { verdict: "RED", reason: "two problems found", findings: [{ problem: "date" }], steps: ["check the title"] });
     },
   ),
 
