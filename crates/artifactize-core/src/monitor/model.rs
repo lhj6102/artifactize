@@ -1054,17 +1054,7 @@ pub fn detail(
             );
             detail.summary = tree::artifact_status(&saved, id, now);
             detail.push("Status", detail.summary.clone());
-            let waits = {
-                let mut seen = std::collections::HashSet::new();
-                let lines = saved.evals(id).into_iter().flat_map(|(eval, _)| {
-                    tree::waits_for(&saved, eval, now)
-                        .lines()
-                        .map(str::to_owned)
-                        .collect::<Vec<_>>()
-                });
-                join(lines.filter(|line| seen.insert(line.clone())), "\n")
-            };
-            detail.push("Waits for", waits);
+            detail.push("Waits for", tree::artifact_waits(&saved, id, now));
             let snapshot = saved.validation(id);
             if let Some(status) = snapshot.and_then(|s| s.status.value()) {
                 detail.push(
