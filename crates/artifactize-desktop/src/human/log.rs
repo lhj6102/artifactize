@@ -1,9 +1,9 @@
 //! The Tool log as Tauri events: the library's runs log their lines to one channel per app,
 //! and this forwards them to the frontend in batches. A line for a review nobody has open is
 //! dropped by the frontend; nothing is saved.
-use crate::ids::RequestKey;
+use crate::ids::{RequestKey, ToolRunKey};
 use artifactize_core::review::log::{End, Event, Events, Kind, Stream};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use specta::Type;
 use tauri_specta::Event as _;
 
@@ -12,23 +12,23 @@ use tauri_specta::Event as _;
 const BATCH: usize = 256;
 
 /// Lines of Human tool runs, oldest first.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanToolLog {
     pub lines: Vec<LogLine>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LogLine {
     /// The review the run belongs to.
     pub request: RequestKey,
     /// The run, unique while the app runs: later lines find their own entry.
-    pub run: String,
+    pub run: ToolRunKey,
     pub line: Line,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Line {
     /// A run started, at milliseconds since the Unix epoch.
@@ -57,7 +57,7 @@ fn line(event: Event) -> LogLine {
     };
     LogLine {
         request: event.request.into(),
-        run: event.run.get().to_string(),
+        run: event.run.into(),
         line: match event.kind {
             Kind::Start {
                 at,

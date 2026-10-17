@@ -27,6 +27,30 @@ numbered!(
     TranscriptHandle
 );
 
+/// The library's Tool log run identity, serialized as decimal text without losing its type.
+/// This is an outbound event key, never an IPC argument to parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(into = "String")]
+pub struct ToolRunKey(artifactize_core::review::log::RunNo);
+
+impl From<artifactize_core::review::log::RunNo> for ToolRunKey {
+    fn from(run: artifactize_core::review::log::RunNo) -> Self {
+        Self(run)
+    }
+}
+
+impl From<ToolRunKey> for String {
+    fn from(key: ToolRunKey) -> Self {
+        key.0.get().to_string()
+    }
+}
+
+impl Type for ToolRunKey {
+    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+        String::definition(types)
+    }
+}
+
 /// The next number of `counter`, which hands out each one once.
 fn allocate(counter: &AtomicU32) -> u32 {
     counter.fetch_add(1, Ordering::Relaxed)

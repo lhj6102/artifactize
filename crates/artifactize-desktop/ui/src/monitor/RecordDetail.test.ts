@@ -75,7 +75,7 @@ it("shows the status with what running it cost, the instruction and the result's
         result: [
           {
             key: "violations",
-            text: null,
+            kind: "items",
             items: [{ head: "TEST-SEAMS · ui/src/Panel.test.ts:40", fields: [{ key: "change", value: "Assert the rendered row." }] }],
           },
         ],

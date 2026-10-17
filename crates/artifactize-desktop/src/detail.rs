@@ -86,11 +86,10 @@ pub struct Evidence {
 
 /// One entry of an eval's result, the verdict left out: a text, or a list of findings.
 #[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ResultEntry {
-    pub key: String,
-    pub text: Option<String>,
-    pub items: Vec<ResultItem>,
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ResultEntry {
+    Text { key: String, text: String },
+    Items { key: String, items: Vec<ResultItem> },
 }
 
 /// A finding: its rule and place as the head (`item · where`), then its other fields.
@@ -155,15 +154,13 @@ impl From<monitor::Card> for CardView {
                 entries
                     .iter()
                     .map(|(key, value)| match value {
-                        serde_json::Value::Array(items) => ResultEntry {
+                        serde_json::Value::Array(items) => ResultEntry::Items {
                             key: key.clone(),
-                            text: None,
                             items: items.iter().map(result_item).collect(),
                         },
-                        other => ResultEntry {
+                        other => ResultEntry::Text {
                             key: key.clone(),
-                            text: Some(text(other)),
-                            items: Vec::new(),
+                            text: text(other),
                         },
                     })
                     .collect()

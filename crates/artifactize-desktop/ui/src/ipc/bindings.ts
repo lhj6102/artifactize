@@ -529,11 +529,7 @@ export type RepositoryKey =
 { kind: "workspace"; path: PathKey };
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
-export type ResultEntry = {
-	key: string,
-	text: string | null,
-	items: ResultItem[],
-};
+export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
 
 /**  A finding: its rule and place as the head (`item · where`), then its other fields. */
 export type ResultItem = {
