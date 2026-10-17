@@ -44,27 +44,10 @@ eval title and ID, target Artifact and instruction. Artifact references expand t
 Artifact ID and its available tools; a file Artifact also includes its workspace-relative
 target path. Instructions therefore need not repeat tool names.
 
-<<<<<<< HEAD:website/docs/src/features/agent.md
-If the repaired output is still invalid, the review is ERROR, and the saved error
-keeps only the error code, never the model's output. See the
-[owner-result schema contract](declarations.md#owner-result-schemas) for allowed
-fields, reserved names and defaults.
-
-`max_tokens` and `max_tool_calls` are optional client-side budgets; omission leaves
-each unlimited. Neither is sent as a provider request parameter. The token budget
-adds each successful response's reported `total_tokens`, including reported cache
-usage, across the whole review. Missing totals count as zero for enforcement.
-The check happens **after** a response and fails only when the cumulative total
-exceeds the limit: it can overshoot and is not a hard generation or spending cap.
-The tool budget counts attempted calls before invocation, including calls that
-later fail, not just successful tools. Exceeding either stops further work with
-`PROVIDER_BUDGET_EXCEEDED`.
-=======
 Agent reviews return schema-validated GREEN or RED verdicts. If the model returns
 an invalid result, artifactize asks once for a correction; a still-invalid result
-makes the review ERROR. [Agent responses](../reference/agent-responses.md) specifies
+makes the review ERROR. [Agent responses](tools/agent-responses.md) specifies
 the backend formats, owner-field validation, repair and limits.
->>>>>>> origin/feat/evaluator-prompt:website/docs/src/guides/agent-evals.md
 
 The rig adapter, retries, tool results and usage counters are in
 [Agent backends](#agent-backends).

@@ -1,16 +1,15 @@
 // The monitor's Run graph in the real app on CLI-made state: release waits for its Human,
 // ship waits for release, docs is GREEN. The graph lights them, follows a submission made by
-// another process live without moving any node while zoomed into release, still opens the
+// another process live without moving any node while release's evals pop up, still opens the
 // highlighted eval's Detail afterwards, and moves between connected Artifacts by keyboard.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
 import { press } from "../keys.ts";
-import { breadcrumbNames } from "../breadcrumb.ts";
+import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryOpen, summaryShows } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
 
 function chainGraph(browser: WebdriverIO.Browser) {
-  const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
   const nodeView = (id: string) => browser.execute((want) => {
     const node = document.querySelector<HTMLElement>(`.graph .svelte-flow__node[data-id="${want}"]`);
     const box = node?.getBoundingClientRect();
@@ -19,41 +18,26 @@ function chainGraph(browser: WebdriverIO.Browser) {
       focused: !!node && document.activeElement === node,
       visible: !!box && !!canvas && box.width > 0 && box.height > 0 &&
         box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom,
-      whole: !document.querySelector('.graph [role="listbox"][aria-label="Evals"]') && !document.querySelector(".graph.split"),
+      whole: !document.querySelector('[role="listbox"][aria-label="Evals"]'),
     };
   }, id);
-  return { focused, nodeView };
+  return { nodeView };
 }
 
-function evalGraph(browser: WebdriverIO.Browser) {
-  const options = () =>
-    browser.execute(() =>
-      [...document.querySelectorAll('[role="listbox"][aria-label="Evals"] [role="option"]')].map(
-        (option) => `${option.getAttribute("aria-selected")}:${(option as HTMLElement).innerText.split("\n")[1] ?? ""}`,
-      ),
-    );
-
-  const selected = async () => (await options()).findIndex((option) => option.startsWith("true"));
-
-  const evals = () => browser.$('[role="listbox"][aria-label="Evals"]');
-
-  const detailClosed = async () => !(await browser.$("button*=Close").isExisting());
-  return { options, selected, evals, detailClosed };
-}
+const detail = (browser: WebdriverIO.Browser) => browser.$('aside[aria-label="Detail"]');
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-GRAPH-OPEN E-GRAPH-RECOLOUR E-GRAPH-ZOOM-IN E-GRAPH-EVAL-OPEN
+  // UX edges: E-GRAPH-RECOLOUR E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-DETAIL E-MON-DETAIL-BACK E-GRAPH-EVALS-CLOSE
   scenario<Record<string, never>>(
     "graph-live-verdicts",
-    "lights Artifacts and edges, recolours them in place and opens a zoomed eval after a submission",
+    "lights Artifacts and edges, recolours them in place and opens a popup's eval after a submission",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
       const graph = () => graphAppearance(browser);
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$("button*=Graph").click();
+      await graphShown(browser, "a:release");
       // Each comparison uses the very drawing that met its wait: the graph may redraw again
       // before a second reading.
       let drawn: GraphAppearance | undefined;
@@ -66,12 +50,13 @@ export const scenarios: Scenario[] = [
       assert.ok(drawn);
       const before = drawn;
 
-      // Zoom into release: its evals, the sign-off highlighted and focused.
-      await browser.$('.svelte-flow__node[data-id="a:release"]').click();
-      const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
-      await evals.waitForExist({ timeout: 10000 });
-      await browser.waitUntil(async () => (await browser.execute((list) => (list as HTMLElement).innerText, evals)).includes("signoff"), { timeout: 15000, timeoutMsg: "the release evals" });
-      await browser.waitUntil(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"), { timeout: 15000, timeoutMsg: "focus in the evals" });
+      // A click pops up release's evals beside it, the sign-off highlighted and focused.
+      await browser.$(nodeAt("a:release")).click();
+      await browser.waitUntil(async () => {
+        const shown = await popup(browser);
+        return shown?.artifact === "release" && shown.focused && shown.selected === "a:release/e:release/signoff";
+      }, { timeout: 15000, timeoutMsg: "release's evals popped up, the sign-off focused" });
+      assert.deepEqual((await popup(browser))?.evals, ["signoff"], "release's own evals");
 
       // Another process signs the release off; the change hint recolours the graph.
       const id = signoff(fixture).id;
@@ -87,7 +72,7 @@ export const scenarios: Scenario[] = [
         recoloured = shown;
         return true;
       }, { timeout: 15000, timeoutMsg: "the submitted release's node border/dot and relation stroke are painted GREEN" });
-      assert.equal(await evals.isFocused(), true, "a live graph update does not steal focus from the evals");
+      assert.equal((await popup(browser))?.focused, true, "a live graph update does not steal focus from the popup");
       assert.ok(recoloured);
       const after = recoloured;
       assert.notEqual(after.nodes["a:release"].border, before.nodes["a:release"].border, "the result changed the actual node border colour");
@@ -97,105 +82,78 @@ export const scenarios: Scenario[] = [
         assert.equal(after.nodes[node].at, before.nodes[node].at, `${node} kept its place`);
       }
 
-      // The tree folded the completed Artifact; Enter still opens the highlighted sign-off's
-      // Detail (an Artifact's Detail has no Human review).
+      // Enter still opens the highlighted sign-off's Detail: its completed Human review.
       const review = () => browser.$('[aria-label="Human review"]').isExisting();
       await press(browser, ["Enter"], review, "the sign-off's Human review");
-      // Back to the graph: Esc leaves Detail, a click on the list and Esc zooms out.
-      await press(browser, ["Escape"], async () => !(await review()), "Detail left");
-      await evals.click();
-      await press(browser, ["Escape"], async () => !(await evals.isExisting()), "zoomed out");
+      await browser.waitUntil(async () => /completed result/i.test(await detail(browser).getText()), { timeout: 15000, timeoutMsg: "the completed review" });
+      // Back to the graph as it was: Esc leaves the Detail, the popup still focused; Esc again
+      // closes the popup with release focused.
+      await press(browser, ["Escape"], async () => !(await review()) && (await popup(browser))?.focused === true, "Detail left, back in the popup");
+      await press(browser, ["Escape"], async () => (await popup(browser)) === null && (await focusedNode(browser)) === "a:release", "popup closed on release");
     },
   ),
 
-  // UX edges: E-GRAPH-OPEN E-GRAPH-CLOSE E-GRAPH-MOVE E-MON-TREE-MOVE
+  // UX edges: E-MON-RUNS-GRAPH E-GRAPH-MOVE E-MON-GRAPH-TO-RUNS E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
-    "graph-tree-focus",
-    "keeps the selected Artifact and keyboard focus through repeated tree/graph switches without a mouse",
+    "graph-keyboard-focus",
+    "takes the keyboard on the selected Artifact with its summary, moves without a mouse and opens an Artifact's Detail",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      const tree = () => browser.$('[role="tree"][aria-label="Artifacts and evals"]');
-      const selected = () => browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("data-path");
-      const on = (id: string) => () => browser.execute((want) =>
-        document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === want, id);
-      await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
-      await press(browser, ["Enter"], () => tree().isFocused(), "the Run tree focused");
-
-      // Navigate the actual visible rows to ship, not a DOM focus or selection mutation.
-      const paths = await browser.execute(() => [...document.querySelectorAll('[role="treeitem"]')]
-        .map((row) => row.getAttribute("data-path")));
-      const from = paths.indexOf(await selected());
-      const to = paths.indexOf("a:ship");
-      assert.ok(from >= 0 && to >= 0, "the selected row and ship are visible in this Run");
-      const step = Math.sign(to - from);
-      for (let at = from; at !== to;) {
-        at += step;
-        const path = paths[at];
-        await press(browser, [step > 0 ? "ArrowDown" : "ArrowUp"], async () => (await selected()) === path, `tree selection on ${path}`);
-      }
-
-      await press(browser, ["v"], on("a:ship"), "the selected ship Artifact focused in the graph");
-      await breadcrumbNames(browser, "ship");
-      await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:ship", "ship still selected and the tree focused");
-      await press(browser, ["v"], on("a:ship"), "ship focused after another switch to the graph");
-      await press(browser, ["ArrowLeft"], on("a:release"), "release focused upstream without a mouse");
-      await breadcrumbNames(browser, "release");
-      await press(browser, ["v"], async () => await tree().isFocused() && (await selected()) === "a:release", "release selected and the tree focused again");
-      const next = await browser.execute(() => document.querySelector('[role="treeitem"][aria-selected="true"]')?.nextElementSibling?.getAttribute("data-path"));
-      assert.ok(next, "release has a following visible row");
-      await press(browser, ["ArrowDown"], async () => await tree().isFocused() && (await selected()) === next, "tree navigation continues from release");
+      await graphShown(browser, "a:release");
+      const runs = () => browser.$('[role="listbox"][aria-label="Runs"]');
+      await browser.waitUntil(() => runs().isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
+      // The Run starts on the release sign-off: its Artifact takes the keyboard.
+      assert.equal(await summaryOpen(browser), false, "no summary while Runs has the keyboard");
+      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:release", "release focused in the graph");
+      await summaryShows(browser, nodeAt("a:release"), /release/);
+      await press(browser, ["ArrowRight"], async () => (await focusedNode(browser)) === "a:ship", "ship focused downstream");
+      await summaryShows(browser, nodeAt("a:ship"), /ship/);
+      // `o` opens the selected Artifact's own Detail; Esc puts the keyboard back on it.
+      await press(browser, ["o"], () => detail(browser).isExisting(), "ship's Detail opened");
+      await browser.waitUntil(async () => /ship/.test(await detail(browser).$("h2").getText()), { timeout: 15000, timeoutMsg: "the Detail is ship's" });
+      await press(browser, ["Escape"], async () => !(await detail(browser).isExisting()) && (await focusedNode(browser)) === "a:ship", "Detail closed, ship focused");
+      await press(browser, ["ArrowLeft"], async () => (await focusedNode(browser)) === "a:release", "release focused upstream");
+      await press(browser, ["Escape"], () => runs().isFocused(), "back to Runs");
+      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:release", "release, still selected, focused again");
     },
   ),
 
-  // UX edges: E-GRAPH-MOVE E-GRAPH-CLOSE
+  // UX edges: E-MON-DETAIL-RUN E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
-    "graph-connected-navigation",
-    "moves along edges with the arrow keys and switches back to the tree with v",
+    "graph-run-detail",
+    "opens the Run's Detail from its headline and closes it again",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$("button*=Graph").click();
-      await browser.$('.svelte-flow__node[data-id="a:release"]').click();
-      await browser.$('[role="listbox"][aria-label="Evals"]').waitForDisplayed({ timeout: 15000 });
-<<<<<<< HEAD
-      await browser.waitUntil(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
-        { timeout: 15000, timeoutMsg: "the clicked release's Evals list is focused" });
-=======
->>>>>>> origin/feat/evaluator-prompt
-      await press(browser, ["Escape"], async () => !(await browser.$('[role="listbox"][aria-label="Evals"]').isExisting()), "this case's whole graph");
-      await browser.waitUntil(() => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === "a:release"), { timeout: 15000, timeoutMsg: "focus back on release" });
-      const on = (id: string) => () =>
-        browser.execute((want) => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === want, id);
-      await press(browser, ["ArrowRight"], on("a:ship"), "focus on ship, downstream");
-      await press(browser, ["ArrowLeft"], on("a:release"), "focus on release, upstream");
-      await press(browser, ["v"], () => browser.$('[role="tree"]').isExisting(), "the tree");
+      await graphShown(browser, "a:release");
+      const run = await browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
+      assert.match(run, /^run-/);
+      await browser.$('button[title="Open the Run\'s Detail"]').click();
+      await browser.waitUntil(async () => (await detail(browser).isExisting()) && (await detail(browser).getText()).includes(run),
+        { timeout: 15000, timeoutMsg: "the Run's own Detail" });
+      await detail(browser).$("button*=Close").click();
+      await browser.waitUntil(async () => !(await detail(browser).isExisting()), { timeout: 15000, timeoutMsg: "the Detail closed" });
+      await graphShown(browser, "a:release");
     },
   ),
 
-  // UX edges: E-GRAPH-BEYOND E-GRAPH-ZOOM-OUT
+  // UX edges: E-GRAPH-BEYOND E-GRAPH-EVALS-CLOSE
   scenario<Record<string, never>>(
     "graph-chain-culling",
-    "walks the whole chain beyond the drawn nodes, through a zoom in and out, focus following",
+    "walks the whole chain beyond the drawn nodes, through a popup opened and closed, focus following",
     async () => {
       const fixture = createChain(85);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      const { focused, nodeView } = chainGraph(browser);
+      const { nodeView } = chainGraph(browser);
       const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), { timeout: 30000, timeoutMsg: "the Run tree" });
-      await browser.$("button*=Graph").click();
-      await browser.waitUntil(async () => {
-        const nodes = await browser.$$(".graph .svelte-flow__node");
-        return (await nodes.map((node) => node.isDisplayed())).some(Boolean);
-      }, { timeout: 30000, timeoutMsg: "a visible node in the drawn chain" });
+      await browser.$(".graph .svelte-flow__node").waitForDisplayed({ timeout: 30000 });
       // Make the chain extend beyond the visible canvas, independently of whether the
       // renderer keeps offscreen nodes mounted.
       const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
@@ -218,13 +176,13 @@ export const scenarios: Scenario[] = [
           document.elementFromPoint(x, y)?.closest(".svelte-flow__node") === node)
           .sort((a, b) => a.distance - b.distance)[0]?.node.dataset.id ?? null;
       });
-      await browser.waitUntil(async () => (await visible()) !== null, { timeout: 15000, timeoutMsg: "a zoomed graph node is actually hit-testable" });
+      await browser.waitUntil(async () => (await visible()) !== null, { timeout: 15000, timeoutMsg: "a magnified graph node is actually hit-testable" });
       const first = await visible();
       assert.ok(first, "a real visible node can receive the pointer");
       console.log(`e2e graph: click visible node ${first}`);
-      await browser.$(`.svelte-flow__node[data-id="${first}"]`).click();
-      // Escape before the click's zoom is shown would leave the Run pane instead.
-      await browser.$('[role="listbox"][aria-label="Evals"]').waitForExist({ timeout: 15000, timeoutMsg: "the clicked node zoomed in" });
+      await browser.$(nodeAt(first)).click();
+      // Escape before the click's popup is shown would leave the Run pane instead.
+      await browser.$('[role="listbox"][aria-label="Evals"]').waitForExist({ timeout: 15000, timeoutMsg: "the clicked node's evals popped up" });
       await press(browser, ["Escape"], async () => {
         const shown = await nodeView(first);
         return shown.whole && shown.focused && shown.visible;
@@ -241,62 +199,72 @@ export const scenarios: Scenario[] = [
         if (key.startsWith("Arrow") && !before.visible) revealedBeyond = true;
       };
       // Back to the start of the chain, then along all of it.
-      let at = Number(((await focused()) ?? "").slice(3));
+      let at = Number(((await focusedNode(browser)) ?? "").slice(3));
       while (at > 0) await step("ArrowLeft", name((at -= 1)));
       for (let index = 1; index < 85; index += 1) {
         await step("ArrowRight", name(index));
         if (index === 40) {
-          // Into the revealed Artifact's evals and back out: focus returns to it and stays
-          // through the camera's move, and the keys go on from it.
+          // The revealed Artifact's evals pop up and close: focus returns to it and stays,
+          // and the keys go on from it.
           await press(
             browser,
             ["Enter"],
-            () => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
+            async () => (await popup(browser))?.focused === true,
             "the evals",
           );
-          // Escape returns to the whole graph with this Artifact in view; the UX
-          // does not require a particular camera scale or a disabled zoom control.
           await step("Escape", name(40));
-          await breadcrumbNames(browser, "n040");
+          await summaryShows(browser, nodeAt(name(40)), /n040/);
         }
       }
-      // The tree's selection is the focused node: the breadcrumb names it.
-      await breadcrumbNames(browser, "n084");
+      // The selection is the focused node: the summary beside it names it.
+      await summaryShows(browser, nodeAt(name(84)), /n084/);
       const last = await nodeView(name(84));
       assert.ok(last.whole && last.visible && last.focused, "the final Artifact is visible and focused in the whole graph");
       assert.ok(revealedBeyond, "arrow navigation brought an Artifact from beyond the viewport into view and focus");
     },
   ),
 
-  // UX edges: E-GRAPH-ZOOM-IN E-GRAPH-EVAL-SELECT E-GRAPH-EVAL-OPEN E-GRAPH-ZOOM-OUT
+  // UX edges: E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-SELECT E-GRAPH-EVALS-DETAIL E-MON-DETAIL-TECHNICAL
+  // E-MON-DETAIL-BACK E-GRAPH-EVALS-CLOSE
   scenario<Record<string, never>>(
     "graph-eval-selection",
-    "selects an eval with the arrows, opens its Detail with Enter and zooms out with Esc",
+    "pops up an Artifact's evals with Enter, selects one with the arrows, opens its Detail with its technical record and closes both",
     async () => {
       const fixture = createEvals(["alpha", "beta", "gamma"]);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
-    async (browser) => {
-      const { options, selected, evals, detailClosed } = evalGraph(browser);
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("alpha"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$("button*=Graph").click();
-      await browser.$('.svelte-flow__node[data-id="a:app"]').waitForExist({ timeout: 15000 });
-      await browser.$('.svelte-flow__node[data-id="a:app"]').click();
-      await evals().waitForExist({ timeout: 10000 });
-      await browser.waitUntil(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"), { timeout: 15000, timeoutMsg: "focus in the evals" });
-      const first = await selected();
-      await press(browser, ["ArrowDown"], async () => (await selected()) === first + 1, "the next eval selected");
-      // The Detail follows the selection without being opened.
-      const chosen = (await options())[first + 1].split(":")[1].trim();
-      // Search only the Monitor's fourth pane: the graph's Evals list already contains
-      // every title and cannot establish that the Detail followed the selection.
-      const peek = () => browser.execute(() => (document.querySelectorAll(".monitor section.panel")[3] as HTMLElement).innerText);
-      await browser.waitUntil(async () => (await peek()).includes(`Check ${chosen}`), { timeout: 15000, timeoutMsg: "the Detail pane follows the selected eval" });
-      assert.match(await peek(), new RegExp(`app/${chosen}`));
-      await press(browser, ["Enter"], async () => !(await detailClosed()), "the Detail opened");
-      await press(browser, ["Escape"], detailClosed, "the Detail left");
-      await evals().click();
-      await press(browser, ["Escape"], async () => !(await evals().isExisting()), "zoomed out");
+    async (browser, { fixture }) => {
+      await graphShown(browser, "a:app");
+      await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
+      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:app", "app focused in the graph");
+      await press(browser, ["Enter"], async () => (await popup(browser))?.focused === true, "app's evals popped up");
+      const shown = (await popup(browser))!;
+      assert.deepEqual(shown.evals, ["alpha", "beta", "gamma"], "app's own evals, with their verdicts");
+      const index = shown.evals.findIndex((name) => shown.selected === `a:app/e:app/${name}`);
+      assert.ok(index >= 0 && index + 1 < shown.evals.length, "an eval with another after it is selected");
+      const chosen = shown.evals[index + 1];
+      const path = `a:app/e:app/${chosen}`;
+      await press(browser, ["ArrowDown"], async () => (await popup(browser))?.selected === path, "the next eval selected");
+      // Its summary follows the selection, beside its row.
+      await summaryShows(browser, rowAt(path), new RegExp(`Check ${chosen}`));
+      await press(browser, ["Enter"], () => detail(browser).isExisting(), "the Detail opened");
+      // The selected eval's own instruction, result and request, then its technical record.
+      const request = requests(fixture).find((saved) => saved.evalId === `app/${chosen}`);
+      assert.ok(request?.result, `the real CLI saved app/${chosen}'s result`);
+      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
+        .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
+      await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: `the Detail is app/${chosen}'s` });
+      assert.ok((await browser.$('[role="document"]').getText()).includes(`Check ${chosen}.`), "its instruction");
+      assert.deepEqual(JSON.parse(await field("Raw result")), request.result, "its exact saved result");
+      const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
+      assert.equal(await field("Fingerprint"), "", "the technical record starts folded");
+      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "", "the technical record shown");
+      assert.equal(await field("Request"), request.id, "the request stays shown beside the technical record");
+      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "", "the technical record hidden");
+      // Back to the graph as it was: the popup, the chosen eval still selected.
+      await press(browser, ["Escape"], async () => !(await detail(browser).isExisting()) && (await popup(browser))?.focused === true, "the Detail left");
+      assert.equal((await popup(browser))?.selected, path, "the chosen eval is still selected");
+      await press(browser, ["Escape"], async () => (await popup(browser)) === null && (await focusedNode(browser)) === "a:app", "the popup closed on app");
     },
   ),
 ];

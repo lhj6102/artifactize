@@ -13,7 +13,6 @@ cp -r examples/runtime-relations "$WALK/bob"
 printf 'WALK directory: %s\n' "$WALK"
 ```
 
-<<<<<<< HEAD:website/docs/src/features/team/walkthrough.md
 `mktemp -d` creates a new temporary folder outside the checkout; `WALK` holds its
 path. Print it now and keep the value:
 
@@ -33,11 +32,6 @@ Exporting in one terminal does not set variables in other terminals. Do not run
 `mktemp` again: all these local examples must use the same folder. The output
 below illustrates the Alice/Bob roles; your actual Run IDs and user/host labels
 will differ.
-=======
-Copy the printed absolute directory path. A new terminal does not inherit `WALK`:
-in each new terminal below, replace `/path/from/setup` with that path and run the
-shown `export WALK=...` line before continuing.
->>>>>>> origin/feat/evaluator-prompt:website/docs/src/guides/team-walkthrough.md
 
 ## 1. The server
 
@@ -137,16 +131,10 @@ Human sign-offs unless the token has `human`.
 ## 5. CI reuses both
 
 CI is configured through the environment only. It uses the read-only `ci` token
-<<<<<<< HEAD:website/docs/src/features/team/walkthrough.md
 from step 1, here supplied as the `CI_TOKEN` secret variable. Configure that value
 through your CI's secret settings, never in a committed file. `--reuse-only
 agent,human` ensures Agent reviews and Human sign-offs come only from the store
 or cache. For the local demonstration, first copy `WALK` into this terminal too:
-=======
-from step 1, here in `CI_TOKEN`, and `--reuse-only agent,human`, so that Agent
-reviews and Human sign-offs only come from the store or the cache. For this local
-simulation, open another terminal and set the same copied directory path:
->>>>>>> origin/feat/evaluator-prompt:website/docs/src/guides/team-walkthrough.md
 
 ```sh
 export WALK='/path/from/setup'
@@ -205,7 +193,6 @@ In the first terminal, keep the watcher running:
 
 ```sh
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
-<<<<<<< HEAD:website/docs/src/features/team/walkthrough.md
 artifactize verify --all --wait
 ```
 
@@ -217,18 +204,6 @@ identifier printed by `request list`:
 cd "$WALK/brand"
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
 artifactize request list
-=======
-artifactize verify --all --wait                    # WAITING_HUMAN; waits for the sign-off
-```
-
-Open another terminal for the submission and re-establish its path and state:
-
-```sh
-export WALK='/path/from/setup'
-cd "$WALK/brand"
-export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
-artifactize request list                    # shows REQUEST_ID
->>>>>>> origin/feat/evaluator-prompt:website/docs/src/guides/team-walkthrough.md
 artifactize request claim REQUEST_ID
 artifactize request submit REQUEST_ID --verdict GREEN
 ```

@@ -286,11 +286,13 @@ kbd {
   margin: 4px 0;
 }
 
-/* Resizable panes. */
+/* Resizable panes. The grab zone reaches 3px over both neighbouring panes, so the divider
+   stacks above them: a press on either side of the line starts the drag. */
 .resizer {
   width: 1px;
   background: var(--border);
   position: relative;
+  z-index: 1;
 }
 .resizer::after {
   content: "";

@@ -233,7 +233,6 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-cli.payload]
 instruction = """
-<<<<<<< HEAD
 Review {docs} against only {cli}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is CLI (src/cli/), including every command, flag, default, output and exit behavior. Interactive terminal screens belong to the TUI area; the CLI area explains how to launch them.
 Check that this area is grouped in one distinct place, that all user-facing features
@@ -247,18 +246,6 @@ Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
 """
-=======
-Check that the mdBook documentation in {docs} (src/, starting from src/SUMMARY.md) matches the code \
-of {core}. Compare what the docs state about commands, flags, defaults, exit codes, output, \
-index.artf fields, tool declarations and state behavior with the code \
-(start from src/cli.rs, src/mcp.rs and src/config.rs). Also compare guides/hey-arti.md with the canonical \
-Artifactizer skill {hey-arti}; verify MCP-first guidance and Human/lifecycle \
-boundaries agree without claiming plugin distribution. Tool paths are relative to each Artifact, for example \
-src/reference/cli.md in docs. Submit GREEN when no statement clearly contradicts the code or \
-describes something the code no longer has. Otherwise submit RED with up to 20 mismatches, the most \
-misleading first, each with the doc path:line, the code path:line and one sentence on how to fix the \
-doc."""
->>>>>>> origin/feat/evaluator-prompt
 
 [evals.matches-cli.pass_schema]
 type = "object"

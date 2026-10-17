@@ -13,6 +13,7 @@
   - [Declarations and Artifact Graph](features/declarations.md)
 - [Eval](features/eval.md)
   - [Agent](features/agent.md)
+  - [Agent responses](features/tools/agent-responses.md)
   - [Human](features/human.md)
   - [Runtime](features/runtime.md)
 - [Fingerprint](features/fingerprint.md)
@@ -39,7 +40,6 @@
 - [Hey Arti](agent-plugin/hey-arti.md)
 - [MCP](agent-plugin/mcp.md)
 
-<<<<<<< HEAD
 # CLI
 
 - [CLI](cli/index.md)
@@ -47,16 +47,3 @@
 # TUI
 
 - [TUI](tui/index.md)
-=======
-- [Overview](reference/overview.md)
-- [CLI](reference/cli.md)
-- [MCP](reference/mcp.md)
-- [Declarations (.artf)](reference/declarations.md)
-- [Agent tools](reference/agent-tools.md)
-- [Agent responses](reference/agent-responses.md)
-- [Human tools](reference/human-tools.md)
-- [Built-in tools](reference/builtin-tools.md)
-- [State, cache and limits](reference/state-cache-limits.md)
-- [Review store server and client](reference/review-store.md)
-- [Operating systems](reference/platforms.md)
->>>>>>> origin/feat/evaluator-prompt

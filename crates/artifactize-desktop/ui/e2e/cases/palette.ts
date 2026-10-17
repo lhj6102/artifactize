@@ -9,6 +9,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { portablePath, primaryModifier, type NativePath } from "../platform.ts";
+import { graphShown } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -155,7 +156,7 @@ export const scenarios: Scenario[] = [
         (window as unknown as { errors: string[] }).errors = errors;
         window.addEventListener("error", (event) => errors.push(event.message));
       });
-      await browser.$('[role="treeitem"][aria-selected="true"]').waitForExist({ timeout: 15000 });
+      await graphShown(browser, "a:release");
       const listed = () => browser.execute(() => [...document.querySelectorAll("[data-command-item]")]
         .map((item) => item.querySelector("span")?.textContent?.trim() ?? "").sort());
       await ctrlK("filter");
@@ -163,8 +164,8 @@ export const scenarios: Scenario[] = [
       // These are the person's commands for this screen, not a registry-derived oracle.
       const expected = [
         "Command palette", "Keyboard shortcuts", "Show Monitor", "Show Review", "Show Settings", "Quit",
-        "Refresh", "Next attention", "Focus Scope", "Focus Runs", "Focus Run tree",
-        "Show the Run graph", "Open Detail of the selected row",
+        "Refresh", "Next attention", "Focus Scope", "Focus Runs", "Focus Run graph",
+        "Open Detail of the selected node", "Open the Run's Detail",
       ].sort();
       await waitFor(browser, async () => isDeepStrictEqual(await listed(), expected), "the enabled Monitor commands are rendered");
       assert.deepEqual(await listed(), expected, "all and only the enabled commands of the Monitor");

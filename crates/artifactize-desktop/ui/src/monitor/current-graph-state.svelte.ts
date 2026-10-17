@@ -13,7 +13,8 @@ export class CurrentGraphState {
   shown = $state.raw<{ view: CurrentGraph; positions: Map<string, Point> } | null>(null);
   error = $state<string | null>(null);
   selected = $state<string[]>([]);
-  zoomed = $state<string | null>(null);
+  /** The Artifact whose evals pop up beside it. */
+  popup = $state<string | null>(null);
   reading = $state(false);
   details = $state(false);
   #read = 0;
@@ -28,7 +29,7 @@ export class CurrentGraphState {
       this.shown = { view, positions };
       this.error = null;
       this.selected = [];
-      this.zoomed = null;
+      this.popup = null;
     } catch (error) {
       if (read === this.#read) this.error = message(error);
     } finally {

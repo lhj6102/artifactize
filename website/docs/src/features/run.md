@@ -14,7 +14,6 @@ See [Eval dependencies](artifact.md#eval-dependencies).
 ## Verify and Runs
 
 `verify` requires exactly one selector: positional `ARTIFACT` or qualified
-<<<<<<< HEAD:website/docs/src/features/run.md
 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`,
 `--artifacts-file PATH`, or `--all`. Eval IDs are qualified (`green/check`).
 Selection preserves first occurrences and removes duplicates. Artifacts expand
@@ -25,27 +24,7 @@ that eval. Both retain the full dependency closure as a final obligation.
 target and cycle peers, in configuration order. `--all` includes every eval and
 all no-eval Artifact obligations. A file
 Artifact selector never selects the surrounding folder's evals.
-=======
-`ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, or
-`--all`. Eval IDs are qualified (`green/check`). Selection order is preserved, with
-duplicates removed at their first occurrence; Artifacts expand to their evals in ID
-order within each declaration. Every READY eval starts as soon as it is ready,
-without a default concurrency cap. Add `--jobs N` (minimum 1) only if this
-concurrency causes trouble. Scheduling prefers unblockable work and the
-longest remaining dependency path; selection/configuration order breaks ties.
-Selection order still defines saved requests, not dispatch priority. The graph is
-re-evaluated after each result;
-newly READY evals do not wait for an entire batch to finish. Waiters on a
-fingerprint claim count against an explicit `--jobs` cap, but cache hits do not. An
-Agent review of a backend with a machine-wide limit also needs one of its
-[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one does not count against `--jobs`.
-QUEUED means awaiting admission, a backend slot or a joined execution; only a
-Run with explicit `--jobs` can be waiting for a Run job slot. Artifactize owns
-each Run independently of its requester. Plain `verify` prints the Run ID
-and exits 0 when submission is accepted; `--json` prints `{"run","state"}`.
-Acceptance is not a validation verdict. Use `verify --wait` to announce the ID on stderr,
-observe settlement and render the final saved result. Interrupting or closing the watcher
-stops observation only; the Run continues. `run cancel RUN_ID` explicitly requests cancellation.
+
 An Artifact selector asks to run that piece's checks; an individual eval selector
 asks to run just that check. The Run still needs valid results for every piece
 those checks rely on, following their links as far as needed. This linked group is
@@ -63,10 +42,6 @@ without that still-valid approval. `verify --eval code/tests --recursive` also
 selects the group's other checks, such as `code/style` and `plan/signoff`, so they
 can run or reuse results. Selecting more checks never supplies approval itself.
 
-Selecting a dependency eval automatically includes the checks in its required
-group, even without `--recursive`: `artifactize verify player/ready` is sufficient.
-A file Artifact selector selects its own evals, never the surrounding folder's.
->>>>>>> origin/feat/evaluator-prompt:website/docs/src/concepts/runs-and-status.md
 
 Every READY eval starts as soon as ready, with **no default concurrency cap**.
 Use `--jobs N` (minimum 1) only when concurrency causes trouble. Scheduling prefers

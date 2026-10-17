@@ -1,7 +1,7 @@
 # Agent responses
 
 Wire formats and validation used by an Agent eval. For setup and everyday use, see
-[Agent evals and backends](../guides/agent-evals.md).
+[Agent evals and backends](../agent.md).
 
 ## Final output and validation
 

@@ -41,7 +41,7 @@
           positions={graph.shown.positions}
           tree={graph.shown.view.tree}
           selected={graph.selected}
-          bind:zoomed={graph.zoomed}
+          bind:popup={graph.popup}
           structural
           onselect={(path) => (graph.selected = path)}
           onopen={() => (graph.details = true)}

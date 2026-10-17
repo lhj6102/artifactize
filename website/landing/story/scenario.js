@@ -89,13 +89,8 @@ const nodes = [
   ...bob.nodes,
   { id: 'app-c', label: 'Carol’s copy', kind: 'repo' },
   ...carol.nodes,
-<<<<<<< HEAD
-  { id: 'store', label: 'Review store', kind: 'store', sub: 'artifactize server' },
-  { id: 'ci', label: 'Checks', kind: 'ci', sub: 'reads saved reviews' },
-=======
   { id: 'store', label: 'Shared reviews', kind: 'store', sub: 'Team’s saved results' },
   { id: 'ci', label: 'Team checks', kind: 'ci', sub: 'Can read, not publish' },
->>>>>>> origin/feat/evaluator-prompt
 ];
 
 /** @type {StoryEval[]} */

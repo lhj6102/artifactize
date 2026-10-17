@@ -16,6 +16,20 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
    * target before one WebDriver click, rather than clicking during that transition. */
   async function clickArtifact(name: string) {
     const selector = `.current .svelte-flow__node[data-id="a:${name}"]`;
+    // Where the node, the canvas and the camera were, read only when the node was no target.
+    const placed = () => browser.execute((selector) => {
+      const node = document.querySelector(selector);
+      const box = node?.getBoundingClientRect();
+      const canvas = node?.closest(".svelte-flow")?.getBoundingClientRect();
+      const hit = box && document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return {
+        window: [innerWidth, innerHeight],
+        node: box && [box.left, box.top, box.right, box.bottom].map(Math.round),
+        canvas: canvas && [canvas.left, canvas.top, canvas.right, canvas.bottom].map(Math.round),
+        camera: document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style"),
+        hit: hit ? `${hit.tagName}.${hit.getAttribute("class") ?? ""}` : null,
+      };
+    }, selector);
     await browser.waitUntil(() => browser.executeAsync<boolean, [string]>((selector, done) => {
       const node = document.querySelector(selector);
       if (!node) return done(false);
@@ -28,7 +42,9 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
           !!canvas && after.left >= canvas.left && after.right <= canvas.right && after.top >= canvas.top && after.bottom <= canvas.bottom &&
           hit?.closest(".svelte-flow__node") === node);
       });
-    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` });
+    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` }).catch(async (error: unknown) => {
+      throw new Error(`${name} is a stable, visible graph pointer target: ${JSON.stringify(await placed())}`, { cause: error });
+    });
     await browser.$(selector).click();
   }
 
@@ -65,10 +81,10 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
 }
 
 export const scenarios: Scenario[] = [
-  // J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-ZOOM → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
+  // J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-EVALS → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
   scenario<Record<string, never>>(
     "current-graph-refresh",
-    "opens without a saved Run, zooms into complete criteria and relations, then refreshes changed declarations",
+    "opens without a saved Run, pops up an Artifact's evals, expands complete criteria and relations, then refreshes changed declarations",
     async () => {
       const fixture = createGraph();
       return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
@@ -85,8 +101,10 @@ export const scenarios: Scenario[] = [
       const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
       await evals.waitForExist({ timeout: 10000 });
       assert.match(await evals.getText(), /A person approves the release/);
-      // Opening the selected eval exposes criteria, not a historical request Detail.
-      await evals.click();
+      // The popup beside release takes the keys; opening its selected eval exposes criteria,
+      // not a historical request Detail.
+      await browser.waitUntil(() => evals.isFocused(), { timeout: 15000, timeoutMsg: "release's eval popup focused" });
+      assert.equal(await expanded(), false, "the structure text starts folded");
       await press(browser, ["Enter"], expanded, "structure text expanded from the selected eval");
       const shown = await structure();
       const criteria: Record<string, unknown> = {};
@@ -120,7 +138,7 @@ export const scenarios: Scenario[] = [
       ], "the concrete input-to-consumer relation carries its instruction label");
       assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false);
 
-      // Continue the same launch, zoom and complete-structure journey: the text remains
+      // Continue the same launch, popup and complete-structure journey: the text remains
       // expanded while each real refresh reloads this window's changed declaration.
       const declaration = nativePath(fixture.repo, "docs", "index.artf");
       let previousTitle = "Docs build";

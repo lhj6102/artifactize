@@ -1,6 +1,6 @@
 <script lang="ts">
   // The Run graph: Artifacts and their dependency edges, lit by the backend's `run_graph` from
-  // the same snapshot as the tree. Every accepted snapshot recolours the graph in place; only a
+  // the same snapshot as the Run's tree of Artifacts and evals. Every accepted snapshot recolours the graph in place; only a
   // change of Artifacts or edges lays it out again, so nodes never jump on a state change.
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
@@ -15,24 +15,27 @@
     revision,
     tree,
     selected,
-    zoomed = $bindable(null),
+    popup = $bindable(null),
     active = true,
     onselect,
     onopen,
     onready,
+    onhover,
   }: {
     run: string;
     /** The browse revision: a new one means a new snapshot to read the graph from. */
     revision: number;
     tree: TreeNode[];
     selected: string[];
-    zoomed?: string | null;
+    /** The Artifact whose evals pop up beside it. */
+    popup?: string | null;
     /** The graph's screen is shown; a hidden graph holds no keyboard focus. */
     active?: boolean;
     onselect: (path: string[]) => void;
     onopen: () => void;
-    /** The graph is mounted and can accept a requested keyboard-focus handoff. */
-    onready?: (focus: () => void) => void;
+    /** A way to give the graph keyboard focus while it is mounted, `null` once it is not. */
+    onready?: (focus: (() => boolean) | null) => void;
+    onhover?: (path: string[] | null) => void;
   } = $props();
   const commands = useIpc();
   const g = new RunGraphState();
@@ -86,7 +89,6 @@
   <div class="note">
     <p>
       This Run has {g.pending.nodes.length} Artifacts; the graph lays out at most {LIMIT} at once, which can take a while.
-      The tree shows every Run at once (<kbd>v</kbd>).
     </p>
     <button
       class="button"
@@ -103,7 +105,7 @@
 {:else}
   {#key g.shown.graph.run}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} {onready} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:popup {active} {onselect} {onopen} {onready} {onhover} />
     </SvelteFlowProvider>
   {/key}
 {/if}

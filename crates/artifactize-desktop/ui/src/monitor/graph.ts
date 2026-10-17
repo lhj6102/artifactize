@@ -1,9 +1,9 @@
 // The Run graph's frontend side: which lights mean what to a reader, when a graph needs a new
 // layout, and which connected node an arrow key moves to. The lights themselves come from the
-// backend (`run_graph`), derived from the same states as the tree.
+// backend (`run_graph`), derived from the same states as the Run's tree of Artifacts and evals.
 import type { Light, RunGraph } from "../ipc/client";
 
-/** Above this many Artifacts the graph asks before laying out; the tree shows any Run. */
+/** Above this many Artifacts the graph asks before laying out. */
 export const LIMIT = 300;
 
 /** Words for each light, for labels and the legend; colours are `light-<name>` classes. */

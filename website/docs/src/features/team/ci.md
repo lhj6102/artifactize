@@ -1,13 +1,8 @@
 # CI
 
-<<<<<<< HEAD:website/docs/src/features/team/ci.md
 **Continuous integration (CI)** automatically runs checks when a team pushes code
 or opens a pull request. A CI job is a sequence of commands on a runner machine;
 it should reuse a developer's Agent/Human approvals, not make those decisions.
-=======
-Continuous integration (CI) runs automated checks when you submit project changes,
-helping your team decide whether those changes are ready to join the shared project.
->>>>>>> origin/feat/evaluator-prompt:website/docs/src/guides/ci.md
 
 Run `artifactize verify --all --wait --reuse-only agent,human` as a CI step: tests run, while reviews must come from the cache or
 the team store, so CI never calls a model or waits for a person. It exits 0 only
@@ -29,7 +24,6 @@ sign-off. RED blocks dependents. Do not treat plain verify acceptance as CI succ
 
 ## Reuse verdicts from the team store
 
-<<<<<<< HEAD:website/docs/src/features/team/ci.md
 The YAML below is **one GitHub Actions step**, not a complete workflow. Put it in
 an existing `.github/workflows/NAME.yml` file under `jobs.YOUR_JOB.steps`, after
 checking out the reviewed commit and making `artifactize` available on the runner
@@ -43,12 +37,6 @@ secret named `ARTIFACTIZE_READ_TOKEN`, and enter that token as its value. Replac
 the example URL below with your team's reachable store URL. The `${{ secrets... }}`
 expression supplies the secret at runtime; never paste the token into this file.
 Configure other CI services through their equivalent secret/environment settings.
-=======
-Configure the team store through environment variables. This example is a GitHub
-Actions step: add it under `steps:` in the job of your `.github/workflows/*.yml`
-workflow file, after installing Artifactize. Create a GitHub Actions secret named
-`ARTIFACTIZE_READ_TOKEN` for the store's read token.
->>>>>>> origin/feat/evaluator-prompt:website/docs/src/guides/ci.md
 
 ```yaml
 - run: artifactize verify --all --wait --reuse-only agent,human

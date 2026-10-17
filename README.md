@@ -56,18 +56,11 @@ explains the alternatives—install scripts, Cargo and building from source—al
 with prerequisites, updates and uninstalling.
 
 Once installed, take the
-<<<<<<< HEAD
 [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
-It uses an example project and needs no AI account or API key.
-[Hey Arti](https://artifactize.dev/docs/agent-plugin/hey-arti.html) lets a coding assistant
-use the same review workflow.
-=======
-[5-minute quick start](https://artifactize.dev/docs/getting-started/quick-start.html).
 It uses an example project and needs no AI account or provider access key (API key).
-With [Hey Arti](https://artifactize.dev/docs/guides/hey-arti.html), ask your coding
+With [Hey Arti](https://artifactize.dev/docs/agent-plugin/hey-arti.html), ask your coding
 assistant in your own words to set up and run these checks; its SKILL.md file gives
 the assistant the workflow instructions.
->>>>>>> origin/feat/evaluator-prompt
 
 ## Learn more
 
