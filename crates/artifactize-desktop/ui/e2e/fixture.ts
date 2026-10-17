@@ -64,6 +64,7 @@ type = "object"
 properties.approved = { const = true }
 properties.comment = { type = "string", description = "What you checked." }
 ${signoff.scalars ? `properties.score = { type = "number" }
+properties.note = { type = "string" }
 properties.confirmed = { type = "boolean" }
 properties.channel = { enum = ["stable", "preview"] }` : ""}
 required = ["approved", "comment"]

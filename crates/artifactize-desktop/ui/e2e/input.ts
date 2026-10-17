@@ -1,6 +1,6 @@
 // One WebDriver page-input adapter for standard events omitted by the pristine provider.
 // This delivers only input to actual UI targets: no app handlers, commands or state access.
-type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "click"; x: number; y: number }
+type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "click" | "text-click"; x: number; y: number }
   | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number };
 
 /** Click the actual option through WebDriver, then supply only its missing HTML default
@@ -85,8 +85,28 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
         target.dispatchEvent(new MouseEvent(`mouse${input.phase}`, { ...common, buttons }));
         return;
       }
-      target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1, pressure: 0.5 }));
-      target.dispatchEvent(new MouseEvent("mousedown", { ...common, buttons: 1 }));
+      const pointerDown = target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1, pressure: 0.5 }));
+      const mouseDown = target.dispatchEvent(new MouseEvent("mousedown", { ...common, buttons: 1 }));
+      if (input.kind === "text-click" && pointerDown && mouseDown && !(target as HTMLElement).isContentEditable && !target.closest("input, textarea")) {
+        let selecting: Element | null = target;
+        while (selecting.parentElement && getComputedStyle(selecting).userSelect === "auto") selecting = selecting.parentElement;
+        const selection = getSelection();
+        if (selection && getComputedStyle(selecting).userSelect !== "none") {
+          target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus();
+          if (getComputedStyle(selecting).userSelect === "all") selection.selectAllChildren(selecting);
+          else {
+            // A real text mousedown places its caret. el.click()/focus() alone leaves
+            // Blink's old textarea selection context active, making Select All a no-op.
+            const engine = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null };
+            const caret = engine.caretPositionFromPoint?.(input.x, input.y);
+            const range = caret ? null : document.caretRangeFromPoint?.(input.x, input.y);
+            const node = caret?.offsetNode ?? range?.startContainer;
+            const offset = caret?.offset ?? range?.startOffset;
+            if (!node || offset === undefined || !target.contains(node)) throw new Error("the clicked text has no native caret position");
+            selection.collapse(node, offset);
+          }
+        }
+      }
       target.dispatchEvent(new PointerEvent("pointerup", { ...pointer, buttons: 0, pressure: 0 }));
       target.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0 }));
       target.dispatchEvent(new MouseEvent("click", { ...common, buttons: 0 }));

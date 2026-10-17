@@ -30,6 +30,11 @@ const executableSuffix = WINDOWS ? ".exe" : "";
 /** The modifier of the app's primary shortcuts as a person on this OS presses it. */
 export const primaryModifier: "Meta" | "Control" = MACOS ? "Meta" : "Control";
 
+/** The platform's visible primary-shortcut label, independent of the app renderer. */
+export function shortcutLabel(keys: string): string {
+  return MACOS ? keys.replaceAll("Ctrl+", "⌘") : keys;
+}
+
 /** This Node.js executable: fixtures declare it as the program the product runs. */
 export const nodeProgram = process.execPath as NativePath;
 

@@ -7,7 +7,7 @@ import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { nativePath, requestWindowClose } from "../platform.ts";
+import { nativePath, requestWindowClose, shortcutLabel } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { aside, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
@@ -101,8 +101,8 @@ export const scenarios: Scenario[] = [
       const opened = () => browser.$('[role="dialog"]').isExisting();
       await press(browser, ["?"], opened, "Review's Help dialog");
       const shortcuts = await browser.execute(() => [...document.querySelectorAll('[role="dialog"] dt')].map((key) => ({ keys: key.textContent ?? "", action: key.nextElementSibling?.textContent ?? "" })));
-      for (const [keys, action] of [[/Ctrl\+F/, /Search requests/], [/Ctrl\+O/, /Open a request by ID/], [/PgDn.*PgUp/, /Older.*newer page/]] as const) {
-        assert.ok(shortcuts.some((entry) => keys.test(entry.keys) && action.test(entry.action)), `Review Help pairs ${keys} with ${action}`);
+      for (const [keys, action] of [[shortcutLabel("Ctrl+F"), /Search requests/], [shortcutLabel("Ctrl+O"), /Open a request by ID/], ["PgDn / PgUp", /Older.*newer page/]] as const) {
+        assert.ok(shortcuts.some((entry) => entry.keys.includes(keys) && action.test(entry.action)), `Review Help pairs ${keys} with ${action}`);
       }
       assert.ok(!shortcuts.some((entry) => entry.keys.includes("Click an Artifact")), "Monitor Help is not reused for Review");
       await press(browser, ["Escape"], async () => !(await opened()), "Review Help closed");

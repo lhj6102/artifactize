@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
-import { clickOption, tab } from "./input.ts";
+import { clickOption, dispatchInput, tab } from "./input.ts";
 
 test("option clicks supply the WebDriver default once and never change disabled or already-selected choices", async () => {
   for (const state of ["fresh", "selected", "disabled", "prevented"] as const) {
@@ -85,4 +85,31 @@ test("Tab skips disabled, inert, hidden, closed contents and negative tabindex a
     await tab(browser, true);
     assert.equal(focused(), "summary");
   } finally { page.window.close(); }
+});
+
+
+test("a text click places the engine's visible caret and native focus, unless mousedown was prevented", async () => {
+  for (const prevented of [false, true]) {
+    const { page, browser } = focusPage('<textarea id="old">old selection</textarea><div id="log" tabindex="0" style="user-select:text"><p id="text">selectable notes</p></div>');
+    try {
+      const old = page.window.document.getElementById("old")!;
+      const log = page.window.document.getElementById("log")!;
+      const target = page.window.document.getElementById("text")!;
+      const text = target.firstChild!;
+      page.window.document.elementFromPoint = () => target;
+      page.window.document.caretRangeFromPoint = () => {
+        const range = page.window.document.createRange(); range.setStart(text, 3); range.collapse(true); return range;
+      };
+      old.focus();
+      if (prevented) target.addEventListener("mousedown", (event) => event.preventDefault());
+      await dispatchInput(browser, { kind: "text-click", x: 10, y: 10 });
+      if (prevented) assert.equal(page.window.document.activeElement, old);
+      else {
+        assert.equal(page.window.document.activeElement, log);
+        assert.equal(page.window.getSelection()!.anchorNode, text);
+        assert.equal(page.window.getSelection()!.anchorOffset, 3);
+        assert.ok(page.window.getSelection()!.isCollapsed);
+      }
+    } finally { page.window.close(); }
+  }
 });

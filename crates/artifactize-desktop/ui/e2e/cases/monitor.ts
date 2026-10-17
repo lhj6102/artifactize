@@ -11,7 +11,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, primaryModifier } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
-import { clickOption, tab } from "../input.ts";
+import { clickOption, dispatchInput, tab } from "../input.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
 import { textContrast } from "../rendering.ts";
 import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
@@ -308,15 +308,15 @@ export const scenarios: Scenario[] = [
       await runNotes();
       assert.ok((await box()).below < 24, "the Tool log follows its newest line again");
       await notes.observed();
-      // Its text is plain page text: a selection of one line reads exactly as shown. (This
-      // WebDriver provider has no OS clipboard; the selection is the page's own, and the copied
-      // text is entered through WebDriver's text input, as a paste enters it.)
+      // Its text is ordinary selectable page text. Select it through input, then copy
+      // and paste through the engine's own editing commands.
       // The tool buttons let go of the keyboard while they ran: the instruction takes it.
       await human().$('[aria-label="Instruction"]').click();
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       // Select All is real WebDriver keyboard input. It includes the log along with the
       // surrounding review; the selection is only observed, never installed by page script.
-      await browser.$(LOG).click();
+      const logPoint = await visibleCenter(browser, await browser.$(LOG).getElement());
+      await dispatchInput(browser, { kind: "text-click", ...logPoint });
       await browser.keys([primaryModifier, "a"]);
       const copied = await browser.execute(() => getSelection()?.toString() ?? "");
       assert.ok(copied.includes("- Ready to ship."), "the selected text includes the selectable Tool log");
@@ -506,15 +506,15 @@ export const scenarios: Scenario[] = [
       await openReview();
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the scalar GREEN form");
       assert.ok(await human().$('label[for="field-comment"] [aria-label="required"]').isExisting(), "the required comment has its star");
-      assert.equal(await browser.$("#field-score").getAttribute("placeholder"), "Optional");
-      await browser.$("#field-score").scrollIntoView({ block: "nearest" });
-      const placeholder = await textContrast(browser, "#field-score");
-      await fill(browser, "#field-score", "Optional");
+      assert.equal(await browser.$("#field-note").getAttribute("placeholder"), "Optional");
+      await browser.$("#field-note").scrollIntoView({ block: "nearest" });
+      const placeholder = await textContrast(browser, "#field-note");
+      await fill(browser, "#field-note", "Optional");
       await tab(browser);
-      const entered = await textContrast(browser, "#field-score");
+      const entered = await textContrast(browser, "#field-note");
       assert.ok(placeholder > entered * 0.1 && placeholder < entered * 0.9,
         `the painted Optional hint is visible and greyer than the same glyphs entered normally: ${placeholder}/${entered}`);
-      await fill(browser, "#field-score", "");
+      await fill(browser, "#field-note", "");
       await fill(browser, "#field-comment", "checked typed fields");
       await fill(browser, "#field-score", "7.5");
       await human().$('input[name="field-confirmed"]').click();
