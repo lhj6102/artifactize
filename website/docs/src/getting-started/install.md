@@ -357,3 +357,13 @@ remove everything, delete the state directory that `artifactize doctor` prints o
 first line.
 
 Next, take the [Quick start](guide.md): a five-minute tour that needs no model.
+
+#### Removed gate-bypass settings
+
+`review_policy` and `review_policy.dependency_gates` are removed; even an empty
+policy table fails configuration validation as an unknown field. The old
+`--ignore-gates` CLI flag and `VerifyOptions.ignore_gates` library option are also
+removed. Choose [speculation and deferred sign-offs](../features/run.md#speculation-and-deferred-sign-offs)
+per verification request instead; neither mode waives final approval obligations.
+Old saved keys are ignored on read, so removing the legacy policy needs no state
+migration.

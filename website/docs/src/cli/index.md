@@ -189,9 +189,8 @@ ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
 
 [Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
-Gate bypass is removed: `--ignore-gates`, `VerifyOptions.ignore_gates` and
-`review_policy.dependency_gates` are no longer accepted. Choose the two
-per-request verify modes instead. Old saved keys are ignored on read; no state migration is needed for removal. `--force` marks only explicitly
+See the [upgrade reference](../getting-started/install.md#removed-gate-bypass-settings)
+for removed legacy gate-bypass settings. `--force` marks only explicitly
 selected executable evals for a fresh review, not recursive dependencies; it
 neither expands
 the execution scope nor bypasses gates. Runs record the resolved policy and each

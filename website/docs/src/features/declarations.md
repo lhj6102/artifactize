@@ -283,10 +283,8 @@ fingerprint value after successful Human reconnection still settles
 ERROR/INPUT_CHANGED for a keyed request. Preparation failures abort before reuse
 or execution; tool calls return an error without running the tool.
 
-`review_policy` and `review_policy.dependency_gates` are removed, including an
-empty policy table. Configuration validation rejects them as unknown fields. Choose
-`--speculate` and `--defer-human` per verify request, never a declaration-level
-bypass. Old saved keys are ignored on read; no state migration is needed.
+For removed legacy policy fields and their replacements, see the
+[upgrade reference](../getting-started/install.md#removed-gate-bypass-settings).
 
 ## Eval mutex tags
 

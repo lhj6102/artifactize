@@ -115,17 +115,8 @@ the most recent by completion time is reused, GREEN or RED. Results from differe
 profiles therefore reuse each other: a review that `--profile fast` produced
 satisfies the declared profile, and the other way around.
 
-Each record keeps how and by whom it was produced, next to its result. These are
-JSON/state field names, not snake_case declaration keys:
-
-- `options`: the backend, model, reasoning, `timeoutMs`, `maxToolCalls`,
-  `maxTokens` and `variant` it ran with, as declared;
-- `profile`: the effective profile;
-- `producer` (`user@host` and artifactize version), the Human `reviewer`, and for
-  a remote record its `origin` with the publisher;
-- `completedAt`, `fingerprints` (each Artifact the key covers), `artifactKinds`
-  (the same names mapped to `folder`, `file` or `graph`) and `key`. The kind map is an
-  additive execution/team-store field, not a declaration option.
+Records retain their producing profile and provenance; the [Run result
+reference](run.md#verify-and-runs) owns the audit-field and source-kind inventory.
 
 Before accepting reuse, artifactize validates admitted file targets again:
 they must exist as regular files without symlink traversal. `fingerprint = false`
@@ -133,18 +124,12 @@ disables reuse, not these file-target safety checks. Targets are checked during
 fingerprint preparation/recheck, at eval start/end and on every tool call too.
 
 A hit returns the original result without running the eval or re-validating it
-against the requested profile or schema. The request saves the original execution
-ID, the producing `profile` and `options`, `evalDefHash`, `key`, `provenance`
-(repository, Run, request, eval, definition hash, completion time and, for Agent
-results, the [pins of their tools' execution paths](tools/agent.md)) and the original attempts as `reusedUsage` when reported,
-alongside its own `requestedProfile`. Its own `usage` is null: a reused request spent
-nothing. Its `source`, `{"runId", "requestId", "kind"}`, names the request whose execution produced the
-result and whether it was a completed record (`cache`), a live execution the
-request waited for (`joined`) or a remote store record (`remote`). `source` is null on a request that executed itself ([Runs](run.md#verify-and-runs)). Runtime
-usage is null, not an invented zero. A reused RED remains RED for gates and final
-obligations. Dependencies outside execution selection can supply cached evidence
-without running. Results remain readable after the source repository is deleted;
-external paths embedded in result text are not made portable.
+against the requested profile or schema. The producing profile remains distinct
+from the requested one, and a reused request spends no new usage. A reused RED
+remains RED for gates and final obligations. Dependencies outside execution
+selection can supply cached evidence without running. Results remain readable
+after the source repository is deleted; external paths embedded in result text
+are not made portable.
 
 With a [team review store](team/reference.md#remote-review-store-client),
 `verify` also asks the store for every key and reuses whichever record completed

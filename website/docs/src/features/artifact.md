@@ -25,9 +25,8 @@ structure to an agent or opens it in Desktop for a person.
 ## Folder configuration
 
 A folder with an `index.artf` is an Artifact. `name` is required; `mounts`,
-`basis`, `views`, `fingerprint` and `tags` are optional. Gate bypass declarations
-(`review_policy.dependency_gates`, including the `review_policy` table) are removed;
-choose `--speculate` and `--defer-human` per verification request instead.
+`basis`, `views`, `fingerprint` and `tags` are optional. For older declarations,
+see the [legacy policy upgrade reference](../getting-started/install.md#removed-gate-bypass-settings).
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
 `usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval

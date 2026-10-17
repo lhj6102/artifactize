@@ -77,8 +77,8 @@ Final validation needs actual GREEN evidence or explicit `basis = true` across
 all required scope; a basis never waives its dependencies. RED blocks downstream
 work and missing/operational evidence waits. Selected GREEN reviews with unmet
 obligations produce INCOMPLETE, with the obligations listed in text and JSON.
-Old gate-bypass declarations (`review_policy.dependency_gates`) and `--ignore-gates`
-are removed; the old declaration policy fails validation. `--reuse-only KINDS`
+The [upgrade reference](../getting-started/install.md#removed-gate-bypass-settings)
+covers removed legacy gate-bypass settings. `--reuse-only KINDS`
 (for example `agent,human` in CI) only reuses results for those kinds; missing
 reusable evidence is not executed and leaves INCOMPLETE. See [CLI](../cli/index.md#reuse-only).
 

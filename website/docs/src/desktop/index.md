@@ -123,8 +123,9 @@ and newer requests. Waiting followers open the original review, not another sign
 One click selects a request; clicking an already-selected request opens it, as
 does a double-click. Clicking its preview also opens Detail.
 
-`/` edits search from the Review request list. Ctrl+F also returns to search from
-an idle open request Detail; editing or busy review work keeps its focus lock.
+`/` edits search from the Review request list. Ctrl+F returns to search from an
+open request Detail too, including while a Human form is open or review work is
+running; it is not blocked by that Detail's normal focus lock.
 Free text and `key:value` terms must all match:
 `repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`.
 `is:mine`, `is:claimed` and `is:unclaimed` filter Human claims. Suggestions complete
