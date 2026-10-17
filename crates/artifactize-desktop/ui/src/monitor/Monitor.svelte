@@ -50,9 +50,11 @@
 
   /** The Review of a request, if one was opened: rendering only looks. */
   const review = (id: string): Review | undefined => app.reviews[id];
-  /** Open the Review of a request when its Detail arrives, never while rendering. */
+  /** Open the Review of a request when its Detail arrives, never while rendering; the open
+   * Detail notes it, so leaving the Detail asks that review first. */
   function openReview(id: string): void {
     app.review(id);
+    if (m.opened && m.opened.request !== id) m.opened = { ...m.opened, request: id };
   }
 
   /** Move focus to a pane's list or review, or else to the pane itself; the graph's pane takes
@@ -78,13 +80,18 @@
     m.opened = { run: run.id, node: row.id, tab: null };
   }
 
+  /** Another tab of the open Detail; a Human review's tab notes its request when it arrives. */
   function showTab(tab: string | null) {
-    if (m.opened) m.opened = { ...m.opened, tab };
+    if (m.opened && m.opened.tab !== tab) m.opened = { run: m.opened.run, node: m.opened.node, tab };
   }
 
-  /** Close the Detail; focus that was in it goes back to the graph. */
+  /** Close the Detail; focus that was in it goes back to the graph. Leaving one step at a time:
+   * a Human review shown in it first cancels its running work, then leaves its form, and only
+   * then the Detail closes. */
   function closeDetail() {
     if (m.opened === null) return;
+    const held = m.opened.request === undefined ? undefined : app.reviews[m.opened.request];
+    if (held && !held.escape()) return;
     const inside = panes.detail?.contains(document.activeElement) ?? false;
     m.opened = null;
     if (inside) void move("graph");

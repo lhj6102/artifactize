@@ -6,9 +6,10 @@ import { loadWidth } from "./detail-width";
 
 export type Focus = "scope" | "runs" | "graph" | "detail";
 
-/** An open Detail: an Artifact (or the Run itself) of a Run, and its shown tab, an eval of that
- * Artifact or `null` for the Artifact's own. */
-export type Opened = { run: string; node: string; tab: string | null };
+/** An open Detail: an Artifact (or the Run itself) of a Run, its shown tab, an eval of that
+ * Artifact or `null` for the Artifact's own, and the Human request whose review that tab shows,
+ * once its Detail arrived. */
+export type Opened = { run: string; node: string; tab: string | null; request?: string };
 
 export class MonitorState {
   focus = $state<Focus>("runs");

@@ -106,9 +106,17 @@
    * sections keep theirs under Technical. */
   const folded = $derived(detail !== null && (detail.card !== null || detail.node.startsWith("a:")));
 
+  /** The Human review this tab shows, while it runs work or edits its form: ← leaves it alone,
+   * and Esc steps through it first (the Monitor's close asks it). */
+  const holding = $derived.by(() => {
+    const reviewing = human && detail?.request ? review(detail.request) : undefined;
+    return reviewing !== undefined && (reviewing.busy !== null || reviewing.editing);
+  });
+
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
     if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
+    if (plain(event, "ArrowLeft") && holding) return;
     if (plain(event, "Escape") || plain(event, "ArrowLeft")) onback();
     else if (human || log) return;
     else if (plain(event, "t")) fold(folded ? { debug: !debug } : { technical: !technical });
