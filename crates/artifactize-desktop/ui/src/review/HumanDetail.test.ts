@@ -287,6 +287,6 @@ describe("HumanDetail", () => {
     await screen.findByText("REVIEW (yours)");
     await user.click(screen.getByRole("button", { name: "GREEN" }));
     const comment = await screen.findByLabelText(/comment/);
-    expect(comment.getAttribute("placeholder")).toMatch(/^Optional/);
+    expect(comment.getAttribute("placeholder")).toBe("Optional");
   });
 });

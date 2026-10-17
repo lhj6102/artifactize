@@ -37,7 +37,7 @@
 
   const text = (value: FieldValue) => ("value" in value && typeof value.value === "string" ? value.value : "");
   /** An optional field says so in grey inside its empty input. */
-  const placeholder = (required: boolean) => (required ? undefined : "Optional — leave empty if nothing to add");
+  const placeholder = (required: boolean) => (required ? undefined : "Optional");
   const items = (value: FieldValue) => (value.kind === "list" ? value.value : []);
   /** A list's items with one edited, added or removed; it always keeps one item to type in. */
   function setItems(name: string, next: string[]) {
