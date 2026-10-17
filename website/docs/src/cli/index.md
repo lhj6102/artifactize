@@ -5,11 +5,14 @@ policy, budgets, selection files and profile variants.
 
 ## Command reference
 
-Every command accepts the common options `--repo PATH` (default: the current
-directory), `--state-dir PATH` (default: the state home below) and `--json`, before
-or after the subcommand, at most once each; commands that do not read a repository
-or state ignore them, except `monitor` and `review` (which reject `--json`). `mcp` always emits
-JSON-RPC protocol on stdout, even with `--json`; startup errors go to stderr.
+Every command accepts `--repo PATH`, `--state-dir PATH` and `--json`, before or
+after the subcommand, at most once each. Repository-reading commands normally use
+the current directory when `--repo` is omitted, but defaults are command-specific:
+**doctor checks project declarations only with an explicit `--repo`**; Monitor
+and Review start on ALL as described below. State defaults to the shared
+[state home](../features/others/state.md#state). Commands that do not use a
+repository or state ignore those options. Monitor and Review reject `--json`;
+`mcp` always writes JSON-RPC on stdout and startup diagnostics on stderr.
 Current-directory tool output is unchanged by `--json`; it is already text or JSON
 as listed below. After the program operand of `tools help`, trailing flags belong
 to that program, not artifactize.
@@ -127,6 +130,8 @@ unsupported earlier and newer versions are refused ([State](../features/others/s
 exit codes must add `--wait`. Its JSON is `{"run":"run-…","state":"preparing"}`
 (the state may already have advanced); only `verify --wait --json` renders the full final
 saved Run. `--wait` has no Human timeout and all eval kinds follow Run settlement.
+In strict default mode, a pending Human request keeps the Run RUNNING; submitting
+its sign-off resumes dependent evals in that same Run.
 
 `--request-key KEY` accepts 1–128 ASCII letters/digits/`._:-`. Repeating a key for the same
 canonical repository returns its original Run without changing the accepted scope/options
@@ -236,12 +241,8 @@ leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
 error. There are no reservations, refunds, admission pools or restart ledger.
 
-The artifactize-owned Run waits for Human results as for runtime and Agent evals:
-while a Human request waits, the Run stays RUNNING, and a submission resumes the
-evals that depend on it in the same Run
-([Human reviews](../features/human.md)). There is no Human wait timeout:
-plain verify submits, and `--wait` observes until the Run ends. An observer's
-interruption never cancels the Run; use `run cancel RUN_ID` explicitly.
+Human waiting and cancellation follow [Submission and watching](#submission-and-watching);
+the [Human guide](../features/human.md) covers claims, tools and sign-offs.
 
 Selection files must be regular files no larger than 4 MiB, containing a JSON
 string array or one trimmed ID per line (UTF-8 BOM and CRLF are accepted). They
@@ -335,9 +336,12 @@ and [Human reviews](../tui/index.md#review).
 ## Current-directory tools
 
 `artifactize tools` also exposes the [standalone scoped tools](../features/tools/builtin.md#artifactize-tools-cli),
-using the same CLI definition and runner as `artifactize-tools`. Paths are relative
-to the current directory (not `--repo`), with `.` the default for `list`, `glob`
-and `grep`; absolute paths, `..` and symlinks are refused. Only `open` accepts
+using the same CLI definition and runner as `artifactize-tools`. Filesystem
+operands are relative to the current directory (not `--repo`), with `.` the
+default for list/glob/grep; absolute filesystem targets, `..` and symlinks are
+refused. This does not restrict **help's literal executable**: it uses ordinary
+cwd/PATH lookup, allowing absolute or parent paths and executable symlinks, and
+forwards subcommand arguments without scope resolution. Only `open` accepts
 HTTP(S) URLs. `artifactize tools --help` lists both `check` and these tools, and
 `artifactize tools SUBCOMMAND --help` documents each one. The `help` subcommand
 runs a trusted program with `--help`; it is not help navigation.

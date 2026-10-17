@@ -20,8 +20,19 @@ artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 **loopback** (`127.0.0.1`): only programs on that same computer can connect directly.
 To let teammates connect without sending tokens over an unencrypted network, use
 [the secure connection setup below](#connect-teammates-securely).
-Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server and its clients
-together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
+Back up the store with the SQLite command-line tool. This complete example reads
+the database from the state directory above and writes a separate backup file:
+
+```sh
+sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/artifactize-reviews.sqlite'"
+```
+
+Replace both paths for your host. The source must be the server's actual
+`review-store.sqlite`; choose an existing, writable backup directory outside a
+project checkout (`/srv/backups` in this example). `-readonly` prevents a mistyped
+source path from silently creating a new empty source database.
+
+Upgrade the server and its clients together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
 Human sign-offs included, needs one new review. Dependency evals have no store
 records: each client derives them from current required evidence. See [Review store server](reference.md#review-store-server) for
 the full reference.
