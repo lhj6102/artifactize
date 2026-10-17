@@ -22,7 +22,7 @@ try {
       "publish", "--dry-run", "--locked", "--allow-dirty",
       "--target-dir", staging,
       "--config", `build.build-dir=${JSON.stringify(staging)}`,
-      "-p", "artifactize-core", "-p", "artifactize-tools", "-p", "artifactize-tui", "-p", "artifactize",
+      "-p", "artifactize-core", "-p", "artifactize-tools", "-p", "artifactize-tui", "-p", "artifactize-mcp", "-p", "artifactize",
     ], { stdio: "inherit" });
     child.once("error", reject);
     child.once("close", (code, signal) => resolve({ code, signal }));

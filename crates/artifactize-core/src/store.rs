@@ -45,7 +45,7 @@ pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
     StoppedBackend, read_latest_requests, read_run, read_state_id, schema_error, state_schema,
 };
-pub(crate) use requests::read_request_repo;
+pub use requests::read_request_repo;
 pub use requests::{
     RequestView, read_original, read_request, read_request_batch, read_requests, read_requests_in,
     read_run_requests, read_session_request, read_waiting, read_waiting_originals,

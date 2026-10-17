@@ -24,6 +24,7 @@ mod stored;
 mod tools;
 pub(crate) mod validation;
 pub use stored::{Field, StoredPayload, StoredProfile};
+pub use validation::MAX_TIMEOUT_MS;
 
 pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanBuiltinTool, HumanCommandTool, HumanTool,

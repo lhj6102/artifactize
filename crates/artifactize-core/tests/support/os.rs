@@ -2841,6 +2841,11 @@ pub fn human_tool_prefix() -> &'static str {
     "/reviewer-home|real-environment|"
 }
 
+/// Node used by the publication runtime fixture, installed on every CI platform.
+pub fn node_program() -> &'static str {
+    "node"
+}
+
 /// Python used by multimodal command-tool fixtures, installed on all CI platforms.
 pub fn python_program() -> &'static str {
     worker::python_program()

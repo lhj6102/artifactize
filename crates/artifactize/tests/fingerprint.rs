@@ -564,7 +564,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
     markers
 }
 
-/// The most fingerprint scripts that ran at once, then reset the notes.
+/// Observe the most fingerprint scripts that ran at once, preserving their notes.
 fn most_at_once(markers: &Path) -> usize {
     let mut most = 0;
     for entry in fs::read_dir(markers).unwrap() {
@@ -579,9 +579,24 @@ fn most_at_once(markers: &Path) -> usize {
             .chain([most])
             .max()
             .unwrap();
-        fs::remove_file(path).unwrap();
     }
     most
+}
+
+/// Reset only completed count evidence between phases; the release gate has its own lifetime.
+fn reset_counts(markers: &Path) {
+    for entry in fs::read_dir(markers).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("counts.")
+        {
+            fs::remove_file(path).unwrap();
+        }
+    }
 }
 
 #[test]
@@ -638,15 +653,18 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
     };
     let (one, most) = status("1");
     assert_eq!(most, 1);
+    reset_counts(&markers);
     fs::remove_file(markers.join("release")).unwrap();
     let (three, most) = status("3");
     assert_eq!(most, 3);
     assert_eq!(three, one);
+    reset_counts(&markers);
 
     // verify bounds preparation and the end-of-review rechecks alike, and records the bound.
     let run = fixture.verify(&["--all", "--fingerprint-jobs", "3"], 0);
     assert_eq!(run["fingerprintJobs"], 3);
     assert!(most_at_once(&markers) <= 3);
+    reset_counts(&markers);
     let default = fixture.verify(&["--all"], 0);
     assert!(default["fingerprintJobs"].as_u64().unwrap() >= 1);
     assert_eq!(default["executionsStarted"], 0);
