@@ -114,7 +114,14 @@ mod tests {
         run.text(Stream::Stdout, "out\n");
         run.text(Stream::Stderr, "err\n");
         run.end(End::Failed("gone".into()));
-        let lines: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
+        let mut started = events.try_recv().unwrap();
+        let Kind::Start { at, .. } = &mut started.kind else {
+            panic!("{started:?}");
+        };
+        // Check the wire timestamp against a fixed instant, not the machine's clock.
+        *at = time::OffsetDateTime::from_unix_timestamp_nanos(1_234_567_890).unwrap();
+        let lines: Vec<_> = std::iter::once(started)
+            .chain(std::iter::from_fn(|| events.try_recv().ok()))
             .map(|event| serde_json::to_value(line(event)).unwrap())
             .collect();
         let [start, out, err, end] = lines.as_slice() else {
@@ -123,7 +130,7 @@ mod tests {
         assert_eq!(start["request"], "run-1-1");
         assert_eq!(start["run"], out["run"]);
         assert_eq!(start["line"]["kind"], "start");
-        assert!(start["line"]["at"].as_f64().unwrap() > 0.0);
+        assert_eq!(start["line"]["at"], json!(1234.0));
         assert_eq!(
             (
                 start["line"]["operation"].clone(),

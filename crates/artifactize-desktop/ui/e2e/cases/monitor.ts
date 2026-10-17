@@ -10,6 +10,7 @@ import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
+import { visibleCenter } from "../pointer.ts";
 import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
 
 /** A Tool log row as read: a run's start (its time as HH:MM:SS), a printed line or a run's end,
@@ -253,7 +254,8 @@ export const scenarios: Scenario[] = [
       const runNotes = async () => {
         const before = await ends();
         await notes.button.waitForEnabled({ timeout: 15000, timeoutMsg: "the notes tool usable" });
-        await notes.button.click();
+        const point = await visibleCenter(browser, await notes.button.getElement());
+        await browser.action("pointer").move(point).down().up().perform();
         await browser.waitUntil(async () => (await ends()) === before + 1 && await notes.button.isEnabled(),
           { timeout: 15000, timeoutMsg: "another notes run logged" });
       };

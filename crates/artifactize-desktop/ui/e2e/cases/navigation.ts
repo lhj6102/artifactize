@@ -8,6 +8,7 @@ import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, requestWindowClose } from "../platform.ts";
+import { visibleCenter } from "../pointer.ts";
 import { aside, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
@@ -195,7 +196,8 @@ export const scenarios: Scenario[] = [
         opened: !!document.querySelector('aside[aria-label="Detail"], [aria-label="Summary"], [aria-label^="Evals of "], [role="tooltip"]'),
         tooltip: !!document.querySelector(selector)?.querySelector("[title]") || !!document.querySelector(selector)?.closest("[title]"),
       }), nodeAt("a:ship"));
-      await browser.$(nodeAt("a:ship")).moveTo();
+      const point = await visibleCenter(browser, await browser.$(nodeAt("a:ship")).getElement());
+      await browser.action("pointer").move(point).perform();
       await browser.waitUntil(async () => (await look()).over.includes("a:ship"), { timeout: 15000, timeoutMsg: "the pointer moved over ship" });
       const hovered = await look();
       assert.equal(hovered.opened, false, "hovering opens no Detail, summary, eval list or tooltip");
