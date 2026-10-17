@@ -416,7 +416,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
     let release = Release(repo.path().join("release"));
     let waits = format!(
         "import os, sys, time\nprint('started', flush=True)\nfor _ in range(6000):\n    if os.path.exists({:?}): break\n    time.sleep(0.01)\nprint('after', file=sys.stderr, flush=True)",
-        release.0.to_string_lossy()
+        support::os::path_text(&release.0)
     );
     write_artifact(
         repo.path(),
