@@ -3,6 +3,7 @@
 // between the tree and the graph, and the instruction, request, result and technical record
 // of a completed eval.
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { createStates, requests } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { breadcrumbNames } from "../breadcrumb.ts";
@@ -172,6 +173,11 @@ export const scenarios: Scenario[] = [
       const detailText = () => browser.$('[role="document"]').getText();
       const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
         .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
+      await browser.waitUntil(async () => {
+        if (await field("Request") !== request.id) return false;
+        const raw = await field("Raw result");
+        return raw !== "" && isDeepStrictEqual(JSON.parse(raw), request.result);
+      }, { timeout: 15000, timeoutMsg: "the selected request and its completed result are rendered in Detail" });
       const shown = await detailText();
       assert.match(shown, /Pass\./, `the instruction in ${shown.slice(0, 1500)}`);
       assert.match(shown, /Source\s+executed in this Run/, "where the result came from");

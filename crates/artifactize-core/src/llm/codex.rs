@@ -30,6 +30,8 @@ use rig_core::{
     },
 };
 mod errors;
+mod output;
+pub(crate) use output::Responses;
 
 use crate::auth::codex::{self as auth, ORIGINATOR};
 
@@ -113,9 +115,7 @@ impl Codex {
 
     /// The Responses model for one turn, with credentials read (and refreshed) now.
     /// Callers must never print or log the token it carries.
-    pub(super) async fn model(
-        &self,
-    ) -> Result<Model<openai::responses_api::wire::Responses>, auth::TokenError> {
+    pub(super) async fn model(&self) -> Result<Model<Responses>, auth::TokenError> {
         let token = auth::access_token(Some(&self.state), Some(&self.repo)).await?;
         {
             let mut sent = self.sent.lock().expect("sent tokens lock");
@@ -138,9 +138,10 @@ impl Codex {
             originator: ORIGINATOR.into(),
             user_agent: user_agent(),
         });
-        Ok(config
+        let model = config
             .connect(super::delivery::Tap::new(self.http.clone()))
-            .responses(self.model.as_str()))
+            .responses(self.model.as_str());
+        Ok(Model::new(Responses(model.wire), model.transport))
     }
 }
 

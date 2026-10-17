@@ -797,9 +797,6 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
     assert!(harness::directories(&fixture.state()).is_empty());
 }
 
-// Unix directory modes can reject admission writes; the Windows directory readonly
-// attribute does not reject file creation and is not an equivalent setup.
-#[cfg(unix)]
 #[test]
 fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_cleanup() {
     let mut fixture = Fixture::new("start", "stop", "act", 0);
@@ -832,7 +829,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
     });
     let start = fixture.records("start").pop().unwrap();
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
-    let denied = support::os::read_only(&directory);
+    let denied = support::os::deny_creates(&directory);
     fs::write(fixture.log().join("admit"), "ready").unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
         fs::read_to_string(fixture.log().join("rejected")).unwrap_or_default() == "rejected"

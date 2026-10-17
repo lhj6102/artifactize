@@ -113,6 +113,39 @@ describe("HumanDetail", () => {
     expect(left).toBe(0);
   });
 
+  it("leaves composition letters and chords alone, then commits and submits Korean text", async () => {
+    const calls = backend("review", () => ({
+      notice: { text: "Submitted GREEN", error: false },
+      view: humanView("completed", { result: '{"verdict":"GREEN","approved":true,"comment":"안녕"}' }),
+      settled: "published",
+    }));
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    const region = await screen.findByLabelText("Human review");
+    await screen.findByText("REVIEW (yours)");
+    await fireEvent.keyDown(region, { key: "g" });
+    const comment = await screen.findByLabelText(/comment/);
+    const writes = new Set(["human_form", "human_claim", "human_release", "human_run", "human_submit", "human_cancel", "human_json"]);
+    const before = calls.filter(({ cmd }) => writes.has(cmd)).length;
+    await fireEvent.compositionStart(comment);
+    for (const key of ["g", "r", "q", "u", "c", "Escape"]) {
+      await fireEvent.keyDown(comment, { key, isComposing: true });
+    }
+    for (const key of ["g", "r", "u", "s", "e"]) {
+      await fireEvent.keyDown(comment, { key, ctrlKey: true, isComposing: true });
+      await fireEvent.keyDown(comment, { key, metaKey: true, isComposing: true });
+    }
+    expect(calls.filter(({ cmd }) => writes.has(cmd))).toHaveLength(before);
+    expect(screen.queryByLabelText(/comment/)).not.toBeNull();
+    await fireEvent.input(comment, { target: { value: "안녕" }, inputType: "insertCompositionText", data: "안녕" });
+    await fireEvent.compositionEnd(comment, { data: "안녕" });
+    await waitFor(() => expect(calls.find(({ cmd }) => cmd === "human_edit_field")?.args.value).toEqual({ kind: "text", value: "안녕" }));
+    await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "human_submit")).toBe(true));
+    expect(calls.find(({ cmd }) => cmd === "human_submit")?.args.draft).toEqual({
+      verdict: "GREEN", fields: [["approved", { kind: "fixed" }], ["comment", { kind: "text", value: "안녕" }]], json: null,
+    });
+  });
+
   it("moves focus into the JSON text when Ctrl+E turns the typed form into JSON", async () => {
     backend("review");
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });

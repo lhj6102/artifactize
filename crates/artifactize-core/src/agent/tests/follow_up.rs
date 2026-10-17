@@ -110,6 +110,9 @@ async fn recorded_send_success_retains_usage_and_event_order() {
         panic!("started");
     };
     assert_eq!(answer.unwrap(), "Free-text answer");
+    let body: Value = serde_json::from_slice(&http.requests()[0].body).unwrap();
+    assert!(body.get("text").is_none());
+    assert!(body.get("output_config").is_none());
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0].usage["inputTokens"], 10);
     let kinds: Vec<_> = saved.wire_events[2..]

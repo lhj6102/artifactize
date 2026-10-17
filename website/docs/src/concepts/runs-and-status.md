@@ -27,14 +27,26 @@ and exits 0 when submission is accepted; `--json` prints `{"run","state"}`.
 Acceptance is not a validation verdict. Use `verify --wait` to announce the ID on stderr,
 observe settlement and render the final saved result. Interrupting or closing the watcher
 stops observation only; the Run continues. `run cancel RUN_ID` explicitly requests cancellation.
-An Artifact selector starts with that Artifact's evals;
-an individual eval selector starts with that eval. Both retain the full dependency
-closure as a final obligation. `--recursive` includes every eval in that closure,
-including other evals on the selected Artifact and cycle peers, in configuration
-order. `--all` already includes every eval and all no-eval Artifact obligations.
-Selecting a dependency eval also includes evals in its required dependency scope,
-without `--recursive`: `artifactize verify player/ready` is sufficient. A file Artifact selector selects its
-own evals, never the surrounding folder's.
+An Artifact selector asks to run that piece's checks; an individual eval selector
+asks to run just that check. The Run still needs valid results for every piece
+those checks rely on, following their links as far as needed. This linked group is
+the **dependency closure**; its required results are **final obligations**, even
+when you did not ask to execute them in this Run.
+
+`--recursive` also selects every check in that group, including other checks on
+the selected Artifact, in configuration order. Pieces that depend on one another
+in a loop are **cycle peers**, and are included together. `--all` already selects
+every check and the obligations of pieces that have no checks.
+
+For example, suppose `code/tests` relies on `plan`, which needs a person's
+`plan/signoff`. `verify --eval code/tests` selects the test, but cannot finish GREEN
+without that still-valid approval. `verify --eval code/tests --recursive` also
+selects the group's other checks, such as `code/style` and `plan/signoff`, so they
+can run or reuse results. Selecting more checks never supplies approval itself.
+
+Selecting a dependency eval automatically includes the checks in its required
+group, even without `--recursive`: `artifactize verify player/ready` is sufficient.
+A file Artifact selector selects its own evals, never the surrounding folder's.
 
 RED blocks downstream execution; missing/operational evidence waits. Cycle peers
 have no internal gates. The per-request modes permit speculative execution or

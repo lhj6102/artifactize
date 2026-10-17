@@ -97,35 +97,50 @@ fn final_json_is_kept_until_matching_end_then_owner_failure_fields_remain_readab
         "mismatches":[{"path":"src/a.rs","reason":"wrong behavior"}],
         "custom":{"expected":"value"},
     });
-    let mut transcript = Transcript::default();
-    let mut blocks = BTreeMap::new();
-    apply(
-        &mut transcript,
-        &mut blocks,
-        &event(Message::assistant(result.to_string()), vec![]),
-    );
-    assert!(
-        shown(&blocks).contains("\"verdict\""),
-        "without authoritative End the text is untouched"
-    );
-    apply(
-        &mut transcript,
-        &mut blocks,
-        &Event {
-            at: None,
-            send: None,
-            kind: Kind::End(super::End::Completed(
-                serde_json::from_value(result).unwrap(),
-            )),
-        },
-    );
-    let text = shown(&blocks);
-    assert!(
-        text.contains("Verdict: RED")
-            && text.contains("wrong behavior")
-            && text.contains("expected: value")
-    );
-    assert!(!text.contains("\"verdict\""));
+    for wire in [
+        result.clone(),
+        json!({"result":result}),
+        json!({"result":{"verdict":"RED","verdictFields":{
+            "mismatches":[{"path":"src/a.rs","reason":"wrong behavior"}],
+            "custom":"{\"expected\":\"value\"}", "unused":null,
+        }}}),
+        json!({"result":{"verdict":"RED","verdictFields":result.to_string()}}),
+        json!({"result":{
+            "verdict":"RED", "unused":null,
+            "mismatches":[{"path":"src/a.rs","reason":"wrong behavior"}],
+            "custom":"{\"expected\":\"value\"}",
+        }}),
+    ] {
+        let mut transcript = Transcript::default();
+        let mut blocks = BTreeMap::new();
+        apply(
+            &mut transcript,
+            &mut blocks,
+            &event(Message::assistant(wire.to_string()), vec![]),
+        );
+        assert!(
+            shown(&blocks).contains("\"verdict\""),
+            "without authoritative End the text is untouched"
+        );
+        apply(
+            &mut transcript,
+            &mut blocks,
+            &Event {
+                at: None,
+                send: None,
+                kind: Kind::End(super::End::Completed(
+                    serde_json::from_value(result.clone()).unwrap(),
+                )),
+            },
+        );
+        let text = shown(&blocks);
+        assert!(
+            text.contains("Verdict: RED")
+                && text.contains("wrong behavior")
+                && text.contains("expected: value")
+        );
+        assert!(!text.contains("\"verdict\""));
+    }
     let mut transcript = Transcript::default();
     let mut blocks = BTreeMap::new();
     apply(

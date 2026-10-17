@@ -17,6 +17,7 @@ pub fn create_router<R: Runtime + 'static>(state: Arc<AppState<R>>) -> Router {
         .route("/status", get(handlers::status::<R>))
         // wdio-specific non-W3C endpoints
         .route("/wdio/eval", post(handlers::direct_eval::eval::<R>))
+        .route("/session/{session_id}/wdio/ime", post(handlers::native_ime::input::<R>))
         // =================================================================
         // W3C WebDriver Standard Endpoints
         // =================================================================

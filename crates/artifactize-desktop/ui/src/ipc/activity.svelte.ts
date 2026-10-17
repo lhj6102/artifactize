@@ -48,8 +48,13 @@ export class Activity {
     return this.#snapshot;
   }
 
-  async run<T>(name: string, operation: () => Promise<T>, query?: string): Promise<T> {
+  /** Availability comes from the commands actually wrapped, not a missing-as-zero guess. */
+  register(name: string): void {
     this.#commands[name] ??= { started: 0, completed: 0 };
+  }
+
+  async run<T>(name: string, operation: () => Promise<T>, query?: string): Promise<T> {
+    this.register(name);
     const state = this.#commands[name];
     state.started += 1;
     this.#revision += 1;
@@ -75,11 +80,14 @@ export const [getActivity, setActivity] = createContext<Activity>();
 /** Instrument the normal command boundary once, without changing generated bindings or
  * replacing Tauri's invoke. Consumers can only read detached, immutable snapshots. */
 export function observeCommands<T extends Record<string, (...args: never[]) => Promise<unknown>>>(source: T, activity: Activity): T {
-  return Object.fromEntries(Object.entries(source).map(([name, command]) => [name, (...args: never[]) => {
-    const query: unknown = args[0];
-    // Dispatch is an action, not a dependency of an attachment that requests a view.
-    return untrack(() => activity.run(name, () => command(...args), name === "reviewSearch" && typeof query === "string" ? query : undefined));
-  }])) as T;
+  return Object.fromEntries(Object.entries(source).map(([name, command]) => {
+    activity.register(name);
+    return [name, (...args: never[]) => {
+      const query: unknown = args[0];
+      // Dispatch is an action, not a dependency of an attachment that requests a view.
+      return untrack(() => activity.run(name, () => command(...args), name === "reviewSearch" && typeof query === "string" ? query : undefined));
+    }];
+  })) as T;
 }
 
 /** Publish only this mounted window's projection, and never leave a disposed owner behind. */

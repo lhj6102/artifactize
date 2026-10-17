@@ -36,9 +36,9 @@ payload.instruction = "Run deterministic fixture, JSON envelope, private materia
 title = "Actual builders follow the skill in all three fixture projects"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 payload.instruction = """
-Read {hey-arti}, {core}, and the source/cases of {arti-harness}. Use case_arti-harness
-for each of library-consumer, docs-assets and monorepo, and source_arti-harness to
-read the actual builder declarations and evidence. Judge at least one actual live
+Read {hey-arti}, {core}, and the source/cases of {arti-harness}. For each of
+library-consumer, docs-assets and monorepo, inspect its case summary and read the
+actual builder declarations and evidence. Judge at least one actual live
 builder pass per fixture in one host against the canonical skill: boundary quality,
 mandatory coverage, genuine consumer dependencies, narrow file/tool scopes,
 unchanged/independent reuse, local edits and judgment changes, split/evolution,
@@ -59,8 +59,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-test-rules.payload]
 instruction = """
-Read the TEST- rules of {code-style} with read_style_code-style. Review the Python tests and harness \
-helpers of {arti-harness}, using list_arti-harness and read_arti-harness. The fixture projects are \
+Read the TEST- rules of {code-style}. Review the Python tests and harness \
+helpers of {arti-harness}. The fixture projects are \
 test inputs, not another copy of the code review. Check every TEST- rule: exact async states, \
 controlled ordering or expiry times, read-only observations, owned processes/connections/temporary \
 files and cleanup, declared executables and inputs, and observable seams without over-verification. \

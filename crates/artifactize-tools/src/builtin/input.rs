@@ -1,5 +1,7 @@
 //! Parse schema-validated provider arguments once, before builtin execution.
 use crate::Builtin;
+use globset::GlobMatcher;
+use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
 
@@ -12,6 +14,31 @@ pub enum Input {
     ViewImage(ViewImage),
 }
 impl Input {
+    /// CLI values enter the same compiled domain as provider input, without JSON round trips.
+    pub(crate) fn glob(pattern: &str, path: String) -> Result<Self, String> {
+        pattern_size(pattern)?;
+        Ok(Self::Glob(Glob {
+            pattern: super::glob(pattern)?,
+            path: LogicalPath::parse(path)?,
+        }))
+    }
+
+    pub(crate) fn grep(
+        pattern: &str,
+        path: String,
+        glob: Option<&str>,
+        insensitive: bool,
+    ) -> Result<Self, String> {
+        Grep::new(
+            pattern,
+            LogicalPath::parse(path)?,
+            glob,
+            insensitive,
+            super::MAX_RESULTS,
+        )
+        .map(Self::Grep)
+    }
+
     pub fn parse(builtin: Builtin, value: Value) -> Result<Self, String> {
         let validator = crate::schema::compile(&super::input_schema(builtin))?;
         crate::schema::validate(&validator, &value)?;
@@ -25,14 +52,14 @@ impl Input {
             Builtin::Grep => serde_json::from_value(value).map(Self::Grep),
             Builtin::ViewImage => serde_json::from_value(value).map(Self::ViewImage),
         };
-        input.map_err(|_| "Tool arguments cannot be read as the declared builtin input.".into())
+        input.map_err(|error| error.to_string())
     }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Read {
-    pub path: String,
+    pub path: LogicalPath,
     #[serde(default = "first_line", deserialize_with = "integer")]
     pub offset: usize,
     #[serde(default = "read_lines", deserialize_with = "integer")]
@@ -42,7 +69,7 @@ pub struct Read {
 #[serde(deny_unknown_fields)]
 pub struct List {
     #[serde(default)]
-    pub path: String,
+    pub path: LogicalPath,
     #[serde(default, deserialize_with = "integer")]
     pub offset: usize,
     #[serde(default = "max_results", deserialize_with = "integer")]
@@ -51,27 +78,115 @@ pub struct List {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Glob {
-    pub pattern: String,
+    #[serde(deserialize_with = "glob_pattern")]
+    pub pattern: GlobMatcher,
     #[serde(default)]
-    pub path: String,
+    pub path: LogicalPath,
 }
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug)]
 pub struct Grep {
-    pub pattern: String,
-    #[serde(default)]
-    pub path: String,
-    #[serde(default)]
-    pub glob: Option<String>,
-    #[serde(default)]
-    pub case_insensitive: bool,
-    #[serde(default = "max_results", deserialize_with = "integer")]
+    pub pattern: Regex,
+    pub path: LogicalPath,
+    pub glob: Option<GlobMatcher>,
     pub max_results: usize,
 }
+impl<'de> Deserialize<'de> for Grep {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Arguments {
+            pattern: String,
+            #[serde(default)]
+            path: LogicalPath,
+            #[serde(default)]
+            glob: Option<String>,
+            #[serde(default)]
+            case_insensitive: bool,
+            #[serde(default = "max_results", deserialize_with = "integer")]
+            max_results: usize,
+        }
+        let args = Arguments::deserialize(deserializer)?;
+        Self::new(
+            &args.pattern,
+            args.path,
+            args.glob.as_deref(),
+            args.case_insensitive,
+            args.max_results,
+        )
+        .map_err(de::Error::custom)
+    }
+}
+
+impl Grep {
+    fn new(
+        pattern: &str,
+        path: LogicalPath,
+        glob: Option<&str>,
+        insensitive: bool,
+        max_results: usize,
+    ) -> Result<Self, String> {
+        pattern_size(pattern)?;
+        if let Some(glob) = glob {
+            pattern_size(glob)?;
+        }
+        let pattern = RegexBuilder::new(pattern)
+            .case_insensitive(insensitive)
+            .size_limit(super::REGEX_BYTES)
+            .build()
+            .map_err(|_| "Invalid or oversized regex pattern.".to_owned())?;
+        Ok(Self {
+            pattern,
+            path,
+            glob: glob.map(super::glob).transpose()?,
+            max_results,
+        })
+    }
+}
+
+fn pattern_size(pattern: &str) -> Result<(), String> {
+    if pattern.is_empty() || pattern.chars().count() > super::MAX_PATTERN_UNITS {
+        Err("Pattern must be nonempty and fit the declared pattern limit.".into())
+    } else {
+        Ok(())
+    }
+}
+
+/// Validated logical syntax. The legacy file-root spelling is resolved against the owner
+/// by Reader::root_path; it never grants a folder access to dot components.
+#[derive(Debug, Default)]
+pub struct LogicalPath(String);
+impl LogicalPath {
+    pub fn parse(path: String) -> Result<Self, String> {
+        if path != "." {
+            crate::scope::logical_path(&path).map_err(|error| error.to_string())?;
+        }
+        Ok(Self(path))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl std::ops::Deref for LogicalPath {
+    type Target = str;
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+impl<'de> Deserialize<'de> for LogicalPath {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let path = String::deserialize(deserializer)?;
+        Self::parse(path).map_err(de::Error::custom)
+    }
+}
+
+fn glob_pattern<'de, D: Deserializer<'de>>(deserializer: D) -> Result<GlobMatcher, D::Error> {
+    super::glob(&String::deserialize(deserializer)?).map_err(de::Error::custom)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewImage {
-    pub path: String,
+    pub path: LogicalPath,
 }
 
 fn first_line() -> usize {
@@ -127,6 +242,11 @@ mod tests {
             (Builtin::List, json!({"limit":201})),
             (Builtin::Grep, json!({"pattern":"notes", "maxResults":0})),
             (Builtin::Glob, json!({"pattern":""})),
+            (Builtin::Read, json!({"path":"../notes"})),
+            (Builtin::List, json!({"path":"nested//notes"})),
+            (Builtin::Glob, json!({"pattern":"../*"})),
+            (Builtin::Grep, json!({"pattern":"["})),
+            (Builtin::Grep, json!({"pattern":"notes", "glob":"../*"})),
             (Builtin::ViewImage, json!({"path":"image", "unknown":true})),
         ] {
             assert!(Input::parse(builtin, value).is_err());

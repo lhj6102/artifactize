@@ -15,8 +15,8 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Read the shared checklist {writer-introduction} with read_rules_writer-introduction and the
-root README {readme} with read_readme. Check every W- item and this Artifact's own criteria:
+Read the shared checklist {writer-introduction} and the
+root README {readme}. Check every W- item and this Artifact's own criteria:
 - R-FLOW: Badges are at the top; the exact project sentence is the first headline, followed by
   the core hook and introduction video, a short explanation, installation, and real product
   screenshots at the bottom.
@@ -24,7 +24,7 @@ root README {readme} with read_readme. Check every W- item and this Artifact's o
   per OS plus a pointer to alternatives are sufficient. It must not replace those defaults
   with only a link to the docs installation page.
 - R-REAL-SCREENS: The bottom images show the actual product running, not mockups. Inspect
-  {screenshots} with list_screenshots, view_image_screenshots and evidence_screenshots. Example
+  {screenshots}. Example
   data is labeled as such and must not present fabricated Human approvals as genuine.
 Submit GREEN only when no shared item or own criterion is clearly violated. Otherwise submit
 RED with up to 20 violations, most important first, each with the item id, a README path:line

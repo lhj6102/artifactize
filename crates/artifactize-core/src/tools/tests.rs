@@ -339,7 +339,7 @@ print(json.dumps({{'content':[
             vec![
                 Content::Image {
                     data: encoded,
-                    mime_type: mime.into()
+                    mime_type: mime.parse().unwrap()
                 };
                 3
             ]

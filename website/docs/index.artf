@@ -15,10 +15,9 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 instruction = """
 Check that the mdBook documentation in {docs} (src/, starting from src/SUMMARY.md) matches the code \
 of {core}. Compare what the docs state about commands, flags, defaults, exit codes, output, \
-index.artf fields, tool declarations and state behavior with the code, using list_docs, glob_docs, \
-grep_docs and read_docs for the docs and list_core, glob_core, grep_core and read_core for the code \
+index.artf fields, tool declarations and state behavior with the code \
 (start from src/cli.rs, src/mcp.rs and src/config.rs). Also compare guides/hey-arti.md with the canonical \
-Artifactizer skill {hey-arti}, using read_hey-arti; verify MCP-first guidance and Human/lifecycle \
+Artifactizer skill {hey-arti}; verify MCP-first guidance and Human/lifecycle \
 boundaries agree without claiming plugin distribution. Tool paths are relative to each Artifact, for example \
 src/reference/cli.md in docs. Submit GREEN when no statement clearly contradicts the code or \
 describes something the code no longer has. Otherwise submit RED with up to 20 mismatches, the most \
@@ -60,8 +59,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Review the mdBook documentation {docs} in src/, starting from src/SUMMARY.md, using list_docs,
-glob_docs, grep_docs and read_docs. These are this Artifact's self-evaluation criteria:
+Review the mdBook documentation {docs} in src/, starting from src/SUMMARY.md. These are this Artifact's self-evaluation criteria:
 - D-INSTALL-ONE-PAGE: Within the docs, artifactize installation instructions exist only in
   src/getting-started/install.md. Every other docs page links to it instead of repeating
   installation commands or channel-specific installation steps.

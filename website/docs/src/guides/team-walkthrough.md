@@ -10,7 +10,12 @@ the producer name.
 export WALK=$(mktemp -d)            # outside any Git checkout
 cp -r examples/runtime-relations "$WALK/alice"
 cp -r examples/runtime-relations "$WALK/bob"
+printf 'WALK directory: %s\n' "$WALK"
 ```
+
+Copy the printed absolute directory path. A new terminal does not inherit `WALK`:
+in each new terminal below, replace `/path/from/setup` with that path and run the
+shown `export WALK=...` line before continuing.
 
 ## 1. The server
 
@@ -30,7 +35,10 @@ on the same computer. For separate computers, first follow the
 
 ## 2. Alice reviews first
 
+Open a second terminal for Alice; leave the server running in the first.
+
 ```sh
+export WALK='/path/from/setup'
 cd "$WALK/alice"
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
 artifactize remote login http://127.0.0.1:8417/   # paste alice-laptop's token; input is hidden when supported
@@ -53,7 +61,10 @@ arguments are not redacted.
 
 ## 3. Bob reuses Alice's verdicts
 
+Open a third terminal for Bob and set the same copied directory path.
+
 ```sh
+export WALK='/path/from/setup'
 cd "$WALK/bob"
 export ARTIFACTIZE_STATE_HOME="$WALK/state-bob"
 artifactize remote login http://127.0.0.1:8417/   # bob-laptop's token
@@ -76,6 +87,8 @@ changing anything. `verify` mirrored the three records into Bob's local cache:
 `verify` reuses them locally, even without the store.
 
 ## 4. Bob works offline, then pushes
+
+Continue in Bob's terminal, still in `$WALK/bob`.
 
 ```sh
 printf 'Nothing unchanged is reviewed twice.\n' >> guide/usage/page.md
@@ -103,9 +116,11 @@ Human sign-offs unless the token has `human`.
 
 CI is configured through the environment only. It uses the read-only `ci` token
 from step 1, here in `CI_TOKEN`, and `--reuse-only agent,human`, so that Agent
-reviews and Human sign-offs only come from the store or the cache:
+reviews and Human sign-offs only come from the store or the cache. For this local
+simulation, open another terminal and set the same copied directory path:
 
 ```sh
+export WALK='/path/from/setup'
 cp -r "$WALK/bob" "$WALK/ci" && cd "$WALK/ci"
 ARTIFACTIZE_STATE_HOME="$WALK/state-ci" \
 ARTIFACTIZE_REMOTE=http://127.0.0.1:8417/ \
@@ -134,7 +149,8 @@ A rejected token, by contrast, fails the job with exit 2.
 ## Human sign-offs
 
 A Human verdict reuses by default through artifactsum; `fingerprint = false` disables it. Here
-is a one-file project with a Human sign-off, with a copy for Bob:
+is a one-file project with a Human sign-off, with a copy for Bob. Return to Alice's
+terminal, where `WALK` still names the shared directory:
 
 ```sh
 mkdir "$WALK/brand" && cd "$WALK/brand"
@@ -159,7 +175,14 @@ sign-off, and her `verify --wait` finishes GREEN:
 ```sh
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
 artifactize verify --all --wait                    # WAITING_HUMAN; waits for the sign-off
-# In the second terminal:
+```
+
+Open another terminal for the submission and re-establish its path and state:
+
+```sh
+export WALK='/path/from/setup'
+cd "$WALK/brand"
+export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
 artifactize request list                    # shows REQUEST_ID
 artifactize request claim REQUEST_ID
 artifactize request submit REQUEST_ID --verdict GREEN

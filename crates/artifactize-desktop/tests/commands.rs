@@ -424,6 +424,25 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
 
 #[test]
 fn a_publication_failure_after_local_settlement_is_saved_locally() {
+    const ISOLATED: &str = "ARTIFACTIZE_TEST_PUBLICATION_FAILURE";
+    if os::environment_variable(ISOLATED).is_none() {
+        let output = os::run_test_without(
+            "a_publication_failure_after_local_settlement_is_saved_locally",
+            &[(ISOLATED, "1".into())],
+            &[
+                "ARTIFACTIZE_REMOTE",
+                "ARTIFACTIZE_REMOTE_TOKEN",
+                "ARTIFACTIZE_REMOTE_SHARE",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
     let fixture = fixture();
     // No real credentials: a loopback store rejects a fake token after local settlement.
     let server = FakeProvider::start(|_| Reply::Json(403, json!({"error": "forbidden"})));

@@ -17,8 +17,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.covers-features.payload]
 instruction = """
-Read the journeys {ux-features} with read_features_ux-features and the graph {ux-graph} with \
-read_graph_ux-graph. Check that every journey (J- id) is a path through edges of the graph: each \
+Read the journeys {ux-features} and the graph {ux-graph}. Check that every journey (J- id) is a path through edges of the graph: each \
 step the journey describes is an edge, and no edge contradicts what a journey says. Check also that \
 every edge id is unique and that each edge belongs to at least one journey. Submit GREEN when no \
 journey is missing a step. Otherwise submit RED with up to 20 gaps, the most important first, each \

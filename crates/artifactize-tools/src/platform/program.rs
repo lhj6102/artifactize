@@ -109,19 +109,18 @@ mod tests {
         let root = crate::test_os::tempdir();
         for directory in ["first", "second"] {
             std::fs::create_dir(root.path().join(directory)).unwrap();
-            let file = root.path().join(directory).join("shim.cmd");
-            std::fs::write(&file, "fixture").unwrap();
-            crate::test_os::make_executable(&file);
+            crate::test_os::lookup_program(&root.path().join(directory), "shim", None);
         }
+        let program = crate::test_os::executable_name("shim");
         let path = env::join_paths(["second", "first"]).unwrap();
         assert_eq!(
-            resolve_with(OsStr::new("shim.cmd"), root.path(), |name| (name
+            resolve_with(OsStr::new(&program), root.path(), |name| (name
                 == SEARCH_PATH)
                 .then(|| path.clone()))
             .unwrap(),
-            root.path().join("second/shim.cmd")
+            root.path().join("second").join(&program)
         );
-        assert!(resolve_with(OsStr::new("shim.cmd"), root.path(), |_| None).is_err());
+        assert!(resolve_with(OsStr::new(&program), root.path(), |_| None).is_err());
     }
 
     // Only Windows applies PATHEXT when producing executable candidates.
@@ -144,7 +143,7 @@ mod tests {
     fn extensionless_names_follow_pathext_order_not_exe_preference() {
         let root = crate::test_os::tempdir();
         for extension in ["cmd", "exe", "bat"] {
-            std::fs::write(root.path().join(format!("shim.{extension}")), "fixture").unwrap();
+            crate::test_os::lookup_program(root.path(), "shim", Some(extension));
         }
         let path = env::join_paths([root.path()]).unwrap();
         assert_eq!(

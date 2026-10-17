@@ -73,9 +73,8 @@
 
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-copy">
-      <p class="eyebrow"><span class="k-runtime">Runtime</span><span class="k-agent">Agent</span><span class="k-human">Human</span><span>Dependency</span><span class="eb-tail">evals, one graph</span></p>
       <h1 id="hero-title">Build together on an <em><span class="nowrap">Artifact Graph</span></em>.</h1>
-      <p class="lede">Bring your way of working to the team. Pick a part, show what is ready, and build on your teammates’ reviewed work. An Artifact is a piece of your project: code, writing, a design or an image. The graph connects those pieces and their checks—tests, AI reviews and a person’s approval. Artifactize calls these checks evals, and reuses their results when their inputs haven’t changed.</p>
+      <p class="lede">Artifactize records tests, AI reviews and human approvals for separate pieces of a project. When those pieces haven't changed, teammates can use the saved results instead of repeating the checks. You can share work that's ready, and build on what your teammates have already checked.</p>
       <div class="cta">
         <a class="btn btn-primary" href="/docs/">Read the docs <span aria-hidden="true">→</span></a>
         <a class="btn btn-ghost" href="/docs/getting-started/quick-start.html">5-minute quick start</a>
@@ -91,7 +90,6 @@
       <p class="kicker">Why I built it</p>
       <h2 id="why-title">Solo got fast with AI. Teamwork should too.</h2>
       <p>Building games with AI made solo work faster. I wanted teammates and their assistants to work their own way too, without repeating reviews every time we brought our work together.</p>
-      <p>Each part keeps its own checks. The team shares results that still apply, and reviews the changes that need attention.</p>
     </div>
   </section>
 
@@ -99,7 +97,7 @@
     <div class="wrap story-head">
       <p class="kicker">The story</p>
       <h2 id="story-title">Grow a project together, and watch what gets reviewed again.</h2>
-      <p>Follow an illustrated example from an idea to a team project. The graphic shows which checks need to run again and which results still apply.</p>
+      <p>Follow an illustrated example from an idea to a team project. Each piece is called an Artifact, each check is an eval, and the graph shows how they connect. A card’s short code identifies its contents: when the code changes, earlier checks may need to run again.</p>
     </div>
 
     <div class="story-grid">
@@ -124,9 +122,9 @@
               <p><b class="c" data-hud="cumExecuted">0</b> executions so far · <b data-hud="cumNaive">0</b> if every eval re-ran at every step</p>
             </div>
             <ul class="legend">
-              <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round"/></svg>Runtime</li>
-              <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--violet)" stroke-width="1.8" stroke-dasharray="7 5"/></svg>Agent</li>
-              <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--amber)" stroke-width="2.6" stroke-dasharray="0.5 5" stroke-linecap="round"/></svg>Human</li>
+              <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round"/></svg>Automated checks</li>
+              <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--violet)" stroke-width="1.8" stroke-dasharray="7 5"/></svg>AI reviews</li>
+              <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--amber)" stroke-width="2.6" stroke-dasharray="0.5 5" stroke-linecap="round"/></svg>People</li>
               <li><svg viewBox="0 0 26 12"><path d="M8 11C2 1 24 1 18 11" fill="none" stroke="var(--dim)" stroke-width="1.6"/></svg>reviews one Artifact alone</li>
               <li><svg class="lg-chip" viewBox="-9 -9 18 18"><circle r="8" fill="none" stroke="var(--green)" stroke-width="1.4"/><path d="M-2.8.2-.8 2.2 2.9-2" fill="none" stroke="var(--green)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>reviewed</li>
               <li><svg class="lg-chip" viewBox="-9 -9 18 18"><circle r="8" fill="none" stroke="var(--cyan)" stroke-width="1.4"/><path d="M2.6-.9A2.8 2.8 0 1 0 2.4 1.6M2.9-3.1v2.3H.6" fill="none" stroke="var(--cyan)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>reused</li>
@@ -145,7 +143,7 @@
             <li><a href="#step-ripple" data-short="A change">A change</a></li>
             <li><a href="#step-grows" data-short="It keeps growing">It keeps growing</a></li>
             <li><a href="#step-parallel" data-short="Work in parallel">Work in parallel</a></li>
-            <li><a href="#step-merge" data-short="Merge and CI">Merge and CI</a></li>
+            <li><a href="#step-merge" data-short="Merge and check">Merge and check</a></li>
           </ol>
         </nav>
       </div>
@@ -156,71 +154,71 @@
         <section class="story-step" data-step="idea" id="step-idea" aria-labelledby="step-idea-h">
           <p class="step-k"><b>01</b>An idea</p>
           <h3 id="step-idea-h">It starts with an idea.</h3>
-          <p>A few notes on what to build. Nothing is declared yet, so there is nothing to review and no verdict to reuse.</p>
-          <p class="sr">At this point there is one note, the Idea: not yet an Artifact, with no fingerprint.</p>
+          <p>A few notes on what to build. There is nothing to review yet.</p>
+          <p class="sr">One idea, with no checks.</p>
         </section>
 
         <section class="story-step" data-step="artifacts" id="step-artifacts" aria-labelledby="step-artifacts-h">
           <p class="step-k"><b>02</b>Artifacts</p>
           <h3 id="step-artifacts-h">The plan and specification become Artifacts.</h3>
-          <p>Choose the pieces you want to review separately. Here, a plan and a specification become Artifacts, and an AI checks whether the specification is complete.</p>
-          <p class="sr">Now there are two Artifacts, Idea and Spec, each with a short fingerprint, and one Agent eval that reviews the Spec alone; it executes once.</p>
+          <p>Choose pieces to review separately. An AI checks whether the specification covers the plan.</p>
+          <p class="sr">The plan and specification become two Artifacts with one AI review.</p>
         </section>
 
         <section class="story-step" data-step="relations" id="step-relations" aria-labelledby="step-relations-h">
           <p class="step-k"><b>03</b>Evals</p>
           <h3 id="step-relations-h">Code arrives, and checks connect the parts.</h3>
-          <p>A check can compare one piece with another. Here, AI reviews compare the code with its specification, and Alice reviews the specification before approving it.</p>
-          <p class="sr">Code joins Idea and Spec. Agent evals review Code against the Spec and the Spec against the Idea, and Alice signs off the Spec alone in a Human eval. All three execute once; the Spec's completeness review is reused.</p>
+          <p>Compare pieces with each other. Alice approves the specification before work builds on it.</p>
+          <p class="sr">The code is compared with the specification; Alice signs off the specification.</p>
         </section>
 
         <section class="story-step" data-step="runtime" id="step-runtime" aria-labelledby="step-runtime-h">
           <p class="step-k"><b>04</b>Tests and style</p>
           <h3 id="step-runtime-h">Tests and a style review check the code.</h3>
-          <p>Tests run automatically. An AI checks the code against a style guide, while Alice approves the guide. Earlier results still apply and are reused.</p>
-          <p class="sr">Code now holds src and tests. Three evals execute: src against tests (runtime), src against the Style sheet (Agent), and Alice's sign-off of the Style sheet alone (Human). The four earlier evals are reused.</p>
+          <p>Tests check the code. AI checks its style against a guide approved by Alice.</p>
+          <p class="sr">Tests, an AI style review and Alice’s approval are three different checks.</p>
         </section>
 
         <section class="story-step" data-step="modules" id="step-modules" aria-labelledby="step-modules-h">
           <p class="step-k"><b>05</b>Modules</p>
           <h3 id="step-modules-h">The code splits into modules.</h3>
-          <p>Split larger pieces into smaller ones, each with its own checks. A change can then be reviewed where it matters instead of restarting every review.</p>
-          <p class="sr">src is now three modules, core, cli and api, each reviewed against tests and the Style sheet, and api has a Human sign-off by Alice. Those seven execute, and so does Code's review, because its children changed; the other four are reused.</p>
+          <p>Give smaller code pieces their own checks so changes can be reviewed where they matter.</p>
+          <p class="sr">The code splits into three parts, each with its own tests and review.</p>
         </section>
 
         <section class="story-step" data-step="beyond" id="step-beyond" aria-labelledby="step-beyond-h">
           <p class="step-k"><b>06</b>Beyond code</p>
           <h3 id="step-beyond-h">A website and docs pages join the graph.</h3>
-          <p>Writing and design belong in the same project. Check the documentation against the public interface, test the website, and ask a designer to approve it.</p>
-          <p class="sr">Docs pages and Website join. Five new evals execute: the docs against api, the docs' own build, the website against the docs and against api, and Dana's sign-off of the website alone.</p>
+          <p>Check writing and design too: compare the guides with the app connections they describe.</p>
+          <p class="sr">Documentation and website checks join, with Dana’s design approval.</p>
         </section>
 
         <section class="story-step" data-step="ripple" id="step-ripple" aria-labelledby="step-ripple-h">
           <p class="step-k"><b>07</b>A change</p>
           <h3 id="step-ripple-h">Change one module, and only what depends on it runs again.</h3>
-          <p>Change the public interface. Its checks and the checks that use it run again; unrelated results and unchanged approvals are reused.</p>
-          <p class="sr">api's fingerprint changes. Its tests and style review run, its Human review waits for Alice's sign-off, then the three evals that depend on api run. Six evals execute, one of them a sign-off; eleven are reused.</p>
+          <p>Change those app connections. Only their checks and the checks that use them run again.</p>
+          <p class="sr">The changed app connections and their users are checked again; unrelated results still apply.</p>
         </section>
 
         <section class="story-step" data-step="grows" id="step-grows" aria-labelledby="step-grows-h">
           <p class="step-k"><b>08</b>It keeps growing</p>
           <h3 id="step-grows-h">New Artifacts and relations keep arriving.</h3>
-          <p>Add new work and new connections as the project grows. New checks run once, while earlier results remain reusable when their inputs still match.</p>
-          <p class="sr">sync and a Brand guide join, and the docs gain an eval against cli. Four new evals execute; seventeen are reused.</p>
+          <p>Add new work and connections without redesigning the project’s review process.</p>
+          <p class="sr">A sync part, a brand guide and their checks join the project.</p>
         </section>
 
         <section class="story-step" data-step="parallel" id="step-parallel" aria-labelledby="step-parallel-h">
           <p class="step-k"><b>09</b>Work in parallel</p>
           <h3 id="step-parallel-h">Work on your own copy of the project.</h3>
-          <p>Alice, Bob and Carol work on their own copies of the project. A shared review store lets each teammate reuse results earned in the other copies.</p>
-          <p class="sr">The project now exists as three copies of the same repository around the review store: app · alice/docs, app · bob/api and app · carol/cli. In each copy the changed Artifact and the evals that depend on it run again, fourteen in all, one of them the sign-off of Bob's api; the other 49 are reused. Each copy publishes its verdicts to the store and reuses verdicts from it.</p>
+          <p>A shared review store lets teammates reuse reviews earned in each other’s project copies.</p>
+          <p class="sr">Alice, Bob and Carol work separately and share their review results.</p>
         </section>
 
         <section class="story-step" data-step="merge" id="step-merge" aria-labelledby="step-merge-h">
-          <p class="step-k"><b>10</b>Merge and CI</p>
+          <p class="step-k"><b>10</b>Merge and check</p>
           <h3 id="step-merge-h">Bring changes together and check only what is new.</h3>
-          <p>Bring the changes together. Automatic checks reuse the results from each teammate’s copy and review only the new combinations created by the merge.</p>
-          <p class="sr">The copies merge back into app · main, so api and cli take their new fingerprints. The evals the copies already reviewed, api's sign-off included, are reused from the store; the three that see two changes at once execute. CI reads verdicts from the store: executed 3, reused 18.</p>
+          <p>Bring changes together. The team checks review the new combinations and read shared results without changing them.</p>
+          <p class="sr">The combined project reuses existing reviews and checks the new combinations.</p>
         </section>
       </div>
     </div>
@@ -231,12 +229,13 @@
       <div class="section-head">
         <p class="kicker">See it in a terminal</p>
         <h2 id="terminal-title">The same reuse, in real sessions.</h2>
+        <p>In these recordings, <code>status</code> lists the checks that would run; <code>verify</code> performs them.</p>
       </div>
       <figure class="demo">
         <div class="demo-tabs" role="group" aria-label="Choose a recording">
           <button type="button" class="demo-tab" aria-pressed="true" data-name="change" data-height="830" data-label="After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.">Change one file</button>
           <button type="button" class="demo-tab" aria-pressed="false" data-name="reuse" data-height="830" data-label="artifactize status predicts five evals; the first verify executes all five and the second reuses all five.">Run it twice</button>
-          <button type="button" class="demo-tab" aria-pressed="false" data-name="team" data-height="900" data-label="On Alice's laptop verify executes five evals and publishes them to the review store; on Bob's laptop, with his own checkout of the same project, status predicts five reuses and verify reuses all five from remote: alice@laptop.">Two checkouts, one store</button>
+          <button type="button" class="demo-tab" aria-pressed="false" data-name="team" data-height="900" data-label="On Alice's laptop verify executes five evals and publishes them to the review store; on Bob's laptop, with his own copy of the same project, status predicts five reuses and verify reuses all five from remote: alice@laptop.">Two copies, one store</button>
         </div>
         <div class="demo-frame" style="aspect-ratio: 1000 / 830">
           <video class="demo-video" muted loop playsinline preload="none" width="1000" height="830" aria-label="Terminal recording"
@@ -249,7 +248,7 @@
             <span class="vc-label">Pause</span>
           </button>
         </div>
-        <figcaption><span id="demo-caption" class="demo-caption">After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.</span> Recorded with VHS in the <code>shop</code> demo project; the tapes are in <code>website/demo/</code>.</figcaption>
+        <figcaption><span id="demo-caption" class="demo-caption">After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.</span> Recorded in an isolated example project, not a live team’s work.</figcaption>
       </figure>
     </div>
   </section>
@@ -258,7 +257,7 @@
     <div class="wrap start-inner">
       <p class="kicker">Get started</p>
       <h2 id="start-title">Try it in five minutes.</h2>
-      <p>Artifactize is open source under the Apache License 2.0. It runs on Linux, macOS and Windows; the quick start reviews an example project with no model or API key.</p>
+      <p>Artifactize is open source under the Apache License 2.0. It runs on Linux, macOS and Windows; the quick start reviews an example project without an AI account or provider access key.</p>
       <p><a href="/docs/getting-started/install.html">The installation guide</a> covers the supported platforms, channels, updates and uninstalling. The <a href="/docs/getting-started/quick-start.html">quick start</a> takes you to your first reused review.</p>
       <div class="cta center">
         <a class="btn btn-primary" href="/docs/getting-started/install.html">Install <span aria-hidden="true">→</span></a>

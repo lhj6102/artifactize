@@ -297,7 +297,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         // The system prompt says from the start how a later follow-up is answered.
         let system = messages[0]["message"]["content"].as_str().unwrap();
         assert!(system.starts_with(
-            "Follow the artifactize review instructions. For the review itself, return only one JSON object matching the schema for its verdict."
+            "You are an artifactize evaluator. Review only the supplied Artifacts; do not implement or repair. Execute only registered Artifact tools."
         ));
         assert!(system.ends_with(
             "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the verdict stays as recorded."
@@ -878,7 +878,11 @@ async fn a_reference_elsewhere_names_where_its_session_lives() {
         r#""sessionId":"{}""#,
         review["sessionId"].as_str().unwrap()
     )));
-    for leaked in ["enc-review-1", "notes: R1 holds", "Follow the artifactize"] {
+    for leaked in [
+        "enc-review-1",
+        "notes: R1 holds",
+        "You are an artifactize evaluator",
+    ] {
         assert!(!text.contains(leaked), "{leaked} in {text}");
     }
     record

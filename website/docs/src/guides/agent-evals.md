@@ -37,23 +37,17 @@ model or lower effort. If the response reports a model ID, it must match exactly
 Agent evals share runtime evals' dependency gates, reuse-key claims, reuse and final
 fingerprint recheck. The backend, model, reasoning and limits are execution
 options, not part of the reuse key: a result another model or profile produced for
-the same eval, Artifact kinds and fingerprints is reused, and its record shows which one it was. Final output must be one strict JSON object containing
-`"verdict":"GREEN"` or `"verdict":"RED"` and only the permitted owner-schema fields.
-One tools-disabled repair is allowed for invalid final output, within the original
-deadline. The repair turn names the error and, when the output was a JSON object, up
-to five failing instance paths with their messages, each bounded to 200 characters,
-as a Human submission's error does:
+the same eval, Artifact kinds and fingerprints is reused, and its record shows which one it was.
 
-```text
-Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema
-- instancePath "/covered": "R1" is not of type "array"
-Return only one JSON object matching the schema.
-```
+The evaluator's system prompt holds the review rules. Its user message contains only the
+eval title and ID, target Artifact and instruction. Artifact references expand to the
+Artifact ID and its available tools; a file Artifact also includes its workspace-relative
+target path. Instructions therefore need not repeat tool names.
 
-If the repaired output is still invalid, the review is ERROR, and the saved error
-keeps only the error code, never the model's output. `max_tokens` and `max_tool_calls` are
-enforced client-side before further tools execute; neither becomes a provider
-request parameter.
+Agent reviews return schema-validated GREEN or RED verdicts. If the model returns
+an invalid result, artifactize asks once for a correction; a still-invalid result
+makes the review ERROR. [Agent responses](../reference/agent-responses.md) specifies
+the backend formats, owner-field validation, repair and limits.
 
 The rig adapter, retries, tool results and usage counters are in
 [Agent backends](#agent-backends).
@@ -161,8 +155,10 @@ retries and repair turn, sends it as `prompt_cache_key` on `openai` and `codex`,
 prefix that each turn replays from its prompt cache. Every review, including a forced
 re-review, starts a new session. `anthropic` caches by prefix and sends no session.
 The `cacheReadTokens` counter of each attempt in `usage` shows the cached input.
-A [follow-up](#saved-conversations) to a saved review reuses its session id, so it
-hits the same cache.
+A [follow-up](#saved-conversations) to a saved review reuses its session id and
+conversation prefix. Cache hits still depend on the provider: follow-ups remove the
+structured output format for plain-text answers, which invalidates Anthropic's
+format-dependent prompt cache.
 
 A failed Agent review records one of these `errorCode` values:
 
@@ -273,10 +269,12 @@ Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
 Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
 
 ── System
-Follow the artifactize review instructions. …
+You are an artifactize evaluator. …
 
 ── User (turn 1)
-You are an artifactize evaluator. …
+Eval: Review notes (notes/review)
+Target Artifact: notes
+Instruction: Check Artifact notes (tools: read_notes). …
 
 ── Assistant (turn 1)
 [reasoning] Reading the notes
@@ -287,13 +285,13 @@ You are an artifactize evaluator. …
 {"artifactId":"notes","lines":[{"number":1,"text":"notes: R1 holds.\n"}], …}
 
 ── Assistant (turn 2)
-{"verdict":"GREEN"}
+{"result":{"verdict":"GREEN","verdictFields":{}}}
 
 ── Repair prompt (turn 3)
 Your final response did not match the required schema: …
 
 ── Assistant (turn 3)
-{"verdict":"GREEN","covered":["R1"]}
+{"result":{"verdict":"GREEN","verdictFields":{"covered":["R1"]}}}
 
 ── Result: {"covered":["R1"],"verdict":"GREEN"}
 ```

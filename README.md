@@ -4,9 +4,8 @@
 
 # Build together on an Artifact Graph.
 
-Bring your way of working to the team. Pick a part, show what is ready, and build
-on work your teammates have already reviewed. Artifactize helps you and your
-coding assistant do that without repeating the same reviews.
+Bring your tests, AI reviews and human sign-offs to the team. Artifactize records
+their results so teammates can see which parts of your work they can build on.
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
@@ -19,19 +18,16 @@ coding assistant do that without repeating the same reviews.
 
 An **Artifact** is a piece of the project: code, writing, a design or an image.
 The **graph** shows how these pieces connect. Give each piece its own checks—a test,
-an AI review or a person's sign-off. When a check's inputs haven't changed,
-Artifactize reuses its earlier result, including across branches and teammates.
+an AI review or a person's sign-off. When the work a check looked at hasn't changed,
+Artifactize can use its earlier result again, even across project versions and teammates’ copies.
 
-- **Check each part in its own way.** Use tests, AI reviews and human approval together.
-- **Keep work running while you step away.** A verification has its own Run ID;
-  closing the terminal doesn't stop it.
-- **Review changes, not everything again.** See what needs checking before you run it,
-  and share still-valid results with your team.
+Checks keep running while you step away. Each verification has a tracking code
+called a Run ID; closing the command window doesn't stop it.
 
 ## Install
 
-Pick the default method for your operating system. No Rust toolchain is needed
-for these prebuilt binaries.
+Pick the default method for your operating system. These downloads are ready to
+run; you do not need Rust’s build tools.
 
 ### Linux
 
@@ -42,7 +38,7 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 ### macOS
 
 ```sh
-brew install lhj6102/tap/artifactize
+curl -fsSL https://artifactize.dev/install.sh | sh
 ```
 
 ### Windows
@@ -51,9 +47,9 @@ brew install lhj6102/tap/artifactize
 winget install lhj6102.Artifactize
 ```
 
-With Smart App Control enabled, use the
+If Windows’ Smart App Control security setting is enabled, use the
 [Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D) version instead.
-Inside WSL 2, use the Linux method.
+If you use Linux inside Windows through WSL 2, use the Linux method.
 
 The [full installation guide](https://artifactize.dev/docs/getting-started/install.html)
 explains the alternatives—install scripts, Cargo and building from source—along
@@ -61,9 +57,10 @@ with prerequisites, updates and uninstalling.
 
 Once installed, take the
 [5-minute quick start](https://artifactize.dev/docs/getting-started/quick-start.html).
-It uses an example project and needs no AI account or API key.
-[Hey Arti](https://artifactize.dev/docs/guides/hey-arti.html) lets a coding assistant
-use the same review workflow.
+It uses an example project and needs no AI account or provider access key (API key).
+With [Hey Arti](https://artifactize.dev/docs/guides/hey-arti.html), ask your coding
+assistant in your own words to set up and run these checks; its SKILL.md file gives
+the assistant the workflow instructions.
 
 ## Learn more
 
@@ -75,11 +72,11 @@ use the same review workflow.
 
 These are real screenshots of the experimental desktop app built from this branch,
 using an isolated example project. The human review is pending; no approval was
-claimed or submitted to make these pictures. The CLI also provides terminal
+claimed or submitted to make these pictures. The text-based app (CLI) also provides
 Monitor and Review screens.
 
-**Monitor:** the example's documentation check has passed, a human sign-off waits,
-and the part that needs that sign-off waits with it.
+**Monitor:** inspect the documentation check's saved result alongside the project.
+It passed; a human sign-off and the shipping check that needs it are still waiting.
 
 <img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example project has a passed documentation check and a waiting human sign-off.">
 

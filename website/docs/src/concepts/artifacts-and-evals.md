@@ -11,6 +11,12 @@ A folder with an `index.artf` is an Artifact. `name` is required; `mounts`,
 (`review_policy.dependency_gates`, including the `review_policy` table) are removed;
 choose `--speculate` and `--defer-human` per verification request instead.
 
+A **mount** links another Artifact into this one under a local name, without
+copying its files. For example, `mounts = { terms = "glossary" }` gives the Artifact
+named `glossary` the local name `terms` inside `guide`. A command in `guide` can
+then use `{terms}/terms.txt` to read that Artifact's `terms.txt`. The global name
+remains `glossary`; the local name also lets scoped tools address it through `terms`.
+
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
 `usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval
 has a `title` and a `profile` whose `kind` is `runtime`, `agent`,

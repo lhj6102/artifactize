@@ -3,6 +3,9 @@ use serde_json::{Map, Value, json};
 
 use crate::{config::EvalDeclaration, tools::schema::quoted};
 
+mod structured;
+pub(super) use structured::Structured;
+
 /// Validate a parsed Agent or Human result without repair or owner-field rewriting.
 /// Errors list at most five failing instance paths, so a reviewer can correct the fields.
 pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<ValidatedResult, String> {
@@ -14,10 +17,10 @@ pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<Validate
 }
 
 /// Bound the raw model response before parsing; prose/whitespace can exceed the semantic result.
-const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 /// Keep the normalized owner result bounded in saved receipts, in UTF-16 units for JSON clients.
 const MAX_RESULT_CHARS: usize = 256_000;
-/// Bound schema compilation and the schema sent in the review prompt.
+/// Bound schema compilation and the schema sent in the provider request.
 const MAX_SCHEMA_BYTES: usize = 8 * 1024 * 1024;
 /// Five diagnostics give an actionable repair without flooding the next provider turn.
 const MAX_DIAGNOSTICS: usize = 5;
@@ -98,7 +101,16 @@ impl VerdictSchema {
         })
     }
 
+    #[cfg(test)]
     pub fn parse(&self, text: &str) -> Result<ValidatedResult, &'static str> {
+        self.parse_model(text, None)
+    }
+
+    pub(super) fn parse_model(
+        &self,
+        text: &str,
+        structured: Option<&Structured>,
+    ) -> Result<ValidatedResult, &'static str> {
         if text.len() > MAX_RESPONSE_BYTES {
             return Err("over_size: final JSON exceeds 1 MiB");
         }
@@ -108,6 +120,10 @@ impl VerdictSchema {
         let value: Value = serde_json::from_str(text).map_err(
             |_| "not_json: return exactly one JSON object, without prose or code fences",
         )?;
+        let value = match structured {
+            Some(structured) => structured.decode(value)?,
+            None => value,
+        };
         self.validate(&value)?;
         Ok(ValidatedResult::from_validated(value))
     }
@@ -115,10 +131,19 @@ impl VerdictSchema {
     /// What the single repair turn tells the model: the parse error and, when the
     /// response was a JSON object, its failing instance paths, bounded as for a Human
     /// submission. Sent to the provider only; the persisted error stays the bare code.
-    pub fn repair_detail(&self, text: &str, error: &str) -> String {
+    pub(super) fn repair_detail(
+        &self,
+        text: &str,
+        error: &str,
+        structured: Option<&Structured>,
+    ) -> String {
         let value = (text.len() <= MAX_RESPONSE_BYTES)
             .then(|| serde_json::from_str::<Value>(text).ok())
-            .flatten();
+            .flatten()
+            .and_then(|value| match structured {
+                Some(structured) => structured.decode(value).ok(),
+                None => Some(value),
+            });
         match value {
             Some(value) => self.explain(error, &value),
             None => error.into(),

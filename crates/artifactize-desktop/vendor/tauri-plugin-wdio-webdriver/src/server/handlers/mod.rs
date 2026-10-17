@@ -15,6 +15,7 @@ pub mod document;
 pub mod element;
 pub mod frame;
 pub mod navigation;
+pub mod native_ime;
 pub mod print;
 pub mod screenshot;
 pub mod script;

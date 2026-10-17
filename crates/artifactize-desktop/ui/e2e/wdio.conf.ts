@@ -91,7 +91,13 @@ export const config = {
           env = accountBrowserEnvironment(input.fixture.root, env);
           // Runs after the app has ended and before the fixture is deleted.
           const release = input.release;
-          input.release = async () => { await releaseAccountBrowser(); await release?.(); };
+          const browserOrigin = env.ARTIFACTIZE_CODEX_AUTH_URL;
+          input.release = async () => {
+            const failures: unknown[] = [];
+            try { await releaseAccountBrowser(input.fixture.root, browserOrigin); } catch (error) { failures.push(error); }
+            try { await release?.(); } catch (error) { failures.push(error); }
+            if (failures.length) throw new AggregateError(failures, "account fixtures could not be released");
+          };
         }
         // Release callbacks and native fixture handles never cross the worker boundary.
         writeJson(context, { fixture: input.fixture, args, env, data: input.data }, { private: true });

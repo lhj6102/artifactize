@@ -30,6 +30,7 @@
 - [MCP](reference/mcp.md)
 - [Declarations (.artf)](reference/declarations.md)
 - [Agent tools](reference/agent-tools.md)
+- [Agent responses](reference/agent-responses.md)
 - [Human tools](reference/human-tools.md)
 - [Built-in tools](reference/builtin-tools.md)
 - [State, cache and limits](reference/state-cache-limits.md)

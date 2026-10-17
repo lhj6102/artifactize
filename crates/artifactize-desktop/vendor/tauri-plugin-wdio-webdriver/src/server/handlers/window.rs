@@ -109,14 +109,22 @@ pub async fn switch_to_window<R: Runtime>(
     let mut sessions = state.sessions.write().await;
     let session = sessions.get_mut(&session_id)?;
 
-    // Verify the window exists
-    if !state.app.webview_windows().contains_key(&request.handle) {
-        return Err(WebDriverErrorResponse::no_such_window());
-    }
+    let window = state
+        .app
+        .webview_windows()
+        .get(&request.handle)
+        .cloned()
+        .ok_or_else(WebDriverErrorResponse::no_such_window)?;
 
     session.switch_to_window(request.handle).map_err(|_| {
         WebDriverErrorResponse::unknown_error("Browsing context generation overflowed")
     })?;
+    drop(sessions);
+    // Switching through WebDriver must focus the native window too; selecting only
+    // its logical context leaves WebView2 without keyboard/focus events.
+    window
+        .set_focus()
+        .map_err(|error| WebDriverErrorResponse::unknown_error(&error.to_string()))?;
 
     Ok(WebDriverResponse::null())
 }

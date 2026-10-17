@@ -8,7 +8,7 @@ read = { builtin = "read" }
 title = "The Artifactizer skill matches declarations, Run lifecycle and Human authority"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 payload.instruction = """
-Review the canonical skill {hey-arti} using read_hey-arti and compare it with {core}
+Review the canonical skill {hey-arti} and compare it with {core}
 and {docs}. Check current .artf/TOML syntax, default artifactsum, real consumer
 coverage and reuse distinctions, tool scopes and artifactize-owned sessions,
 MCP-first validation and durable Run observation, optional caller request_key,

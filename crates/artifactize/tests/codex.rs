@@ -143,7 +143,9 @@ fn reviewer(request: &Request) -> Reply {
     match request.path.as_str() {
         "/backend-api/codex/responses" if replayed(request) => codex::completed(
             request,
-            vec![openai::message(r#"{"verdict":"GREEN"}"#)],
+            vec![openai::message(
+                r#"{"result":{"verdict":"GREEN","verdictFields":{}}}"#,
+            )],
             openai::usage(40, 8),
         ),
         "/backend-api/codex/responses" => codex::completed(
@@ -220,14 +222,18 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
         assert_eq!(body["tools"][0]["type"], "function");
         assert_eq!(body["tools"][0]["name"], "read_spec");
         let instructions = body["instructions"].as_str().unwrap();
-        assert!(instructions.starts_with(
-            "Follow the artifactize review instructions. For the review itself, return only one JSON object"
-        ));
+        assert!(instructions.starts_with("You are an artifactize evaluator."));
+        assert_eq!(body["text"]["format"]["type"], "json_schema");
+        assert_eq!(body["text"]["format"]["strict"], true);
+        let schema = &body["text"]["format"]["schema"];
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["required"], json!(["result"]));
+        assert!(schema.get("anyOf").is_none());
         assert!(instructions.contains(
             "If a person later asks a follow-up question about this review, answer that question in plain text instead"
         ));
         assert!(!instructions.contains("You are ChatGPT"));
-        for absent in ["temperature", "max_output_tokens", "text", "metadata"] {
+        for absent in ["temperature", "max_output_tokens", "metadata"] {
             assert!(body.get(absent).is_none(), "{absent}: {body}");
         }
     }

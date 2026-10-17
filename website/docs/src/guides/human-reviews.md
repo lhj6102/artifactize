@@ -454,18 +454,13 @@ Detail depends on the eval kind:
   there is no live-log recorder.
 - **Dependency:** the saved derived state and `blockedBy` requirements, marked
   `derived (no execution)`. It has no claim, tools or verdict form.
-- **Human:** the same [Human Detail](#shared-human-detail) as standalone `review`,
-  with explicit **CLAIM → REVIEW**, instruction first, folded Technical (`t`),
-  instruction expansion (`i`), tools/output and GREEN/RED fields. `c` claims only
-  in focused Detail; tools and submission never claim implicitly. `g`/`r` opens
-  forms, Ctrl-G/Ctrl-R switches verdicts and Ctrl-S submits. Esc cancels work,
-  then stops editing with the draft kept, then returns to the tree.
-  Monitor never opens `$EDITOR`. Outside editing or work, `q` quits,
-  `?` shows monitor help and `!` opens the next attention item.
+- **Human:** use the [Shared Human Detail](#shared-human-detail) controls for claims,
+  tools, verdict forms and stepping back. Monitor-specific differences: it keeps
+  the completed result open and never opens `$EDITOR`. Outside editing or work,
+  `q` quits, `?` shows monitor help and `!` opens the next attention item.
 
-Browsing is read-only. Only explicit Human actions claim work, run tools or submit
-results. Leaving Human Detail keeps its claim; Release gives it back. If publishing
-to the team store fails after submission, Detail shows the completed local result
+Browsing is read-only. If publishing to the team store fails after submission,
+Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. See the
 [local reader reference](../reference/state-cache-limits.md#local-readers) for

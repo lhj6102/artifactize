@@ -1,5 +1,8 @@
 # CI
 
+Continuous integration (CI) runs automated checks when you submit project changes,
+helping your team decide whether those changes are ready to join the shared project.
+
 Run `artifactize verify --all --wait --reuse-only agent,human` as a CI step: tests run, while reviews must come from the cache or
 the team store, so CI never calls a model or waits for a person. It exits 0 only
 when every selected eval is GREEN, so RED (1), ERROR (2) and INCOMPLETE (4) fail the
@@ -25,7 +28,10 @@ sign-off. RED blocks dependents. Do not treat plain verify acceptance as CI succ
 
 ## Reuse verdicts from the team store
 
-**CI.** Configure CI through the environment only:
+Configure the team store through environment variables. This example is a GitHub
+Actions step: add it under `steps:` in the job of your `.github/workflows/*.yml`
+workflow file, after installing Artifactize. Create a GitHub Actions secret named
+`ARTIFACTIZE_READ_TOKEN` for the store's read token.
 
 ```yaml
 - run: artifactize verify --all --wait --reuse-only agent,human
