@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@wdio/tauri-service@1.5.0': 589dfdc3be98643f19b8a0af9d77bdd7a9cfedbdc62e3e08b2369f2b0e9eade2
+
 importers:
 
   .:
@@ -220,7 +223,7 @@ importers:
         version: 1.5.0(supports-color@8.1.1)(tsx@4.23.15)
       '@wdio/tauri-service':
         specifier: 1.5.0
-        version: 1.5.0(expect-webdriverio@6.1.0)(supports-color@8.1.1)(tsx@4.23.15)(webdriverio@9.32.0(supports-color@8.1.1))
+        version: 1.5.0(patch_hash=589dfdc3be98643f19b8a0af9d77bdd7a9cfedbdc62e3e08b2369f2b0e9eade2)(expect-webdriverio@6.1.0)(supports-color@8.1.1)(tsx@4.23.15)(webdriverio@9.32.0(supports-color@8.1.1))
       eslint:
         specifier: 10.12.0
         version: 10.12.0(jiti@2.7.0)(supports-color@8.1.1)
@@ -4262,7 +4265,7 @@ snapshots:
       - supports-color
       - tsx
 
-  '@wdio/tauri-service@1.5.0(expect-webdriverio@6.1.0)(supports-color@8.1.1)(tsx@4.23.15)(webdriverio@9.32.0(supports-color@8.1.1))':
+  '@wdio/tauri-service@1.5.0(patch_hash=589dfdc3be98643f19b8a0af9d77bdd7a9cfedbdc62e3e08b2369f2b0e9eade2)(expect-webdriverio@6.1.0)(supports-color@8.1.1)(tsx@4.23.15)(webdriverio@9.32.0(supports-color@8.1.1))':
     dependencies:
       '@wdio/globals': 9.31.3(expect-webdriverio@6.1.0)(webdriverio@9.32.0(supports-color@8.1.1))
       '@wdio/logger': 9.29.1

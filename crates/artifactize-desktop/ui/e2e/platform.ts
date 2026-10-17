@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createConnection, createServer, type Socket } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -760,4 +760,29 @@ export async function nativeIme(browser: WebdriverIO.Browser, input:
 }
 export function nativeImeKey(browser: WebdriverIO.Browser, key: string, primary = false, preedit?: string): Promise<void> {
   return nativeIme(browser, { type: "key", key, preedit, control: primary && primaryModifier === "Control", meta: primary && primaryModifier === "Meta" });
+}
+
+/** Native crash reports for this run's exact candidate binary, never other apps or runs.
+ * A crashed embedded driver cannot answer WebDriver diagnostics; the OS report survives it. */
+export function nativeCrashReports(app: NativePath): string[] {
+  if (!MACOS) return [];
+  const directory = nativePath(homedir(), "Library", "Logs", "DiagnosticReports");
+  if (!exists(directory)) return [];
+  const reports: string[] = [];
+  for (const name of readdirSync(directory).filter((entry) => entry.startsWith(`${nameOf(app)}-`) && entry.endsWith(".ips"))) {
+    const text = readFileSync(nativePath(directory, name), "utf8");
+    // Incident reports start with one metadata JSON line, then the crash's JSON object.
+    const report = JSON.parse(text.slice(text.indexOf("\n") + 1)) as {
+      procPath?: string; pid?: number; exception?: unknown; termination?: unknown;
+      faultingThread?: number; threads?: { triggered?: boolean; frames?: unknown[] }[];
+      lastExceptionBacktrace?: unknown[];
+    };
+    if (report.procPath !== portablePath(app)) continue;
+    reports.push(JSON.stringify({
+      nativeCrash: name, pid: report.pid, exception: report.exception,
+      termination: report.termination, lastExceptionBacktrace: report.lastExceptionBacktrace,
+      thread: report.threads?.find((thread) => thread.triggered) ?? report.threads?.[report.faultingThread ?? 0],
+    }));
+  }
+  return reports;
 }

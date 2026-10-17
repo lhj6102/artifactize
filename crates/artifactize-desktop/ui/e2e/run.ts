@@ -3,7 +3,7 @@ import { inspect } from "node:util";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nodeProgram, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
+  nativeCrashReports, nodeProgram, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -69,6 +69,10 @@ async function suite(ids: string[]): Promise<void> {
       }
     }
   } finally {
+    if (failures.length) {
+      try { for (const report of nativeCrashReports(candidate.app)) console.error(report); }
+      catch (error) { failures.push(error); }
+    }
     try { await cleanup(candidate.root); } catch (error) { failures.push(error); }
   }
   if (failures.length) throw new AggregateError(failures, "desktop E2E failures");

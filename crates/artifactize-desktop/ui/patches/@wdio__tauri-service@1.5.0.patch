@@ -1,0 +1,74 @@
+diff --git a/dist/cjs/index.js b/dist/cjs/index.js
+index 7707403ba38c4493db29a82e50802051f58d64e0..1abc3804ad5bfc619b3eff3a90e29f0d88427890 100644
+--- a/dist/cjs/index.js
++++ b/dist/cjs/index.js
+@@ -4668,17 +4668,25 @@ async function cleanup(browser) {
+     const launcher = activeLaunchers.get(browser);
+     if (launcher) {
+         const service = activeServices.get(browser);
+-        const svc = service;
++        const failures = [];
+         try {
+-            await svc?.afterSession?.();
++            await service?.afterSession?.();
+         }
+-        catch (e) {
+-            log.warn(`service.afterSession() failed during cleanup: ${nativeUtils.errorMessage(e)}`);
++        catch (error) {
++            failures.push(error);
+         }
+-        finally {
+-            activeServices.delete(browser);
++        try {
++            // A resolved cleanup is permission to remove the app's fixture inputs.
++            // Preserve ownership on any failure, including bounded shutdown timeout.
++            await nativeUtils.boundedOnComplete(launcher, 'cleanup', log, { rethrow: true });
++        }
++        catch (error) {
++            failures.push(error);
++        }
++        if (failures.length) {
++            throw new AggregateError(failures, 'Tauri standalone session cleanup failed');
+         }
+-        await nativeUtils.boundedOnComplete(launcher, 'cleanup', log);
++        activeServices.delete(browser);
+         activeLaunchers.delete(browser);
+         log.debug('Tauri standalone session cleaned up');
+     }
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index daf24be418bf9009ae5076595add15a1affe6af6..4b69431364eabb895c6df4015f56d4c8bb83276a 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -4664,17 +4664,25 @@ async function cleanup(browser) {
+     const launcher = activeLaunchers.get(browser);
+     if (launcher) {
+         const service = activeServices.get(browser);
+-        const svc = service;
++        const failures = [];
+         try {
+-            await svc?.afterSession?.();
++            await service?.afterSession?.();
+         }
+-        catch (e) {
+-            log.warn(`service.afterSession() failed during cleanup: ${errorMessage(e)}`);
++        catch (error) {
++            failures.push(error);
+         }
+-        finally {
+-            activeServices.delete(browser);
++        try {
++            // A resolved cleanup is permission to remove the app's fixture inputs.
++            // Preserve ownership on any failure, including bounded shutdown timeout.
++            await boundedOnComplete(launcher, 'cleanup', log, { rethrow: true });
++        }
++        catch (error) {
++            failures.push(error);
++        }
++        if (failures.length) {
++            throw new AggregateError(failures, 'Tauri standalone session cleanup failed');
+         }
+-        await boundedOnComplete(launcher, 'cleanup', log);
++        activeServices.delete(browser);
+         activeLaunchers.delete(browser);
+         log.debug('Tauri standalone session cleaned up');
+     }
