@@ -50,3 +50,45 @@ fn eval_detail_keeps_request_instruction_and_result_outside_technical() {
         assert!(!visible.iter().any(|(name, _)| *name == key));
     }
 }
+
+#[test]
+fn artifact_detail_lists_its_evals_waits_once_outside_technical() {
+    let run: RunView = serde_json::from_value(json!({
+        "id":"run-1",
+        "repoPath":crate::test_os::temp_root().join("repo"),
+        "stateDir":crate::test_os::temp_root().join("state"),
+        "status":"INCOMPLETE",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "completedAt":"2026-01-01T00:00:01Z",
+        "selection":{"kind":"all"},
+        "definitions":{
+            "artifacts":{"app":{"name":"app"},"plan":{"name":"plan"}},
+            "evals":[
+                {"id":"app/first","target":"app","deps":["plan"]},
+                {"id":"app/second","target":"app","deps":["plan"]},
+                {"id":"plan/check","target":"plan","deps":[]}
+            ]
+        },
+        "validation":null,
+        "requests":[]
+    }))
+    .unwrap();
+    let target = Target::Artifact("app".parse().unwrap());
+    let shown = detail(&run, &[], &target, run.run.created_at.time());
+    let waits = shown
+        .field("Waits for")
+        .expect("the Artifact exposes its evals' waits");
+    assert_eq!(
+        waits
+            .lines()
+            .filter(|line| line.starts_with("↑ plan "))
+            .count(),
+        1
+    );
+    assert_eq!(
+        waits.lines().filter(|line| line.starts_with("  ")).count(),
+        1
+    );
+    assert!(waits.contains("check  not in this Run"), "{waits}");
+    assert_eq!(Section::of("Waits for"), Section::Waits);
+}
