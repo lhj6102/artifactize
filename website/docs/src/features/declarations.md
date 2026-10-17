@@ -464,7 +464,7 @@ and mount closure, not the referenced Artifacts' eval instructions.
 `Scope::resolve_path` follows logical child/mount paths to canonical Artifact
 ids; `Scope::resolve_input` additionally requires existing files/directories
 without symlink traversal. Logical paths reject absolute paths, traversal, empty
-components, backslashes, colons, controls and lengths above 4096 characters.
+components, backslashes, colons, ASCII controls and lengths above 4096 UTF-16 code units.
 
 Before preparing a runtime command, call `scope::resolve_argv` with the admitted
 scope. Explicit `{name}`, `{name}/path` and `--flag={name}/path` operands resolve to

@@ -82,9 +82,10 @@ and [Human tools](human.md) for complete protocols, scoping and bounds.
 
 ## Keep a game or app harness running
 
-A tool session keeps one harness alive across an Agent review's calls. For example,
-a game tool Artifact can start its own headless game and expose a read-only board
-inspection operation:
+A **harness** is a helper program that runs or controls the application during
+review. A tool session keeps one harness alive across an Agent review's calls.
+For example, a game tool Artifact can run its game **headless**—without a visible
+window—and expose a read-only board inspection operation:
 
 ```toml
 [views.agent_sessions.game]

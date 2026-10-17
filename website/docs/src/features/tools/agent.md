@@ -43,7 +43,9 @@ logical `path`, and grep's matching line numbers start at 1.
 
 Paths are relative logical paths from the tool's declaring Artifact, including
 children and mount aliases; omitted paths mean its root. They never accept
-absolute paths, traversal components or symlinks. The lone `.` is accepted as
+absolute paths, traversal components or symlinks. Logical paths are at most
+4096 UTF-16 code units and reject ASCII controls, backslashes, colons and empty
+or `.`/`..` components. The lone `.` is accepted as
 a file Artifact's virtual root for list/glob/grep; other dot components are
 rejected. The registry scope remains the eval's
 admitted Artifacts, not other evals' references. Paths are opened read-only through
@@ -139,7 +141,11 @@ Successful stdout is one JSON object with 1–32 content blocks:
 Image blocks are described [below](#image-results).
 Text is at most 64 KiB per block; compact JSON data at most 512 KiB per block;
 the normalized result at most 8 MiB. Both process streams are bounded at 16 MiB.
-An optional `isError` boolean is accepted. Exit-0 authored errors must have
+The result object accepts only `content` and optional boolean `isError`.
+Every block is also closed: text permits only `type` and `text`; JSON permits
+only `type` and `data`; image permits only `type`, `mimeType` and exactly one of
+`data` or `path`. Any extra field on a result or block is an invalid-output error,
+not metadata passed through to the reviewer. Exit-0 authored errors must have
 exactly one nonblank text block, such as
 `{"isError":true,"content":[{"type":"text","text":"Choose a smaller range."}]}`.
 These reach the reviewer unchanged. Nonzero exit, crash, malformed/truncated

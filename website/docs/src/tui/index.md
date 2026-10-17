@@ -124,12 +124,11 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
 | Esc | Cancel work, then stop editing, then leave Detail |
 | Ctrl-E | Standalone only: edit the form in `$EDITOR` |
 
-- **Claim.** Press `c` before running tools or submitting (`$USER` unless
-  `--reviewer`). Those actions never claim implicitly. A request claimed by someone
-  else, or no longer waiting, is read-only. GREEN/RED, submit and release require
-  your claim. `u` or Release relinquishes it; leaving Detail keeps it.
-- **Tools.** With Tools focused, ↑/↓ selects and Enter runs the selected tool
-  at once; there is no confirmation step. `j`/`k` also selects while not editing.
+- **Claim.** The reviewer defaults to `$USER` unless selected with `--reviewer`.
+  Tool and verdict actions never claim implicitly. A request claimed by someone
+  else, or no longer waiting, is read-only; leaving Detail keeps your claim.
+- **Tools.** ↑/↓ selects; `j`/`k` also selects while not editing. Running a tool
+  has no confirmation step.
   The run needs your claim on a request that still waits, checked when it starts:
   after a release or a settlement elsewhere it neither claims nor runs. Each run
   reloads and resolves the declarations again, but refuses the action if the
@@ -139,7 +138,7 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. Its stdout/stderr fill Output; PgUp/PgDn scroll. A nonzero exit
   is a tool error, not a verdict.
-- **Form.** `g`/`r` opens the schema-backed GREEN/RED form directly; there is no
+- **Form.** The chosen verdict opens its schema-backed form without an intermediate
   verdict popup. A flat object with `const`, `boolean`, `string` (`minLength`,
   `maxLength`, `enum`), `integer` or `number` properties gets typed fields. `const`
   fields are prefilled and fixed; `*` marks required fields. Blank optional fields
@@ -149,15 +148,15 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   `$ref`) open a JSON template inside the TUI. Both inline and external JSON
   editors take **only owner fields**: omit `verdict`, which is inserted from the
   selected GREEN/RED choice automatically; an explicit `verdict` field is rejected.
-  Enter inserts a JSON newline and Tab indents; Enter never submits a flat form. Ctrl-S or Submit submits. A
-  validation error keeps the request waiting and shows the failing paths.
+  Enter inserts a JSON newline and Tab indents; Enter never submits a flat form.
+  A validation error keeps the request waiting and shows the failing paths.
   A saved request **without a recorded Human definition** is not an empty-schema
   review: its tools display as unknown and GREEN/RED forms are refused. Browsing
   that old request does not invent missing tool or schema declarations.
 - **Editing.** Ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and Tab belong to the
   fields, not navigation. A bracketed keyboard paste goes into the focused field as
-  one edit, in standalone `review` as in the monitor. Ctrl-G/Ctrl-R switches
-  verdicts, keeping separate drafts.
+  one edit, in standalone `review` as in the monitor. Each verdict keeps a separate
+  draft when you switch between them.
   Editing and tool work normally lock focus moves outside Detail. Monitor's Close
   button is an exception: when idle it returns directly to the tree with the form
   retained; while busy it cancels the work first. Esc closes
