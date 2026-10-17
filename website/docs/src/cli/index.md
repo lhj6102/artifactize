@@ -76,7 +76,10 @@ Run until it finishes; when its own timeout expires first it prints the current
 Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
 (unknown, repeated nonrepeatable, conflicting or missing options and values) and operational
 errors: text on stderr, or `{"error":"..."}` on stdout with `--json` (except
-`mcp`, whose stdout remains protocol-only). There is no
+`mcp`, whose stdout remains protocol-only). Current-directory tools (`tools read`,
+`list`, `glob`, `grep`, `section`, `help` and `open`) are an exception for tool
+failures: they retain the shared tool runner's exit 1 and unchanged diagnostics,
+even with `--json`; their usage errors still exit 2. There is no
 `plan`, `history` or `--full`.
 
 List options `--reuse-only` and `server token add --scopes` may be repeated;
