@@ -103,7 +103,7 @@ pub struct Key {
 pub enum Unkeyed {
     /// The eval's own target.
     Target,
-    /// A mount, child or referenced Artifact.
+    /// A child or referenced Artifact.
     Dependency(ArtifactName),
 }
 
@@ -124,13 +124,12 @@ pub struct Changes {
     pub summary: String,
 }
 
-/// The Artifacts an eval depends on: its target, the target's mounts and child Artifacts, and
+/// The Artifacts an eval depends on: its target, the target's child Artifacts, and
 /// the Artifacts the eval names in its instruction or runtime args. Connections further away
 /// count only through how the developer defines fingerprints.
 pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a ArtifactName> {
     let target = &config.artifacts[&eval.target];
     std::iter::once(&eval.target)
-        .chain(target.mounts.values())
         .chain(target.children.values())
         .chain(&eval.deps)
         .collect()

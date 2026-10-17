@@ -664,11 +664,10 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
 }
 
 #[tokio::test]
-async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
+async fn json_scope_contains_only_paths_kinds_and_children() {
     let fixture = Fixture::new(command());
     let mut root: Value =
         crate::test_declaration::read(fs::read(fixture.repo.join("index.artf")).unwrap()).unwrap();
-    root["mounts"] = json!({"alias":"leaf"});
     root["views"]["human_tools"] = json!({
         "humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]},
     });
@@ -703,7 +702,6 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
     let [Content::Json { data }] = result.content() else {
         panic!("{result:?}")
     };
-    assert_eq!(data["a"]["mounts"], json!({"alias":"leaf"}));
     assert_eq!(data["a"]["children"], json!({"cases":"leaf"}));
     assert_eq!(
         data["leaf"]["path"],
@@ -711,9 +709,9 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
     );
     assert_eq!(
         data["leaf"],
-        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","children":{},"mounts":{}})
+        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","children":{}})
     );
-    assert_eq!(data["a"].as_object().unwrap().len(), 4);
+    assert_eq!(data["a"].as_object().unwrap().len(), 3);
 }
 
 #[tokio::test]

@@ -129,7 +129,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
 }
 
 #[tokio::test]
-async fn fixed_agent_reads_sections_mounts_and_schemas() {
+async fn fixed_agent_reads_sections_children_and_schemas() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
@@ -189,35 +189,29 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
             .unwrap()
             .contains("First\\nNested\\nNext")
     );
-    // A mount prefix follows the same read rule, even for fixed args.
+    // A child path follows the same read rule, even for fixed args.
     let mut value =
         support::declaration::read(fs::read(repo.join("a/index.artf")).unwrap()).unwrap();
-    value["mounts"] = json!({"reference":"b"});
-    value["views"]["agent_tools"]["mounted"] =
+    value["views"]["agent_tools"]["nested"] =
         json!({"builtin":"read","args":["reference/reference.md"]});
     support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
-    fs::create_dir_all(repo.join("b")).unwrap();
-    fs::write(repo.join("b/reference.md"), "mounted text\n").unwrap();
+    fs::create_dir_all(repo.join("a/reference")).unwrap();
+    fs::write(repo.join("a/reference/reference.md"), "child text\n").unwrap();
     support::declaration::write(
-        repo.join("b/index.artf"),
+        repo.join("a/reference/index.artf"),
         json!({"name":"b","basis":true}).to_string(),
     )
     .unwrap();
     let config = read_workspace_config(&repo).unwrap();
     let result = tools::Registry::for_artifact(&config, "a")
         .unwrap()
-        .call(
-            "mounted_a",
-            json!({}),
-            root.path(),
-            CancellationToken::new(),
-        )
+        .call("nested_a", json!({}), root.path(), CancellationToken::new())
         .await;
     assert!(!result.is_error(), "{result:?}");
     assert!(
         serde_json::to_string(&result)
             .unwrap()
-            .contains("mounted text")
+            .contains("child text")
     );
 }
 
@@ -486,7 +480,7 @@ fn human_builtin_arguments_parse_at_the_declaration_edge_and_keep_saved_bytes() 
 
     for saved in [
         r#"{"builtin":"read","description":"Read","kind":"output","args":["{artifactPath}/notes.md"]}"#,
-        r#"{"builtin":"section","description":"Read","kind":"output","args":["{mount}/notes.md","First"]}"#,
+        r#"{"builtin":"section","description":"Read","kind":"output","args":["{guide}/notes.md","First"]}"#,
         r#"{"builtin":"open","description":"Read","kind":"launch","args":["https://example.org/notes"]}"#,
         r#"{"builtin":"help","description":"Read","kind":"output","args":["missing-program","subcommand"]}"#,
     ] {

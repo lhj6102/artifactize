@@ -420,17 +420,8 @@ impl Scheduler<'_, '_> {
                 // Failures cancel transitively, including tasks, joined waits and sign-offs.
                 for (request, admission) in self.requests.iter_mut().zip(admissions.iter_mut()) {
                     let eval = &evaluation.evals[request.eval_id.as_str()];
-                    let sibling_failed = self.run.modes.defer_human
-                        && request.profile.kind() == ProfileKind::Human
-                        && modes::machines(&self.config, request).any(|id| {
-                            matches!(
-                                evidence.get(id),
-                                Some(Evidence::Current(Verdict::Red))
-                                    | Some(Evidence::OperationalError)
-                            )
-                        });
                     if (self.run.modes.speculate || self.run.modes.defer_human)
-                        && (eval.readiness == crate::graph::Readiness::Blocked || sibling_failed)
+                        && eval.readiness == crate::graph::Readiness::Blocked
                         && !admission.blocked()
                     {
                         evidence.remove(&request.eval_id);
@@ -445,11 +436,8 @@ impl Scheduler<'_, '_> {
                             .expect("blocked state");
                             request.blocked_by =
                                 eval.blocked_by.iter().copied().map(Into::into).collect();
-                            request.blocked_reason = Some(if sibling_failed {
-                                "Artifact machine eval failed; sign-off withdrawn.".into()
-                            } else {
-                                crate::project::verify::gate_reason(eval)
-                            });
+                            request.blocked_reason =
+                                Some(crate::project::verify::gate_reason(eval));
                             request.queue = None;
                             self.receipts.block_request(request).await?;
                         }
@@ -468,15 +456,9 @@ impl Scheduler<'_, '_> {
                     }
                     let current = &self.requests[index];
                     let eval = &evaluation.evals[current.eval_id.as_str()];
-                    let late_ready = !self.run.modes.defer_human
-                        || current.profile.kind() != ProfileKind::Human
-                        || modes::machines(&self.config, current).all(|id| {
-                            matches!(evidence.get(id), Some(Evidence::Current(Verdict::Green)))
-                        });
-                    let ready = late_ready
-                        && (eval.can_execute()
-                            || (deferred.contains(&current.eval_id)
-                                && eval.readiness == crate::graph::Readiness::Ready));
+                    let ready = eval.can_execute()
+                        || (deferred.contains(&current.eval_id)
+                            && eval.readiness == crate::graph::Readiness::Ready);
                     let can_start = current.profile.kind() == ProfileKind::Human
                         || self
                             .run
@@ -536,8 +518,15 @@ impl Scheduler<'_, '_> {
                         continue;
                     }
                     let eval = &evaluation.evals[request.eval_id.as_str()];
+                    // People are never asked before the machine evals of their Artifact pass.
+                    let siblings_pending = request.profile.kind() == ProfileKind::Human
+                        && eval
+                            .unmet_gates
+                            .iter()
+                            .any(|gate| self.graph.eval_target(gate) == Some(&request.target));
                     let speculative = self.run.modes.speculate
                         && eval.readiness == crate::graph::Readiness::Wait
+                        && !siblings_pending
                         && matches!(eval.evidence, None | Some(Evidence::Stale));
                     let deferred_human = deferred.contains(&request.eval_id);
                     let may_execute = eval.can_execute()
@@ -560,15 +549,11 @@ impl Scheduler<'_, '_> {
                         }
                         continue;
                     }
+                    // Deferral asks for a sign-off only once its gates are met, never
+                    // speculatively.
                     if self.run.modes.defer_human
                         && request.profile.kind() == ProfileKind::Human
-                        && (eval.readiness != crate::graph::Readiness::Ready
-                            || modes::machines(&self.config, request).any(|id| {
-                                !matches!(
-                                    evidence.get(id),
-                                    Some(Evidence::Current(_)) | Some(Evidence::OperationalError)
-                                )
-                            }))
+                        && eval.readiness != crate::graph::Readiness::Ready
                     {
                         continue;
                     }

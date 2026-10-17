@@ -4,7 +4,7 @@
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
 import ReviewScreen from "./ReviewScreen.svelte";
@@ -48,6 +48,7 @@ const agentDetail: DetailView = {
   running: false,
   sections: [{ name: "outcome", title: "Outcome", fields: [{ key: "Verdict", value: "GREEN" }], waits: [] }],
   evidence: null,
+  card: null,
 };
 
 function delayedRows() {
@@ -244,11 +245,15 @@ describe("ReviewScreen", () => {
     renderHosted(ReviewScreen, { launch: { ...launch, search: "kind:agent" }, active: true });
     await fireEvent.dblClick(await screen.findByText("app/agent"));
     await screen.findByText(/An Agent reads the input · read-only/);
-    await screen.findByText("No conversation was saved.");
     expect(screen.queryByLabelText("Human review")).toBeNull();
-    await fireEvent.keyDown(screen.getByRole("document"), { key: "d" });
+    // Its Summary first; the Agent log is the other choice of the switch below the title.
+    const views = within(screen.getByRole("tablist", { name: "Views" })).getAllByRole("tab");
+    expect(views.map((view) => [view.textContent, view.getAttribute("aria-selected")])).toEqual([["Summary", "true"], ["Agent log", "false"]]);
     await screen.findByText("Verdict");
-    await fireEvent.keyDown(screen.getByRole("document"), { key: "Escape" });
+    expect(screen.queryByRole("log", { name: "Agent transcript" })).toBeNull();
+    await fireEvent.click(views[1]);
+    await screen.findByText("No conversation was saved.");
+    expect(screen.queryByText("Verdict")).toBeNull();
     await fireEvent.keyDown(screen.getByRole("document"), { key: "Escape" });
     await waitFor(() => expect(screen.queryByText(/· read-only/)).toBeNull());
   });

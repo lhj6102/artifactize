@@ -217,7 +217,8 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             id,
             &"bob".parse().unwrap(),
             &"inspect_review".parse().unwrap(),
-            CancellationToken::new()
+            CancellationToken::new(),
+            artifactize_core::review::log::Run::unwatched()
         )
         .await
         .is_err()
@@ -239,7 +240,8 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             id,
             &"alice".parse().unwrap(),
             &"read_review".parse().unwrap(),
-            CancellationToken::new()
+            CancellationToken::new(),
+            artifactize_core::review::log::Run::unwatched()
         )
         .await
         .is_err()
@@ -250,6 +252,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &"alice".parse().unwrap(),
         &"inspect_review".parse().unwrap(),
         CancellationToken::new(),
+        artifactize_core::review::log::Run::unwatched(),
     )
     .await
     .unwrap();
@@ -260,6 +263,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &"alice".parse().unwrap(),
         &"fail_review".parse().unwrap(),
         CancellationToken::new(),
+        artifactize_core::review::log::Run::unwatched(),
     )
     .await
     .unwrap();
@@ -324,7 +328,8 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             id,
             &"alice".parse().unwrap(),
             &"inspect_review".parse().unwrap(),
-            CancellationToken::new()
+            CancellationToken::new(),
+            artifactize_core::review::log::Run::unwatched()
         )
         .await
         .is_err()
@@ -362,6 +367,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
                 &"alice".parse().unwrap(),
                 &"inspect_review".parse().unwrap(),
                 CancellationToken::new(),
+                artifactize_core::review::log::Run::unwatched(),
             )
             .await
             .unwrap_err()
@@ -428,7 +434,8 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
             id,
             &"alice".parse().unwrap(),
             &"inspect_review".parse().unwrap(),
-            CancellationToken::new()
+            CancellationToken::new(),
+            artifactize_core::review::log::Run::unwatched()
         )
         .await
         .unwrap_err()
@@ -571,6 +578,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &"alice".parse().unwrap(),
         &"inspect_review".parse().unwrap(),
         CancellationToken::new(),
+        artifactize_core::review::log::Run::unwatched(),
     )
     .await
     .unwrap();

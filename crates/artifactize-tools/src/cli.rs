@@ -85,7 +85,6 @@ async fn execute(tool: Tool) -> Result<(), String> {
                 kind: ArtifactKind::Folder,
                 name: "cwd".into(),
                 children: BTreeMap::new(),
-                mounts: BTreeMap::new(),
             },
         )]),
     };

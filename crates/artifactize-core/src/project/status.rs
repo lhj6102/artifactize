@@ -336,12 +336,13 @@ pub async fn status(
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ),
+                        // Status never treats an ERROR as a blocker, so every cause is RED.
                         Readiness::Blocked => format!(
                             "; its gates are blocked by RED: {}",
                             current
-                                .unmet_gates
+                                .causes
                                 .iter()
-                                .map(ToString::to_string)
+                                .map(|cause| cause.eval().as_str())
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ),
@@ -350,15 +351,7 @@ pub async fn status(
             ),
             Readiness::Blocked => (
                 VerifyAction::Blocked,
-                format!(
-                    "Dependency verdict RED: {}",
-                    current
-                        .unmet_gates
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
+                current.blocked_reason().unwrap_or_default(),
             ),
             Readiness::Wait => (
                 VerifyAction::Wait,

@@ -6,9 +6,14 @@ the next `verify` will execute, reuse, wait for or block, without running evals.
 
 ## Eval execution gates
 
-Each eval waits for the required reviews of its own referenced Artifacts.
-Mounts and child relations alone do not gate sibling evals. Eval-level cycles
-run their peers independently; external gates apply to the entire cycle.
+Each eval waits for the required reviews of its own referenced Artifacts and of
+its Artifact's children, and is blocked when one of them, or anything further
+upstream, has a RED eval. A child counts as if every eval of its parent referenced
+it. Its own Artifact and the Artifacts in a dependency cycle with it never gate it:
+a RED sibling or cycle peer neither blocks it nor makes it wait. A Human eval also
+starts only once every other non-Human eval of its Artifact is GREEN, and is
+BLOCKED when one of them is RED or ERROR; see
+[Human sign-offs](artifact.md#human-sign-offs).
 See [Eval dependencies](artifact.md#eval-dependencies).
 
 ## Verify and Runs
@@ -96,15 +101,17 @@ The two [per-request verify modes](../cli/index.md#verify-modes),
 The same request key keeps its original choices.
 
 Speculation starts requested runtime, Agent and Human evals before unresolved
-gates, within `--jobs`, backend capacity and `--max-executions` limits. Ready work
+gates, within `--jobs`, backend capacity and `--max-executions` limits. A Human eval
+is never requested before every other non-Human eval of its Artifact is GREEN. Ready work
 has priority; speculative work uses spare capacity and yields first. Redispatch
-consumes another executor start. Upstream RED/ERROR immediately cancels
-transitively blocked work and marks it BLOCKED without a reusable cancelled
-result. GREEN keeps results already produced for the same files.
+consumes another executor start. An upstream RED or ERROR immediately cancels
+only the work it makes invalid, the evals that depend on it outside their own
+Artifact and cycle, and marks it BLOCKED without a reusable cancelled result.
+GREEN keeps results already produced for the same files.
 
 Deferral allows execution past pending Human gates. A deferrable sign-off's
-request is issued as late as possible, after its Artifact's machine reviews finish
-and no gate blocks it. Requests show DEFERRED, dependent results PROVISIONAL.
+request is issued as late as possible: once its Artifact's other machine evals are
+GREEN and no gate holds it. Requests show DEFERRED, dependent results PROVISIONAL.
 Neither state is actual approval. `gate = "blocking"` retains the strict Human
 gate. When all other obligations pass, the Run ends SIGNOFFS_PENDING (exit 5),
 meaning **only sign-offs remain**; it does not wait for those submissions.
@@ -249,7 +256,7 @@ It compares the current key with the newest cached GREEN/RED record for the same
 eval and Eval definition hash (from any repository in this state), and reports
 `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a `Fingerprint changed since Run RUN_ID: ...` line, for example `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. `files`
 lists the target's own files as `path` (changed), `+path` (added) or
-`-path` (removed); `dependencies` lists the mounts, children and named Artifacts
+`-path` (removed); `dependencies` lists the children and named Artifacts
 whose fingerprint changed, as `name`, `+name` or `-name`. A script
 fingerprint, or a manifest whose file map was dropped, can only report `fingerprint changed`
 or `inputs changed` for the target. No explanation appears when that eval definition has
@@ -260,12 +267,14 @@ a Human claim and submission", even without a key; blocked or waiting evals
 explain their gate or wait state instead.
 
 An Eval's own references define its gates. Required input Evals that are pending
-leave it WAIT_DEPENDENCY; RED/BLOCKED inputs block it. Evals inside the same
-Eval-level cycle keep their own real verdicts, while external gates hold the cycle
-and failed cycles do not release downstream consumers. An independent sibling
-Eval on the same Artifact is not gated by another sibling's references.
-`blockedBy` names unfulfilled qualified Eval IDs. Detail groups these gates by
-input Artifact under `Waits for`; `w` shows pending Evals.
+leave it WAIT_DEPENDENCY; RED/BLOCKED inputs block it. Its own Artifact and its
+cycle peers are never gates: they keep their own real verdicts, while what the
+cycle references outside itself holds it, and a failed cycle does not release
+downstream consumers. An independent sibling Eval on the same Artifact is not
+gated by another sibling's references. For a waiting Eval `blockedBy` names the
+unfulfilled qualified Eval IDs; for a BLOCKED one, the RED Evals at the root of the
+block, as its reason does. Detail groups these gates by input Artifact under
+`Waits for`; `w` shows pending Evals.
 
 A later Human submission can settle a waiting Run. `run show` keeps its saved
 validation and requests.
@@ -281,7 +290,7 @@ MCP `config_graph` exposes the same definitions with single/multiple Artifact or
 eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
-child/mount/instruction/argv relation metadata, cycle markers and
+child/instruction/argv relation metadata, cycle markers and
 dependency-first strongly connected components (SCCs): groups of Artifacts that
 mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
 workspace-relative target `path`. Status also shows file kinds/paths; the monitor

@@ -4,6 +4,12 @@ A Human eval asks a person for a GREEN or RED sign-off. The reviewer claims the
 waiting request, runs the Human tools you declared and submits a verdict, either
 with `artifactize request` commands or in the `artifactize review` terminal UI.
 
+A Human eval is ready only when every other non-Human eval of its own Artifact is
+GREEN and its dependency gates are met: a person signs off only on what the
+machine evals already pass. When one of those machine evals is RED or ERROR, the
+Human eval is BLOCKED and its reason names them. Other Human evals of the Artifact
+are not part of this condition. See [Human sign-offs](artifact.md#human-sign-offs).
+
 When the check is ready, artifactize saves a **WAITING_HUMAN request**: work
 waiting for a person's decision. Waiting for that person uses neither a Run's
 `--jobs` execution slot nor its `--max-executions` budget, even if that budget is
@@ -78,11 +84,11 @@ setting, and defaults off. `--speculate` can independently speed machine work;
 combining it with deferral still asks for deferrable sign-offs last.
 
 Pending sign-offs count as passing gates for execution only. Human requests are
-issued after their Artifact's machine evals finish and nothing blocks them;
+issued once their Artifact's other machine evals are GREEN and nothing blocks them;
 they appear as DEFERRED alongside ordinary WAITING_HUMAN requests in `review`,
 monitor, desktop and request listings. Claim, tools, release and submission use
 the same Human authority checks. Dependent machine results are PROVISIONAL,
-not approved. A blocked sign-off is withdrawn rather than offered to a person.
+not approved. A blocked sign-off is never offered to a person.
 
 When only these sign-offs remain, the owned Run ends SIGNOFFS_PENDING and
 `verify --wait` returns 5. It never fabricates a Human GREEN. Later GREEN
@@ -134,7 +140,22 @@ the Agent description rules, including `{artifactName}`.
 edit = { description = "Open {artifactName} in VS Code.", kind = "launch", command = "code", args = ["{artifactPath}"] }
 ```
 
+What a tool prints shows live in the reviewer's **Tool log** while the review is
+open: each run's start line, its stdout and stderr (stderr in red) line by line,
+and its end line. A launch tool returns at once, and its program's output keeps
+arriving under the same run until it exits. A tool can therefore print what the
+person did in it, such as the choices made or a measured value, for the reviewer to
+copy from the log into the result. Nothing in the log is saved.
+
 Placeholders, executable resolution and the `launch` and `output` kinds are in the
 [reference](tools/human.md#human-tools).
+
+## Result forms
+
+The reviewer enters the result in a form built from the eval's `pass_schema`
+(GREEN) or `fail_schema` (RED): text, numbers, true/false, choices, lists of text
+and repeated groups of fields. Constants are filled in. A Human eval's schemas
+may use only those shapes; the [declaration reference](declarations.md#human-result-schemas)
+lists them and how each shows.
 
 Use [TUI](../tui/index.md) or [Desktop](../desktop/index.md) for interactive review.

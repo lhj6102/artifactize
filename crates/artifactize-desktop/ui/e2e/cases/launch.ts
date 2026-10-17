@@ -8,7 +8,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
-import { graphShown, nodeAt, popup, rowAt } from "../graph-view.ts";
+import { detail, evalAt, graphShown, nodeAt, openArtifact } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -101,27 +101,28 @@ export const scenarios: Scenario[] = [
       const selectedRun = await browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0]);
       assert.equal(selectedRun, initialRun);
       // This fixture has a waiting Human release, its waiting consumer and GREEN docs: each
-      // Artifact's node and each eval of its popup display that state.
+      // Artifact's node and each eval its Detail lists display that state.
       for (const [id, label] of [["a:release", "release: in progress"], ["a:ship", "ship: waiting"], ["a:docs", "docs: GREEN"]]) {
         await waitFor(browser, async () => (await browser.$(nodeAt(id)).getAttribute("aria-label")) === label, `${id} drawn as ${label} in ${initialRun}`);
       }
       const verdict = (path: string) => browser.execute((selector) => {
         const row = document.querySelector(selector);
         return {
-          glyph: row?.querySelector("span")?.textContent?.trim(),
+          glyph: row?.querySelector(".glyph")?.textContent?.trim(),
           status: row?.querySelector(".status")?.textContent?.trim(),
         };
-      }, rowAt(path));
+      }, evalAt(path));
       for (const [artifact, path, glyph, status] of [
-        ["release", "a:release/e:release/signoff", "?", /Human sign-off · unclaimed/],
-        ["ship", "a:ship/e:ship/check", "…", /waits for release/],
-        ["docs", "a:docs/e:docs/lint", "✓", /^GREEN(?: · reused)?$/],
+        ["release", "e:release/signoff", "?", /Human sign-off · unclaimed/],
+        ["ship", "e:ship/check", "…", /waits for release/],
+        ["docs", "e:docs/lint", "✓", /^GREEN(?: · reused)?$/],
       ] as const) {
-        await browser.$(nodeAt(`a:${artifact}`)).click();
-        await waitFor(browser, async () => (await popup(browser))?.artifact === artifact, `${artifact}'s evals popped up`);
+        await openArtifact(browser, `a:${artifact}`, `Artifact ${artifact}`);
         const shown = await verdict(path);
         assert.equal(shown.glyph, glyph, `${path}'s verdict glyph in ${initialRun}`);
         assert.match(shown.status ?? "missing row", status, `${path}'s own status in ${initialRun}`);
+        // Closed again, so the Detail covers none of the next Artifact.
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${artifact}'s Detail closed`);
       }
       // Another scope lists its own Runs.
       const runIds = () =>

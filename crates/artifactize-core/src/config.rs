@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 pub use crate::types::{ArtifactName, EvalId};
 mod identities;
 pub use identities::{
-    ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, MountAlias,
-    ProfileVariantName, ReferenceName, ToolName, ToolOperationName,
+    ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, ProfileVariantName,
+    ReferenceName, ToolName, ToolOperationName,
 };
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -472,6 +472,12 @@ impl EvalDeclaration {
                 location
                     .child(key)
                     .check(crate::agent::verdict::validate_schema(schema))?;
+                // A person enters a Human result in a form: only shapes it can enter.
+                if self.profile().kind() == ProfileKind::Human {
+                    location
+                        .child(key)
+                        .check(crate::review::check_schema(schema))?;
+                }
             }
         }
         if self.profile_variants().len() > MAX_DECLARED_ITEMS {
@@ -659,7 +665,7 @@ impl TryFrom<Map<String, Value>> for Fingerprint {
         } else {
             if object.contains_key("dependencies") {
                 return Err(serde::de::Error::custom(
-                    "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its mounts, children and referenced Artifacts. Remove the field.",
+                    "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its children and referenced Artifacts. Remove the field.",
                 ));
             }
             let ArtifactsumForm { files, ignore } = serde_json::from_value(Value::Object(object))?;
@@ -748,8 +754,6 @@ pub struct ArtifactDeclaration {
     pub evals: Vec<EvalDeclaration>,
     #[serde(default)]
     pub views: Views,
-    #[serde(default)]
-    pub mounts: BTreeMap<MountAlias, ArtifactName>,
     #[serde(default, deserialize_with = "present")]
     pub basis: Option<bool>,
     #[serde(
@@ -775,13 +779,6 @@ impl ArtifactDeclaration {
                 .error(format!("Basis Artifact {} cannot own Evals.", self.name)));
         }
         self.views.validate(&location.child("views"))?;
-        for (alias, target) in &self.mounts {
-            let mounts = location.child("mounts");
-            mounts.key(alias).check(identifier(alias, "Mount alias"))?;
-            mounts
-                .child(alias)
-                .check(identifier(target, "Mount target"))?;
-        }
         if let Some(fingerprint) = &self.fingerprint {
             fingerprint.validate(&location.child("fingerprint"))?;
         }
@@ -926,24 +923,6 @@ fn validate_identity_locations(
             .child("name")
             .check(identifier(name, "Artifact name"))?;
     }
-    if let Some(mounts) = document
-        .get_ref()
-        .get("mounts")
-        .and_then(|value| value.get_ref().as_table())
-    {
-        for (alias, target) in mounts {
-            location
-                .child("mounts")
-                .key(alias.get_ref())
-                .check(identifier(alias.get_ref(), "Mount alias"))?;
-            if let DeValue::String(target) = target.get_ref() {
-                location
-                    .child("mounts")
-                    .child(alias.get_ref())
-                    .check(identifier(target, "Mount target"))?;
-            }
-        }
-    }
     if let Some(evals) = document
         .get_ref()
         .get("evals")
@@ -1025,17 +1004,17 @@ fn reject_non_json_values(
 
 pub use artifactize_tools::scope::ArtifactKind;
 
-/// Child paths or mount aliases with their target Artifacts as tool-side IDs. Declarations
-/// validated both, so a failure here is a bug.
-fn tool_ids<K: Ord, T: Ord + AsRef<str>>(
-    targets: &BTreeMap<T, ArtifactName>,
-    key: impl Fn(&str) -> Result<K, artifactize_tools::scope::ScopeError>,
-) -> BTreeMap<K, artifactize_tools::scope::ArtifactId> {
-    targets
+/// Child paths with their target Artifacts as tool-side IDs. Discovery validated both, so a
+/// failure here is a bug.
+fn tool_children(
+    children: &BTreeMap<ChildPrefix, ArtifactName>,
+) -> BTreeMap<artifactize_tools::scope::ChildPrefix, artifactize_tools::scope::ArtifactId> {
+    children
         .iter()
         .map(|(path, name)| {
             (
-                key(path.as_ref()).expect("validated child prefix or mount alias"),
+                artifactize_tools::scope::ChildPrefix::new(path.as_ref())
+                    .expect("validated child prefix"),
                 crate::scope::tool_id(name),
             )
         })
@@ -1052,7 +1031,6 @@ pub struct Artifact {
     pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
-    pub mounts: BTreeMap<MountAlias, ArtifactName>,
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
 }
@@ -1063,12 +1041,7 @@ impl Artifact {
             path: self.path.clone(),
             kind: self.kind,
             name: self.name.to_string(),
-            children: tool_ids(&self.children, |path| {
-                artifactize_tools::scope::ChildPrefix::new(path)
-            }),
-            mounts: tool_ids(&self.mounts, |alias| {
-                artifactize_tools::scope::MountAlias::new(alias)
-            }),
+            children: tool_children(&self.children),
         }
     }
 

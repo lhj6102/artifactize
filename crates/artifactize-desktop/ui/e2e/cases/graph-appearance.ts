@@ -18,8 +18,11 @@ export function graphAppearance(browser: WebdriverIO.Browser) {
       const style = getComputedStyle(element);
       return style.display !== "none" && style.visibility === "visible" && Number(style.opacity) > 0;
     };
+    // The Run graph only: an open Detail draws an Artifact's neighbours with the same nodes.
+    const ofRun = <E extends Element>(selector: string) =>
+      [...document.querySelectorAll<E>(selector)].filter((element) => !element.closest('aside[aria-label="Detail"]'));
     return {
-      nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].map((node) => {
+      nodes: Object.fromEntries(ofRun<HTMLElement>(".svelte-flow__node").map((node) => {
         const artifact = node.querySelector(".artifact");
         const dot = artifact?.querySelector(".dot") ?? null;
         const style = artifact ? getComputedStyle(artifact) : null;
@@ -32,7 +35,7 @@ export function graphAppearance(browser: WebdriverIO.Browser) {
             style?.borderTopStyle !== "none" && Number.parseFloat(style?.borderTopWidth ?? "0") > 0,
         }] as const;
       })),
-      edges: Object.fromEntries([...document.querySelectorAll<SVGElement>(".svelte-flow__edge")].map((edge) => {
+      edges: Object.fromEntries(ofRun<SVGElement>(".svelte-flow__edge").map((edge) => {
         // The interaction path is transparent; only this path draws the relation.
         const path = edge.querySelector(".svelte-flow__edge-path");
         const style = path ? getComputedStyle(path) : null;

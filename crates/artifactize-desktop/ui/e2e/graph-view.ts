@@ -1,6 +1,6 @@
-// The Monitor's Run graph as a person sees it: the Artifact that has the keyboard, the eval
-// popup beside an Artifact, and the summary beside the node it describes. Every reading is
-// read-only; a timeout reports what the graph showed instead.
+// The Monitor's Run graph as a person sees it: the Artifact that has the keyboard, and the Detail
+// a click opens over the graph's right side with its tabs. Every reading is read-only; a timeout
+// reports what the window showed instead.
 
 /** The Artifact node with keyboard focus (`a:<name>`), or null. */
 export function focusedNode(browser: WebdriverIO.Browser): Promise<string | null> {
@@ -18,85 +18,111 @@ export async function graphShown(browser: WebdriverIO.Browser, id: string, timeo
   }, id), { timeout, timeoutMsg: `the Run graph draws ${id}` });
 }
 
-/** The node selector of the Artifact `id`, and the popup row selector of its eval `path`. */
+/** The node selector of the Artifact `id`. */
 export const nodeAt = (id: string) => `.svelte-flow__node[data-id="${id}"]`;
-export const rowAt = (path: string) => `[aria-label="Evals"] [role="option"][data-path="${path}"]`;
 
-export type Popup = { artifact: string; evals: string[]; selected: string | null; focused: boolean };
+/** The open Detail's tab of the eval `id` (`e:<artifact>/<eval>`), and the same eval's row in
+ * the Artifact tab's list. */
+export const tabAt = (id: string) => `aside[aria-label="Detail"] [role="tab"][data-tab="${id}"]`;
+export const evalAt = (id: string) => `aside[aria-label="Detail"] button[data-eval="${id}"]`;
 
-/** The open eval popup: its Artifact's name, its evals' names, the selected eval's path and
- * whether its list has the keyboard; null while no popup is open. */
-export function popup(browser: WebdriverIO.Browser): Promise<Popup | null> {
+/** A chip as read: its visible text without the glyph, what a screen reader names it, its verdict
+ * glyph and colour, whether an icon is drawn in it, and whether it is the chosen one. */
+export type Tab = { name: string; label: string; glyph: string; tone: string; icon: boolean; selected: boolean };
+export type Detail = {
+  /** The Detail's heading: the shown node's title, or "Human review". */
+  title: string;
+  /** The Artifact's chip (its icon and name) first, then one per eval; empty for the Run's Detail. */
+  tabs: Tab[];
+  /** The chip row as it reads, glyphs and icon left out: `{name} / eval eval …`. */
+  path: string;
+  /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
+  evals: { name: string; status: string }[];
+  /** Whether the Detail lies within the graph's area, right of Scope and Runs, with a gap
+   * from the area's right edge. */
+  docked: boolean;
+};
+
+/** The open Detail of the Monitor, or null while none is open. */
+export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
   return browser.execute(() => {
-    const section = document.querySelector('section[aria-label^="Evals of "]');
-    if (!section) return null;
-    const options = [...section.querySelectorAll<HTMLElement>('[role="option"][data-path]')];
+    const aside = document.querySelector<HTMLElement>('.stage aside[aria-label="Detail"]');
+    if (!aside) return null;
+    const stage = aside.closest<HTMLElement>(".stage")!.getBoundingClientRect();
+    const box = aside.getBoundingClientRect();
+    const tone = (element: Element | null) => [...(element?.classList ?? [])].find((name) => name.startsWith("tone-")) ?? "";
     return {
-      artifact: section.getAttribute("aria-label")?.slice("Evals of ".length) ?? "",
-      evals: options.map((option) => option.querySelector(".name")?.firstChild?.textContent?.trim() ?? ""),
-      selected: options.find((option) => option.getAttribute("aria-selected") === "true")?.dataset.path ?? null,
-      focused: document.activeElement?.getAttribute("aria-label") === "Evals" && section.contains(document.activeElement),
+      title: aside.querySelector("h2")?.textContent?.trim() ?? "",
+      tabs: [...aside.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => {
+        const glyph = tab.querySelector(".glyph");
+        const name = [...tab.childNodes].filter((node) => node !== glyph).map((node) => node.textContent ?? "").join("").trim();
+        const icon = tab.querySelector("img");
+        const drawn = icon?.getBoundingClientRect();
+        return {
+          name,
+          label: tab.getAttribute("aria-label") ?? name,
+          icon: !!icon && icon.complete && icon.naturalWidth > 0 && !!drawn && drawn.width > 0 && drawn.height > 0,
+          glyph: glyph?.textContent?.trim() ?? "",
+          tone: tone(glyph),
+          selected: tab.getAttribute("aria-selected") === "true",
+        };
+      }),
+      path: [...(aside.querySelector('[role="tablist"]')?.childNodes ?? [])].flatMap((node) => {
+        const element = node as HTMLElement;
+        const parts = element.matches?.(".head") ? [...element.children] : [element];
+        return parts.map((part) => (part as HTMLElement).matches?.('[role="tab"]')
+          ? [...part.childNodes].filter((child) => !(child as HTMLElement).classList?.contains("glyph")).map((child) => child.textContent ?? "").join("").trim()
+          : part.textContent?.trim() ?? "");
+      }).filter((text) => text !== "").join(" "),
+      evals: [...aside.querySelectorAll<HTMLElement>("button[data-eval]")].map((row) => ({
+        name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
+        status: row.querySelector(".status")?.textContent?.trim() ?? "",
+      })),
+      docked: box.left > stage.left && box.right < stage.right - 4 && box.top >= stage.top && box.bottom <= stage.bottom,
     };
   });
 }
 
-type Shown = { text: string; beside: boolean; anchor: boolean };
-
-/** The summary's text, and whether it floats beside the element `anchor` finds: visible, not
- * covering it, and at most a small gap away. */
-function summary(browser: WebdriverIO.Browser, anchor: string): Promise<Shown | null> {
-  return browser.execute((selector) => {
-    const box = document.querySelector<HTMLElement>('[aria-label="Summary"]');
-    if (!box) return null;
-    const target = document.querySelector(selector)?.getBoundingClientRect();
-    const near = box.getBoundingClientRect();
-    if (!target) return { text: box.innerText, beside: false, anchor: false };
-    const across = Math.max(0, target.left - near.right, near.left - target.right);
-    const along = Math.max(0, target.top - near.bottom, near.top - target.bottom);
-    const visible = getComputedStyle(box).visibility === "visible" && near.width > 0 && near.height > 0;
-    return { text: box.innerText, beside: visible && (across > 0 || along > 0) && Math.max(across, along) <= 24, anchor: true };
-  }, anchor);
+/** Click the Artifact `id` and wait for its Detail on the Artifact tab. */
+export async function openArtifact(browser: WebdriverIO.Browser, id: string, title: string): Promise<Detail> {
+  await browser.$(nodeAt(id)).click();
+  let shown: Detail | null = null;
+  await browser.waitUntil(async () => {
+    shown = await detail(browser);
+    return shown?.title === title && shown.tabs[0]?.selected === true;
+  }, { timeout: 15000, timeoutMsg: `${id}'s Detail opened on its Artifact tab` })
+    .catch((error: unknown) => { throw new Error(`${String(error)}; the Detail showed ${JSON.stringify(shown)}`); });
+  return shown!;
 }
 
-/** Wait until the summary shows `text` beside the element `anchor` finds. A timeout reports
- * the summary, the focused node and the popup. */
-export async function summaryShows(browser: WebdriverIO.Browser, anchor: string, text: RegExp): Promise<void> {
-  try {
-    await browser.waitUntil(async () => {
-      const shown = await summary(browser, anchor);
-      return !!shown && shown.beside && text.test(shown.text);
-    }, { timeout: 15000, timeoutMsg: `the summary shows ${text} beside ${anchor}` });
-  } catch (error) {
-    const state = {
-      summary: await summary(browser, anchor), focused: await focusedNode(browser), popup: await popup(browser),
-      pointer: await browser.execute(() => (window as unknown as { pointerTrace?: unknown[] }).pointerTrace ?? []),
+/** Click the tab of the eval `id` (or its row on the Artifact tab, with `row`) and wait until
+ * its tab is the shown one. */
+export async function openTab(browser: WebdriverIO.Browser, id: string, { row = false } = {}): Promise<void> {
+  await browser.$(row ? evalAt(id) : tabAt(id)).click();
+  await browser.waitUntil(() => browser.$(tabAt(id)).getAttribute("aria-selected").then((selected) => selected === "true"),
+    { timeout: 15000, timeoutMsg: `${id}'s tab shown` });
+}
+
+/** The open Detail. */
+export const aside = (browser: WebdriverIO.Browser) => browser.$('aside[aria-label="Detail"]');
+
+/** An eval's Summary as read: its status line, instruction, the titles of its blocks (Result,
+ * Execution options, Execution metadata, Fingerprint), whether Debug is unfolded (null when it
+ * has none), and one Debug fact by its name ("" while folded or absent). */
+export type Summary = { status: string; instruction: string; blocks: string[]; debug: boolean | null };
+export function summary(browser: WebdriverIO.Browser): Promise<Summary> {
+  return browser.execute(() => {
+    const shown = document.querySelector('aside[aria-label="Detail"] [role="document"]');
+    const fold = shown?.querySelector("button.fold");
+    return {
+      status: shown?.querySelector(".summary")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      instruction: shown?.querySelector(".instruction")?.textContent?.trim() ?? "",
+      blocks: [...(shown?.querySelectorAll(".block > h3") ?? [])].map((title) => title.textContent?.trim() ?? ""),
+      debug: fold ? fold.getAttribute("aria-expanded") === "true" : null,
     };
-    throw new Error(`the summary shows ${text} beside ${anchor}: ${JSON.stringify(state)}`, { cause: error });
-  }
-}
-
-/** Whether a summary is shown at all. */
-export function summaryOpen(browser: WebdriverIO.Browser): Promise<boolean> {
-  return browser.$('[aria-label="Summary"]').isExisting();
-}
-
-/** Read-only pointer evidence for diagnosing a hover lost between real UI actions. */
-export async function tracePointer(browser: WebdriverIO.Browser): Promise<void> {
-  await browser.execute(() => {
-    const trace: unknown[] = [];
-    (window as unknown as { pointerTrace: unknown[] }).pointerTrace = trace;
-    const observe = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const hit = document.elementFromPoint(event.clientX, event.clientY);
-      trace.push({
-        type: event.type, trusted: event.isTrusted, x: event.clientX, y: event.clientY,
-        target: target?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? target?.tagName,
-        hit: hit?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? hit?.tagName,
-      });
-      // Only the most recent input transitions are relevant to one missing summary.
-      if (trace.length > 32) trace.shift();
-    };
-    document.addEventListener("mousemove", observe, true);
-    document.documentElement.addEventListener("mouseleave", observe);
   });
+}
+export function fact(browser: WebdriverIO.Browser, name: string): Promise<string> {
+  return browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
+    .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
 }

@@ -667,12 +667,6 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
                 path.value().map_or("", crate::config::ChildPrefix::as_str)
             )
         }
-        RelationKind::Mount { alias } => {
-            format!(
-                "mount {}",
-                alias.value().map_or("", crate::config::MountAlias::as_str)
-            )
-        }
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,
@@ -887,6 +881,77 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     };
     detail.push("Usage", join(std::iter::once(state).chain(attempts), "\n"));
     detail
+}
+
+/// An eval at a glance: what it checks, its result once it has one, and what running it cost.
+/// For a reused result, `took` and `tokens` are what reuse saved. Everything else about the
+/// request stays in its [`Detail`]'s fields.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Card {
+    pub instruction: String,
+    /// The result's own entries, without its verdict and saved output.
+    pub result: Option<serde_json::Map<String, Value>>,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+    pub reused: bool,
+    /// The execution's own span: from its start to its end, or to `now` while it runs.
+    pub took: Option<String>,
+    /// Total tokens over every attempt.
+    pub tokens: Option<u64>,
+    pub model: Option<String>,
+}
+
+pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
+    use crate::config::StoredProfile;
+    use crate::store::ExecutionResult;
+    let request = &view.request;
+    let reused = reused(view);
+    let result = request.result();
+    let attempts = if reused {
+        request.reused_usage.as_ref()
+    } else {
+        request.usage.as_ref()
+    };
+    let tokens = attempts
+        .map(|attempts| {
+            attempts
+                .iter()
+                .filter_map(|attempt| attempt.usage.get("totalTokens"))
+                .sum::<u64>()
+        })
+        .filter(|tokens| *tokens > 0);
+    Card {
+        instruction: request.payload.instruction().to_owned(),
+        result: result.map(|result| {
+            let mut entries = result.to_json().as_object().cloned().unwrap_or_default();
+            for key in [
+                "verdict",
+                "stdout",
+                "stderr",
+                "exitCode",
+                "durationMs",
+                "truncated",
+            ] {
+                entries.remove(key);
+            }
+            entries
+        }),
+        exit_code: match result {
+            Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
+            _ => None,
+        },
+        error: error(view),
+        reused,
+        took: view
+            .execution
+            .as_ref()
+            .and_then(|execution| span(execution.started_at, execution.completed_at(), now)),
+        tokens,
+        model: match &request.profile {
+            StoredProfile::Agent { model, .. } => Some(model.to_string()),
+            _ => None,
+        },
+    }
 }
 
 pub fn detail(

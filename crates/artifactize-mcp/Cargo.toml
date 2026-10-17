@@ -3,7 +3,6 @@ name = "artifactize-mcp"
 description = "The MCP endpoint for artifactize's shared verification and inspection operations."
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true

@@ -104,25 +104,9 @@ fn ordinary_verify_reuses_graph_results_until_structure_changes() {
         eval["id"] == "project-graph/check" && eval["key"] == changed["requests"][0]["key"]
     }));
 
-    // The graph differs only in its fingerprint: a no-eval basis is ordinary,
-    // and it does not silently satisfy an unmet input's obligations.
+    // The graph differs only in its fingerprint: a no-eval basis is ordinary.
     fs::write(repo.join(".artf"), "name = 'project-graph'\nbasis = true\n").unwrap();
     let basis = invoke(&["verify", "--wait", "--all"], 0);
     assert_eq!(basis["validation"]["satisfied"], true);
     assert_eq!(basis["executionsStarted"], 0);
-    fs::create_dir(repo.join("input")).unwrap();
-    fs::write(repo.join("input/index.artf"), "name = 'input'\n").unwrap();
-    fs::write(
-        repo.join(".artf"),
-        "name = 'project-graph'\nbasis = true\nmounts = { required = 'input' }\n",
-    )
-    .unwrap();
-    let required = invoke(&["verify", "--wait", "project-graph"], 4);
-    assert_eq!(required["validation"]["satisfied"], false);
-    assert!(
-        required["validation"]["obligations"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("input"))
-    );
 }

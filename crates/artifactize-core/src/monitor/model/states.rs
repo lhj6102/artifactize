@@ -1,7 +1,8 @@
 //! Eval view states: what one tree row shows, derived from the saved definitions and the
 //! current request states with the readiness rules of [`crate::graph`].
 //!
-//! Each Eval has its own references and gates; only actual Eval-cycle peers bypass one another.
+//! Each Eval has its own references and gates, and its target's children count as references;
+//! its own Artifact and that Artifact's cycle peers never gate it.
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -228,10 +229,19 @@ impl<'a> Index<'a> {
             .iter()
             .flat_map(|(&target, ids)| ids.iter().map(move |&id| (id, target)))
             .collect();
+        let children: BTreeMap<_, Vec<_>> = saved
+            .artifacts()
+            .map(|(parent, artifact)| {
+                let children = artifact.children.value().into_iter().flatten();
+                (parent, children.map(|(_, child)| child).collect())
+            })
+            .collect();
+        // An eval depends on what it references and, like every eval of its target, on the
+        // target's children.
         let inputs: BTreeMap<_, Vec<_>> = targets
-            .keys()
-            .map(|&eval| {
-                let deps = definitions
+            .iter()
+            .map(|(&eval, &target)| {
+                let mut deps: Vec<_> = definitions
                     .get(eval)
                     .and_then(|definition| definition.deps.value())
                     .map(|deps| deps.iter().collect())
@@ -240,13 +250,32 @@ impl<'a> Index<'a> {
                             .get(eval)
                             .map_or(Vec::new(), |view| view.request.deps.iter().collect())
                     });
+                deps.extend(children.get(target).into_iter().flatten().copied());
                 (eval, deps)
             })
             .collect();
+        let human = |eval: &EvalId| match requests.get(eval) {
+            Some(view) => view.request.profile.kind() == crate::config::ProfileKind::Human,
+            None => definitions
+                .get(eval)
+                .and_then(|definition| definition.declaration.value())
+                .and_then(|declaration| declaration.profile.value())
+                .is_some_and(|profile| {
+                    matches!(profile.known, crate::config::StoredProfile::Human { .. })
+                }),
+        };
         let schedule = crate::graph::schedule::Schedule::new(
             targets
                 .iter()
-                .map(|(&eval, &target)| (eval, target, inputs[eval].clone())),
+                .map(|(&eval, &target)| crate::graph::schedule::Input {
+                    id: eval,
+                    target,
+                    deps: inputs[eval].clone(),
+                    human: human(eval),
+                }),
+            children
+                .iter()
+                .flat_map(|(&parent, children)| children.iter().map(move |&child| (parent, child))),
         );
         let upstream = inputs
             .into_iter()
@@ -261,7 +290,7 @@ impl<'a> Index<'a> {
                 (eval, deps)
             })
             .collect();
-        let execution_order = schedule.components.into_iter().flatten().collect();
+        let execution_order = schedule.order;
         Self {
             order,
             position,
@@ -277,7 +306,7 @@ impl<'a> Index<'a> {
     }
 }
 
-/// Lazily derived views over one Run, using the same Eval condensation as live scheduling.
+/// Lazily derived views over one Run, using the same Eval gates as live scheduling.
 pub(super) struct States<'a> {
     run: &'a crate::store::Run,
     #[cfg(any(test, feature = "test-support"))]
@@ -430,7 +459,7 @@ impl<'a> States<'a> {
     /// gates are unmet still waits or is blocked, and never fulfils a downstream gate.
     pub fn effective(&self, eval: &'a EvalId) -> EvalStatus {
         if let Some(status) = self.effective.borrow().get(eval) {
-            // The Eval condensation is acyclic; a revisit cannot supply a verdict.
+            // Eval gates are acyclic; a revisit cannot supply a verdict.
             return status.unwrap_or(EvalStatus::Wait);
         }
         self.effective.borrow_mut().insert(eval, None);
@@ -454,13 +483,13 @@ impl<'a> States<'a> {
             .get(eval)
             .into_iter()
             .flatten()
-            .map(|&gate| self.effective(gate))
-            .filter(|status| !status.passes_gate())
+            .map(|&gate| (gate, self.effective(gate)))
+            .filter(|(_, status)| !status.passes_gate())
             .collect();
-        if unmet.iter().any(|status| {
-            matches!(status, EvalStatus::Red | EvalStatus::Blocked)
-                || (self.run.modes.speculate && *status == EvalStatus::Error)
-        }) {
+        if unmet
+            .iter()
+            .any(|&(gate, status)| self.status_blocks(eval, gate, status))
+        {
             return EvalStatus::Blocked;
         }
         if !unmet.is_empty() {
@@ -561,7 +590,7 @@ impl<'a> States<'a> {
         ))
     }
 
-    /// Only this Eval's external gates contribute waits; internal cycle references do not.
+    /// Only this Eval's gates contribute waits; its own Artifact and cycle peers never do.
     fn unmet(&self, eval: &EvalId) -> Vec<ArtifactName> {
         let mut artifacts: Vec<_> = self
             .index
@@ -637,10 +666,20 @@ impl<'a> States<'a> {
             .into_iter()
             .flatten()
             .filter(|gate| self.index.targets[*gate] == artifact)
-            .any(|&gate| {
-                matches!(self.effective(gate), EvalStatus::Red | EvalStatus::Blocked)
-                    || (self.run.modes.speculate && self.effective(gate) == EvalStatus::Error)
-            })
+            .any(|&gate| self.status_blocks(eval, gate, self.effective(gate)))
+    }
+
+    /// A RED or blocked gate blocks; an ERROR blocks under `--speculate`, and always when the
+    /// gate is a machine eval of a Human eval's own Artifact.
+    fn status_blocks(&self, eval: &EvalId, gate: &EvalId, status: EvalStatus) -> bool {
+        match status {
+            EvalStatus::Red | EvalStatus::Blocked => true,
+            EvalStatus::Error => {
+                self.run.modes.speculate
+                    || self.index.targets.get(gate) == self.index.targets.get(eval)
+            }
+            _ => false,
+        }
     }
 
     /// Graph lights treat an external ERROR as held too, without treating cycle peers

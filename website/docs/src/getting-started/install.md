@@ -35,7 +35,7 @@ grep --help
 These should print a Python version and grep's help. If either command is not
 found, install that tool or add its directory to `PATH` before continuing.
 
-Only `cargo install` needs a Rust toolchain: Rust 1.95 or later, from
+Only `cargo install` needs a Rust toolchain: the latest stable Rust, from
 [rustup](https://rustup.rs), and a C compiler (SQLite is built from source).
 
 ## Install

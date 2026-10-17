@@ -166,6 +166,8 @@ with the same `--request-key` retains the first request's modes.
 | `--speculate` | Start all requested kinds before unresolved gates; wait for people |
 | Both | Start machine reviews speculatively; ask for deferrable sign-offs last |
 
+In every mode, a Human eval is asked only once every other non-Human eval of its
+own Artifact is GREEN, and is BLOCKED when one of them is RED or ERROR.
 These modes change execution order, not approval. `verify --wait` uses the
 ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5
 SIGNOFFS_PENDING. [Execution modes](../features/run.md#speculation-and-deferred-sign-offs)
@@ -298,9 +300,10 @@ declared names; a sidecar creates no automatic relation to the surrounding folde
 
 Only the Eval that references an input waits for its reviews. Its independent
 siblings remain runnable. Plain verify is dependency-first; `--speculate` changes
-scheduling, not approval. Actual Eval-cycle peers run independently of one another,
-retain their own verdicts, and still honor external gates. A failed cycle does not
-release downstream consumers. See [Eval dependencies](../features/declarations.md#eval-dependencies).
+scheduling, not approval. An Eval's own Artifact and its cycle peers never gate
+it: a RED sibling or cycle peer does not block it, peers retain their own verdicts,
+and what the cycle references outside itself still holds them. A failed cycle does
+not release downstream consumers. See [Eval dependencies](../features/declarations.md#eval-dependencies).
 
 Status uses `execute`, `reuse`, `wait` and `blocked` actions. Requests, validation
 and status carry `blockedBy` qualified Eval IDs. The monitor groups gate Evals by

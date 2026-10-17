@@ -81,8 +81,8 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     }
     assert_eq!(press(&mut monitor, KeyCode::Right), Action::None);
     assert_eq!(monitor.focus, Pane::Detail);
-    let schema = json!({"type":"object","properties":{"nested":{"type":"object"}}});
-    // A nested JSON form owns Left/Right; focus stays in Detail.
+    let schema = json!({"type":"object","properties":{"level":{"enum":["low","high"]}}});
+    // A choice field owns Left/Right; focus stays in Detail.
     let mut view = tests::request(
         "app/review",
         "WAITING_HUMAN",
@@ -105,7 +105,7 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     review.load_single(view);
     review.control(review::Control::Red);
     monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
-    let cursor = |monitor: &Monitor| match monitor
+    let choice = |monitor: &Monitor| match monitor
         .detail
         .as_ref()
         .unwrap()
@@ -114,21 +114,21 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
         .unwrap()
         .mode()
     {
-        review::Mode::Form(form) => form.cursor,
+        review::Mode::Form(form) => form.fields[0].display(),
         _ => panic!("form"),
     };
-    let initial = cursor(&monitor);
+    assert_eq!(choice(&monitor), "–");
     assert_eq!(
         press(&mut monitor, KeyCode::Left),
         Action::Review(review::Action::None)
     );
-    assert_eq!(cursor(&monitor), initial - 1);
+    assert_eq!(choice(&monitor), r#""high""#);
     assert_eq!(monitor.focus, Pane::Detail);
     assert_eq!(
         press(&mut monitor, KeyCode::Right),
         Action::Review(review::Action::None)
     );
-    assert_eq!(cursor(&monitor), initial);
+    assert_eq!(choice(&monitor), "–");
     assert_eq!(monitor.focus, Pane::Detail);
 }
 

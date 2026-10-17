@@ -294,7 +294,6 @@ fn insert_artifact(
         tags,
         evals,
         views,
-        mounts,
         basis,
         fingerprint,
     } = declaration;
@@ -326,7 +325,6 @@ fn insert_artifact(
             name,
             tags,
             views,
-            mounts,
             basis,
             fingerprint,
         },

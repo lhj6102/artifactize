@@ -135,9 +135,6 @@ macro_rules! logical_name {
 }
 
 logical_name!(ChildPrefix, "child folder prefix", |_: &str| true);
-// A mount alias is one name: the first component of the paths it serves.
-logical_name!(MountAlias, "mount alias", |value: &str| !value
-    .contains('/'));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,8 +152,6 @@ pub struct Artifact {
     pub name: String,
     /// Logical path prefix to the child Artifact that owns it.
     pub children: BTreeMap<ChildPrefix, ArtifactId>,
-    /// Mount alias to the mounted Artifact.
-    pub mounts: BTreeMap<MountAlias, ArtifactId>,
 }
 
 impl Artifact {
@@ -186,7 +181,7 @@ pub struct Scope {
 }
 
 impl Scope {
-    /// Pure logical resolution. Each mount or child hop consumes path components.
+    /// Pure logical resolution. Each child hop consumes path components.
     pub fn resolve_path(
         &self,
         artifact_id: &ArtifactId,
@@ -202,12 +197,6 @@ impl Scope {
                 .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {current}")))?;
             if remaining.is_empty() {
                 break;
-            }
-            let (first, rest) = remaining.split_once('/').unwrap_or((remaining, ""));
-            if let Some(target) = artifact.mounts.get(first) {
-                current = target;
-                remaining = rest;
-                continue;
             }
             if let Some((prefix, target)) = artifact.children.iter().find(|(prefix, _)| {
                 remaining == prefix.as_str()
@@ -290,11 +279,6 @@ pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, 
     let components: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
     let mut file = owner;
     for (depth, component) in components.iter().enumerate() {
-        let mount = depth == 0
-            && artifact
-                .mounts
-                .keys()
-                .any(|alias| alias.eq_ignore_ascii_case(component));
         let child = artifact.children.keys().any(|prefix| {
             let prefix: Vec<_> = prefix.split('/').collect();
             prefix.len() == depth + 1
@@ -303,13 +287,10 @@ pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, 
                     .zip(&components)
                     .all(|(left, right)| left.eq_ignore_ascii_case(right))
         });
-        if (mount || child)
+        if child
             && !platform::case_sensitive(&file).map_err(|error| ScopeError(error.to_string()))?
         {
-            return Err(ScopeError(
-                "Physical input conflicts with a child or logical mount name.".into(),
-            )
-            .into());
+            return Err(ScopeError("Physical input conflicts with a child name.".into()).into());
         }
         file = open_child(&file, std::ffi::OsStr::new(component))?;
     }
@@ -325,14 +306,14 @@ pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, 
     Ok(file)
 }
 
-/// A file Artifact exposes a virtual root containing only its target and mounts.
+/// A file Artifact exposes a virtual root containing only its target.
 fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
     if let Some(target) = artifact.file_name()
         && !path.is_empty()
         && path != target
     {
         return Err(ScopeError(format!(
-            "File Artifact {} exposes only its target {target} and mounts.",
+            "File Artifact {} exposes only its target {target}.",
             artifact.name
         )));
     }

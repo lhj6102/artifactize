@@ -28,14 +28,14 @@ in its instruction or runtime arguments. See [Eval dependencies](artifact.md#eva
 
 Declare only real inputs. An eval's observation scope starts with its own target
 and its explicit instruction/Runtime-operand references, then recursively admits
-the children and mounts of every such Artifact. It does not follow a referenced
+the children of every such Artifact. It does not follow a referenced
 Artifact's own eval instructions into more dependencies. All admitted Artifacts
 can contribute tools. Tool operands do not add new inputs on their own.
 
 Observation access is broader than the [reuse key](fingerprint.md#the-reuse-key):
-that key covers the target, its direct children/mounts and this eval's explicit
-inputs, not every recursively reachable observation. Execution gates follow this eval’s own references, not those of its siblings.
-Eval-cycle peers share external gates but do not gate one another internally. See [Artifact](artifact.md) for declarations.
+that key covers the target, its direct children and this eval's explicit
+inputs, not every recursively reachable observation. Execution gates follow this eval’s own references and its target's children, not its siblings' references.
+Its own Artifact and the Artifacts in a cycle with it never gate it; a RED sibling or cycle peer does not block it, except that a [Human eval](artifact.md#human-sign-offs) waits for its Artifact's machine evals. See [Artifact](artifact.md) for declarations.
 
 `artifactize verify library/tests --wait` starts a [Run](run.md) for one eval.
 Use `artifactize status library/tests` first to see what can reuse or needs review;

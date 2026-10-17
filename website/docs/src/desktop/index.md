@@ -37,42 +37,57 @@ be folded into a group: Space or a click reveals or hides them. Runs appear
 newest first. Move past the list's first or last row to load newer or older
 pages, or use its newer/older arrow buttons.
 
-Selecting a Run updates its graph while Runs keeps the keyboard. Enter focuses
-the selected Artifact in that graph; double-clicking a Run does the same. The
-Run headline's Detail button or the palette command **Open the Run's Detail**
-opens the Run's full Detail overlay. It shows saved validation and unmet
-obligations, request counts, waiting work, timing, budgets, executed/reused work
-and usage. New Runs, claims and submissions made elsewhere appear without a
-manual reload. Run-end validation stays historical: a later Human submission
-can change the current request display without rewriting the old verdict. Damaged
-records are [marked unreadable](../features/others/state.md#unreadable-records),
-not treated as successful evidence.
+Selecting a Run updates its graph while Runs keeps the keyboard; Enter moves the
+keyboard into the graph. The divider between the left side and the graph area is
+always there: with no Run selected, while loading, on an error or with an empty
+graph, the area stays and says so. What went wrong, such as Runs on the page that
+cannot be read, shows as one line in the Run pane's header; click it to read it
+in full and again to fold it. It never moves or hides the graph. New Runs, claims
+and submissions made elsewhere appear without a manual reload. Run-end validation
+stays historical: a later Human submission can change the current request display
+without rewriting the old verdict. Damaged records are
+[marked unreadable](../features/others/state.md#unreadable-records), not treated
+as successful evidence.
 
-Graph hover or keyboard selection shows a floating **Summary** beside the
-Artifact or eval. It is read-only and non-interactive, not a clickable preview.
-A single click on an Artifact opens its eval popup; a single click on an eval
-opens its Detail. The explicit keyboard actions are described under Run graph.
+Hovering only highlights what is under the pointer; nothing opens on hover.
+Information opens on a click.
 
-`!` jumps to the next ERROR, RED or waiting Human eval. Inspect dependencies through
-the graph's input-to-consumer relations and the **Waits for** section. `b` cycles
-through the selected eval's upstream inputs, unmet first, then completed inputs. Backspace or the palette command **Back to where the blocker
-jumps started** returns to the original selection.
+### Detail
 
-### Detail and conversations
+A click on an Artifact opens its **Detail**, floating over the graph's right side
+with the graph still visible behind it. Clicking another Artifact switches the
+Detail to it; clicking the graph's background, **Close** or Esc closes it. Click
+the Run's headline, or use the palette command **Open the Run's Detail**, for the
+Run's own Detail: saved validation and unmet obligations, request counts, waiting
+work, timing, budgets, executed/reused work and usage. Drag the Detail's left edge
+to resize it; it keeps that width, also in the next launch.
 
-Record sections show Outcome, Waits for, What, Provenance and Technical when
-applicable. `t` toggles Technical. In Waits for, `w` or the pending-evals control
-reveals the unfinished checks behind an upstream wait. Runtime evidence is saved
-stdout/stderr, not a live log stream. Human Detail provides the explicit review
-controls described below.
+An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`:
+the Artifact's own chip, the Artifact icon before its name (a long name is cut
+short; the Detail's title shows it whole), then one per eval with its verdict's
+glyph and colour. Eval chips that do not fit wrap onto the next line.
 
-An **Agent** request opens its locally available conversation first. Press `d`
-or click **Details** to inspect its instruction, result, provenance and Technical
-sections; `d` switches back. `t` and `w` act on the sections, not the default
-transcript view. Missing or remote conversations explain why they are unavailable
-on this machine.
+The Artifact's chip shows it between its neighbours, drawn with the Run graph's
+nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
+use it on the right. The drawing holds still; a click on a neighbour opens that
+neighbour's Detail. Below it are its evals with their verdicts (click one to show
+its chip), its path, what it waits for, and the rest folded under **Debug**.
 
-Transcripts update live. In a focused transcript, ↑/↓ or `j`/`k` moves by row,
+An eval's chip shows its **Summary**: its status, with what running it took and
+spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
+result, each owner field by name and a list as numbered items; then **Execution
+options**, **Execution metadata** and **Fingerprint** when it has them. Every other
+fact, including what it waits for, folds under **Debug**. An eval with a log switches
+below the chips between its Summary, shown first, and its log, a plain-text choice
+whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
+with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
+not a live log stream). Missing or remote conversations explain why they are
+unavailable on this machine. A Human eval's chip holds its review and sign-off, with
+the controls described below. A Run's Detail keeps its sections, where `t` toggles
+Technical and `w` or the pending-evals control reveals the unfinished checks behind
+an upstream wait.
+
+Agent logs update live. In a focused Agent log, ↑/↓ or `j`/`k` moves by row,
 PgUp/PgDn by page, Home/End or **Top/Bottom** goes to either end, and the mouse wheel
 scrolls. Moving up pauses following; return to Bottom to follow new messages.
 Space or Enter toggles the visible grouped content; clicking a group header also
@@ -82,33 +97,25 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 
 Monitor always displays the selected Run as an Artifact graph; there is no
 Run-tree mode. Node and relation colors show review states and update as results
-arrive. ←/→ moves upstream or downstream; ↑/↓ selects a neighbor in the same
-column. Enter or a single click on an Artifact opens its eval popup. `o` opens
-Detail for the selected node, not necessarily the Artifact that has keyboard
-focus: a newly entered Run can still select its initial attention eval before
-its popup is visible. To select an Artifact for its own Detail, navigate onto it,
-or open and then close its eval popup with Esc, then press `o`.
-
-In the popup, ↑/↓ selects an eval and updates its floating Summary without
-opening or retargeting full Detail. Enter, `o`, → or a click on the eval explicitly
-opens its Detail overlay. Esc leaves Detail for the same popup and selection;
-Esc again closes the popup and focuses its Artifact. For an Agent whose saved
-Details sections are open, Esc first returns to its transcript (in Monitor and
-Review); another Esc closes Detail, and in Monitor a further Esc closes the popup.
-This is not a camera zoom
-or a separate graph view. Scope and Runs remain visible behind the Detail overlay.
+arrive. Inspect dependencies through the graph's input-to-consumer relations and
+an eval's **Waits for** section. The graph takes the pointer: Tab reaches its
+Artifacts and Enter on one opens its Detail, as a click does; it has no other
+keys of its own.
 
 Drag the graph background to pan; wheel, pinch or a background double-click
 zooms the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its
-viewport. These gestures move the camera, not the pane dividers or an Artifact's
-eval popup. Above 40
+viewport. These gestures move the camera, not the pane dividers or the Detail.
+Above 40
 nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
 than 300 Artifacts** ask before layout: choose **Lay out all** to display the
-whole graph. Only visible elements are rendered, but layout is not an
-incrementally loaded neighborhood, and there is no tree fallback.
+whole graph. Only visible elements are rendered: panning or zooming draws the
+Artifacts it brings into view. Layout is not an incrementally loaded
+neighborhood, and there is no tree fallback.
 
 `artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
-without needing a Run or showing saved verdicts. Expand **Structure and evaluation
+without needing a Run or showing saved verdicts. A click on an Artifact shows its
+evals over the graph's right side; Esc, **Close** or a click on the background
+closes them. Expand **Structure and evaluation
 criteria** for the full tree, criteria and labeled relations. Refresh or Ctrl+R/F5
 reloads declarations. A Human `graph` tool opens this viewer; opening it approves
 nothing.
@@ -121,7 +128,9 @@ settled requests remain read-only. The context menu or palette can open a Human
 request with Tools focused; Ctrl+O opens a request by ID. PgDn/PgUp pages older
 and newer requests. Waiting followers open the original review, not another sign-off.
 One click selects a request; clicking an already-selected request opens it, as
-does a double-click. Clicking its preview also opens Detail.
+does a double-click. Clicking its preview also opens Detail. A read-only request
+with a log switches between its Summary and its Agent or Runtime log, as an
+eval's chip does in Monitor.
 
 `/` edits search from the Review request list. Ctrl+F returns to search from an
 open request Detail too, including while a Human form is open or review work is
@@ -145,31 +154,46 @@ release. Another person's claim prevents your actions. Claims are cooperative
 reviewer locks, not authenticated accounts; only the claimant can run tools or
 submit. See [Human](../features/human.md) for shared lifecycle and deferred sign-offs.
 
-The instruction comes first. `i` or its expand/fold button changes how much is
-shown; Ctrl+PgUp/PgDn scrolls long criteria from any sub-area. `t` toggles the
-Human request's Technical record. Tab or a click moves to Tools; Ctrl+U releases
-your claim even while editing.
+A Human review reads top to bottom as its instruction, the **Tools** to use, their
+**Tool log**, and the **Result** to write. The instruction comes first. `i` or its
+expand/fold button changes how much is shown; Ctrl+PgUp/PgDn scrolls long criteria
+from any sub-area. `t` toggles the Human request's Technical record. Tab or a click
+moves to Tools; Ctrl+U releases your claim even while editing.
 
-In Tools, ↑/↓ or `j`/`k` selects an action and previews its resolved command,
-description or reason it cannot run. A click focuses and selects a tool. **Enter,
-or a second click on the selected tool while Tools is focused, runs it immediately**.
-Output tools show captured text, launch tools open an application, and failures
-show an error without a verdict. The saved definition must still match before an
-action runs.
+Tools are grouped under the Artifact that declares them, the reviewed one first.
+Each is a `▶ operation` button with its description, and the reason when it cannot
+run. **A click, or Enter or Space on the focused button, runs it immediately**; Tab
+moves between them. Opened with Tools focused (from the Review list's context menu or
+palette), the Tools take the keyboard. A launch tool opens its application and
+returns at once; a failing tool says so without a verdict. The saved definition must
+still match before an action runs.
 
-After claiming, `g` opens GREEN and `r` RED. Flat owner schemas get typed fields;
-complex schemas open an owner-fields JSON editor. **Edit as JSON** or Ctrl+E turns
-a typed form into JSON. Include only owner fields, not a `verdict` wrapper. Tab
-indents JSON; Shift+Tab leaves that editor. In typed forms, Tab moves between
-controls. Ctrl+G/Ctrl+R switches verdicts. Enter inside owner-field editors does
-not implicitly submit; Ctrl+S or activating the **Submit** button submits,
-including Enter while that button has keyboard focus.
+The Tool log shows every run of this review as it happens: `▶ HH:MM:SS · operation ·
+Artifact` in local time, then each line the tool prints to stdout, or in red to
+stderr, then its end line, such as `■ exit 0`, `■ launched`, `■ done`,
+`■ cancelled` or `■ error: …`. A launched application's output keeps arriving
+under its own run until it exits, even while you write the result. The log wraps,
+scrolls on its own and follows the newest line; scroll up to read and it stays,
+scroll back to the bottom and it follows again. Its text is ordinary selectable
+text, so copy what a tool printed into the result. It lasts while the app runs and
+is cleared by a submission; nothing is saved.
+
+After claiming, `g` opens GREEN and `r` RED, each a form built from the eval's
+schema ([the shapes it may use](../features/declarations.md#human-result-schemas)):
+a text box, a number box, true/false, a choice, a list of text with **+ Add** and
+✕ per item, or repeated groups of fields with **+ Add** for a group and ✕ per
+group (one empty group always stays to type in). Constants are filled in and not
+shown; `*` marks a required field and an empty optional one says *Optional* in
+grey. Tab moves between controls. Ctrl+G/Ctrl+R switches verdicts. Enter in a field
+does not submit; Ctrl+S or activating the **Submit** button submits, including
+Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
 composition, including Korean, belongs to the text field and never fires shortcuts.
 Esc cancels active work, then leaves the form, then leaves Detail.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
 GREEN and RED keep separate drafts. Monitor and Review share the same request's
-review state within this app session, rather than creating independent forms.
+review state, Tool log included, within this app session, rather than creating
+independent forms.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.

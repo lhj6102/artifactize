@@ -55,29 +55,43 @@ pub async fn unclaim(
     receipts.release_human(request, reviewer).await
 }
 
+/// Run `tool` for the reviewer who holds the claim, its output reaching `run`'s Tool log. A
+/// refusal before it starts ends the run with the refusal.
 pub async fn run_human_tool(
     receipts: &Receipts,
     request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
     tool: &crate::config::ToolName,
     cancellation: CancellationToken,
+    run: crate::tools::human::log::Run,
 ) -> Result<ToolResult, String> {
-    let (mut request, _) = receipts.human_request(request, reviewer).await?;
-    let config = reconnect(&request)?;
-    let registry = Registry::new(&config, &request.eval_id)?;
-    if !registry.list().any(|entry| &entry.name == tool) {
-        return Err("Unknown registered Human tool.".into());
-    }
-    recheck(
-        receipts,
-        &mut request,
-        reviewer,
-        &config,
-        cancellation.clone(),
-    )
-    .await?;
-    receipts.human_request(&request.id, reviewer).await?;
-    Ok(registry.call(tool, cancellation).await)
+    let ready = async {
+        let (mut request, _) = receipts.human_request(request, reviewer).await?;
+        let config = reconnect(&request)?;
+        let registry = Registry::new(&config, &request.eval_id)?;
+        if !registry.list().any(|entry| &entry.name == tool) {
+            return Err::<_, String>("Unknown registered Human tool.".into());
+        }
+        recheck(
+            receipts,
+            &mut request,
+            reviewer,
+            &config,
+            cancellation.clone(),
+        )
+        .await?;
+        receipts.human_request(&request.id, reviewer).await?;
+        Ok((config, request.eval_id))
+    };
+    let (config, eval) = match ready.await {
+        Ok(ready) => ready,
+        Err(error) => {
+            run.end(crate::tools::human::log::End::Failed(error.clone()));
+            return Err(error);
+        }
+    };
+    let registry = Registry::new(&config, &eval).expect("the registry was just built");
+    Ok(registry.call_logged(tool, cancellation, run).await)
 }
 
 /// What every registered Human tool of a waiting request would run, by tool name; needs no

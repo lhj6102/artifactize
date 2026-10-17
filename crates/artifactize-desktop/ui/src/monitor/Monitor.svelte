@@ -1,21 +1,22 @@
 <script lang="ts">
-  // Scope and Runs on the left, the selected Run's graph filling the right. Focus moves between
-  // the panes; a node's summary floats beside it, and its Detail floats over the graph's right.
+  // Scope and Runs on the left, the selected Run's graph on the right, always with the divider
+  // between them. Focus moves between the panes with the keys; a click on an Artifact or on the
+  // Run's headline opens its Detail, floating over the graph's right side. Dragging the Detail's
+  // left edge sets its width, kept like the split ratio.
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { BrowseView } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { MonitorState, setMonitorState, type Focus } from "./monitor-state.svelte";
-  import { find } from "./tree.svelte";
+  import { find } from "./tree";
+  import { GAP, clampWidth, saveWidth } from "./detail-width";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";
   import RunPane from "./RunPane.svelte";
   import DetailPane from "./DetailPane.svelte";
-  import Summary from "./Summary.svelte";
   import { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
-  import { plain } from "../shell/keys";
 
   let { active }: { active: boolean } = $props();
   const app = getAppState();
@@ -23,7 +24,7 @@
 
   const m = new MonitorState();
   setMonitorState(m);
-  const { tree, panes } = m;
+  const { panes } = m;
 
   const view = $derived(browse.view);
   const run = $derived(view?.run ?? null);
@@ -31,22 +32,15 @@
   /** What a snapshot changes here, as it is accepted. */
   function accept(shown: BrowseView) {
     const at = shown.run;
-    if (at) tree.sync(at.id, at.tree);
     // A replaced state: Details, drafts and sessions of the old one no longer apply.
     if (shown.replaced) {
       m.opened = null;
       app.forgetReviews();
       if (m.focus === "detail") m.focus = "graph";
     }
-    // Leaving the selected Run (or losing it) closes its Detail.
-    if (m.opened !== null && m.opened.run !== at?.id) m.opened = null;
-    // Another Run's graph starts without a popup or a node under the pointer.
-    const id = at?.id ?? null;
-    if (id !== m.popupRun) {
-      m.popupRun = id;
-      m.popup = null;
-      m.hovered = null;
-    }
+    // Leaving the selected Run (or losing it, or the node) closes its Detail.
+    const opened = m.opened;
+    if (opened !== null && (opened.run !== at?.id || !find(at.tree, [opened.node]))) m.opened = null;
   }
 
   onMount(() => {
@@ -56,96 +50,77 @@
 
   /** The Review of a request, if one was opened: rendering only looks. */
   const review = (id: string): Review | undefined => app.reviews[id];
-  /** Open the Review of a request when its Detail arrives, never while rendering. */
+  /** Open the Review of a request when its Detail arrives, never while rendering; the open
+   * Detail notes it, so leaving the Detail asks that review first. */
   function openReview(id: string): void {
     app.review(id);
+    if (m.opened && m.opened.request !== id) m.opened = { ...m.opened, request: id };
   }
 
-  /** Move focus to a pane's list or review, or else to the pane itself. The graph takes it on
-   * its popup or selected Artifact, as soon as it is drawn. */
+  /** Move focus to a pane's list or review, or else to the pane itself; the graph's pane takes
+   * it itself, and Tab goes on to its Artifacts. */
   async function move(to: Focus) {
     m.focus = to;
     await tick();
-    if (to === "graph") {
-      if (m.graphFocus?.()) return;
-      m.graphPending = true;
-      panes.graph?.focus();
-      return;
-    }
     const pane = panes[to];
-    (pane?.querySelector<HTMLElement>('[tabindex="0"]') ?? pane)?.focus();
+    if (to === "graph") pane?.focus();
+    else (pane?.querySelector<HTMLElement>('[tabindex="0"]') ?? pane)?.focus();
   }
 
-  /** A graph was drawn (or went away): it takes the focus asked for while none could. */
-  function ready(focus: (() => boolean) | null) {
-    m.graphFocus = focus;
-    if (!focus || !m.graphPending || !active || m.focus !== "graph") return;
-    // Focus that moved on meanwhile stays where it went.
-    if (!panes.graph?.contains(document.activeElement)) return;
-    m.graphPending = false;
-    focus();
+  /** A click on an Artifact: its Detail, on the Artifact's own tab. */
+  function openNode(node: string) {
+    if (!run) return;
+    m.opened = { run: run.id, node, tab: null };
   }
 
-  /** Show the selection in the graph: an eval in its Artifact's popup, an Artifact by itself. */
-  function follow() {
-    m.popup = tree.selected.length > 1 ? tree.selected[0] : null;
-    void move("graph");
-  }
-
-  function openDetail() {
-    const node = tree.selected.at(-1);
-    if (!run || !node) return;
-    m.opened = { run: run.id, node };
-    void move("detail");
-  }
-
+  /** A click on the Run's headline: the Run's Detail. */
   function openRun() {
     const row = run?.tree.find((node) => node.kind === "run");
     if (!run || !row) return;
-    m.opened = { run: run.id, node: row.id };
-    void move("detail");
+    m.opened = { run: run.id, node: row.id, tab: null };
   }
 
-  function leaveDetail() {
+  /** Another tab of the open Detail; a Human review's tab notes its request when it arrives. */
+  function showTab(tab: string | null) {
+    if (m.opened && m.opened.tab !== tab) m.opened = { run: m.opened.run, node: m.opened.node, tab };
+  }
+
+  /** Close the Detail; focus that was in it goes back to the graph. Leaving one step at a time:
+   * a Human review shown in it first cancels its running work, then leaves its form, and only
+   * then the Detail closes. */
+  function closeDetail() {
+    if (m.opened === null) return;
+    const held = m.opened.request === undefined ? undefined : app.reviews[m.opened.request];
+    if (held && !held.escape()) return;
+    const inside = panes.detail?.contains(document.activeElement) ?? false;
     m.opened = null;
-    void move("graph");
+    if (inside) void move("graph");
   }
 
-  /** `!`: the next ERROR, RED or waiting Human eval in its Artifact's popup; from Detail, its
-   * Detail. */
-  function attention() {
-    if (!run) {
-      m.notice = "Open a Run to find what needs attention.";
-      return;
-    }
-    const fromDetail = m.opened !== null;
-    if (!tree.nextAttention(run.tree)) {
-      m.notice = "Nothing in this Run needs attention.";
-      return;
-    }
-    m.notice = null;
-    m.popup = tree.selected[0];
-    if (fromDetail) openDetail();
-    else void move("graph");
+  /** Esc in the graph closes its Detail, else steps back to the Runs. */
+  function back() {
+    if (m.opened) closeDetail();
+    else void move("runs");
   }
 
-  /** `b`: the upstream Artifact the selection waits for. */
-  function blocker() {
-    if (run && tree.jumpBlocker(run.tree)) follow();
-  }
-
-  /** Backspace: back to where the `b` jumps started. */
-  function jumpBack() {
-    if (tree.jumpBack()) follow();
-  }
-
-  /** Screen-wide: `!` works wherever focus is while the Monitor shows. */
-  function keydown(event: KeyboardEvent) {
-    if (!active || event.defaultPrevented) return;
-    if (plain(event, "!")) {
-      event.preventDefault();
-      attention();
-    }
+  /** Dragging the Detail's left edge: the mouse moves it wherever it goes until the button is
+   * released, as the pane dividers follow it. */
+  function grab(event: MouseEvent) {
+    if (event.button !== 0) return;
+    const stage = (event.currentTarget as HTMLElement).closest(".stage");
+    if (!stage) return;
+    event.preventDefault();
+    const drag = (moved: MouseEvent) => {
+      const room = stage.getBoundingClientRect();
+      m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width);
+    };
+    const drop = () => {
+      window.removeEventListener("mousemove", drag);
+      window.removeEventListener("mouseup", drop);
+      if (m.detailWidth !== null) saveWidth(m.detailWidth);
+    };
+    window.addEventListener("mousemove", drag);
+    window.addEventListener("mouseup", drop);
   }
 
   /** The Runs pane has focus first, as in the terminal monitor. */
@@ -156,66 +131,26 @@
     }
   };
 
-  /** The node the summary describes: the one under the pointer, else the graph's selection
-   * while the graph has the keyboard. An Artifact whose evals pop up shows them instead. */
-  const summarized = $derived.by(() => {
-    const keys = m.focus === "graph" ? (m.popup ? tree.selected : tree.selected.slice(0, 1)) : null;
-    const path = m.hovered ?? keys;
-    if (!run || !path?.length || (path.length === 1 && path[0] === m.popup)) return null;
-    // The Run itself has no node in the graph: its headline opens its Detail.
-    const node = find(run.tree, path);
-    return node && node.kind !== "run" ? path : null;
-  });
-  /** Where the summary floats: beside the eval's popup row, or beside the Artifact's node. */
-  const anchor = $derived(
-    summarized === null
-      ? ""
-      : summarized.length > 1
-        ? `.evals [data-path="${CSS.escape(summarized.join("/"))}"]`
-        : `.svelte-flow__node[data-id="${CSS.escape(summarized[0])}"]`,
-  );
-
-  const upstream = $derived(run ? (find(run.tree, tree.origin())?.upstream.length ?? 0) : 0);
-
   useCommands(() =>
     active
       ? [
           { id: "monitor.refresh", group: "Monitor", label: "Refresh", keys: "Ctrl+R", run: () => browse.refresh() },
-          { id: "monitor.attention", group: "Monitor", label: "Next attention", keys: "!", run: attention },
           { id: "monitor.scope", group: "Monitor", label: "Focus Scope", run: () => void move("scope") },
           { id: "monitor.runs", group: "Monitor", label: "Focus Runs", run: () => void move("runs") },
           { id: "monitor.graph", group: "Monitor", label: "Focus Run graph", run: () => void move("graph") },
-          {
-            id: "monitor.open",
-            group: "Monitor",
-            label: "Open Detail of the selected node",
-            keys: "o",
-            enabled: () => run !== null && tree.selected.length > 0,
-            run: openDetail,
-          },
           { id: "monitor.run", group: "Monitor", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
           {
-            id: "monitor.blocker",
+            id: "monitor.close",
             group: "Monitor",
-            label: "Go to the upstream blocker",
-            keys: "b",
-            enabled: () => upstream > 0,
-            run: blocker,
-          },
-          {
-            id: "monitor.back",
-            group: "Monitor",
-            label: "Back to where the blocker jumps started",
-            keys: "Backspace",
-            enabled: () => tree.blocker !== null,
-            run: jumpBack,
+            label: "Close the Detail",
+            keys: "Esc",
+            enabled: () => m.opened !== null,
+            run: closeDetail,
           },
         ]
       : [],
   );
 </script>
-
-<svelte:window onkeydown={keydown} />
 
 <div class="monitor" {@attach begin}>
   <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
@@ -245,41 +180,37 @@
     <Pane defaultSize={76} minSize={30}>
       <div class="stage">
         <RunPane
-          {tree}
-          notice={m.notice ?? browse.error ?? view?.error ?? null}
-          bind:popup={m.popup}
-          {active}
+          notice={browse.error ?? view?.error ?? null}
+          bind:noticeOpen={m.noticeOpen}
+          opened={m.opened && m.opened.run === run?.id ? m.opened.node : null}
           focused={m.focus === "graph"}
           bind:element={panes.graph}
           onfocus={() => (m.focus = "graph")}
-          onopen={openDetail}
+          onopen={openNode}
+          onclose={closeDetail}
           onrun={openRun}
-          onback={() => void move("runs")}
-          onblocker={blocker}
-          onjumpback={jumpBack}
-          onready={ready}
-          onhover={(path) => (m.hovered = path)}
+          onback={back}
         />
-        {#if run && summarized}
-          <Summary
-            run={run.id}
-            node={summarized[summarized.length - 1]}
-            {anchor}
-            hint={summarized.length > 1 ? "Enter or click: Detail" : "Enter or click: evals · o: Detail"}
-          />
-        {/if}
-        {#if m.opened}
-          <aside class="overlay" aria-label="Detail">
+        {#if m.opened && run && m.opened.run === run.id}
+          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
+            <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
+                 the resize cursor. -->
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onmousedown={grab}></div>
             <DetailPane
               run={m.opened.run}
               node={m.opened.node}
+              tab={m.opened.tab}
+              tree={run.tree}
               focused={m.focus === "detail"}
               {active}
               {review}
               {openReview}
               bind:element={panes.detail}
               onfocus={() => (m.focus = "detail")}
-              onback={leaveDetail}
+              ontab={showTab}
+              onopen={openNode}
+              onback={closeDetail}
             />
           </aside>
         {/if}
@@ -292,29 +223,47 @@
   .monitor {
     height: 100%;
     min-height: 0;
+    min-width: 0;
   }
   :global(.columns) {
     min-height: 0;
   }
-  /* The graph's own layers (canvas, popup, Summary, Detail) stack inside the stage, so none
-   * of them covers the divider's grab zone on the graph's side. */
+  /* The graph's own layers (canvas, Detail) stack inside the stage, so none of them covers the
+   * divider's grab zone on the graph's side, and the Detail never sits beside Scope or Runs. */
   .stage {
     position: relative;
     isolation: isolate;
     height: 100%;
     min-height: 0;
+    min-width: 0;
   }
-  .overlay {
+  /* Docked toward the graph's right edge with a gap; the graph stays visible behind it. The
+   * Detail sets its own width, by default or by a drag, within the graph's area (as
+   * detail-width.ts fits a drag); its content never sizes it, and wraps or scrolls in its own
+   * boxes. */
+  .dock {
     position: absolute;
     z-index: 20;
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: min(46%, 680px);
-    min-width: min(340px, calc(100% - 16px));
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: var(--detail-width, min(46%, 680px));
+    min-width: min(320px, calc(100% - 24px));
+    max-width: calc(100% - 108px);
+    contain: inline-size;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
+  }
+  .edge {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
   }
 </style>

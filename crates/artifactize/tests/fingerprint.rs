@@ -442,10 +442,9 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     );
     fs::write(fixture.repo.join("core/lib.txt"), "v1").unwrap();
     // The JSON from issue #48: a global Artifact name in both fingerprint and runtime argv.
-    let api = |reference: &str, mounts: Value| {
+    let api = |reference: &str| {
         json!({
             "name":"api",
-            "mounts":mounts,
             "fingerprint":{
                 "script":{"command":support::os::python_program(),"args":["../fingerprint.py",".",reference]},
             },
@@ -463,7 +462,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
             ],
         })
     };
-    fixture.write("api/index.artf", api("{core}", json!({})));
+    fixture.write("api/index.artf", api("{core}"));
     fs::write(
         fixture.repo.join("api/test_api.py"),
         "import pathlib, sys\nassert (pathlib.Path(sys.argv[1]) / 'lib.txt').is_file()\n",
@@ -493,17 +492,12 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     assert_ne!(second["requests"][0]["fingerprint"], fingerprint.as_str());
     assert_eq!(second["executionsStarted"], 1);
 
-    // Mount aliases keep working.
-    fixture.write("api/index.artf", api("{lib}", json!({"lib":"core"})));
-    assert_eq!(run(&["config", "check"]).0, Some(0));
-    fixture.verify(&["--all"], 0);
-
     // Unknown and escaping references fail closed in config check and status alike.
     for (reference, message) in [
         ("{missing}", "Unknown Artifact reference {missing}"),
         ("{core}/../api", "safe relative logical path"),
     ] {
-        fixture.write("api/index.artf", api(reference, json!({})));
+        fixture.write("api/index.artf", api(reference));
         for command in [&["config", "check"][..], &["status"]] {
             let (code, _, stderr) = run(command);
             assert_eq!(code, Some(2), "{command:?} {reference}: {stderr}");

@@ -162,6 +162,25 @@ pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
     spawn_detached(command)
 }
 
+/// A desktop handoff whose output pipes a Tool log drains. Like [`spawn_detached`] it gets
+/// its own session; it also ignores SIGPIPE, so that once nobody reads the pipes any more (the
+/// review's process exited) a write fails with EPIPE instead of killing the program.
+pub(crate) fn spawn_watched(mut command: Command) -> io::Result<tokio::process::Child> {
+    // SAFETY: the forked child calls only setsid and signal, which are async-signal-safe.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::signal(libc::SIGPIPE, libc::SIG_IGN) == libc::SIG_ERR {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command.spawn()
+}
+
 /// The index of `starttime` (field 22 of /proc/PID/stat, see proc(5)) among the fields after
 /// the command name. The name, field 2, is cut off at its closing parenthesis because it may
 /// contain spaces, so the remaining fields start at field 3: 22 - 3 = 19.

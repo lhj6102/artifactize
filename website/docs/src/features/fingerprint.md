@@ -32,7 +32,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 - `files`: 1–64 unique owner-relative paths, default `["."]` (the owner's own
   files). Each must exist and stay inside the Artifact: paths into child Artifacts
-  or mounts are rejected. Directory walks skip child Artifact folders and every
+  are rejected. Directory walks skip child Artifact folders and every
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
   not silently skipped. A directory whose name ends in `.artf` is an invalid
   declaration and fails discovery.
@@ -60,7 +60,6 @@ Artifact. Walk limits and manifests are in the [reference](declarations.md#artif
 
 An eval depends on its target Artifact and on what the target directly connects:
 
-- the target's mounts;
 - the target's child Artifacts;
 - the Artifacts the eval names in its instruction or runtime args.
 
@@ -79,7 +78,7 @@ are never key inputs, so copies with matching names, kinds and fingerprints reus
 Changing a covered Artifact's name changes the key. Differently named targets can
 still share a result when their evaluation criteria and complete covered Artifact
 maps match: the key does not separately identify which covered Artifact is the target.
-For example, two Artifacts that mount each other can share results from identical evals.
+For example, two Artifacts whose identical evals reference each other can share results.
 The **Eval definition hash** is lowercase SHA-256 of canonical JSON with recursively
 sorted keys over the **evaluation criteria**:
 
@@ -162,7 +161,7 @@ folder locations and repository paths are not identities. Extraction includes:
   The graph Artifact has a graph-coverage marker, not its own recursively embedded
   digest.
 - Input → consumer relations: child ownership (names, not child folder paths),
-  mounts (including aliases), instruction references, runtime argv references
+  instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
 - Qualified eval IDs, owning Artifact, titles, optional `gate` and evaluation criteria: default
   profile kind, the full `payload` including instruction and owner context,

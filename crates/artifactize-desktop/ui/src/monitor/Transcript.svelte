@@ -14,13 +14,11 @@
   } from "../ipc/client";
   import { plain } from "../shell/keys";
 
-  let { id, peek = false }: { id: string; peek?: boolean } = $props();
+  let { id }: { id: string } = $props();
   const commands = useIpc();
   const t = new TranscriptState();
   setTranscriptState(t);
 
-  /** Rows of a peek: enough to find the last line of a running Agent. */
-  const PEEK_ROWS = 6;
   /** How often a missed append or removal is checked, as in the terminal monitor. */
   const PROBE_MS = 5000;
   /** A wheel step moves three rows, like the terminal's. */
@@ -32,9 +30,13 @@
     // Before layout (or without one) a cell is assumed 7 × 18 pixels.
     const width = cell.width / 10 || 7;
     const height = cell.height || 18;
+    // The rows fill the content box: the pane's width without its padding, never its border
+    // box, so no laid-out row is wider than the room it is drawn in.
     const box = t.pane.getBoundingClientRect();
-    const columns = Math.max(Math.floor(box.width / width) - 1, 10) || 10;
-    const rows = peek ? PEEK_ROWS : Math.max(Math.floor(box.height / height), 3);
+    const style = getComputedStyle(t.pane);
+    const room = box.width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const columns = Math.max(Math.floor(room / width) - 1, 10) || 10;
+    const rows = Math.max(Math.floor(box.height / height), 3);
     const changed = columns !== t.size.columns || rows !== t.size.rows;
     t.size = { columns, rows };
     return changed;
@@ -153,64 +155,107 @@
     event.stopPropagation();
   }
 
+  /** The scrollbar: the shown rows' share of every laid-out row, and where they start. It is
+   * drawn here because the pane holds only the visible rows. */
+  const bar = $derived.by(() => {
+    const view = t.view;
+    const shown = t.size.rows;
+    if (!view || view.total <= shown || shown === 0) return null;
+    const size = Math.max(shown / view.total, 0.05);
+    const start = (view.top / (view.total - shown)) * (1 - size);
+    return { size, start: Math.min(Math.max(start, 0), 1 - size) };
+  });
+
+  /** Move the shown rows so they start at `row`. */
+  function scrollTo(row: number) {
+    const view = t.view;
+    if (!view) return;
+    const target = Math.round(Math.min(Math.max(row, 0), Math.max(view.total - t.size.rows, 0)));
+    const delta = target - view.top;
+    if (delta > 0) void ask({ kind: "down", rows: delta });
+    else if (delta < 0) void ask({ kind: "up", rows: -delta });
+  }
+
+  /** Drag the thumb, or press the track to move there: the row under the pointer's share. */
+  function drag(event: PointerEvent) {
+    const track = event.currentTarget as HTMLElement;
+    const view = t.view;
+    if (!view || !bar) return;
+    event.preventDefault();
+    track.setPointerCapture(event.pointerId);
+    const box = track.getBoundingClientRect();
+    const thumb = bar.size * box.height;
+    const onThumb = (event.target as HTMLElement).classList.contains("thumb");
+    // A press on the thumb keeps its grip; one on the track centres the thumb there.
+    const grip = onThumb ? event.clientY - box.top - bar.start * box.height : thumb / 2;
+    const follow = (move: PointerEvent) => {
+      const share = (move.clientY - box.top - grip) / Math.max(box.height - thumb, 1);
+      scrollTo(share * (view.total - t.size.rows));
+    };
+    follow(event);
+    const stop = () => {
+      track.removeEventListener("pointermove", follow);
+      track.removeEventListener("pointerup", stop);
+      track.removeEventListener("pointercancel", stop);
+    };
+    track.addEventListener("pointermove", follow);
+    track.addEventListener("pointerup", stop);
+    track.addEventListener("pointercancel", stop);
+  }
+
   function wheel(event: WheelEvent) {
-    if (peek || event.deltaY === 0) return;
+    if (event.deltaY === 0) return;
     event.preventDefault();
     void ask({ kind: event.deltaY > 0 ? "down" : "up", rows: WHEEL_ROWS });
   }
-
-  const last = $derived(
-    t.view?.status ?? t.view?.rows.map((row) => row.text.trim()).findLast((text) => text) ?? "reading the session…",
-  );
 </script>
 
-{#if peek}
-  <p class="last" bind:this={t.pane}>
+<div class="transcript">
+  <!-- A live log that scrolls by keys and wheel, since it holds only the visible rows. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="window"
+    tabindex="0"
+    role="log"
+    aria-label="Agent transcript"
+    bind:this={t.pane}
+    onkeydown={keydown}
+    onwheel={wheel}
+  >
     <span class="probe" bind:this={t.probe} aria-hidden="true">MMMMMMMMMM</span>
-    <strong>Last:</strong> {t.unavailable ?? last}
-  </p>
-{:else}
-  <div class="transcript">
-    <!-- A live log that scrolls by keys and wheel, since it holds only the visible rows. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-    <div
-      class="window"
-      tabindex="0"
-      role="log"
-      aria-label="Agent transcript"
-      bind:this={t.pane}
-      onkeydown={keydown}
-      onwheel={wheel}
-    >
-      <span class="probe" bind:this={t.probe} aria-hidden="true">MMMMMMMMMM</span>
-      {#if t.unavailable}
-        <p class="status">{t.unavailable}</p>
-      {:else if t.view?.status && t.view.rows.length === 0}
-        <p class="status">{t.view.status}</p>
-      {:else if t.view}
-        {#each t.view.rows as row, at (at)}
-          {#if row.group}
-            <button class="row group" onclick={() => void ask(null, at)}>{row.text || " "}</button>
-          {:else}
-            <div class="row" class:thinking={row.thinking}>{row.text || " "}</div>
-          {/if}
-        {/each}
-      {:else}
-        <p class="status">Loading session…</p>
-      {/if}
-    </div>
-    <footer>
-      <button class="button small" onclick={() => void ask({ kind: "top" })}>Top <kbd>Home</kbd></button>
-      <button class="button small" onclick={() => void ask({ kind: "bottom" })}>Bottom <kbd>End</kbd></button>
-      <span class="indicator">{t.view?.indicator ?? ""}</span>
-    </footer>
+    {#if t.unavailable}
+      <p class="status">{t.unavailable}</p>
+    {:else if t.view?.status && t.view.rows.length === 0}
+      <p class="status">{t.view.status}</p>
+    {:else if t.view}
+      {#each t.view.rows as row, at (at)}
+        {#if row.group}
+          <button class="row group" onclick={() => void ask(null, at)}>{row.text || " "}</button>
+        {:else}
+          <div class="row" class:thinking={row.thinking}>{row.text || " "}</div>
+        {/if}
+      {/each}
+    {:else}
+      <p class="status">Loading session…</p>
+    {/if}
+    {#if bar}
+      <div class="track" aria-hidden="true" onpointerdown={drag}>
+        <div class="thumb" style:top="{bar.start * 100}%" style:height="{bar.size * 100}%"></div>
+      </div>
+    {/if}
   </div>
-{/if}
+  <footer>
+    <button class="button small" onclick={() => void ask({ kind: "top" })}>Top <kbd>Home</kbd></button>
+    <button class="button small" onclick={() => void ask({ kind: "bottom" })}>Bottom <kbd>End</kbd></button>
+    <span class="indicator">{t.view?.indicator ?? ""}</span>
+  </footer>
+</div>
 
 <style>
   .transcript {
     display: grid;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
   }
@@ -231,9 +276,12 @@
     font: 12px/18px var(--mono);
     white-space: pre;
   }
+  /* Rows come laid out to the pane's columns; a row that still does not fit wraps inside the
+   * pane rather than running past its edge. */
   .row {
-    white-space: pre;
-    height: 18px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    min-height: 18px;
   }
   .group {
     display: block;
@@ -263,17 +311,28 @@
     padding: 6px var(--pad);
     border-top: 1px solid var(--border);
   }
+  /* Thin like the other panes' scrollbars; the thumb darkens under the pointer. */
+  .track {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 10px;
+    cursor: default;
+  }
+  .thumb {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    border-radius: 4px;
+    background: var(--border);
+  }
+  .track:hover .thumb {
+    background: var(--muted);
+  }
   .indicator {
     margin-left: auto;
     color: var(--muted);
     font: 11px var(--mono);
-  }
-  .last {
-    position: relative;
-    margin: 0;
-    padding: 0 var(--pad) 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 </style>

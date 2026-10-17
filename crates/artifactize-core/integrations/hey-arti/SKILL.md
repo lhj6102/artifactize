@@ -33,7 +33,7 @@ requirements or executing its application on its behalf.
 
 `index.artf` declares its containing folder; `<filename>.artf` declares that exact
 neighboring regular file, including its extension. `name` is required and globally
-unique. Names and eval/tool/session/mount IDs match
+unique. Names and eval/tool/session IDs match
 `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Evals are ID-keyed tables, not arrays.
 Keys use snake_case; JSON Schema keywords retain their standard spelling.
 Do not use legacy JSON declarations, families, slices or invented options.
@@ -72,7 +72,6 @@ basis = true
 ```toml
 name = "app"
 tags = ["type:code"]
-mounts = { requirements = "spec" }
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -87,7 +86,7 @@ payload.instruction = "Run the application tests."
 [evals.review]
 title = "The app fulfills the requirements"
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", reasoning = "high" }
-payload.instruction = "Review {app} against {requirements}; GREEN only when every requirement is met."
+payload.instruction = "Review {app} against {spec}; GREEN only when every requirement is met."
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
 fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string" }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
 ```
@@ -115,9 +114,10 @@ arguments; the test-code Artifact’s own Evals review style and feature coverag
 An independent sibling Eval does not inherit another Eval’s references. All Evals
 can judge their targets independently of upstream verdicts. Plain verify schedules
 dependency-first for efficiency; `--speculate` starts unresolved work early, not
-approval. Eval-cycle peers do not wait for or cancel each other on an internal RED;
-external gates still hold the cycle and a failed cycle cannot release downstream
-consumers. `basis = true` waives an input’s own reviews, not its dependencies, and
+approval. An Eval is blocked only by a RED in an Artifact it depends on outside its
+own Artifact and that Artifact's cycle: a RED sibling or cycle peer never blocks or
+holds it, what the cycle references outside itself still does, and a failed cycle
+cannot release downstream consumers. `basis = true` waives an input’s own reviews, not its dependencies, and
 cannot own Evals.
 
 For runtime or Agent evals whose own command or tools use the machine, put
@@ -132,7 +132,11 @@ or an ended Run frees the tags. There is no default, priority or ordering policy
 Human evals cannot declare mutex tags. Changing mutex tags does
 not invalidate fingerprints or reuse keys.
 
-Mount aliases and explicit `{name}` references resolve to declared Artifacts.
+Explicit `{name}` references resolve to declared Artifacts. An eval that uses
+another Artifact names it itself; nothing else adds a dependency, except that a
+child folder counts as a reference of every eval of its parent. A Human eval starts
+only when every other non-Human eval of its Artifact is GREEN, and is BLOCKED when
+one of them is RED or ERROR.
 Instruction references and runtime argv references make real consumer relations;
 references do not paste file content into instructions. Folder operands may use
 `{name}/path`; file operands resolve to the target itself and cannot have a suffix.
@@ -151,7 +155,7 @@ folder's `index.artf`.
 ## 3. Give reviewers narrow views; let artifactize own tool sessions
 
 Declare only read-only tools actually needed by the reviewer. Built-in `list`,
-`read`, `glob`, `grep` and `view_image` obey admitted Artifact/mount/reference
+`read`, `glob`, `grep` and `view_image` obey admitted Artifact/child/reference
 scopes, reject traversal and symlinks, and expose only a file Artifact's target
 (not arbitrary siblings). Tools are published as `<tool>_<artifact>`.
 Command tools require `description`, `protocol`, `command` and `args`; optional
@@ -211,7 +215,7 @@ Use the repository-bound artifactize MCP tools first:
   project tools or starting sessions.
 
 Inspect dependencies and covered fingerprints in `status` as well as the source
-declarations: mounts/children may cover more than intended; scoped references must
+declarations: children may cover more than intended; scoped references must
 cover genuine consumers. If MCP
 is not registered, the CLI fallback from the repository is `artifactize config
 check`, `artifactize config graph`, `artifactize status --all`, and `artifactize

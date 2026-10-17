@@ -10,8 +10,7 @@ use support::runs::RecordOutput;
 const FEATURES: &str = r#"
 name = "app"
 tags = ["type:code", "한글"]
-mounts = { input = "source" }
-fingerprint = { script = { command = "hash", args = ["{input}"], files = ["rules"], timeout_ms = 1000 } }
+fingerprint = { script = { command = "hash", args = ["{source}"], files = ["rules"], timeout_ms = 1000 } }
 
 [views.agent_tools]
 read = { builtin = "read", description = "Read {artifactName}" }
@@ -22,7 +21,7 @@ print = { description = "Print", kind = "output", command = "print-fixture", arg
 
 [evals.z-runtime]
 title = "Runtime"
-profile = { kind = "runtime", command = "check", args = ["{input}"], timeout_ms = 2000 }
+profile = { kind = "runtime", command = "check", args = ["{source}"], timeout_ms = 2000 }
 payload.instruction = "Run."
 
 [evals.a-agent]
@@ -30,7 +29,7 @@ title = "Agent"
 mutex = ["use-computer:display"]
 profile = { kind = "agent", backend = "codex", model = "fixture", reasoning = "high", timeout_ms = 3000, max_tool_calls = 10, max_tokens = 1000 }
 profile_variants.careful = { kind = "agent", backend = "codex", model = "fixture", reasoning = "max", timeout_ms = 4000, max_tool_calls = 20, max_tokens = 2000 }
-payload = { instruction = "Inspect {input}.", ownerData = { camelCase = true, array = [1, 2] } }
+payload = { instruction = "Inspect {source}.", ownerData = { camelCase = true, array = [1, 2] } }
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
 fail_schema = { type = "object", properties = { reason = { type = "string", minLength = 1 } }, required = ["reason"], additionalProperties = false }
 
@@ -47,7 +46,6 @@ Then sign off.
 fn every_declaration_feature_is_standard_toml_with_owner_data_untouched() {
     let declaration = parse_declaration(FEATURES).unwrap();
     assert_eq!(declaration.tags, ["type:code", "한글"]);
-    assert_eq!(declaration.mounts["input"], "source");
     assert_eq!(
         declaration
             .evals
@@ -482,11 +480,6 @@ fn semantic_errors_include_the_typed_key_path_and_source_position() {
             6,
         ),
         (
-            "name = 'a'\nmounts = { '_bad' = 'input' }",
-            "mounts._bad",
-            2,
-        ),
-        (
             "name = 'a'\nfingerprint = { files = [] }",
             "fingerprint.files",
             2,
@@ -533,7 +526,6 @@ fn null_syntax_is_rejected_by_the_production_toml_parser_at_every_boundary() {
         "basis",
         "evals",
         "views",
-        "mounts",
         "fingerprint",
         "tags",
         "tags.items",
@@ -580,11 +572,6 @@ fn owner_payload_keys_do_not_collide_with_toml_datetime_serde_internals() {
 fn cross_artifact_validation_errors_keep_the_referencing_field_position() {
     let root = support::os::tempdir();
     for (source, path, line) in [
-        (
-            "name = 'a'\nmounts = { input = 'missing' }",
-            "mounts.input",
-            2,
-        ),
         (
             "name = 'a'\nfingerprint.script = { command = 'hash', args = ['{missing}'] }",
             "fingerprint.script.args",

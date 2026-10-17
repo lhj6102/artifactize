@@ -11,7 +11,7 @@ import { reviewing } from "../human-review.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeIme, primaryModifier } from "../platform.ts";
-import { graphShown, nodeAt, popup, rowAt } from "../graph-view.ts";
+import { graphShown, openArtifact, openTab } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -80,7 +80,7 @@ export const scenarios: Scenario[] = [
       await press(browser, [primaryModifier, "k"], () => browser.$('[aria-label="Command palette"][data-state="open"]').isExisting(), "the palette");
       await choosePaletteCommand(browser, "Tools focused", "Open the selected request with Tools focused");
       await press(browser, ["Enter"], exists, "the Human review");
-      await waitFor(browser, () => browser.$('[aria-label="Human tools"]').isFocused(), "focus on the Tools");
+      await waitFor(browser, () => browser.$('section[aria-label="Tools"]').isFocused(), "focus on the Tools");
       await press(browser, ["Escape"], gone, "back on the list");
     },
   ),
@@ -154,7 +154,9 @@ export const scenarios: Scenario[] = [
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => (await text()).includes("claimed by bob"), "bob's claim shown");
       await press(browser, ["Enter"], () => human().isExisting(), "the Human review");
-      await human().$("button*=Claim").waitForExist({ timeout: 15000 });
+      // Taken: the review says who holds it and offers no Claim button.
+      await waitFor(browser, async () => (await human().getText()).includes("Claimed by bob. Read-only until released.")
+        && !(await human().$("button*=Claim").isExisting()), "bob's claim shown as read-only");
       await human().click();
       await press(browser, ["c"], () => browser.execute(() =>
         [...document.querySelectorAll('[aria-label="Human review"] .notice.error')].some((notice) => /bob/.test(notice.textContent ?? "")),
@@ -179,9 +181,8 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const { text, human } = submission(browser);
       await graphShown(browser, "a:release");
-      await browser.$(nodeAt("a:release")).click();
-      await waitFor(browser, async () => (await popup(browser))?.artifact === "release", "release's evals popped up");
-      await browser.$(rowAt("a:release/e:release/signoff")).click();
+      await openArtifact(browser, "a:release", "Artifact release");
+      await openTab(browser, "e:release/signoff");
       await human().waitForExist({ timeout: 15000, timeoutMsg: "the Human review" });
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
       await human().click();
@@ -189,7 +190,7 @@ export const scenarios: Scenario[] = [
       // The window shows the claim before a verdict can be chosen.
       await waitFor(browser, async () => (await text()).includes("claimed by you") && await reviewing(browser), "the claim shown");
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form of the pass schema");
-      assert.ok(await browser.$("#field-approved").isExisting(), "the schema's approved field");
+      assert.equal(await browser.$("#field-approved").isExisting(), false, "the schema's approved constant is filled in, not shown");
       const comment = browser.$("#field-comment");
       await comment.click();
       type ImeEvent = { type: string; code: string; composing: boolean; keyCode: number; trusted: boolean };

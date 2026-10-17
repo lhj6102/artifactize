@@ -349,6 +349,12 @@ pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
     spawn_detached(command)
 }
 
+/// A desktop handoff whose output pipes a Tool log drains. A write to a pipe nobody reads
+/// fails with an error on Windows; no signal ends the program.
+pub(crate) fn spawn_watched(command: Command) -> io::Result<tokio::process::Child> {
+    spawn_detached(command)
+}
+
 /// The creation time, in 100 ns intervals since 1601. A process that has exited counts as
 /// not found, as does one this user may not query: artifactize records only its own
 /// processes and children, so such a PID was reused by another user's or a system process.

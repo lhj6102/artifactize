@@ -137,8 +137,15 @@ pub(super) async fn execute(
             let (receipts, _) = human::open(state, &id).await?;
             let result = async {
                 let (cancellation, listener) = cancellation_listener()?;
-                let result =
-                    human::run_human_tool(&receipts, &id, &reviewer, &tool, cancellation).await;
+                let result = human::run_human_tool(
+                    &receipts,
+                    &id,
+                    &reviewer,
+                    &tool,
+                    cancellation,
+                    artifactize_core::review::log::Run::unwatched(),
+                )
+                .await;
                 listener.abort();
                 result
             }

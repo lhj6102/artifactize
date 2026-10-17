@@ -347,11 +347,12 @@ fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
         (&brand["state"], &brand["action"]),
         (&json!("BLOCKED"), &json!("reuse"))
     );
+    // style/contrast is itself blocked; the reason names the RED at the root.
     assert!(
         brand["reason"]
             .as_str()
             .unwrap()
-            .ends_with("blocked by RED: style/contrast"),
+            .ends_with("blocked by RED: web/tests"),
         "{brand}"
     );
     let style = row("style/contrast");

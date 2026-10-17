@@ -3,6 +3,7 @@
 // is whatever the backend last read.
 import { SvelteMap } from "svelte/reactivity";
 import type { Jobs } from "../ipc/jobs.svelte";
+import { logged, type LogEntry } from "./tool-log";
 import { CommandError, call, commands, message, type Commands } from "../ipc/client";
 import type {
   Acted,
@@ -11,15 +12,15 @@ import type {
   FormField,
   FormView,
   HumanView,
+  LogLine,
   Notice,
-  Output,
   Settled,
   Verdict,
 } from "../ipc/client";
 
 export type Area = "instruction" | "tools" | "fields";
 
-const NO_DRAFT: Draft = { verdict: "GREEN", fields: [], json: null };
+const NO_DRAFT: Draft = { verdict: "GREEN", fields: [] };
 
 /** The draft of one verdict; it survives switching verdicts and leaving the Detail. The library
  * owns what an edit means: every edit is sent to it and its answer replaces the draft whole. A
@@ -33,8 +34,6 @@ export class FormDraft {
   snapshot = $state.raw<Draft>(NO_DRAFT);
   /** The draft's values; assigned over, they show what was typed until the next answer. */
   values = $derived<Record<string, FieldValue>>(Object.fromEntries(this.snapshot.fields));
-  /** The draft's owner-fields JSON text, likewise. */
-  json = $derived<string | null>(this.snapshot.json);
   error = $state<string | null>(null);
   /** Counts edits: only the newest answer replaces the draft. */
   #edits = 0;
@@ -50,13 +49,7 @@ export class FormDraft {
     return {
       verdict: this.verdict,
       fields: this.snapshot.fields.map(([name]) => [name, this.values[name]] as [string, FieldValue]),
-      json: this.json,
     };
-  }
-
-  /** The owner-fields JSON the library produced for this form, now the draft. */
-  adoptJson(json: string): void {
-    this.snapshot = { ...this.snapshot, json };
   }
 
   /** Set field `name`. */
@@ -65,10 +58,14 @@ export class FormDraft {
     await this.#ask((draft) => call(this.ipc.humanEditField(this.id, draft, name, value)));
   }
 
-  /** Replace the owner-fields JSON text. */
-  async setJson(text: string): Promise<void> {
-    this.json = text;
-    await this.#ask((draft) => call(this.ipc.humanEditJson(this.id, draft, text)));
+  /** Add an empty item to the list field `name`; the library builds it. */
+  async add(name: string): Promise<void> {
+    await this.#ask((draft) => call(this.ipc.humanAddItem(this.id, draft, name)));
+  }
+
+  /** Remove item `item` of the list field `name`; the library keeps one to type in. */
+  async remove(name: string, item: number): Promise<void> {
+    await this.#ask((draft) => call(this.ipc.humanRemoveItem(this.id, draft, name, item)));
   }
 
   async #ask(edit: (draft: Draft) => Promise<Draft>): Promise<void> {
@@ -97,7 +94,8 @@ class ReviewState {
   expanded = $state(false);
   technical = $state(false);
   tool = $state(0);
-  output = $state.raw<Output | null>(null);
+  /** Every tool run of this review, oldest first: kept while the review is open. */
+  log = $state.raw<LogEntry[]>([]);
   busy = $state<Busy | null>(null);
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);
@@ -121,8 +119,8 @@ export class Review {
   set technical(value: boolean) { this.#state.technical = value; }
   get tool(): number { return this.#state.tool; }
   set tool(value: number) { this.#state.tool = value; }
-  get output(): Output | null { return this.#state.output; }
-  set output(value: Output | null) { this.#state.output = value; }
+  get log(): LogEntry[] { return this.#state.log; }
+  set log(value: LogEntry[]) { this.#state.log = value; }
   get busy(): Busy | null { return this.#state.busy; }
   set busy(value: Busy | null) { this.#state.busy = value; }
   get notice(): Notice | null { return this.#state.notice; }
@@ -233,27 +231,6 @@ export class Review {
     this.form = null;
   }
 
-  /** Edit the open typed form as owner-fields JSON, as the terminal review does in `$EDITOR`;
-   * the JSON stays this verdict's draft. Values typed while the conversion was on its way are
-   * converted again, never dropped. */
-  async editJson(): Promise<void> {
-    const form = this.form;
-    if (this.busy || !form || form.json !== null) return;
-    try {
-      for (;;) {
-        const draft = form.draft();
-        const json = await call(this.ipc.humanJson(this.id, draft));
-        if (this.form !== form || form.json !== null) return;
-        if (JSON.stringify(form.draft()) === JSON.stringify(draft)) {
-          form.adoptJson(json);
-          return;
-        }
-      }
-    } catch (error) {
-      form.error = message(error);
-    }
-  }
-
   /** Submit the open form; the result says how the settled request stands, or `null` when
    * nothing was settled. */
   async submit(): Promise<Settled | null> {
@@ -271,7 +248,7 @@ export class Review {
       form.error = null;
       this.form = null;
       this.#state.drafts.clear();
-      this.output = null;
+      this.log = [];
       this.#acted(submitted);
       return submitted.settled;
     } catch (error) {
@@ -284,7 +261,8 @@ export class Review {
     }
   }
 
-  /** Run a tool at once; the backend checks the claim when it starts. */
+  /** Run a tool at once; the backend checks the claim when it starts. What the tool prints
+   * reaches the Tool log as it runs ([`logged`](#logged)); a launch tool returns at once. */
   async run(index = this.tool): Promise<void> {
     if (this.busy || this.settled) return;
     const tool = this.view?.tools[index];
@@ -294,17 +272,21 @@ export class Review {
     }
     this.tool = index;
     try {
-      const ran = await this.#job(`Running ${tool.name}`, (job) =>
+      const notice = await this.#job(`Running ${tool.operation}`, (job) =>
         call(this.ipc.humanRun(this.id, tool.name, job)),
       );
-      if (!ran) return;
-      this.output = ran.output;
-      this.notice = ran.notice;
+      if (!notice) return;
+      this.notice = notice;
       // Declarations may have changed; show what the next run resolves.
       await this.load();
     } catch (error) {
       this.notice = { text: message(error), error: true };
     }
+  }
+
+  /** Take in Tool log lines of this review's runs, as the backend sends them. */
+  logged(lines: LogLine[]): void {
+    this.log = logged(this.log, lines);
   }
 
   cancel(): void {

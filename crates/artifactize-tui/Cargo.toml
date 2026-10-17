@@ -3,7 +3,6 @@ name = "artifactize-tui"
 description = "The terminal screens of artifactize: the Monitor and the Human review, over the artifactize-core library."
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true

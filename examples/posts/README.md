@@ -30,13 +30,15 @@ What it demonstrates:
   the README and `.artf` declarations are not part of that file's artifactsum.
   Changing an eval's instruction or runtime argv still changes its definition
   hash. `fingerprint = false` would disable reuse.
-- **A shared mount.** Every post mounts the `house-style` basis Artifact as
-  `style`. It has no evals and uses default folder artifactsum. Each post's reuse
-  key therefore covers both its file and the checker and banned words, including
-  each covered Artifact's kind (`file` or `folder`), never its physical path.
-  Changing `house-style/check.py` or `house-style/banned.txt` reviews all three posts.
+- **A shared basis.** Every post's eval names the `house-style` basis Artifact as
+  `{house-style}`, because it uses the checker and banned words. That reference
+  makes `house-style` its dependency. The basis has no evals and uses default folder
+  artifactsum. Each post's reuse key therefore covers both its file and the checker
+  and banned words, including each covered Artifact's kind (`file` or `folder`), never
+  its physical path. Changing `house-style/check.py` or `house-style/banned.txt`
+  reviews all three posts.
 - **File references and cwd.** Runtime argv resolves `{tip}` to the absolute
-  file path and `{style}/check.py` to the mounted checker. File references never
+  file path and `{house-style}/check.py` to the shared checker. File references never
   take a `/path` suffix. The process runs in `examples/posts`, the file's
   containing folder, with only PATH and LANG inherited. The checker reads its
   arguments without writing into the workspace.
@@ -48,12 +50,11 @@ For example, `tip.md.artf` contains:
 ```toml
 name = "tip"
 tags = ["type:post", "length:brief"]
-mounts = { style = "house-style" }
 
 [evals.style]
 title = "The brief post fits in 40 words and follows the house style"
-profile = { kind = "runtime", command = "python3", args = ["{style}/check.py", "{tip}", "{style}/banned.txt", "40"], timeout_ms = 10000 }
-payload.instruction = "Check that {tip} starts with a title, stays within 40 words, and avoids every word banned in {style}."
+profile = { kind = "runtime", command = "python3", args = ["{house-style}/check.py", "{tip}", "{house-style}/banned.txt", "40"], timeout_ms = 10000 }
+payload.instruction = "Check that {tip} starts with a title, stays within 40 words, and avoids every word banned in {house-style}."
 ```
 
 ## Run it
@@ -66,7 +67,7 @@ You need artifactize 0.9 or later on your PATH
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # outside this checkout
 cd examples/posts
 artifactize config check   # four Artifacts, three evals; runs no owner code
-artifactize config graph   # each post is [file], with a mount to house-style
+artifactize config graph   # each post is [file], referencing house-style
 artifactize status         # exit 1: all three evals would execute
 artifactize verify --all   # three GREEN results, exit 0
 artifactize verify --all   # nothing executes; all three results are reused
@@ -111,4 +112,4 @@ The checker also rejects a missing `# ` title and posts over their declared word
 limit. Appending a comment to `house-style/check.py` changes the shared basis
 fingerprint, so the next `verify --all` executes all three checks again. Adding a
 word to `house-style/banned.txt` does the same. No special template or shared-file
-reuse rule is needed: those files belong to the mounted Artifact.
+reuse rule is needed: those files belong to the referenced Artifact.

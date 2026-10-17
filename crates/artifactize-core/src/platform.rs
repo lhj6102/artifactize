@@ -32,13 +32,13 @@ use unix as os;
 use windows as os;
 
 pub(crate) use os::{
-    CRLF_LINE_ENDINGS, Child, DEFAULT_EDITOR, ENV_NAMES_IGNORE_CASE, HOME_VARIABLE, PrivateTempDir,
+    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, HOME_VARIABLE, PrivateTempDir,
     STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, create_private_dir, create_private_dir_all,
-    editor, exit_signal, file_identity, home_directory, host_name, ipc, is_owner_only,
-    is_private_dir, is_private_file, kill_saved_group, kill_saved_session, path_from_bytes,
-    private_options, private_tempdir_in, process_start_time, remove_abandoned_directory,
-    resolve_system_aliases, restrict_file, running_process_start_time, spawn_detached, spawn_gated,
-    spawn_run, sync_dir, transient_file_access,
+    exit_signal, file_identity, home_directory, host_name, ipc, is_owner_only, is_private_dir,
+    is_private_file, kill_saved_group, kill_saved_session, path_from_bytes, private_options,
+    private_tempdir_in, process_start_time, remove_abandoned_directory, resolve_system_aliases,
+    restrict_file, running_process_start_time, spawn_detached, spawn_gated, spawn_run,
+    spawn_watched, sync_dir, transient_file_access,
 };
 pub use os::{HiddenInput, VISIBLE_INPUT_FALLBACK, stop_requested};
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
@@ -229,7 +229,6 @@ mod console;
 pub use console::pause_after_help;
 
 mod interaction;
-pub use interaction::{PrivateTempFile, private_temp_file, run_editor, selected_editor};
 pub(crate) use interaction::{is_within, label, paths_equal, private_anonymous_file};
 
 /// Whether an entry exists without following links (including dangling links).

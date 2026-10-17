@@ -66,7 +66,7 @@ fn fixture(repo: &Path) {
                     "id":"review",
                     "title":"Review",
                     "profile":profile,
-                    "payload":{"instruction":"Review a."},
+                    "payload":{"instruction":"Review a with {b}."},
                 },
                 {
                     "id":"human",
@@ -86,6 +86,7 @@ fn fixture(repo: &Path) {
     )
     .unwrap();
     fs::write(repo.join("a/text.txt"), "scoped text\n").unwrap();
+    fs::write(repo.join("b/notes.md"), "b notes\n").unwrap();
 }
 
 fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
@@ -147,13 +148,14 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     support::declaration::write(&declaration_path, original).unwrap();
     let scoped = parsed(&check(&repo, &state, &["a/review"]), 0);
     assert_eq!(scoped["scopes"].as_array().unwrap().len(), 1);
-    assert!(
-        scoped["scopes"][0]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|t| t["artifactId"] == "a")
-    );
+    // The eval's scope: its own Artifact's tools plus those of the b it references.
+    let owners: std::collections::BTreeSet<_> = scoped["scopes"][0]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["artifactId"].as_str().unwrap())
+        .collect();
+    assert_eq!(owners, ["a", "b"].into());
     // Windows has no execute bit to take away.
     if support::os::revoke_execution(&repo.join("a").join(TOOL)) {
         assert_eq!(
@@ -244,9 +246,51 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     assert_eq!(error["result"]["isError"], true);
     assert!(!state.join(store::DATABASE).exists());
     assert_eq!(fs::read_dir(&state).unwrap().count(), 0);
+    // An eval selector runs one tool in that eval's own scope, which admits what it
+    // references; an Artifact-only check admits only the Artifact and its children.
+    let in_eval = parsed(
+        &check(
+            &repo,
+            &state,
+            &[
+                "--execute",
+                "--eval",
+                "a/review",
+                "--tool",
+                "read_b",
+                "--args",
+                r#"{"path":"notes.md"}"#,
+            ],
+        ),
+        0,
+    );
+    assert_eq!(in_eval["scopes"][0]["evalId"], "a/review");
+    let read = &in_eval["result"]["content"][0]["data"];
+    assert_eq!(read["resolvedArtifactId"], "b");
+    assert_eq!(read["lines"][0]["text"], "b notes\n");
+    let unpublished = parsed(
+        &check(
+            &repo,
+            &state,
+            &["--execute", "--eval", "a/human", "--tool", "read_b"],
+        ),
+        1,
+    );
+    assert_eq!(unpublished["ok"], false);
+    assert!(unpublished.get("result").is_none_or(Value::is_null));
     for args in [
         vec!["--eval", "a/review", "--artifact", "a"],
+        vec!["--eval", "a/review", "--audience", "agent"],
         vec!["--eval", "a/review", "--execute"],
+        vec![
+            "--eval",
+            "a/human",
+            "--execute",
+            "--tool",
+            "env_a",
+            "--args",
+            "{}",
+        ],
         vec!["--execute", "--artifact", "a"],
         vec!["--args", "{}"],
         vec![

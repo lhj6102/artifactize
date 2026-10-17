@@ -48,8 +48,8 @@
 
 <Panel title="Runs ({runs.length})" {focused} bind:element {onfocus} onkeydown={keydown}>
   {#snippet actions()}
-    <button class="button small" disabled={!view?.newer} onclick={() => browse.navigate({ paging: "newer" })} title="Newer Runs">↑</button>
-    <button class="button small" disabled={!view?.older} onclick={() => browse.navigate({ paging: "older" })} title="Older Runs">↓</button>
+    <button class="button small" disabled={!view?.newer} onclick={() => browse.navigate({ paging: "newer" })} aria-label="Newer Runs">↑</button>
+    <button class="button small" disabled={!view?.older} onclick={() => browse.navigate({ paging: "older" })} aria-label="Older Runs">↓</button>
   {/snippet}
   {#if runs.length === 0}
     <p class="empty">{view?.refreshed ? "No saved Runs. Start one with `artifactize verify`." : "Loading…"}</p>
@@ -62,7 +62,6 @@
           class:selected={at === index}
           class:unreadable={!run.readable}
           data-index={at}
-          title={run.unreadable.join("\n") || run.repository}
           onclick={() => select(at)}
           ondblclick={onnext}
           onkeydown={() => {}}

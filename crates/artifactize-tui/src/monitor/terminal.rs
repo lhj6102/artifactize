@@ -32,20 +32,6 @@ impl Wanted {
     }
 }
 
-pub(crate) async fn suspend<T>(
-    terminal: &mut ratatui::DefaultTerminal,
-    child: impl Future<Output = T>,
-) -> Result<T, String> {
-    input::protocols(false, false)?;
-    terminal.show_cursor().map_err(|error| error.to_string())?;
-    ratatui::try_restore().map_err(|error| error.to_string())?;
-    let result = child.await;
-    crossterm::terminal::enable_raw_mode().map_err(|error| error.to_string())?;
-    crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)
-        .map_err(|error| error.to_string())?;
-    repaint(terminal)?;
-    Ok(result)
-}
 pub(crate) fn repaint(terminal: &mut ratatui::DefaultTerminal) -> Result<(), String> {
     crossterm::execute!(
         std::io::stdout(),
@@ -112,9 +98,6 @@ async fn watch(
                 if let Some(review) = monitor.review_mut() {
                     jobs.action = Some(Box::pin(review.start(job)));
                 }
-            }
-            Action::Review(review::Action::Edit(_)) => {
-                unreachable!("the embedded review hands its JSON to the form, never to an editor")
             }
             _ => {}
         }
@@ -204,6 +187,17 @@ async fn watch(
                     (Some(outcome), Some(review)) => Action::Review(review.finish_single(outcome)),
                     _ => Action::Refresh,
                 }
+            }
+            event = async {
+                match monitor.review_mut() {
+                    Some(review) => review.log_event().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some(review) = monitor.review_mut() {
+                    review.logged(event);
+                }
+                Action::None
             }
             _ = spin.tick(), if jobs.action.is_some() => Action::None,
             _ = tick.tick() => Action::None,

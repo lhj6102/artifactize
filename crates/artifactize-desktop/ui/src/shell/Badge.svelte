@@ -9,7 +9,7 @@
 
 <span class="badge">
   {#each shown as count (count.mark.status)}
-    <span class={tone(count.mark.status)} title={count.mark.status}>{count.mark.glyph}{count.count}</span>
+    <span class={tone(count.mark.status)} aria-label="{count.mark.status} {count.count}">{count.mark.glyph}{count.count}</span>
   {/each}
 </span>
 

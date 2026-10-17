@@ -74,7 +74,6 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
     assert!(empty.evals.is_empty());
     assert!(empty.views.agent_tools.is_empty());
     assert!(empty.views.human_tools.is_empty());
-    assert!(empty.mounts.is_empty());
     assert_eq!(empty.basis, None);
 
     let original = eval(json!({ "kind": "human" }));
@@ -146,7 +145,6 @@ fn identifiers_and_eval_requirements_are_strict() {
             .unwrap_err()
             .contains("payload.instruction")
     );
-    assert!(parse(json!({"name": "a", "mounts": {"bad/alias": "b"}})).is_err());
 }
 
 #[test]
@@ -344,12 +342,42 @@ fn response_schemas_are_validated_without_rewriting_owner_fields() {
         "properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}},
         "ownerKeyword":true,
     });
-    let mut declared = eval(json!({"kind": "human"}));
+    let mut declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
     declared["pass_schema"] = schema.clone();
     let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
     assert_eq!(
         declaration.evals[0].pass_schema().unwrap(),
         schema.as_object().unwrap()
+    );
+}
+
+#[test]
+fn a_human_result_schema_takes_only_shapes_a_person_can_enter() {
+    let declared = |schema: Value| {
+        let mut declared = eval(json!({"kind": "human"}));
+        declared["fail_schema"] = schema;
+        parse(json!({"name": "a", "evals": [declared]}))
+    };
+    declared(json!({
+        "type": "object",
+        "properties": {
+            "changes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "findings": {"type": "array", "items": {
+                "type": "object",
+                "properties": {"where": {"type": "string"}, "severity": {"enum": ["low", "high"]}}
+            }}
+        },
+        "required": ["changes"]
+    }))
+    .unwrap();
+    let error = declared(json!({
+        "type": "object",
+        "properties": {"ownerField": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}
+    }))
+    .unwrap_err();
+    assert!(
+        error.contains("fail_schema") && error.contains("properties.ownerField"),
+        "{error}"
     );
 }
 
