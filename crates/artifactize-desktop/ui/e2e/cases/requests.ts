@@ -210,9 +210,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await events()).some((event) => event.type === "compositionstart" && event.trusted), "a trusted native composition started");
       for (const [key, primary, preedit] of [["g", false, "안녕"], ["r", false, "안"], ["q", false, "안녕"], ["u", false, "안"], ["c", false, "안녕"], ["Escape", false, "안"], ["g", true, undefined], ["r", true, undefined], ["s", true, undefined]] as const) {
         const count = (await events()).length;
-        await nativeImeKey(browser, key, primary, preedit);
         const code = key === "Escape" ? key : `Key${key.toUpperCase()}`;
         try {
+          await nativeImeKey(browser, key, primary, preedit);
           if (preedit !== undefined) {
             // An IME consumes text keys before DOM keydown. Its trusted preedit update
             // and exact field value witness processing of that native physical key.
@@ -223,7 +223,10 @@ export const scenarios: Scenario[] = [
               event.type === "keydown" && event.code === code && event.trusted && (event.composing || event.keyCode === 229)),
             `the native composing ${code} reached the real page`);
           }
-        } catch (error) { throw new Error(`Native input events: ${JSON.stringify(await events())}`, { cause: error }); }
+        } catch (error) {
+          const observed = await events().catch((failure: unknown) => `event reader unavailable: ${String(failure)}`);
+          throw new Error(`Native input ${code} (primary=${primary}): ${JSON.stringify(observed)}`, { cause: error });
+        }
       }
       await commandsRendered(browser);
       const after = (await checkpoint(browser)).activity;
@@ -235,7 +238,10 @@ export const scenarios: Scenario[] = [
       assert.equal(signoff(fixture).status, "WAITING_HUMAN", "composition submitted nothing");
       await nativeIme(browser, { type: "commit", text: "안녕" });
       try {
-        await waitFor(browser, async () => await comment.getValue() === "안녕" && (await events()).some((event) => event.type === "compositionend" && event.trusted), "the native input method committed Korean text");
+        // The engine's commit API can mark compositionend untrusted. Native
+        // composing start/update/key events above must be trusted; completion is
+        // witnessed by compositionend, the exact committed text and real submit.
+        await waitFor(browser, async () => await comment.getValue() === "안녕" && (await events()).some((event) => event.type === "compositionend"), "the native input method committed Korean text");
       } catch (error) { throw new Error(`Native commit: ${JSON.stringify({ value: await comment.getValue(), events: await events() })}`, { cause: error }); }
       await commandsRendered(browser);
       await press(browser, [primaryModifier, "s"], async () => signoff(fixture).status === "GREEN", "GREEN saved");
