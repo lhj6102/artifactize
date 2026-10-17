@@ -108,9 +108,9 @@ viewport. These gestures move the camera, not the pane dividers or the Detail.
 Above 40
 nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
 than 300 Artifacts** ask before layout: choose **Lay out all** to display the
-whole graph. Only visible elements are rendered: panning or zooming draws the
-Artifacts it brings into view. Layout is not an incrementally loaded
-neighborhood, and there is no tree fallback.
+whole graph. Above **80 Artifacts**, only elements in view are rendered: panning or
+zooming draws those it brings into view. Smaller graphs render every element.
+Layout is not an incrementally loaded neighborhood, and there is no tree fallback.
 
 `artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
 without needing a Run or showing saved verdicts. A click on an Artifact shows its
