@@ -58,11 +58,16 @@ and the limits of trusted commands.
 ## Paths
 
 Logical paths use `/` on every OS, in declarations, tool arguments, results and
-records. They are case-sensitive everywhere: Artifact references, tool paths,
-`.artfignore` and artifactsum `files` patterns match the exact spelling. On a
-case-insensitive volume (the macOS default, and Windows), a path must also use the
-exact spelling of the entry on disk, and a file or folder whose name differs from a
-child Artifact or mount alias only by case is refused rather than read.
+records. Artifactize matches them case-sensitively on every OS: Artifact
+references, tool paths, `.artfignore` and artifactsum `files` patterns match the
+exact spelling.
+
+How the spelling on disk is checked differs by OS:
+
+| OS | Spelling on disk |
+|---|---|
+| macOS, Windows | Artifactize enforces it. On a case-insensitive volume (the default on both), a path must use the exact spelling of the entry on disk, and a file or folder whose name differs from a child Artifact or mount alias only by case is refused rather than read. |
+| Linux | Artifactize relies on the filesystem. A case-sensitive filesystem (the usual one) only opens the exact spelling; on a case-insensitive one, such as a casefolded folder or a Windows drive mounted in WSL, a path that differs only by case may open the same entry. |
 
 ## Opening files and the browser
 
