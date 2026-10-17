@@ -25,7 +25,7 @@ pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
     crate::platform::USER_VARIABLES
         .iter()
         .find_map(|name| crate::platform::environment::var_text(name))
-        .ok_or("Set USER or provide a reviewer id.")?
+        .ok_or("Provide an explicit reviewer id; no default reviewer is available.")?
         .parse()
 }
 
