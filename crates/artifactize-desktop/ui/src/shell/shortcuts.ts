@@ -71,7 +71,9 @@ export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]
       title: "Detail",
       keys: [
         ["Click a tab or an eval", "Show the Artifact or that eval"],
-        ["t / w / d", "Technical / pending evals / Agent details"],
+        ["Click Summary · a log", "Show the eval's Summary, or its Agent or Runtime log"],
+        ["t / w", "Technical / pending evals"],
+        ["Drag the left edge", "Resize the Detail"],
         ["Esc / ← · Close", "Close the Detail"],
       ],
     },

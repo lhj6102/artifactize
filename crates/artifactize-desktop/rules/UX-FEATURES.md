@@ -6,6 +6,12 @@ machine, not of one repository: its Scope pane starts from ALL and narrows to a 
 a worktree, and its Review search reaches every repository. It shows and changes the same state as the
 `artifactize` CLI; a change made by either shows in the other.
 
+Hovering only highlights what is under the pointer: no popup, summary, tooltip or menu opens on
+hover, and information opens only on a click. A pane is never wider than its place: its width
+is set by the layout or by a drag, never by what it shows, and what it shows wraps or scrolls in
+its own box. A choice among a few views, such as the Detail's tabs, shows as rounded chips, the
+chosen one filled.
+
 ## Window
 
 - **J-LAUNCH**: the app opens on the Monitor, or on Review when started with `review`, The window is titled "Artifactize".
@@ -17,22 +23,19 @@ a worktree, and its Review search reaches every repository. It shows and changes
 
 ## Monitor
 
-- **J-MON-CATALOG**: the left side stacks the Scope and Runs panes; the Scope pane lists ALL (this machine) and each repository and worktree; selecting one narrows the Runs pane to its Runs; the selected Run fills the right side as the graph of its Artifacts with their verdicts, under the Run's headline and what needs attention.
+- **J-MON-CATALOG**: the left side stacks the Scope and Runs panes and the right side is the graph area, with the divider between them always shown; with no Run selected, while loading, on an error or with an empty graph the graph area stays and says so. The Scope pane lists ALL (this machine) and each repository and worktree; selecting one narrows the Runs pane to its Runs; the selected Run fills the graph area as the graph of its Artifacts with their verdicts, under the Run's headline and what needs attention. What went wrong, such as Runs that cannot be read, shows as one line in the Run pane's header without moving or hiding the graph; a click on it shows it in full.
 - **J-MON-NAVIGATE**: arrow keys or `j`/`k` select a scope or a Run, Enter or → goes one level deeper (Scope, Runs, the Run's graph), Esc goes back a level, and so does ← in the Runs pane.
-- **J-MON-DETAIL**: hovering an Artifact or an eval, or selecting it with the keys, shows its Detail summary next to it. Enter, `o` or a click on an eval in an Artifact's eval popup opens its full Detail as an overlay on the right of the graph: instruction, result, request, and with `t` the technical record; `o` on an Artifact opens the Artifact's Detail, and a click on the Run's headline the Run's. Esc closes the overlay.
-- **J-MON-ATTENTION**: `!` opens the eval popup of the Artifact of the next ERROR, RED or waiting Human eval, with that eval selected; `b` follows a blocked Artifact or eval to its upstream blocker.
+- **J-MON-DETAIL**: a click on an Artifact opens its Detail, floating over the graph docked toward its right edge with a gap, never beside Scope and Runs, the graph staying visible behind it. The Detail has tabs: Artifact first, then one per eval showing its verdict's glyph and colour; the Artifact tab is shown first and lists the Artifact's evals with their verdicts, and a click on one shows its tab. Many tabs scroll sideways inside the Detail. An eval's tab shows its Summary: its instruction, result and request, and with `t` its technical record. An eval with a log switches below the tabs between its Summary, shown first, and its log: an Agent eval's Agent log (its transcript) or a runtime eval's Runtime log (its saved output). A Human eval's tab holds its review and sign-off. Close is the Detail's one control of its own. A click on another Artifact shows that Artifact's Detail; a click on the graph's background, Close or Esc closes it. A click on the Run's headline opens the Run's Detail. Everything in the Detail, transcript and log lines, long words and code included, stays within its width.
 - **J-MON-LIVE**: a change made by another process (a claim, a submission, a new Run) appears in the open Monitor without a reload.
-- **J-MON-RESIZE**: the dividers between Scope and Runs and between the left side and the graph can be dragged to resize them.
+- **J-MON-RESIZE**: the dividers between Scope and Runs and between the left side and the graph can be dragged to resize them; the split stays as dragged whether or not a graph is shown. Dragging the Detail's left edge sets its width, between a readable column and leaving some graph visible, never over Scope and Runs; the Detail keeps that width when opened again and in the next launch. Hovering a divider or the edge shows only the resize cursor.
 
 ## Run graph
 
-The Monitor shows a Run only as its graph.
+The Monitor shows a Run only as its graph. The graph takes the pointer: Tab reaches its Artifacts and Enter on one does what a click does; it has no other keys of its own.
 
-- **J-GRAPH-CURRENT**: `artifactize-desktop graph --repo PATH` (also the declared Human `graph` tool) opens current declarations in the same graph view, without a saved Run; a click or Enter on a node pops up its evals around it, the structure text exposes all criteria and labeled relations, Refresh or Ctrl+R/F5 reloads declarations. There are no Run verdicts on this screen.
+- **J-GRAPH-CURRENT**: `artifactize-desktop graph --repo PATH` (also the declared Human `graph` tool) opens current declarations in the same graph view, without a saved Run; a click on a node shows its evals docked over the graph's right side, the structure text exposes all criteria and labeled relations, Refresh or Ctrl+R/F5 reloads declarations. There are no Run verdicts on this screen.
 - **J-GRAPH-COLOURS**: nodes and edges are coloured by verdict (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked) and recolour in place when a result arrives.
-- **J-GRAPH-MOVE**: ← → move to the upstream or downstream Artifact; ↑ ↓ to the neighbour in the same column; the selected Artifact's summary shows next to it.
-- **J-GRAPH-EVALS**: Enter or a click on an Artifact pops up its evals with their verdicts around the node, ↑ ↓ select one (its summary shows next to it), Esc closes the popup.
-- **J-GRAPH-LARGE**: a Run too large to draw at once stays navigable: moving beyond the drawn nodes brings the next ones into view and focus follows.
+- **J-GRAPH-LARGE**: a Run too large to draw at once stays navigable: panning or zooming the camera draws the Artifacts it brings into view.
 
 ## Human review
 

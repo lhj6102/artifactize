@@ -7,6 +7,7 @@ import { saveEvidence } from "../observation.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
+import { graphShown, openArtifact, openTab } from "../graph-view.ts";
 
 export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
   // UX edges: E-HUMAN-GREEN E-HUMAN-SUBMIT E-HUMAN-ESC-DETAIL
@@ -18,14 +19,12 @@ export const scenarios: Scenario[] = ["Monitor graph", "Review"].map((screen) =>
       const human = () => browser.$('[aria-label="Human review"]');
       const text = () => browser.execute(() => document.body.innerText);
       if (screen === "Monitor graph") {
-        const release = await browser.$('.svelte-flow__node[data-id="a:release"]');
-        await release.waitForExist({ timeout: 15000 });
-        await release.click();
-        await browser.waitUntil(
-          () => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
-          { timeout: 15000, timeoutMsg: "focus in release's eval popup" },
-        );
-        await press(browser, ["Enter"], () => human().isExisting(), "the sign-off's Human Detail");
+        // A click on release, then on its sign-off's tab, shows the Human Detail.
+        await graphShown(browser, "a:release");
+        await openArtifact(browser, "a:release", "Artifact release");
+        await openTab(browser, "e:release/signoff");
+        await human().waitForExist({ timeout: 15000, timeoutMsg: "the sign-off's Human Detail" });
+        await human().click();
       } else {
         await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
         await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "open by ID");

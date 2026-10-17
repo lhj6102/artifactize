@@ -205,7 +205,7 @@
       if (r.record?.request !== view.request) {
         r.technical = false;
         r.pending = false;
-        r.details = false;
+        r.log = false;
       }
       r.record = view;
       r.focus = "detail";
@@ -284,13 +284,10 @@
   }
 
   function recordKey(event: KeyboardEvent) {
-    const agent = r.record?.profile === "agent";
-    if (plain(event, "Escape") || plain(event, "ArrowLeft")) {
-      if (r.details) r.details = false;
-      else void back();
-    } else if (plain(event, "t") && (!agent || r.details)) r.technical = !r.technical;
-    else if (plain(event, "w") && (!agent || r.details)) r.pending = !r.pending;
-    else if (plain(event, "d") && agent) r.details = !r.details;
+    if (plain(event, "Escape") || plain(event, "ArrowLeft")) void back();
+    else if (r.log) return;
+    else if (plain(event, "t")) r.technical = !r.technical;
+    else if (plain(event, "w")) r.pending = !r.pending;
     else return;
     event.preventDefault();
   }
@@ -417,15 +414,12 @@
       >
         {#snippet actions()}
           {#if r.focus === "detail" && r.record}
-            {#if r.record.profile === "agent"}
-              <button class="button small" onclick={() => (r.details = !r.details)} aria-pressed={r.details}>Details <kbd>d</kbd></button>
-            {/if}
             <button class="button small" onclick={() => void back()}>Close <kbd>Esc</kbd></button>
           {/if}
         {/snippet}
         {#if r.focus === "detail" && r.record}
           {#key r.record.request}
-            <RecordDetail detail={r.record} bind:technical={r.technical} bind:pending={r.pending} bind:details={r.details} />
+            <RecordDetail detail={r.record} bind:technical={r.technical} bind:pending={r.pending} bind:log={r.log} />
           {/key}
         {:else if r.focus === "detail" && r.review}
           {#key r.review}

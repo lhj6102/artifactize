@@ -11,7 +11,7 @@ import { reviewing } from "../human-review.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeIme, primaryModifier } from "../platform.ts";
-import { graphShown, nodeAt, popup, rowAt } from "../graph-view.ts";
+import { graphShown, openArtifact, openTab } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -179,9 +179,8 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const { text, human } = submission(browser);
       await graphShown(browser, "a:release");
-      await browser.$(nodeAt("a:release")).click();
-      await waitFor(browser, async () => (await popup(browser))?.artifact === "release", "release's evals popped up");
-      await browser.$(rowAt("a:release/e:release/signoff")).click();
+      await openArtifact(browser, "a:release", "Artifact release");
+      await openTab(browser, "e:release/signoff");
       await human().waitForExist({ timeout: 15000, timeoutMsg: "the Human review" });
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
       await human().click();

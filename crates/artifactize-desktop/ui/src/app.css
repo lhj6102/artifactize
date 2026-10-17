@@ -309,3 +309,56 @@ kbd {
 .resizer[data-active] {
   background: var(--accent);
 }
+
+/* A chip choice: one of a few rounded choices, the chosen one filled. Hover only highlights.
+   A row of chips scrolls sideways in its own box when it does not fit; it never widens its pane. */
+.chips {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.chips::-webkit-scrollbar {
+  height: 4px;
+}
+.chips::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+.chip {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  max-width: 24ch;
+  margin: 0;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.chip:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.chip[aria-selected="true"] {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.chips.small .chip {
+  padding: 1px 10px;
+  font-size: 12px;
+}

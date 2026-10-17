@@ -4,7 +4,7 @@ import { renderHosted as render } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { cleanup, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import Transcript from "./Transcript.svelte";
 
 beforeAll(() => {
@@ -82,5 +82,43 @@ describe("Transcript", () => {
     pending[0].reject({ kind: "missing", message: "The transcript was closed." });
     await screen.findByText("Fresh rows of the new session");
     expect(screen.queryByText("The transcript was closed.")).toBeNull();
+  });
+
+  it("lays a very long unbroken agent-log line out within the pane's content box", async () => {
+    // A 400px pane with 16px padding on each side and a 7.2px monospace cell: 368px of room.
+    const [width, padding, cell] = [400, 16, 7.2];
+    const rect = (w: number, h: number) => ({ width: w, height: h, top: 0, left: 0, right: w, bottom: h, x: 0, y: 0, toJSON: () => ({}) });
+    const boxes = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("probe") ? rect(cell * 10, 18) : rect(width, 360);
+    });
+    // The pane's padding, as the app's style gives it.
+    const sheet = document.head.appendChild(document.createElement("style"));
+    sheet.textContent = `.window { padding-left: ${padding}px; padding-right: ${padding}px; }`;
+    const line = "x".repeat(600);
+    let asked = 0;
+    mockIPC(
+      (cmd, args) => {
+        if (cmd === "transcript_open") return { kind: "local", handle: 9, session: "s-9" };
+        if (cmd === "transcript_window") {
+          // The backend lays the line out in the columns asked for, as a terminal does.
+          asked = (args as { columns: number }).columns;
+          const rows = line.match(new RegExp(`.{1,${asked}}`, "g"))!.map((text) => ({ text, group: false, thinking: false }));
+          return { rows, indicator: "1/1 bottom following", status: null, following: true, loading: false };
+        }
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    try {
+      render(Transcript, { id: "run-a-4" });
+      const log = await screen.findByRole("log", { name: "Agent transcript" });
+      await waitFor(() => expect(log.querySelectorAll(".row").length).toBeGreaterThan(1));
+      const rows = [...log.querySelectorAll(".row")].map((row) => row.textContent ?? "");
+      expect(rows.join("")).toBe(line);
+      for (const row of rows) expect(row.length * cell).toBeLessThanOrEqual(width - 2 * padding);
+    } finally {
+      boxes.mockRestore();
+      sheet.remove();
+    }
   });
 });

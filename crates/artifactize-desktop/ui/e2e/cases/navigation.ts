@@ -1,14 +1,14 @@
-// Moving through the Monitor in the real app: the keys help, a refresh, the summary under the
-// pointer, jumping to what needs attention and to an upstream blocker, and stepping back out of
-// a Detail; and quitting a window that holds no claim.
+// Moving through the Monitor in the real app: the keys help, a refresh, the pointer that only
+// highlights, a Detail opened by a click and stepped back out of, unreadable Runs beside a
+// readable one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { verifyWaiting, create, createNavigationFixture, createStates, createUnreadableRuns, requests } from "../fixture.ts";
+import { verifyWaiting, create, createNavigationFixture, createUnreadableRuns, requests } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, requestWindowClose } from "../platform.ts";
-import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryShows, tracePointer } from "../graph-view.ts";
+import { detail, graphShown, nodeAt, openArtifact, openTab } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
 function monitorNavigation(browser: WebdriverIO.Browser) {
@@ -32,14 +32,15 @@ function paneNavigation(browser: WebdriverIO.Browser) {
   const runTitle = () => browser.execute(() => [...document.querySelectorAll("section.panel h2")]
     .map((title) => title.textContent?.trim() ?? "").find((title) => title.startsWith("Run ")) ?? "");
 
-  /** From the focused graph, pop up the subject Artifact's evals: the selected Run's own
-   * historical criterion, and no other. Current declarations cannot substitute for it. */
+  /** The graph's pane has the keyboard. */
+  const graphFocused = () => browser.$('section.panel[aria-label^="Run run-"]').isFocused();
+
+  /** A click on subject opens its Detail: the selected Run's own historical criterion, and no
+   * other. Current declarations cannot substitute for it. Esc closes the Detail again. */
   async function graphShows(run: { id: string; eval: string }) {
-    await press(browser, ["Enter"], async () => (await popup(browser))?.focused === true, `${run.id}'s subject evals popped up`);
-    const shown = await popup(browser);
-    assert.equal(shown?.artifact, "subject");
-    assert.deepEqual(shown?.evals, [run.eval], "only the selected Run's criterion is in its popup");
-    await press(browser, ["Escape"], async () => (await popup(browser)) === null && (await focusedNode(browser)) === "a:subject", "the popup closed on subject");
+    const shown = await openArtifact(browser, "a:subject", "Artifact subject");
+    assert.deepEqual(shown.evals.map((row) => row.name), [run.eval], "only the selected Run's criterion is in subject's Detail");
+    await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
   }
 
   /** Moving in Runs replaces the graph with the newly selected Run while Runs keeps the focus. */
@@ -48,7 +49,7 @@ function paneNavigation(browser: WebdriverIO.Browser) {
     await graphShown(browser, "a:subject");
     assert.ok(await listbox("Runs").isFocused(), "Runs keeps the focus while the graph follows");
   }
-  return { listbox, runIds, selectedRun, chosen, graphShows, runTitle, graphFollows };
+  return { listbox, runIds, selectedRun, chosen, graphFocused, graphShows, runTitle, graphFollows };
 }
 
 export const scenarios: Scenario[] = [
@@ -72,10 +73,9 @@ export const scenarios: Scenario[] = [
         action: key.nextElementSibling?.textContent?.trim() ?? "",
       })));
       const expected: [RegExp, RegExp][] = [
-        [/(?:^|[\s/])b(?:$|[\s/])/, /Upstream blocker/],
-        [/^!$/, /Next ERROR, RED or waiting Human eval/],
-        [/^Enter \/ click$/, /Pop up the Artifact's evals/],
-        [/^o$/, /Open the Detail of the selected Artifact or eval/],
+        [/^Click an Artifact$/, /Open its Detail/],
+        [/^Click the background$/, /Close the Detail/],
+        [/^Click a tab or an eval$/, /Show the Artifact or that eval/],
         [/\bF5\b/, /^Refresh$/],
       ];
       for (const [keys, action] of expected) {
@@ -83,6 +83,7 @@ export const scenarios: Scenario[] = [
           `the Monitor Help pairs ${keys} with ${action}: ${JSON.stringify(shortcuts)}`);
       }
       assert.ok(!shortcuts.some((entry) => /^v$/.test(entry.keys)), "no key switches to a tree");
+      assert.ok(!shortcuts.some((entry) => /^(?:!|o|b \/ Backspace|← \/ →)$/.test(entry.keys)), `the graph has no keys of its own: ${JSON.stringify(shortcuts)}`);
       await press(browser, ["Escape"], async () => !(await helpOpen()), "the keys dialog closed");
     },
   ),
@@ -143,123 +144,63 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-RUNS-GRAPH E-GRAPH-MOVE E-MON-BLOCKER
-  scenario<Record<string, never>>(
-    "navigation-blocker",
-    "jumps from an Artifact waiting for another to that upstream Artifact with b",
-    async () => {
-      const fixture = await create();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser) => {
-      const { runsFocused } = monitorNavigation(browser);
-      await graphShown(browser, "a:ship");
-      await browser.waitUntil(runsFocused, { timeout: 15000, timeoutMsg: "the Runs pane focused" });
-      // The Run starts on the release sign-off; its Artifact takes the keyboard in the graph.
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:release", "release focused in the graph");
-      await press(browser, ["ArrowRight"], async () => (await focusedNode(browser)) === "a:ship", "ship, which waits for release, focused");
-      await summaryShows(browser, nodeAt("a:ship"), /waits for release/);
-      await press(browser, ["b"], async () => (await focusedNode(browser)) === "a:release", "release, the upstream Artifact ship waits for, focused");
-      await summaryShows(browser, nodeAt("a:release"), /release/);
-    },
-  ),
-
-  // UX edges: E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-DETAIL E-MON-DETAIL-TECHNICAL E-MON-DETAIL-BACK
+  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "navigation-technical-detail",
-    "shows the technical record of an opened Detail with t and steps back to the graph as it was",
+    "shows the technical record of an eval's tab with t and closes the Detail back to the graph",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
       await graphShown(browser, "a:ship");
-      await browser.$(nodeAt("a:ship")).click();
-      await browser.waitUntil(async () => (await popup(browser))?.focused === true, { timeout: 15000, timeoutMsg: "ship's evals popped up" });
-      assert.equal((await popup(browser))?.selected, "a:ship/e:ship/check");
-      const detail = () => browser.$('aside[aria-label="Detail"]');
-      await press(browser, ["Enter"], () => detail().isExisting(), "the Detail opened");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      await openTab(browser, "e:ship/check");
       const request = requests(fixture).find((saved) => saved.evalId === "ship/check");
       assert.ok(request, "the fixture independently identifies ship/check");
-      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
+      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
         .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
       await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: "the opened Detail identifies ship/check by default" });
-      const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
+      const technical = () => browser.$('aside[aria-label="Detail"]').$("button*=Technical").getAttribute("aria-expanded");
       assert.equal(await technical(), "false");
       assert.equal(await field("Fingerprint"), "");
       await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "", "the actual additional technical record shown");
       await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "", "the additional technical record hidden");
       assert.equal(await field("Request"), request.id, "hiding Technical does not hide the default request");
-      await press(browser, ["Escape"], async () => !(await detail().isExisting()), "the Detail closed");
-      // The graph as it was: ship's popup, check selected, its list taking the keys again.
-      await browser.waitUntil(async () => {
-        const shown = await popup(browser);
-        return shown?.artifact === "ship" && shown.selected === "a:ship/e:ship/check" && shown.focused;
-      }, { timeout: 15000, timeoutMsg: "focus back in ship's popup on check" });
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+      // The graph as it was, every Artifact still drawn and reachable.
+      for (const id of ["a:release", "a:ship", "a:docs"]) await graphShown(browser, id);
     },
   ),
 
-  // UX edges: E-MON-ATTENTION
+  // The pointer rule of the UX journeys: hovering only highlights; information opens on a click.
   scenario<Record<string, never>>(
-    "navigation-attention-order",
-    "pops up each ERROR, RED and waiting Human eval in its Artifact's evals in turn, then wraps",
-    async () => {
-      const fixture = await createStates();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser, { fixture }) => {
-      await graphShown(browser, "a:crash");
-      const eligible = new Map([
-        ["crash", { eval: "check", status: "ERROR" }],
-        ["red", { eval: "check", status: "RED" }],
-        ["gate", { eval: "signoff", status: "WAITING_HUMAN" }],
-      ]);
-      const saved = requests(fixture);
-      for (const [artifact, expected] of eligible) {
-        assert.equal(saved.find((request) => request.evalId === `${artifact}/${expected.eval}`)?.status, expected.status,
-          `${artifact} actually reached its declared attention state`);
-      }
-      // The UX names no order: each press shows another eligible eval in its Artifact's
-      // popup, all of them in as many presses, and the next press starts over.
-      const visited: string[] = [];
-      for (let round = 0; round <= eligible.size; round += 1) {
-        const before = (await popup(browser))?.selected ?? null;
-        await press(browser, ["!"], async () => {
-          const shown = await popup(browser);
-          return !!shown?.focused && shown.selected !== null && shown.selected !== before;
-        }, "the next eligible eval in its Artifact's popup");
-        const shown = (await popup(browser))!;
-        const expected = eligible.get(shown.artifact);
-        assert.ok(expected, `${shown.artifact} is one of the eligible Artifacts`);
-        assert.equal(shown.selected, `a:${shown.artifact}/e:${shown.artifact}/${expected.eval}`, `its ${expected.status} eval selected`);
-        visited.push(shown.artifact);
-      }
-      assert.deepEqual(visited.slice(0, eligible.size).sort(), [...eligible.keys()].sort(), "every eligible eval once");
-      assert.equal(visited[eligible.size], visited[0], "then the first again");
-    },
-  ),
-
-  // UX edges: E-MON-SUMMARY
-  scenario<Record<string, never>>(
-    "navigation-summary-hover",
-    "shows the summary of the Artifact or eval under the pointer beside it",
+    "navigation-hover-highlight",
+    "only highlights the Artifact under the pointer, opening nothing, and opens its Detail on a click",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      await tracePointer(browser);
-      await graphShown(browser, "a:docs");
-      await browser.$(nodeAt("a:docs")).moveTo();
-      await summaryShows(browser, nodeAt("a:docs"), /docs/);
       await graphShown(browser, "a:ship");
+      const look = () => browser.execute((selector) => {
+        const node = document.querySelector<HTMLElement>(selector)?.querySelector<HTMLElement>(".artifact");
+        return {
+          shadow: node ? getComputedStyle(node).boxShadow : "",
+          opened: !!document.querySelector('aside[aria-label="Detail"], [aria-label="Summary"], [aria-label^="Evals of "]'),
+          tooltip: !!node?.closest("[title]"),
+        };
+      }, nodeAt("a:ship"));
+      const before = await look();
       await browser.$(nodeAt("a:ship")).moveTo();
-      await summaryShows(browser, nodeAt("a:ship"), /waits for release/);
-      // An eval of a popup under the pointer: its own summary beside its row.
-      await browser.$(nodeAt("a:release")).click();
-      await browser.waitUntil(async () => (await popup(browser))?.artifact === "release", { timeout: 15000, timeoutMsg: "release's evals popped up" });
-      await browser.$(rowAt("a:release/e:release/signoff")).moveTo();
-      await summaryShows(browser, rowAt("a:release/e:release/signoff"), /WAITING_HUMAN/);
+      await browser.waitUntil(async () => (await look()).shadow !== before.shadow, { timeout: 15000, timeoutMsg: "the Artifact under the pointer is highlighted" });
+      const hovered = await look();
+      assert.equal(hovered.opened, false, "hovering opens no Detail, summary or eval list");
+      assert.equal(hovered.tooltip, false, "the Artifact carries no tooltip");
+      // The same probe sees what a click opens.
+      await browser.$(nodeAt("a:ship")).click();
+      await browser.waitUntil(async () => (await look()).opened, { timeout: 15000, timeoutMsg: "a click opened ship's Detail" });
+      assert.equal((await detail(browser))?.title, "Artifact ship");
     },
   ),
 
@@ -273,31 +214,32 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: { scopes: example.scopes, runs: example.runs } };
     },
     async (browser, { data: example }) => {
-      const { listbox, runIds, selectedRun, graphShows, runTitle, graphFollows } = paneNavigation(browser);
+      const { listbox, runIds, selectedRun, graphFocused, graphShows, runTitle, graphFollows } = paneNavigation(browser);
       await browser.waitUntil(async () => JSON.stringify(await runIds()) === JSON.stringify([...example.scopes.repo].sort()), { timeout: 15000, timeoutMsg: "the repository's exact Runs" });
       await browser.waitUntil(() => listbox("Runs").isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
       const [older, newer] = example.runs;
       assert.equal(await selectedRun(), newer.id, "the explicitly newer fixture Run is selected first");
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "the newer Run's graph focused");
+      await press(browser, ["Enter"], graphFocused, "the newer Run's graph focused");
       await graphShows(newer);
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
       await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id && (await runTitle()) === `Run ${older.id}`, "the older identified Run selected and shown");
       await graphFollows(older);
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "the older Run's graph focused");
+      await press(browser, ["Enter"], graphFocused, "the older Run's graph focused");
       await graphShows(older);
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "back to Runs");
       await press(browser, ["ArrowUp"], async () => (await selectedRun()) === newer.id && (await runTitle()) === `Run ${newer.id}`, "the newer identified Run selected and shown again");
       await graphFollows(newer);
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "the newer Run's graph focused again");
+      await press(browser, ["Enter"], graphFocused, "the newer Run's graph focused again");
       await graphShows(newer);
     },
   ),
 
-  // UX journey J-MON-CATALOG: the selected Run fills the right side as its graph, also while
-  // other Runs on the page cannot be read and the Run pane says so.
+  // UX edges: E-MON-NOTICE
+  // J-MON-CATALOG: the selected Run fills the graph area as its graph, beside the divider, also
+  // while other Runs on the page cannot be read and the Run pane's notice says so.
   scenario<{ readable: string; unreadable: string[] }>(
     "navigation-unreadable-runs",
-    "shows the selected Run's graph within its pane while the pane names the Runs that cannot be read",
+    "keeps the selected Run's graph within its pane while the notice names the Runs that cannot be read, in full on a click",
     async () => {
       const { fixture, readable, unreadable, restore } = createUnreadableRuns();
       return { fixture, args: ["--repo", fixture.repo], data: { readable, unreadable }, release: async () => restore() };
@@ -309,13 +251,16 @@ export const scenarios: Scenario[] = [
         const section = document.querySelector<HTMLElement>(`section.panel[aria-label="${title}"]`);
         const heading = section?.querySelector<HTMLElement>("h2");
         const notice = section?.querySelector<HTMLElement>('[role="status"]');
+        const toggle = notice?.querySelector<HTMLElement>("button");
         const node = section?.querySelector<HTMLElement>('.svelte-flow__node[data-id="a:n000"]');
-        if (!section || !heading || !notice || !node) return null;
+        const divider = document.querySelectorAll<HTMLElement>(".monitor [data-pane-resizer]")[1];
+        if (!section || !heading || !notice || !toggle || !node || !divider) return null;
         const box = section.getBoundingClientRect();
         const within = (element: HTMLElement) => {
           const inner = element.getBoundingClientRect();
           return inner.width > 0 && inner.left >= box.left && inner.right <= box.right;
         };
+        const line = divider.getBoundingClientRect();
         return {
           // The pane stays inside the window, and what it shows stays inside the pane.
           inWindow: box.left >= 0 && box.right <= window.innerWidth,
@@ -323,19 +268,37 @@ export const scenarios: Scenario[] = [
           nodeWithin: within(node),
           noticeWithin: within(notice),
           titleWhole: within(heading) && heading.scrollWidth <= heading.clientWidth,
-          tooltip: notice.title,
+          // The divider between the left side and the graph stays on screen, left of the pane.
+          divider: line.width > 0 && line.left > 0 && line.right <= box.left + 1,
+          text: toggle.textContent ?? "",
+          cut: toggle.scrollWidth > toggle.clientWidth,
+          open: toggle.getAttribute("aria-expanded") === "true",
+          tall: notice.getBoundingClientRect().height > heading.getBoundingClientRect().height * 2,
         };
       }, `Run ${readable}`);
       let last: Awaited<ReturnType<typeof pane>> = null;
       await browser.waitUntil(async () => {
         last = await pane();
-        return !!last && last.inWindow && last.bodyWithin && last.nodeWithin && last.noticeWithin && last.titleWhole;
+        return !!last && last.inWindow && last.bodyWithin && last.nodeWithin && last.noticeWithin && last.titleWhole && last.divider;
       }, { timeout: 15000, timeoutMsg: "the Run pane keeps its title, notice and graph within its width" })
         .catch((error: unknown) => { throw new Error(`${String(error)}; the pane last showed ${JSON.stringify(last)}`); });
       await graphShown(browser, "a:n000");
-      const { tooltip } = (await pane())!;
-      for (const id of unreadable) assert.match(tooltip, new RegExp(`Unreadable run ${id}: unknown variant \`dependency\``), `the notice names ${id} in full`);
-      assert.doesNotMatch(tooltip, new RegExp(readable), "the readable Run is not named unreadable");
+      const folded = (await pane())!;
+      assert.ok(folded.cut && !folded.open, "the notice is one line, cut to the header's room");
+      for (const id of unreadable) assert.match(folded.text, new RegExp(`Unreadable run ${id}: unknown variant \`dependency\``), `the notice names ${id}`);
+      assert.doesNotMatch(folded.text, new RegExp(readable), "the readable Run is not named unreadable");
+      // A click shows the notice in full; the graph stays within the pane. Another folds it.
+      await browser.$(`section.panel[aria-label="Run ${readable}"] [role="status"] button`).click();
+      await browser.waitUntil(async () => {
+        const shown = await pane();
+        return !!shown && shown.open && !shown.cut && shown.tall && shown.bodyWithin && shown.inWindow;
+      }, { timeout: 15000, timeoutMsg: "the whole notice shown, wrapped within the pane" });
+      await browser.$(`section.panel[aria-label="Run ${readable}"] [role="status"] button`).click();
+      await browser.waitUntil(async () => {
+        const shown = await pane();
+        return !!shown && !shown.open && shown.cut;
+      }, { timeout: 15000, timeoutMsg: "the notice folded back to one line" });
+      await graphShown(browser, "a:n000");
     },
   ),
 
@@ -349,10 +312,10 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: { scopes: example.scopes, runs: example.runs } };
     },
     async (browser, { data: example }) => {
-      const { listbox, runIds, chosen } = paneNavigation(browser);
+      const { listbox, runIds, chosen, graphFocused } = paneNavigation(browser);
       await browser.waitUntil(async () => JSON.stringify(await runIds()) === JSON.stringify([...example.scopes.repo].sort()), { timeout: 15000, timeoutMsg: "the repository's exact Runs" });
       await browser.waitUntil(() => listbox("Runs").isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "the graph focused");
+      await press(browser, ["Enter"], graphFocused, "the graph focused");
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
       await press(browser, ["ArrowLeft"], () => listbox("Scope").isFocused(), "the Scope focused");
       const select = async (label: string, ids: string[]) => {
@@ -372,7 +335,7 @@ export const scenarios: Scenario[] = [
       await select("other", example.scopes.other);
       await select("repo", example.scopes.repo);
       await press(browser, ["Enter"], () => listbox("Runs").isFocused(), "the narrowed Runs focused");
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "the narrowed Run's graph focused");
+      await press(browser, ["Enter"], graphFocused, "the narrowed Run's graph focused");
     },
   ),
 

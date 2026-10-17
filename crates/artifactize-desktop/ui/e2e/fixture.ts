@@ -460,7 +460,7 @@ export async function createStates(): Promise<Fixture> {
 
 /**
  * A fresh repository whose one Artifact `app` has an eval for each of `names`, all verified
- * GREEN: an Artifact whose eval popup has several evals to move through.
+ * GREEN: an Artifact whose Detail has a tab for each of several evals.
  */
 export function createEvals(names: string[]): Fixture {
   return prepareFixture((root) => {

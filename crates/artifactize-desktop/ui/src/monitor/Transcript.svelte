@@ -30,8 +30,12 @@
     // Before layout (or without one) a cell is assumed 7 × 18 pixels.
     const width = cell.width / 10 || 7;
     const height = cell.height || 18;
+    // The rows fill the content box: the pane's width without its padding, never its border
+    // box, so no laid-out row is wider than the room it is drawn in.
     const box = t.pane.getBoundingClientRect();
-    const columns = Math.max(Math.floor(box.width / width) - 1, 10) || 10;
+    const style = getComputedStyle(t.pane);
+    const room = box.width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const columns = Math.max(Math.floor(room / width) - 1, 10) || 10;
     const rows = Math.max(Math.floor(box.height / height), 3);
     const changed = columns !== t.size.columns || rows !== t.size.rows;
     t.size = { columns, rows };
@@ -219,9 +223,12 @@
     font: 12px/18px var(--mono);
     white-space: pre;
   }
+  /* Rows come laid out to the pane's columns; a row that still does not fit wraps inside the
+   * pane rather than running past its edge. */
   .row {
-    white-space: pre;
-    height: 18px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    min-height: 18px;
   }
   .group {
     display: block;

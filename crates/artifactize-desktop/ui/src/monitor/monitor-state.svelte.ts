@@ -1,7 +1,8 @@
-// What the Monitor screen holds of its own: which pane has focus, the open Detail and its tab,
-// and the notice. One owner, shared with createContext; the snapshot it shows is the Browse of
-// the window.
+// What the Monitor screen holds of its own: which pane has focus, the open Detail, its tab and
+// its width, and whether the notice shows in full. One owner, shared with createContext; the
+// snapshot it shows is the Browse of the window.
 import { createContext } from "svelte";
+import { loadWidth } from "./detail-width";
 
 export type Focus = "scope" | "runs" | "graph" | "detail";
 
@@ -13,7 +14,8 @@ export class MonitorState {
   focus = $state<Focus>("runs");
   /** The Detail floating over the graph. */
   opened = $state.raw<Opened | null>(null);
-  notice = $state<string | null>(null);
+  /** The Detail's dragged width in pixels, or `null` for its default. */
+  detailWidth = $state<number | null>(loadWidth());
   /** The notice shows in full rather than cut to one line. */
   noticeOpen = $state(false);
   /** The Runs pane took its first focus: only the first accepted snapshot moves it. */

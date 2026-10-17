@@ -30,6 +30,10 @@
   .light-waiting {
     background: var(--surface);
   }
+  /* The pointer only highlights the Artifact under it. */
+  .artifact:hover {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
   .selected,
   .open {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);

@@ -40,7 +40,7 @@ function search(browser: WebdriverIO.Browser) {
       title: pane.querySelector("header h2")?.textContent?.trim(),
       fields: Object.fromEntries([...opened.querySelectorAll("dt")].map((key) => [key.textContent?.trim(), key.nextElementSibling?.textContent?.trim()])),
       editable: !!opened.querySelector('input, textarea, select, [contenteditable="true"], [aria-label="Human review"]'),
-      close: !!pane.querySelector('button[title="Back to the list"]'),
+      close: [...pane.querySelectorAll("header button")].some((button) => /^Close/.test(button.textContent?.trim() ?? "")),
     };
   });
   const suggestions = () =>
@@ -210,7 +210,7 @@ export const scenarios: Scenario[] = [
       assert.equal(opened.fields.Request, requestId, "this opened Detail belongs to the exact listed request by default");
       assert.equal(opened.title, "docs/lint · Docs build · read-only", "this Detail names the eval and its read-only state");
       assert.equal(opened.editable, false, "this non-Human Detail has no review form or editing controls");
-      assert.ok(opened.close, "the opened Detail offers Back to the list");
+      assert.ok(opened.close, "the opened Detail offers Close back to the list");
       assert.equal(opened.fields.Fingerprint, undefined, "additional technical fields start folded");
       const technical = () => record().$("button*=Technical");
       await technical().click();

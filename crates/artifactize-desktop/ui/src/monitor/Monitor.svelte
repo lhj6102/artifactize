@@ -1,7 +1,8 @@
 <script lang="ts">
   // Scope and Runs on the left, the selected Run's graph on the right, always with the divider
   // between them. Focus moves between the panes with the keys; a click on an Artifact or on the
-  // Run's headline opens its Detail, floating over the graph's right side.
+  // Run's headline opens its Detail, floating over the graph's right side. Dragging the Detail's
+  // left edge sets its width, kept like the split ratio.
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -9,6 +10,7 @@
   import { getAppState } from "../shell/app.svelte";
   import { MonitorState, setMonitorState, type Focus } from "./monitor-state.svelte";
   import { find } from "./tree";
+  import { GAP, clampWidth, saveWidth } from "./detail-width";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";
   import RunPane from "./RunPane.svelte";
@@ -94,6 +96,25 @@
     else void move("runs");
   }
 
+  /** Dragging the Detail's left edge: the pointer stays with the edge until it is released. */
+  function grab(event: PointerEvent) {
+    if (event.button !== 0) return;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+  function drag(event: PointerEvent) {
+    const edge = event.currentTarget as HTMLElement;
+    if (!edge.hasPointerCapture(event.pointerId)) return;
+    const stage = edge.closest(".stage")?.getBoundingClientRect();
+    if (stage) m.detailWidth = clampWidth(stage.right - GAP - event.clientX, stage.width);
+  }
+  function drop(event: PointerEvent) {
+    const edge = event.currentTarget as HTMLElement;
+    if (!edge.hasPointerCapture(event.pointerId)) return;
+    edge.releasePointerCapture(event.pointerId);
+    if (m.detailWidth !== null) saveWidth(m.detailWidth);
+  }
+
   /** The Runs pane has focus first, as in the terminal monitor. */
   const begin: Attachment = () => {
     if (active && !m.started && view?.refreshed) {
@@ -163,7 +184,9 @@
           onback={back}
         />
         {#if m.opened && run && m.opened.run === run.id}
-          <aside class="dock" aria-label="Detail">
+          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
+            <!-- The left edge takes a drag; hovering it shows only the resize cursor. -->
+            <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onpointerdown={grab} onpointermove={drag} onpointerup={drop} onpointercancel={drop}></div>
             <DetailPane
               run={m.opened.run}
               node={m.opened.node}
@@ -203,19 +226,33 @@
     min-height: 0;
     min-width: 0;
   }
-  /* Docked toward the graph's right edge with a gap; the graph stays visible behind it. */
+  /* Docked toward the graph's right edge with a gap; the graph stays visible behind it. The
+   * Detail sets its own width, by default or by a drag, within the graph's area (as
+   * detail-width.ts fits a drag); its content never sizes it, and wraps or scrolls in its own
+   * boxes. */
   .dock {
     position: absolute;
     z-index: 20;
     top: 12px;
     right: 12px;
     bottom: 12px;
-    width: min(46%, 680px);
-    min-width: min(340px, calc(100% - 24px));
-    max-width: calc(100% - 24px);
+    width: var(--detail-width, min(46%, 680px));
+    min-width: min(320px, calc(100% - 24px));
+    max-width: calc(100% - 108px);
+    contain: inline-size;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
+  }
+  .edge {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
   }
 </style>

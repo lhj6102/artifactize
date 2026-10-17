@@ -37,42 +37,45 @@ be folded into a group: Space or a click reveals or hides them. Runs appear
 newest first. Move past the list's first or last row to load newer or older
 pages, or use its newer/older arrow buttons.
 
-Selecting a Run updates its graph while Runs keeps the keyboard. Enter focuses
-the selected Artifact in that graph; double-clicking a Run does the same. The
-Run headline's Detail button or the palette command **Open the Run's Detail**
-opens the Run's full Detail overlay. It shows saved validation and unmet
-obligations, request counts, waiting work, timing, budgets, executed/reused work
-and usage. New Runs, claims and submissions made elsewhere appear without a
-manual reload. Run-end validation stays historical: a later Human submission
-can change the current request display without rewriting the old verdict. Damaged
-records are [marked unreadable](../features/others/state.md#unreadable-records),
-not treated as successful evidence.
+Selecting a Run updates its graph while Runs keeps the keyboard; Enter moves the
+keyboard into the graph. The divider between the left side and the graph area is
+always there: with no Run selected, while loading, on an error or with an empty
+graph, the area stays and says so. What went wrong, such as Runs on the page that
+cannot be read, shows as one line in the Run pane's header; click it to read it
+in full and again to fold it. It never moves or hides the graph. New Runs, claims
+and submissions made elsewhere appear without a manual reload. Run-end validation
+stays historical: a later Human submission can change the current request display
+without rewriting the old verdict. Damaged records are
+[marked unreadable](../features/others/state.md#unreadable-records), not treated
+as successful evidence.
 
-Graph hover or keyboard selection shows a floating **Summary** beside the
-Artifact or eval. It is read-only and non-interactive, not a clickable preview.
-A single click on an Artifact opens its eval popup; a single click on an eval
-opens its Detail. The explicit keyboard actions are described under Run graph.
+Hovering only highlights what is under the pointer; nothing opens on hover.
+Information opens on a click.
 
-`!` jumps to the next ERROR, RED or waiting Human eval. Inspect dependencies through
-the graph's input-to-consumer relations and the **Waits for** section. `b` cycles
-through the selected eval's upstream inputs, unmet first, then completed inputs. Backspace or the palette command **Back to where the blocker
-jumps started** returns to the original selection.
+### Detail
 
-### Detail and conversations
+A click on an Artifact opens its **Detail**, floating over the graph's right side
+with the graph still visible behind it. Clicking another Artifact switches the
+Detail to it; clicking the graph's background, **Close** or Esc closes it. Click
+the Run's headline, or use the palette command **Open the Run's Detail**, for the
+Run's own Detail: saved validation and unmet obligations, request counts, waiting
+work, timing, budgets, executed/reused work and usage. Drag the Detail's left edge
+to resize it; it keeps that width, also in the next launch.
 
-Record sections show Outcome, Waits for, What, Provenance and Technical when
-applicable. `t` toggles Technical. In Waits for, `w` or the pending-evals control
-reveals the unfinished checks behind an upstream wait. Runtime evidence is saved
-stdout/stderr, not a live log stream. Human Detail provides the explicit review
-controls described below.
+An Artifact's Detail has a row of chips: **Artifact** first, then one per eval
+with its verdict's glyph and colour. Many chips scroll sideways. The Artifact chip
+lists the Artifact's evals with their verdicts; click one to show its chip.
 
-An **Agent** request opens its locally available conversation first. Press `d`
-or click **Details** to inspect its instruction, result, provenance and Technical
-sections; `d` switches back. `t` and `w` act on the sections, not the default
-transcript view. Missing or remote conversations explain why they are unavailable
-on this machine.
+An eval's chip shows its **Summary**: Outcome, Waits for, What, Provenance and
+Technical when applicable. `t` toggles Technical. In Waits for, `w` or the
+pending-evals control reveals the unfinished checks behind an upstream wait. An
+eval with a log switches below the chips between its Summary, shown first, and
+its log: an Agent eval's **Agent log** (its conversation) or a runtime eval's
+**Runtime log** (saved stdout/stderr, not a live log stream). Missing or remote
+conversations explain why they are unavailable on this machine. A Human eval's
+chip holds its review and sign-off, with the controls described below.
 
-Transcripts update live. In a focused transcript, ↑/↓ or `j`/`k` moves by row,
+Agent logs update live. In a focused Agent log, ↑/↓ or `j`/`k` moves by row,
 PgUp/PgDn by page, Home/End or **Top/Bottom** goes to either end, and the mouse wheel
 scrolls. Moving up pauses following; return to Bottom to follow new messages.
 Space or Enter toggles the visible grouped content; clicking a group header also
@@ -82,33 +85,25 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 
 Monitor always displays the selected Run as an Artifact graph; there is no
 Run-tree mode. Node and relation colors show review states and update as results
-arrive. ←/→ moves upstream or downstream; ↑/↓ selects a neighbor in the same
-column. Enter or a single click on an Artifact opens its eval popup. `o` opens
-Detail for the selected node, not necessarily the Artifact that has keyboard
-focus: a newly entered Run can still select its initial attention eval before
-its popup is visible. To select an Artifact for its own Detail, navigate onto it,
-or open and then close its eval popup with Esc, then press `o`.
-
-In the popup, ↑/↓ selects an eval and updates its floating Summary without
-opening or retargeting full Detail. Enter, `o`, → or a click on the eval explicitly
-opens its Detail overlay. Esc leaves Detail for the same popup and selection;
-Esc again closes the popup and focuses its Artifact. For an Agent whose saved
-Details sections are open, Esc first returns to its transcript (in Monitor and
-Review); another Esc closes Detail, and in Monitor a further Esc closes the popup.
-This is not a camera zoom
-or a separate graph view. Scope and Runs remain visible behind the Detail overlay.
+arrive. Inspect dependencies through the graph's input-to-consumer relations and
+an eval's **Waits for** section. The graph takes the pointer: Tab reaches its
+Artifacts and Enter on one opens its Detail, as a click does; it has no other
+keys of its own.
 
 Drag the graph background to pan; wheel, pinch or a background double-click
 zooms the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its
-viewport. These gestures move the camera, not the pane dividers or an Artifact's
-eval popup. Above 40
+viewport. These gestures move the camera, not the pane dividers or the Detail.
+Above 40
 nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
 than 300 Artifacts** ask before layout: choose **Lay out all** to display the
-whole graph. Only visible elements are rendered, but layout is not an
-incrementally loaded neighborhood, and there is no tree fallback.
+whole graph. Only visible elements are rendered: panning or zooming draws the
+Artifacts it brings into view. Layout is not an incrementally loaded
+neighborhood, and there is no tree fallback.
 
 `artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
-without needing a Run or showing saved verdicts. Expand **Structure and evaluation
+without needing a Run or showing saved verdicts. A click on an Artifact shows its
+evals over the graph's right side; Esc, **Close** or a click on the background
+closes them. Expand **Structure and evaluation
 criteria** for the full tree, criteria and labeled relations. Refresh or Ctrl+R/F5
 reloads declarations. A Human `graph` tool opens this viewer; opening it approves
 nothing.
@@ -121,7 +116,9 @@ settled requests remain read-only. The context menu or palette can open a Human
 request with Tools focused; Ctrl+O opens a request by ID. PgDn/PgUp pages older
 and newer requests. Waiting followers open the original review, not another sign-off.
 One click selects a request; clicking an already-selected request opens it, as
-does a double-click. Clicking its preview also opens Detail.
+does a double-click. Clicking its preview also opens Detail. A read-only request
+with a log switches between its Summary and its Agent or Runtime log, as an
+eval's chip does in Monitor.
 
 `/` edits search from the Review request list. Ctrl+F returns to search from an
 open request Detail too, including while a Human form is open or review work is

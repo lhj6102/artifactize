@@ -1,6 +1,7 @@
 // The monitor end to end, in the real app on fixture state made by the real CLI: catalog →
-// Run graph → eval popup → Detail, the shared Human Detail's claim, release, tool, RED validation, Korean
-// text and GREEN submission, and a live update from another process.
+// Run graph → an Artifact's Detail → its Human eval's tab, the shared Human Detail's claim,
+// release, tool, RED validation, Korean text and GREEN submission, and a live update from
+// another process.
 import assert from "node:assert/strict";
 import { artifactize, create, createNavigationFixture, type Fixture, launched, signoff, slowTool } from "../fixture.ts";
 import { reviewing } from "../human-review.ts";
@@ -9,7 +10,7 @@ import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
-import { focusedNode, graphShown, nodeAt, popup, rowAt, summaryShows } from "../graph-view.ts";
+import { detail, graphShown, openArtifact, openTab } from "../graph-view.ts";
 
 async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
   const text = () => browser.execute(() => document.body.innerText);
@@ -57,9 +58,8 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
   }
 
   async function openReview(claim = true) {
-    await browser.$(nodeAt("a:release")).click();
-    await browser.waitUntil(async () => (await popup(browser))?.artifact === "release", { timeout: 15000, timeoutMsg: "release's evals popped up" });
-    await browser.$(rowAt("a:release/e:release/signoff")).click();
+    await openArtifact(browser, "a:release", "Artifact release");
+    await openTab(browser, "e:release/signoff");
     await human().waitForExist({ timeout: 15000, timeoutMsg: "this case's Human Detail" });
     const id = signoff(fixture).id;
     await browser.waitUntil(async () => (await human().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
@@ -86,7 +86,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-LAUNCH-MONITOR E-MON-RUNS-GRAPH
   scenario<null>(
     "monitor-catalog",
-    "catalogs the repository and its Run, and shows the Run's graph starting on its waiting eval",
+    "catalogs the repository and its Run, and shows the Run's graph with release's waiting sign-off a click away",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       const { text } = await monitorUI(browser, fixture);
@@ -107,13 +107,12 @@ export const scenarios: Scenario[] = [
       assert.match(shown, /validation pending/);
       // The Run fills the right side as its graph, with every Artifact as a node.
       for (const id of ["a:release", "a:ship", "a:docs"]) await graphShown(browser, id);
-      // A new Run starts on its first in-progress eval: its Artifact takes the keyboard with
-      // its summary, and its popup opens on that eval.
+      // Enter steps from the Runs into the graph; a click on release shows its waiting sign-off.
       await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:release", "release focused in the graph");
-      await summaryShows(browser, nodeAt("a:release"), /release/);
-      await press(browser, ["Enter"], async () => (await popup(browser))?.selected === "a:release/e:release/signoff", "the sign-off selected in release's popup");
-      await summaryShows(browser, rowAt("a:release/e:release/signoff"), /WAITING_HUMAN — waiting for a Human submission/);
+      await press(browser, ["Enter"], () => browser.$('section.panel[aria-label^="Run run-"]').isFocused(), "the graph's pane focused");
+      const opened = await openArtifact(browser, "a:release", "Artifact release");
+      assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"]);
+      assert.match(opened.evals[0].status, /waiting for a Human|Human/, "the sign-off waits for a Human");
     },
   ),
 
@@ -362,10 +361,10 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-RESIZE
+  // UX edges: E-MON-RESIZE E-MON-DETAIL-ARTIFACT E-MON-DETAIL-WIDTH E-MON-DETAIL-BACK
   scenario<null>(
     "monitor-resize",
-    "resizes the graph against the left side, and Scope against Runs, by dragging their dividers",
+    "resizes the graph against the left side, Scope against Runs, and the Detail, by dragging their dividers and its edge",
     async () => ({ fixture: await create(), data: null }),
     async (browser, { fixture }) => {
       await monitorUI(browser, fixture);
@@ -428,15 +427,41 @@ export const scenarios: Scenario[] = [
       // In document order: Scope | Runs inside the left side, then the left side | the graph.
       await drag(1, -20, 0, async () => (await graph()) > graphBefore + 60, "Run graph");
       await drag(0, 0, 20, async () => (await scope()) > scopeBefore + 60, "Scope pane");
+
+      // The Detail's left edge: a drag widens it within the graph's area, and it opens again
+      // at that width.
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      const placed = () => browser.execute(() => {
+        const dock = document.querySelector('.stage aside[aria-label="Detail"]')?.getBoundingClientRect();
+        const stage = document.querySelector(".stage")!.getBoundingClientRect();
+        return dock ? { width: Math.round(dock.width), left: Math.round(dock.left - stage.left), right: Math.round(stage.right - dock.right) } : null;
+      });
+      const before = (await placed())!;
+      const edge = await browser.$('aside[aria-label="Detail"] [role="separator"][aria-label="Detail width"]');
+      await browser.action("pointer", { id: "edge" }).move({ origin: edge, x: 0, y: 0 }).down().perform(true);
+      try {
+        const pointer = browser.action("pointer", { id: "edge" });
+        for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x: -20, y: 0 });
+        await pointer.up().perform();
+      } finally { await browser.releaseActions(); }
+      let widened: Awaited<ReturnType<typeof placed>> = null;
+      await browser.waitUntil(async () => {
+        widened = await placed();
+        return !!widened && widened.width > before.width + 60;
+      }, { timeout: 15000, timeoutMsg: "the dragged Detail widened" })
+        .catch((error: unknown) => { throw new Error(`${String(error)}: ${JSON.stringify({ before, widened })}`); });
+      assert.ok(widened!.left > 0 && widened!.right > 0, `the Detail stays within the graph's area: ${JSON.stringify(widened)}`);
+      await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closed");
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      assert.equal((await placed())?.width, widened!.width, "the Detail opens again at its dragged width");
     },
   ),
 
   // UX edges: E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-MOVE E-MON-RUNS-GRAPH
-  // E-GRAPH-EVALS-OPEN E-GRAPH-EVALS-DETAIL E-MON-DETAIL-BACK E-GRAPH-EVALS-CLOSE
-  // E-MON-GRAPH-TO-RUNS E-MON-RUNS-TO-SCOPE
+  // E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-HUMAN-ESC-DETAIL E-MON-GRAPH-TO-RUNS E-MON-RUNS-TO-SCOPE
   scenario<NavigationData>(
-    "monitor-keyboard-journey",
-    "walks Scope → another Run → its graph → the eval popup → Detail → back to Scope without a mouse",
+    "monitor-navigate-journey",
+    "walks Scope → another Run → its graph by keys, opens an Artifact's Detail and eval tab by clicks, and steps back to Scope by keys",
     async () => {
       const { fixture, ...data } = await createNavigationFixture();
       return { fixture, data };
@@ -464,20 +489,17 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Enter"], () => pane("Runs").isFocused(), "the repository's Runs focused");
       assert.equal(await selectedRun(), newer.id);
       await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id, "another identified Run selected");
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:subject", "that Run's subject Artifact focused in its graph");
-      await summaryShows(browser, nodeAt("a:subject"), /subject/);
-      const evalPath = `a:subject/e:subject/${older.eval}`;
-      await press(browser, ["Enter"], async () => {
-        const shown = await popup(browser);
-        return !!shown?.focused && shown.selected === evalPath;
-      }, "the older Run's own criterion selected in subject's popup");
-      const human = () => browser.$('[aria-label="Human review"]');
-      await press(browser, ["Enter"], () => human().isExisting(), "the selected eval's Detail opened");
+      const graph = () => browser.$('section.panel[aria-label^="Run run-"]');
+      await press(browser, ["Enter"], () => graph().isFocused(), "that Run's graph focused");
+      const opened = await openArtifact(browser, "a:subject", "Artifact subject");
+      assert.deepEqual(opened.evals.map((row) => row.name), [older.eval], "the older Run's own criterion");
+      await openTab(browser, `e:subject/${older.eval}`);
+      const human = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"]');
       await browser.waitUntil(() => browser.execute((name) => document.querySelector('[aria-label="Human review"] h3')?.textContent?.includes(`subject/${name}`) ?? false,
-        older.eval), { timeout: 15000, timeoutMsg: "Detail has loaded the eval selected in this journey" });
-      await press(browser, ["Escape"], async () => !(await human().isExisting()) && (await popup(browser))?.focused === true, "back to the popup");
-      assert.equal((await popup(browser))?.selected, evalPath, "the popup's selection survived the Detail");
-      await press(browser, ["Escape"], async () => (await popup(browser)) === null && (await focusedNode(browser)) === "a:subject", "the popup closed on subject");
+        older.eval), { timeout: 15000, timeoutMsg: "the eval's tab holds this journey's Human review" });
+      await human().click();
+      // Esc leaves the review's Detail, back on the graph; Esc again steps back to Runs.
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null && await graph().isFocused(), "the Detail closed, the graph focused");
       await press(browser, ["Escape"], () => pane("Runs").isFocused(), "back to Runs");
       assert.equal(await selectedRun(), older.id, "the same Run remains selected");
       await press(browser, ["ArrowLeft"], () => pane("Scope").isFocused(), "back to Scope");
@@ -493,12 +515,11 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const text = () => browser.execute(() => document.body.innerText);
       await graphShown(browser, "a:release");
-      // The Runs pane has focus first: Enter steps into the graph on release, whose popup
-      // starts on the sign-off.
-      await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
-      await press(browser, ["Enter"], async () => (await focusedNode(browser)) === "a:release", "release focused in the graph");
-      await press(browser, ["Enter"], async () => (await popup(browser))?.selected === "a:release/e:release/signoff", "the sign-off in release's popup");
-      await press(browser, ["Enter"], () => browser.$('[aria-label="Human review"]').isExisting(), "Human Detail");
+      // A click on release, then on its sign-off's tab, opens the Human Detail.
+      await openArtifact(browser, "a:release", "Artifact release");
+      await openTab(browser, "e:release/signoff");
+      await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000, timeoutMsg: "Human Detail" });
+      await browser.$('[aria-label="Human review"]').click();
       await browser.waitUntil(async () => (await text()).includes("Unclaimed. c claims it for alice"), { timeout: 15000, timeoutMsg: "the claim stage" });
       await browser.keys(["c"]);
       await browser.waitUntil(async () => signoff(fixture).claim?.reviewer === "alice", { timeout: 15000, timeoutMsg: "claimed" });

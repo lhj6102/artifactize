@@ -10,27 +10,31 @@ that makes the transition happen and checks where it leads.
 - **Launch**: the window opening. It opens on the Monitor, or on Review when started with
   `review`. The window's title is "Artifactize". The person narrows
   the view inside the app, with the Scope pane or the Review search.
-- **Monitor**: **Scope** and **Runs** stacked on the left, the selected Run's **Graph** filling
-  the right side. Scope lists ALL repositories and each repository and worktree; Runs lists the
-  selected scope's Runs, newest first; Graph shows the Run's headline and what needs attention
-  above the Run graph. The **summary** (an Artifact's or eval's one-line outcome and its
-  sections in brief) shows next to the node under the pointer, else next to the node selected
-  with the keys. The **Detail** overlay floats on the right of the graph and shows the Run, an
-  Artifact or an eval: for an eval its instruction, result and request, and with `t` its
-  technical record; for a Human eval the Human review.
-  States: Scope, Runs or Graph focused, Evals popup open, Detail open.
+- **Monitor**: **Scope** and **Runs** stacked on the left, the selected Run's **Graph** on the
+  right, the divider between them always shown. Scope lists ALL repositories and each repository
+  and worktree; Runs lists the selected scope's Runs, newest first; Graph shows the Run's headline
+  and what needs attention above the Run graph, and the **notice** of what went wrong as one line
+  in its header. With no Run, while loading, on an error or with an empty graph, Graph stays and
+  says so. The **Detail** floats over the graph docked toward its right edge, with a gap, and
+  shows the Run or an Artifact; its left edge takes a drag that sets its width. An Artifact's
+  Detail has tabs, a chip choice: the Artifact's own, listing its evals with their verdicts, then
+  one per eval with its verdict's glyph and colour, showing its Summary (instruction, result and
+  request, and with `t` its technical record) or, switched below the tabs, its Agent log or
+  Runtime log; for a Human eval the Human review. Hovering only highlights; nothing opens on
+  hover.
+  States: Scope, Runs or Graph focused, Detail open on a tab (Summary or log), notice in full.
 - **Run graph**: the selected Run's Artifacts as nodes and their dependencies as edges,
-  coloured by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
-  The **Evals popup** around an Artifact lists its evals with their verdicts.
+  coloured by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked. It
+  takes the pointer; Tab reaches its Artifacts and Enter on one does what a click does.
 - **Current graph**: current declarations opened with `artifactize-desktop graph --repo PATH`
   or the Human `graph` tool, without a saved Run or Run verdicts. States: whole graph,
-  an Artifact's evals popped up around it, structure text expanded (all evaluation criteria and labeled
-  relations). Refresh, Ctrl+R or F5 reloads declarations.
+  an Artifact's evals docked over the graph's right side, structure text expanded (all
+  evaluation criteria and labeled relations). Refresh, Ctrl+R or F5 reloads declarations.
 - **Review**: the saved-request list (at first the waiting Human reviews of every repository)
   with a read-only preview of the selected request, and the search field above it. States:
   Requests focused, Search focused (with or without suggestions), a request open (a Human
   review is actionable, any other request read-only).
-- **Human review** (in the Monitor's Detail overlay or in Review): Unclaimed, Taken (another reviewer
+- **Human review** (on a Human eval's tab of the Monitor's Detail, or in Review): Unclaimed, Taken (another reviewer
   holds the claim), Claimed (by this reviewer), Editing GREEN
   (the form built from the eval's pass schema), Editing RED (built from its fail schema),
   Submitted; a tool may be running.
@@ -66,33 +70,31 @@ that makes the transition happen and checks where it leads.
 | E-MON-SCOPE-MOVE | Scope | `j`, `k`, ↑ or ↓ | Scope, another scope selected (ALL, a repository or a worktree); Runs narrows to its Runs |
 | E-MON-SCOPE-RUNS | Scope | Enter or → | Runs |
 | E-MON-RUNS-MOVE | Runs | `j`, `k`, ↑ or ↓ | Runs, another Run selected; Graph shows it |
-| E-MON-RUNS-GRAPH | Runs | Enter or → | Graph, the selected Artifact focused and its summary shown |
-| E-MON-GRAPH-TO-RUNS | Graph | Esc | Runs |
+| E-MON-RUNS-GRAPH | Runs | Enter or → | Graph focused |
+| E-MON-GRAPH-TO-RUNS | Graph, no Detail open | Esc | Runs |
 | E-MON-RUNS-TO-SCOPE | Runs | Esc or ← | Scope |
-| E-MON-SUMMARY | Graph or Evals popup | the pointer rests on an Artifact or an eval | same state, that node's summary shown next to it |
-| E-MON-DETAIL-ARTIFACT | Graph | `o` | Detail of the selected Artifact opened |
+| E-MON-NOTICE | Graph with a notice | click the notice | the notice shown in full; another click shows it as one line again |
+| E-MON-DETAIL-ARTIFACT | Graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab, its evals listed with their verdicts |
+| E-MON-DETAIL-TAB | Detail of an Artifact | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's tab shown: its instruction, result and request, or its Human review |
+| E-MON-DETAIL-SWITCH | Detail | click another Artifact | Detail of that Artifact, on its Artifact tab |
 | E-MON-DETAIL-RUN | Graph | click the Run's headline | Detail of the Run opened |
-| E-MON-DETAIL-TECHNICAL | Detail of an eval | `t` | Detail, the technical record shown or hidden |
-| E-MON-DETAIL-BACK | Detail | Esc, ← or Close | the graph as it was, Detail closed |
-| E-MON-ATTENTION | Graph | `!` | Evals popup of the Artifact of the next ERROR, RED or waiting Human eval, that eval selected |
-| E-MON-BLOCKER | Graph, a blocked Artifact or eval selected | `b` | Graph, its upstream blocker selected |
+| E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary | `t` | Detail, the technical record shown or hidden |
+| E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, or its Summary again |
+| E-MON-DETAIL-BACK | Detail | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
 | E-MON-LIVE | Monitor | another process changes state | same state, updated |
 | E-MON-RESIZE | Monitor | drag a divider | same state, pane resized |
+| E-MON-DETAIL-WIDTH | Detail | drag its left edge | Detail resized, kept for the next opening and launch |
 | E-GRAPH-RECOLOUR | Graph | a result arrives | Graph, nodes and edges recoloured in place |
-| E-GRAPH-MOVE | Graph | ← upstream, → downstream, ↑ ↓ the neighbour in the same column | Graph, that Artifact selected and focused, its summary shown next to it |
-| E-GRAPH-EVALS-OPEN | Graph | Enter or click on an Artifact | Evals popup around that Artifact, its evals listed with their verdicts |
-| E-GRAPH-EVALS-SELECT | Evals popup | ↑ ↓ | Evals popup, another eval selected, its summary shown next to it |
-| E-GRAPH-EVALS-DETAIL | Evals popup | Enter, `o`, → or click on an eval | Detail of the eval opened |
-| E-GRAPH-EVALS-CLOSE | Evals popup | Esc or ← | Graph, the Artifact focused |
-| E-GRAPH-BEYOND | Graph of a large Run | move past the drawn nodes | Graph, next nodes drawn, focus follows |
+| E-GRAPH-BEYOND | Graph of a large Run | pan or zoom the camera past the drawn nodes | Graph, the Artifacts brought into view drawn |
 
 ## Current graph
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | Current graph, current declarations drawn without Run verdicts |
-| E-CURRENT-EVALS | Current graph | click or Enter on an Artifact | Current graph, its evals popped up around it |
-| E-CURRENT-STRUCTURE | Current graph | expand Structure and evaluation criteria, or open an eval of the popup | Current graph, complete criteria and labeled relations shown as text |
+| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Current graph, its evals docked over the graph's right side |
+| E-CURRENT-STRUCTURE | Current graph | expand Structure and evaluation criteria, or click a docked eval | Current graph, complete criteria and labeled relations shown as text |
+| E-CURRENT-CLOSE | Current graph, an Artifact's evals docked | Esc, Close, or a click on the graph's background | Current graph, the evals closed |
 | E-CURRENT-REFRESH | Current graph | Refresh, Ctrl+R or F5 | Current graph, declarations reloaded and the graph and structure text updated |
 
 ## Human review
@@ -162,20 +164,15 @@ several walks lists them one per line. Selecting a row first is the movement edg
 - J-REFRESH: E-REFRESH
 - J-QUIT: E-QUIT-CLEAN | E-QUIT-ASK → E-QUIT-STAY | E-QUIT-ASK → E-QUIT-RELEASE
 - J-MON-CATALOG: E-LAUNCH-MONITOR → E-MON-SCOPE-MOVE → E-MON-SCOPE-RUNS → E-MON-RUNS-MOVE → E-MON-RUNS-GRAPH
+  E-MON-RUNS-MOVE → E-MON-NOTICE
 - J-MON-NAVIGATE: E-MON-SCOPE-MOVE → E-MON-SCOPE-RUNS → E-MON-RUNS-MOVE → E-MON-RUNS-GRAPH → E-MON-GRAPH-TO-RUNS → E-MON-RUNS-TO-SCOPE
-- J-MON-DETAIL: E-MON-SUMMARY
-  E-GRAPH-EVALS-OPEN → E-GRAPH-EVALS-SELECT → E-GRAPH-EVALS-DETAIL → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-BACK
-  E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-BACK
+- J-MON-DETAIL: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-LOG → E-MON-DETAIL-SWITCH → E-MON-DETAIL-BACK
   E-MON-DETAIL-RUN → E-MON-DETAIL-BACK
-- J-MON-ATTENTION: E-MON-ATTENTION
-  E-GRAPH-MOVE (onto a blocked Artifact) → E-MON-BLOCKER
 - J-MON-LIVE: E-MON-LIVE
 - J-MON-RESIZE: E-MON-RESIZE
-- J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-EVALS → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
+  E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-WIDTH → E-MON-DETAIL-BACK → E-MON-DETAIL-ARTIFACT
+- J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-EVALS → E-CURRENT-STRUCTURE → E-CURRENT-CLOSE → E-CURRENT-REFRESH
 - J-GRAPH-COLOURS: E-MON-RUNS-GRAPH → E-GRAPH-RECOLOUR
-- J-GRAPH-MOVE: E-MON-RUNS-GRAPH → E-GRAPH-MOVE
-- J-GRAPH-EVALS: E-MON-RUNS-GRAPH → E-GRAPH-EVALS-OPEN → E-GRAPH-EVALS-SELECT → E-GRAPH-EVALS-CLOSE
-  E-MON-RUNS-GRAPH → E-GRAPH-EVALS-OPEN → E-GRAPH-EVALS-SELECT → E-GRAPH-EVALS-DETAIL → E-MON-DETAIL-BACK
 - J-GRAPH-LARGE: E-MON-RUNS-GRAPH → E-GRAPH-BEYOND
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM

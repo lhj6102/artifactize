@@ -1,8 +1,9 @@
 <script lang="ts">
   // The Detail of an Artifact or of the Run, floating over the graph. An Artifact's Detail has
-  // tabs: the Artifact's own, which lists its evals with their verdicts, then one per eval. An
-  // eval's tab shows its sections and saved logs, an Agent transcript, or the shared Human
-  // Detail. Everything in it wraps or is cut to its width.
+  // tabs, a chip choice: the Artifact's own, which lists its evals with their verdicts, then one
+  // per eval. An eval's tab shows its Summary or its log (an Agent's transcript, a runtime's
+  // saved output), or the shared Human Detail. Its width is the Detail's: everything in it wraps
+  // or scrolls in its own box.
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, message, type TreeNode } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
@@ -62,10 +63,10 @@
    * Detail does. */
   const technical = $derived(d.folds.node === target && d.folds.technical);
   const pending = $derived(d.folds.node === target && d.folds.pending);
-  /** An Agent's summary sections instead of its transcript. */
-  const details = $derived(d.folds.node === target && d.folds.details);
-  function fold(change: Partial<{ technical: boolean; pending: boolean; details: boolean }>) {
-    d.folds = { node: target, technical, pending, details, ...change };
+  /** The eval's log rather than its Summary. */
+  const log = $derived(d.folds.node === target && d.folds.log);
+  function fold(change: Partial<{ technical: boolean; pending: boolean; log: boolean }>) {
+    d.folds = { node: target, technical, pending, log, ...change };
   }
 
   /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
@@ -94,7 +95,6 @@
   /** Only this node's Detail: another node's, still held while this one is read, is not. */
   const detail = $derived(d.detail?.run === run && d.detail.node === target ? d.detail : null);
   const human = $derived(detail?.profile === "human" && detail.request !== null);
-  const agent = $derived(detail?.profile === "agent" && detail.request !== null);
 
   /** The wheel scrolls the tab strip sideways when its tabs overflow it. */
   function wheel(event: WheelEvent) {
@@ -105,13 +105,12 @@
   }
 
   function keydown(event: KeyboardEvent) {
-    if (human) return;
-    if (plain(event, "Escape") || plain(event, "ArrowLeft")) {
-      if (details) fold({ details: false });
-      else onback();
-    } else if (plain(event, "t") && (!agent || details)) fold({ technical: !technical });
-    else if (plain(event, "w") && (!agent || details)) fold({ pending: !pending });
-    else if (plain(event, "d") && agent) fold({ details: !details });
+    // A Human review takes its own keys; from the tabs only Esc and ← close.
+    if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
+    if (plain(event, "Escape") || plain(event, "ArrowLeft")) onback();
+    else if (human || log) return;
+    else if (plain(event, "t")) fold({ technical: !technical });
+    else if (plain(event, "w")) fold({ pending: !pending });
     else return;
     event.preventDefault();
   }
@@ -119,22 +118,15 @@
 
 <Panel title={human ? "Human review" : (detail?.title ?? "Detail")} focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
   {#snippet actions()}
-    <!-- A Human review has its own Close among its controls. -->
-    {#if !human}
-      {#if agent}
-        <button class="button small" onclick={() => fold({ details: !details })} aria-pressed={details}>
-          Details <kbd>d</kbd>
-        </button>
-      {/if}
-      <button class="button small" onclick={onback}>Close <kbd>Esc</kbd></button>
-    {/if}
+    <!-- The one window-level control; a Human review has its own Close among its controls. -->
+    {#if !human}<button class="button small" onclick={onback}>Close <kbd>Esc</kbd></button>{/if}
   {/snippet}
   <div class="detail" class:tabbed>
     {#if tabbed && row}
-      <div class="strip" role="tablist" aria-label="Tabs of {row.name}" onwheel={wheel}>
-        <button class="pick" role="tab" aria-selected={tab === null} onclick={() => ontab(null)}>Artifact</button>
+      <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}" onwheel={wheel}>
+        <button class="chip" role="tab" aria-selected={tab === null} onclick={() => ontab(null)}>Artifact</button>
         {#each evals as item (item.id)}
-          <button class="pick" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
+          <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
             <span class="glyph {tone(item.tone)}">{item.glyph}</span>{item.name}
           </button>
         {/each}
@@ -173,7 +165,7 @@
           {detail}
           bind:technical={() => technical, (value) => fold({ technical: value })}
           bind:pending={() => pending, (value) => fold({ pending: value })}
-          bind:details={() => details, (value) => fold({ details: value })}
+          bind:log={() => log, (value) => fold({ log: value })}
         />
       {/if}
     </div>
@@ -191,47 +183,10 @@
   .detail.tabbed {
     grid-template-rows: auto minmax(0, 1fr);
   }
-  /* Many tabs scroll sideways; they never widen the Detail. */
+  /* Many tabs scroll sideways in their own row; they never widen the Detail. */
   .strip {
-    display: flex;
-    gap: 2px;
-    min-width: 0;
-    overflow-x: auto;
-    padding: 0 var(--pad);
+    padding: 2px var(--pad) 8px;
     border-bottom: 1px solid var(--border);
-  }
-  /* A thin scrollbar of its own, below the tabs rather than over their labels. */
-  .strip::-webkit-scrollbar {
-    height: 4px;
-  }
-  .strip::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 2px;
-  }
-  .pick {
-    flex: none;
-    display: inline-flex;
-    gap: 6px;
-    align-items: baseline;
-    max-width: 24ch;
-    margin: 0;
-    padding: 6px 10px;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: none;
-    color: var(--muted);
-    font: inherit;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-  }
-  .pick:hover {
-    color: var(--text);
-  }
-  .pick[aria-selected="true"] {
-    color: var(--text);
-    border-bottom-color: var(--accent);
   }
   .content {
     display: grid;
