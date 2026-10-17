@@ -45,7 +45,8 @@ pub(super) async fn inspect(
         }
         "config_graph" => {
             let args: GraphInput = parse(arguments)?;
-            let config = artifactize_core::config::read_workspace_config(repo).map_err(|e| e.to_string())?;
+            let config =
+                artifactize_core::config::read_workspace_config(repo).map_err(|e| e.to_string())?;
             let selection = if args.impact {
                 artifactize_core::query::impact(&config, &args.scope.0)?
             } else {

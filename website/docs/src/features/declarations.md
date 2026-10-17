@@ -4,6 +4,24 @@ The exact rules for TOML declarations, folder and file Artifacts, fingerprints,
 Eval dependencies, scoped references and the runtime execution environment.
 [Artifacts and evals](artifact.md) introduces them.
 
+## Migrating removed dependency declarations
+
+`kind = "dependency"` and `depends_on` are removed. Delete the dependency eval;
+put the needed Artifacts as `{name}` references in the consuming eval's
+`payload.instruction` (or runtime `args`). For example, instead of a derived
+`ready` eval listing `spec` and `assets`, write the actual review instruction as
+`"Review {app} against {spec} and {assets}."` Each consuming eval waits for those
+inputs' required evals; independent sibling evals keep running.
+
+Mounts and child relations still provide visible material and fingerprint inputs,
+but no longer block sibling evals on their own. To require their reviews before
+an eval, reference those Artifacts explicitly in that eval's instruction or argv.
+
+An old profile fails configuration parsing with
+`unknown variant `dependency`, expected one of `agent`, `human`, `runtime``.
+A `depends_on` field on a supported profile is an unknown-field error. These are
+configuration errors, not review verdicts; migrate the declaration before verifying.
+
 ## Declaration validation
 
 `index.artf` declares its containing folder. `<filename>.artf` declares the
@@ -285,7 +303,7 @@ payload.instruction = "Run the end-to-end suite."
 A tag is `use-computer` or a colon-separated descendant such as
 `use-computer:display`. Each descendant segment matches
 `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Other roots, empty segments, invalid segments,
-duplicate tags and declarations on Human or dependency evals are errors.
+duplicate tags and declarations on Human evals are errors.
 Omitting `mutex` (or declaring `mutex = []`) adds no constraint.
 
 Two evals conflict if any of their tags are equal or one is an ancestor of the

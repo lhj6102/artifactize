@@ -371,5 +371,5 @@ queries return at most 200 lines per stream and a bounded byte budget, with
 case-sensitive 1–2048-byte string. Lines longer than 2048 raw bytes are marked
 `clipped` with bounded head/tail text. Full raw runtime streams, including tails beyond the 128 KiB saved
 audit, stay in Run output until pruning; older/remote/pruned evidence may have
-only the saved audit and says so. See [MCP focused diagnosis](mcp.md#streaming-and-focused-diagnosis)
+only the saved audit and says so. See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
 for the shared evidence/event schemas and client delivery limits.

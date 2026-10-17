@@ -59,21 +59,13 @@ fn eval_mutex_declarations_are_typed_and_excluded_from_criteria() {
             "accepted {tags}"
         );
     }
-    for profile in [
-        json!({"kind":"human"}),
-        json!({"kind":"dependency","depends_on":["input"]}),
-    ] {
-        let mut changed = eval(profile.clone());
-        if profile["kind"] == "dependency" {
-            changed.as_object_mut().unwrap().remove("payload");
-        }
-        changed["mutex"] = json!([]);
-        let error = parse(json!({"name":"a","evals":[changed]})).unwrap_err();
-        assert!(
-            error.contains("mutex is supported only on runtime and agent"),
-            "{error}"
-        );
-    }
+    let mut changed = eval(json!({"kind":"human"}));
+    changed["mutex"] = json!([]);
+    let error = parse(json!({"name":"a","evals":[changed]})).unwrap_err();
+    assert!(
+        error.contains("mutex is supported only on runtime and agent"),
+        "{error}"
+    );
 }
 
 #[test]

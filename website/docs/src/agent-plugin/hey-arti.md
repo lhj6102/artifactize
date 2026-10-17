@@ -126,7 +126,7 @@ When the host consumes standard MCP progress notifications, use `verify_watch
 `verify_result` when terminal. A live update or one eval's GREEN is not final
 Run approval. Displaying/routing notifications into a conversation requires
 client support; artifactize cannot inject model turns. See the
-[MCP streaming contract](../reference/mcp.md#streaming-and-focused-diagnosis).
+[MCP streaming contract](mcp.md#streaming-and-focused-diagnosis).
 
 Without client progress support, use `verify_wait {run, seconds?}` rather than
 short-interval status loops. It

@@ -50,7 +50,8 @@ pub(super) async fn verify(
         context.state_dir.as_deref(),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;
-    let observation = artifactize_core::runs::start(&runs, &selection, &options, request_key).await?;
+    let observation =
+        artifactize_core::runs::start(&runs, &selection, &options, request_key).await?;
     if watch {
         return super::run::watch(context_for_watch(&runs, context.json), observation.run).await;
     }

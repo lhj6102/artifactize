@@ -23,9 +23,8 @@ for the closed envelope, reserved names and the verdict-only default. Runtime
 evals use their command's exit status instead of owner schemas. Named `profile_variants` let a caller select an alternative execution
 profile without editing the judgment; see [Declarations](declarations.md).
 
-A fourth, non-executing kind, [dependency](artifact.md#dependency-evals), expresses
-readiness over other Artifacts. It derives its state from evidence, never runs a
-reviewer and has no cached verdict of its own.
+Dependencies belong to the consuming eval: name its input Artifacts as `{name}`
+in its instruction or runtime arguments. See [Eval dependencies](artifact.md#eval-dependencies).
 
 Declare only real inputs. An eval's observation scope starts with its own target
 and its explicit instruction/Runtime-operand references, then recursively admits
@@ -35,9 +34,8 @@ can contribute tools. Tool operands do not add new inputs on their own.
 
 Observation access is broader than the [reuse key](fingerprint.md#the-reuse-key):
 that key covers the target, its direct children/mounts and this eval's explicit
-inputs, not every recursively reachable observation. Ordinary execution gates are
-also separate: they are shared at the [Artifact/component level](run.md#shared-execution-gates),
-not confined to this eval's own references. See [Artifact](artifact.md) for declarations.
+inputs, not every recursively reachable observation. Execution gates follow this eval’s own references, not those of its siblings.
+Eval-cycle peers share external gates but do not gate one another internally. See [Artifact](artifact.md) for declarations.
 
 `artifactize verify library/tests --wait` starts a [Run](run.md) for one eval.
 Use `artifactize status library/tests` first to see what can reuse or needs review;
