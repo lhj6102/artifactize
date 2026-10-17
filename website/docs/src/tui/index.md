@@ -125,6 +125,10 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
 | Esc | Cancel work, then stop editing, then leave Detail |
 | Enter on `+ Add` / Ctrl-D | In a list of groups, add a group / remove the selected group |
 
+While a Human lifecycle job is busy, ordinary PgUp/PgDn scroll the Tool log
+regardless of the focused area. Normal editing and focus switching pause until
+the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
+
 - **Claim.** The reviewer defaults to `$USER` unless selected with `--reviewer`.
   Tool and verdict actions never claim implicitly. A request claimed by someone
   else, or no longer waiting, is read-only; leaving Detail keeps your claim.
