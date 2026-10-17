@@ -615,14 +615,24 @@ fn speculative_readiness_and_saved_blocked_requests() {
 }
 
 #[test]
-fn upstream_index_uses_eval_references_not_artifact_components() {
-    // Material components and visibility alone do not add Eval gates.
+fn upstream_index_uses_each_evals_references_and_its_targets_children() {
+    // A component alone adds no Eval gates: a/x references nothing in its cycle with b, and
+    // d/x depends on its child c as if it referenced it.
     let definitions = json!({
-        "artifacts":{"a":{"path":"a"},"b":{"path":"b"},"c":{"path":"c"},"d":{"path":"d"}},
-        "evals":[runtime("a/x"), runtime("b/x"), referenced("c/x", &["a"]), runtime("d/x")],
+        "artifacts":{
+            "a":{"path":"a"},"b":{"path":"b"},"c":{"path":"c"},
+            "d":{"path":"d","children":{"c":"c"}},
+        },
+        "evals":[
+            runtime("a/x"),
+            referenced("a/y", &["b"]),
+            referenced("b/x", &["a"]),
+            referenced("c/x", &["a"]),
+            runtime("d/x"),
+        ],
         "relations":[
-            {"source":"a","target":"b","kind":"mount","alias":"base"},
-            {"source":"b","target":"a","kind":"child","path":"a"},
+            {"source":"b","target":"a","kind":"instruction","name":"b","evalId":"a/y"},
+            {"source":"a","target":"b","kind":"instruction","name":"a","evalId":"b/x"},
             {"source":"a","target":"c","kind":"instruction","name":"a","evalId":"c/x"},
             {"source":"c","target":"d","kind":"child","path":"c"},
         ],
@@ -637,13 +647,14 @@ fn upstream_index_uses_eval_references_not_artifact_components() {
         upstream_index(&run, &requests),
         [
             ("a/x".parse().unwrap(), x(&[])),
-            ("b/x".parse().unwrap(), x(&[])),
-            ("c/x".parse().unwrap(), x(&["a"])),
-            ("d/x".parse().unwrap(), x(&[])),
+            ("a/y".parse().unwrap(), x(&["b"])),
+            ("b/x".parse().unwrap(), x(&["a"])),
+            ("c/x".parse().unwrap(), x(&["a", "b"])),
+            ("d/x".parse().unwrap(), x(&["c"])),
         ]
     );
     let nodes = tree(&run, &requests, now());
-    assert_eq!(line(&nodes, "a:a"), "- a  ↻ b  not in this Run  0/1");
+    assert_eq!(line(&nodes, "a:a"), "- a  ↻ b  not in this Run  0/2");
     // Runs saved without definitions: the request's referenced Artifacts.
     let requests = vec![
         request("lib/x", "GREEN", json!({})),
@@ -681,12 +692,11 @@ fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
                 "name":"code-style",
                 "evalId":"cli/follows-style",
             },
-            {"source":"engine","target":"cli","kind":"mount","alias":"base"},
         ],
         "components":[
             {"id":0,"artifacts":["code-style"]},
             {"id":1,"artifacts":["engine"]},
-            {"id":2,"artifacts":["cli"],"dependencies":[0,1]},
+            {"id":2,"artifacts":["cli"],"dependencies":[0]},
         ],
     });
     let requests = vec![

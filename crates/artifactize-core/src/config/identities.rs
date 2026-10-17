@@ -124,8 +124,7 @@ identity!(HubEpoch, |value: &str| !value.is_empty()
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
     ));
 
-identity!(MountAlias, name);
-// An instruction or argv reference can name either an Artifact or its owner's mount.
+// An instruction or argv reference names an Artifact.
 identity!(ReferenceName, name);
 impl From<&crate::types::ArtifactName> for ReferenceName {
     fn from(value: &crate::types::ArtifactName) -> Self {

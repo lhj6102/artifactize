@@ -345,14 +345,13 @@ async fn call(registry: &Registry<'_>, name: &str, args: Value, state: &Path) ->
 }
 
 #[tokio::test]
-async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
+async fn builtins_expose_only_the_target_and_explicit_references() {
     let fixture = Fixture::new();
     fixture.write("files/target.txt", "visible needle\n");
     fixture.write("files/sibling.txt", "secret needle\n");
     fixture.declare("files/child/index.artf", json!({"name":"child"}));
     fixture.declare("files/target.txt.artf", json!({
         "name":"file",
-        "mounts":{"external":"other"},
         "views":{
             "agent_tools":{
                 "list":{"builtin":"list"},
@@ -370,7 +369,7 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
             },
         ],
     }));
-    fixture.write("other/input.txt", "mounted needle\n");
+    fixture.write("other/input.txt", "unreferenced needle\n");
     fixture.declare("other/input.txt.artf", json!({"name":"other"}));
     fixture.write("references/rules", "rules");
     fixture.declare(
@@ -401,7 +400,7 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
             .iter()
             .map(|entry| entry["name"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["external", "target.txt"]
+        ["target.txt"]
     );
     let glob = call(
         &registry,
@@ -410,7 +409,7 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
         &fixture.state,
     )
     .await;
-    assert_eq!(glob["files"], json!(["external/input.txt", "target.txt"]));
+    assert_eq!(glob["files"], json!(["target.txt"]));
     let grep = call(
         &registry,
         "grep_file",
@@ -418,7 +417,7 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
         &fixture.state,
     )
     .await;
-    assert_eq!(grep["matches"].as_array().unwrap().len(), 2);
+    assert_eq!(grep["matches"].as_array().unwrap().len(), 1);
     assert_eq!(
         call(
             &registry,
@@ -428,16 +427,6 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
         )
         .await["lines"][0]["text"],
         "visible needle\n"
-    );
-    assert_eq!(
-        call(
-            &registry,
-            "read_file",
-            json!({"path":"external/input.txt"}),
-            &fixture.state
-        )
-        .await["lines"][0]["text"],
-        "mounted needle\n"
     );
     assert_eq!(
         call(
@@ -467,18 +456,6 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
                 .is_error()
         );
     }
-}
-
-#[test]
-fn file_mount_alias_cannot_shadow_the_target() {
-    let fixture = Fixture::new();
-    fixture.write("Makefile", "all:");
-    fixture.declare("other/index.artf", json!({"name":"other"}));
-    fixture.declare(
-        "Makefile.artf",
-        json!({"name":"file","mounts":{"Makefile":"other"}}),
-    );
-    fixture.error("Makefile.artf", "conflicts with the target file");
 }
 
 #[test]
@@ -863,7 +840,7 @@ fn artfignore_skips_sidecars_in_excluded_folders() {
 }
 
 #[tokio::test]
-async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
+async fn relative_tool_executables_work_on_file_artifacts() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
     fs::create_dir_all(fixture.repo.join("files")).unwrap();
@@ -905,49 +882,6 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
         result.content(),
         vec![Content::Text {
             text: support::os::path_text(&files)
-        }]
-    );
-    let tools = fixture.repo.join("tools");
-    fs::create_dir_all(&tools).unwrap();
-    let mounted = support::os::exiting_program(&tools, 0, "mounted");
-    let mounted = format!(
-        "bin/{}",
-        support::os::path_text(Path::new(&mounted).strip_prefix(&tools).unwrap())
-    );
-    fixture.declare("tools/index.artf", json!({"name":"tools","basis":true}));
-    fixture.declare(
-        "files/input.txt.artf",
-        json!({
-            "name":"file",
-            "mounts":{"bin":"tools"},
-            "views":{
-                "agent_tools":{
-                    "inspect":{
-                        "description":"Inspect",
-                        "protocol":"plain",
-                        "command":mounted,
-                        "args":[],
-                    },
-                },
-            },
-        }),
-    );
-    let config = fixture.config();
-    let registry = Registry::for_artifact(&config, "file").unwrap();
-    registry.preflight("inspect_file").unwrap();
-    let result = registry
-        .call(
-            "inspect_file",
-            json!({}),
-            &fixture.state,
-            CancellationToken::new(),
-        )
-        .await;
-    assert!(!result.is_error(), "{result:?}");
-    assert_eq!(
-        result.content(),
-        vec![Content::Text {
-            text: "mounted".into()
         }]
     );
 }
@@ -1011,13 +945,12 @@ fn changing_folder_to_file_does_not_reuse_equal_artifactsum_evidence() {
 }
 
 #[test]
-fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or_tags() {
+fn reuse_key_covers_kinds_of_target_child_and_reference_but_never_paths_or_tags() {
     let fixture = Fixture::new();
     fixture.declare(
         "owner/index.artf",
         json!({
             "name":"owner",
-            "mounts":{"mounted":"mount"},
             "evals":[
                 {
                     "id":"check",
@@ -1032,17 +965,15 @@ fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or
         "owner/child/index.artf",
         json!({"name":"child","basis":true}),
     );
-    fixture.declare("mount/index.artf", json!({"name":"mount","basis":true}));
     fixture.declare(
         "reference/index.artf",
         json!({"name":"reference","basis":true}),
     );
     let mut config = fixture.config();
-    let names: Vec<artifactize_core::types::ArtifactName> =
-        ["owner", "mount", "child", "reference"]
-            .into_iter()
-            .map(|id| id.parse().unwrap())
-            .collect();
+    let names: Vec<artifactize_core::types::ArtifactName> = ["owner", "child", "reference"]
+        .into_iter()
+        .map(|id| id.parse().unwrap())
+        .collect();
     let fingerprints = names
         .iter()
         .map(|id| {
@@ -1058,7 +989,7 @@ fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or
     let key = cache::eval_key(&config, &config.evals[0], &fingerprints)
         .unwrap()
         .value;
-    for id in ["owner", "mount", "child", "reference"] {
+    for id in ["owner", "child", "reference"] {
         config.artifacts.get_mut(id).unwrap().kind = ArtifactKind::File;
         assert_ne!(
             key,
@@ -1162,7 +1093,7 @@ fn disabled_fingerprint_target_deleted_by_dependency_script_is_not_executed() {
         &["-c", "import pathlib; pathlib.Path('started').touch()"],
     );
     declaration["fingerprint"] = json!(false);
-    declaration["mounts"] = json!({"dep":"dep"});
+    declaration["evals"][0]["payload"]["instruction"] = json!("Check with {dep}.");
     fixture.declare("files/input.txt.artf", declaration);
     fixture.declare(
         "dep/index.artf",
@@ -1180,37 +1111,6 @@ fn disabled_fingerprint_target_deleted_by_dependency_script_is_not_executed() {
     let run = fixture.json(&["verify", "--wait", "--all"], 2);
     assert_eq!(run["requests"][0]["errorCode"], "PREPARATION_FAILED");
     assert!(!fixture.repo.join("files/started").exists());
-}
-
-#[tokio::test]
-async fn mount_alias_can_shadow_a_sibling_not_visible_in_the_file_virtual_root() {
-    let fixture = Fixture::new();
-    fixture.write("target", "target");
-    fixture.write("alias", "hidden sibling");
-    fixture.write("other/visible", "mounted");
-    fixture.declare("other/index.artf", json!({"name":"other","basis":true}));
-    fixture.declare(
-        "target.artf",
-        json!({
-            "name":"file",
-            "mounts":{"alias":"other"},
-            "views":{"agent_tools":{"list":{"builtin":"list"},"read":{"builtin":"read"}}},
-        }),
-    );
-    let config = fixture.config();
-    let registry = Registry::for_artifact(&config, "file").unwrap();
-    let listing = call(&registry, "list_file", json!({}), &fixture.state).await;
-    assert_eq!(listing["entries"][0]["kind"], "mount");
-    assert_eq!(
-        call(
-            &registry,
-            "read_file",
-            json!({"path":"alias/visible"}),
-            &fixture.state
-        )
-        .await["lines"][0]["text"],
-        "mounted"
-    );
 }
 
 #[tokio::test]
@@ -1420,7 +1320,7 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
     let mut declaration = runtime("file", &["-c", "pass"]);
-    declaration["mounts"] = json!({"dep":"dep"});
+    declaration["evals"][0]["payload"]["instruction"] = json!("Check with {dep}.");
     fixture.declare("files/input.txt.artf", declaration);
     fixture.declare(
         "dep/index.artf",

@@ -76,9 +76,9 @@ distinction.
 A sidecar such as `hero.png.artf` declares the neighboring file as an independent
 Artifact. It requires a `name`, uses the same TOML schema as a folder and hashes
 only that file by default. Built-in tools see that file and the inputs explicitly
-made available to its evals, not unrelated sibling files. A **mount** gives another
-Artifact a local alias, such as `house-style` for a shared checker; see
-[Artifact declarations](../features/artifact.md#folder-configuration). The [posts example](https://github.com/lhj6102/artifactize/tree/main/examples/posts)
+made available to its evals, not unrelated sibling files. An eval that uses another
+Artifact, such as a shared checker, names it as `{house-style}`; see
+[Eval dependencies](../features/artifact.md#eval-dependencies). The [posts example](https://github.com/lhj6102/artifactize/tree/main/examples/posts)
 uses three Markdown sidecars and one shared style checker. From the previous
 example's directory:
 
@@ -91,7 +91,7 @@ artifactize status         # all three post reviews are reused
 cd ../runtime-relations    # continue the tour below
 ```
 
-Each file hashes only itself. The mounted `house-style` Artifact covers the
+Each file hashes only itself. The referenced `house-style` Artifact covers the
 checker and banned words, so a shared change invalidates all three post reviews'
 [reuse keys](../features/fingerprint.md#the-reuse-key): the recorded identity of a
 check's criteria and reviewed inputs that decides whether its old result applies.
@@ -106,7 +106,9 @@ See [Eval dependencies](../features/artifact.md#eval-dependencies).
 
 ## Agent tools and the Human flow
 
-Both terminals must use the same temporary state directory. Before starting the
+A Human eval is requested only once every other non-Human eval of its Artifact is
+GREEN, so `spec/review` runs first; it needs the model credentials described in
+the example's README. Both terminals must use the same temporary state directory. Before starting the
 waiting command below, print the first terminal's value with
 `echo "$ARTIFACTIZE_STATE_HOME"` (PowerShell: `$env:ARTIFACTIZE_STATE_HOME`).
 In the second terminal, replace `STATE_DIRECTORY` below with that printed path.
@@ -118,7 +120,8 @@ For PowerShell, use `$env:ARTIFACTIZE_STATE_HOME = "STATE_DIRECTORY"` instead of
 ```sh
 cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
-artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{}'
+artifactize tools check --execute --eval spec/review --tool coverage_spec --args '{}'
+artifactize verify --eval spec/review --wait    # the machine review comes first
 artifactize verify --eval spec/signoff --wait   # records a WAITING_HUMAN request and waits
 # In a second terminal, in the same directory:
 export ARTIFACTIZE_STATE_HOME="STATE_DIRECTORY"  # copy the first terminal's path

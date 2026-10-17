@@ -4,7 +4,7 @@ use std::fs;
 use tokio_util::sync::CancellationToken;
 
 const GRAPH: &str = "name = 'graph'\n[evals.review]\ntitle = 'Review graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review the project structure.' }\n";
-const APP: &str = "name = 'app'\ntags = ['code']\nmounts = { input = 'leaf' }\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {input} and {app}.', context = 'criteria' }\npass_schema = { type = 'object' }\nfail_schema = { type = 'object' }\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{input}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
+const APP: &str = "name = 'app'\ntags = ['code']\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {leaf} and {app}.', context = 'criteria' }\npass_schema = { type = 'object' }\nfail_schema = { type = 'object' }\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{leaf}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
 
 fn fixture() -> tempfile::TempDir {
     let repo = crate::test_os::tempdir();
@@ -23,12 +23,11 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
     let baseline = fingerprint();
     // Each independent change is meaningful even when no input bytes change.
     for changed in [
-        APP.replace("input = 'leaf'", "input = 'graph'"),
         APP.replace("Review app", "A different title"),
         APP.replace("command = 'runtime-program'", "command = 'different-program'"),
-        APP.replace("args = ['{input}/input.txt']", "args = ['{input}/input.txt', 'criterion']"),
+        APP.replace("args = ['{leaf}/input.txt']", "args = ['{leaf}/input.txt', 'criterion']"),
         APP.replace("context = 'criteria'", "context = 'different criteria'"),
-        APP.replace("Review {input} and {app}.", "Review {app}."),
+        APP.replace("Review {leaf} and {app}.", "Review {app}."),
         APP.replace("pass_schema = { type = 'object' }", "pass_schema = { type = 'object', required = ['summary'] }"),
         APP.replace("kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000", "kind = 'human'"),
     ] {
@@ -118,7 +117,6 @@ fn graph_declaration_is_root_only_and_rejects_fingerprint_overrides() {
     let graph = &config.artifacts["graph"];
     assert_eq!(graph.kind, ArtifactKind::Graph);
     assert!(graph.children.is_empty());
-    assert!(graph.mounts.is_empty());
     assert!(!config.evals.iter().any(|eval| eval.target == "graph"));
     for basis in [false, true] {
         fs::write(

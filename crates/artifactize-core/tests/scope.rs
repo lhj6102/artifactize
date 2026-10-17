@@ -19,7 +19,7 @@ impl Drop for Fixture {
 }
 
 #[tokio::test]
-async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
+async fn resolved_child_and_global_inputs_reach_the_runtime_executor() {
     let scratch = support::os::tempdir();
     let root = scratch.path().join("repo");
     fs::create_dir_all(root.join("review/nested")).unwrap();
@@ -30,7 +30,6 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
         root.join("review/index.artf"),
         json!({
             "name":"review",
-            "mounts":{"source":"input"},
             "evals":[
                 {
                     "id":"read",
@@ -42,7 +41,6 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
                         "args":[
                             "local",
                             "{review}/nested/file",
-                            "{review}/source/file",
                             "{input}/file",
                         ],
                     },
@@ -82,5 +80,5 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
         panic!("{outcome:?}")
     };
     assert_eq!(result.verdict, Verdict::Green);
-    assert_eq!(result.output.stdout, b"owner\nchild\ninput\ninput\n");
+    assert_eq!(result.output.stdout, b"owner\nchild\ninput\n");
 }

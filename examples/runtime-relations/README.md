@@ -1,4 +1,4 @@
-# Runtime evals with children, mounts and references
+# Runtime evals with children and references
 
 This example is a two-page guide checked by runtime evals. It shows how
 Artifacts relate to each other and how a content fingerprint lets a second
@@ -7,7 +7,7 @@ Artifacts relate to each other and how a content fingerprint lets a second
 ```
 runtime-relations/
 ├── glossary/            basis Artifact: terms.txt is accepted as is
-└── guide/               parent Artifact: eval guide/terms, mounts glossary as "terms"
+└── guide/               parent Artifact: eval guide/terms, references glossary
     ├── check_terms.py   runtime check used by guide/terms
     ├── intro/           child Artifact: eval intro/heading
     └── usage/           child Artifact: eval usage/heading
@@ -16,18 +16,20 @@ runtime-relations/
 What it demonstrates:
 
 - **Children.** `guide/intro` and `guide/usage` have their own `index.artf`,
-  so they are separate Artifacts. A parent depends on its nearest marked
-  children, so `guide/terms` waits for `intro/heading` and `usage/heading` to be GREEN.
+  so they are separate Artifacts. A child folder's files are part of its parent's
+  content, so every eval of a parent depends on its nearest marked children, as if
+  it referenced them: `guide/terms` waits for `intro/heading` and `usage/heading`
+  to be GREEN.
 - **A basis Artifact.** `glossary` declares `basis = true`: it has no evals
   and counts as accepted input. A basis never waives its own dependencies.
-- **A mount.** `guide` mounts `glossary` under the alias `terms`. The mount
-  is a logical name that adds a dependency. Nothing is copied or linked.
 - **`{artifact}` references.** The instruction of `guide/terms` names
-  `{intro}`, `{usage}` and `{terms}`. Each one is a graph relation, and the
-  text is never expanded. Its argv shows three operand forms that
-  artifactize resolves to absolute paths before the command runs:
-  `{terms}/terms.txt` (a mount alias), `{guide}/intro/page.md` (a logical path
-  from the owner through a child) and `{usage}/page.md` (an Artifact name).
+  `{intro}`, `{usage}` and `{glossary}`. Each one is a graph relation, and the
+  text is never expanded. `guide/terms` uses the glossary, so it names
+  `{glossary}` itself: that reference is what makes the glossary its dependency.
+  Its argv shows two operand forms that artifactize resolves to absolute paths
+  before the command runs: `{glossary}/terms.txt` and `{usage}/page.md` (an
+  Artifact name), and `{guide}/intro/page.md` (a logical path from the owner
+  through a child).
 - **Runtime evals.** The exit code is the verdict: 0 is GREEN, anything else is RED.
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with only
@@ -36,7 +38,7 @@ What it demonstrates:
   built-in content fingerprint, artifactsum, which hashes the Artifact's own files (child
   folders, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded). An eval's reuse key adds the
   fingerprints of the Artifacts it depends on: `guide/terms` depends on `intro` and
-  `usage` (children) and `glossary` (the mount, also named as `{terms}`). That is
+  `usage` (children) and `glossary` (named as `{glossary}`). That is
   why the `glossary` basis participates in reuse too. The default fingerprint is
   artifactsum; setting `fingerprint = false` on a dependency would leave `guide/terms`
   without a reuse key, so it would be reviewed on every `verify`. While the eval
@@ -51,7 +53,7 @@ You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/ge
 ```sh
 cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
-artifactize config graph    # Artifacts, evals, components and child/mount/instruction/argv relations
+artifactize config graph    # Artifacts, evals, components and child/instruction/argv relations
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # nothing executes: each line says "(reused from RUN_ID)"

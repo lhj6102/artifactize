@@ -90,11 +90,10 @@ pub(crate) fn demo() -> Value {
 }
 
 /// The demo request with builtin Human tools beside the `notes` command tool: `release` at
-/// `release` mounts `guide`, a folder at `docs/guide`.
+/// `release` references `guide`, a folder at `docs/guide`.
 pub(crate) fn builtins() -> Value {
     let mut definition = demo();
     let artifacts = &mut definition["artifacts"];
-    artifacts["release"]["mounts"] = json!({"guide":"guide"});
     artifacts["release"]["views"]["humanTools"] = json!({
         "notes":{
             "description":"Print the notes of {artifactName}.",

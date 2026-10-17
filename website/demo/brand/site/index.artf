@@ -1,5 +1,4 @@
 name = "site"
-mounts = { brand = "logo" }
 
 [evals.embed]
 title = "The header embeds the signed-off logo"
@@ -7,4 +6,4 @@ profile = { kind = "runtime", command = "grep", args = ["-q", "logo.svg", "heade
 
 [evals.embed.payload]
 instruction = """
-Check that {site}/header.html embeds the logo from {brand}."""
+Check that {site}/header.html embeds the logo from {logo}."""

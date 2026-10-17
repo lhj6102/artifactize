@@ -8,7 +8,7 @@ for their target and run inside artifactize; the rest of this page is about comm
 
 Arguments are fixed literal argv, with scope placeholders only: `{artifactPath}`
 is the declaring Artifact's canonical target path (a folder or file); `{name}`
-names an Artifact or its owner's mount alias. Folder references accept `/path`
+names an Artifact. Folder references accept `/path`
 suffixes; file references, including `{artifactPath}` for a file owner, reject
 them. Both accept `--flag=` forms, resolved by the same
 logical-path and no-symlink checks as runtime argv. Other brace forms are rejected;
@@ -65,7 +65,7 @@ is not shown, and a line longer than 4096 bytes shows in pieces. The log lives i
 memory while the review is open; nothing is saved.
 
 Internal callers use `tools::human::Registry::new(&config, "artifact/eval")` for a
-Human eval scope or `for_artifact(&config, "artifact")` for its child/mount scope,
+Human eval scope or `for_artifact(&config, "artifact")` for its child scope,
 then `list()`, `command(name)` (the resolved program, argv and directory, without
 running it) and `call(name, cancellation).await`, or
 `call_logged(name, cancellation, run).await` to log the run to a Tool log

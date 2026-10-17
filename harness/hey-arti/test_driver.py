@@ -70,8 +70,7 @@ payload.instruction = {json.dumps(instruction)}
         write("api/index.artf", runtime("api", "Check API against {contract}."))
         write("contract/index.artf", runtime("contract"))
         write("preview/probe.py.artf", 'name = "preview-driver"\nbasis = true\n')
-        ui = runtime("ui", "Check UI consumes {api} and {contract}.").replace(
-            'name = "ui"\n', 'name = "ui"\nmounts = { preview = "preview-driver", backend = "api", schema = "contract" }\n')
+        ui = runtime("ui", "Check UI consumes {api} and {contract}.")
         write("ui/index.artf", ui + f'''
 [views.agent_sessions.preview]
 start = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "start"] }}
@@ -458,8 +457,8 @@ sys.stdin.read()
             edited.write_text(source, encoding="utf-8")
             # Exercise actual session admission/cleanup through the candidate, not just Popen.
             if case_id == "monorepo":
-                result = driver.run_command(command + ["tools", "check", "--execute", "--artifact", "ui",
-                                                   "--audience", "agent", "--tool", "inspect"],
+                result = driver.run_command(command + ["tools", "check", "--execute", "--eval", "ui/review",
+                                                   "--tool", "inspect_ui"],
                                         capture_output=True, text=True, timeout=30, env=environment)
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 self.assertIn("Hello orchard", result.stdout)

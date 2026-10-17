@@ -114,9 +114,9 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
 #[tokio::test]
 async fn tag_changes_leave_artifactsum_eval_definition_and_reuse_key_unchanged() {
     let repo = Repo::new();
-    let mut app = json!({"name":"app","tags":["type:code"],"mounts":{"rules":"basis"},"evals":[{
+    let mut app = json!({"name":"app","tags":["type:code"],"evals":[{
         "id":"check","title":"Check","profile":{"kind":"human"},
-        "payload":{"instruction":"Check."}
+        "payload":{"instruction":"Check against {basis}."}
     }]});
     repo.artifact("app", app.clone());
     repo.write("app/input.txt", "input");

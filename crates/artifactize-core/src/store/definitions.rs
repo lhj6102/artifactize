@@ -105,8 +105,6 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing")]
     pub views: Field<Views>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub mounts: Field<BTreeMap<config::MountAlias, crate::types::ArtifactName>>,
-    #[serde(default, skip_serializing_if = "missing")]
     pub basis: Field<bool>,
     #[serde(default, skip_serializing_if = "missing")]
     pub fingerprint: Field<Fingerprint>,
@@ -282,7 +280,6 @@ impl<'de> Deserialize<'de> for Relation {
             serde_json::from_value(take("kind")?).map_err(serde::de::Error::custom)?;
         let names: &[&str] = match kind_name.as_str() {
             "child" => &["path"],
-            "mount" => &["alias"],
             "instruction" => &["evalId", "name"],
             "argv" => &["evalId", "index", "name", "path"],
             _ => &[],
@@ -325,10 +322,6 @@ pub enum RelationKind {
     Child {
         #[serde(default, skip_serializing_if = "missing")]
         path: Field<config::ChildPrefix>,
-    },
-    Mount {
-        #[serde(default, skip_serializing_if = "missing")]
-        alias: Field<config::MountAlias>,
     },
     Instruction {
         #[serde(rename = "evalId")]

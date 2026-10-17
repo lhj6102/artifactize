@@ -667,12 +667,6 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
                 path.value().map_or("", crate::config::ChildPrefix::as_str)
             )
         }
-        RelationKind::Mount { alias } => {
-            format!(
-                "mount {}",
-                alias.value().map_or("", crate::config::MountAlias::as_str)
-            )
-        }
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,

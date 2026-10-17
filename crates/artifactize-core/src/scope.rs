@@ -1,4 +1,4 @@
-//! Mounts, aliases, artifact references, and canonical scoped paths.
+//! Artifact references and canonical scoped paths.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -35,9 +35,6 @@ pub struct Relation {
 pub enum RelationKind {
     Child {
         path: crate::config::ChildPrefix,
-    },
-    Mount {
-        alias: crate::config::MountAlias,
     },
     Instruction {
         #[serde(rename = "evalId")]
@@ -90,8 +87,8 @@ impl Scope<'_> {
     }
 }
 
-/// The tool-side ID of a configured Artifact. Configuration validates every Artifact name,
-/// mount target and child, so a name that fails here is a bug in that validation.
+/// The tool-side ID of a configured Artifact. Configuration validates every Artifact name
+/// and child, so a name that fails here is a bug in that validation.
 pub(crate) fn tool_id(name: &ArtifactName) -> ArtifactId {
     ArtifactId::new(name.as_str()).expect("configuration validates Artifact names")
 }
@@ -151,7 +148,6 @@ pub fn artifact_scope<'a>(
             continue;
         }
         pending.extend(artifact.children.values());
-        pending.extend(artifact.mounts.values());
     }
     Ok(Scope { artifacts })
 }
@@ -167,10 +163,7 @@ pub(crate) fn executable(
     let artifact = scope.artifacts[owner];
     let cwd = scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
     let program = if let Some(relative) = crate::platform::program::folder_relative(command) {
-        let mounted = artifact
-            .mounts
-            .contains_key(relative.split('/').next().unwrap_or(""));
-        let physical = if artifact.file_name().is_some() && !mounted {
+        let physical = if artifact.file_name().is_some() {
             artifactize_tools::scope::logical_path(relative).map_err(|error| error.to_string())?;
             cwd.join(relative)
         } else {
@@ -188,11 +181,11 @@ pub(crate) fn executable(
             .find_map(|candidate| {
                 // A suffix the lookup added is matched to the entry's actual spelling.
                 let candidate = if candidate.as_path() != Path::new(relative) {
-                    executable_spelling(root, scope, owner, &cwd, &candidate, mounted)?
+                    executable_spelling(root, scope, owner, &cwd, &candidate)?
                 } else {
                     candidate
                 };
-                let resolved = if artifact.file_name().is_some() && !mounted {
+                let resolved = if artifact.file_name().is_some() {
                     scoped_path(&cwd, &candidate)
                 } else {
                     scope.resolve_input(
@@ -227,10 +220,9 @@ fn executable_spelling(
     owner: &ArtifactName,
     cwd: &Path,
     candidate: &Path,
-    mounted: bool,
 ) -> Option<PathBuf> {
     let parent = candidate.parent().unwrap_or(Path::new(""));
-    let directory = if scope.artifacts[owner].file_name().is_some() && !mounted {
+    let directory = if scope.artifacts[owner].file_name().is_some() {
         scoped_path(cwd, parent).ok()?
     } else {
         scope.resolve_input(root, owner, parent.to_str()?).ok()?
@@ -300,14 +292,10 @@ fn reference_target<'a>(
     owner: &ArtifactName,
     name: &crate::config::ReferenceName,
 ) -> Result<&'a ArtifactName, ScopeError> {
-    let artifact = config
-        .artifacts
-        .get(owner)
-        .ok_or_else(|| ScopeError(format!("Unknown Artifact: {owner}")))?;
-    let target = match artifact.mounts.get(name.as_str()) {
-        Some(target) => config.artifacts.get_key_value(target),
-        None => config.artifacts.get_key_value(name.as_str()),
-    };
+    if !config.artifacts.contains_key(owner) {
+        return Err(ScopeError(format!("Unknown Artifact: {owner}")));
+    }
+    let target = config.artifacts.get_key_value(name.as_str());
     target.map(|(id, _)| id).ok_or_else(|| {
         ScopeError(format!(
             "Unknown Artifact reference {{{name}}}. Escape literal braces with a backslash."
@@ -423,48 +411,6 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 kind: RelationKind::Child { path: path.clone() },
             });
         }
-        for (alias, source) in &artifact.mounts {
-            if !config.artifacts.contains_key(source) {
-                return Err(error(
-                    &["mounts", alias],
-                    format!("Unknown mount target {source} in {id}."),
-                ));
-            }
-            if config.artifacts.contains_key(alias.as_str()) && alias.as_str() != source.as_str() {
-                return Err(error(
-                    &["mounts", alias],
-                    format!("Ambiguous mount alias {alias} in {id}."),
-                ));
-            }
-            if artifact.file_name().is_some() {
-                if artifact.file_name() == Some(alias.as_str()) {
-                    return Err(error(
-                        &["mounts", alias],
-                        format!("Mount {id}/{alias} conflicts with the target file."),
-                    ));
-                }
-            } else {
-                match crate::platform::entry_exists(
-                    &config.root.join(artifact.folder()).join(alias.as_str()),
-                ) {
-                    Ok(true) => {
-                        return Err(error(
-                            &["mounts", alias],
-                            format!("Mount {id}/{alias} conflicts with a physical entry."),
-                        ));
-                    }
-                    Ok(false) => {}
-                    Err(failure) => return Err(error(&["mounts", alias], failure.to_string())),
-                }
-            }
-            relations.push(Relation {
-                source: source.clone(),
-                target: id.clone(),
-                kind: RelationKind::Mount {
-                    alias: alias.clone(),
-                },
-            });
-        }
     }
     for (id, artifact) in &config.artifacts {
         let Some(Fingerprint::Artifactsum { files: inputs, .. }) = &artifact.fingerprint else {
@@ -493,7 +439,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 .map_err(|failure| error(failure.0))?;
             if location.artifact_id.as_str() != id.as_str() {
                 return Err(error(format!(
-                    "{input} belongs to Artifact {}; dependencies come from children, mounts and references.",
+                    "{input} belongs to Artifact {}; dependencies come from children and references.",
                     location.artifact_id
                 )));
             }

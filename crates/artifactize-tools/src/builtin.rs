@@ -63,19 +63,19 @@ pub fn description(builtin: Builtin) -> &'static str {
         Builtin::Help => "Read a program's --help output.",
         Builtin::Open => "Open a scoped file or URL in its default application.",
         Builtin::Read => {
-            "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child/mount paths. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
+            "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child paths. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
         }
         Builtin::List => {
-            "List {artifactName} at a relative logical path (default root). Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Sorted entries include name, path and kind; mounts are included. offset is 0-based; limit defaults to and cannot exceed 200. Returns totalEntries, truncated and nextOffset. Symlinks and special files are listed but never followed. Directories are limited to 10,000 entries."
+            "List {artifactName} at a relative logical path (default root). Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Sorted entries include name, path and kind. offset is 0-based; limit defaults to and cannot exceed 200. Returns totalEntries, truncated and nextOffset. Symlinks and special files are listed but never followed. Directories are limited to 10,000 entries."
         }
         Builtin::Glob => {
-            "Find files in {artifactName} with a relative glob pattern (* within a path component, ** across directories). path is a relative logical directory, default root; patterns are relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Returns up to 200 sorted logical paths and truncated. Includes hidden files and mounts; ignores no files by git rules. Symlinks/special files are skipped, mount cycles are not repeated, and traversal is limited to 10,000 entries."
+            "Find files in {artifactName} with a relative glob pattern (* within a path component, ** across directories). path is a relative logical directory, default root; patterns are relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Returns up to 200 sorted logical paths and truncated. Includes hidden files; ignores no files by git rules. Symlinks/special files are skipped, and traversal is limited to 10,000 entries."
         }
         Builtin::Grep => {
             "Search UTF-8 files in {artifactName} with a Rust regex, one match per matching line. path is a relative logical file or directory (default root); glob filters paths relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". caseInsensitive defaults to false; maxResults defaults to and cannot exceed 200. Returns matches with path, line and text, plus truncated. Skips binary/invalid UTF-8 and symlinks; includes hidden files. Caps: 10,000 traversed entries, 8 MiB per file, 64 MiB searched, 512 KiB result. Skipped oversized files or bounded results set truncated."
         }
         Builtin::ViewImage => {
-            "View one image in {artifactName} at a relative logical file path, including child/mount paths. Paths are relative to {artifactName} itself: use \"image.png\", not \"{artifactName}/image.png\". Detects PNG, JPEG or WebP by bytes, not extension; returns an embedded image block. Requires a nonempty regular file up to 4 MiB; no symlinks, GIF, BMP or animated PNG."
+            "View one image in {artifactName} at a relative logical file path, including child paths. Paths are relative to {artifactName} itself: use \"image.png\", not \"{artifactName}/image.png\". Detects PNG, JPEG or WebP by bytes, not extension; returns an embedded image block. Requires a nonempty regular file up to 4 MiB; no symlinks, GIF, BMP or animated PNG."
         }
     }
 }
@@ -297,31 +297,6 @@ impl Reader<'_> {
                 entries.insert(name, kind);
             }
         }
-        if location.path.is_empty() {
-            for (alias, id) in &owner.mounts {
-                self.check_cancelled()?;
-                if entries.len() == MAX_ENTRIES {
-                    return Err(
-                        "Directory exceeds the 10,000-entry listing limit; choose a narrower path."
-                            .into(),
-                    );
-                }
-                if !self.scope.artifacts.contains_key(id) {
-                    return Err("Mount is outside this eval's scope.".into());
-                }
-                if entries
-                    .insert(
-                        alias.to_string(),
-                        EntryKind::Mount {
-                            artifact_id: id.clone(),
-                        },
-                    )
-                    .is_some()
-                {
-                    return Err("Logical mount conflicts with a physical entry.".into());
-                }
-            }
-        }
         Ok(entries
             .into_iter()
             .map(|(name, kind)| Entry {
@@ -347,18 +322,12 @@ impl Reader<'_> {
         {
             return Ok((BTreeSet::from([path.into()]), false));
         }
-        let mut pending = vec![(path.to_owned(), Vec::new())];
+        let mut pending = vec![path.to_owned()];
         let mut files = BTreeSet::new();
         let mut seen = 0;
         let mut truncated = false;
-        while let Some((path, mut ancestors)) = pending.pop() {
+        while let Some(path) = pending.pop() {
             self.check_cancelled()?;
-            let location = self.location(&path)?;
-            let key = (location.artifact_id, location.path);
-            if ancestors.contains(&key) {
-                continue;
-            }
-            ancestors.push(key);
             for entry in self.entries(&path)? {
                 if seen == MAX_ENTRIES {
                     truncated = true;
@@ -369,9 +338,7 @@ impl Reader<'_> {
                     EntryKind::File => {
                         files.insert(entry.path);
                     }
-                    EntryKind::Directory | EntryKind::Mount { .. } => {
-                        pending.push((entry.path, ancestors.clone()));
-                    }
+                    EntryKind::Directory => pending.push(entry.path),
                     EntryKind::Symlink | EntryKind::Other => {}
                 }
             }

@@ -17,8 +17,10 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
             .map(|&(source, target)| Relation {
                 source: source.parse().unwrap(),
                 target: target.parse().unwrap(),
-                kind: RelationKind::Mount {
-                    alias: source.parse().unwrap(),
+                // Each edge is a reference its target's evals make.
+                kind: RelationKind::Instruction {
+                    eval_id: format!("{target}/check").parse().unwrap(),
+                    name: source.parse().unwrap(),
                 },
             })
             .collect(),
@@ -57,11 +59,6 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 basis: declaration.basis,
                 path: name.into(),
                 children: BTreeMap::new(),
-                mounts: declaration
-                    .mounts
-                    .into_iter()
-                    .map(|(alias, target)| (alias, target.parse().unwrap()))
-                    .collect(),
                 views: declaration.views,
                 fingerprint: declaration.fingerprint,
             },
@@ -349,7 +346,6 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
             "owner",
             json!({
                 "name":"owner",
-                "mounts":{"input":"mounted"},
                 "evals":[
                     {
                         "id":"check",
@@ -365,7 +361,6 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
             }),
         ),
         ("owner/child", json!({"name":"child", "basis":true})),
-        ("mounted", json!({"name":"mounted", "basis":true})),
         ("instruction", json!({"name":"instruction", "basis":true})),
         ("argument", json!({"name":"argument", "basis":true})),
     ] {
@@ -374,13 +369,13 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
         crate::test_declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
     }
     let config = read_workspace_config(fixture.path()).unwrap();
-    assert_eq!(config.relations.len(), 4);
+    assert_eq!(config.relations.len(), 3);
     let graph = Graph::new(&config).unwrap();
     assert_eq!(
         graph
             .dependency_closure(&roots(&["owner"]).iter().collect::<Vec<_>>())
             .unwrap(),
-        ["argument", "child", "instruction", "mounted", "owner"]
+        ["argument", "child", "instruction", "owner"]
     );
     assert_eq!(
         graph.eval_target("owner/check").map(ArtifactName::as_str),

@@ -74,7 +74,6 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
     assert!(empty.evals.is_empty());
     assert!(empty.views.agent_tools.is_empty());
     assert!(empty.views.human_tools.is_empty());
-    assert!(empty.mounts.is_empty());
     assert_eq!(empty.basis, None);
 
     let original = eval(json!({ "kind": "human" }));
@@ -146,7 +145,6 @@ fn identifiers_and_eval_requirements_are_strict() {
             .unwrap_err()
             .contains("payload.instruction")
     );
-    assert!(parse(json!({"name": "a", "mounts": {"bad/alias": "b"}})).is_err());
 }
 
 #[test]

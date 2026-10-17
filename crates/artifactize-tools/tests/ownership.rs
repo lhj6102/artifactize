@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, fs};
 use artifactize_tools::{
     Builtin, Content,
     builtin::{self, Input},
-    scope::{Artifact, ArtifactId, ArtifactKind, ChildPrefix, MountAlias, Scope},
+    scope::{Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope},
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -16,7 +16,7 @@ fn id(value: &str) -> ArtifactId {
 }
 
 #[test]
-fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
+fn child_names_cannot_be_bypassed_by_a_filesystem_alias() {
     let directory = os::tempdir();
     // The fixture root is already canonical.
     let root = directory.path().to_path_buf();
@@ -28,9 +28,8 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
         kind: ArtifactKind::Folder,
         name: "parent".into(),
         children: BTreeMap::from([(ChildPrefix::new("Secret").unwrap(), id("child"))]),
-        mounts: BTreeMap::from([(MountAlias::new("Remote").unwrap(), id("unavailable"))]),
     };
-    // Excluded child and mounted Artifact data are intentionally absent from this scope.
+    // Excluded child data is intentionally absent from this scope.
     let scope = Scope {
         artifacts: BTreeMap::from([(id("parent"), owner)]),
     };
@@ -43,7 +42,7 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
             &CancellationToken::new(),
         )
     };
-    for path in ["Secret/x", "secret/x", "SECRET/x", "Remote/x", "remote/x"] {
+    for path in ["Secret/x", "secret/x", "SECRET/x"] {
         let result = call(Builtin::Read, json!({"path":path}));
         assert!(result.is_error(), "{path}: {result:?}");
         assert!(!format!("{result:?}").contains("excluded"));
@@ -54,18 +53,7 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
         matches!(&result.content()[0], Content::Json { data } if data["lines"][0]["text"] == "visible")
     );
 
-    // A physical entry added after the logical scope was built cannot shadow a mount by
-    // changing its case on an insensitive volume; distinct names remain usable otherwise.
-    fs::create_dir(root.join("remote")).unwrap();
-    fs::write(root.join("remote/x"), "physical").unwrap();
     let insensitive = os::case_policy(&root, "public") == os::CasePolicy::Insensitive;
-    let result = call(Builtin::Read, json!({"path":"remote/x"}));
-    assert_eq!(result.is_error(), insensitive, "{result:?}");
-    if !insensitive {
-        assert!(
-            matches!(&result.content()[0], Content::Json { data } if data["lines"][0]["text"] == "physical")
-        );
-    }
 
     // A stale scope still reserves the excluded child after a case-only rename. Use an
     // intermediate name because Windows may otherwise leave the old spelling unchanged.

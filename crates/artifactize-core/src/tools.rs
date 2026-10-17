@@ -80,7 +80,6 @@ struct ContextArtifact {
     path: PathBuf,
     kind: crate::config::ArtifactKind,
     children: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
-    mounts: BTreeMap<crate::config::MountAlias, crate::config::ArtifactName>,
 }
 #[derive(Serialize)]
 struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
@@ -430,7 +429,6 @@ impl<'a> Registry<'a> {
                         path,
                         kind: artifact.kind,
                         children: artifact.children.clone(),
-                        mounts: artifact.mounts.clone(),
                     },
                 ))
             })

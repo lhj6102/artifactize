@@ -83,9 +83,6 @@ pub struct Relation {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Edge {
     Child,
-    Mount {
-        alias: crate::config::MountAlias,
-    },
     Instruction {
         eval_id: EvalId,
         name: crate::config::ReferenceName,
@@ -166,9 +163,6 @@ pub fn extract(config: &RepoConfig) -> Structure {
             target: relation.target.clone(),
             kind: match &relation.kind {
                 RelationKind::Child { .. } => Edge::Child,
-                RelationKind::Mount { alias } => Edge::Mount {
-                    alias: alias.clone(),
-                },
                 RelationKind::Instruction { eval_id, name } => Edge::Instruction {
                     eval_id: eval_id.clone(),
                     name: name.clone(),

@@ -1001,7 +1001,8 @@ async fn graph_discovery_and_conservative_impact_match_cli() {
         ("input", json!({"name":"input","basis":true})),
         (
             "consumer",
-            json!({"name":"consumer","basis":true,"mounts":{"data":"input"}}),
+            json!({"name":"consumer","evals":[{"id":"check","title":"Check",
+                "profile":{"kind":"human"},"payload":{"instruction":"Check {input}."}}]}),
         ),
         ("independent", json!({"name":"independent","basis":true})),
     ] {

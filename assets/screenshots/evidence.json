@@ -35,7 +35,6 @@
             "ignore": []
           },
           "kind": "folder",
-          "mounts": {},
           "name": "docs",
           "path": "docs",
           "tags": [],
@@ -232,7 +231,6 @@
             "ignore": []
           },
           "kind": "folder",
-          "mounts": {},
           "name": "release",
           "path": "release",
           "tags": [
@@ -397,7 +395,6 @@
               "ignore": []
             },
             "kind": "folder",
-            "mounts": {},
             "name": "release",
             "path": "release",
             "tags": [
@@ -569,7 +566,6 @@
             "ignore": []
           },
           "kind": "folder",
-          "mounts": {},
           "name": "ship",
           "path": "ship",
           "tags": [],

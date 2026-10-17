@@ -12,7 +12,7 @@ pub(super) enum Output {
     Grep(Grep),
 }
 
-/// A listed entry always has a kind; only a mount carries its target Artifact.
+/// A listed entry always has a kind.
 #[derive(Debug, Serialize)]
 pub(super) struct Entry {
     #[serde(flatten)]
@@ -28,10 +28,6 @@ pub(super) enum EntryKind {
     Directory,
     Symlink,
     Other,
-    Mount {
-        #[serde(rename = "artifactId")]
-        artifact_id: ArtifactId,
-    },
 }
 
 #[derive(Debug, Serialize)]

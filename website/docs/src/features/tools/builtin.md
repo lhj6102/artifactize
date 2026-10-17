@@ -16,7 +16,7 @@ grep = { builtin = "grep" }
 style = { builtin = "read", args = ["DEV-CODING.md"] }                 # one fixed file
 spec = { builtin = "section", args = ["spec.md"] }                # the model passes only the heading
 install = { builtin = "section", args = ["spec.md", "Install"] }  # one fixed section
-reqs = { builtin = "read", args = ["reqs/requirements.md"] }      # through the mount alias
+reqs = { builtin = "read", args = ["reqs/requirements.md"] }      # in the child folder reqs
 structure = { builtin = "graph", args = [] }                    # current project entity tree
 cargo_help = { builtin = "help", args = ["cargo", "build"] }      # cargo build --help
 
@@ -125,20 +125,19 @@ exactly the extraction that produces the graph fingerprint:
 Filesystem targets must stay inside the scope admitted to the actual review:
 
 - **Fixed Agent tools** use logical paths relative to the declaring Artifact,
-  with a mount alias or child folder as the first component
-  (`reqs/requirements.md`). Discovery and `config check` validate these targets
-  against that Artifact's child/mount scope, rejecting missing or out-of-scope
-  targets. Calls check them again.
+  which may lead into a child folder (`reqs/requirements.md`). Discovery and
+  `config check` validate these targets against that Artifact's child scope,
+  rejecting missing or out-of-scope targets. Calls check them again.
 - **Human tools** accept the same logical paths, and also `{artifactPath}` or
-  `{artifactPath}/path` and `{name}` or `{name}/path`, where `name` is an Artifact
-  or a mount alias of the declaring Artifact, as in
+  `{artifactPath}/path` and `{name}` or `{name}/path`, where `name` is an Artifact,
+  as in
   [Human tools](human.md#human-tools). A `--flag=` prefix is not accepted.
   Discovery and `config check` validate reference names and target existence
   against the workspace, not the narrower review scope. An existing `{other}/file`
-  can therefore pass configuration validation without being a child or mount.
-  Preflight and calls require that `other` is admitted to the actual Human eval
-  scope; an Artifact-only tool check uses just that Artifact's child/mount scope.
-  Tool operands never add dependencies or expand that scope.
+  can therefore pass configuration validation without being a child. Preflight
+  and calls require that `other` is admitted to the actual Human eval scope, so
+  the eval references `{other}` itself; an Artifact-only tool check uses just that
+  Artifact's child scope. Tool operands never add dependencies or expand that scope.
 
 Filesystem targets refuse absolute paths, `..`, symlinks and special files at
 configuration validation and on every call. `open` additionally accepts HTTP(S)

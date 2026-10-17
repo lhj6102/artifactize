@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use artifactize_tools::scope::{
-    Artifact, ArtifactId, ArtifactKind, ChildPrefix, MountAlias, Scope, ScopedPath,
+    Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope, ScopedPath,
 };
 
 fn id(value: &str) -> ArtifactId {
@@ -30,15 +30,11 @@ fn artifact_ids_accept_only_short_names_without_path_syntax() {
 }
 
 #[test]
-fn mounts_and_children_resolve_to_their_target_ids() {
-    let folder = |path: &str, mounts: &[(&str, &str)], children: &[(&str, &str)]| Artifact {
+fn children_resolve_to_their_target_ids() {
+    let folder = |path: &str, children: &[(&str, &str)]| Artifact {
         path: PathBuf::from(path),
         kind: ArtifactKind::Folder,
         name: path.into(),
-        mounts: mounts
-            .iter()
-            .map(|(alias, target)| (MountAlias::new(*alias).unwrap(), id(target)))
-            .collect(),
         children: children
             .iter()
             .map(|(prefix, target)| (ChildPrefix::new(*prefix).unwrap(), id(target)))
@@ -46,9 +42,9 @@ fn mounts_and_children_resolve_to_their_target_ids() {
     };
     let scope = Scope {
         artifacts: BTreeMap::from([
-            (id("review"), folder("review", &[("data", "input")], &[])),
-            (id("input"), folder("input", &[], &[("deep/leaf", "leaf")])),
-            (id("leaf"), folder("input/deep/leaf", &[], &[])),
+            (id("review"), folder("review", &[("data", "input")])),
+            (id("input"), folder("review/data", &[("deep/leaf", "leaf")])),
+            (id("leaf"), folder("review/data/deep/leaf", &[])),
         ]),
     };
     assert_eq!(

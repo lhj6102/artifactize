@@ -216,16 +216,15 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
         &[
             "%s\n",
             "{artifactPath}",
-            "--input={source}/input",
-            "{a}/source/input",
+            "--input={b}/input",
+            "{b}/input",
             "literal $(touch injected)",
         ],
     );
-    write_artifact(&owner, "a", json!({"inspect":command}), "Review.");
-    let marker = owner.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&marker).unwrap()).unwrap();
-    declaration["mounts"] = json!({"source":"b"});
-    support::declaration::write(&marker, declaration.to_string()).unwrap();
+    // An operand outside the eval's scope fails: the eval must reference what it uses.
+    write_artifact(&owner, "a", json!({"inspect":command.clone()}), "Review.");
+    assert!(call(repo).await.is_error());
+    write_artifact(&owner, "a", json!({"inspect":command}), "Review with {b}.");
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
     let input = repo.join("b").join("input");
@@ -250,10 +249,6 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
             .await
             .is_error()
     );
-    declaration.as_object_mut().unwrap().remove("mounts");
-    declaration["views"]["human_tools"]["inspect"]["args"] = json!(["{b}"]);
-    support::declaration::write(marker, declaration.to_string()).unwrap();
-    assert!(call(repo).await.is_error());
 }
 
 #[tokio::test]

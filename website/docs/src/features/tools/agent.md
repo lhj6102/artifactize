@@ -26,23 +26,23 @@ program); `view_image` applies the same image checks as `json` image results.
 |---|---|---|
 | `graph` | Fixed declaration `args = []`; call `{}` | Complete name-based Artifact/eval tree, extracted criteria, graph fingerprint and input → consumer relations |
 | `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1), limit defaults to 80, max 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
-| `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | `artifactId`, `path`, sorted `entries: [{name, path, kind, artifactId?}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
+| `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | `artifactId`, `path`, sorted `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
 | `glob` | `{pattern, path?}`; `path` must name a directory | Searched `path`, up to 200 sorted logical `files`, `truncated` |
 | `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`; case-sensitive by default, maxResults defaults to/max 200 | Searched `path`, `matches: [{path, line, text}]` (one per matching line, sorted by path then line), `truncated` |
 
 `read.artifactId` identifies the Artifact that **declared the tool**;
-`resolvedArtifactId` identifies the Artifact reached through a child or mount.
-For example, if app declares `mounts = { rules = "spec" }`, its read tool called
-with `{"path":"rules/requirements.md"}` returns ownership metadata
+`resolvedArtifactId` identifies the Artifact reached through a child folder.
+For example, if app owns the child folder `rules` declared as `spec`, its read tool
+called with `{"path":"rules/requirements.md"}` returns ownership metadata
 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`
 alongside the line data. `path` remains the logical request path, not a physical
 machine path. List's top-level `artifactId` likewise names the declaring Artifact.
-Entry kinds are `file`, `directory`, `symlink`, `other` or `mount`; only a mount
-entry adds `artifactId`, naming its target Artifact. Glob/grep return the searched
-logical `path`, and grep's matching line numbers start at 1.
+Entry kinds are `file`, `directory`, `symlink` or `other`. Glob/grep return the
+searched logical `path`, and grep's matching line numbers start at 1.
 
 Paths are relative logical paths from the tool's declaring Artifact, including
-children and mount aliases; omitted paths mean its root. They never accept
+its children; omitted paths mean its root. Another Artifact's files are read with
+that Artifact's own tools, which an eval admits when it references the Artifact. They never accept
 absolute paths, traversal components or symlinks. Logical paths are at most
 4096 UTF-16 code units and reject ASCII controls, backslashes, colons and empty
 or `.`/`..` components. The lone `.` is accepted as
@@ -51,12 +51,10 @@ rejected. The registry scope remains the eval's
 admitted Artifacts, not other evals' references. Paths are opened read-only through
 pinned directory descriptors with no-follow component checks; special files cannot
 be read. `list` can report `symlink`/`other` entries, but searches skip them.
-Mounts have kind `mount`. A file Artifact exposes only its target file, mounts and
-referenced Artifacts, not unrelated siblings in its working directory.
-`list` with no path or `path: "."` lists that virtual root's target file and
-declared mounts. Read the target by its filename; file paths remain relative to
-the containing folder. A mount alias may shadow an unrelated physical sibling,
-but not the target filename.
+A file Artifact exposes only its target file, not unrelated siblings in its
+working directory. `list` with no path or `path: "."` lists that virtual root's
+target file. Read the target by its filename; file paths remain relative to the
+containing folder.
 
 Every call validates admitted file targets before invoking a built-in or command
 tool, even when reuse is disabled. A missing, non-regular or symlink-replaced
@@ -82,7 +80,7 @@ syntax, with a 2 MiB compiled-regex size ceiling; an empty, invalid or oversized
 regex is an error. Grep's optional `glob` filter matches relative file paths
 (or the basename when `path` names a file). Hidden files are included; git ignore
 rules do not filter results.
-Search follows logical mounts without repeating a mount cycle. Bounds are 10,000
+Bounds are 10,000
 traversed entries, 8 MiB per grep file, 64 MiB searched,
 and 512 KiB per JSON result. Search limits or skipped oversized files set
 `truncated: true`; narrow the path/pattern to continue. Separately, encountering
@@ -101,7 +99,7 @@ The `json` protocol receives exactly one request on stdin:
     "outputDir": "/external/private/output",
     "tmpDir": "/external/private/tmp",
     "scope": {
-      "example": {"path": "/workspace/example", "kind": "folder", "children": {}, "mounts": {}}
+      "example": {"path": "/workspace/example", "kind": "folder", "children": {}}
     },
     "executionPaths": {"shared/rules.json": "/workspace/shared/rules.json"}
   },
@@ -110,7 +108,7 @@ The `json` protocol receives exactly one request on stdin:
 ```
 
 Scope entries contain canonical physical paths, `kind` (`file`, `folder` or `graph`) and
-logical child/mount maps. For a file Artifact, `context.artifactPath` and its
+logical child maps. For a file Artifact, `context.artifactPath` and its
 scope entry's `path` name the file, not the process cwd; the cwd is its containing
 folder. File Artifact references reject `/path` suffixes.
 These protocol keys stay camelCase; declarations use `execution_paths` and
@@ -321,15 +319,20 @@ artifactize tools check app/review              # same as --eval app/review
 artifactize tools check --artifact app --audience agent
 artifactize tools check --execute --artifact app --audience agent --tool read --args '{"path":"README.md"}'
 artifactize tools check --execute --artifact app --audience human --tool inspect
+artifactize tools check --execute --eval app/review --tool coverage_app --args '{}'
 ```
 
 `tools check` discovers and validates declarations, resolves executable availability,
 scoped argv operands and declared execution paths, and prints JSON scopes, schemas
 and per-tool readiness checks. It is static by default: no owner process, fingerprint
 script, database or output directory is created. A positional selector or `--eval`
-selects one Agent/Human eval and cannot be combined with `--artifact`, `--audience`,
-`--tool` or `--execute`. Explicit execution requires all three Artifact, audience
-and tool flags; the short operation name or its published name is accepted.
+selects one Agent/Human eval and cannot be combined with `--artifact` or
+`--audience`. Explicit execution requires `--tool` and either an eval selector or
+both `--artifact` and `--audience`. With `--artifact`, the short operation name or
+its published name is accepted, and the scope is that Artifact and its children.
+With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
+in the eval's own scope, so a tool whose operands name another Artifact runs as it
+would in that eval's review.
 `--args` is valid only for Agent execution; Human schemas admit only an empty
 object and Human commands take no free arguments. A check never creates a Run,
 verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after

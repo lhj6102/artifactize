@@ -1,5 +1,4 @@
 name = "review"
-mounts = { source = "input" }
 fingerprint = { script = { command = "hook.sh", args = [], files = ["hook.sh"], timeout_ms = 1000 } }
 
 [views.agent_tools]
@@ -14,7 +13,7 @@ profile = { kind = "runtime", command = "sh", args = ["hook.sh"], timeout_ms = 1
 
 [evals.runtime.payload]
 instruction = """
-Check {source}."""
+Check {input}."""
 owner = { literal = "$HOME" }
 
 [evals.agent]
@@ -23,7 +22,7 @@ profile = { kind = "agent", backend = "openai", model = "not-called", reasoning 
 
 [evals.agent.payload]
 instruction = """
-Inspect {source}."""
+Inspect {input}."""
 
 [evals.agent.pass_schema]
 properties.notes = { type = "string" }
@@ -34,4 +33,4 @@ profile = { kind = "human" }
 
 [evals.human.payload]
 instruction = """
-Inspect {source}."""
+Inspect {input}."""

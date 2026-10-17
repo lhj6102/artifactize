@@ -1,2 +1,5 @@
 name = "requirements"
 basis = true
+
+[views.agent_tools]
+read = { builtin = "read", description = "Read lines of requirements.md in {artifactName}." }

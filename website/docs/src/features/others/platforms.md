@@ -33,10 +33,9 @@ fingerprint scripts and command tools:
   empty `PATH` therefore searches that directory. On Windows, a name without an extension tries each extension in `PATHEXT`, in order,
   so `npx` finds `npx.cmd`. Without `PATHEXT`, the order is `.COM;.EXE;.BAT;.CMD`.
 - A relative name containing `/`, such as `./tools/check`, is resolved inside a
-  folder Artifact's admitted scope. For a file Artifact, a non-mount relative
-  executable resolves beneath its containing folder and may name an unrelated
-  sibling (for example `./inspect`); a mount-prefixed path still uses the admitted
-  scope. `..` and symlinks are refused in both cases. This executable lookup does
+  folder Artifact's admitted scope. For a file Artifact, a relative executable
+  resolves beneath its containing folder and may name an unrelated sibling (for
+  example `./inspect`). `..` and symlinks are refused in both cases. This executable lookup does
   not make sibling files visible to built-in tools or scoped argv references.
 - An absolute path runs as given.
 
@@ -66,7 +65,7 @@ How the spelling on disk is checked differs by OS:
 
 | OS | Spelling on disk |
 |---|---|
-| macOS, Windows | Artifactize enforces it. On a case-insensitive volume (the default on both), a path must use the exact spelling of the entry on disk, and a file or folder whose name differs from a child Artifact or mount alias only by case is refused rather than read. |
+| macOS, Windows | Artifactize enforces it. On a case-insensitive volume (the default on both), a path must use the exact spelling of the entry on disk, and a file or folder whose name differs from a child Artifact only by case is refused rather than read. |
 | Linux | Artifactize relies on the filesystem. A case-sensitive filesystem (the usual one) only opens the exact spelling; on a case-insensitive one, such as a casefolded folder or a Windows drive mounted in WSL, a path that differs only by case may open the same entry. |
 
 ## Opening files and the browser

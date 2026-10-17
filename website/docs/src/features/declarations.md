@@ -13,9 +13,9 @@ put the needed Artifacts as `{name}` references in the consuming eval's
 `"Review {app} against {spec} and {assets}."` Each consuming eval waits for those
 inputs' required evals; independent sibling evals keep running.
 
-Mounts and child relations still provide visible material and fingerprint inputs,
-but no longer block sibling evals on their own. To require their reviews before
-an eval, reference those Artifacts explicitly in that eval's instruction or argv.
+A child folder counts as a reference of every eval of its parent. To require any
+other Artifact's reviews before an eval, reference that Artifact explicitly in the
+eval's instruction or argv.
 
 An old profile fails configuration parsing with
 `unknown variant `dependency`, expected one of `agent`, `human`, `runtime``.
@@ -43,7 +43,7 @@ crates/app/tests/
 examples/
 ```
 
-Names, eval IDs, mount aliases, tool/session names and profile variant names match
+Names, eval IDs, tool/session names and profile variant names match
 `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Artifact names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
@@ -53,7 +53,6 @@ by ID, not by their position in the TOML source.
 |---|---|
 | `name` | Required Artifact name |
 | `tags` | Optional list of at most 64 unique nonblank strings, without ASCII controls |
-| `mounts` | Optional alias-to-Artifact-name map |
 | `basis` | Optional boolean; `true` declares a no-eval input, waiving its own review obligations but not its dependencies |
 | `fingerprint` | Omission uses artifactsum; `false` disables reuse; otherwise an artifactsum or script table |
 | `views.agent_tools`, `views.human_tools` | Optional maps of declared tools |
@@ -133,19 +132,6 @@ own project generator and commit its `.artf` output. Older fields such as
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
 option is also rejected.
-
-## Mounts
-
-`mounts = { rules = "shared-rules" }` gives a local alias to an existing Artifact.
-The target must exist. If an alias is also a globally declared Artifact name, it
-must target **that same Artifact**, not another one; otherwise references would
-be ambiguous. For folder and Graph Artifacts, an alias must not collide with any
-physical file, directory or link in the owner's folder.
-
-A file Artifact's virtual root is the exception to the physical-entry check: its
-mount may shadow an unrelated sibling, because siblings are not visible through
-that root. It may never shadow the file target itself, and the global-name rule
-still applies. See [File Artifacts](#file-artifacts) for the virtual path behavior.
 
 ## Owner-result schemas
 
@@ -236,7 +222,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 It is an ordinary named Artifact: declare any runtime, Agent or Human
 evals and tools, and select it by name in `verify`, `status`, CI or `--reuse-only`.
 It has no default evals, child ownership or relations to other Artifacts. Explicit
-mounts and instruction/argv references work normally. Commands run from the
+instruction/argv references work normally. Commands run from the
 repository root; declaring the graph does not make it the owner of that folder.
 Its scope uses `kind = "graph"` and its declaration path is `.artf`.
 
@@ -244,8 +230,7 @@ Do not declare `fingerprint`, even `false` or an empty table: its fingerprint is
 always the current extracted graph. Otherwise ordinary Artifact rules apply:
 `basis = true` explicitly declares no own review obligations and cannot own evals;
 it does not satisfy unmet dependencies. A no-eval graph without `basis = true`
-remains UNREVIEWED, as any no-eval Artifact does. Mounts remain valid because they
-connect declared tools or evals to other Artifacts. No source file is
+remains UNREVIEWED, as any no-eval Artifact does. No source file is
 created or required. Ordinary Artifact cycles are allowed; extraction is flat and
 includes the graph Artifact's own declaration without recursive fingerprinting.
 
@@ -271,17 +256,13 @@ Artifact. The nearest-folder ownership rule still applies to subfolder
 Artifact targets and excludes every `*.artf` declaration.
 
 Runtime commands, tools and fingerprint scripts use the containing folder as cwd.
-A non-mount relative executable may be an unrelated sibling in that folder; a
-mount-prefixed executable follows the admitted scope instead. This does not grant
-built-in tools or scoped argv references access to other sibling files.
+A relative executable may be an unrelated sibling in that folder. This does not
+grant built-in tools or scoped argv references access to other sibling files.
 `{name}` resolves to the target file path, not the folder; file references cannot
-have a `/path` suffix. Built-in tools expose only the target file, mounts and
-referenced Artifacts, not unrelated siblings. `list .` names the virtual file
-Artifact root; it lists the target filename and mounts. Paths within that root
-remain relative to the containing folder.
-Mount aliases must not shadow the target filename, but may shadow unrelated
-sibling entries: those siblings are not visible in the file Artifact's virtual
-root. Ordinary global-name ambiguity checks still apply. Default artifactsum covers
+have a `/path` suffix. Built-in tools expose only the target file and referenced
+Artifacts, not unrelated siblings. `list .` names the virtual file Artifact root;
+it lists the target filename. Paths within that root remain relative to the
+containing folder. Default artifactsum covers
 only the target file. The containing folder is a working directory, not an
 implicit grant of built-in-tool access to its other files. A workspace can have
 only file Artifacts; it does not need a folder declaration.
@@ -376,15 +357,17 @@ See [verify modes](../cli/index.md#verify-modes) and
 ## Eval dependencies
 
 `payload.instruction` references and runtime `profile.args` operands such as
-`{input}` or `{input}/path` create dependencies for that Eval only. Mount aliases
-resolve first; the input's Evals supply its review obligations. Mount/child
-visibility alone does not create an execution gate. Self-references identify the
-target and do not make an Eval wait for its own siblings.
+`{input}` or `{input}/path` create dependencies for that Eval only; the input's
+Evals supply its review obligations. A child folder is part of its parent's
+content, so it is a dependency of every Eval of the parent, as if each referenced
+it. Self-references identify the target and do not make an Eval wait for its own
+siblings; only a Human Eval waits for its Artifact's
+[machine Evals](artifact.md#human-sign-offs).
 
 Plain `verify` waits for input evidence; `--speculate` changes this scheduling
 policy without waiving final approval. An Eval's own Artifact and the Artifacts
-in a dependency cycle with it never gate it, so a RED sibling or cycle peer does
-not block it; peers retain individual verdicts and must all pass before downstream
+in a dependency cycle with it never gate it, so a RED sibling machine Eval or cycle
+peer does not block it; a child that references its parent is such a peer; peers retain individual verdicts and must all pass before downstream
 consumers can proceed. See [Eval dependencies](artifact.md#eval-dependencies)
 for the E2E ownership example and full model.
 
@@ -444,12 +427,11 @@ The command runs from its owner's working directory with JSON on stdin:
 `{"version":1,"artifactId":"example"}`. Bare commands resolve through PATH;
 absolute executables run as given. Relative executables containing `/` (such as
 `./fingerprint.sh`) resolve inside a folder Artifact's admitted scope. For file
-Artifacts, non-mount relative executables instead resolve beneath the containing
-folder and may name unrelated siblings; mount-prefixed executables still use the
-admitted scope. Traversal and symlinks are rejected in both cases.
-Arguments stay literal except explicit scoped Artifact references: `{name}` may
-be a mount alias or global Artifact name. Each referenced Artifact, with its child
-and mount closure, enters the script's scope without becoming a graph relation.
+Artifacts, relative executables instead resolve beneath the containing folder and
+may name unrelated siblings. Traversal and symlinks are rejected in both cases.
+Arguments stay literal except explicit scoped Artifact references: `{name}` is a
+global Artifact name. Each referenced Artifact, with its child closure, enters the
+script's scope without becoming a graph relation.
 `config check` rejects unknown and malformed references; existence and symlinks
 are checked when the command is prepared. There are no interpreter-specific
 flags, wrappers or entry-file rules.
@@ -478,15 +460,15 @@ only at preparation and recheck.
 ## Scoped input library
 
 `config::read_workspace_config` (also used by `config check`) resolves nearest
-child ownership, validates mounts and explicit references, and returns typed
+child ownership, validates explicit references, and returns typed
 input-to-consumer `relations` for graph scheduling. Instruction references resolve
-an owner's mount alias or a global Artifact name. Backslash-escaped braces, doubled
+a global Artifact name. Backslash-escaped braces, doubled
 braces, `${variables}`, nested/JSON groups and unmatched braces stay literal.
 Payloads are never changed and references never expand file content.
 
 `scope::eval_scope` admits the target and explicit references plus their child
-and mount closure, not the referenced Artifacts' eval instructions.
-`Scope::resolve_path` follows logical child/mount paths to canonical Artifact
+closure, not the referenced Artifacts' eval instructions.
+`Scope::resolve_path` follows logical child paths to canonical Artifact
 ids; `Scope::resolve_input` additionally requires existing files/directories
 without symlink traversal. Logical paths reject absolute paths, traversal, empty
 components, backslashes, colons, ASCII controls and lengths above 4096 UTF-16 code units.
@@ -494,7 +476,7 @@ components, backslashes, colons, ASCII controls and lengths above 4096 UTF-16 co
 Before preparing a runtime command, call `scope::resolve_argv` with the admitted
 scope. Explicit `{name}`, `{name}/path` and `--flag={name}/path` operands resolve to
 absolute scoped input paths and add dependencies even without instruction
-references. Use `{owner}/mount/path` for logical paths starting at a folder owner.
+references. Use `{owner}/child/path` for logical paths starting at a folder owner.
 A file reference resolves to the file itself. Other arguments (including escaped
 references) remain literal, and the command is never interpolated. `config check`
 validates names and syntax but does not open runtime operands or execute programs.
