@@ -365,7 +365,8 @@ Detail depends on the eval kind:
   [transcript reader reference](../features/others/state.md#transcript-reader)
   for storage, streaming and history behavior.
 - **Runtime:** saved stdout/stderr, exit code and capture truncation beside the
-  sections, or below them in a Detail narrower than 90 columns. Running,
+  sections when Detail has at least 90 inner-content columns (92 including its
+  outer borders); in a narrower pane the evidence stacks below. Running,
   timeout/cancellation and remote summary-only results show logs as unavailable;
   there is no live-log recorder.
 - **Dependency:** the saved derived state and `blockedBy` requirements, marked
