@@ -115,9 +115,10 @@ arguments; the test-code Artifact’s own Evals review style and feature coverag
 An independent sibling Eval does not inherit another Eval’s references. All Evals
 can judge their targets independently of upstream verdicts. Plain verify schedules
 dependency-first for efficiency; `--speculate` starts unresolved work early, not
-approval. Eval-cycle peers do not wait for or cancel each other on an internal RED;
-external gates still hold the cycle and a failed cycle cannot release downstream
-consumers. `basis = true` waives an input’s own reviews, not its dependencies, and
+approval. An Eval is blocked only by a RED in an Artifact it depends on outside its
+own Artifact and that Artifact's cycle: a RED sibling or cycle peer never blocks or
+holds it, what the cycle references outside itself still does, and a failed cycle
+cannot release downstream consumers. `basis = true` waives an input’s own reviews, not its dependencies, and
 cannot own Evals.
 
 For runtime or Agent evals whose own command or tools use the machine, put

@@ -382,8 +382,9 @@ visibility alone does not create an execution gate. Self-references identify the
 target and do not make an Eval wait for its own siblings.
 
 Plain `verify` waits for input evidence; `--speculate` changes this scheduling
-policy without waiving final approval. Actual Eval-cycle peers bypass only their
-internal gates, retain individual verdicts, and must all pass before downstream
+policy without waiving final approval. An Eval's own Artifact and the Artifacts
+in a dependency cycle with it never gate it, so a RED sibling or cycle peer does
+not block it; peers retain individual verdicts and must all pass before downstream
 consumers can proceed. See [Eval dependencies](artifact.md#eval-dependencies)
 for the E2E ownership example and full model.
 

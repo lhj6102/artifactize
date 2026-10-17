@@ -297,8 +297,10 @@ A row groups those gates into at most two
 unmet Artifacts, then `+N`, with each Artifact's completion state. When all targets
 are themselves waiting, it adds one level of cause, for example
 `waits for cli … waiting (cli waits for code-style)`. Cycle peers share `↻ peer`
-markers. Actual Eval-cycle peers do not gate one another; an Artifact-level cycle
-marker does not make every sibling Eval a cycle peer. External gates still apply.
+markers. An eval's own Artifact and its cycle peers never gate it, so a RED sibling
+or peer does not block it; what the cycle references outside itself still applies.
+The marker shows material cycles, mounts and children included; only a cycle that
+Eval references form makes Artifacts peers for gating.
 Upstream comes first where the graph allows; Artifact cycle peers and Evals are
 ordered by name.
 

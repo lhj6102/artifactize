@@ -6,9 +6,11 @@ the next `verify` will execute, reuse, wait for or block, without running evals.
 
 ## Eval execution gates
 
-Each eval waits for the required reviews of its own referenced Artifacts.
-Mounts and child relations alone do not gate sibling evals. Eval-level cycles
-run their peers independently; external gates apply to the entire cycle.
+Each eval waits for the required reviews of its own referenced Artifacts, and is
+blocked when one of them, or anything further upstream, has a RED eval. Its own
+Artifact and the Artifacts in a dependency cycle with it never gate it: a RED
+sibling or cycle peer neither blocks it nor makes it wait. Mounts and child
+relations alone do not gate sibling evals.
 See [Eval dependencies](artifact.md#eval-dependencies).
 
 ## Verify and Runs
@@ -98,9 +100,10 @@ The same request key keeps its original choices.
 Speculation starts requested runtime, Agent and Human evals before unresolved
 gates, within `--jobs`, backend capacity and `--max-executions` limits. Ready work
 has priority; speculative work uses spare capacity and yields first. Redispatch
-consumes another executor start. Upstream RED/ERROR immediately cancels
-transitively blocked work and marks it BLOCKED without a reusable cancelled
-result. GREEN keeps results already produced for the same files.
+consumes another executor start. An upstream RED or ERROR immediately cancels
+only the work it makes invalid, the evals that depend on it outside their own
+Artifact and cycle, and marks it BLOCKED without a reusable cancelled result.
+GREEN keeps results already produced for the same files.
 
 Deferral allows execution past pending Human gates. A deferrable sign-off's
 request is issued as late as possible, after its Artifact's machine reviews finish
@@ -260,12 +263,14 @@ a Human claim and submission", even without a key; blocked or waiting evals
 explain their gate or wait state instead.
 
 An Eval's own references define its gates. Required input Evals that are pending
-leave it WAIT_DEPENDENCY; RED/BLOCKED inputs block it. Evals inside the same
-Eval-level cycle keep their own real verdicts, while external gates hold the cycle
-and failed cycles do not release downstream consumers. An independent sibling
-Eval on the same Artifact is not gated by another sibling's references.
-`blockedBy` names unfulfilled qualified Eval IDs. Detail groups these gates by
-input Artifact under `Waits for`; `w` shows pending Evals.
+leave it WAIT_DEPENDENCY; RED/BLOCKED inputs block it. Its own Artifact and its
+cycle peers are never gates: they keep their own real verdicts, while what the
+cycle references outside itself holds it, and a failed cycle does not release
+downstream consumers. An independent sibling Eval on the same Artifact is not
+gated by another sibling's references. For a waiting Eval `blockedBy` names the
+unfulfilled qualified Eval IDs; for a BLOCKED one, the RED Evals at the root of the
+block, as its reason does. Detail groups these gates by input Artifact under
+`Waits for`; `w` shows pending Evals.
 
 A later Human submission can settle a waiting Run. `run show` keeps its saved
 validation and requests.

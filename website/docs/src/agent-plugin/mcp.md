@@ -99,7 +99,7 @@ readable.
 
 Both mode arguments default false and pass directly to shared `RunModes`.
 `speculate` starts requested downstream work within core scheduling limits before
-upstream judgment; an upstream RED/ERROR cancels blocked work. `defer_human`
+upstream judgment; an upstream RED/ERROR cancels only the work it makes invalid. `defer_human`
 permits provisional progress and returns terminal `signoffs_pending` when only
 deferred sign-offs remain. `verify_result` reports verdict `SIGNOFFS_PENDING`;
 this is not full approval (the CLI watcher exits 5). Explicit `gate = "blocking"`

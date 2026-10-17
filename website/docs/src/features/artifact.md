@@ -109,10 +109,29 @@ reviews delay the consumer Eval; RED input reviews block it. `--speculate` lets
 work start before unresolved input gates, without approving missing requirements.
 Final GREEN still requires all required evidence, including upstream reviews.
 
-Cycles are condensed at the Eval level. Internal peers do not wait for each other,
-and an internal RED does not cancel a peer or replace its actual verdict with
-BLOCKED. External gates still apply to the entire cycle. Every internal result
-must pass before downstream consumers outside the cycle can proceed.
+An Eval is blocked, never an Artifact. An Eval is BLOCKED when an Artifact it
+depends on has a RED Eval: that content will change, so the Eval's result would
+not be fresh, and it does not run. The Eval depends on the Artifacts it references
+and on everything upstream of them, so a BLOCKED input Eval blocks it in turn: a
+RED sits further upstream.
+
+Its own Artifact and the Artifacts in a dependency cycle with it are excluded.
+Cycle peers are evaluated together: none can be fixed first. Cycles are the ones
+Eval references form; a mount or child alone never makes Artifacts cycle peers,
+just as it never gates. A RED sibling Eval on the same Artifact or a
+RED Eval of a cycle peer never blocks an Eval or replaces its actual verdict, and
+peers never wait for one another. A reference to a cycle peer stands for what the
+cycle references outside itself; a reference to an Artifact in another cycle
+stands for every Eval of that cycle. Waiting follows the same set: plain `verify`
+holds an Eval only for those Evals, and `--speculate` cancels only Evals that a
+RED makes invalid this way. Every result in a cycle must pass before consumers
+outside the cycle can proceed.
+
+A BLOCKED Eval's reason names the RED Evals at the root of the block, for example
+`Dependency verdict RED: core/tests`, never Evals that were merely still running.
+In a speculative Run an upstream ERROR blocks too and is named as
+`Dependency ERROR: …`. `blockedBy` lists the same Evals, and the settled Run names
+every one of them.
 
 ## The fingerprint field
 
