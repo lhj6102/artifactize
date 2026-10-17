@@ -808,3 +808,11 @@ export function sourceTree(root: NativePath): { path: NativePath; name: string; 
 
 /** Original bytes, for checksum-based upstream provenance rather than text normalization. */
 export function readBytes(path: NativePath): Uint8Array { return readFileSync(path); }
+
+/** Failure-only native/backend diagnostics from this batch's service-owned log files. */
+export function serviceFailureLogs(directory: NativePath): string[] {
+  // Keep startup and crash causes visible in CI without replaying entire backend logs.
+  const tailCharacters = 16 * 1024;
+  return sourceTree(directory).filter((item) => item.kind === "file" && item.name.endsWith(".log"))
+    .map((item) => `--- service log ${item.name} ---\n${readText(item.path).slice(-tailCharacters)}`);
+}

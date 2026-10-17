@@ -5,7 +5,7 @@ import { checkIntegrity } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, readJson, requiredVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
+  nativeCrashReports, nodeProgram, readJson, requiredVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -49,7 +49,13 @@ async function batch(): Promise<void> {
       await configuration.releasePrepared();
     }
   } catch (error) { failures.push(error); }
-  if (failures.length) throw new AggregateError(failures, "desktop WDIO batch failed");
+  if (failures.length) {
+    try {
+      const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "failed batches retain service diagnostics"));
+      for (const log of serviceFailureLogs(output)) console.error(log);
+    } catch (error) { failures.push(error); }
+    throw new AggregateError(failures, "desktop WDIO batch failed");
+  }
 }
 
 async function suite(ids: string[]): Promise<void> {

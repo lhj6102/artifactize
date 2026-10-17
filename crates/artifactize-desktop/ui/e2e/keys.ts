@@ -6,6 +6,7 @@
 // in a row are several calls, each with its own expected effect, so no delivered key is ever
 // sent twice.
 import assert from "node:assert/strict";
+import { dispatchInput } from "./input.ts";
 
 const WAIT_EXPIRED = "the key delivery or outcome did not complete";
 
@@ -50,13 +51,7 @@ export function page(browser: WebdriverIO.Browser): Page {
       // WebDriver's page command for the same keyboard fields the app handles.
       const key = keys.length === 1 ? keys[0] : undefined;
       if (key === "PageUp" || key === "PageDown") {
-        await browser.execute((key) => {
-          const target = document.activeElement ?? document.body;
-          const keyCode = key === "PageUp" ? 33 : 34;
-          for (const type of ["keydown", "keyup"]) target.dispatchEvent(new KeyboardEvent(type, {
-            key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true,
-          }));
-        }, key);
+        await dispatchInput(browser, { kind: "key", key });
       } else await browser.keys(keys);
     },
     until: async (check, timeout) => {
