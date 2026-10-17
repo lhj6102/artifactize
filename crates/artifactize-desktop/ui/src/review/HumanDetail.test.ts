@@ -2,14 +2,14 @@
 // leave input methods alone, verdict drafts and correctable schema errors.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
 import { greenForm, humanView, redForm } from "./fixtures";
-import type { FormView, ToolView } from "../ipc/client";
+import type { FormView, LogLine, ToolView } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
@@ -33,15 +33,11 @@ function backend(stage: "claim" | "review", submit?: (args: Record<string, unkno
       }
       case "human_submit":
         return submit?.(args as Record<string, unknown>);
-      case "human_json":
-        return '{\n  "approved": true,\n  "comment": ""\n}';
       case "human_edit_field": {
         // The library's form takes the value as typed.
         const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
         return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
       }
-      case "human_edit_json":
-        return { ...(args as { draft: object }).draft, json: (args as { json: string }).json };
       default:
         return null;
     }
@@ -95,7 +91,7 @@ describe("HumanDetail", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("/reason");
     const submitted = calls.find((call) => call.cmd === "human_submit");
-    expect(submitted?.args.draft).toEqual({ verdict: "RED", fields: [["reason", { kind: "text", value: "no" }]], json: null });
+    expect(submitted?.args.draft).toEqual({ verdict: "RED", fields: [["reason", { kind: "text", value: "no" }]] });
     expect(((await screen.findByLabelText(/reason/)) as HTMLTextAreaElement).value).toBe("no");
   });
 
@@ -125,7 +121,7 @@ describe("HumanDetail", () => {
     await screen.findByText("REVIEW (yours)");
     await fireEvent.keyDown(region, { key: "g" });
     const comment = await screen.findByLabelText(/comment/);
-    const writes = new Set(["human_form", "human_claim", "human_release", "human_run", "human_submit", "human_cancel", "human_json"]);
+    const writes = new Set(["human_form", "human_claim", "human_release", "human_run", "human_submit", "human_cancel"]);
     const before = calls.filter(({ cmd }) => writes.has(cmd)).length;
     await fireEvent.compositionStart(comment);
     for (const key of ["g", "r", "q", "u", "c", "Escape"]) {
@@ -143,7 +139,7 @@ describe("HumanDetail", () => {
     await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
     await waitFor(() => expect(calls.some(({ cmd }) => cmd === "human_submit")).toBe(true));
     expect(calls.find(({ cmd }) => cmd === "human_submit")?.args.draft).toEqual({
-      verdict: "GREEN", fields: [["approved", { kind: "fixed" }], ["comment", { kind: "text", value: "안녕" }]], json: null,
+      verdict: "GREEN", fields: [["approved", { kind: "fixed" }], ["comment", { kind: "text", value: "안녕" }]],
     });
   });
 
@@ -221,8 +217,7 @@ describe("HumanDetail", () => {
         { name: "approved", required: true, hint: "", input: { kind: "fixed", value: "false" } },
         { name: "change", required: true, hint: "array", input: { kind: "list" } },
       ],
-      json: null,
-      draft: { verdict: "RED", fields: [["approved", { kind: "fixed" }], ["change", { kind: "list", value: [""] }]], json: null },
+      draft: { verdict: "RED", fields: [["approved", { kind: "fixed" }], ["change", { kind: "list", value: [""] }]] },
     };
     const calls = backend("review");
     mockIPC((cmd, args) => {
@@ -251,32 +246,102 @@ describe("HumanDetail", () => {
     expect(screen.getByRole("button", { name: "Submit RED" })).toBeTruthy();
   });
 
-  it("groups the tools by their Artifact, the reviewed one first, and keeps every run in the Tool log", async () => {
+  it("groups the tools by their Artifact, the reviewed one first, and logs each run's lines under it", async () => {
     const tools: ToolView[] = [
       { name: "preview_brand", artifact: "brand", operation: "preview", kind: "launch", description: "Show the icon.", action: "preview", error: null },
       { name: "notes_release", artifact: "release", operation: "notes", kind: "output", description: "Print the notes.", action: "$ cat notes.md", error: null },
     ];
-    let runs = 0;
-    mockIPC((cmd) => {
+    const ran: string[] = [];
+    mockIPC((cmd, args) => {
       if (cmd === "human_open") return humanView("review", { tools });
       if (cmd === "human_run") {
-        runs += 1;
-        return { output: { title: "exited 0", text: `clicked (412, ${runs})`, error: false }, notice: { text: "Ran", error: false } };
+        ran.push((args as { tool: string }).tool);
+        return { text: "Ran", error: false };
       }
+      return null;
+    }, { shouldMockEvents: true });
+    const user = userEvent.setup();
+    const review = new Review("run-a-2", new Jobs());
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    await screen.findByText("REVIEW (yours)");
+    const groups = screen.getAllByRole("group", { name: /^Tools of / });
+    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
+    await user.click(screen.getByRole("button", { name: "▶ preview" }));
+    await waitFor(() => expect(ran).toEqual(["preview_brand"]));
+    // The launched program keeps printing after its button returned; a later run's lines
+    // join their own entry.
+    const line = (run: string, line: LogLine["line"]): LogLine => ({ request: "run-a-2", run, line });
+    review.logged([
+      line("1", { kind: "start", at: 0, operation: "preview", artifact: "brand" }),
+      line("1", { kind: "stdout", text: "clicked (412, 1)" }),
+      line("2", { kind: "start", at: 0, operation: "notes", artifact: "release" }),
+      line("1", { kind: "stderr", text: "clicked (412, 2)" }),
+      line("2", { kind: "end", text: "■ exit 0", error: false }),
+    ]);
+    const log = screen.getByRole("log", { name: "Tool log" });
+    await waitFor(() => expect(log.textContent).toContain("clicked (412, 2)"));
+    const rows = [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
+    expect(rows).toEqual(["▶ HH:MM:SS · preview · brand", "clicked (412, 1)", "clicked (412, 2)", "▶ HH:MM:SS · notes · release", "■ exit 0"]);
+    expect(screen.getByText("clicked (412, 2)").classList.contains("error")).toBe(true);
+  });
+
+  it("enters a list of flat objects as groups of fields, added and removed", async () => {
+    const findings: FormView = {
+      verdict: "RED",
+      fields: [
+        {
+          name: "findings",
+          required: true,
+          hint: "array",
+          input: {
+            kind: "groups",
+            fields: [
+              { name: "kind", required: false, hint: "", input: { kind: "fixed", value: '"review"' } },
+              { name: "problem", required: true, hint: "string", input: { kind: "text" } },
+              { name: "severity", required: false, hint: "", input: { kind: "choice", options: ['"low"', '"high"'] } },
+            ],
+          },
+        },
+      ],
+      draft: {
+        verdict: "RED",
+        fields: [["findings", { kind: "groups", value: [[["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "" }], ["severity", { kind: "choice", value: null }]]] }]],
+      },
+    };
+    const submitted: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "human_open") return humanView("review");
+      if (cmd === "human_form") return findings;
+      if (cmd === "human_edit_field") {
+        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
+        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
+      }
+      if (cmd === "human_submit") submitted.push((args as { draft: unknown }).draft);
       return null;
     }, { shouldMockEvents: true });
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
-    const groups = screen.getAllByRole("group", { name: /^Tools of / });
-    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
-    await user.click(screen.getByRole("button", { name: "▶ notes" }));
-    await user.click(await screen.findByRole("button", { name: "▶ preview" }));
-    const log = screen.getByRole("log", { name: "Tool log" });
-    await waitFor(() => expect(log.textContent).toContain("clicked (412, 2)"));
-    expect(log.textContent).toContain("▶ notes · release");
-    expect(log.textContent).toContain("clicked (412, 1)");
-    expect(log.textContent).toContain("▶ preview · brand");
+    await user.click(screen.getByRole("button", { name: "RED" }));
+    const first = await screen.findByRole("group", { name: "findings 1" });
+    // The group's constant is filled in, not shown.
+    expect(within(first).queryByText(/kind/)).toBeNull();
+    await user.type(within(first).getByLabelText(/problem/), "typo");
+    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    const second = await screen.findByRole("group", { name: "findings 2" });
+    await user.type(within(second).getByLabelText(/problem/), "date");
+    await user.selectOptions(within(second).getByLabelText(/severity/), '"high"');
+    await user.click(screen.getByRole("button", { name: "Remove findings 1" }));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "findings 2" })).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Submit RED" }));
+    await waitFor(() =>
+      expect(submitted).toEqual([
+        {
+          verdict: "RED",
+          fields: [["findings", { kind: "groups", value: [[["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "date" }], ["severity", { kind: "choice", value: 1 }]]] }]],
+        },
+      ]),
+    );
   });
 
   it("says in grey that an optional field may stay empty", async () => {
@@ -288,5 +353,16 @@ describe("HumanDetail", () => {
     await user.click(screen.getByRole("button", { name: "GREEN" }));
     const comment = await screen.findByLabelText(/comment/);
     expect(comment.getAttribute("placeholder")).toBe("Optional");
+  });
+});
+
+describe("Tools focused", () => {
+  it("gives a review opened with Tools focused the keyboard on its Tools", async () => {
+    backend("review");
+    const review = new Review("run-a-2", new Jobs());
+    review.area = "tools";
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    const tools = await screen.findByRole("region", { name: "Tools" });
+    await waitFor(() => expect(document.activeElement).toBe(tools));
   });
 });

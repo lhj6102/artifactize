@@ -5,6 +5,7 @@
 //! the review's own [`Form`] turns them into the result, so typed fields, coercion and local
 //! errors are the terminal's.
 mod form;
+pub(crate) mod log;
 
 pub use form::{Draft, FormView, Verdict};
 
@@ -42,8 +43,8 @@ type Commands = BTreeMap<ToolName, Result<CommandLine, String>>;
 /// What resolving a request's tool commands answered: them, or why it could not.
 type Resolved = Result<Commands, String>;
 
-/// Per-app review state: what is cached for drawing, running jobs, and claims taken here.
-#[derive(Default)]
+/// Per-app review state: what is cached for drawing, running jobs, claims taken here, and
+/// the Tool log every run logs to.
 pub struct Reviews {
     /// The last read view of each opened request, for redraws without a read.
     views: Mutex<BTreeMap<RequestId, RequestView>>,
@@ -53,9 +54,31 @@ pub struct Reviews {
     jobs: Mutex<BTreeMap<JobId, CancellationToken>>,
     /// Claims this app took and has neither submitted nor released.
     taken: Mutex<BTreeSet<RequestId>>,
+    log: review::log::Sink,
+    /// The Tool log's receiving end, until the app starts forwarding it.
+    events: Mutex<Option<review::log::Events>>,
+}
+
+impl Default for Reviews {
+    fn default() -> Self {
+        let (log, events) = review::log::channel();
+        Self {
+            views: Mutex::default(),
+            commands: Mutex::default(),
+            jobs: Mutex::default(),
+            taken: Mutex::default(),
+            log,
+            events: Mutex::new(Some(events)),
+        }
+    }
 }
 
 impl Reviews {
+    /// The Tool log's events, for the one forwarder of this app.
+    pub(crate) fn take_events(&self) -> Option<review::log::Events> {
+        self.events.lock().expect("events lock").take()
+    }
+
     /// Forget everything read from a replaced state and cancel its jobs.
     pub fn reset(&self) {
         self.cancel_all();
@@ -185,22 +208,6 @@ impl From<(String, bool)> for Notice {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Output {
-    pub title: String,
-    pub text: String,
-    pub error: bool,
-}
-
-/// A finished tool run: its output pane and notice.
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolRun {
-    pub output: Output,
-    pub notice: Notice,
-}
-
 /// What a Human action left: its notice and the request as it now stands.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -269,12 +276,7 @@ fn view(
                     action: tool.action(resolved),
                     error: failed
                         .or_else(|| resolved.and_then(|resolved| resolved.as_ref().err().cloned())),
-                    operation: tool
-                        .name
-                        .as_str()
-                        .strip_suffix(&format!("_{}", tool.artifact))
-                        .unwrap_or(tool.name.as_str())
-                        .to_owned(),
+                    operation: tool.operation().to_owned(),
                     artifact: tool.artifact.to_string(),
                     name: tool.name.to_string(),
                     kind: kind(tool.kind),
@@ -391,6 +393,7 @@ async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
             app.launch.state.clone(),
             app.launch.reviewer.clone(),
             cancel,
+            app.human.log.clone(),
         )
         .await;
     app.human.end(job);
@@ -426,7 +429,9 @@ async fn acted(app: &App, id: &RequestId, outcome: Outcome) -> Result<Acted, Fai
 }
 
 /// Run tool `tool` of request `id`; job number `job` cancels it. The run needs this
-/// reviewer's claim on a request that still waits and unchanged declarations.
+/// reviewer's claim on a request that still waits and unchanged declarations. What it prints
+/// arrives as [`log::HumanToolLog`] events while it runs; a launch tool answers at once and its
+/// program's output keeps arriving until it exits.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_run(
@@ -434,7 +439,7 @@ pub async fn human_run(
     id: RequestKey,
     tool: String,
     job: JobId,
-) -> Result<ToolRun, Failure> {
+) -> Result<Notice, Failure> {
     let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
     guard(&app, &id, review::review_refusal).await?;
@@ -454,19 +459,7 @@ pub async fn human_run(
         .lock()
         .expect("commands lock")
         .remove(&id);
-    let notice = outcome.notice().into();
-    let Outcome::Ran { tool, result, .. } = outcome else {
-        unreachable!("a run job ends in Ran");
-    };
-    let output = review::output(&tool, result);
-    Ok(ToolRun {
-        output: Output {
-            title: output.title,
-            text: output.text,
-            error: output.error,
-        },
-        notice,
-    })
+    Ok(outcome.notice().into())
 }
 
 /// Cancel running job `job`: a tool, or a submission's fingerprint recheck.
@@ -537,19 +530,6 @@ pub async fn human_edit_field(
     form::edit_field(&opened(&app, &id)?.request, draft, &name, value)
 }
 
-/// `draft` of request `id` with its owner-fields JSON replaced.
-#[tauri::command]
-#[specta::specta]
-pub async fn human_edit_json(
-    app: tauri::State<'_, App>,
-    id: RequestKey,
-    draft: Draft,
-    json: String,
-) -> Result<Draft, Failure> {
-    let id = id.into_inner();
-    form::edit_json(&opened(&app, &id)?.request, draft, json)
-}
-
 /// Submit `draft` for request `id` and publish it like `request submit`. A result the
 /// schema rejects keeps the request waiting and fails as `invalid`.
 #[tauri::command]
@@ -591,19 +571,6 @@ pub async fn human_submit(
         notice,
         view,
     })
-}
-
-/// The owner-fields JSON of `draft`, to edit a typed form as JSON: what the terminal review
-/// hands to `$EDITOR`.
-#[tauri::command]
-#[specta::specta]
-pub fn human_json(
-    app: tauri::State<'_, App>,
-    id: RequestKey,
-    draft: Draft,
-) -> Result<String, Failure> {
-    let request = opened(&app, &id.into_inner())?;
-    form::json(&request.request, draft)
 }
 
 /// Release this reviewer's claims on `ids` without a verdict.

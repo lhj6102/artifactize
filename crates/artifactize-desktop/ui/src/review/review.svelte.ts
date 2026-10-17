@@ -3,6 +3,7 @@
 // is whatever the backend last read.
 import { SvelteMap } from "svelte/reactivity";
 import type { Jobs } from "../ipc/jobs.svelte";
+import { logged, type LogEntry } from "./tool-log";
 import { CommandError, call, commands, message, type Commands } from "../ipc/client";
 import type {
   Acted,
@@ -11,6 +12,7 @@ import type {
   FormField,
   FormView,
   HumanView,
+  LogLine,
   Notice,
   Settled,
   Verdict,
@@ -18,7 +20,7 @@ import type {
 
 export type Area = "instruction" | "tools" | "fields";
 
-const NO_DRAFT: Draft = { verdict: "GREEN", fields: [], json: null };
+const NO_DRAFT: Draft = { verdict: "GREEN", fields: [] };
 
 /** The draft of one verdict; it survives switching verdicts and leaving the Detail. The library
  * owns what an edit means: every edit is sent to it and its answer replaces the draft whole. A
@@ -32,8 +34,6 @@ export class FormDraft {
   snapshot = $state.raw<Draft>(NO_DRAFT);
   /** The draft's values; assigned over, they show what was typed until the next answer. */
   values = $derived<Record<string, FieldValue>>(Object.fromEntries(this.snapshot.fields));
-  /** The draft's owner-fields JSON text, likewise. */
-  json = $derived<string | null>(this.snapshot.json);
   error = $state<string | null>(null);
   /** Counts edits: only the newest answer replaces the draft. */
   #edits = 0;
@@ -49,25 +49,13 @@ export class FormDraft {
     return {
       verdict: this.verdict,
       fields: this.snapshot.fields.map(([name]) => [name, this.values[name]] as [string, FieldValue]),
-      json: this.json,
     };
-  }
-
-  /** The owner-fields JSON the library produced for this form, now the draft. */
-  adoptJson(json: string): void {
-    this.snapshot = { ...this.snapshot, json };
   }
 
   /** Set field `name`. */
   async set(name: string, value: FieldValue): Promise<void> {
     this.values = { ...this.values, [name]: value };
     await this.#ask((draft) => call(this.ipc.humanEditField(this.id, draft, name, value)));
-  }
-
-  /** Replace the owner-fields JSON text. */
-  async setJson(text: string): Promise<void> {
-    this.json = text;
-    await this.#ask((draft) => call(this.ipc.humanEditJson(this.id, draft, text)));
   }
 
   async #ask(edit: (draft: Draft) => Promise<Draft>): Promise<void> {
@@ -86,14 +74,6 @@ export class FormDraft {
 }
 
 type Busy = { label: string; job: number; since: number };
-
-/** One tool run in the review's Tool log: when it started, what ran, and what it printed. */
-export type LogEntry = { at: string; operation: string; artifact: string; title: string; text: string; error: boolean };
-
-/** `HH:MM:SS` of now, as the Tool log stamps a run. */
-function stamp(): string {
-  return new Date().toTimeString().slice(0, 8);
-}
 
 /** One canonical request owns these facts. Alias handles adopt this same instance,
  * never copy its forms, drafts or running work. It is shared through AppState. */
@@ -241,27 +221,6 @@ export class Review {
     this.form = null;
   }
 
-  /** Edit the open typed form as owner-fields JSON, as the terminal review does in `$EDITOR`;
-   * the JSON stays this verdict's draft. Values typed while the conversion was on its way are
-   * converted again, never dropped. */
-  async editJson(): Promise<void> {
-    const form = this.form;
-    if (this.busy || !form || form.json !== null) return;
-    try {
-      for (;;) {
-        const draft = form.draft();
-        const json = await call(this.ipc.humanJson(this.id, draft));
-        if (this.form !== form || form.json !== null) return;
-        if (JSON.stringify(form.draft()) === JSON.stringify(draft)) {
-          form.adoptJson(json);
-          return;
-        }
-      }
-    } catch (error) {
-      form.error = message(error);
-    }
-  }
-
   /** Submit the open form; the result says how the settled request stands, or `null` when
    * nothing was settled. */
   async submit(): Promise<Settled | null> {
@@ -292,7 +251,8 @@ export class Review {
     }
   }
 
-  /** Run a tool at once; the backend checks the claim when it starts. */
+  /** Run a tool at once; the backend checks the claim when it starts. What the tool prints
+   * reaches the Tool log as it runs ([`logged`](#logged)); a launch tool returns at once. */
   async run(index = this.tool): Promise<void> {
     if (this.busy || this.settled) return;
     const tool = this.view?.tools[index];
@@ -301,22 +261,22 @@ export class Review {
       return;
     }
     this.tool = index;
-    const at = stamp();
     try {
-      const ran = await this.#job(`Running ${tool.operation}`, (job) =>
+      const notice = await this.#job(`Running ${tool.operation}`, (job) =>
         call(this.ipc.humanRun(this.id, tool.name, job)),
       );
-      if (!ran) return;
-      this.log = [
-        ...this.log,
-        { at, operation: tool.operation, artifact: tool.artifact, title: ran.output.title, text: ran.output.text, error: ran.output.error },
-      ];
-      this.notice = ran.notice;
+      if (!notice) return;
+      this.notice = notice;
       // Declarations may have changed; show what the next run resolves.
       await this.load();
     } catch (error) {
       this.notice = { text: message(error), error: true };
     }
+  }
+
+  /** Take in Tool log lines of this review's runs, as the backend sends them. */
+  logged(lines: LogLine[]): void {
+    this.log = logged(this.log, lines);
   }
 
   cancel(): void {

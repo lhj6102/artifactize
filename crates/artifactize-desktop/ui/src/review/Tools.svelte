@@ -1,7 +1,9 @@
 <script lang="ts">
   // The request's Human tools, grouped by the Artifact that declares them (the reviewed eval's
-  // own first), and the Tool log of every run in this review. A click runs a tool at once.
-  // The log is plain selectable text: the reviewer copies from it into the result.
+  // own first), and the Tool log of every run in this review. A click runs a tool at once; what
+  // it prints arrives in the log line by line while it runs, a launched program's until it
+  // exits. The log is plain selectable text: the reviewer copies from it into the result.
+  import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { ToolView } from "../ipc/client";
   import type { Review } from "./review.svelte";
@@ -24,15 +26,35 @@
     void review.run(tools.indexOf(tool));
   }
 
-  /** The log follows its newest run unless the reviewer scrolled up to read. */
+  /** A review opened with Tools focused gives them the keyboard once, as they appear; Tab
+   * then reaches each tool. Later focus moves change the area without taking focus back. */
+  const focusTools: Attachment<HTMLElement> = (section) => {
+    if (untrack(() => review.area) === "tools") section.focus();
+  };
+
+  /** Rows from the bottom within which the log still counts as followed. */
+  const FOLLOW_SLACK = 24;
+
+  /** The log follows its newest line unless the reader scrolled up; scrolled back to the
+   * bottom, it follows again. Only the DOM is touched, as lines are added. */
   const follow: Attachment<HTMLElement> = (log) => {
-    void review.log.length;
-    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
-    if (atBottom || review.log.length <= 1) queueMicrotask(() => (log.scrollTop = log.scrollHeight));
+    let following = true;
+    const scrolled = () => {
+      following = log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_SLACK;
+    };
+    const added = new MutationObserver(() => {
+      if (following) log.scrollTop = log.scrollHeight;
+    });
+    added.observe(log, { childList: true, subtree: true, characterData: true });
+    log.addEventListener("scroll", scrolled);
+    return () => {
+      added.disconnect();
+      log.removeEventListener("scroll", scrolled);
+    };
   };
 </script>
 
-<section class="tools" aria-label="Tools">
+<section class="tools" aria-label="Tools" tabindex="-1" onfocusin={() => (review.area = "tools")} {@attach focusTools}>
   <h4>Tools</h4>
   {#if tools.length === 0}
     <p class="muted">
@@ -62,10 +84,12 @@
   <!-- Focusable so the keys scroll it; its text selects and copies like any other. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div class="log" tabindex="0" role="log" aria-label="Tool log" {@attach follow}>
-    {#each review.log as entry, at (at)}
-      <p class="start">{entry.at} ▶ {entry.operation} · {entry.artifact}</p>
-      {#if entry.text}<pre class:error={entry.error}>{entry.text}</pre>{/if}
-      <p class="end" class:error={entry.error}>■ {entry.title}</p>
+    {#each review.log as entry (entry.run)}
+      <p class="start">▶ {entry.at} · {entry.operation} · {entry.artifact}</p>
+      {#each entry.lines as line, at (at)}
+        <p class:error={line.error}>{line.text}</p>
+      {/each}
+      {#if entry.end}<p class="end" class:error={entry.end.error}>{entry.end.text}</p>{/if}
     {:else}
       <p class="muted">What the tools print shows here while this review is open.</p>
     {/each}
@@ -132,8 +156,7 @@
   .log:focus-visible {
     box-shadow: inset 0 0 0 2px var(--focus);
   }
-  .log p,
-  .log pre {
+  .log p {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;

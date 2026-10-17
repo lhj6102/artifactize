@@ -27,8 +27,7 @@ export function humanView(stage: HumanView["stage"], overrides: Partial<HumanVie
 export const redForm: FormView = {
   verdict: "RED",
   fields: [{ name: "reason", required: true, hint: "string, minLength 3", input: { kind: "text" } }],
-  json: null,
-  draft: { verdict: "RED", fields: [["reason", { kind: "text", value: "" }]], json: null },
+  draft: { verdict: "RED", fields: [["reason", { kind: "text", value: "" }]] },
 };
 
 export const greenForm: FormView = {
@@ -37,13 +36,11 @@ export const greenForm: FormView = {
     { name: "approved", required: true, hint: "", input: { kind: "fixed", value: "true" } },
     { name: "comment", required: true, hint: "string", input: { kind: "text" } },
   ],
-  json: null,
   draft: {
     verdict: "GREEN",
     fields: [
       ["approved", { kind: "fixed" }],
       ["comment", { kind: "text", value: "" }],
     ],
-    json: null,
   },
 };

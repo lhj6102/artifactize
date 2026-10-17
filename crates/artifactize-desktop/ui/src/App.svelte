@@ -5,7 +5,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
-  import { call, message, onStateChanged } from "./ipc/client";
+  import { call, message, onHumanToolLog, onStateChanged } from "./ipc/client";
   import CurrentGraph from "./monitor/CurrentGraph.svelte";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewScreen from "./review/ReviewScreen.svelte";
@@ -32,7 +32,6 @@
     call(commands.launch()).then(
       (view) => {
         app.start(view);
-
       },
       (error) => (app.failure = message(error)),
     );
@@ -40,6 +39,8 @@
     // Ages and running times redraw from the snapshot; nothing is read.
     const clock = setInterval(() => void browse.redraw(), 1000);
     const unchanged = onStateChanged((resync) => browse.refresh(resync));
+    // What Human tools print, for whichever review shows it.
+    const unlogged = onHumanToolLog((lines) => app.logged(lines));
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
@@ -49,6 +50,7 @@
       hideActivity();
       clearInterval(clock);
       unchanged();
+      unlogged();
       unlisten?.();
     };
   });

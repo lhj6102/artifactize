@@ -320,8 +320,8 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         json!({"id": id, "tool": "notes_release", "job": 3}),
     )
     .unwrap();
-    assert_eq!(ran["output"]["text"], "# Release notes\n- Ready.");
-    assert_eq!(ran["notice"]["text"], "notes_release finished.");
+    // What it printed reaches the Tool log as events; the command answers with the notice.
+    assert_eq!(ran["text"], "notes_release finished.");
 
     let red = invoke(&window, "human_form", json!({"id": id, "verdict": "RED"})).unwrap();
     assert_eq!(red["fields"][0]["name"], "reason");
@@ -329,7 +329,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let invalid = invoke(
         &window,
         "human_submit",
-        json!({"id": id, "job": 4, "draft": {"verdict": "RED", "fields": [["reason", {"kind": "text", "value": "no"}]], "json": null}}),
+        json!({"id": id, "job": 4, "draft": {"verdict": "RED", "fields": [["reason", {"kind": "text", "value": "no"}]]}}),
     )
     .unwrap_err();
     assert_eq!(invalid["kind"], "invalid");
@@ -347,8 +347,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         green["fields"][0]["input"],
         json!({"kind": "fixed", "value": "true"})
     );
-    // The typed draft as owner-fields JSON, as the terminal review hands it to $EDITOR.
-    let draft = json!({"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]], "json": null});
+    let draft = json!({"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]]});
     // Choosing the verdict again hands the kept draft to the library, which answers with it.
     let again = invoke(
         &window,
@@ -357,15 +356,12 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     )
     .unwrap();
     assert_eq!(again["draft"]["fields"][1][1]["value"], "확인했습니다");
-    let text = invoke(&window, "human_json", json!({"id": id, "draft": draft})).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Value>(text.as_str().unwrap()).unwrap(),
-        json!({"approved": true, "comment": "확인했습니다"})
-    );
+    // The editor of owner-fields JSON is gone: a Human result is entered in the form only.
+    assert!(invoke(&window, "human_json", json!({"id": id, "draft": draft})).is_err());
     let submitted = invoke(
         &window,
         "human_submit",
-        json!({"id": id, "job": 5, "draft": {"verdict": "GREEN", "fields": [], "json": text}}),
+        json!({"id": id, "job": 5, "draft": draft}),
     )
     .unwrap();
     assert_eq!(submitted["settled"], "published");

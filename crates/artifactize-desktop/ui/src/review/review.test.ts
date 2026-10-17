@@ -1,10 +1,12 @@
 // The Review state against a mocked command boundary: verdict forms that answer out of
-// order, and JSON drafts per verdict.
+// order, drafts per verdict, and the Tool log the backend's lines build.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
+import { logged } from "./tool-log";
+import type { LogLine } from "../ipc/client";
 import { greenForm, humanView, redForm } from "./fixtures";
 
 /** A form request the test answers when it chooses. */
@@ -21,11 +23,8 @@ function backend() {
       const edit = payload as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
       return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
     }
-    if (cmd === "human_json") {
-      drafts.push(payload.draft);
-      return '{\n  "approved": true,\n  "comment": ""\n}';
-    }
     if (cmd === "human_form") {
+      drafts.push(payload.kept);
       const verdict = payload.verdict as string;
       await new Promise<void>((answer) => pending.push({ verdict, answer }));
       // The library hands a kept draft back when the schema still takes it.
@@ -66,7 +65,7 @@ describe("Review", () => {
     expect(review.form).toBeNull();
   });
 
-  it("edits a typed form as JSON and keeps that JSON as the verdict's draft", async () => {
+  it("keeps each verdict's typed draft when switching verdicts", async () => {
     const { pending, drafts } = backend();
     const review = new Review("run-a-2", new Jobs());
     await review.load();
@@ -75,58 +74,62 @@ describe("Review", () => {
     pending[0].answer();
     await green;
     await review.form!.set("comment", { kind: "text", value: "x" });
-    await review.editJson();
-    expect(drafts[0]).toEqual({
+    const red = review.choose("RED");
+    await waitFor(() => expect(pending[1]?.verdict).toBe("RED"));
+    pending[1].answer();
+    await red;
+    const again = review.choose("GREEN");
+    await waitFor(() => expect(pending[2]?.verdict).toBe("GREEN"));
+    pending[2].answer();
+    await again;
+    // The kept draft goes back to the library, which answers with it.
+    expect(drafts[2]).toEqual({
       verdict: "GREEN",
       fields: [
         ["approved", { kind: "fixed" }],
         ["comment", { kind: "text", value: "x" }],
       ],
-      json: null,
     });
-    expect(review.form?.json).toContain('"approved": true');
-    const red = review.choose("RED");
-    await waitFor(() => expect(pending[1]?.verdict).toBe("RED"));
-    pending[1].answer();
-    await red;
-    expect(review.form?.json).toBeNull();
-    const again = review.choose("GREEN");
-    await waitFor(() => expect(pending[2]?.verdict).toBe("GREEN"));
-    pending[2].answer();
-    await again;
-    expect(review.form?.json).toContain('"approved": true');
+    expect(review.form?.values.comment).toEqual({ kind: "text", value: "x" });
   });
 
-  it("converts newer values typed while a JSON conversion was on its way", async () => {
-    const pending: { draft: { fields: [string, { value?: string }][] }; answer: () => void }[] = [];
-    mockIPC(async (cmd, args) => {
-      const payload = args as Record<string, unknown>;
+  it("runs a tool for its notice; its lines arrive in the Tool log on their own", async () => {
+    mockIPC(async (cmd) => {
       if (cmd === "human_open") return humanView("review");
-      if (cmd === "human_edit_field") {
-        // The library's form takes the value as typed.
-        const edit = payload as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-      }
-      if (cmd === "human_form") return greenForm;
-      if (cmd === "human_json") {
-        const draft = payload.draft as { fields: [string, { value?: string }][] };
-        await new Promise<void>((answer) => pending.push({ draft, answer }));
-        const comment = draft.fields.find(([name]) => name === "comment")?.[1].value;
-        return JSON.stringify({ approved: true, comment });
-      }
+      if (cmd === "human_run") return { text: "notes_release launched.", error: false };
       return null;
     });
     const review = new Review("run-a-2", new Jobs());
     await review.load();
-    await review.choose("GREEN");
-    await review.form!.set("comment", { kind: "text", value: "before" });
-    const converting = review.editJson();
-    await waitFor(() => expect(pending).toHaveLength(1));
-    await review.form!.set("comment", { kind: "text", value: "after" });
-    pending[0].answer();
-    await waitFor(() => expect(pending).toHaveLength(2));
-    pending[1].answer();
-    await converting;
-    expect(JSON.parse(review.form!.json!)).toEqual({ approved: true, comment: "after" });
+    await review.run(0);
+    expect(review.notice?.text).toBe("notes_release launched.");
+    expect(review.log).toEqual([]);
+    review.logged([
+      { request: "run-a-2", run: "7", line: { kind: "start", at: 0, operation: "notes", artifact: "release" } },
+      { request: "run-a-2", run: "7", line: { kind: "stdout", text: "hello" } },
+    ]);
+    expect(review.log.map((entry) => entry.lines)).toEqual([[{ text: "hello", error: false }]]);
+  });
+});
+
+describe("logged", () => {
+  const line = (run: string, line: LogLine["line"]): LogLine => ({ request: "run-a-2", run, line });
+
+  it("groups lines under their run, also after a later run started, and ends each once", () => {
+    const log = logged([], [
+      line("1", { kind: "start", at: 0, operation: "launch", artifact: "app" }),
+      line("2", { kind: "start", at: 0, operation: "check", artifact: "lib" }),
+      line("2", { kind: "stdout", text: "checked" }),
+      line("2", { kind: "end", text: "■ exit 0", error: false }),
+      line("1", { kind: "stderr", text: "app says" }),
+    ]);
+    const later = logged(log, [line("1", { kind: "end", text: "■ exit 1", error: true }), line("9", { kind: "stdout", text: "never started here" })]);
+    expect(later.map(({ operation, lines, end }) => ({ operation, lines, end }))).toEqual([
+      { operation: "launch", lines: [{ text: "app says", error: true }], end: { text: "■ exit 1", error: true } },
+      { operation: "check", lines: [{ text: "checked", error: false }], end: { text: "■ exit 0", error: false } },
+    ]);
+    // Taking lines in never changes the log it was given.
+    expect(log[0].end).toBeNull();
+    expect(later[0].at).toMatch(/^\d\d:\d\d:\d\d$/);
   });
 });

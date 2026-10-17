@@ -194,3 +194,28 @@ it("draws the Artifact between the Artifacts its evals use and those that use it
   await fireEvent.click(node("a:app")!);
   expect(onopen).toHaveBeenCalledTimes(1);
 });
+
+it("folds an eval Summary's technical facts under Debug, which t shows and hides", async () => {
+  mockIPC((command) =>
+    command === "detail"
+      ? {
+          ...view("e:app/lint", "app/lint · Check"),
+          sections: [{ name: "request", title: "Request", fields: [{ key: "Status", value: "GREEN" }, { key: "Request", value: "run-a-3" }], waits: [] }],
+          card: { instruction: "Check lint.", result: null, error: null, exitCode: 0, reused: false, took: "2s", tokens: null, model: null },
+        }
+      : null,
+  );
+  renderHosted(DetailPane, {
+    run: "run-a", node: "a:app", tab: "e:app/lint", tree, focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
+  });
+  const heading = await screen.findByRole("heading", { name: "app/lint · Check" });
+  const debug = await screen.findByRole("button", { name: /Debug/ });
+  expect(debug.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("run-a-3")).toBeNull();
+  await fireEvent.keyDown(heading, { key: "t" });
+  await screen.findByText("run-a-3");
+  expect(screen.getByRole("button", { name: /Debug/ }).getAttribute("aria-expanded")).toBe("true");
+  await fireEvent.keyDown(heading, { key: "t" });
+  await waitFor(() => expect(screen.queryByText("run-a-3")).toBeNull());
+});

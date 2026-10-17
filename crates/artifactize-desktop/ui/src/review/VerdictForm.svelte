@@ -1,49 +1,122 @@
 <script lang="ts">
-  // The chosen verdict's owner fields as a person enters them: a text, a choice, or a list of
-  // items to add and remove. Constants are filled in and not shown. Enter never submits; the
-  // Submit button and Ctrl+S do. Values are checked and coerced by the backend's form.
+  // The chosen verdict's owner fields as a person enters them: a text, a choice, a list of items,
+  // or repeated groups of fields, each to add and remove. Constants are filled in and not shown.
+  // Enter never submits; the Submit button and Ctrl+S do. Values are checked and coerced by the
+  // backend's form.
   import type { Attachment } from "svelte/attachments";
-  import type { FieldValue } from "../ipc/client";
+  import type { FieldValue, FormField } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
-  import { composing } from "../shell/keys";
 
   let { review, form, onsubmit }: { review: Review; form: FormDraft; onsubmit: () => void } = $props();
   /** What a person enters: constants are the form's own. */
-  const shown = $derived(form.fields.filter((field) => field.input.kind !== "fixed"));
+  const entered = (fields: FormField[]) => fields.filter((field) => field.input.kind !== "fixed");
+  const shown = $derived(entered(form.fields));
 
-  /** Typed fields or JSON text: switching either way moves focus like opening a form does. */
-  const mode = $derived(form.json === null ? "fields" : "json");
-
-  /** Typing goes to the form: the first editable field takes focus when a verdict opens or
-   * its typed fields become JSON. */
+  /** Typing goes to the form: the first field takes focus when a verdict opens. */
   const takeFocus: Attachment<HTMLElement> = (root) => {
     void form;
-    void mode;
-    queueMicrotask(() => root.querySelector<HTMLElement>("input:not([readonly]), textarea, select")?.focus());
+    queueMicrotask(() => root.querySelector<HTMLElement>("input, textarea, select")?.focus());
   };
 
   function set(name: string, value: FieldValue) {
     void form.set(name, value);
   }
 
-  /** Tab indents JSON, as in the terminal; Shift+Tab still leaves the field. */
-  function indent(event: KeyboardEvent) {
-    if (event.key !== "Tab" || event.shiftKey || composing(event)) return;
-    event.preventDefault();
-    const area = event.currentTarget as HTMLTextAreaElement;
-    area.setRangeText("  ", area.selectionStart, area.selectionEnd, "end");
-    void form.setJson(area.value);
-  }
-
-  const text = (value: FieldValue) => ("value" in value && typeof value.value === "string" ? value.value : "");
+  const text = (value: FieldValue | undefined) => (value && "value" in value && typeof value.value === "string" ? value.value : "");
   /** An optional field says so in grey inside its empty input. */
   const placeholder = (required: boolean) => (required ? undefined : "Optional");
-  const items = (value: FieldValue) => (value.kind === "list" ? value.value : []);
+  const items = (value: FieldValue | undefined) => (value?.kind === "list" ? value.value : []);
   /** A list's items with one edited, added or removed; it always keeps one item to type in. */
   function setItems(name: string, next: string[]) {
     set(name, { kind: "list", value: next.length > 0 ? next : [""] });
   }
+
+  type Group = [string, FieldValue][];
+  const groups = (value: FieldValue | undefined): Group[] => (value?.kind === "groups" ? value.value : []);
+  /** A group's empty value of `field`, before the form answers with its own. */
+  function blank(field: FormField): FieldValue {
+    switch (field.input.kind) {
+      case "fixed":
+        return { kind: "fixed" };
+      case "bool":
+        return { kind: "bool", value: null };
+      case "choice":
+        return { kind: "choice", value: null };
+      case "list":
+        return { kind: "list", value: [""] };
+      case "groups":
+        return { kind: "groups", value: [] };
+      default:
+        return { kind: field.input.kind, value: "" };
+    }
+  }
+  /** The groups with one edited, added or removed; one empty group always stays to type in. */
+  function setGroups(field: FormField, next: Group[]) {
+    const fields = field.input.kind === "groups" ? field.input.fields : [];
+    const empty: Group = fields.map((sub) => [sub.name, blank(sub)]);
+    set(field.name, { kind: "groups", value: next.length > 0 ? next : [empty] });
+  }
+  /** `group` with field `name` set to `value`. */
+  const within = (group: Group, name: string, value: FieldValue): Group => {
+    const at = group.findIndex(([sub]) => sub === name);
+    return at < 0 ? [...group, [name, value]] : group.with(at, [name, value]);
+  };
+  const valueIn = (group: Group, name: string) => group.find(([sub]) => sub === name)?.[1];
 </script>
+
+<!-- One scalar input: `id` names it for its label, `label` for screen readers, `onset` takes
+     the new value. -->
+{#snippet scalar(field: FormField, value: FieldValue | undefined, id: string, onset: (value: FieldValue) => void)}
+  {#if field.input.kind === "bool"}
+    {@const chosen = value?.kind === "bool" ? value.value : null}
+    <div class="choices" role="radiogroup" aria-labelledby={id}>
+      {#each [true, false] as option (option)}
+        <label>
+          <input type="radio" name={id} checked={chosen === option} onchange={() => onset({ kind: "bool", value: option })} />
+          {option}
+        </label>
+      {/each}
+      {#if !field.required}
+        <label>
+          <input type="radio" name={id} checked={chosen === null} onchange={() => onset({ kind: "bool", value: null })} />
+          –
+        </label>
+      {/if}
+    </div>
+  {:else if field.input.kind === "choice"}
+    {@const chosen = value?.kind === "choice" ? value.value : null}
+    <select
+      {id}
+      value={chosen === null ? "" : String(chosen)}
+      onchange={(event) => {
+        const raw = (event.currentTarget as HTMLSelectElement).value;
+        onset({ kind: "choice", value: raw === "" ? null : Number(raw) });
+      }}
+    >
+      <option value="">–</option>
+      {#each field.input.options as option, at (at)}
+        <option value={String(at)}>{option}</option>
+      {/each}
+    </select>
+  {:else if field.input.kind === "text"}
+    <textarea
+      {id}
+      rows="2"
+      placeholder={placeholder(field.required)}
+      value={text(value)}
+      oninput={(event) => onset({ kind: "text", value: (event.currentTarget as HTMLTextAreaElement).value })}
+    ></textarea>
+  {:else if field.input.kind === "integer" || field.input.kind === "number"}
+    {@const kind = field.input.kind}
+    <input
+      {id}
+      placeholder={placeholder(field.required)}
+      inputmode={kind === "integer" ? "numeric" : "decimal"}
+      value={text(value)}
+      oninput={(event) => onset({ kind, value: (event.currentTarget as HTMLInputElement).value })}
+    />
+  {/if}
+{/snippet}
 
 <div class="form" {@attach takeFocus}>
   <div class="verdicts" role="radiogroup" aria-label="Verdict">
@@ -59,19 +132,7 @@
     {/each}
   </div>
 
-  {#if form.json !== null}
-    <label class="field">
-      <span class="name">Owner fields (JSON)</span>
-      <textarea
-        class="json"
-        spellcheck="false"
-        value={form.json}
-        oninput={(event) => void form.setJson((event.currentTarget as HTMLTextAreaElement).value)}
-        onkeydown={indent}
-        rows="12"
-      ></textarea>
-    </label>
-  {:else if shown.length === 0}
+  {#if shown.length === 0}
     <p class="muted">This verdict asks for nothing more.</p>
   {:else}
     {#each shown as field (field.name)}
@@ -80,50 +141,7 @@
         <label class="name" for="field-{field.name}">
           {field.name}{#if field.required}<span class="required" aria-label="required">*</span>{/if}
         </label>
-        {#if field.input.kind === "fixed"}
-          <input id="field-{field.name}" readonly value="{field.input.value} (fixed)" />
-        {:else if field.input.kind === "bool"}
-          {@const chosen = value.kind === "bool" ? value.value : null}
-          <div class="choices" role="radiogroup" aria-labelledby="field-{field.name}">
-            {#each [true, false] as option (option)}
-              <label>
-                <input
-                  type="radio"
-                  name="field-{field.name}"
-                  checked={chosen === option}
-                  onchange={() => set(field.name, { kind: "bool", value: option })}
-                />
-                {option}
-              </label>
-            {/each}
-            {#if !field.required}
-              <label>
-                <input
-                  type="radio"
-                  name="field-{field.name}"
-                  checked={chosen === null}
-                  onchange={() => set(field.name, { kind: "bool", value: null })}
-                />
-                –
-              </label>
-            {/if}
-          </div>
-        {:else if field.input.kind === "choice"}
-          {@const chosen = value.kind === "choice" ? value.value : null}
-          <select
-            id="field-{field.name}"
-            value={chosen === null ? "" : String(chosen)}
-            onchange={(event) => {
-              const raw = (event.currentTarget as HTMLSelectElement).value;
-              set(field.name, { kind: "choice", value: raw === "" ? null : Number(raw) });
-            }}
-          >
-            <option value="">–</option>
-            {#each field.input.options as option, at (at)}
-              <option value={String(at)}>{option}</option>
-            {/each}
-          </select>
-        {:else if field.input.kind === "list"}
+        {#if field.input.kind === "list"}
           {@const list = items(value)}
           <ol class="items" id="field-{field.name}">
             {#each list as item, at (at)}
@@ -141,25 +159,35 @@
             {/each}
           </ol>
           <button class="button small add" onclick={() => setItems(field.name, [...list, ""])}>+ Add</button>
+        {:else if field.input.kind === "groups"}
+          {@const subs = entered(field.input.fields)}
+          {@const list = groups(value)}
+          <div class="groups" id="field-{field.name}" role="group" aria-label={field.name}>
+            {#each list as group, at (at)}
+              <div class="group" role="group" aria-label="{field.name} {at + 1}">
+                <div class="group-head">
+                  <span>{field.name} {at + 1}</span>
+                  <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => setGroups(field, list.toSpliced(at, 1))}>✕</button>
+                </div>
+                {#each subs as sub (sub.name)}
+                  {@const id = `field-${field.name}-${at}-${sub.name}`}
+                  <div class="field">
+                    <label class="name" for={id} id={sub.input.kind === "bool" ? id : undefined}>
+                      {sub.name}{#if sub.required}<span class="required" aria-label="required">*</span>{/if}
+                    </label>
+                    {@render scalar(sub, valueIn(group, sub.name), id, (next) => setGroups(field, list.with(at, within(group, sub.name, next))))}
+                    {#if sub.hint}<span class="hint">{sub.hint}</span>{/if}
+                  </div>
+                {/each}
+              </div>
+            {/each}
+          </div>
+          <button
+            class="button small add"
+            onclick={() => setGroups(field, [...list, (field.input.kind === "groups" ? field.input.fields : []).map((sub) => [sub.name, blank(sub)] as [string, FieldValue])])}
+          >+ Add</button>
         {:else}
-          {@const kind = field.input.kind}
-          {#if kind === "text"}
-            <textarea
-              id="field-{field.name}"
-              rows="2"
-              placeholder={placeholder(field.required)}
-              value={text(value)}
-              oninput={(event) => set(field.name, { kind, value: (event.currentTarget as HTMLTextAreaElement).value })}
-            ></textarea>
-          {:else}
-            <input
-              id="field-{field.name}"
-              placeholder={placeholder(field.required)}
-              inputmode={kind === "integer" ? "numeric" : "decimal"}
-              value={text(value)}
-              oninput={(event) => set(field.name, { kind, value: (event.currentTarget as HTMLInputElement).value })}
-            />
-          {/if}
+          {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next))}
         {/if}
         {#if field.hint}<span class="hint">{field.hint}</span>{/if}
       </div>
@@ -239,9 +267,6 @@
   ::placeholder {
     color: var(--faint);
   }
-  .json {
-    font: 12px/1.5 var(--mono);
-  }
   .items {
     display: grid;
     gap: 6px;
@@ -267,6 +292,24 @@
   }
   .add {
     justify-self: start;
+  }
+  .groups {
+    display: grid;
+    gap: 8px;
+  }
+  .group {
+    display: grid;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 12px;
   }
   .submit {
     display: flex;

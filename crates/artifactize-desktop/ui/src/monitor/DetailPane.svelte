@@ -102,13 +102,16 @@
   /** Only this node's Detail: another node's, still held while this one is read, is not. */
   const detail = $derived(d.detail?.run === run && d.detail.node === target ? d.detail : null);
   const human = $derived(detail?.profile === "human" && detail.request !== null);
+  /** An Artifact's or an eval's Summary keeps its technical facts under Debug; a Run's
+   * sections keep theirs under Technical. */
+  const folded = $derived(detail !== null && (detail.card !== null || detail.node.startsWith("a:")));
 
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
     if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
     if (plain(event, "Escape") || plain(event, "ArrowLeft")) onback();
     else if (human || log) return;
-    else if (plain(event, "t")) fold({ technical: !technical });
+    else if (plain(event, "t")) fold(folded ? { debug: !debug } : { technical: !technical });
     else if (plain(event, "w")) fold({ pending: !pending });
     else return;
     event.preventDefault();
