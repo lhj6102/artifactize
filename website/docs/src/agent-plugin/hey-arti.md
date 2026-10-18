@@ -11,7 +11,11 @@ and it never approves anything in a person's place. (The name comes from
 Its instruction guide, called a **skill**, is
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/skills/hey-arti/SKILL.md),
 in the repository's `skills/` folder. There is one body, not separate instructions per
-host. Plugin-marketplace installation is separate; no plugin exporter or release
+host. It is short on purpose: these docs are its **source of truth**. It maps each
+concept to the page that owns it and has Arti read a page before explaining or
+writing what it is unsure of; when a page and the skill disagree, the page wins.
+Then come how Arti treats you as its client, its work processes by situation, and
+the best practices and examples it draws from. Plugin-marketplace installation is separate; no plugin exporter or release
 bundle is required for the MCP registration below.
 
 ## Register the MCP server
@@ -80,6 +84,14 @@ Combinations it recommends, with who owns each check and what it references:
 
 It steers away from implicit dependencies, whole-repository reviews, anti-cheat
 evals, unrequested execution options, and weakening an eval to reach GREEN.
+
+To show you a pattern, it points at the example that matches your situation: the
+[examples](../getting-started/examples.md) (runtime relations, Agent tools with a
+sign-off, posts as file Artifacts), the demo projects `website/demo/shop` (a page
+checked against the style tokens it uses) and `website/demo/brand` (a signed-off
+logo embedded by a page), and artifactize's own repository (rule documents with a
+sign-off read by the evals of the code they govern, and an app whose eval runs its
+E2E suite). The skill ends with a small starter set of declarations to adapt.
 
 Changing an eval's instruction, result schema or runtime command changes its
 judgment; tags, titles, execution options and tool declarations do not. After an
