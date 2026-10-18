@@ -4,6 +4,18 @@
 
 # Build together on an Artifact Graph.
 
+**Who is it for?**
+
+- People who want to make it easier for others to build together.
+- People who want to keep code, documents, images, and running applications consistent.
+- People who want to review efficiently and develop in modules.
+
+**Our principles**
+
+- We don't restrict how you build. Use your preferred tools and agent harnesses.
+- We don't restrict individuality. Create freely within loose guardrails.
+- AI doesn't make every decision. Vision, taste, and important decisions about direction remain in human hands.
+
 Bring your tests, AI reviews and human sign-offs to the team. Artifactize records
 their results so teammates can see which parts of your work they can build on.
 
@@ -43,17 +55,21 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 
 ### Windows
 
+In PowerShell, without administrator rights:
+
 ```powershell
-winget install lhj6102.Artifactize
+irm https://artifactize.dev/install.ps1 | iex
 ```
 
-If Windows’ Smart App Control security setting is enabled, use the
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D) version instead.
-If you use Linux inside Windows through WSL 2, use the Linux method.
+Open a new terminal afterwards. The download is not code-signed yet, so Windows’
+Smart App Control security setting may block it. If you use Linux inside Windows
+through WSL 2, use the Linux method.
+
+> winget and Microsoft Store packages are in preparation.
 
 The [full installation guide](https://artifactize.dev/docs/getting-started/install.html)
-explains the alternatives—install scripts, Cargo and building from source—along
-with prerequisites, updates and uninstalling.
+explains the alternatives—Cargo and building from source—along with prerequisites,
+updates and uninstalling.
 
 Once installed, take the
 [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
