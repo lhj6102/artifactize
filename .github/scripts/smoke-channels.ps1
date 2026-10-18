@@ -14,7 +14,7 @@ foreach ($script in Get-ChildItem (Join-Path $PSScriptRoot '*.ps1')) {
 }
 $root = Join-Path $env:TEMP ('artifactize-channels-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
-$server = $null; $cert = $null
+$server = $null; $cert = $null; $childName = $null
 $packageName = 'lhj6102.Artifactize'
 try {
     if ($Channel -eq 'winget') {
@@ -89,23 +89,52 @@ try {
             & $alias tools read ../escape
             if ($LASTEXITCODE -ne 1) { throw 'MSIX tools facade must refuse scope escapes' }
         } finally { Pop-Location }
-        # The un-packaged shell inspects the real directory after a packaged alias writes.
+        # Inspect physical files from this unpackaged shell, not through the alias.
         # Clear overrides, not LOCALAPPDATA: test the actual Windows known folder.
         Remove-Item Env:ARTIFACTIZE_STATE_HOME, Env:XDG_STATE_HOME -ErrorAction SilentlyContinue
         $state = Join-Path $env:LOCALAPPDATA 'artifactize'
         if (Test-Path $state) { throw 'State seam requires a fresh disposable runner' }
-        & (Join-Path $aliases 'artifactize.exe') server token list
+        & $alias server token list
         if ($LASTEXITCODE -ne 0) { throw 'Packaged artifactize state write failed' }
-        if (-not (Get-ChildItem $state -Recurse -File | Where-Object { $_.Extension -eq '.sqlite' })) {
-            throw 'MSIX did not write SQLite state to real LOCALAPPDATA\artifactize'
-        }
         $private = Join-Path $env:LOCALAPPDATA "Packages\$($installed.PackageFamilyName)"
-        $redirected = Get-ChildItem $private -Recurse -Filter '*.sqlite' -ErrorAction SilentlyContinue
-        if ($redirected) { throw "State was virtualized: $($redirected.FullName)" }
-        Write-Host 'MSIX alias, tools facade and unvirtualized state passed'
+        $databases = @(Get-ChildItem $private -Recurse -Filter 'review-store.sqlite' -ErrorAction SilentlyContinue)
+        if ($databases.Count -ne 1) { throw "Expected one package-private review-store.sqlite, found $($databases.Count)" }
+        if (Test-Path $state) { throw 'MSIX wrote state to real LOCALAPPDATA\artifactize' }
+        Write-Host "MSIX review-store database: $($databases[0].FullName)"
+        Write-Host "MSIX virtualization runner: $([Environment]::OSVersion.VersionString)"
+
+        # A real Runtime eval exercises artifactize's worker/child-process launch path.
+        # Use a unique new file: existing AppData files have different overlay semantics.
+        $probe = Join-Path $root 'virtualization-probe'
+        New-Item -ItemType Directory -Path $probe | Out-Null
+        $childName = 'artifactize-msix-child-' + [Guid]::NewGuid().ToString('N') + '.txt'
+        $writer = '[IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA ''@NAME@''), ''MSIX runtime child'')'
+        [IO.File]::WriteAllText((Join-Path $probe 'write-appdata.ps1'), $writer.Replace('@NAME@', $childName))
+        [IO.File]::WriteAllText((Join-Path $probe 'index.artf'), @'
+name = "virtualization-probe"
+[evals.appdata]
+profile = { kind = "runtime", command = "powershell.exe", args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "write-appdata.ps1"] }
+[evals.appdata.payload]
+instruction = "Write a new AppData file to measure packaged child-process redirection."
+'@)
+        & $alias verify --repo $probe --all --wait
+        if ($LASTEXITCODE -ne 0) { throw 'MSIX child-process Runtime eval failed' }
+        $databases = @(Get-ChildItem $private -Recurse -Filter 'state.sqlite' -ErrorAction SilentlyContinue)
+        if ($databases.Count -ne 1) { throw "Expected one package-private state.sqlite, found $($databases.Count)" }
+        if (Test-Path $state) { throw 'MSIX worker wrote state to real LOCALAPPDATA\artifactize' }
+        Write-Host "MSIX state database: $($databases[0].FullName)"
+        $realChild = Join-Path $env:LOCALAPPDATA $childName
+        $privateChildren = @(Get-ChildItem $private -Recurse -Filter $childName -ErrorAction SilentlyContinue)
+        if ($privateChildren.Count -eq 1 -and -not (Test-Path $realChild)) {
+            Write-Host "MSIX child AppData redirected: yes; file: $($privateChildren[0].FullName)"
+        } elseif ($privateChildren.Count -eq 0 -and (Test-Path $realChild)) {
+            Write-Host "MSIX child AppData redirected: no; file: $realChild"
+        } else { throw 'MSIX child AppData probe has missing or ambiguous physical files' }
+        Write-Host 'MSIX alias, tools facade and package-private state passed'
     }
 } finally {
     if ($Channel -eq 'msix') { Get-AppxPackage -Name $packageName | Remove-AppxPackage }
+    if ($childName) { Remove-Item -LiteralPath (Join-Path $env:LOCALAPPDATA $childName) -Force -ErrorAction SilentlyContinue }
     if ($cert) {
         Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
         Remove-Item "Cert:\LocalMachine\TrustedPeople\$($cert.Thumbprint)" -ErrorAction SilentlyContinue

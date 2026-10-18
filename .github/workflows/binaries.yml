@@ -199,7 +199,7 @@ jobs:
       - name: Install and test the local Homebrew formula
         if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
         run: sh .github/scripts/smoke-homebrew.sh "$VERSION" "$TARGET" dist
-      - name: Install signed MSIX; run facade alias and check shared state
+      - name: Install signed MSIX; check private state and child AppData virtualization
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel msix
