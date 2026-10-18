@@ -83,19 +83,13 @@ state rather than steering each execution. It is per request, not a machine
 setting, and defaults off. `--speculate` can independently speed machine work;
 combining it with deferral still asks for deferrable sign-offs last.
 
-Pending sign-offs count as passing gates for execution only. Human requests are
-issued once their Artifact's other machine evals are GREEN and nothing blocks them;
-they appear as DEFERRED alongside ordinary WAITING_HUMAN requests in `review`,
-monitor, desktop and request listings. Claim, tools, release and submission use
-the same Human authority checks. Dependent machine results are PROVISIONAL,
-not approved. A blocked sign-off is never offered to a person.
-
-When only these sign-offs remain, the owned Run ends SIGNOFFS_PENDING and
-`verify --wait` returns 5. It never fabricates a Human GREEN. Later GREEN
-submissions cause no replay: the next verify reuses unchanged machine results
-and sign-offs and is SATISFIED. RED blocks dependents on that next verify.
-Fingerprints must enable reuse; `fingerprint = false` still disables it.
-A completed Run's verdict is historical and is not rewritten after submission.
+For a reviewer, a deferred sign-off is an ordinary one marked DEFERRED: it is
+listed with WAITING_HUMAN requests in `review`, monitor, desktop and request
+listings, and claim, tools, release and submission check Human authority the same
+way. A blocked sign-off is never offered to a person. How the Run ends
+(SIGNOFFS_PENDING, exit 5) and how the next verify reuses the result are in
+[Speculation and deferred sign-offs](run.md#speculation-and-deferred-sign-offs);
+that reuse needs fingerprints, so `fingerprint = false` disables it.
 
 For a sign-off whose rejection would waste substantial downstream work, retain
 the strict pending gate explicitly:

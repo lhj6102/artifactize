@@ -79,9 +79,7 @@ work, timing, budgets, executed/reused work and usage. Drag the Detail's left ed
 to resize it; it keeps that width, also in the next launch.
 
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`:
-the Artifact's own chip, the Artifact icon before its name, then one per eval with
-its verdict's glyph and colour. Available pane width can cut a long name short in
-both the chip and the Detail title. Eval chips that do not fit wrap onto the next line.
+the Artifact's own chip, then one per eval with its verdict's glyph and colour.
 
 The Artifact's chip shows it between its neighbours, drawn with the Run graph's
 nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
@@ -92,12 +90,9 @@ its chip) and its path; every other fact, what it waits for included, folds unde
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
-result; then **Execution options**, **Execution metadata** and **Fingerprint** when
-it has them. In the result, `summary` appears as text without its field name; other
-text fields show their names. Lists become numbered items: `item` and `where`, when
-present, form an item's heading. Its remaining fields show their names unless only
-one remains, in which case its text stands alone. Every other fact, including what
-it waits for, folds under **Debug**. An eval with a log switches
+result, with findings as numbered items headed by their `item` and `where`; then
+**Execution options**, **Execution metadata** and **Fingerprint** when it has them.
+Other facts fold under **Debug**. An eval with a log switches
 below the chips between its Summary, shown first, and its log, a plain-text choice
 whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
 with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,

@@ -345,12 +345,41 @@ async fn next(
         .kind
 }
 
-/// Lets a launched fixture program finish, also when an assertion unwinds first.
-struct Release(std::path::PathBuf);
+/// Owns a launched fixture program that waits for its release file: dropping it, also when
+/// an assertion unwinds first, releases the program and waits for it to exit, so it never
+/// outlives the repository it runs in.
+struct Release {
+    file: std::path::PathBuf,
+    pid: std::path::PathBuf,
+}
+
+impl Release {
+    fn new(root: &Path) -> Self {
+        Self {
+            file: root.join("release"),
+            pid: root.join("pid"),
+        }
+    }
+
+    fn release(&self) {
+        let _ = fs::write(&self.file, "");
+    }
+}
 
 impl Drop for Release {
     fn drop(&mut self) {
-        let _ = fs::write(&self.0, "");
+        self.release();
+        let Some(pid) = fs::read_to_string(&self.pid)
+            .ok()
+            .and_then(|pid| pid.parse().ok())
+        else {
+            return;
+        };
+        // Bounded without a panic: a second panic while unwinding would abort the test binary.
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        while support::os::running(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 
@@ -408,10 +437,11 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
 
     // A launch returns at once; what its program prints keeps arriving in the same run until
     // it exits, here once the test lets it.
-    let release = Release(repo.path().join("release"));
+    let release = Release::new(repo.path());
     let waits = format!(
-        "import os, sys, time\nprint('started', flush=True)\nfor _ in range(6000):\n    if os.path.exists({:?}): break\n    time.sleep(0.01)\nprint('after', file=sys.stderr, flush=True)",
-        support::os::path_text(&release.0)
+        "import os, sys, time\nwith open({:?}, 'w') as f: f.write(str(os.getpid()))\nprint('started', flush=True)\nfor _ in range(6000):\n    if os.path.exists({:?}): break\n    time.sleep(0.01)\nprint('after', file=sys.stderr, flush=True)",
+        support::os::path_text(&release.pid),
+        support::os::path_text(&release.file)
     );
     write_artifact(
         repo.path(),
@@ -437,7 +467,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
             text: "started".into()
         }
     );
-    drop(release);
+    release.release();
     assert_eq!(
         next(&mut events).await,
         Kind::Line {
