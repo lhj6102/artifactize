@@ -1,7 +1,7 @@
 name = "desktop"
 
-# The app runs headless for the whole review. start snapshots the explicitly prepared
-# candidate manifest into its own session; it never consumes shared Cargo output names.
+# The app runs headless for the whole review. start builds a candidate into its own
+# session (or snapshots an explicitly prepared one); it never consumes shared Cargo output names.
 [views.agent_tools]
 list = { builtin = "list" }
 glob = { builtin = "glob" }

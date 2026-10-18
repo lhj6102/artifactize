@@ -114,7 +114,7 @@ def run(candidate, output, model, evidence_root):
     records = {}
     claimed = set()
     try:
-        skill = (ROOT.parents[1] / "crates/artifactize-core/integrations/hey-arti/SKILL.md").read_text()
+        skill = (ROOT.parents[1] / "skills/hey-arti/SKILL.md").read_text()
         version = driver.run_command([str(candidate), "--version"], capture_output=True, text=True,
                                      timeout=60, check=True).stdout.strip()
         host_version = driver.run_command(["claude", "--version"], capture_output=True, text=True,

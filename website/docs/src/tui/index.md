@@ -173,7 +173,9 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   that old request does not invent missing tool or schema declarations.
 - **Editing.** Ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and Tab belong to the
   fields, not navigation. A bracketed keyboard paste goes into the focused field as
-  one edit, in standalone `review` as in the monitor. Each verdict keeps a separate
+  one edit, in standalone `review` as in the monitor. A paste that would push the
+  result past the 256000-byte Human result limit is refused as a whole with an
+  error, leaving the draft unchanged. Each verdict keeps a separate
   draft when you switch between them.
   Editing and tool work normally lock focus moves outside Detail. Monitor's Close
   button is an exception: when idle it returns directly to the tree with the form
@@ -195,8 +197,9 @@ keeping outstanding claims. The quit prompt sets a form aside without dropping i
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
 one back. Esc never quits either UI.
 
-After a standalone submission the list returns if the search still lists requests;
-otherwise `review` exits. Monitor keeps the completed result open in Detail. Both use the
+After a standalone submission the list returns if the current page of the search
+still lists requests; when that page is empty `review` exits, even if earlier pages
+still hold matching requests. Monitor keeps the completed result open in Detail. Both use the
 same in-process lifecycle jobs; monitor does not launch the standalone command.
 
 ## Monitor
@@ -243,7 +246,8 @@ a level. Widen the terminal when the focused pane needs more room.
 - **Runs.** The selected scope's Runs appear newest first, with age, duration and
   request counts (`✓` GREEN, `✗` RED, `!` ERROR, `?` waiting Human, `◐` running).
   Narrow panes drop secondary columns. Scope filtering happens before paging;
-  moving past the end loads older Runs.
+  Down/`j` past the last Run loads older Runs, and Up/`k` at the first Run of an
+  older page loads the newer page and selects its last Run.
 - **Run tree.** The selected Run's saved definitions, recorded evidence and current
   request states, not a re-evaluation of files. The headline shows status, wall
   time, counts and only the token total for usage. It shows `validation pending`
@@ -299,17 +303,11 @@ as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A finis
 change current requests, not the historical Run-end verdict; strict Human gates
 still remain strict.
 
-Each Eval references its own input Artifacts and waits for their required Evals,
-and for those of its Artifact's children. A Human Eval also waits for its own
-Artifact's machine Evals.
-A row groups those gates into at most two
-unmet Artifacts, then `+N`, with each Artifact's completion state. When all targets
-are themselves waiting, it adds one level of cause, for example
-`waits for cli … waiting (cli waits for code-style)`. Cycle peers share `↻ peer`
-markers. An eval's own Artifact and its cycle peers never gate it, so a RED sibling
-or peer does not block it; what the cycle references outside itself still applies.
-The marker shows the cycles that Eval references and children form, the same
-cycles that make Artifacts peers for gating.
+What an eval waits for follows [Eval dependencies](../features/artifact.md#eval-dependencies).
+A row groups those gates into at most two unmet Artifacts, then `+N`, with each
+Artifact's completion state. When all targets are themselves waiting, it adds one
+level of cause, for example `waits for cli … waiting (cli waits for code-style)`.
+Artifacts in a cycle share `↻ peer` markers.
 Upstream comes first where the graph allows; Artifact cycle peers and Evals are
 ordered by name.
 

@@ -259,11 +259,13 @@ start or stop.
 
 After execution-path pinning, artifactize starts only the sessions referenced by
 the eval's admitted tools, while holding the review's backend slot. Every session
-must be ready before the first model request. Spawn failure, exit before readiness,
-or readiness timeout produces `PREPARATION_FAILED` with no model request; already
-started sessions undergo stop and cleanup rollback. Any cleanup failure is also
-reported, with unconfirmed state retained for recovery. Readiness has an internal
-30-second bound. After readiness, stdout and stderr are drained and discarded.
+must be ready before the first model request. Spawn failure or exit before readiness
+produces `PREPARATION_FAILED` with no model request; already started sessions undergo
+stop and cleanup rollback. Any cleanup failure is also reported, with unconfirmed
+state retained for recovery. Readiness has no fixed bound: start may prepare for as
+long as it needs, such as building what the harness runs, while its process lives;
+cancelling the review ends the wait. After readiness, stdout and stderr are drained
+and discarded.
 
 If the start process exits during the review, artifactize immediately kills its
 remaining process group/Job and cancels in-flight bound calls. The cleaned group
@@ -282,21 +284,28 @@ directory and admission records are removed only after all owned-process cleanup
 is confirmed, even when stop itself fails or hangs. Windows cleanup waits for all
 Job descendants, with a separate internal 30-second termination bound.
 
-A lazy cleanup executor owns session lifetimes independently of the caller's
-runtime: dropping that runtime still runs stop and cleanup. Process termination
-cannot run stop. Before the next tool session starts, artifactize sweeps directories
-whose saved owner identity has exited (including an unreaped zombie), or whose
-supervisor lease has been released after a cleanup failure even while its owner
-process remains alive. Active leases protect concurrent reviews. On Unix, start,
-stop and bound invocation groups are recorded before admission and each saved PID/start-time identity is checked
-before signalling, including when the group leader is already gone. Windows Jobs
-terminate when their owner dies; recovery waits up to 30 seconds for pending file
-sharing dispositions to clear. Cleanup or record-retirement failures are reported
-instead of publishing a successful result. Unconfirmed process cleanup retains its
-journals for recovery; failed directory removal leaves the remaining state for the
-next start to sweep after the lease is released. Sweep errors preserve the journals
-and refuse the new session instead of admitting it. A reused or waited-on result
-starts nothing.
+Cleanup does not depend on the program that asked for the review: if that caller
+shuts down its async runtime, artifactize's own background executor still runs stop
+and cleanup. If the artifactize process itself is killed, stop cannot run, so the
+next tool session cleans up first. Each session directory records the process that
+owns it and a **lease**, a marker that its cleanup is still in progress. Before
+starting, artifactize removes directories whose owner has exited (including one that
+has exited but was never waited for) or whose lease was released after a failed
+cleanup, even if the owner is still alive. Directories with an active lease belong
+to a running review and are left alone.
+
+On Unix, artifactize records each start, stop and bound-call process group before
+admitting it, and checks the saved process ID and start time before sending a signal,
+so it never signals a reused process ID, even when the group's first process has
+already exited. Windows Jobs end when their owner dies; recovery waits up to 30
+seconds for Windows to release open file handles.
+
+A cleanup failure is reported instead of a successful result. When process cleanup
+is not confirmed, artifactize keeps its **journals** (the records of which processes
+it started) so a later start can finish the job; a directory that could not be
+removed is swept by the next start once its lease is released. If that sweep fails,
+the journals are kept and the new session is refused rather than admitted. A reused
+or waited-on result starts nothing.
 
 Start/stop execution-path pins use `<session>_<artifact>.start` and `.stop` keys
 in the result's existing `executionPaths` provenance, including remote records.

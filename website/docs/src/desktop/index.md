@@ -37,6 +37,12 @@ be folded into a group: Space or a click reveals or hides them. Runs appear
 newest first. Move past the list's first or last row to load newer or older
 pages, or use its newer/older arrow buttons.
 
+**Attention counters** read `!N ✗N ◐N ?N`: requests in ERROR, RED, running and
+waiting for a Human. The window header always shows the totals of the whole
+catalog, every repository (the ALL row), whatever scope, Run or page is selected;
+each Scope row shows its own totals, and each Run row its own request counts.
+Followers of one Human execution count as one waiting sign-off.
+
 Selecting a Run updates its graph while Runs keeps the keyboard; Enter moves the
 keyboard into the graph. The divider between the left side and the graph area is
 always there: with no Run selected, while loading, on an error or with an empty
@@ -56,7 +62,9 @@ Information opens on a click.
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
 with the graph still visible behind it. Clicking another Artifact switches the
-Detail to it; clicking the graph's background, **Close** or Esc closes it. Click
+Detail to it; clicking the graph's background, **Close** or Esc closes it. On a
+Human review's Detail all three step back the same way: they cancel active work
+first, then leave the form, and only then close the Detail. Click
 the Run's headline, or use the palette command **Open the Run's Detail**, for the
 Run's own Detail: saved validation and unmet obligations, request counts, waiting
 work, timing, budgets, executed/reused work and usage. Drag the Detail's left edge
@@ -71,7 +79,8 @@ The Artifact's chip shows it between its neighbours, drawn with the Run graph's
 nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
 use it on the right. The drawing holds still; a click on a neighbour opens that
 neighbour's Detail. Below it are its evals with their verdicts (click one to show
-its chip), its path, what it waits for, and the rest folded under **Debug**.
+its chip) and its path; every other fact, what it waits for included, folds under
+**Debug**.
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
@@ -101,7 +110,7 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 Monitor always displays the selected Run as an Artifact graph; there is no
 Run-tree mode. Node and relation colors show review states and update as results
 arrive. Inspect dependencies through the graph's input-to-consumer relations and
-an eval's **Waits for** section. The graph takes the pointer: Tab reaches its
+**Waits for** under an Artifact's or eval's **Debug**. The graph takes the pointer: Tab reaches its
 Artifacts and Enter on one opens its Detail, as a click does; it has no other
 keys of its own.
 
@@ -135,12 +144,18 @@ does a double-click. Clicking its preview also opens Detail. A read-only request
 with a log switches between its Summary and its Agent or Runtime log, as an
 eval's chip does in Monitor.
 
-`/` edits search from the Review request list. Ctrl+F returns to search from an
+`/` edits search from the Review request list. Ctrl+F focuses search from an
 open request Detail too, including while a Human form is open or review work is
-running; it is not blocked by that Detail's normal focus lock.
+running. Clicking the Requests pane or switching screens also leaves the Detail
+without closing it: an open form keeps its draft and running review work goes on.
 Free text and `key:value` terms must all match:
-`repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`.
-`is:mine`, `is:claimed` and `is:unclaimed` filter Human claims. Suggestions complete
+`repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`. A plain
+word matches part of the repository, eval, request ID or claimant, ignoring case;
+`repo:`, `eval:`, `request:`, `reviewer:` and `tag:` match part of that one field
+the same way, so `eval:sign` finds `release/signoff`. `kind:` and `status:` take
+the eval kind and request status; `is:mine`, `is:claimed` and `is:unclaimed`
+filter Human claims. Quote a value with spaces (`repo:"/work/my repo"`); the
+[terminal review](../tui/index.md#review) uses the same search, term by term. Suggestions complete
 keys and values. ↑/↓ selects a suggestion (↓ can also open suggestions); Tab or
 Enter accepts it, and a click accepts it with the mouse. Enter without an open
 suggestion returns focus to the list. Esc closes suggestions, then clears the

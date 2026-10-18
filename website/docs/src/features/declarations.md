@@ -255,17 +255,15 @@ Artifact. The nearest-folder ownership rule still applies to subfolder
 `index.artf` declarations. A folder's artifactsum includes neighboring file
 Artifact targets and excludes every `*.artf` declaration.
 
-Runtime commands, tools and fingerprint scripts use the containing folder as cwd.
-A relative executable may be an unrelated sibling in that folder. This does not
-grant built-in tools or scoped argv references access to other sibling files.
-`{name}` resolves to the target file path, not the folder; file references cannot
-have a `/path` suffix. Built-in tools expose only the target file and referenced
-Artifacts, not unrelated siblings. `list .` names the virtual file Artifact root;
-it lists the target filename. Paths within that root remain relative to the
-containing folder. Default artifactsum covers
-only the target file. The containing folder is a working directory, not an
-implicit grant of built-in-tool access to its other files. A workspace can have
-only file Artifacts; it does not need a folder declaration.
+The containing folder is the working directory of runtime commands, tools and
+fingerprint scripts, so a relative executable may be a sibling file. It grants no
+access to other siblings: built-in tools and scoped argv references see only the
+target file and referenced Artifacts. `{name}` resolves to the target file path,
+not the folder, and file references cannot have a `/path` suffix. `list .` names
+the virtual file Artifact root and lists the target filename; paths within that
+root stay relative to the containing folder. Default artifactsum covers only the
+target file. A workspace can have only file Artifacts; it does not need a folder
+declaration.
 
 Omit `fingerprint` to hash the file. An explicit artifactsum form must be
 `fingerprint = { files = ["hero.png"] }` for `hero.png.artf`: only the target
@@ -391,7 +389,9 @@ hash only their target by default. Tags are not hashed and do not change the Eva
 reuse key.
 
 Walks follow scoped path rules. Symlinks and special files fail closed unless they
-are ignored, nothing is followed out of the owner, and a walk stops with an error
+are ignored. Every applicable `.gitignore` is read as rule metadata even when it is
+itself ignored as content, so it must be a regular file, not a symlink, and at most
+1 MiB. Nothing is followed out of the owner, and a walk stops with an error
 after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
 rechecks. Files a review writes into ignored paths, such as Python's `__pycache__`,
 therefore never cause `INPUT_CHANGED`. Artifactsum records a manifest with the

@@ -18,8 +18,10 @@ use crate::{
     platform, process, runtime, workspace,
 };
 
-/// Readiness and stop each get thirty seconds, independently of the Agent budget;
-/// a broken harness must not retain a backend slot or delay cleanup indefinitely.
+/// Spawning a session's start and running its stop each get thirty seconds, so a
+/// broken harness cannot delay cleanup indefinitely. Readiness has no fixed bound:
+/// preparing a harness may take as long as it needs while its start lives, and the
+/// review's cancellation or the start's exit ends the wait.
 const LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Drain without retaining untrusted harness output or allocating for a whole line.
 const DRAIN_BYTES: usize = 8192;
@@ -298,14 +300,13 @@ async fn supervise_inner(
             Ok(status) => format!("exited before readiness: {}", platform::exit_description(&status)),
             Err(error) => format!("could not wait for the start command: {error}"),
         }),
-        result = tokio::time::timeout_at(deadline, ready_receive) => match result {
-            Ok(Ok(Ok(()))) => match child.try_wait_leader() {
+        result = ready_receive => match result {
+            Ok(Ok(())) => match child.try_wait_leader() {
                 Ok(None) => Ok(()),
                 _ => Err("exited before readiness".into()),
             },
-            Ok(Ok(Err(error))) => Err(error.to_string()),
             Ok(Err(error)) => Err(error.to_string()),
-            Err(_) => Err("start timed out".into()),
+            Err(error) => Err(error.to_string()),
         }
     };
     let mut child = Some(child);

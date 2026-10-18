@@ -77,10 +77,14 @@ Run until it finishes; when its own timeout expires first it prints the current
 Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
 (unknown, repeated nonrepeatable, conflicting or missing options and values) and operational
 errors: text on stderr, or `{"error":"..."}` on stdout with `--json` (except
-`mcp`, whose stdout remains protocol-only). Current-directory tools (`tools read`,
-`list`, `glob`, `grep`, `section`, `help` and `open`) are an exception for tool
-failures: they retain the shared tool runner's exit 1 and unchanged diagnostics,
-even with `--json`; their usage errors still exit 2. There is no
+`mcp`, whose stdout remains protocol-only). Two kinds of tool failure are exceptions.
+Current-directory tools (`tools read`, `list`, `glob`, `grep`, `section`, `help` and
+`open`) retain the shared tool runner's exit 1 and unchanged diagnostics, even with
+`--json`. A Human tool that `request tool` ran and that failed prints its normal
+result on stdout (rendered content, or `{"content":[…],"isError":true}` with
+`--json`) and exits 2. `tools check` reports declaration, preflight, execution and
+cleanup failures, including a failed `--execute` call, in its diagnostic report
+and exits 1. Usage errors of all three still follow the generic rule. There is no
 `plan`, `history` or `--full`.
 
 List options `--reuse-only` and `server token add --scopes` may be repeated;
@@ -264,8 +268,10 @@ variant is an execution option: it is not part of the reuse key, so results of
 different variants (and of the declared profile) reuse each other unless a runtime
 variant changes the command or args. Stored request `profile` and `options`
 describe the execution that produced the result; `requestedProfile` retains the
-requested profile when a hit returns another one, and text output then adds
-`profile NAME` to the reuse marker.
+requested profile when a hit returns another one. Text output adds `profile NAME` to
+the reuse marker only when the producing profile's settings differ; a result from a
+variant with identical settings shows no marker and is identified by its saved
+`options.variant`.
 
 ## Reuse only
 

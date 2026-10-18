@@ -332,9 +332,14 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "ship's Detail opened from its neighbour" });
       assert.equal((await detail(browser))?.tabs[0]?.selected, true, "on its Artifact tab");
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "ship drawn after release, which it uses" });
-      const waiting = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] .block')]
-        .find((block) => block.querySelector("h3")?.textContent === "Waits for")?.textContent ?? "");
-      assert.match(waiting, /release/);
+      // What ship waits for is a Debug fact, not shown above it.
+      assert.equal(await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] .block h3')]
+        .some((heading) => heading.textContent === "Waits for")), false, "ship's waits are not shown outside Debug");
+      if (!(await summary(browser)).debug) {
+        await aside(browser).$('[role="document"]').click();
+        await press(browser, ["t"], async () => (await summary(browser)).debug === true, "ship's Debug unfolded by t");
+      }
+      assert.match(await fact(browser, "Waits for"), /release/, "ship waits for release, under Debug");
       assert.equal(await path(), "ship", "the Artifact's path is below its neighbour drawing");
       await neighbour("a:release").click();
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact release", { timeout: 15000, timeoutMsg: "release's Detail again" });
