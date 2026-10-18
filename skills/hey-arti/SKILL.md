@@ -33,7 +33,8 @@ Use these words with the user, briefly:
 - What a result means for the user:
   - **GREEN**: done for this content.
   - **RED**: something to fix, in the Artifact that eval judges.
-  - **BLOCKED**: an input it uses has a RED eval; fix that first.
+  - **BLOCKED**: something it waits on failed: usually a RED eval of an input it
+    uses, sometimes an ERROR. Fix that first.
   - **ERROR**: the check could not run; fix the cause, not the verdict.
   - **SIGNOFFS_PENDING**: everything else passed and a person's sign-off is
     waiting. It is not full approval.

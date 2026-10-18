@@ -195,8 +195,9 @@ keeping outstanding claims. The quit prompt sets a form aside without dropping i
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
 one back. Esc never quits either UI.
 
-After a standalone submission the list returns if the search still lists requests;
-otherwise `review` exits. Monitor keeps the completed result open in Detail. Both use the
+After a standalone submission the list returns if the current page of the search
+still lists requests; when that page is empty `review` exits, even if earlier pages
+still hold matching requests. Monitor keeps the completed result open in Detail. Both use the
 same in-process lifecycle jobs; monitor does not launch the standalone command.
 
 ## Monitor
@@ -243,7 +244,8 @@ a level. Widen the terminal when the focused pane needs more room.
 - **Runs.** The selected scope's Runs appear newest first, with age, duration and
   request counts (`✓` GREEN, `✗` RED, `!` ERROR, `?` waiting Human, `◐` running).
   Narrow panes drop secondary columns. Scope filtering happens before paging;
-  moving past the end loads older Runs.
+  Down/`j` past the last Run loads older Runs, and Up/`k` at the first Run of an
+  older page loads the newer page and selects its last Run.
 - **Run tree.** The selected Run's saved definitions, recorded evidence and current
   request states, not a re-evaluation of files. The headline shows status, wall
   time, counts and only the token total for usage. It shows `validation pending`

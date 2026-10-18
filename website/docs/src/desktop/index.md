@@ -56,7 +56,9 @@ Information opens on a click.
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
 with the graph still visible behind it. Clicking another Artifact switches the
-Detail to it; clicking the graph's background, **Close** or Esc closes it. Click
+Detail to it; clicking the graph's background, **Close** or Esc closes it. On a
+Human review's Detail all three step back the same way: they cancel active work
+first, then leave the form, and only then close the Detail. Click
 the Run's headline, or use the palette command **Open the Run's Detail**, for the
 Run's own Detail: saved validation and unmet obligations, request counts, waiting
 work, timing, budgets, executed/reused work and usage. Drag the Detail's left edge
@@ -139,8 +141,13 @@ eval's chip does in Monitor.
 open request Detail too, including while a Human form is open or review work is
 running; it is not blocked by that Detail's normal focus lock.
 Free text and `key:value` terms must all match:
-`repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`.
-`is:mine`, `is:claimed` and `is:unclaimed` filter Human claims. Suggestions complete
+`repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`. A plain
+word matches part of the repository, eval, request ID or claimant, ignoring case;
+`repo:`, `eval:`, `request:`, `reviewer:` and `tag:` match part of that one field
+the same way, so `eval:sign` finds `release/signoff`. `kind:` and `status:` take
+the eval kind and request status; `is:mine`, `is:claimed` and `is:unclaimed`
+filter Human claims. Quote a value with spaces (`repo:"/work/my repo"`); the
+[terminal review](../tui/index.md#review) uses the same search, term by term. Suggestions complete
 keys and values. ↑/↓ selects a suggestion (↓ can also open suggestions); Tab or
 Enter accepts it, and a click accepts it with the mouse. Enter without an open
 suggestion returns focus to the list. Esc closes suggestions, then clears the
