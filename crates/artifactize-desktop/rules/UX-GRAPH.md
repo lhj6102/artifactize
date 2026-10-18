@@ -26,8 +26,8 @@ that makes the transition happen and checks where it leads.
   the `/`. Eval chips that do not fit on one line wrap onto further lines within the Detail, the
   `/` staying with the Artifact's chip. The Artifact's tab draws it between its neighbours (the
   Artifacts its evals use, those whose evals use it), lists its evals with their verdicts, then
-  shows its path and what it waits for, every other fact under Debug (unfolded with `t` or a
-  click). An eval's tab shows its Summary (status with what it took and spent, instruction,
+  shows its path, every other fact (what it waits for included) under Debug (unfolded with `t`
+  or a click). An eval's tab shows its Summary (status with what it took and spent, instruction,
   result, execution options, metadata and fingerprint, every other fact under Debug, unfolded
   with `t` or a click) or, switched below the tabs, its Agent log or Runtime log; for a Human
   eval the Human review. Everything in the Detail, transcript and log lines, long words and code
@@ -93,7 +93,7 @@ that makes the transition happen and checks where it leads.
 | E-MON-GRAPH-TO-RUNS | Graph, no Detail open | Esc | Runs |
 | E-MON-RUNS-TO-SCOPE | Runs | Esc or ← | Scope |
 | E-MON-NOTICE | Monitor with a notice, any pane focused | click the notice in the Run pane's header | the notice shown in full, wrapped within the Run pane's header, the Graph neither moved nor hidden; another click shows it as one line again |
-| E-MON-DETAIL-ARTIFACT | Graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab: its chips as a path (eval chips wrapping onto further lines with the `/` kept with the Artifact's chip; no `/` without evals), the Artifact between its neighbours, its evals listed with their verdicts, then its path and what it waits for, the rest folded under Debug |
+| E-MON-DETAIL-ARTIFACT | Graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab: its chips as a path (eval chips wrapping onto further lines with the `/` kept with the Artifact's chip; no `/` without evals), the Artifact between its neighbours, its evals listed with their verdicts, then its path, every other fact (what it waits for included) folded under Debug |
 | E-MON-DETAIL-TAB | Detail of an Artifact | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's tab shown: its Summary (status, instruction, result), or its Human review, long words and code wrapping within the Detail's width |
 | E-MON-DETAIL-NEIGHBOUR | Detail of an Artifact, on its Artifact tab | click a neighbour drawn beside it | Detail of that Artifact, on its Artifact tab, between its own neighbours |
 | E-MON-DETAIL-SWITCH | Detail | click another Artifact | Detail of that Artifact, on its Artifact tab |

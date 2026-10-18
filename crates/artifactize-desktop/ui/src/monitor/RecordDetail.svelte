@@ -31,7 +31,7 @@
   const logName = $derived(agent ? "Agent log" : detail.evidence ? "Runtime log" : null);
   const showLog = $derived(log && logName !== null);
   const card = $derived(detail.card);
-  /** An Artifact's Detail: its status line, path and what it waits for; the rest under Debug. */
+  /** An Artifact's Detail: its status line and path; the rest, what it waits for included, under Debug. */
   const artifact = $derived(detail.node.startsWith("a:"));
 
   /** The Summary's own blocks, each named by the Detail fields it shows. */
@@ -97,13 +97,7 @@
   {:else if artifact}
     <div class="shown card">
       {#each pick(["Path"]) as field (field.key)}<p class="line muted">{field.value}</p>{/each}
-      {#if waits.length > 0}
-        <section class="block">
-          <h3>Waits for</h3>
-          {#each waits.filter((line) => !line.pending) as line, at (at)}<p class="line">{line.text}</p>{/each}
-        </section>
-      {/if}
-      {#if debugFields.length > 0}
+      {#if debugFields.length > 0 || waits.length > 0}
         <section class="block">
           <button class="fold" aria-expanded={debug} onclick={() => (debug = !debug)}>{debug ? "▾" : "▸"} Debug</button>
           {#if debug}
@@ -112,6 +106,10 @@
                 <dt>{field.key}</dt>
                 <dd>{field.value}</dd>
               {/each}
+              {#if waits.length > 0}
+                <dt>Waits for</dt>
+                <dd>{waits.map((line) => line.text).join("\n")}</dd>
+              {/if}
             </dl>
           {/if}
         </section>

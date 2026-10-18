@@ -73,7 +73,8 @@ The Artifact's chip shows it between its neighbours, drawn with the Run graph's
 nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
 use it on the right. The drawing holds still; a click on a neighbour opens that
 neighbour's Detail. Below it are its evals with their verdicts (click one to show
-its chip), its path, what it waits for, and the rest folded under **Debug**.
+its chip) and its path; every other fact, what it waits for included, folds under
+**Debug**.
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
@@ -103,7 +104,7 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 Monitor always displays the selected Run as an Artifact graph; there is no
 Run-tree mode. Node and relation colors show review states and update as results
 arrive. Inspect dependencies through the graph's input-to-consumer relations and
-an eval's **Waits for** section. The graph takes the pointer: Tab reaches its
+**Waits for** under an Artifact's or eval's **Debug**. The graph takes the pointer: Tab reaches its
 Artifacts and Enter on one opens its Detail, as a click does; it has no other
 keys of its own.
 

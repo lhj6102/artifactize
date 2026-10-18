@@ -1,7 +1,7 @@
 // An eval's Summary: its status (REUSED in the status colour, what running it cost or what reuse
 // saved in grey), its instruction and result, then execution options, metadata and fingerprint,
-// with every other fact folded under Debug. An Artifact's Detail shows its path and what it
-// waits for, the rest under Debug.
+// with every other fact folded under Debug. An Artifact's Detail shows its path, with every
+// other fact, what it waits for included, under Debug.
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, expect, it } from "vitest";
 import type { CardView, DetailView } from "../ipc/client";
