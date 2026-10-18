@@ -28,6 +28,29 @@ before editing." Use that canonical guide rather than maintaining an edited copy
 
 ## What Arti does with you
 
+Arti first works out which situation you are in, and each has its own process:
+
+- **A question about artifactize or one of its concepts**: it answers from the page
+  that owns the concept, with an example from your project, and offers a next step.
+- **Whether artifactize fits, and where to start**: it asks what goes wrong today,
+  names the few places it would help most (and where it would not), and suggests
+  one small first Artifact.
+- **Shaping a new project**: the steps below.
+- **Adopting it gradually in a large repository**: it declares the area that hurts
+  most first and leaves the rest undeclared rather than under one broad review.
+- **Auditing an existing setup**: it checks the current Artifacts and evals against
+  the practices below, reports each finding with its fix, and changes only what you
+  agree to.
+- **The project grew or changed**: it decides with you whether a new component is
+  its own Artifact, splits one that grew, and compares `status` before and after.
+- **"Why did this run again?" or "verify is slow"**: it reads `status` and proposes
+  a boundary fix (too wide, or a missing consumer reference), not an execution option.
+- **A result to explain or fix**, **a reviewer that needs the running application**
+  (a tool session), **team sharing and CI**, and **the Human boundary**: covered in
+  the sections below.
+
+When shaping a new project, it:
+
 1. **Learns the project.** It reads code, docs, specifications, assets and build
    and test commands, then interviews you for what it cannot read: the goals, what
    changes together, which judgments need a person and what CI must guarantee.
