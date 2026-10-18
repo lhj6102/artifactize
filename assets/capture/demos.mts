@@ -1,7 +1,6 @@
 // The README demos, recorded from the real desktop app.
 //
-//   node assets/capture/demos.mts           record demos A and B, then write version.json
-//   node assets/capture/demos.mts --check   exit 1 when the demos are stale
+//   node assets/capture/demos.mts   record demos A and B into assets/demos/
 //
 // Linux only: the app runs on its own 1920×1080 virtual display, and ffmpeg turns the frames
 // into GIFs. Recording builds the app and its CLI from this checkout; every Run, reuse,
@@ -22,26 +21,25 @@
 //      are converted once to the current format: 0.7–0.8's artifactize.json, and dependency
 //      evals, whose relations become references.
 //
-// Last, version.json records the current fingerprints of the app ({desktop},
-// {desktop-backend} and {desktop-ui}) and of this script's own Artifact, and their hash.
-// Any change to one of them makes the demos stale until this script runs again; --check
-// recomputes the hash and compares.
+// Modes:
+//   (none)        record into assets/demos/.
+//   session       the start of the demos' review session: record into the session's own
+//                 folder, outside the repository, then print one line and stay until stopped.
+//   stop          the session's stop: nothing to do; artifactize removes the folder.
+//   gif stored    a tool: a saved demo's length, or its frame about `at` seconds in.
+//   gif fresh     the session's tool: the same for a demo the session just recorded.
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, "..", "..");
 const output = join(repository, "assets", "demos");
-const VERSION = join(output, "version.json");
-const SCRIPT_ARTIFACT = "demos-script";
-/** The app as built: {desktop} and the Artifacts inside it, whose files its own fingerprint
- * leaves to them. */
-const INPUTS = ["desktop", "desktop-backend", "desktop-ui", SCRIPT_ARTIFACT];
+/** The demos, in the order they are recorded. */
+const DEMOS = ["review-loop.gif", "graph-growth.gif"];
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;
@@ -50,46 +48,61 @@ const SPEED = 8;
 /** The GIFs' width, frame rate and palette; one step of demo B stays this long. */
 const GIF = { width: 1280, fps: 10, colours: 128, step: 1.6, hold: 1.5 };
 
-/** Each input's current fingerprint, from the CLI built from this checkout. */
-function fingerprints(cli?: string): Record<string, string> {
-  const [program, args] = cli
-    ? [cli, ["--repo", repository, "fingerprint", ...INPUTS]]
-    : ["cargo", ["run", "-q", "--locked", "-p", "artifactize", "--", "--repo", repository, "fingerprint", ...INPUTS]];
-  const done = spawnSync(program, args, { cwd: repository, encoding: "utf8" });
-  if (done.status !== 0) throw new Error(`fingerprint failed: ${done.stderr || done.error}`);
-  return Object.fromEntries(done.stdout.trim().split("\n").map((line) => line.split(" ") as [string, string]));
-}
-
-/** SHA-256 over `name fingerprint` lines in name order. */
-function hash(inputs: Record<string, string>): string {
-  const lines = Object.keys(inputs).sort().map((name) => `${name} ${inputs[name]}\n`).join("");
-  return createHash("sha256").update(lines).digest("hex");
-}
-
-function check(): number {
-  let recorded: { hash?: string };
-  try {
-    recorded = JSON.parse(readFileSync(VERSION, "utf8"));
-  } catch {
-    console.error("No readable version.json: run node assets/capture/demos.mts.");
-    return 1;
-  }
-  const current = hash(fingerprints());
-  if (recorded.hash === current) {
-    console.log(`Demos are current (${current}).`);
-    return 0;
-  }
-  console.error(`Demos are stale: recorded ${recorded.hash}, current ${current}. Run node assets/capture/demos.mts.`);
-  return 1;
-}
-
-/** Re-run this script on its own virtual display and session bus, which end with it. */
-function wrapped(): Promise<number> {
+/** Re-run this script in `mode` on its own virtual display and session bus, which end with
+ * it. Its output goes to stderr when `quiet`, so a session's stdout carries only its ready line. */
+function wrapped(mode: string[], quiet = false): Promise<number> {
   const env = { ...process.env, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
   delete env.WAYLAND_DISPLAY;
-  const child = spawn("dbus-run-session", ["--", "xvfb-run", "-a", "-s", `-screen 0 ${WIDTH}x${HEIGHT}x24`, process.execPath, fileURLToPath(import.meta.url)],
-    { env, stdio: "inherit" });
+  const child = spawn("dbus-run-session", ["--", "xvfb-run", "-a", "-s", `-screen 0 ${WIDTH}x${HEIGHT}x24`, process.execPath, fileURLToPath(import.meta.url), ...mode],
+    { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
   return new Promise((done) => child.once("close", (code) => done(code ?? 1)));
+}
+
+/** The session's folder, which artifactize names and removes. */
+function sessionDirectory(): string {
+  const directory = process.env.ARTIFACTIZE_SESSION_DIR;
+  if (!directory) throw new Error("ARTIFACTIZE_SESSION_DIR is not set: run this mode as a tool session.");
+  return directory;
+}
+
+/** Record into the session's folder; once recorded, say ready and stay until stopped. */
+async function session(): Promise<number> {
+  const code = await wrapped(["session"], true);
+  if (code !== 0) return code;
+  console.log("recorded");
+  // Stay alive: the session lasts as long as this process.
+  setInterval(() => {}, 1 << 30);
+  return new Promise(() => {});
+}
+
+/** The `gif` tools: without `at`, a demo's length and frame count; with `at`, its frame about
+ * `at` seconds in, as a PNG. `stored` reads the demo saved in the Artifact, `fresh` the one
+ * the session just recorded. */
+function gif(source: string): void {
+  const request = JSON.parse(readFileSync(0, "utf8")) as { context: { artifactPath: string }; args: { name: string; at?: number } };
+  const { name, at } = request.args;
+  const folder = source === "fresh" ? join(sessionDirectory(), "fresh") : request.context.artifactPath;
+  const file = join(folder, name);
+  const answer = (content: object[], isError = false) => console.log(JSON.stringify(isError ? { isError, content } : { content }));
+  if (!DEMOS.includes(name) || !existsSync(file)) {
+    answer([{ type: "text", text: `No demo ${name}; choose one of ${DEMOS.join(", ")}.` }], true);
+    return;
+  }
+  const label = source === "fresh" ? `${name}, recorded just now from the current app` : `${name}, as saved`;
+  const [width, height, frames, seconds] = run("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
+    "-show_entries", "stream=width,height,nb_read_frames:format=duration", "-of", "csv=p=0", file]).trim().split(/[,\n]/);
+  const length = Number(seconds);
+  if (at === undefined) {
+    answer([{ type: "text", text: `${label}: ${length.toFixed(1)} s, ${frames} frames, ${width}×${height}. Ask for a frame with at (seconds).` }]);
+    return;
+  }
+  if (at < 0 || at > length) {
+    answer([{ type: "text", text: `${name} is ${length.toFixed(1)} s long; choose at from 0 to ${length.toFixed(1)}.` }], true);
+    return;
+  }
+  const frame = spawnSync("ffmpeg", ["-v", "error", "-ss", String(at), "-i", file, "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"], { maxBuffer: 1 << 26 });
+  if (frame.status !== 0 || frame.stdout.length === 0) throw new Error(`ffmpeg could not read ${name} at ${at} s`);
+  answer([{ type: "text", text: `${label}, at ${at} s of ${length.toFixed(1)} s.` }, { type: "image", mimeType: "image/png", data: frame.stdout.toString("base64") }]);
 }
 
 function run(program: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string {
@@ -144,7 +157,7 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   }
   // The concat demuxer takes the last entry's duration only when its file is listed again.
   list.push(`file '${segments.at(-1)!.frames.at(-1)!.file}'`);
-  const concat = join(work, `${relative(output, gif).replaceAll("/", "-")}.txt`);
+  const concat = join(work, `${basename(gif)}.txt`);
   writeFileSync(concat, `${list.join("\n")}\n`);
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat,
     "-filter_complex", `[0:v]${captions.join(",")},fps=${GIF.fps},scale=${GIF.width}:-1:flags=lanczos,split[a][b];` +
@@ -353,14 +366,14 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   return segments;
 }
 
-async function capture(): Promise<void> {
+/** Record every demo into `output`, building and keeping frames in `work`. */
+async function capture(output: string, work: string): Promise<void> {
   const base = "../../crates/artifactize-desktop/ui/e2e";
   const { adopt, cleanup, prepare } = await import(`${base}/build.ts`);
   const e2e = { ...await import(`${base}/environment.ts`), ...await import(`${base}/graph-view.ts`) };
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
-  const work = mkdtempSync(join(tmpdir(), "artifactize-demos-"));
+  mkdirSync(work, { recursive: true });
   const candidate = adopt(await prepare(join(work, "build")));
-  let inputs: Record<string, string> = {};
   try {
     const frames = join(work, "frames");
     mkdirSync(frames);
@@ -368,26 +381,25 @@ async function capture(): Promise<void> {
     const growth = await graphGrowth(service, e2e, candidate, frames);
     mkdirSync(output, { recursive: true });
     // Each caption sits inside the graph's canvas, clear of the app's own header lines.
-    const gifs = [["review-loop.gif", loop, { x: 490, y: 190 }], ["graph-growth.gif", growth, { x: 28, y: 180 }]] as const;
+    const gifs = [[DEMOS[0], loop, { x: 490, y: 190 }], [DEMOS[1], growth, { x: 28, y: 180 }]] as const;
     for (const [name, segments, at] of gifs) {
       // Write beside the old GIF and replace it whole, so a failed encode keeps the last one.
       const gif = join(output, name);
       encode(segments, `${gif}.new.gif`, work, at);
       renameSync(`${gif}.new.gif`, gif);
     }
-    inputs = fingerprints(candidate.cli);
   } finally {
     await cleanup(candidate.root);
     rmSync(work, { recursive: true, force: true });
   }
-  writeFileSync(VERSION, `${JSON.stringify({ inputs, hash: hash(inputs) }, null, 2)}\n`);
-  for (const name of ["review-loop.gif", "graph-growth.gif"]) {
-    console.log(`${name}: ${(statSync(join(output, name)).size / 1e6).toFixed(1)} MB`);
-  }
+  for (const name of DEMOS) console.log(`${name}: ${(statSync(join(output, name)).size / 1e6).toFixed(1)} MB`);
 }
 
-if (process.argv.includes("--check")) process.exit(check());
+const mode = process.argv[2];
+if (mode === "stop") process.exit(0);
+else if (mode === "gif") gif(process.argv[3]);
 else if (process.platform !== "linux") throw new Error("Recording runs on Linux only.");
-else if (!process.env.CAPTURE_DISPLAY_OWNED) process.exit(await wrapped());
+else if (!process.env.CAPTURE_DISPLAY_OWNED) process.exit(await (mode === "session" ? session() : wrapped([])));
 else if (!existsSync(join(repository, ".git"))) throw new Error("Recording reads the release history: run it in a Git checkout.");
-else await capture();
+else if (mode === "session") await capture(join(sessionDirectory(), "fresh"), join(sessionDirectory(), "work"));
+else await capture(output, mkdtempSync(join(tmpdir(), "artifactize-demos-")));

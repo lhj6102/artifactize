@@ -149,35 +149,6 @@ pub(super) async fn status(
     Ok(u8::from(!view.satisfied))
 }
 
-pub(super) async fn fingerprint(
-    context: Context,
-    artifacts: Vec<artifactize_core::types::ArtifactName>,
-) -> Result<u8, String> {
-    let (cancellation, listener) = cancellation_listener()?;
-    let result = artifactize_core::project::fingerprints(
-        &context.repo.unwrap_or_else(|| PathBuf::from(".")),
-        context.state_dir.as_deref(),
-        &artifacts,
-        cancellation,
-    )
-    .await;
-    listener.abort();
-    let fingerprints = result?;
-    if context.json {
-        print_json(
-            &fingerprints
-                .into_iter()
-                .collect::<std::collections::BTreeMap<_, _>>(),
-        )?;
-    } else {
-        let mut out = io::stdout().lock();
-        for (name, fingerprint) in fingerprints {
-            writeln!(out, "{name} {fingerprint}").map_err(|error| error.to_string())?;
-        }
-    }
-    Ok(0)
-}
-
 pub(super) async fn graph(
     context: Context,
     artifact: Option<artifactize_core::types::ArtifactName>,

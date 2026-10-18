@@ -2,9 +2,6 @@
 
 pub mod selection;
 
-mod fingerprint;
-pub use fingerprint::fingerprints;
-
 mod status;
 pub use status::{
     ArtifactCondition, ArtifactState, Counts, EvalCondition, EvalState, StatusView, VerifyAction,

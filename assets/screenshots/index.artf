@@ -1,10 +1,51 @@
 name = "screenshots"
 
-[evals.current]
-title = "The screenshots were captured from the current app and script"
-profile = { kind = "runtime", command = "node", args = ["{screenshots-script}", "--check"] }
-payload.instruction = "Compare the hash {screenshots} recorded in version.json with the current fingerprints of {desktop}, {desktop-backend}, {desktop-ui} and {screenshots-script}; a difference means the screenshots are stale and the script runs again."
+# The review captures the scenes again into its own folder, outside the repository.
+[views.agent_sessions.capture]
+start = { command = "node", args = ["{screenshots-script}", "session"] }
+stop = { command = "node", args = ["{screenshots-script}", "stop"] }
 
 [views.agent_tools]
 list = { builtin = "list" }
-view_image = { builtin = "view_image" }
+view_image = { description = "View a screenshot saved in {artifactName}, such as monitor.png.", builtin = "view_image" }
+
+[views.agent_tools.fresh]
+session = "capture"
+description = "View a screenshot just captured from the current app by the screenshots' script: monitor.png, detail.png or review.png."
+command = "node"
+args = ["{screenshots-script}", "fresh"]
+protocol = "json"
+
+[views.agent_tools.fresh.input_schema]
+type = "object"
+properties.name = { enum = ["monitor.png", "detail.png", "review.png"] }
+required = ["name"]
+additionalProperties = false
+
+[evals.matches-capture]
+title = "The saved screenshots show what the script captures from the current app"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+
+[evals.matches-capture.payload]
+instruction = """
+{screenshots} holds the screenshots {screenshots-script} captured from the desktop app, \
+built from {desktop-backend} and {desktop-ui} and driven through {desktop-e2e}. For each of monitor.png, detail.png and \
+review.png, view the saved one with view_image and the one just captured from the current \
+app with fresh, and compare them. Ignore what differs on every capture: Run and request \
+IDs, times, durations, temporary paths and fingerprints. Submit GREEN when every pair shows \
+the same screen with the same layout, controls, text and colours. Otherwise submit RED with \
+one finding per screenshot that differs, saying what changed; the script then runs again to \
+replace the saved screenshots.
+"""
+
+[evals.matches-capture.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.matches-capture.fail_schema]
+type = "object"
+properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { screenshot = { enum = ["monitor.png", "detail.png", "review.png"] }, change = { type = "string", minLength = 1 } }, required = ["screenshot", "change"], additionalProperties = false } }
+required = ["findings"]
+additionalProperties = false

@@ -1,9 +1,0 @@
-{
-  "inputs": {
-    "desktop": "artifactsum:be439d1a672945a40547511b62a6dec97ab3ac5793011e3728fafbb28f4a4176",
-    "desktop-backend": "artifactsum:8f63d7dc44bf0287cc286bd8ef4468bfade01f6cc44a67467873d2adfacf4208",
-    "desktop-ui": "artifactsum:56532bd603513a31ce914f32fc9ed4451dbd0f64f9d39c7ca7737c93437301a5",
-    "demos-script": "artifactsum:08e2014cb279ae4226d205984768276dba817a159f99bec534c608bc90d3e574"
-  },
-  "hash": "97957899ac5f7da6845f47a6827934934ae058d85fae524575de854d8901c1d7"
-}

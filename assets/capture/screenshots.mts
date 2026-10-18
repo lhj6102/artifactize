@@ -1,7 +1,6 @@
 // The README screenshots, captured from the real desktop app.
 //
-//   node assets/capture/screenshots.mts           capture scenes A–C, then write version.json
-//   node assets/capture/screenshots.mts --check   exit 1 when the screenshots are stale
+//   node assets/capture/screenshots.mts   capture scenes A–C into assets/screenshots/
 //
 // Linux only: the app runs on its own 1920×1080 virtual display. Capturing builds the app and
 // its CLI from this checkout, declares a small project through that CLI, verifies it for real
@@ -15,13 +14,14 @@
 //   C. review.png  — a claimed Human review: its instruction, Tools, a Tool log run and the
 //      GREEN form.
 //
-// Last, version.json records the current fingerprints of the app ({desktop},
-// {desktop-backend} and {desktop-ui}) and of this script's own Artifact, and their hash.
-// Any change to one of them makes the screenshots stale until this script runs again; --check
-// recomputes the hash and compares.
+// Modes:
+//   (none)    capture into assets/screenshots/.
+//   session   the start of the screenshots' review session: capture into the session's own
+//             folder, outside the repository, then print one line and stay until stopped.
+//   stop      the session's stop: nothing to do; artifactize removes the folder.
+//   fresh     the session's tool: answer one just-captured screenshot as an image.
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -30,55 +30,52 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, "..", "..");
 const output = join(repository, "assets", "screenshots");
-const VERSION = join(output, "version.json");
-const SCRIPT_ARTIFACT = "screenshots-script";
-/** The app as built: {desktop} and the Artifacts inside it, whose files its own fingerprint
- * leaves to them. */
-const INPUTS = ["desktop", "desktop-backend", "desktop-ui", SCRIPT_ARTIFACT];
+/** The scenes, in the order they are captured. */
+const SCENES = ["monitor.png", "detail.png", "review.png"];
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;
 
-/** Each input's current fingerprint, from the CLI built from this checkout. */
-function fingerprints(cli?: string): Record<string, string> {
-  const [program, args] = cli
-    ? [cli, ["--repo", repository, "fingerprint", ...INPUTS]]
-    : ["cargo", ["run", "-q", "--locked", "-p", "artifactize", "--", "--repo", repository, "fingerprint", ...INPUTS]];
-  const done = spawnSync(program, args, { cwd: repository, encoding: "utf8" });
-  if (done.status !== 0) throw new Error(`fingerprint failed: ${done.stderr || done.error}`);
-  return Object.fromEntries(done.stdout.trim().split("\n").map((line) => line.split(" ") as [string, string]));
-}
-
-/** SHA-256 over `name fingerprint` lines in name order. */
-function hash(inputs: Record<string, string>): string {
-  const lines = Object.keys(inputs).sort().map((name) => `${name} ${inputs[name]}\n`).join("");
-  return createHash("sha256").update(lines).digest("hex");
-}
-
-function check(): number {
-  let recorded: { hash?: string };
-  try {
-    recorded = JSON.parse(readFileSync(VERSION, "utf8"));
-  } catch {
-    console.error("No readable version.json: run node assets/capture/screenshots.mts.");
-    return 1;
-  }
-  const current = hash(fingerprints());
-  if (recorded.hash === current) {
-    console.log(`Screenshots are current (${current}).`);
-    return 0;
-  }
-  console.error(`Screenshots are stale: recorded ${recorded.hash}, current ${current}. Run node assets/capture/screenshots.mts.`);
-  return 1;
-}
-
-/** Re-run this script on its own virtual display and session bus, which end with it. */
-function wrapped(): Promise<number> {
+/** Re-run this script in `mode` on its own virtual display and session bus, which end with
+ * it. Its output goes to stderr when `quiet`, so a session's stdout carries only its ready line. */
+function wrapped(mode: string[], quiet = false): Promise<number> {
   const env = { ...process.env, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
   delete env.WAYLAND_DISPLAY;
-  const child = spawn("dbus-run-session", ["--", "xvfb-run", "-a", "-s", `-screen 0 ${WIDTH}x${HEIGHT}x24`, process.execPath, fileURLToPath(import.meta.url)],
-    { env, stdio: "inherit" });
+  const child = spawn("dbus-run-session", ["--", "xvfb-run", "-a", "-s", `-screen 0 ${WIDTH}x${HEIGHT}x24`, process.execPath, fileURLToPath(import.meta.url), ...mode],
+    { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
   return new Promise((done) => child.once("close", (code) => done(code ?? 1)));
+}
+
+/** The session's folder, which artifactize names and removes. */
+function sessionDirectory(): string {
+  const directory = process.env.ARTIFACTIZE_SESSION_DIR;
+  if (!directory) throw new Error("ARTIFACTIZE_SESSION_DIR is not set: run this mode as a tool session.");
+  return directory;
+}
+
+/** Capture into the session's folder; once captured, say ready and stay until stopped. */
+async function session(): Promise<number> {
+  const code = await wrapped(["session"], true);
+  if (code !== 0) return code;
+  console.log("captured");
+  // Stay alive: the session lasts as long as this process.
+  setInterval(() => {}, 1 << 30);
+  return new Promise(() => {});
+}
+
+/** The `fresh` tool: one screenshot the session just captured, as an image. */
+function fresh(): void {
+  const request = JSON.parse(readFileSync(0, "utf8")) as { args: { name: string } };
+  const name = request.args.name;
+  const file = join(sessionDirectory(), "fresh", name);
+  if (!SCENES.includes(name) || !existsSync(file)) {
+    console.log(JSON.stringify({ isError: true, content: [{ type: "text", text: `No screenshot ${name}; choose one of ${SCENES.join(", ")}.` }] }));
+    return;
+  }
+  console.log(JSON.stringify({ content: [
+    { type: "text", text: `${name}, captured just now from the current app.` },
+    { type: "image", mimeType: "image/png", data: readFileSync(file).toString("base64") },
+  ] }));
 }
 
 /** The example project: core feeds cli and release; cli feeds docs. cli's tests fail, so docs
@@ -134,7 +131,8 @@ payload.instruction = "Read the release notes and approve them for publication."
   writeFileSync(join(repo, "release", "notes.md"), "# Release notes\n\n- Faster startup.\n- Clearer error messages.\n");
 }
 
-async function capture(): Promise<void> {
+/** Capture every scene into `output`, building in `work`. */
+async function capture(output: string, work: string): Promise<void> {
   const e2e = "../../crates/artifactize-desktop/ui/e2e";
   const { adopt, cleanup, prepare } = await import(`${e2e}/build.ts`);
   const fixtures = await import(`${e2e}/native-fixtures.ts`);
@@ -142,13 +140,12 @@ async function capture(): Promise<void> {
   const { graphShown, openArtifact } = await import(`${e2e}/graph-view.ts`);
   const { claimable, reviewing } = await import(`${e2e}/human-review.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
-  const work = mkdtempSync(join(tmpdir(), "artifactize-screenshots-"));
+  mkdirSync(output, { recursive: true });
   const candidate = adopt(await prepare(work));
   // The build cleans up fixture roots named like this one, with every Run it settled.
   const root = join(candidate.root, "fixtures", "fixture-screenshots");
   const fixture = { root, repo: join(root, "example"), state: join(root, "state") };
   let browser: WebdriverIO.Browser | undefined;
-  let inputs: Record<string, string> = {};
   try {
     mkdirSync(fixture.repo, { recursive: true });
     project(fixture.repo, fixtures);
@@ -206,16 +203,17 @@ async function capture(): Promise<void> {
     await app.$('[aria-label="Human review"]').$("button=GREEN").click();
     await app.$('[aria-label="Human review"] .form').waitForExist({ timeout: WAIT });
     await shot("review.png");
-    inputs = fingerprints(candidate.cli);
   } finally {
     if (browser) await service.cleanupWdioSession(browser);
     await cleanup(candidate.root);
     rmSync(work, { recursive: true, force: true });
   }
-  writeFileSync(VERSION, `${JSON.stringify({ inputs, hash: hash(inputs) }, null, 2)}\n`);
 }
 
-if (process.argv.includes("--check")) process.exit(check());
+const mode = process.argv[2];
+if (mode === "stop") process.exit(0);
+else if (mode === "fresh") fresh();
 else if (process.platform !== "linux") throw new Error("Capturing runs on Linux only.");
-else if (!process.env.CAPTURE_DISPLAY_OWNED) process.exit(await wrapped());
-else await capture();
+else if (!process.env.CAPTURE_DISPLAY_OWNED) process.exit(await (mode === "session" ? session() : wrapped([])));
+else if (mode === "session") await capture(join(sessionDirectory(), "fresh"), join(sessionDirectory(), "work"));
+else await capture(output, mkdtempSync(join(tmpdir(), "artifactize-screenshots-")));

@@ -21,11 +21,6 @@ through the [reuse key](#the-reuse-key).
   reflect every input and script change that should re-review.
 - `fingerprint = false` disables reuse. `fingerprint = true` is rejected.
 
-`artifactize fingerprint ARTIFACT...` prints the current value of each named
-Artifact, the one its evals' reuse keys use, without running anything else. A
-script can record it next to outputs it generated, and a runtime eval can compare
-the record with the current value to tell whether those outputs are stale.
-
 ## Artifactsum
 
 An Artifact is reviewed again when its own files change or when an Artifact its

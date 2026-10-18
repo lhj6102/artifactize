@@ -11,7 +11,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 [evals.records-demos.payload]
 instruction = """
 Read {demos-script}, the app's feature journeys in {ux-features} and graph rules in \
-{ux-graph}, and the app in {desktop} as far as the demos need. Judge whether running the \
+{ux-graph}, and the app in {desktop-backend}, {desktop-ui} and {desktop-e2e} as far as the \
+demos need. Judge whether running the \
 script records each demo below from the real desktop app at 1920×1080, with real Runs made \
 through the real CLI and nothing mocked:
 
@@ -39,31 +40,5 @@ additionalProperties = false
 [evals.records-demos.fail_schema]
 type = "object"
 properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { demo = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["demo", "where", "change"], additionalProperties = false } }
-required = ["findings"]
-additionalProperties = false
-
-[evals.writes-version]
-title = "The script ends by recording the version of what it produced"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high" }
-
-[evals.writes-version.payload]
-instruction = """
-Read {demos-script}. Judge whether its outputs and a hash file come out as one bundle: \
-after every GIF is written, the script writes the hash file last, from the current \
-fingerprints of desktop, desktop-backend and desktop-ui and of the script's own Artifact (demos-script), so a change to \
-either makes the outputs stale. Its check mode must recompute that same hash the same way and \
-fail when it differs or the file is missing. Submit GREEN when it does; otherwise RED with one \
-finding per problem.
-"""
-
-[evals.writes-version.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.writes-version.fail_schema]
-type = "object"
-properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } }
 required = ["findings"]
 additionalProperties = false

@@ -107,7 +107,6 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Status { selection, policy }) => {
             workflow::status(context, selection, policy).await
         }
-        Some(Command::Fingerprint { artifacts }) => workflow::fingerprint(context, artifacts).await,
         Some(Command::Graph { .. }) => Err(r#"graph moved to "artifactize config graph""#.into()),
         Some(Command::Config {
             command: ConfigCommand::Graph { artifact, impact },
