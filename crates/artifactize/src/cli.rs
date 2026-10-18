@@ -162,6 +162,12 @@ pub enum Command {
         #[command(flatten)]
         policy: PolicyArgs,
     },
+    /// Print the current fingerprint of each named Artifact, one `NAME FINGERPRINT` line each.
+    Fingerprint {
+        /// Artifact names, printed in this order.
+        #[arg(value_name = "ARTIFACT", required = true)]
+        artifacts: Vec<artifactize_core::types::ArtifactName>,
+    },
     /// Moved to "artifactize config graph".
     #[command(hide = true, disable_help_flag = true)]
     Graph {

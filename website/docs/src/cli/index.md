@@ -28,6 +28,7 @@ on the root command and on `artifactize tools`.
 |---|---|---|---|
 | `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait`; JSON-line events with `--watch` | 0 accepted; outcome with `--wait` or `--watch` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
+| `fingerprint ARTIFACT...` | | `NAME FINGERPRINT` per line, in the order given; JSON object with `--json` | 0; 2 for an unknown Artifact or one without a fingerprint |
 | `mcp` | | [MCP stdio protocol](../agent-plugin/mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
 | `config graph [ARTIFACT]` | `--impact` | text or JSON | 0 |

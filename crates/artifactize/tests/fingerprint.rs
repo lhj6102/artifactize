@@ -317,6 +317,56 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
 }
 
 #[test]
+fn the_fingerprint_command_prints_what_reviews_key_and_follows_changes() {
+    let fixture = Fixture::new();
+    fixture.write("files/index.artf", json!({"name":"files"}));
+    fs::write(fixture.repo.join("files/notes.md"), "first\n").unwrap();
+    fixture.write(
+        "scripted/index.artf",
+        json!({"name":"scripted","fingerprint":fingerprint("printf scripted:v1")}),
+    );
+    fixture.write(
+        "none/index.artf",
+        json!({"name":"none","fingerprint":false}),
+    );
+    let printed = |args: &[&str]| {
+        let output = fixture
+            .command()
+            .arg("fingerprint")
+            .args(args)
+            .record_output()
+            .unwrap();
+        (
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    let (code, stdout, stderr) = printed(&["scripted", "files"]);
+    assert_eq!(code, Some(0), "{stderr}");
+    let lines: Vec<_> = stdout.lines().collect();
+    assert_eq!(lines[0], "scripted scripted:v1");
+    let first = lines[1].strip_prefix("files ").unwrap().to_owned();
+    assert!(first.starts_with("artifactsum:"), "{first}");
+    fs::write(fixture.repo.join("files/notes.md"), "second\n").unwrap();
+    let (_, stdout, _) = printed(&["files"]);
+    assert_ne!(stdout.trim().strip_prefix("files ").unwrap(), first);
+    let (code, stdout, _) = printed(&["files", "--json"]);
+    assert_eq!(code, Some(0));
+    let json: Value = serde_json::from_str(&stdout).unwrap();
+    assert!(json["files"].as_str().unwrap().starts_with("artifactsum:"));
+    for (args, message) in [
+        (["missing"], "Unknown Artifact: missing"),
+        (["none"], "Artifact none declares no fingerprint."),
+    ] {
+        let (code, stdout, stderr) = printed(&args);
+        assert_eq!(code, Some(2));
+        assert!(stdout.is_empty());
+        assert!(stderr.contains(message), "{stderr}");
+    }
+}
+
+#[test]
 fn preparation_covers_only_required_artifacts_but_includes_unselected_dependencies() {
     let fixture = Fixture::new();
     let mut selected = eval("check", "exit 0");
