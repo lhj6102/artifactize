@@ -91,14 +91,10 @@ way. A blocked sign-off is never offered to a person. How the Run ends
 [Speculation and deferred sign-offs](run.md#speculation-and-deferred-sign-offs);
 that reuse needs fingerprints, so `fingerprint = false` disables it.
 
-A newer Human request for the same eval in the same working tree retires earlier
-DEFERRED sign-offs with a different reuse key as ERROR/SUPERSEDED, claimed or not,
-together with their followers. They disappear from Review and cannot be claimed
-again. This happens when the new request is issued, not when its Run is accepted.
-The same key still joins the existing review; original sign-offs in another
-working tree and live WAITING_HUMAN originals are not retired. A deferred sign-off can still be
-submitted after its Run ends, until retirement; the fingerprint recheck still
-refuses changed files.
+A newer request for the same eval in the same working tree retires earlier
+DEFERRED sign-offs with a different reuse key, removing them from Review. See
+[the Run rules](run.md#speculation-and-deferred-sign-offs) for retirement, joining
+and submitting a sign-off after its Run ends.
 
 For a sign-off whose rejection would waste substantial downstream work, retain
 the strict pending gate explicitly:

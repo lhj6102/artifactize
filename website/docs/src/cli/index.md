@@ -327,15 +327,10 @@ and [Human reviews](../tui/index.md#review).
 ## Current-directory tools
 
 `artifactize tools` also exposes the [standalone scoped tools](../features/tools/builtin.md#artifactize-tools-cli),
-using the same CLI definition and runner as `artifactize-tools`. Filesystem
-operands are relative to the current directory (not `--repo`), with `.` the
-default for list/glob/grep; absolute filesystem targets, `..` and symlinks are
-refused. This does not restrict **help's literal executable**: it uses ordinary
-cwd/PATH lookup, allowing absolute or parent paths and executable symlinks, and
-forwards subcommand arguments without scope resolution. Only `open` accepts
-HTTP(S) URLs. `artifactize tools --help` lists both `check` and these tools, and
-`artifactize tools SUBCOMMAND --help` documents each one. The `help` subcommand
-runs a trusted program with `--help`; it is not help navigation.
+using the same CLI definition and runner as `artifactize-tools`. These tools use
+the current directory, not `--repo`; the linked reference explains their path,
+URL and executable lookup rules. `artifactize tools --help` lists both `check`
+and these tools, and `artifactize tools SUBCOMMAND --help` documents each one.
 
 
 ### Agent streaming and runtime logs
