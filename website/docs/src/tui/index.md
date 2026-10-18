@@ -197,9 +197,9 @@ keeping outstanding claims. The quit prompt sets a form aside without dropping i
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
 one back. Esc never quits either UI.
 
-After a standalone submission the list returns if the current page of the search
-still lists requests; when that page is empty `review` exits, even if earlier pages
-still hold matching requests. Monitor keeps the completed result open in Detail. Both use the
+After a standalone submission the list returns. A page emptied by reviews goes
+back to the nearest earlier page that still lists requests; `review` exits only
+when no request matches the search any more. Monitor keeps the completed result open in Detail. Both use the
 same in-process lifecycle jobs; monitor does not launch the standalone command.
 
 ## Monitor

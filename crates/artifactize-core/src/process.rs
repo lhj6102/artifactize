@@ -733,12 +733,10 @@ async fn capture(
                 log.flush().await?;
                 let mut options = platform::private_options();
                 options.write(true).create_new(true);
-                options.open(path.with_extension(format!(
-                        "{}.complete",
-                        path.extension()
-                            .expect("stream extension")
-                            .to_string_lossy()
-                    )))?;
+                let extension = path.extension().expect("stream extension");
+                options.open(
+                    path.with_extension(format!("{}.complete", extension.to_string_lossy())),
+                )?;
             }
             return Ok((output, truncated));
         }

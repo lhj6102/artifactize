@@ -363,7 +363,7 @@ impl Review {
         self.tool = self.tool.min(self.tools().len().saturating_sub(1));
         if self.submitted && self.open.is_none() {
             self.submitted = false;
-            // Nothing left to list after the submission: the review is done.
+            // Nothing matches any more after the submission, on any page: the review is done.
             if self.listed.is_empty() {
                 return Action::Quit;
             }

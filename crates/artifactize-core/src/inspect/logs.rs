@@ -209,11 +209,21 @@ fn excerpt(
         };
         if let Some(text) = audit {
             let (lines, next_start) = select(Cursor::new(text.as_bytes()), query)?;
-            return Ok(LogExcerpt { stream, evidence: Evidence::SavedAudit,
-                note: match result.truncated.value() {
-                    Some(false) => "Full capture unavailable (older, remote or pruned); saved cleaned audit reports no truncation.",
-                    _ => "Full capture unavailable (older, remote or pruned); audit may contain only the first 128 KiB. Missing tail cannot be recovered.",
-                }.into(), lines, next_start });
+            let note = match result.truncated.value() {
+                Some(false) => {
+                    "Full capture unavailable (older, remote or pruned); saved cleaned audit reports no truncation."
+                }
+                _ => {
+                    "Full capture unavailable (older, remote or pruned); audit may contain only the first 128 KiB. Missing tail cannot be recovered."
+                }
+            };
+            return Ok(LogExcerpt {
+                stream,
+                evidence: Evidence::SavedAudit,
+                note: note.into(),
+                lines,
+                next_start,
+            });
         }
     }
     Ok(absent(
