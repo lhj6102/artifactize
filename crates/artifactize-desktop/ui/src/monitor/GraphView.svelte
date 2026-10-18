@@ -73,15 +73,19 @@
     })),
   );
 
-  /** Expanding the structural text changes the canvas height. Keep the whole graph in view
-   * rather than clipping it below the new canvas; the Run view keeps its own camera. */
-  const structuralSize: Attachment<HTMLElement> = (canvas) => {
-    if (!structural) return;
+  /** A graph first drawn in a hidden screen, such as Monitor behind a launch into Review, was
+   * fitted into an empty canvas; fit it once the canvas first has a size. Expanding the
+   * structural text changes the canvas height: keep the whole graph in view rather than
+   * clipping it below the new canvas. The Run view otherwise keeps its own camera. */
+  const canvasSize: Attachment<HTMLElement> = (canvas) => {
     const resized = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (width === 0 || height === 0) return;
       const previous = v.lastSize;
-      if (previous && (previous.width !== width || previous.height !== height)) {
+      if (v.initialized && !v.fitted) {
+        v.fitted = true;
+        void fit({ duration: 0 });
+      } else if (structural && previous && (previous.width !== width || previous.height !== height)) {
         void fit({ duration: 0, maxZoom: 1.6, padding: 0.6 });
       }
       v.lastSize = { width, height };
@@ -113,7 +117,7 @@
 
 <div class="graph">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={v.canvas} {@attach structuralSize} onkeydown={keydown} tabindex="-1">
+  <div class="canvas" bind:this={v.canvas} {@attach canvasSize} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
       bind:nodes
       bind:edges
@@ -127,7 +131,10 @@
       autoPanOnNodeFocus={false}
       elevateNodesOnSelect={false}
       onlyRenderVisibleElements={graph.nodes.length > 80}
-      oninit={() => (v.initialized = true)}
+      oninit={() => {
+        v.initialized = true;
+        v.fitted = (v.canvas?.clientWidth ?? 0) > 0 && (v.canvas?.clientHeight ?? 0) > 0;
+      }}
       proOptions={{ hideAttribution: true }}
       onnodeclick={({ node }) => onopen(node.id)}
       onpaneclick={onclose}

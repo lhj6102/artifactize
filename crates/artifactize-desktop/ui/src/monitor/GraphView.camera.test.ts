@@ -67,3 +67,37 @@ it("opens and closes an Artifact's Detail without moving the camera", async () =
   expect(camera.setCenter).not.toHaveBeenCalled();
   expect(camera.fitView).not.toHaveBeenCalled();
 });
+
+it("fits a graph drawn in a hidden screen once its canvas first has a size, then keeps the camera", async () => {
+  const observed: ResizeObserverCallback[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback: ResizeObserverCallback) {
+      observed.push(callback);
+    }
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  });
+  const graph: Graph = {
+    run: "run-a", nodes: [{ id: "a:app", name: "app", light: "green" }, { id: "a:other", name: "other", light: "green" }], edges: [],
+  };
+  mockIPC((command) => command === "run_graph" ? graph : null);
+  camera.getViewport.mockImplementation(() => ({ x: 0, y: 0, zoom: 1 }));
+  renderHosted(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+  await screen.findByLabelText("app: GREEN");
+  const canvas = document.querySelector<HTMLElement>(".canvas")!;
+  const resize = (width: number, height: number) => {
+    Object.defineProperty(canvas, "clientWidth", { configurable: true, value: width });
+    Object.defineProperty(canvas, "clientHeight", { configurable: true, value: height });
+    const entry = { target: canvas, contentRect: { width, height } } as unknown as ResizeObserverEntry;
+    for (const callback of observed) callback([entry], {} as ResizeObserver);
+  };
+  // Drawn hidden: the canvas had no size, so nothing was fitted yet.
+  expect(camera.setViewport).not.toHaveBeenCalled();
+  resize(1200, 800);
+  expect(camera.setViewport).toHaveBeenCalledOnce();
+  // Later resizes leave the Run view's camera where the person put it.
+  resize(1000, 700);
+  expect(camera.setViewport).toHaveBeenCalledOnce();
+  vi.unstubAllGlobals();
+});
