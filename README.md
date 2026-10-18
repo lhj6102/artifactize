@@ -12,7 +12,7 @@
 
 **Our principles**
 
-- We don't restrict how you build. Use your preferred tools and agent harnesses.
+- We don't restrict how you build. Use your preferred tools and agent harnesses (the apps that run your AI assistants).
 - We don't restrict individuality. Create freely within loose guardrails.
 - AI doesn't make every decision. Vision, taste, and important decisions about direction remain in human hands.
 
@@ -108,9 +108,9 @@ and release waits for a person's sign-off.
 
 <img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example Run graph where core passed, cli failed, docs is blocked and release waits for a sign-off.">
 
-**Detail:** cli between the core it uses and the docs that use it, with its evals.
+**Detail:** cli between the core it uses and the docs that use it, with its checks.
 
-<img src="assets/screenshots/detail.png" width="1200" alt="Real Artifactize desktop Detail of the cli Artifact: its neighbours core and docs, and its lint and tests evals.">
+<img src="assets/screenshots/detail.png" width="1200" alt="Real Artifactize desktop Detail of the cli Artifact: its neighbours core and docs, and its lint and tests checks.">
 
 **Review:** the release sign-off, claimed by the example reviewer, after running its
 notes tool, with the GREEN form open.
