@@ -132,8 +132,10 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 
 `executed` counts the Run's own executions, including ERROR results and Human
 requests it recorded; `reused` counts cache, joined and remote results. A reused result that another profile produced
-(another variant, model or limit, none of which is in the reuse key) adds `profile NAME`
+(another model, limit or other setting, none of which is in the reuse key) adds `profile NAME`
 to its line, and the summary then ends with `; N produced by another profile` (`summary.reused.otherProfile` in JSON).
+A result from a variant with identical settings adds no marker; its saved
+`options.variant` names the variant.
 `Usage` (printed only when some usage was reported) separates counters spent in
 this Run from `saved`, the sum of the reused executions' original counters. JSON
 verify and `run show` carry the same numbers as `summary.executed`, `summary.reused` and the

@@ -268,8 +268,10 @@ variant is an execution option: it is not part of the reuse key, so results of
 different variants (and of the declared profile) reuse each other unless a runtime
 variant changes the command or args. Stored request `profile` and `options`
 describe the execution that produced the result; `requestedProfile` retains the
-requested profile when a hit returns another one, and text output then adds
-`profile NAME` to the reuse marker.
+requested profile when a hit returns another one. Text output adds `profile NAME` to
+the reuse marker only when the producing profile's settings differ; a result from a
+variant with identical settings shows no marker and is identified by its saved
+`options.variant`.
 
 ## Reuse only
 

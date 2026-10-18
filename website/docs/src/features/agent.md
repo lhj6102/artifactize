@@ -153,8 +153,11 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 The next Run admits the backend again.
 
-Only tools from the eval's scope are exposed. They run sequentially in the author's
-[environment](declarations.md#runtime-execution-library), each call with its own private output and temporary directories. Tool results keep text, JSON and validated base64 image blocks rather than flattening
+Only tools from the eval's scope are exposed, and they run sequentially. Command
+tools run in the author's [environment](declarations.md#runtime-execution-library),
+each call with its own private output and temporary directories. Built-in tools run
+inside artifactize and get no per-call directories; `help` runs its program in the
+environment artifactize itself was given. Tool results keep text, JSON and validated base64 image blocks rather than flattening
 structured data. PNG/JPEG/WebP results reach both provider wires; unsupported-model
 image requests fail with the provider error. Duplicate provider call IDs fail
 closed. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
