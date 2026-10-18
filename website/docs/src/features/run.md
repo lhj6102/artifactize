@@ -54,7 +54,9 @@ renders the saved result. Closing or interrupting that watcher stops observation
 only; the Run continues. Only `run cancel RUN_ID` explicitly requests cancellation:
 it stops new admission and owned active work, waits for cleanup, and records
 ERROR/CANCELLED without erasing committed evidence. It does not kill an execution
-this Run joined from another Run. Dead workers reconcile as ERROR/OWNER_DIED;
+this Run joined from another Run. Its sign-offs still waiting, deferred ones
+included, end as ERROR too, and so do the requests other Runs joined to them; the
+next `verify` asks again. Dead workers reconcile as ERROR/OWNER_DIED;
 interrupted work is not replayed automatically.
 
 Acceptance saves the resolved definitions for the selected scope. Before execution,

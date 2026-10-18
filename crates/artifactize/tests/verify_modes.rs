@@ -514,6 +514,64 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
 }
 
 #[tokio::test]
+async fn c2_cancelling_a_run_ends_its_deferred_signoff_and_the_requests_joined_to_it() {
+    let fixture = Fixture::new();
+    fixture.declare("up", vec![human_eval(&[], false)]);
+    fixture.declare("slow", vec![fixture.runtime("check", &[])]);
+    let run = fixture.submit(&["--defer-human"], None);
+    fixture
+        .until(&run, |view| {
+            status(view, "up/sign") == RequestStatus::Deferred && fixture.ready("slow", "check")
+        })
+        .await;
+    // Another Run joins the same sign-off while the first one still runs.
+    let output = support::os::run(fixture.command().args([
+        "verify",
+        "--eval",
+        "up/sign",
+        "--defer-human",
+        "--json",
+    ]));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let follower: RunId = serde_json::from_slice::<Value>(&output.stdout).unwrap()["run"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let follower = fixture.settled(&follower).await;
+    assert_eq!(status(&follower, "up/sign"), RequestStatus::Deferred);
+
+    let output = support::os::run(fixture.command().args(["run", "cancel", run.as_str()]));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let cancelled = fixture.settled(&run).await;
+    assert_eq!(cancelled.run.status(), RunStatus::Error);
+    assert_eq!(status(&cancelled, "up/sign"), RequestStatus::Error);
+    let follower = store::read_run(&fixture.state, &follower.run.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        status(&follower, "up/sign"),
+        RequestStatus::Error,
+        "a request joined to the cancelled sign-off ends with it"
+    );
+    assert!(
+        store::read_waiting(&fixture.state, None)
+            .await
+            .unwrap()
+            .is_empty(),
+        "no sign-off is offered that can no longer be claimed"
+    );
+}
+
+#[tokio::test]
 async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() {
     let fixture = Fixture::new();
     fixture.declare("a-short", vec![fixture.runtime("check", &[])]);

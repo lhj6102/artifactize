@@ -336,8 +336,10 @@ pub(crate) async fn execute(
     };
     let evaluation = graph.evaluate_for_run(&evidence, run.modes.speculate);
     for request in &mut requests {
-        if evidence.contains_key(request.eval_id.as_str())
-            || (request.status().is_human_wait() && !cancellation.is_cancelled())
+        // A cancelled Run withdraws its waiting sign-offs too, deferred ones included.
+        let withdrawn = request.status().is_human_wait() && cancellation.is_cancelled();
+        if (evidence.contains_key(request.eval_id.as_str()) && !withdrawn)
+            || (request.status().is_human_wait() && !withdrawn)
         {
             continue;
         }

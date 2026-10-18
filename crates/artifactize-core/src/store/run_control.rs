@@ -165,7 +165,9 @@ impl Receipts {
         })
         .await
     }
-    /// Retire only this worker's executions; joined work belongs to its original Run.
+    /// Retire only this worker's executions; joined work belongs to its original Run. A
+    /// sign-off still waiting on a retired execution, deferred or joined from another Run,
+    /// could never be claimed again, so it ends with the execution.
     pub(crate) async fn retire_worker(
         &self,
         id: &RunId,
@@ -173,10 +175,22 @@ impl Receipts {
     ) -> Result<(), String> {
         let id = id.clone();
         self.connection.call(move |db| -> Result<(), Error> {
-            let run = load(db, &id)?;
+            let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let run = load(&transaction, &id)?;
             if let Some(Control { worker: Worker::Admitted { owner }, .. }) = run.control {
-                db.execute("UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Run worker stopped.','$.errorCode',?1,'$.result',NULL,'$.completedAt',?2) WHERE owner_pid=?3 AND owner_start_time=?4 AND status IN ('RUNNING','WAITING_HUMAN')", params![code,crate::broker::now(),owner.pid,owner.start_time as i64])?;
+                let at = crate::broker::now();
+                let waiting = {
+                    let mut statement = transaction.prepare("SELECT q.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE e.owner_pid=?1 AND e.owner_start_time=?2 AND e.status='WAITING_HUMAN' AND q.status IN ('WAITING_HUMAN','DEFERRED')")?;
+                    statement.query_map(params![owner.pid, owner.start_time as i64], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?
+                };
+                transaction.execute("UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Run worker stopped.','$.errorCode',?1,'$.result',NULL,'$.completedAt',?2) WHERE owner_pid=?3 AND owner_start_time=?4 AND status IN ('RUNNING','WAITING_HUMAN')", params![code,at,owner.pid,owner.start_time as i64])?;
+                for data in waiting {
+                    let mut request: Request = serde_json::from_str(&data)?;
+                    request.state = super::RequestState::failed("Run worker stopped.".into(), Some(code), at);
+                    super::receipts::update_request(&transaction, &request)?;
+                }
             }
+            transaction.commit()?;
             Ok(())
         }).await.map_err(|e| e.to_string())
     }
