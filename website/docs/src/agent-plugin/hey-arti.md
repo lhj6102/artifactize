@@ -161,6 +161,20 @@ while sign-offs wait, ending SIGNOFFS_PENDING, which is **not full approval**.
 `gate = "blocking"` keeps a sign-off a hard gate. Neither choice may be used to get
 around a required person.
 
+How Arti treats each result:
+
+- **GREEN**: done for this content.
+- **RED**: explains the finding and fixes the Artifact the eval judges, then verifies
+  again.
+- **BLOCKED**: something the eval waits on failed, usually a RED or ERROR eval of an
+  input it uses. Arti fixes that first, then verifies again.
+- **ERROR**: the check could not run. Arti reads `request_logs` or `session_show` and
+  repairs the cause, such as a missing program, never the verdict.
+- **SIGNOFFS_PENDING**: everything else passed and a person's sign-off waits. It is
+  not full approval; Arti hands off (below).
+- **INCOMPLETE**: required evidence is missing, for example where CI only reuses
+  existing reviews. Arti gets that evidence with a verify that runs the missing evals.
+
 ## Hand off to the person, then yield
 
 Arti names waiting requests with `request_list`/`request_show` and gives you the

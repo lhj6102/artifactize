@@ -20,7 +20,7 @@
 //             folder, outside the repository, then print one line and stay until stopped.
 //   stop      the session's stop: nothing to do; artifactize removes the folder.
 //   fresh     the session's tool: answer one just-captured screenshot as an image.
-import { spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -36,14 +36,38 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;
 
+/** A virtual display of its own: Xvfb on the first free display number from a random start.
+ * A number another server holds makes Xvfb exit at once, so captures running at the same
+ * time never share one; -displayfd says when the display is ready. */
+async function virtualDisplay(): Promise<{ number: number; server: ChildProcess }> {
+  const start = 100 + Math.floor(Math.random() * 800);
+  for (let number = start; number < start + 64; number++) {
+    const server = spawn("Xvfb", [`:${number}`, "-displayfd", "3", "-screen", "0", `${WIDTH}x${HEIGHT}x24`, "-nolisten", "tcp"],
+      { stdio: ["ignore", "ignore", "ignore", "pipe"] });
+    const ready = await new Promise<boolean>((done) => {
+      server.stdio[3]!.once("data", () => done(true));
+      server.once("error", () => done(false));
+      server.once("exit", () => done(false));
+    });
+    if (ready) return { number, server };
+  }
+  throw new Error("Xvfb found no free display");
+}
+
 /** Re-run this script in `mode` on its own virtual display and session bus, which end with
- * it. Its output goes to stderr when `quiet`, so a session's stdout carries only its ready line. */
-function wrapped(mode: string[], quiet = false): Promise<number> {
-  const env = { ...process.env, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
-  delete env.WAYLAND_DISPLAY;
-  const child = spawn("dbus-run-session", ["--", "xvfb-run", "-a", "-s", `-screen 0 ${WIDTH}x${HEIGHT}x24`, process.execPath, fileURLToPath(import.meta.url), ...mode],
-    { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
-  return new Promise((done) => child.once("close", (code) => done(code ?? 1)));
+ * it. The child's output goes to stderr when `quiet`, so a session's stdout carries only its
+ * ready line. */
+async function wrapped(mode: string[], quiet = false): Promise<number> {
+  const display = await virtualDisplay();
+  try {
+    const env = { ...process.env, DISPLAY: `:${display.number}`, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
+    delete env.WAYLAND_DISPLAY;
+    const child = spawn("dbus-run-session", ["--", process.execPath, fileURLToPath(import.meta.url), ...mode],
+      { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
+    return await new Promise((done) => child.once("close", (code) => done(code ?? 1)));
+  } finally {
+    display.server.kill();
+  }
 }
 
 /** The session's folder, which artifactize names and removes. */
@@ -139,6 +163,7 @@ async function capture(output: string, work: string): Promise<void> {
   const { environment, git } = await import(`${e2e}/environment.ts`);
   const { graphShown, openArtifact } = await import(`${e2e}/graph-view.ts`);
   const { claimable, reviewing } = await import(`${e2e}/human-review.ts`);
+  const { embeddedPorts } = await import(`${e2e}/platform.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
   mkdirSync(output, { recursive: true });
   const candidate = adopt(await prepare(work));
@@ -166,6 +191,9 @@ async function capture(output: string, work: string): Promise<void> {
       logLevel: "error",
     });
     capabilities["wdio:enforceWebDriverClassic"] = true;
+    // A free WebDriver port of its own, so a capture running beside this one drives its own app.
+    const [embeddedPort] = await embeddedPorts(1);
+    capabilities["wdio:tauriServiceOptions"] = { ...capabilities["wdio:tauriServiceOptions"], embeddedPort };
     browser = await service.startWdioSession(capabilities) as WebdriverIO.Browser;
     const app = browser;
     await app.setWindowSize(WIDTH, HEIGHT);

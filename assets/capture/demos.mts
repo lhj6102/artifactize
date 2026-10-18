@@ -28,7 +28,7 @@
 //   stop          the session's stop: nothing to do; artifactize removes the folder.
 //   gif stored    a tool: a saved demo's length, or its frame about `at` seconds in.
 //   gif fresh     the session's tool: the same for a demo the session just recorded.
-import { spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -48,14 +48,38 @@ const SPEED = 8;
 /** The GIFs' width, frame rate and palette; one step of demo B stays this long. */
 const GIF = { width: 1280, fps: 10, colours: 128, step: 1.6, hold: 1.5 };
 
+/** A virtual display of its own: Xvfb on the first free display number from a random start.
+ * A number another server holds makes Xvfb exit at once, so captures running at the same
+ * time never share one; -displayfd says when the display is ready. */
+async function virtualDisplay(): Promise<{ number: number; server: ChildProcess }> {
+  const start = 100 + Math.floor(Math.random() * 800);
+  for (let number = start; number < start + 64; number++) {
+    const server = spawn("Xvfb", [`:${number}`, "-displayfd", "3", "-screen", "0", `${WIDTH}x${HEIGHT}x24`, "-nolisten", "tcp"],
+      { stdio: ["ignore", "ignore", "ignore", "pipe"] });
+    const ready = await new Promise<boolean>((done) => {
+      server.stdio[3]!.once("data", () => done(true));
+      server.once("error", () => done(false));
+      server.once("exit", () => done(false));
+    });
+    if (ready) return { number, server };
+  }
+  throw new Error("Xvfb found no free display");
+}
+
 /** Re-run this script in `mode` on its own virtual display and session bus, which end with
- * it. Its output goes to stderr when `quiet`, so a session's stdout carries only its ready line. */
-function wrapped(mode: string[], quiet = false): Promise<number> {
-  const env = { ...process.env, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
-  delete env.WAYLAND_DISPLAY;
-  const child = spawn("dbus-run-session", ["--", "xvfb-run", "-a", "-s", `-screen 0 ${WIDTH}x${HEIGHT}x24`, process.execPath, fileURLToPath(import.meta.url), ...mode],
-    { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
-  return new Promise((done) => child.once("close", (code) => done(code ?? 1)));
+ * it. The child's output goes to stderr when `quiet`, so a session's stdout carries only its
+ * ready line. */
+async function wrapped(mode: string[], quiet = false): Promise<number> {
+  const display = await virtualDisplay();
+  try {
+    const env = { ...process.env, DISPLAY: `:${display.number}`, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
+    delete env.WAYLAND_DISPLAY;
+    const child = spawn("dbus-run-session", ["--", process.execPath, fileURLToPath(import.meta.url), ...mode],
+      { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
+    return await new Promise((done) => child.once("close", (code) => done(code ?? 1)));
+  } finally {
+    display.server.kill();
+  }
 }
 
 /** The session's folder, which artifactize names and removes. */
@@ -172,16 +196,26 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
 
 /** Launch the app on `args` in `env`, at the demo's size. */
 async function launch(service: any, app: string, args: string[], env: NodeJS.ProcessEnv): Promise<WebdriverIO.Browser> {
+  const { embeddedPorts } = await import("../../crates/artifactize-desktop/ui/e2e/platform.ts");
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   Object.assign(process.env, env);
   const capabilities = service.createTauriCapabilities(app, {
     appArgs: args, driverProvider: "embedded", startTimeout: WAIT, commandTimeout: WAIT, logLevel: "error",
   });
   capabilities["wdio:enforceWebDriverClassic"] = true;
+  // A free WebDriver port of its own, so a capture running beside this one drives its own app.
+  const [embeddedPort] = await embeddedPorts(1);
+  capabilities["wdio:tauriServiceOptions"] = { ...capabilities["wdio:tauriServiceOptions"], embeddedPort };
   const browser = await service.startWdioSession(capabilities) as WebdriverIO.Browser;
-  await browser.setWindowSize(WIDTH, HEIGHT);
-  await browser.waitUntil(() => browser.execute(() => [innerWidth, innerHeight].join("x")).then((size) => size === `${WIDTH}x${HEIGHT}`),
-    { timeout: WAIT, timeoutMsg: `the window is ${WIDTH}x${HEIGHT}` });
+  try {
+    await browser.setWindowSize(WIDTH, HEIGHT);
+    await browser.waitUntil(() => browser.execute(() => [innerWidth, innerHeight].join("x")).then((size) => size === `${WIDTH}x${HEIGHT}`),
+      { timeout: WAIT, timeoutMsg: `the window is ${WIDTH}x${HEIGHT}` });
+  } catch (error) {
+    // The app runs already: end it before the caller removes what it runs from.
+    await service.cleanupWdioSession(browser);
+    throw error;
+  }
   return browser;
 }
 
@@ -234,12 +268,13 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   try {
     const first = '[aria-label="Runs"] [data-index="0"]';
     /** The Run `id`'s panel shows its own graph, not the one drawn before it was opened: a
-     * graph of another Run is replaced by a new canvas. */
+     * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
     const opened = (id: string) => browser.execute((id) => {
       const canvas = document.querySelector(`[aria-label="Run ${id}"] .svelte-flow`);
       const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
       const box = node?.getBoundingClientRect();
-      return !!canvas && canvas !== (window as unknown as { before?: Element }).before && !!box && box.width > 0
+      const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
+      return !!canvas && (canvas !== before?.canvas || before.run === `Run ${id}`) && !!box && box.width > 0
         && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
     }, id);
     /** The Run `id` ended and its graph is lit as it ended: every Artifact settled, and exactly
@@ -259,7 +294,11 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       // Open the new Run as soon as the Monitor lists it first, then record it until it ends.
       await browser.waitUntil(() => browser.$(first).getText().then((text) => text.includes(id), () => false),
         { timeout: WAIT, timeoutMsg: `the Monitor lists ${id}` });
-      await browser.execute(() => { (window as unknown as { before?: Element | null }).before = document.querySelector(".svelte-flow"); });
+      await browser.execute(() => {
+        const canvas = document.querySelector(".svelte-flow");
+        const run = canvas?.closest("[aria-label^='Run ']")?.getAttribute("aria-label") ?? null;
+        (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before = { canvas, run };
+      });
       await browser.$(first).click();
       await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Monitor draws ${id}'s graph` });
       // `run show --wait` exits with the Run's outcome: 0 when it is satisfied.
