@@ -230,8 +230,9 @@ not the Store app's private state.
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`; from a checkout, `git pull` and repeat `cargo install --path` |
 
-The install scripts and cargo get a release as soon as it is published. Homebrew,
-The prepared winget and Store channels target stable releases only; their first
+The install scripts and Cargo get a release as soon as it is published. Homebrew
+follows stable releases only. The prepared winget and Store channels target stable
+releases only; their first
 publications are still pending. After publication, updates can lag while reviewed.
 Updating keeps your state.
 
