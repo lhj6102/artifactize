@@ -437,13 +437,32 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         && document.querySelectorAll(".current .svelte-flow__node").length > 0), { timeout: WAIT, timeoutMsg: `${step.caption}'s graph is drawn` });
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Refresh keeps the camera; fit the grown graph into view the way a person would.
+      // Complete and still: every node drawn inside the canvas, every edge drawn as a visible
+      // line, and nothing (nodes, edges, camera) changing over 300 ms.
+      const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean]>((inside, done) => {
+        const shown = () => {
+          const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
+          const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
+          const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
+          const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
+            const box = line.getBoundingClientRect();
+            return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
+          }).length;
+          const within = !!canvas && nodes.every((node) => {
+            const box = node.getBoundingClientRect();
+            return box.width > 0 && (!inside || (box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom));
+          });
+          const camera = document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
+          return within && nodes.length > 0 && lines === edges ? `${nodes.length} ${edges} ${camera}` : null;
+        };
+        const before = shown();
+        setTimeout(() => done(before !== null && before === shown()), 300);
+      }, inside), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is drawn${inside ? " in view" : ""}` });
+      // Refresh keeps the camera: once the grown graph is drawn, fit it into view the way a
+      // person would.
+      await drawn(false);
       await browser.$(".current .svelte-flow__controls-fitview").click();
-      await browser.waitUntil(() => browser.executeAsync<boolean, []>((done) => {
-        const camera = () => document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
-        const before = camera();
-        setTimeout(() => done(before === camera()), 300);
-      }), { timeout: WAIT, timeoutMsg: `${step.caption}'s graph is in view` });
+      await drawn(true);
       const file = join(frames, `${step.caption}.png`);
       writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
       segments.push({ frames: [{ file, at: 0 }], speed: 1, caption: step.caption, hold: GIF.step });
