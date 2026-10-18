@@ -37,6 +37,12 @@ be folded into a group: Space or a click reveals or hides them. Runs appear
 newest first. Move past the list's first or last row to load newer or older
 pages, or use its newer/older arrow buttons.
 
+**Attention counters** read `!N ✗N ◐N ?N`: requests in ERROR, RED, running and
+waiting for a Human. The window header always shows the totals of the whole
+catalog, every repository (the ALL row), whatever scope, Run or page is selected;
+each Scope row shows its own totals, and each Run row its own request counts.
+Followers of one Human execution count as one waiting sign-off.
+
 Selecting a Run updates its graph while Runs keeps the keyboard; Enter moves the
 keyboard into the graph. The divider between the left side and the graph area is
 always there: with no Run selected, while loading, on an error or with an empty
@@ -138,9 +144,10 @@ does a double-click. Clicking its preview also opens Detail. A read-only request
 with a log switches between its Summary and its Agent or Runtime log, as an
 eval's chip does in Monitor.
 
-`/` edits search from the Review request list. Ctrl+F returns to search from an
+`/` edits search from the Review request list. Ctrl+F focuses search from an
 open request Detail too, including while a Human form is open or review work is
-running; it is not blocked by that Detail's normal focus lock.
+running. Clicking the Requests pane or switching screens also leaves the Detail
+without closing it: an open form keeps its draft and running review work goes on.
 Free text and `key:value` terms must all match:
 `repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`. A plain
 word matches part of the repository, eval, request ID or claimant, ignoring case;

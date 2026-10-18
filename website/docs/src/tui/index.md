@@ -303,17 +303,11 @@ as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A finis
 change current requests, not the historical Run-end verdict; strict Human gates
 still remain strict.
 
-Each Eval references its own input Artifacts and waits for their required Evals,
-and for those of its Artifact's children. A Human Eval also waits for its own
-Artifact's machine Evals.
-A row groups those gates into at most two
-unmet Artifacts, then `+N`, with each Artifact's completion state. When all targets
-are themselves waiting, it adds one level of cause, for example
-`waits for cli … waiting (cli waits for code-style)`. Cycle peers share `↻ peer`
-markers. An eval's own Artifact and its cycle peers never gate it, so a RED sibling
-or peer does not block it; what the cycle references outside itself still applies.
-The marker shows the cycles that Eval references and children form, the same
-cycles that make Artifacts peers for gating.
+What an eval waits for follows [Eval dependencies](../features/artifact.md#eval-dependencies).
+A row groups those gates into at most two unmet Artifacts, then `+N`, with each
+Artifact's completion state. When all targets are themselves waiting, it adds one
+level of cause, for example `waits for cli … waiting (cli waits for code-style)`.
+Artifacts in a cycle share `↻ peer` markers.
 Upstream comes first where the graph allows; Artifact cycle peers and Evals are
 ordered by name.
 

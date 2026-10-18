@@ -104,11 +104,13 @@ Artifact reviews its own style and feature coverage. Only that application Eval
 waits for the test-code reviews; unrelated application Evals remain runnable.
 See [Eval dependencies](../features/artifact.md#eval-dependencies).
 
-## Agent tools and the Human flow
+## Optional: Agent tools and the Human flow
 
+The tour above needs no model. This optional part does: first set up the model
+credentials, exact model and profile described in the
+[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
 A Human eval is requested only once every other non-Human eval of its Artifact is
-GREEN, so `spec/review` runs first; it needs the model credentials described in
-the example's README. Both terminals must use the same temporary state directory. Before starting the
+GREEN, so `spec/review` runs first. Both terminals must use the same temporary state directory. Before starting the
 waiting command below, print the first terminal's value with
 `echo "$ARTIFACTIZE_STATE_HOME"` (PowerShell: `$env:ARTIFACTIZE_STATE_HOME`).
 In the second terminal, replace `STATE_DIRECTORY` below with that printed path.

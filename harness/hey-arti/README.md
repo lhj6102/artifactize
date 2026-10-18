@@ -14,7 +14,9 @@ bytes are covered by `arti-harness`'s fingerprint.
 
 ## Deterministic checks
 
-Requires Python 3.11+; only the standard library is used:
+Requires Python 3.11+ on Linux or macOS; only the standard library is used. The
+driver refuses Windows, where it could not own a process's descendants once the
+process itself exits:
 
 ```sh
 python3 -I harness/hey-arti/driver.py check

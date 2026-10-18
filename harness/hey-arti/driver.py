@@ -64,9 +64,13 @@ def wait_for_exit(owner):
 
 
 def spawn(command, **options):
-    """Each harness subprocess owns a fresh process group, including its children."""
-    if os.name == "posix":
-        options["start_new_session"] = True
+    """Each harness subprocess owns a fresh process group, including its children.
+
+    Windows is refused: once a leader exits, nothing here would still own its
+    descendants, so their working files could not be released safely."""
+    if os.name != "posix":
+        raise RuntimeError("The hey-arti harness runs on Linux and macOS only.")
+    options["start_new_session"] = True
     return subprocess.Popen(command, **options)
 
 
@@ -92,16 +96,10 @@ def _stop_child(process):
                     owners.append({"pid": int(stat.parent.name), "start_time": int(fields[19])})
             except (FileNotFoundError, ProcessLookupError):
                 continue
-    if os.name == "posix":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    elif process.poll() is None:
-        # Use the explicitly declared native OS tree operation, not a PATH tool.
-        taskkill = Path(os.environ["SystemRoot"]) / "System32/taskkill.exe"
-        subprocess.run([str(taskkill), "/PID", str(process.pid), "/T", "/F"],
-                       capture_output=True, timeout=EXIT_BOUND, check=True)
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     process.wait(timeout=EXIT_BOUND)
     for owner in owners:
         wait_for_exit(owner)
