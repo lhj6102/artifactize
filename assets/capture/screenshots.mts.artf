@@ -1,0 +1,67 @@
+name = "screenshots-script"
+tags = ["type:capture"]
+
+[views.agent_tools]
+read = { builtin = "read" }
+
+[evals.records-scenes]
+title = "The script captures scenes A, B and C from the real app"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high" }
+
+[evals.records-scenes.payload]
+instruction = """
+Read {screenshots-script}, the app's feature journeys in {ux-features} and graph rules in \
+{ux-graph}, and the app in {desktop} as far as the scenes need. Judge whether running the \
+script captures each scene below from the real desktop app at 1920×1080, with real data made \
+through the real CLI and nothing mocked:
+
+A. The Monitor (J-MON-CATALOG, J-GRAPH-COLOURS): Scope and Runs on the left, and a Run graph \
+whose Artifacts show mixed verdicts: GREEN, RED, blocked and waiting for a person.
+B. An Artifact's Detail (J-MON-DETAIL, J-MON-NEIGHBOURS) floating over the graph on its \
+Artifact tab: the Artifact between its neighbours, and its evals with their verdicts.
+C. A claimed Human review (J-HUMAN-LAYOUT, J-HUMAN-LOG): its instruction, Tools, a Tool log \
+run and the GREEN form.
+
+Check that each scene's selectors and actions reach the state the journey describes, that the \
+script waits for that state rather than a fixed delay alone before capturing, and that it \
+cleans up the app, the build and the project it made. Submit GREEN when every scene is \
+captured; otherwise RED with one finding per problem.
+"""
+
+[evals.records-scenes.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.records-scenes.fail_schema]
+type = "object"
+properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { scene = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["scene", "where", "change"], additionalProperties = false } }
+required = ["findings"]
+additionalProperties = false
+
+[evals.writes-version]
+title = "The script ends by recording the version of what it produced"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high" }
+
+[evals.writes-version.payload]
+instruction = """
+Read {screenshots-script}. Judge whether its outputs and a hash file come out as one bundle: \
+after every image is written, the script writes the hash file last, from the current \
+fingerprints of desktop and of the script's own Artifact (screenshots-script), so a change to \
+either makes the outputs stale. Its check mode must recompute that same hash the same way and \
+fail when it differs or the file is missing. Submit GREEN when it does; otherwise RED with one \
+finding per problem.
+"""
+
+[evals.writes-version.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.writes-version.fail_schema]
+type = "object"
+properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } }
+required = ["findings"]
+additionalProperties = false

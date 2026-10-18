@@ -1,11 +1,10 @@
 name = "screenshots"
 
-[evals.integrity]
-title = "The real captured images match their honest saved evidence"
-profile = { kind = "runtime", command = "python3", args = ["-I", "check.py"] }
-payload.instruction = "Check the four normal/narrow PNG captures and {screenshots} evidence read-only: exact hashes, PNG integrity and dimensions, real capture provenance, and isolated demo requests with no Human claims or submissions. The README review judges the images themselves."
+[evals.current]
+title = "The screenshots were captured from the current app and script"
+profile = { kind = "runtime", command = "node", args = ["{screenshots-script}", "--check"] }
+payload.instruction = "Compare the hash {screenshots} recorded in version.json with the current fingerprints of {desktop} and {screenshots-script}; a difference means the screenshots are stale and the script runs again."
 
 [views.agent_tools]
 list = { builtin = "list" }
 view_image = { builtin = "view_image" }
-evidence = { builtin = "read", args = ["evidence.json"] }

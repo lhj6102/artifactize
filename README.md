@@ -70,16 +70,21 @@ the assistant the workflow instructions.
 
 ## The product running
 
-These are real screenshots of the experimental desktop app built from this branch,
-using an isolated example project. The human review is pending; no approval was
-claimed or submitted to make these pictures. The text-based app (CLI) also provides
-Monitor and Review screens.
+These are real screenshots of the desktop app, captured by
+[a script](assets/capture/screenshots.mts) from an example project it verifies for
+real. The example reviewer "alice" claims the sign-off to show the review form; nothing
+is submitted. The text-based app (CLI) also provides Monitor and Review screens.
 
-**Monitor:** inspect the documentation check's saved result alongside the project.
-It passed; a human sign-off and the shipping check that needs it are still waiting.
+**Monitor:** the example's Run: core passed, cli's tests failed so docs is blocked,
+and release waits for a person's sign-off.
 
-<img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example project has a passed documentation check and a waiting human sign-off.">
+<img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example Run graph where core passed, cli failed, docs is blocked and release waits for a sign-off.">
 
-**Review:** the same waiting request can be inspected before anyone claims it.
+**Detail:** cli between the core it uses and the docs that use it, with its evals.
 
-<img src="assets/screenshots/review.png" width="1200" alt="Real Artifactize desktop Review: the example's unclaimed human review shows its instruction and declared tools.">
+<img src="assets/screenshots/detail.png" width="1200" alt="Real Artifactize desktop Detail of the cli Artifact: its neighbours core and docs, and its lint and tests evals.">
+
+**Review:** the release sign-off, claimed by the example reviewer, after running its
+notes tool, with the GREEN form open.
+
+<img src="assets/screenshots/review.png" width="1200" alt="Real Artifactize desktop Review: the example's claimed sign-off with its instruction, notes tool, tool log and GREEN form.">
