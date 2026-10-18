@@ -49,10 +49,11 @@
         position: positions.get(node.id)!,
         // A fixed size: recoloured nodes keep their dimensions and never re-measure. A node
         // object without `measured` makes Svelte Flow drop its handle positions, which hides
-        // its edges until it is measured again; every recolour would make them flicker.
+        // its edges until it is measured again; every recolour would make them flicker. The
+        // first draw goes without it, so the initial fit waits for the laid-out canvas.
         width: NODE.width,
         height: NODE.height,
-        measured: { width: NODE.width, height: NODE.height },
+        measured: v.initialized ? { width: NODE.width, height: NODE.height } : undefined,
         data: { name: node.name, light: node.light, open: node.id === opened },
         draggable: false,
         connectable: false,
@@ -126,6 +127,7 @@
       autoPanOnNodeFocus={false}
       elevateNodesOnSelect={false}
       onlyRenderVisibleElements={graph.nodes.length > 80}
+      oninit={() => (v.initialized = true)}
       proOptions={{ hideAttribution: true }}
       onnodeclick={({ node }) => onopen(node.id)}
       onpaneclick={onclose}
