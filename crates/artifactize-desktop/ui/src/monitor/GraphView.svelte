@@ -35,8 +35,9 @@
 
   const flow = useSvelteFlow();
   const nodeTypes = { artifact: ArtifactNode };
-  /** The camera and its controls share the same zoom limits. */
-  const MIN_ZOOM = 0.05;
+  /** A positive zoom floor clips sufficiently long graphs in the split canvas. Zero lets
+   * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
+  const MIN_ZOOM = 0;
   const MAX_ZOOM = 2;
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() =>
@@ -72,15 +73,14 @@
    * rather than clipping it below the new canvas; the Run view keeps its own camera. */
   const structuralSize: Attachment<HTMLElement> = (canvas) => {
     if (!structural) return;
-    let previous = "";
     const resized = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (width === 0 || height === 0) return;
-      const size = `${width}:${height}`;
-      if (previous && previous !== size) {
+      const previous = v.lastSize;
+      if (previous && (previous.width !== width || previous.height !== height)) {
         void fit({ duration: 0, maxZoom: 1.6, padding: 0.6 });
       }
-      previous = size;
+      v.lastSize = { width, height };
     });
     resized.observe(canvas);
     return () => resized.disconnect();

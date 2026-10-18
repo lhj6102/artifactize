@@ -11,12 +11,13 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { create, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
+import { create, createdRoots, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
 import { asNativePath, assertHarnessPlatform, embeddedPorts, harnessEnvironment, nativePath, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 import { cargoGate, cleanup, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
 import { assertAppsStopped } from "../ui/e2e/observation.ts";
+import { settleFixtureRuns } from "../ui/e2e/runs.ts";
 
 // Resolve the public package entry from the frontend which declares this dependency.
 const service = createRequire(new URL("../ui/package.json", import.meta.url))("@wdio/tauri-service") as
@@ -323,9 +324,20 @@ async function serve(): Promise<void> {
   // Startup is an active command too, so an in-flight acquisition is joined first.
   const release = async () => {
     if (server.listening) server.close();
-    await shown?.session.stop();
-    shown = undefined;
-    if (startupFailure !== undefined) throw new Error("App startup cleanup is unconfirmed; preserve fixture and candidate inputs", { cause: startupFailure });
+    const failures: unknown[] = [];
+    try { await shown?.session.stop(); }
+    catch (error) { failures.push(error); }
+    if (failures.length === 0) shown = undefined;
+    if (startupFailure !== undefined) failures.push(new Error("App startup cleanup is unconfirmed", { cause: startupFailure }));
+    if (failures.length > 0) {
+      // Native ownership may be unknown, so keep every input. The fixture's domain
+      // Runs were already submitted before app admission; cancel and join them anyway.
+      if (candidate) for (const root of createdRoots()) {
+        try { settleFixtureRuns(candidate.cli, root, candidate.observer); }
+        catch (error) { failures.push(error); }
+      }
+      throw new AggregateError(failures, "Desktop cleanup is unconfirmed; preserve fixture and candidate inputs");
+    }
     if (candidate) {
       await releaseFixtures();
       await cleanup(candidate.root);

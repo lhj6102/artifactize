@@ -41,3 +41,15 @@ const char *arti_ime_commit(void *raw, const char *text) {
     return NULL;
 }
 const char *arti_ime_cancel(void *raw) { return arti_ime_commit(raw, ""); }
+
+/* WKWebView's responder editing actions, not constructed AppKit events. */
+const char *arti_edit_copy(void *raw) {
+    WKWebView *view = (__bridge WKWebView *)raw;
+    if (![view tryToPerform:@selector(copy:) with:nil]) return "The WebView has no Copy editing action";
+    return NULL;
+}
+const char *arti_edit_paste(void *raw) {
+    WKWebView *view = (__bridge WKWebView *)raw;
+    if (![view tryToPerform:@selector(paste:) with:nil]) return "The WebView has no Paste editing action";
+    return NULL;
+}

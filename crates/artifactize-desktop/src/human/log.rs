@@ -1,9 +1,9 @@
 //! The Tool log as Tauri events: the library's runs log their lines to one channel per app,
 //! and this forwards them to the frontend in batches. A line for a review nobody has open is
 //! dropped by the frontend; nothing is saved.
-use crate::ids::RequestKey;
+use crate::ids::{RequestKey, ToolRunKey};
 use artifactize_core::review::log::{End, Event, Events, Kind, Stream};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use specta::Type;
 use tauri_specta::Event as _;
 
@@ -12,23 +12,23 @@ use tauri_specta::Event as _;
 const BATCH: usize = 256;
 
 /// Lines of Human tool runs, oldest first.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanToolLog {
     pub lines: Vec<LogLine>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LogLine {
     /// The review the run belongs to.
     pub request: RequestKey,
     /// The run, unique while the app runs: later lines find their own entry.
-    pub run: String,
+    pub run: ToolRunKey,
     pub line: Line,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Line {
     /// A run started, at milliseconds since the Unix epoch.
@@ -57,7 +57,7 @@ fn line(event: Event) -> LogLine {
     };
     LogLine {
         request: event.request.into(),
-        run: event.run.get().to_string(),
+        run: event.run.into(),
         line: match event.kind {
             Kind::Start {
                 at,
@@ -114,7 +114,14 @@ mod tests {
         run.text(Stream::Stdout, "out\n");
         run.text(Stream::Stderr, "err\n");
         run.end(End::Failed("gone".into()));
-        let lines: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
+        let mut started = events.try_recv().unwrap();
+        let Kind::Start { at, .. } = &mut started.kind else {
+            panic!("{started:?}");
+        };
+        // Check the wire timestamp against a fixed instant, not the machine's clock.
+        *at = time::OffsetDateTime::from_unix_timestamp_nanos(1_234_567_890).unwrap();
+        let lines: Vec<_> = std::iter::once(started)
+            .chain(std::iter::from_fn(|| events.try_recv().ok()))
             .map(|event| serde_json::to_value(line(event)).unwrap())
             .collect();
         let [start, out, err, end] = lines.as_slice() else {
@@ -123,7 +130,7 @@ mod tests {
         assert_eq!(start["request"], "run-1-1");
         assert_eq!(start["run"], out["run"]);
         assert_eq!(start["line"]["kind"], "start");
-        assert!(start["line"]["at"].as_f64().unwrap() > 0.0);
+        assert_eq!(start["line"]["at"], json!(1234.0));
         assert_eq!(
             (
                 start["line"]["operation"].clone(),

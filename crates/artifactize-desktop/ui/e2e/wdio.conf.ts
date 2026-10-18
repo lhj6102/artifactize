@@ -5,7 +5,7 @@ import { selectedScenarios } from "./catalog.ts";
 import { environment, releaseFixtures } from "./fixture.ts";
 import {
   accountBrowserEnvironment, asNativePath, releaseAccountBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
-  makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
+  assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
   type Environment,
 } from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
@@ -23,7 +23,12 @@ export let preparationFailure: unknown;
 
 /** The product has one fixed auth callback endpoint. All its auth actions therefore
  * form one independent accounts capability; no unrelated capability consumes it. */
-export const fixedResources = { accounts: { callbackHost: "127.0.0.1", callbackPort: 1455 } } as const;
+export const fixedResources = {
+  accounts: { callbackHost: "127.0.0.1", callbackPort: 1455 },
+  // This is the only capability to copy/paste. It writes its own selection before reading
+  // it back through a paste; neither the runner nor another capability reads the clipboard.
+  "monitor-tool-log-scroll": { clipboard: true },
+} as const;
 
 /** Called by the runner AFTER Launcher.run returns, never from config onComplete:
  * WDIO runs the user's onComplete before the upstream service's shutdown hook. */
@@ -79,13 +84,16 @@ export const config = {
       const endpoints = await embeddedPorts(selected.length);
       for (let index = 0; index < selected.length; index++) {
         const item = selected[index];
-        const input = await item.prepare();
-        prepared.push(input);
+        if (item.id === "monitor-tool-log-scroll") assertClipboardDesktop();
+        const input = variable("DESKTOP_TEST_RELAUNCH") === "1" ? prepared[index] : await item.prepare();
+        if (!input) throw new Error("the relaunched case lost its owning fixture");
+        if (variable("DESKTOP_TEST_RELAUNCH") !== "1") prepared.push(input);
         const context = nativePath(outputDir, `${item.id}.json`);
         const args = ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])];
         let env: Environment = {
           ...environment(input.fixture), ...native, ...input.env,
           DESKTOP_TEST_SCENARIO: item.id, DESKTOP_TEST_FIXTURE_ROOT: input.fixture.root,
+          DESKTOP_TEST_RELAUNCH: variable("DESKTOP_TEST_RELAUNCH"),
           ARTIFACTIZE_E2E_OWNER_FILE: nativePath(outputDir, `${item.id}.owner.json`),
         };
         if (item.id === "accounts") {

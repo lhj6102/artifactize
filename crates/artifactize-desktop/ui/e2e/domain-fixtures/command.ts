@@ -7,6 +7,12 @@ const GATE_POLL = 20;
 
 const [operation, argument] = process.argv.slice(2);
 switch (operation) {
+  case "report":
+    for (let line = 0; line < 80; line += 1) {
+      process.stdout.write(`fixture stdout ${String(line).padStart(3, "0")} ${line === 0 ? `code_${"unbroken".repeat(240)}` : ""}\n`);
+      process.stderr.write(`fixture stderr ${String(line).padStart(3, "0")} ${line === 0 ? `code_${"unbroken".repeat(240)}` : ""}\n`);
+    }
+    break;
   case "pass":
     break;
   case "fail":

@@ -76,9 +76,6 @@
     padding: 10px var(--pad) 6px;
     border-top: 2px solid transparent;
   }
-  header:has(> .notice.open) {
-    align-items: flex-start;
-  }
   .focused header {
     border-top-color: var(--accent);
   }
@@ -96,8 +93,10 @@
     color: var(--text);
   }
   .notice {
+    position: relative;
     flex: 1 1 0;
     min-width: 0;
+    height: 1.5em;
   }
   .notice button {
     display: block;
@@ -114,7 +113,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Expanded text floats from its one-line header slot: reading a notice never
+   * moves or resizes the graph underneath it. */
   .notice.open button {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 30;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
     max-height: 40vh;
     overflow: auto;
     text-align: start;

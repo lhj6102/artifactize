@@ -756,6 +756,39 @@ pub(super) fn artifact_status(saved: &Saved, id: &ArtifactName, now: OffsetDateT
 /// completion and why the eval depends on it, then its evals that are not done yet.
 pub(super) fn waits_for(saved: &Saved, eval: &EvalId, now: OffsetDateTime) -> String {
     let states = States::new(saved);
+    format_waits(
+        saved,
+        &states,
+        eval,
+        now,
+        &mut std::collections::HashSet::new(),
+    )
+}
+
+/// An Artifact combines its evals' input groups by identity, not by rendered text:
+/// different inputs may each have a pending eval named `check`.
+pub(super) fn artifact_waits(
+    saved: &Saved,
+    artifact: &ArtifactName,
+    now: OffsetDateTime,
+) -> String {
+    let states = States::new(saved);
+    let mut seen = std::collections::HashSet::new();
+    let blocks = states
+        .evals(artifact)
+        .iter()
+        .map(|eval| format_waits(saved, &states, eval, now, &mut seen))
+        .filter(|block| !block.is_empty());
+    super::join(blocks, "\n")
+}
+
+fn format_waits(
+    saved: &Saved,
+    states: &States<'_>,
+    eval: &EvalId,
+    now: OffsetDateTime,
+    seen: &mut std::collections::HashSet<ArtifactName>,
+) -> String {
     let Some((&target, _)) = states
         .index
         .evals
@@ -769,6 +802,9 @@ pub(super) fn waits_for(saved: &Saved, eval: &EvalId, now: OffsetDateTime) -> St
     own.push(target);
     let mut lines = Vec::new();
     for upstream in states.upstream_states(eval) {
+        if !seen.insert(upstream.artifact.clone()) {
+            continue;
+        }
         let (glyph, _, word) = completion(upstream.completion);
         let id = &upstream.artifact;
         let mut origins: Vec<String> = saved
@@ -797,7 +833,7 @@ pub(super) fn waits_for(saved: &Saved, eval: &EvalId, now: OffsetDateTime) -> St
             continue;
         }
         for &pending in states.evals(id) {
-            let node = eval_node(&states, pending, now);
+            let node = eval_node(states, pending, now);
             if !matches!(node.kind, Kind::Eval(EvalView::Done(_))) {
                 lines.push(format!("  {} {}  {}", node.glyph, node.name, node.status()));
             }

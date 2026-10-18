@@ -63,9 +63,9 @@ work, timing, budgets, executed/reused work and usage. Drag the Detail's left ed
 to resize it; it keeps that width, also in the next launch.
 
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`:
-the Artifact's own chip, the Artifact icon before its name (a long name is cut
-short; the Detail's title shows it whole), then one per eval with its verdict's
-glyph and colour. Eval chips that do not fit wrap onto the next line.
+the Artifact's own chip, the Artifact icon before its name, then one per eval with
+its verdict's glyph and colour. Available pane width can cut a long name short in
+both the chip and the Detail title. Eval chips that do not fit wrap onto the next line.
 
 The Artifact's chip shows it between its neighbours, drawn with the Run graph's
 nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
@@ -75,9 +75,12 @@ its chip), its path, what it waits for, and the rest folded under **Debug**.
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
-result, each owner field by name and a list as numbered items; then **Execution
-options**, **Execution metadata** and **Fingerprint** when it has them. Every other
-fact, including what it waits for, folds under **Debug**. An eval with a log switches
+result; then **Execution options**, **Execution metadata** and **Fingerprint** when
+it has them. In the result, `summary` appears as text without its field name; other
+text fields show their names. Lists become numbered items: `item` and `where`, when
+present, form an item's heading. Its remaining fields show their names unless only
+one remains, in which case its text stands alone. Every other fact, including what
+it waits for, folds under **Debug**. An eval with a log switches
 below the chips between its Summary, shown first, and its log, a plain-text choice
 whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
 with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
@@ -108,9 +111,9 @@ viewport. These gestures move the camera, not the pane dividers or the Detail.
 Above 40
 nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
 than 300 Artifacts** ask before layout: choose **Lay out all** to display the
-whole graph. Only visible elements are rendered: panning or zooming draws the
-Artifacts it brings into view. Layout is not an incrementally loaded
-neighborhood, and there is no tree fallback.
+whole graph. Above **80 Artifacts**, only elements in view are rendered: panning or
+zooming draws those it brings into view. Smaller graphs render every element.
+Layout is not an incrementally loaded neighborhood, and there is no tree fallback.
 
 `artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
 without needing a Run or showing saved verdicts. A click on an Artifact shows its
@@ -155,9 +158,9 @@ reviewer locks, not authenticated accounts; only the claimant can run tools or
 submit. See [Human](../features/human.md) for shared lifecycle and deferred sign-offs.
 
 A Human review reads top to bottom as its instruction, the **Tools** to use, their
-**Tool log**, and the **Result** to write. The instruction comes first. `i` or its
-expand/fold button changes how much is shown; Ctrl+PgUp/PgDn scrolls long criteria
-from any sub-area. `t` toggles the Human request's Technical record. Tab or a click
+**Tool log**, and the **Result** to write. The instruction is shown in full within
+the review body's shared scroller; scroll that body to read long criteria.
+`t` toggles the Human request's Technical record. Tab or a click
 moves to Tools; Ctrl+U releases your claim even while editing.
 
 Tools are grouped under the Artifact that declares them, the reviewed one first.

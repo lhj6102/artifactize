@@ -4,12 +4,15 @@
   // it prints arrives in the log line by line while it runs, a launched program's until it
   // exits. The log is plain selectable text: the reviewer copies from it into the result.
   import { untrack } from "svelte";
+  import { ToolsState, setToolsState } from "./tools-state.svelte";
   import type { Attachment } from "svelte/attachments";
   import type { ToolView } from "../ipc/client";
   import type { Review } from "./review.svelte";
   import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let { review }: { review: Review } = $props();
+  const t = new ToolsState();
+  setToolsState(t);
 
   const tools = $derived(review.view?.tools ?? []);
   /** Tools by Artifact, the reviewed eval's Artifact first, then by name. */
@@ -38,12 +41,11 @@
   /** The log follows its newest line unless the reader scrolled up; scrolled back to the
    * bottom, it follows again. Only the DOM is touched, as lines are added. */
   const follow: Attachment<HTMLElement> = (log) => {
-    let following = true;
     const scrolled = () => {
-      following = log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_SLACK;
+      t.following = log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_SLACK;
     };
     const added = new MutationObserver(() => {
-      if (following) log.scrollTop = log.scrollHeight;
+      if (t.following) log.scrollTop = log.scrollHeight;
     });
     added.observe(log, { childList: true, subtree: true, characterData: true });
     log.addEventListener("scroll", scrolled);

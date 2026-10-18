@@ -1,16 +1,18 @@
-//! The test build's engine text-input device. It changes only the WebView's native
-//! composition, never the app's review state or keyboard/OS event stream.
+//! The test build's engine text-input device. It changes only native composition
+//! and clipboard editing, never the app's review state or keyboard/OS event stream.
 mod platform;
 
 use serde::Deserialize;
 
-/// Native composition operations; keystrokes deliberately do not belong to this device.
+/// Native composition and clipboard editing; raw keystrokes do not belong to this device.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Input {
     Set { text: String },
     Commit { text: String },
     Cancel,
+    Copy,
+    Paste,
 }
 
 /// Bound text passed through the test IPC and native input-method allocation.

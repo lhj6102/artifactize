@@ -76,8 +76,6 @@ and Agent evals cannot construct a Human eval registry. Listing executes nothing
 Human results use a separate text/launch type; Agent results cannot include launch
 blocks. These low-level registry operations do not authorize a claimant; use the
 `human` lifecycle API, `request tool` or `review` below for recorded requests.
-No desktop/project launcher factory, preparation phase, readiness hook
-or observation receipt is added.
 
 ## Human reviews
 

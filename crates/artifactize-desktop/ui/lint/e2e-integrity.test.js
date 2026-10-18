@@ -9,6 +9,23 @@ test("input integrity rejects native OS injection across the suite and device la
   assert.deepEqual(inputViolations("fixture", "setMarkedText:text; webkit_web_view_set_input_method_context(view, context); Input.imeSetComposition; Input.insertText; new KeyboardEvent('keydown', { isComposing: true });"), []);
 });
 
+test("only the native Windows engine device may issue literal CDP Copy/Paste editing commands", () => {
+  const device = "src/e2e_input/platform.rs";
+  for (const command of ["Copy", "Paste"]) {
+    const call = `("Input.dispatchKeyEvent", json!({"type":"keyDown", "commands":["${command}"]}))`;
+    assert.deepEqual(inputViolations(device, call), []);
+    for (const path of ["ui/e2e/platform.ts", "ui/e2e/cases/monitor.ts", "vendor/tauri-plugin-wdio-webdriver/src/device.rs"]) {
+      assert.equal(inputViolations(path, call).length, 1, path);
+    }
+  }
+  for (const call of [
+    '("Input.dispatchKeyEvent", json!({"type":"keyDown", "key":"a"}))',
+    '("Input.dispatchKeyEvent", json!({"commands":["SelectAll"]}))',
+    '("Input.dispatchKeyEvent", json!({"commands":["Copy", "MoveRight"]}))',
+    '("Input.dispatchKeyEvent", parameters)',
+  ]) assert.equal(inputViolations(device, call).length, 1, call);
+});
+
 test("provider integrity detects changed, missing, additional and non-file source entries", () => {
   const release = { "src/lib.rs": "original" };
   assert.deepEqual(providerViolations(release, release), []);

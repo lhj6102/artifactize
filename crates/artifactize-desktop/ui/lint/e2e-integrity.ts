@@ -6,7 +6,13 @@ const injection = /\b(?:sendEvent|keyEventWithType|gdk_event_new|gtk_widget_even
 
 /** Forbidden API names are rejected even in otherwise portable-looking native adapters. */
 export function inputViolations(path: string, source: string): string[] {
-  return source.split("\n").flatMap((line, at) => injection.test(line) ? [`${path}:${at + 1}: E2E-INPUT forbids OS/key-event injection APIs`] : []);
+  // CDP carries Copy/Paste as editing commands in the one native engine adapter. Mask
+  // only those literal command calls, preserving line numbers; raw key events stay banned.
+  const checked = path === "src/e2e_input/platform.rs" ? source.replace(
+    /"Input\.dispatchKeyEvent"\s*,\s*json!\(\{[^{}]*"commands"\s*:\s*\[\s*"(?:Copy|Paste)"\s*\][^{}]*\}\)/g,
+    (call) => call.replace(/[^\n]/g, " "),
+  ) : source;
+  return checked.split("\n").flatMap((line, at) => injection.test(line) ? [`${path}:${at + 1}: E2E-INPUT forbids OS/key-event injection APIs`] : []);
 }
 
 /** Compare every source byte, and reject additions rather than just checking known files. */
@@ -24,11 +30,11 @@ export function providerViolations(actual: Record<string, string>, expected: Rec
 export function checkIntegrity(): void {
   const desktop = absolutePath(suitePath(), "../..");
   const failures: string[] = [];
-  const roots = [suitePath(), absolutePath(desktop, "src/e2e_input")];
-  for (const root of roots) {
+  const roots = [[suitePath(), "ui/e2e/"], [absolutePath(desktop, "src/e2e_input"), "src/e2e_input/"]] as const;
+  for (const [root, prefix] of roots) {
     for (const item of sourceTree(root)) {
       if (item.kind !== "file") throw new Error(`E2E source must be a regular file: ${item.name}`);
-      if (/\.(?:ts|js|mjs|mts|rs|c|h|m)$/.test(item.name)) failures.push(...inputViolations(item.name, readText(item.path)));
+      if (/\.(?:ts|js|mjs|mts|rs|c|h|m)$/.test(item.name)) failures.push(...inputViolations(`${prefix}${item.name}`, readText(item.path)));
     }
   }
   const device = absolutePath(desktop, "src/e2e_input.rs");

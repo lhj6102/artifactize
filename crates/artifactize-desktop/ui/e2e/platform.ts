@@ -30,6 +30,11 @@ const executableSuffix = WINDOWS ? ".exe" : "";
 /** The modifier of the app's primary shortcuts as a person on this OS presses it. */
 export const primaryModifier: "Meta" | "Control" = MACOS ? "Meta" : "Control";
 
+/** The platform's visible primary-shortcut label, independent of the app renderer. */
+export function shortcutLabel(keys: string): string {
+  return MACOS ? keys.replaceAll("Ctrl+", "⌘") : keys;
+}
+
 /** This Node.js executable: fixtures declare it as the program the product runs. */
 export const nodeProgram = process.execPath as NativePath;
 
@@ -643,6 +648,13 @@ export function harnessEnvironment(): Record<string, string> {
   return env;
 }
 
+/** The general pasteboard on macOS cannot be redirected into a fixture's profile. */
+export function assertClipboardDesktop(): void {
+  if (MACOS && !(variable("GITHUB_ACTIONS") === "true" && variable("RUNNER_ENVIRONMENT") === "github-hosted" && variable("RUNNER_OS") === "macOS")) {
+    throw new Error("Native clipboard E2E requires a disposable GitHub-hosted macOS runner; the user's general pasteboard must stay untouched");
+  }
+}
+
 export function assertRunnerMachine(): void {
   if (WINDOWS && !(variable("GITHUB_ACTIONS") === "true"
     && variable("RUNNER_ENVIRONMENT") === "github-hosted" && variable("RUNNER_OS") === "Windows")) {
@@ -757,9 +769,10 @@ try {
 
 /** The evaluated test-build device reaches only the engine's text-input API. This
  * test-only IPC command is not an application action and is absent from production. */
-export async function nativeIme(browser: WebdriverIO.Browser, input:
+export async function nativeInput(browser: WebdriverIO.Browser, input:
   | { type: "set" | "commit"; text: string }
-  | { type: "cancel" }): Promise<void> {
+  | { type: "cancel" | "copy" | "paste" }): Promise<void> {
+  if (input.type === "copy" || input.type === "paste") assertClipboardDesktop();
   const error = await browser.executeAsync((operation, done) => {
     const native = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> } };
     native.__TAURI_INTERNALS__.invoke("e2e_input", { input: operation }).then(
@@ -767,7 +780,7 @@ export async function nativeIme(browser: WebdriverIO.Browser, input:
       (failure: unknown) => done(String(failure)),
     );
   }, input);
-  if (error !== null) throw new Error(`native composition failed: ${String(error)}`);
+  if (error !== null) throw new Error(`native engine input failed: ${String(error)}`);
 }
 
 /** Native crash reports for this run's exact candidate binary, never other apps or runs.

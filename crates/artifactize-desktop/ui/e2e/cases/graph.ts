@@ -5,7 +5,9 @@
 // into view.
 import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
-import { press } from "../keys.ts";
+import { afterRender, press } from "../keys.ts";
+import { visibleCenter } from "../pointer.ts";
+import { dispatchInput, tab } from "../input.ts";
 import { aside, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
@@ -122,6 +124,34 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
+  scenario<Record<string, never>>(
+    "graph-keyboard-artifacts",
+    "Tabs from the graph pane to every Artifact and opens the corresponding Detail with Enter, without clicking a node",
+    async () => ({ fixture: await create(), data: {} }),
+    async (browser) => {
+      await graphShown(browser, "a:release");
+      await browser.waitUntil(() => browser.$('[aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "Runs initially has the keyboard" });
+      await press(browser, ["Enter"], () => browser.$('section.panel[aria-label^="Run run-"]').isFocused(), "the graph pane reached by keyboard");
+      const expected = new Map([["a:release", "release"], ["a:ship", "ship"], ["a:docs", "docs"]]);
+      const visited = new Set<string>();
+      // A bound on traversing this small fixture's controls, not a claimed tab order.
+      const TAB_ATTEMPTS = 40;
+      for (let attempt = 0; attempt < TAB_ATTEMPTS && visited.size < expected.size; attempt += 1) {
+        await tab(browser);
+        const id = await focusedNode(browser);
+        if (!id || visited.has(id)) continue;
+        const name = expected.get(id);
+        assert.ok(name, `Tab reached the expected Artifact ${id}`);
+        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail`);
+        assert.equal((await detail(browser))?.tabs[0]?.name, name);
+        visited.add(id);
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the keyboard-opened Detail closes");
+      }
+      assert.deepEqual([...visited].sort(), [...expected.keys()].sort(), "every Artifact is reachable with Tab and Enter alone");
+    },
+  ),
+
   // UX edges: E-MON-DETAIL-RUN E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "graph-run-detail",
@@ -151,7 +181,8 @@ export const scenarios: Scenario[] = [
     "graph-chain-culling",
     "draws the Artifacts the camera brings into view when zooming over a chain too large to draw at once",
     async () => {
-      const fixture = createChain(85);
+      // Even a wide desktop needs a scale below 5% to fit this chain in the split canvas.
+      const fixture = createChain(125);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
@@ -171,15 +202,15 @@ export const scenarios: Scenario[] = [
       // Zoom in until the chain extends beyond the canvas and its last Artifact is not drawn.
       const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
-      await browser.waitUntil(async () => !(await drawn(name(84))) && !(await visible()).includes(name(84)),
+      await browser.waitUntil(async () => !(await drawn(name(124))) && !(await visible()).includes(name(124)),
         { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas and is not drawn" });
       // Fit View moves the camera back over the whole chain: the Artifacts it brings into view
       // are drawn, the chain's end among them.
       await browser.$(".svelte-flow__controls-fitview").click();
-      await browser.waitUntil(async () => (await visible()).includes(name(84)), { timeout: 15000, timeoutMsg: "the camera drew the chain's last Artifact in view" });
+      await browser.waitUntil(async () => (await visible()).includes(name(124)), { timeout: 15000, timeoutMsg: "the camera drew the chain's last Artifact in view" });
       // The Artifact brought into view takes the pointer like any other.
-      await graphShown(browser, name(84));
-      await openArtifact(browser, name(84), "Artifact n084");
+      await graphShown(browser, name(124));
+      await openArtifact(browser, name(124), "Artifact n124");
     },
   ),
 
@@ -244,6 +275,26 @@ export const scenarios: Scenario[] = [
     },
     async (browser) => {
       await graphShown(browser, "a:release");
+      const geometry = (selector: string) => browser.execute((selector) => {
+        const root = document.querySelector(selector)!;
+        return { transform: root.querySelector(".svelte-flow__viewport")?.getAttribute("style"),
+          nodes: [...root.querySelectorAll(".svelte-flow__node")].map((node) => [node.getAttribute("data-id"), node.getAttribute("style")]) };
+      }, selector);
+      const move = async (point: { x: number; y: number }) => {
+        await dispatchInput(browser, { kind: "pointer", phase: "down", ...point });
+        await afterRender(browser);
+        const end = { x: point.x + 40, y: point.y - 15 };
+        await dispatchInput(browser, { kind: "pointer", phase: "move", ...end });
+        await dispatchInput(browser, { kind: "pointer", phase: "up", ...end });
+        await afterRender(browser);
+      };
+      const background = (selector: string) => browser.execute((selector) => {
+        const box = document.querySelector(selector)!.getBoundingClientRect();
+        return { x: Math.round(box.left + box.width / 2), y: Math.round(box.bottom - 3) };
+      }, selector);
+      const main = await geometry(".graph");
+      await move(await background(".graph"));
+      assert.notDeepEqual(await geometry(".graph"), main, "the same geometry probe observes a real main-graph pan");
       // Each node drawn in the Detail's neighbours, left to right: the Artifacts its evals use,
       // the Artifact itself, then those whose evals use it.
       const neighbours = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] [role="group"][aria-label="Neighbours"] .svelte-flow__node')]
@@ -251,6 +302,22 @@ export const scenarios: Scenario[] = [
         .sort((a, b) => a.x - b.x).map((node) => node.id));
       await openArtifact(browser, "a:release", "Artifact release");
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "release drawn before ship, which uses it" });
+      const drawing = '[aria-label="Detail"] [aria-label="Neighbours"]';
+      let edges: (string | null)[] = [];
+      await browser.waitUntil(async () => {
+        edges = await browser.execute((selector) => [...document.querySelectorAll(`${selector} .svelte-flow__edge`)].map((edge) => edge.getAttribute("data-id")), drawing);
+        return JSON.stringify(edges) === JSON.stringify(["a:release>a:ship"]);
+      }, { timeout: 15000, timeoutMsg: "the neighbour drawing renders its actual input-to-consumer relation" });
+      assert.deepEqual(edges, ["a:release>a:ship"]);
+      const fixed = await geometry(drawing);
+      const point = await background(drawing);
+      await move(point);
+      assert.deepEqual(await geometry(drawing), fixed, "the neighbour drawing does not pan");
+      await browser.action("wheel").scroll({ ...point, deltaX: 0, deltaY: -120 }).perform();
+      await afterRender(browser);
+      assert.deepEqual(await geometry(drawing), fixed, "the neighbour drawing does not zoom");
+      await move(await visibleCenter(browser, await aside(browser).$('[aria-label="Neighbours"] .svelte-flow__node[data-id="a:release"]').getElement()));
+      assert.deepEqual(await geometry(drawing), fixed, "its nodes do not drag");
       // Below the drawing: its evals with their verdicts, then its path; every other fact folds
       // under Debug, unfolded with t.
       const path = () => browser.execute(() =>
@@ -265,6 +332,10 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "ship's Detail opened from its neighbour" });
       assert.equal((await detail(browser))?.tabs[0]?.selected, true, "on its Artifact tab");
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "ship drawn after release, which it uses" });
+      const waiting = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] .block')]
+        .find((block) => block.querySelector("h3")?.textContent === "Waits for")?.textContent ?? "");
+      assert.match(waiting, /release/);
+      assert.equal(await path(), "ship", "the Artifact's path is below its neighbour drawing");
       await neighbour("a:release").click();
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact release", { timeout: 15000, timeoutMsg: "release's Detail again" });
       // A click on an eval listed on the Artifact tab shows that eval's tab.

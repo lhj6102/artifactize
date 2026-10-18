@@ -34,7 +34,7 @@ export function finishTalk(fixture: Fixture): void {
 }
 
 /** Declared Human content, captured in the request before the app starts. */
-export type SignoffDefinition = { title: string; instruction: string };
+export type SignoffDefinition = { title: string; instruction: string; scalars?: boolean; report?: boolean };
 const DEFAULT_SIGNOFF: SignoffDefinition = {
   title: "A person approves the release",
   instruction: "Read the release notes and approve them.",
@@ -45,6 +45,7 @@ tags = ["type:release"]
 fingerprint = { files = ["."] }
 
 [views.human_tools]
+${signoff.report ? `report = { description = "Print long lines on both output streams.", kind = "output", ${commandFields("report")} }` : ""}
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", textPath("{artifactPath}", "notes.md"))} }
 open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", portablePath(nativePath(root, "launched")))} }
 fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }
@@ -62,6 +63,10 @@ instruction = ${JSON.stringify(signoff.instruction)}
 type = "object"
 properties.approved = { const = true }
 properties.comment = { type = "string", description = "What you checked." }
+${signoff.scalars ? `properties.score = { type = "number" }
+properties.note = { type = "string" }
+properties.confirmed = { type = "boolean" }
+properties.channel = { enum = ["stable", "preview"] }` : ""}
 required = ["approved", "comment"]
 additionalProperties = false
 
@@ -86,6 +91,9 @@ Ship {release}."""
 `;
 
 const DOCS = `name = "docs"
+
+[views.human_tools]
+reference = { description = "Print documentation review notes.", builtin = "read", args = ["{artifactPath}/notes.md"] }
 
 [evals.lint]
 title = "Docs build"
@@ -156,6 +164,7 @@ function declare(repo: NativePath, notes = "# Release notes\n- Ready to ship.\n"
     writeText(nativePath(makeDirectory(nativePath(repo, name)), "index.artf"), text);
   }
   writeText(nativePath(repo, "release", "notes.md"), notes);
+  writeText(nativePath(repo, "docs", "notes.md"), "Documentation checked.\n");
   git(repo, "init", "-q", "--initial-branch=master", repo);
 }
 
@@ -370,7 +379,7 @@ export function createPagedRequests(): { fixture: Fixture; expected: string[] } 
  * cannot be read; the newest stays readable. `restore` writes them back as they were saved, so
  * teardown settles every Run through the public CLI.
  */
-export function createUnreadableRuns(): { fixture: Fixture; readable: string; unreadable: string[]; restore: () => void } {
+export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture; readable: string; unreadable: string[]; restore: () => void } {
   const fixture = createChain(1);
   return prepareFixture(() => {
     const runs = savedRuns(fixture).map((run) => run.id);
@@ -384,7 +393,7 @@ export function createUnreadableRuns(): { fixture: Fixture; readable: string; un
     settleRuns(cli(), fixture.repo, fixture.state);
     if (runs.length !== 4) throw new Error(`expected four fixture Runs, saved ${runs.join(", ")}`);
     const saved = requests(fixture);
-    const unreadable = runs.slice(0, 3);
+    const unreadable = allUnreadable ? runs : runs.slice(0, 3);
     const database = nativePath(fixture.state, "state.sqlite");
     const rewrite = (from: string, to: string) => updateDatabase(database, (db) => {
       for (const id of unreadable) {
@@ -508,9 +517,4 @@ export function createOutside(): Fixture & { remove: () => Promise<void> } {
     const remove = () => releaseFixtures([root]);
     return { root, repo, state: nativePath(root, "state"), remove };
   });
-}
-
-if (import.meta.main) {
-  const fixture = await create();
-  console.log(JSON.stringify(fixture));
 }

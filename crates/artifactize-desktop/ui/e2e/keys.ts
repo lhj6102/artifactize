@@ -6,7 +6,7 @@
 // in a row are several calls, each with its own expected effect, so no delivered key is ever
 // sent twice.
 import assert from "node:assert/strict";
-import { dispatchInput } from "./input.ts";
+import { dispatchInput, tab } from "./input.ts";
 
 const WAIT_EXPIRED = "the key delivery or outcome did not complete";
 
@@ -49,6 +49,10 @@ export function page(browser: WebdriverIO.Browser): Page {
     keys: async (keys) => {
       // The pristine embedded provider omits these W3C special-key mappings. Use
       // WebDriver's page command for the same keyboard fields the app handles.
+      if (keys.includes("Tab") && keys.every((key) => key === "Tab" || key === "Shift")) {
+        await tab(browser, keys.includes("Shift"));
+        return;
+      }
       const key = keys.length === 1 ? keys[0] : undefined;
       if (key === "PageUp" || key === "PageDown") {
         await dispatchInput(browser, { kind: "key", key });

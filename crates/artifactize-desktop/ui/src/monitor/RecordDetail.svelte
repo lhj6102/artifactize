@@ -126,7 +126,7 @@
           {#if card.error}<p class="error">{card.error}</p>{/if}
           {#if card.exitCode !== null}<p>exit {card.exitCode}</p>{/if}
           {#each card.result ?? [] as entry (entry.key)}
-            {#if entry.text !== null}
+            {#if entry.kind === "text"}
               <p class="text">{#if entry.key !== "summary"}<span class="key">{entry.key}</span> {/if}{entry.text}</p>
             {:else}
               <p class="count">{entry.items.length} {entry.key}</p>
@@ -245,6 +245,7 @@
     min-height: 0;
   }
   .shown {
+    overflow: auto;
     grid-row: 3;
     min-width: 0;
     min-height: 0;

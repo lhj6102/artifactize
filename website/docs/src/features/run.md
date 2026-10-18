@@ -6,15 +6,9 @@ the next `verify` will execute, reuse, wait for or block, without running evals.
 
 ## Eval execution gates
 
-Each eval waits for the required reviews of its own referenced Artifacts and of
-its Artifact's children, and is blocked when one of them, or anything further
-upstream, has a RED eval. A child counts as if every eval of its parent referenced
-it. Its own Artifact and the Artifacts in a dependency cycle with it never gate it:
-a RED sibling or cycle peer neither blocks it nor makes it wait. A Human eval also
-starts only once every other non-Human eval of its Artifact is GREEN, and is
-BLOCKED when one of them is RED or ERROR; see
-[Human sign-offs](artifact.md#human-sign-offs).
-See [Eval dependencies](artifact.md#eval-dependencies).
+`verify` schedules each eval from its own [execution gates](artifact.md#eval-dependencies),
+including the [machine prerequisites of a Human sign-off](artifact.md#human-sign-offs).
+`status` shows those gates without executing evals.
 
 ## Verify and Runs
 
@@ -266,12 +260,7 @@ without a key, the execution reason names the target or dependency declaring
 a Human claim and submission", even without a key; blocked or waiting evals
 explain their gate or wait state instead.
 
-An Eval's own references define its gates. Required input Evals that are pending
-leave it WAIT_DEPENDENCY; RED/BLOCKED inputs block it. Its own Artifact and its
-cycle peers are never gates: they keep their own real verdicts, while what the
-cycle references outside itself holds it, and a failed cycle does not release
-downstream consumers. An independent sibling Eval on the same Artifact is not
-gated by another sibling's references. For a waiting Eval `blockedBy` names the
+For a waiting Eval `blockedBy` names the
 unfulfilled qualified Eval IDs; for a BLOCKED one, the RED Evals at the root of the
 block, as its reason does. Detail groups these gates by input Artifact under
 `Waits for`; `w` shows pending Evals.

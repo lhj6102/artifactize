@@ -7,7 +7,8 @@ import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { nativePath, requestWindowClose } from "../platform.ts";
+import { nativePath, requestWindowClose, shortcutLabel } from "../platform.ts";
+import { visibleCenter } from "../pointer.ts";
 import { aside, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
@@ -88,6 +89,26 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX edges: E-HELP-OPEN E-HELP-CLOSE
+  scenario<Record<string, never>>(
+    "navigation-review-help",
+    "opens Review-specific search, request-opening and paging Help with the question key",
+    async () => ({ fixture: await create(), args: ["review"], data: {} }),
+    async (browser) => {
+      const list = () => browser.$('[aria-label="Requests"]');
+      await list().waitForExist({ timeout: 15000 });
+      await list().click();
+      const opened = () => browser.$('[role="dialog"]').isExisting();
+      await press(browser, ["?"], opened, "Review's Help dialog");
+      const shortcuts = await browser.execute(() => [...document.querySelectorAll('[role="dialog"] dt')].map((key) => ({ keys: key.textContent ?? "", action: key.nextElementSibling?.textContent ?? "" })));
+      for (const [keys, action] of [[shortcutLabel("Ctrl+F"), /Search requests/], [shortcutLabel("Ctrl+O"), /Open a request by ID/], ["PgDn / PgUp", /Older.*newer page/]] as const) {
+        assert.ok(shortcuts.some((entry) => entry.keys.includes(keys) && action.test(entry.action)), `Review Help pairs ${keys} with ${action}`);
+      }
+      assert.ok(!shortcuts.some((entry) => entry.keys.includes("Click an Artifact")), "Monitor Help is not reused for Review");
+      await press(browser, ["Escape"], async () => !(await opened()), "Review Help closed");
+    },
+  ),
+
   // UX edges: E-MON-LIVE
   scenario<Record<string, never>>(
     "navigation-live-run",
@@ -161,9 +182,13 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await summary(browser)).instruction.startsWith("Ship"), { timeout: 15000, timeoutMsg: "ship/check's Summary" });
       assert.equal((await summary(browser)).debug, false, "Debug starts folded");
       assert.equal(await fact(browser, "Request"), "");
+      assert.equal(await fact(browser, "Waits for"), "", "the waiting eval's input facts start hidden");
       await aside(browser).$('[role="document"]').click();
-      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Request")) === request.id, "the request among the Debug facts");
-      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === "", "the Debug facts hidden");
+      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Request")) === request.id
+        && (await fact(browser, "Waits for")).includes("release"), "the request and its waiting input inside Debug");
+      assert.match(await fact(browser, "Waits for"), /signoff/);
+      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === ""
+        && (await fact(browser, "Waits for")) === "", "the Debug facts and waits hidden again");
       assert.ok((await summary(browser)).instruction.startsWith("Ship"), "folding Debug keeps the Summary");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       // The graph as it was, every Artifact still drawn and reachable.
@@ -195,7 +220,8 @@ export const scenarios: Scenario[] = [
         opened: !!document.querySelector('aside[aria-label="Detail"], [aria-label="Summary"], [aria-label^="Evals of "], [role="tooltip"]'),
         tooltip: !!document.querySelector(selector)?.querySelector("[title]") || !!document.querySelector(selector)?.closest("[title]"),
       }), nodeAt("a:ship"));
-      await browser.$(nodeAt("a:ship")).moveTo();
+      const point = await visibleCenter(browser, await browser.$(nodeAt("a:ship")).getElement());
+      await browser.action("pointer").move(point).perform();
       await browser.waitUntil(async () => (await look()).over.includes("a:ship"), { timeout: 15000, timeoutMsg: "the pointer moved over ship" });
       const hovered = await look();
       assert.equal(hovered.opened, false, "hovering opens no Detail, summary, eval list or tooltip");
@@ -268,6 +294,7 @@ export const scenarios: Scenario[] = [
           // The pane stays inside the window, and what it shows stays inside the pane.
           inWindow: box.left >= 0 && box.right <= window.innerWidth,
           bodyWithin: [...section.children].every((child) => within(child as HTMLElement)),
+          graph: (() => { const at = section.querySelector(".graph")!.getBoundingClientRect(); return [at.left, at.top, at.width, at.height].map(Math.round); })(),
           nodeWithin: within(node),
           noticeWithin: within(notice),
           titleWhole: within(heading) && heading.scrollWidth <= heading.clientWidth,
@@ -276,7 +303,7 @@ export const scenarios: Scenario[] = [
           text: toggle.textContent ?? "",
           cut: toggle.scrollWidth > toggle.clientWidth,
           open: toggle.getAttribute("aria-expanded") === "true",
-          tall: notice.getBoundingClientRect().height > heading.getBoundingClientRect().height * 2,
+          tall: toggle.getBoundingClientRect().height > heading.getBoundingClientRect().height * 2,
         };
       }, `Run ${readable}`);
       let last: Awaited<ReturnType<typeof pane>> = null;
@@ -296,11 +323,14 @@ export const scenarios: Scenario[] = [
         const shown = await pane();
         return !!shown && shown.open && !shown.cut && shown.tall && shown.bodyWithin && shown.inWindow;
       }, { timeout: 15000, timeoutMsg: "the whole notice shown, wrapped within the pane" });
+      assert.deepEqual((await pane())?.graph, folded.graph, "opening the full notice does not move or resize the graph");
+      await graphShown(browser, "a:n000");
       await browser.$(`section.panel[aria-label="Run ${readable}"] [role="status"] button`).click();
       await browser.waitUntil(async () => {
         const shown = await pane();
         return !!shown && !shown.open && shown.cut;
       }, { timeout: 15000, timeoutMsg: "the notice folded back to one line" });
+      assert.deepEqual((await pane())?.graph, folded.graph, "collapsing the notice keeps the same graph geometry");
       await graphShown(browser, "a:n000");
     },
   ),

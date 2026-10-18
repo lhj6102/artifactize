@@ -65,6 +65,9 @@ automatically add the files it reads to its reuse key.
 ```toml
 name = "spec"
 basis = true
+
+[views.agent_tools]
+read = { builtin = "read" }
 ```
 
 `app/index.artf`:
@@ -114,10 +117,12 @@ arguments; the test-code Artifact’s own Evals review style and feature coverag
 An independent sibling Eval does not inherit another Eval’s references. All Evals
 can judge their targets independently of upstream verdicts. Plain verify schedules
 dependency-first for efficiency; `--speculate` starts unresolved work early, not
-approval. An Eval is blocked only by a RED in an Artifact it depends on outside its
-own Artifact and that Artifact's cycle: a RED sibling or cycle peer never blocks or
-holds it, what the cycle references outside itself still does, and a failed cycle
-cannot release downstream consumers. `basis = true` waives an input’s own reviews, not its dependencies, and
+approval. Execution gates are actual Evals of referenced Artifacts and nearest marked
+children; RED or BLOCKED gates block the consumer in turn. Its own Artifact and cycle
+peers are excluded; what the cycle references outside itself still gates it, and a
+failed cycle cannot release downstream consumers. Human sibling gates are described
+below. An eval-less input supplies no execution gates, but its dependencies remain
+final approval obligations. `basis = true` waives only that input’s own reviews and
 cannot own Evals.
 
 For runtime or Agent evals whose own command or tools use the machine, put
@@ -138,7 +143,9 @@ child folder counts as a reference of every eval of its parent. A Human eval sta
 only when every other non-Human eval of its Artifact is GREEN, and is BLOCKED when
 one of them is RED or ERROR.
 Instruction references and runtime argv references make real consumer relations;
-references do not paste file content into instructions. Folder operands may use
+references do not paste file content into instructions or create observation tools.
+Each input must declare the read-only views its reviewer needs; the app example
+uses `read_spec` to inspect the requirements. Folder operands may use
 `{name}/path`; file operands resolve to the target itself and cannot have a suffix.
 Runtime argv is literal, not a shell string. Commands and fingerprint scripts run
 from the owner folder (a file Artifact's containing folder).

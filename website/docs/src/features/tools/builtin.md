@@ -56,7 +56,9 @@ Without `args`, an Agent tool takes the model's input; the input, result and lim
 block; fixed `read`, `section` and `help` return text blocks:
 
 - **`read`** prints a UTF-8 file, at most 64 KiB; a longer file ends with
-  `[output truncated]`. Binary and invalid UTF-8 files are refused.
+  `[output truncated]`. It validates only the bounded prefix it inspects: NUL or
+  invalid UTF-8 there is refused, but such bytes later in a truncated file may go
+  undetected. The CLI fixed read has the same limit.
 - **`list`** prints one page of the folder's sorted entries as JSON, like the
   model's `list`.
 - **`section`** prints one section of a Markdown file. It finds the first heading

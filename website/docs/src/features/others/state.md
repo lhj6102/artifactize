@@ -163,21 +163,22 @@ limits are in [Cache limits](#cache-limits).
 
 ## Cache limits
 
-Recording a new reusable result triggers LRU GC over every record of every key: at
-most 10,000 records and 1 GiB of retained execution JSON, with a 16 MiB per-record
-limit. Oversized results still reach their Run and existing waiters through the
-saved execution, but later calls execute again. A reuse hit updates the last use of
-the record it reused; inspection does not. GC evicts the least recently used eligible
-records first (a reuse can refresh an older record after a newer one completed),
-using the key then the completion time to break ties, and skips keys with an active
-execution and records an in-flight waiter needs. Protected entries can temporarily exceed the caps, and
-automatic maintenance failures are reported on stderr without replacing an already
-completed verdict; the next publication retries collection.
+Saving a new reusable result automatically removes the least recently reused
+eligible cache records to stay within **10,000 records** and **1 GiB** of saved
+result data. One record may occupy at most **16 MiB**. A larger result still reaches
+its own Run and any current waiters, but it is not kept for later reuse.
 
-GC and `rm` clear only the history columns of a record, never execution or receipt
-rows or Run output. These limits are not a bound on total database size or active
-scratch space, and there is no semantic TTL, protected-reader registry or scratch
-cleanup.
+Reusing a record updates when it was last used; inspecting it does not. Cleanup
+removes the least recently used records first, breaking ties by key and completion
+time. It keeps a key's records while a review of that key is running, and any
+records another Run still needs, so these limits can temporarily be exceeded. A cleanup failure is printed on stderr without
+changing an already-completed verdict; the next saved result retries cleanup.
+
+Cache cleanup and `cache rm` stop records from being reused. They do not remove
+the saved execution audit, Run receipts or Run output files. These limits therefore
+do not cap the whole database or temporary files of active Runs. Matching evidence
+has no age-based expiry, and cache cleanup does not automatically delete Run files.
+Use `artifactize prune` to remove eligible finished Run output.
 
 ## Backend capacity
 

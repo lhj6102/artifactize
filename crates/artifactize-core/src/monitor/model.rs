@@ -1054,6 +1054,7 @@ pub fn detail(
             );
             detail.summary = tree::artifact_status(&saved, id, now);
             detail.push("Status", detail.summary.clone());
+            detail.push("Waits for", tree::artifact_waits(&saved, id, now));
             let snapshot = saved.validation(id);
             if let Some(status) = snapshot.and_then(|s| s.status.value()) {
                 detail.push(

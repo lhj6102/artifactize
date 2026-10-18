@@ -9,14 +9,18 @@ import { sessionEndedByApp } from "../observation.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier } from "../platform.ts";
+import { nativeInput, primaryModifier } from "../platform.ts";
+import { visibleCenter } from "../pointer.ts";
+import { clickOption, dispatchInput, tab } from "../input.ts";
+import { emptyRepository } from "../catalog-fixtures.ts";
+import { textContrast } from "../rendering.ts";
 import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
 
 /** A Tool log row as read: a run's start (its time as HH:MM:SS), a printed line or a run's end,
  * and whether it is red. */
 type LogRow = { text: string; kind: "start" | "line" | "end"; error: boolean };
 
-async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
+async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruction = "Read the release notes and approve them.") {
   const text = () => browser.execute(() => document.body.innerText);
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
   /** The Tool log's rows and the review's notice. */
@@ -65,7 +69,7 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture) {
     await browser.waitUntil(async () => (await human().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
       timeout: 15000, timeoutMsg: "the default Human Detail identifies this case's exact waiting request without Technical",
     });
-    assert.equal(await human().$(".instruction .text").getText(), "Read the release notes and approve them.", "the selected Human eval's default instruction");
+    assert.equal(await human().$(".instruction .text").getText(), instruction, "the selected Human eval's default instruction");
     assert.equal(await human().$("button*=Technical").getAttribute("aria-expanded"), "false", "request and instruction are visible before Technical");
     // It reads top to bottom as the instruction, the Tools, their Tool log and the Result.
     const order = await browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] .body > *')]
@@ -213,6 +217,12 @@ export const scenarios: Scenario[] = [
       { timeout: 15000, timeoutMsg: "the launched stand-in's first line, with the review idle" });
       assert.ok(!(await runOf("talk"))!.some((row) => row.kind === "end"), "the launched application has not ended");
       await talk.observed();
+      const notes = await tool("notes");
+      await notes.button.click();
+      await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end",
+        { timeout: 15000, timeoutMsg: "a second tool finishes while talk remains live" });
+      const otherRun = await runOf("notes");
+      assert.ok(!(await runOf("talk"))!.some((row) => row.kind === "end"));
       // The result can be written meanwhile. The button let go of the keyboard while it ran.
       await human().$('[aria-label="Instruction"]').click();
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
@@ -229,6 +239,7 @@ export const scenarios: Scenario[] = [
       assert.ok(lines.every((row) => row.kind === "line"), "only output lines between the run's start and end");
       assert.deepEqual(lines.filter((row) => !row.error).map((row) => row.text), ["opened the stand-in", "chose: B"]);
       assert.deepEqual(lines.filter((row) => row.error).map((row) => row.text), ["warning: B is slower"]);
+      assert.deepEqual(await runOf("notes"), otherRun, "late talk lines and its end do not replace or join the other tool run");
       assert.equal(await browser.$("#field-comment").getValue(), "chose B", "the form kept what was typed while the log grew");
       // The log follows its newest line.
       const followed = await browser.execute(() => {
@@ -247,15 +258,26 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const { human, toolLog, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
+      // A normal smaller window makes the result form scroll the log out of view,
+      // as on shorter desktops. Every copy action must bring its own target back.
+      await browser.setWindowSize(1100, 720);
+      await afterRender(browser);
       const notes = await tool("notes");
       const ends = async () => (await toolLog()).rows.filter((row) => row.kind === "end").length;
       /** One more notes run, until its end line is logged and its button is usable again. */
       const runNotes = async () => {
         const before = await ends();
         await notes.button.waitForEnabled({ timeout: 15000, timeoutMsg: "the notes tool usable" });
-        await notes.button.click();
+        // Preparing a user's click may scroll the review to the button. Observe after that
+        // input preparation, so the assertion isolates scrolling caused by arriving output.
+        await notes.button.scrollIntoView({ block: "nearest" });
+        await afterRender(browser);
+        const position = await box();
+        const point = await visibleCenter(browser, await notes.button.getElement());
+        await browser.action("pointer").move(point).down().up().perform();
         await browser.waitUntil(async () => (await ends()) === before + 1 && await notes.button.isEnabled(),
           { timeout: 15000, timeoutMsg: "another notes run logged" });
+        return position;
       };
       const LOG = '[role="log"][aria-label="Tool log"]';
       /** Where the log is scrolled, whether it is longer than its box, and where the rest of
@@ -279,8 +301,7 @@ export const scenarios: Scenario[] = [
       // Its first line sits at the top of the box, below the box's own padding.
       await browser.waitUntil(async () => { const at = await box(); return at.top < 24 && at.below >= 24; },
         { timeout: 15000, timeoutMsg: "the Tool log scrolled up" });
-      const up = await box();
-      await runNotes();
+      const up = await runNotes();
       const held = await box();
       assert.equal(held.top, up.top, "new lines do not move a log scrolled up");
       assert.ok(held.below > up.below, "the new lines arrived below");
@@ -291,28 +312,31 @@ export const scenarios: Scenario[] = [
       await runNotes();
       assert.ok((await box()).below < 24, "the Tool log follows its newest line again");
       await notes.observed();
-      // Its text is plain page text: a selection of one line reads exactly as shown. (This
-      // WebDriver provider has no OS clipboard; the selection is the page's own, and the copied
-      // text is entered through WebDriver's text input, as a paste enters it.)
+      // Its text is ordinary selectable page text. Select it through input, then copy
+      // and paste through the engine's own editing commands.
       // The tool buttons let go of the keyboard while they ran: the instruction takes it.
       await human().$('[aria-label="Instruction"]').click();
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
-      const copied = await browser.execute((selector) => {
-        const line = [...document.querySelectorAll(`${selector} p`)].find((row) => row.textContent === "- Ready to ship.");
-        if (!line || getComputedStyle(line).userSelect === "none") return null;
-        const range = document.createRange();
-        range.selectNodeContents(line);
-        const selection = getSelection()!;
-        selection.removeAllRanges();
-        selection.addRange(range);
-        return selection.toString();
-      }, LOG);
-      assert.equal(copied, "- Ready to ship.", "a selected log line copies as it reads");
-      await fill(browser, "#field-comment", copied);
+      // Select All is real WebDriver keyboard input. It includes the log along with the
+      // surrounding review; the selection is only observed, never installed by page script.
+      await browser.$(LOG).scrollIntoView({ block: "nearest" });
+      await afterRender(browser);
+      const logPoint = await visibleCenter(browser, await browser.$(LOG).getElement());
+      await dispatchInput(browser, { kind: "text-click", ...logPoint });
+      await browser.keys([primaryModifier, "a"]);
+      const copied = await browser.execute(() => getSelection()?.toString() ?? "");
+      assert.ok(copied.includes("- Ready to ship."), "the selected text includes the selectable Tool log");
+      // The pristine provider has no clipboard shortcuts. The evaluated device uses only
+      // the WebView's editing API; it copies our selection and pastes into the focused field.
+      await nativeInput(browser, { type: "copy" });
+      await browser.$("#field-comment").click();
+      await nativeInput(browser, { type: "paste" });
+      await browser.waitUntil(async () => (await browser.$("#field-comment").getValue()) === copied,
+        { timeout: 15000, timeoutMsg: "the copied Tool log text pasted unchanged into the result" });
       // A submission clears the Tool log; the completed result stays open.
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
-      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "- Ready to ship." });
+      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: copied });
       await browser.waitUntil(async () => (await toolLog()).rows.length === 0, { timeout: 15000, timeoutMsg: "the Tool log cleared by the submission" });
       await browser.waitUntil(async () => /completed result/i.test(await human().getText()), { timeout: 15000, timeoutMsg: "the completed result open" });
     },
@@ -447,22 +471,120 @@ export const scenarios: Scenario[] = [
       await human().$('button[aria-label="Remove steps 1"]').click();
       await browser.$(step(2)).waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the first step removed" });
       assert.equal(await browser.$(step(1)).getValue(), "check the title", "the second step moved up");
+      await human().$('button[aria-label="Remove steps 1"]').click();
+      await browser.waitUntil(async () => (await browser.$(step(1)).getValue()) === "" && !(await browser.$(step(2)).isExisting()),
+        { timeout: 15000, timeoutMsg: "removing the final step leaves exactly one empty editable item" });
+      await fill(browser, step(1), "check the title");
       const group = (at: number) => human().$(`[role="group"][aria-label="findings ${at}"]`);
       // One empty group is there to type in.
       assert.ok(await group(1).isExisting(), "the first findings group");
       await fill(browser, "#field-findings-0-problem", "typo");
       await human().$("#field-findings + button").click();
       await group(2).waitForExist({ timeout: 15000, timeoutMsg: "a second findings group added" });
+      assert.equal(await browser.$("#field-findings-1-problem").getValue(), "", "the added group's text starts empty");
+      assert.equal(await browser.$("#field-findings-1-severity").getValue(), "", "the added group's choice starts empty");
+      assert.equal(await browser.$("#field-findings-0-problem").getValue(), "typo", "adding a group preserves the original group's text");
+      assert.equal(await browser.$("#field-findings-0-severity").getValue(), "", "adding a group preserves the original group's unset choice");
       await fill(browser, "#field-findings-1-problem", "date");
-      // An optional choice left empty stays out of the result. (A native select's options are
-      // not reachable through this WebDriver's page input; the form's unit tests choose one.)
+      // An optional choice left empty stays out of the result.
       assert.equal(await browser.$("#field-findings-1-severity").getValue(), "", "the severity left empty");
       await human().$('button[aria-label="Remove findings 1"]').click();
       await group(2).waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the first group removed" });
       assert.equal(await browser.$("#field-findings-0-problem").getValue(), "date", "the second group moved up");
+      await human().$('button[aria-label="Remove findings 1"]').click();
+      await browser.waitUntil(async () => (await browser.$("#field-findings-0-problem").getValue()) === "" && !(await group(2).isExisting()),
+        { timeout: 15000, timeoutMsg: "removing the final group leaves one empty group with its schema fields" });
+      assert.ok(await browser.$("#field-findings-0-severity").isExisting());
+      await fill(browser, "#field-findings-0-problem", "date");
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "RED", { timeout: 15000, timeoutMsg: "RED saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "RED", reason: "two problems found", findings: [{ problem: "date" }], steps: ["check the title"] });
+    },
+  ),
+
+  // UX journey: J-HUMAN-FORM
+  scenario<null>(
+    "monitor-form-scalars",
+    "edits a number, a boolean and a choice, marks required fields and shows Optional hints before submitting typed values",
+    async () => ({ fixture: await create({ title: "Scalar form", instruction: "Read the release notes and approve them.", scalars: true }), data: null }),
+    async (browser, { fixture }) => {
+      const { human, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the scalar GREEN form");
+      assert.ok(await human().$('label[for="field-comment"] [aria-label="required"]').isExisting(), "the required comment has its star");
+      assert.equal(await browser.$("#field-note").getAttribute("placeholder"), "Optional");
+      await browser.$("#field-note").scrollIntoView({ block: "nearest" });
+      const placeholder = await textContrast(browser, "#field-note");
+      await fill(browser, "#field-note", "Optional");
+      await tab(browser);
+      const entered = await textContrast(browser, "#field-note");
+      assert.ok(placeholder > entered * 0.1 && placeholder < entered * 0.9,
+        `the painted Optional hint is visible and greyer than the same glyphs entered normally: ${placeholder}/${entered}`);
+      await fill(browser, "#field-note", "");
+      await fill(browser, "#field-comment", "checked typed fields");
+      await fill(browser, "#field-score", "7.5");
+      await human().$('input[name="field-confirmed"]').click();
+      await clickOption(browser, await browser.$('#field-channel option[value="1"]').getElement());
+      await browser.waitUntil(async () => (await browser.$("#field-channel").getValue()) === "1", { timeout: 15000, timeoutMsg: "the preview choice selected" });
+      await browser.keys([primaryModifier, "s"]);
+      await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "the scalar result saved" });
+      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "checked typed fields", score: 7.5, confirmed: true, channel: "preview" });
+      await browser.waitUntil(async () => {
+        const text = await human().getText();
+        return /completed result/i.test(text) && text.includes("7.5") && text.includes("preview");
+      }, { timeout: 15000, timeoutMsg: "the completed scalar result rendered with its submitted number and choice" });
+    },
+  ),
+
+  // UX journey: J-HUMAN-TOOL
+  scenario<null>(
+    "monitor-tool-groups",
+    "groups tools by their declaring Artifact, own first, and runs the tool of each group",
+    async () => ({ fixture: await create({ title: "Grouped tools", instruction: "Read {docs} and approve." }), data: null }),
+    async (browser, { fixture }) => {
+      const { human, openReview, runOf } = await monitorUI(browser, fixture, "Read {docs} and approve.");
+      await openReview();
+      const groups = await browser.execute(() => [...document.querySelectorAll('[aria-label="Tools"] .group')].map((group) => group.getAttribute("aria-label")));
+      assert.deepEqual(groups, ["Tools of release", "Tools of docs"], "own tools precede the alphabetically earlier dependency");
+      await human().$('[aria-label="Tools of release"]').$('button=▶ notes').click();
+      await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "release's notes completed" });
+      await human().$('[aria-label="Tools of docs"]').$('button=▶ reference').click();
+      await browser.waitUntil(async () => (await human().getText()).includes("Documentation checked."), { timeout: 15000, timeoutMsg: "the dependency's own notes were printed" });
+      const text = await human().getText();
+      assert.match(text, /reference · docs/);
+      assert.match(text, /notes · release/);
+      assert.match(text, /Ready to ship/);
+    },
+  ),
+
+  // UX journey: J-HUMAN-LOG
+  scenario<null>(
+    "monitor-tool-log-long-lines",
+    "wraps long stdout and stderr in a monospace Tool log and paints stderr and a failing end red",
+    async () => ({ fixture: await create({ title: "Long Tool log", instruction: "Read the release notes and approve them.", report: true }), data: null }),
+    async (browser, { fixture }) => {
+      const { human, openReview, tool, runOf } = await monitorUI(browser, fixture);
+      await openReview();
+      const report = await tool("report");
+      await report.button.click();
+      await browser.waitUntil(async () => (await runOf("report"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the long report finished" });
+      const appearance = await browser.execute(() => {
+        const log = document.querySelector<HTMLElement>('[role="log"][aria-label="Tool log"]')!;
+        const rows = [...log.querySelectorAll<HTMLElement>("p")];
+        const out = rows.find((row) => row.textContent?.startsWith("fixture stdout 000"))!;
+        const err = rows.find((row) => row.textContent?.startsWith("fixture stderr 000"))!;
+        const colour = getComputedStyle(err).color.match(/[\d.]+/g)!.map(Number);
+        return { font: getComputedStyle(log).fontFamily, wraps: out.getBoundingClientRect().height > 18 && err.getBoundingClientRect().height > 18,
+          fits: log.scrollWidth <= log.clientWidth + 1, red: colour[0] > colour[1] && colour[0] > colour[2],
+          distinct: getComputedStyle(out).color !== getComputedStyle(err).color, colour: getComputedStyle(err).color };
+      });
+      assert.match(appearance.font, /mono/i);
+      assert.ok(appearance.wraps && appearance.fits && appearance.red && appearance.distinct, JSON.stringify(appearance));
+      const fail = await tool("fail");
+      await fail.button.click();
+      await browser.waitUntil(async () => (await runOf("fail"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the failing tool's end logged" });
+      const ending = await human().$('[role="log"] p.end.error:last-child').getCSSProperty("color");
+      assert.equal(String(ending.value).replace(/\s/g, ""), appearance.colour.replace(/\s/g, ""), "the failed end is painted the same red as stderr");
     },
   ),
 
@@ -501,11 +623,16 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX edges: E-MON-RESIZE E-MON-DETAIL-ARTIFACT E-MON-DETAIL-WIDTH E-MON-DETAIL-BACK
-  scenario<null>(
+  scenario<{ width: number }>(
     "monitor-resize",
     "resizes the graph against the left side, Scope against Runs, and the Detail, by dragging their dividers and its edge",
-    async () => ({ fixture: await create(), data: null }),
-    async (browser, { fixture }) => {
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", emptyRepository(fixture)], data: { width: 400 } };
+    },
+    async (browser, { fixture, data: { width } }) => {
+      await browser.$('[aria-label="Scope"] [data-index="0"]').waitForExist({ timeout: 15000 });
+      await browser.$('[aria-label="Scope"] [data-index="0"]').click();
       await monitorUI(browser, fixture);
       const size = (selector: string, axis: "width" | "height") =>
         browser.execute((within, dimension) =>
@@ -593,6 +720,72 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closed");
       await openArtifact(browser, "a:docs", "Artifact docs");
       assert.equal((await placed())?.width, widened!.width, "the Detail opens again at its dragged width");
+      const dragEdge = async (x: number) => {
+        const handle = await browser.$('aside[aria-label="Detail"] [aria-label="Detail width"]');
+        await browser.action("pointer", { id: "bounds" }).move({ origin: handle }).down().perform(true);
+        try {
+          await browser.action("pointer", { id: "bounds" }).move({ x, y: 200 }).up().perform();
+        } finally { await browser.releaseActions(); }
+      };
+      const room = await browser.execute(() => {
+        const box = document.querySelector(".stage")!.getBoundingClientRect();
+        return { left: box.left, right: box.right, width: box.width };
+      });
+      await dragEdge(Math.round(room.right - 1));
+      const minimum = (await placed())!;
+      const readable = await browser.execute(() => {
+        const dock = document.querySelector<HTMLElement>('aside[aria-label="Detail"]')!;
+        const heading = dock.querySelector<HTMLElement>("h2")!;
+        const tab = dock.querySelector<HTMLElement>('[role="tab"] .label')!;
+        return dock.scrollWidth <= dock.clientWidth && heading.scrollWidth <= heading.clientWidth && tab.scrollWidth <= tab.clientWidth;
+      });
+      assert.ok(readable && minimum.width <= before.width && minimum.left > 0 && minimum.right > 0, "the minimum is a readable, contained column, not collapsed text");
+      await dragEdge(Math.round(room.right - 1));
+      assert.equal((await placed())?.width, minimum.width, "dragging past the minimum cannot shrink the column further");
+      await dragEdge(Math.round(room.left + 1));
+      const maximum = (await placed())!;
+      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right > 0, "the widest Detail stays in its graph area");
+      const graphVisible = await browser.execute(() => {
+        const stage = document.querySelector(".stage")!.getBoundingClientRect();
+        const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
+        return !!document.elementFromPoint((stage.left + dock.left) / 2, stage.top + stage.height / 2)?.closest(".graph");
+      });
+      assert.ok(graphVisible, "some actual graph remains visible beside the maximum-width Detail");
+      await dragEdge(Math.round(room.right - maximum.right - width));
+      await browser.waitUntil(async () => Math.abs((await placed())!.width - width) <= 1, { timeout: 15000, timeoutMsg: "the independently chosen persisted width" });
+      const cursor = await browser.execute(() => ({
+        edge: getComputedStyle(document.querySelector('aside[aria-label="Detail"] [aria-label="Detail width"]')!).cursor,
+        divider: getComputedStyle(document.querySelectorAll(".monitor [data-pane-resizer]")[1]).cursor,
+      }));
+      assert.match(cursor.edge, /(?:ew|col)-resize/);
+      assert.match(cursor.divider, /(?:ew|col)-resize/);
+      const edgePoint = await visibleCenter(browser, await browser.$('aside[aria-label="Detail"] [aria-label="Detail width"]').getElement());
+      await browser.action("pointer").move(edgePoint).perform();
+      assert.equal(await browser.$('[role="tooltip"], [role="menu"]').isExisting(), false, "hovering the edge opens nothing");
+      await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closes before removing the graph");
+      const split = await graph();
+      // No graph in another repository: the same dragged split remains, then restores its Run.
+      const scopes = await browser.$$('[aria-label="Scope"] [role="option"]').getElements();
+      const empty = [];
+      for (const row of scopes) if ((await row.getText()).includes("empty-repo")) empty.push(row);
+      assert.equal(empty.length, 1, "the launch repository has its own empty scope");
+      await empty[0].click();
+      await browser.waitUntil(async () => (await browser.$(".stage").getText()).includes("Select a Run."), { timeout: 15000, timeoutMsg: "the empty scope removes the graph, not the pane" });
+      assert.equal(await graph(), split, "the split stays as dragged without a graph");
+      const divider = await visibleCenter(browser, await browser.$$('.monitor [data-pane-resizer]')[1].getElement());
+      await browser.action("pointer").move(divider).perform();
+      assert.equal(await browser.$('[role="tooltip"], [role="menu"]').isExisting(), false, "hovering the divider opens nothing");
+      await browser.$('[aria-label="Scope"] [data-index="0"]').click();
+      await graphShown(browser, "a:docs");
+      assert.equal(await graph(), split, "the restored graph keeps the dragged split");
+    },
+    async (browser, { data: { width } }) => {
+      await browser.$('[aria-label="Scope"] [data-index="0"]').waitForExist({ timeout: 15000 });
+      await browser.$('[aria-label="Scope"] [data-index="0"]').click();
+      await graphShown(browser, "a:docs");
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      const actual = await browser.execute(() => Math.round(document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect().width));
+      assert.ok(Math.abs(actual - width) <= 1, `the fresh service-owned app launch restores ${width}px, got ${actual}`);
     },
   ),
 

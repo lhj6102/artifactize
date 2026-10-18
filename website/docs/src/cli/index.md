@@ -298,12 +298,8 @@ Add `--recursive` to execute the Evals in the required dependency scope. Without
 it, input evidence must already be available. File Artifacts are selected by their
 declared names; a sidecar creates no automatic relation to the surrounding folder.
 
-Only the Eval that references an input waits for its reviews. Its independent
-siblings remain runnable. Plain verify is dependency-first; `--speculate` changes
-scheduling, not approval. An Eval's own Artifact and its cycle peers never gate
-it: a RED sibling or cycle peer does not block it, peers retain their own verdicts,
-and what the cycle references outside itself still holds them. A failed cycle does
-not release downstream consumers. See [Eval dependencies](../features/declarations.md#eval-dependencies).
+For which evals wait or block, including dependency cycles, see
+[Eval dependencies](../features/artifact.md#eval-dependencies).
 
 Status uses `execute`, `reuse`, `wait` and `blocked` actions. Requests, validation
 and status carry `blockedBy` qualified Eval IDs. The monitor groups gate Evals by
