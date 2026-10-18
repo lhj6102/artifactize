@@ -15,9 +15,10 @@
 //   C. review.png  — a claimed Human review: its instruction, Tools, a Tool log run and the
 //      GREEN form.
 //
-// Last, version.json records the current fingerprints of {desktop} and of this script's own
-// Artifact, and their hash. Any change to either makes the screenshots stale until this script
-// runs again; --check recomputes the hash and compares.
+// Last, version.json records the current fingerprints of the app ({desktop},
+// {desktop-backend} and {desktop-ui}) and of this script's own Artifact, and their hash.
+// Any change to one of them makes the screenshots stale until this script runs again; --check
+// recomputes the hash and compares.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -31,7 +32,9 @@ const repository = join(here, "..", "..");
 const output = join(repository, "assets", "screenshots");
 const VERSION = join(output, "version.json");
 const SCRIPT_ARTIFACT = "screenshots-script";
-const INPUTS = ["desktop", SCRIPT_ARTIFACT];
+/** The app as built: {desktop} and the Artifacts inside it, whose files its own fingerprint
+ * leaves to them. */
+const INPUTS = ["desktop", "desktop-backend", "desktop-ui", SCRIPT_ARTIFACT];
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;

@@ -1,7 +1,9 @@
 {
   "inputs": {
     "desktop": "artifactsum:be439d1a672945a40547511b62a6dec97ab3ac5793011e3728fafbb28f4a4176",
-    "screenshots-script": "artifactsum:54ec3bd441f037960152af3c70fda3d62e81e5e814fb80f3b6c78dcd3a760ca2"
+    "desktop-backend": "artifactsum:8f63d7dc44bf0287cc286bd8ef4468bfade01f6cc44a67467873d2adfacf4208",
+    "desktop-ui": "artifactsum:56532bd603513a31ce914f32fc9ed4451dbd0f64f9d39c7ca7737c93437301a5",
+    "screenshots-script": "artifactsum:d985d8d9a9f1d171c1a8abd7982a7ae3010f8f5594acebf3a92b872d6db69927"
   },
-  "hash": "49a96aeee6ed79bd746f54adad3916aefb6a0ece72c2e31f73899138f50b4962"
+  "hash": "391e3e8a44ec309189eb6a6f0f167b96e54f521bbff2dbd7ae36383f0a2c6e65"
 }

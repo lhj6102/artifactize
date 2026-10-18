@@ -3,7 +3,7 @@ name = "screenshots"
 [evals.current]
 title = "The screenshots were captured from the current app and script"
 profile = { kind = "runtime", command = "node", args = ["{screenshots-script}", "--check"] }
-payload.instruction = "Compare the hash {screenshots} recorded in version.json with the current fingerprints of {desktop} and {screenshots-script}; a difference means the screenshots are stale and the script runs again."
+payload.instruction = "Compare the hash {screenshots} recorded in version.json with the current fingerprints of {desktop}, {desktop-backend}, {desktop-ui} and {screenshots-script}; a difference means the screenshots are stale and the script runs again."
 
 [views.agent_tools]
 list = { builtin = "list" }

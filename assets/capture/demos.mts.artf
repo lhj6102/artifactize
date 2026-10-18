@@ -50,7 +50,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 instruction = """
 Read {demos-script}. Judge whether its outputs and a hash file come out as one bundle: \
 after every GIF is written, the script writes the hash file last, from the current \
-fingerprints of desktop and of the script's own Artifact (demos-script), so a change to \
+fingerprints of desktop, desktop-backend and desktop-ui and of the script's own Artifact (demos-script), so a change to \
 either makes the outputs stale. Its check mode must recompute that same hash the same way and \
 fail when it differs or the file is missing. Submit GREEN when it does; otherwise RED with one \
 finding per problem.
