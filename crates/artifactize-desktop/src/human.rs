@@ -55,6 +55,8 @@ pub struct Reviews {
     /// Claims this app took and has neither submitted nor released.
     taken: Mutex<BTreeSet<RequestId>>,
     log: review::log::Sink,
+    /// The Tool log of each review a run logged to, until it is submitted.
+    logs: Mutex<BTreeMap<RequestId, review::log::ToolLog>>,
     /// The Tool log's receiving end, until the app starts forwarding it.
     events: Mutex<Option<review::log::Events>>,
 }
@@ -68,6 +70,7 @@ impl Default for Reviews {
             jobs: Mutex::default(),
             taken: Mutex::default(),
             log,
+            logs: Mutex::default(),
             events: Mutex::new(Some(events)),
         }
     }
@@ -79,9 +82,27 @@ impl Reviews {
         self.events.lock().expect("events lock").take()
     }
 
+    /// Take `events` into each review's Tool log; answer the logs they changed.
+    pub(crate) fn logged(&self, events: Vec<review::log::Event>) -> Vec<log::RequestLog> {
+        let mut logs = self.logs.lock().expect("logs lock");
+        let mut changed = BTreeSet::new();
+        for event in events {
+            changed.insert(event.request.clone());
+            logs.entry(event.request.clone()).or_default().apply(event);
+        }
+        changed
+            .into_iter()
+            .map(|request| {
+                let log = &logs[&request];
+                log::request_log(request.into(), log)
+            })
+            .collect()
+    }
+
     /// Forget everything read from a replaced state and cancel its jobs.
     pub fn reset(&self) {
         self.cancel_all();
+        self.logs.lock().expect("logs lock").clear();
         self.views.lock().expect("views lock").clear();
         self.commands.lock().expect("commands lock").clear();
         self.taken.lock().expect("taken lock").clear();
@@ -594,6 +615,8 @@ pub async fn human_submit(
         other => unreachable!("a submit job ends in Submitted or SavedLocally, not {other:?}"),
     };
     app.human.took(&id, false);
+    // A submitted review's log ends here; what a launched program still prints is dropped.
+    app.human.logs.lock().expect("logs lock").remove(&id);
     let Acted { notice, view } = acted(&app, &id, outcome).await?;
     Ok(Submitted {
         settled,

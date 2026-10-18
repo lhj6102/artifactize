@@ -99,9 +99,12 @@ automatically join an in-flight execution only when both its reuse key and its
 complete effective evaluation profile match. The queued request names the execution
 it waits for; it takes no execution start or backend slot. Completion delivers that
 execution's GREEN, RED or ERROR to its waiters as joined reuse. An ERROR is not a
-new cache entry for later Runs. Cancellation or a dead owner (checked by PID and
-process start time) releases the claim: one waiter starts a replacement, and the
-others join it. Cancelling a waiter does not cancel the owner. `--force` always runs
+new cache entry for later Runs. For a Runtime or Agent execution, cancellation or a
+dead owner (checked by PID and process start time) releases the claim: one waiter
+starts a replacement, and the others join it. A Human sign-off is not replaced: when
+its owning Run is cancelled or its worker stops, the sign-off and every request
+waiting on it, in any Run, end as ERROR, and a new `verify` requests another one.
+Cancelling a waiter does not cancel the owner. `--force` always runs
 its own execution and never joins. There are no sharing settings, and in-flight
 sharing never crosses a remote store. Completed GREEN/RED reuse remains keyed by
 the reuse key alone, even if the producing profile differs.

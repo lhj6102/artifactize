@@ -5,8 +5,6 @@ import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
-import { logged } from "./tool-log";
-import type { LogLine } from "../ipc/client";
 import { greenForm, humanView, redForm } from "./fixtures";
 
 /** A form request the test answers when it chooses. */
@@ -104,32 +102,7 @@ describe("Review", () => {
     await review.run(0);
     expect(review.notice?.text).toBe("notes_release launched.");
     expect(review.log).toEqual([]);
-    review.logged([
-      { request: "run-a-2", run: "7", line: { kind: "start", at: 0, operation: "notes", artifact: "release" } },
-      { request: "run-a-2", run: "7", line: { kind: "stdout", text: "hello" } },
-    ]);
+    review.logged([{ run: "7", at: 0, operation: "notes", artifact: "release", lines: [{ text: "hello", error: false }], end: null }]);
     expect(review.log.map((entry) => entry.lines)).toEqual([[{ text: "hello", error: false }]]);
-  });
-});
-
-describe("logged", () => {
-  const line = (run: string, line: LogLine["line"]): LogLine => ({ request: "run-a-2", run, line });
-
-  it("groups lines under their run, also after a later run started, and ends each once", () => {
-    const log = logged([], [
-      line("1", { kind: "start", at: 0, operation: "launch", artifact: "app" }),
-      line("2", { kind: "start", at: 0, operation: "check", artifact: "lib" }),
-      line("2", { kind: "stdout", text: "checked" }),
-      line("2", { kind: "end", text: "■ exit 0", error: false }),
-      line("1", { kind: "stderr", text: "app says" }),
-    ]);
-    const later = logged(log, [line("1", { kind: "end", text: "■ exit 1", error: true }), line("9", { kind: "stdout", text: "never started here" })]);
-    expect(later.map(({ operation, lines, end }) => ({ operation, lines, end }))).toEqual([
-      { operation: "launch", lines: [{ text: "app says", error: true }], end: { text: "■ exit 1", error: true } },
-      { operation: "check", lines: [{ text: "checked", error: false }], end: { text: "■ exit 0", error: false } },
-    ]);
-    // Taking lines in never changes the log it was given.
-    expect(log[0].end).toBeNull();
-    expect(later[0].at).toMatch(/^\d\d:\d\d:\d\d$/);
   });
 });
