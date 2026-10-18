@@ -1,190 +1,126 @@
-# Hey Arti: structure a project's reviews
+# Hey Arti: shape a project's reviews
 
-**Arti is the Artifactizer**: an agent role that finds review and reuse boundaries,
-declares them, validates them and evolves them with the team. It does not take over
-building or running your project. Its reusable instruction guide, called a **skill**, is
+**Arti is artifactize's Forward Deployed Engineer.** Given to your coding assistant,
+it learns your project and recommends how to shape it into Artifacts and evals, so
+that reviews stay meaningful and reusable. It works like a good waiter: it knows the
+menu and which combinations work, listens before recommending, confirms the order,
+and leaves the cooking to artifactize. It does not build or run your application,
+and it never approves anything in a person's place. (The name comes from
+*Artifactizer*.)
+
+Its instruction guide, called a **skill**, is
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/crates/artifactize-core/integrations/hey-arti/SKILL.md),
 inside the published core crate. There is one body, not separate instructions per
 host. Plugin-marketplace installation is separate; no plugin exporter or release
 bundle is required for the MCP registration below.
 
-Give the agent the skill and ask it to inspect your repository and propose
-boundaries **before** changing structure. Agree which parts are independently
-editable, which inputs their consumers really depend on, and which judgments need
-a person. It should preserve your project instructions and existing Human gates.
-Before adding a discretionary sign-off, it must explain the need and obtain
-agreement. It must never mark unfinished work as `basis`.
-
 ## Register the MCP server
 
 Follow [MCP setup](mcp.md#register-the-mcp-server) to connect your coding host.
-Registration supplies tools; it does not install those instructions. For example,
-open the linked `SKILL.md`, attach the unchanged file to your assistant's conversation and
-ask: "Follow this guide. Inspect this repository and propose Artifact boundaries
-before editing." Use that canonical guide rather than maintaining a second edited
-copy.
+Registration supplies tools; it does not install the skill. Open the linked
+`SKILL.md`, attach the unchanged file to your assistant's conversation and ask, for
+example: "Follow this guide. Learn this repository and propose Artifacts and evals
+before editing." Use that canonical guide rather than maintaining an edited copy.
+
+## What Arti does with you
+
+1. **Learns the project.** It reads code, docs, specifications, assets and build
+   and test commands, then interviews you for what it cannot read: the goals, what
+   changes together, which judgments need a person and what CI must guarantee.
+2. **Proposes a composition.** It suggests each Artifact and its evals (who judges,
+   against which inputs, by which criteria) with reasons, and waits for your
+   agreement before changing structure. It keeps your project instructions and
+   existing Human responsibilities, explains before adding a new sign-off, and
+   never marks unfinished work as `basis`.
+3. **Writes small declarations** in today's [format](../features/declarations.md),
+   validates them with `config_check`, and shows with `status` what would run and
+   what would be reused. It then tells you what changed.
+4. **Hands verification over** and follows the Run (below).
+
+On an existing project it checks the current structure against the same practices
+and changes only what you agree to. On a RED result it explains the finding in your
+terms and fixes the Artifact the eval judges, such as inaccurate docs or criteria,
+rather than bending code or weakening a review.
+
+## The practices it recommends
+
+- Cut Artifacts where work is edited and judged independently, each with a concrete
+  obligation. Avoid one review over the whole repository.
+- An eval names each input it really uses as `{name}`; sharing a repository is not a
+  dependency, and a command does not add the files it reads. A child folder counts
+  as an input of its parent's evals.
+- One obligation per eval. Use a runtime eval when a command can check it, an
+  [Agent eval](../features/agent.md) when it needs judgment, and a
+  [Human eval](../features/human.md) only where a person must add judgment or
+  authority.
+- Criteria for one Artifact go inside its eval; rules many Artifacts share go in a
+  rule document their evals read.
+- Keep the default fingerprint (artifactsum); give reviewers only the read-only
+  tools they need.
+- Recurring combinations: library and consumer, spec and app, app and E2E tests (the
+  app's eval runs the suite), docs and assets, monorepo contracts, generated files,
+  and rule documents.
+- Steer away from implicit dependencies, whole-repository reviews, anti-cheat evals,
+  unrequested execution options, and weakening an eval to reach GREEN.
+
+Changing an eval's instruction, result schema or runtime command changes its
+judgment; tags, titles, execution options and tool declarations do not. After an
+edit, `status` should show the edited input and its real consumers needing review
+and independent parts still reused. See [Fingerprints and reuse](../features/fingerprint.md).
 
 ## Use MCP first
 
 Arti uses `config_graph` to discover Artifacts, evals and dependencies (`impact:true`
 adds downstream consumers conservatively), `config_check` to validate declarations
-and `status` to predict which
-evals execute, reuse or wait. `tools_check` inspects tools and sessions statically;
-it does not run project tools or start a session. Saved evidence is available
-through `run_list`, `run_show`, `request_list`, `request_show`, `session_show` and
-`cache_show`; `doctor`, `models` and `remote_status` help inspect readiness.
-
-See the [MCP reference](mcp.md) for exact arguments and detail paging.
-Inspection tools return bounded UTF-8 fragments of their CLI JSON in `entries[].text`;
-append continuation pages until `next_cursor` is null, then parse JSON.
+and `status` to predict which evals execute, reuse or wait. `tools_check` inspects
+tools and sessions statically. Inspection tools return bounded UTF-8 fragments of
+their CLI JSON in `entries[].text`; append continuation pages until `next_cursor` is
+null, then parse. See the [MCP reference](mcp.md).
 
 MCP does not expose login/logout, Human claim/submit/release, prune/cache removal,
-remote push, TUIs, the store server, tool execution or session follow-ups. A person
-uses their normal review interface; an agent cannot approve through MCP.
+remote push, TUIs, the store server, tool execution or session follow-ups. If MCP is
+not registered, the CLI fallback is `artifactize config check`, `artifactize config
+graph`, `artifactize status --all` and `artifactize tools check`.
 
-If MCP is not registered, use the CLI fallback:
+## Tool sessions
 
-```sh
-artifactize config check
-artifactize config graph
-artifactize status --all
-artifactize tools check
-```
-
-`config check` validates without hashing or running fingerprint scripts. `status`
-can compute fingerprints and consult the review store. See
-[Declarations](../features/declarations.md) and
-[Fingerprints and reuse](../features/fingerprint.md) for exact rules.
-
-## Start with small current declarations
-
-A folder uses `index.artf`; a regular file uses `<filename>.artf`. Both are TOML
-and require a unique `name`. Omit `fingerprint` for artifactsum. Evals are ID-keyed
-tables. For example, a library's `index.artf`:
-
-```toml
-name = "library"
-
-[evals.tests]
-title = "Library tests pass"
-profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"] }
-payload.instruction = "Run the library's tests."
-```
-
-A consumer's Agent eval should explicitly reference `{library}` when its judgment
-really depends on it. Use the team's configured exact model ID and narrowly
-admitted read-only tools; see [Agent evals](../features/agent.md). Do not add unrelated
-inputs just because they share a repository.
-
-A file sidecar gives an asset its own identity and narrow tool view. It creates no
-automatic child/dependency relation to a surrounding folder, and its target still
-appears in the surrounding folder's default fingerprint. A growing Artifact can
-be split into child folders or explicitly related file Artifacts, preserving
-independent reuse. `basis = true` is an agreed no-eval input, not a shortcut past
-mandatory reviews. Each Eval’s instruction and runtime arguments name its own
-inputs; independent sibling Evals do not inherit its dependency gates.
-
-Changing an eval's instruction, result schema or runtime command changes its
-judgment identity; covered content changes its fingerprint. Tool execution paths
-record **provenance**, not reuse inputs. Cover relevant tool implementation bytes
-in a fingerprint if changes should re-review. Tags and execution options are not
-judgment changes. After agreed edits, compare `status`: intended inputs and real
-consumers should need review, independent components should still reuse. Fix the
-evaluated Artifact on RED, including inaccurate docs or criteria, rather than
-bending code or weakening reviews to manufacture success.
-
-## Tool sessions belong to artifactize
-
-A session keeps a read-only harness alive across an Agent review's tool calls.
-Declare `views.agent_sessions.<name>.start`/`stop` and command tools bound with
-`session = "<name>"` in the same Artifact. Start uses the ordinary JSON tool
-envelope, prepares its private `ARTIFACTIZE_SESSION_DIR`, prints one readiness
-newline, and stays alive. Stop and bound calls share the directory. Artifactize
-owns admission, stop and cleanup; the reviewer receives no instance ID or lifecycle
-knobs. See [Tool sessions](../features/tools/agent.md#tool-sessions).
-
-Commands inherit the author's terminal/toolchain environment with caller
-`ARTIFACTIZE_*` credentials/settings stripped and private external output/tmp.
-Built-in scoping is narrow, but declared commands are trusted local programs,
-**not an OS sandbox**. Neither builders nor reviewers should write reviewed inputs
-during verification.
+When a reviewer must inspect something running, the skill shows a session declared
+with `views.agent_sessions.<name>.start`/`stop` and a command tool bound with
+`session = "<name>"`, its program inside the Artifact so the fingerprint covers it.
+artifactize starts, stops and cleans up sessions; there are no lifetime or port
+options, and `execution_paths` record provenance, not reuse inputs. Declared
+commands are trusted local programs, **not an OS sandbox**. See
+[Tool sessions](../features/tools/agent.md#tool-sessions).
 
 ## Follow a durable Run
 
-Start with `verify_start`, for example:
+Arti starts with `verify_start`, keeps the returned Run ID, and follows with
+`verify_watch` when the host shows MCP progress or `verify_wait` otherwise, reading
+findings with `verify_result`. An accepted Run is not a passing one. It diagnoses a
+failed runtime finding with `request_logs` and an Agent finding with `session_show`.
+artifactize owns the Run: closing the terminal, disconnecting or ending the agent's
+turn does not stop it; only `verify_cancel` requests cancellation. See
+[Run](../features/run.md) and [streaming](mcp.md#streaming-and-focused-diagnosis).
 
-```json
-{"scope":{"kind":"all"},"request_key":"change-42-attempt-1"}
-```
-
-Retain the returned Run ID. The optional caller key is 1–128 ASCII
-letters/digits/`._:-`. Same repository + same key returns the same attempt, even
-after completion or source edits; retry a lost start answer with that key. A
-new attempt after fixes needs a new key or no key. Omitting it creates a new Run
-every time; it does not disable ordinary eval-result reuse.
-
-When the host consumes standard MCP progress notifications, use `verify_watch
-{run}` with tool-call `_meta.progressToken`: up to 30 seconds of `update`,
-`eval_result` and final `outcome` events. Reattach at the bound, or read
-`verify_result` when terminal. A live update or one eval's GREEN is not final
-Run approval. Displaying/routing notifications into a conversation requires
-client support; artifactize cannot inject model turns. See the
-[MCP streaming contract](mcp.md#streaming-and-focused-diagnosis).
-
-Without client progress support, use `verify_wait {run, seconds?}` rather than
-short-interval status loops. It
-returns on Run end or its bound (default 30 seconds; integer 0–40; whole call under
-45 seconds), not early merely because a person is needed. A still-active response
-at the bound is normal. `verify_status` reads saved state; `verify_result` reads
-terminal findings with an optional continuation cursor, or `ready:false` while
-active. Follow continuation pages for complete evidence. RED is a verdict, not a
-tool invocation error. Diagnose a failed runtime finding with `request_logs`:
-select stdout/stderr, tail, original line range or literal search without loading
-the full request. Evidence explicitly distinguishes full local captures (including
-tails past the saved audit limit), partial capture and unavailable older/remote/
-pruned logs. For Agent failures, inspect `session_show`.
-
-Two per-request choices default off: `speculate` can speed integration by starting
-downstream evals before upstream judgment, at the cost of work cancelled after
-upstream RED/ERROR; `defer_human` allows provisional progress when immediate
-human-in-the-loop judgment is not needed. A deferred Run ending with only
-sign-offs remaining is **not full approval**. Explicit blocking gates still
-block. Do not choose these modes to evade a required person.
-
-Artifactize owns the Run, not the caller. Terminal closure, watcher interruption,
-MCP disconnection or ending the agent turn does not stop execution. Only explicit
-`verify_cancel {run}` requests cancellation; observe settlement to confirm cleanup.
-CLI fallback is `artifactize verify --all --watch` for JSON-line streaming,
-`artifactize run watch RUN_ID` to reattach,
-`artifactize verify --all --request-key KEY` to submit,
-`artifactize verify --all --wait --request-key KEY` to follow, `artifactize run
-show RUN_ID` to inspect, and `artifactize run cancel RUN_ID` to explicitly cancel.
-Default CLI `verify` exits zero on **acceptance**, not a successful review. There
-is no caller-controlled verification timeout or ten-minute Human wait limit.
+Two per-request choices default off: `speculate` starts downstream work early, at
+the cost of work an upstream RED cancels; `defer_human` lets machine work finish
+while sign-offs wait, ending SIGNOFFS_PENDING, which is **not full approval**.
+`gate = "blocking"` keeps a sign-off a hard gate. Neither choice may be used to get
+around a required person.
 
 ## Hand off to the person, then yield
 
-Use `request_list`/`request_show` to name waiting requests and their judgment.
-Give the person `artifactize review REQUEST_ID` or their usual monitor/review
-interface. Never claim, approve, submit or forge a Human review on their behalf.
-If independent work is available, continue it. Otherwise yield with a compact
-handoff in the host's ordinary conversation/task context:
-
-```text
-Repository: <project path>
-Run: <returned ID>
-Request key: <retained key, or none>
-Waiting requests: <request IDs, evals, criteria>
-Next action: person reviews, then observe this same saved Run
-```
-
-Resume by observing the saved Run. No synthetic keep-alive turns, cache-TTL tweaks,
-indefinite polling or fake progress are needed, and yielding is not cancellation.
+Arti names waiting requests with `request_list`/`request_show` and gives you the
+criteria and `artifactize review REQUEST_ID` (or your usual review interface). It
+never claims, approves or submits a Human review. It continues independent work, or
+yields with a short handoff naming the repository, Run, waiting requests and next
+action, then resumes by observing the same Run. Yielding is not cancellation, and no
+keep-alive turns or polling loops are needed.
 
 ## Team and CI
 
-Use the existing [team review store](../features/team/index.md) login/environment
-flow and keep credentials out of declarations, skill copies, transcripts and MCP
-registration. Human authority stays with people. Follow the dedicated [CI
-guide](../features/team/ci.md) for the read-only-token verification step: CI must
-wait for validation, not merely accept a submitted Run.
+Use the existing [team review store](../features/team/index.md) and keep credentials
+out of declarations, skill copies, transcripts and MCP registration. CI uses a
+read-only token and `artifactize verify --all --wait --reuse-only agent,human`, so it
+runs runtime checks and reuses Agent and Human evidence; see the
+[CI guide](../features/team/ci.md).

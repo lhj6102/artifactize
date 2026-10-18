@@ -146,7 +146,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 [evals.matches-hey-arti.payload]
 instruction = """
 Review {docs} against only {hey-arti}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is Hey Arti inside Agent plugin (src/agent-plugin/hey-arti.md), including using the canonical portable skill, proposing boundaries, MCP-first workflow, tool sessions, durable Runs, Human authority, team sharing and read-only CI.
+The owned documentation area is Hey Arti inside Agent plugin (src/agent-plugin/hey-arti.md), including Arti's role, using the canonical portable skill, interviewing and proposing a composition, the practices it recommends, MCP-first workflow, tool sessions, durable Runs, Human authority, team sharing and read-only CI.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
