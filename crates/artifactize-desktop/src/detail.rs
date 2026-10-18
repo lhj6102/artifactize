@@ -20,6 +20,25 @@ pub enum Profile {
     Human,
 }
 
+/// What a Detail describes, from the library's [`Target`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum DetailTarget {
+    Run,
+    Artifact,
+    Eval,
+}
+
+impl From<&Target> for DetailTarget {
+    fn from(target: &Target) -> Self {
+        match target {
+            Target::Run => Self::Run,
+            Target::Artifact(_) => Self::Artifact,
+            Target::Eval(_) => Self::Eval,
+        }
+    }
+}
+
 impl From<ProfileKind> for Profile {
     fn from(kind: ProfileKind) -> Self {
         match kind {
@@ -182,6 +201,7 @@ impl From<monitor::Card> for CardView {
 pub struct DetailView {
     pub run: RunKey,
     pub node: NodeKey,
+    pub target: DetailTarget,
     pub title: String,
     /// One-line outcome: state, elapsed time, profile and dependencies.
     pub summary: String,
@@ -263,6 +283,7 @@ pub fn view(
     DetailView {
         run: run.run.id.clone().into(),
         node: id.clone().into(),
+        target: (&target).into(),
         title: detail.title.clone(),
         summary: detail.summary.clone(),
         request: request.map(|view| view.request.id.clone().into()),

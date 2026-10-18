@@ -40,6 +40,7 @@ const agentRow: Listed = {
 const agentDetail: DetailView = {
   run: "run-a",
   node: "eval:app/agent",
+  target: "eval",
   title: "app/agent · An Agent reads the input",
   summary: "GREEN · the input is complete",
   request: "run-a-3",

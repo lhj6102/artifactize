@@ -104,7 +104,7 @@
   const human = $derived(detail?.profile === "human" && detail.request !== null);
   /** An Artifact's or an eval's Summary keeps its technical facts under Debug; a Run's
    * sections keep theirs under Technical. */
-  const folded = $derived(detail !== null && (detail.card !== null || detail.node.startsWith("a:")));
+  const folded = $derived(detail !== null && (detail.card !== null || detail.target === "artifact"));
 
   /** The Human review this tab shows, while it runs work or edits its form: ← leaves it alone,
    * and Esc steps through it first (the Monitor's close asks it). */

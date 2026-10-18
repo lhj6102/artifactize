@@ -52,7 +52,7 @@ const tree: TreeNode[] = [
 ];
 
 const view = (node: string, title: string): DetailView => ({
-  run: "run-a", node, title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
+  run: "run-a", node, target: node.startsWith("e:") ? "eval" : "artifact", title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
   mark: null, sections: [], evidence: null, running: false, card: null,
 });
 

@@ -32,7 +32,7 @@
   const showLog = $derived(log && logName !== null);
   const card = $derived(detail.card);
   /** An Artifact's Detail: its status line and path; the rest, what it waits for included, under Debug. */
-  const artifact = $derived(detail.node.startsWith("a:"));
+  const artifact = $derived(detail.target === "artifact");
 
   /** The Summary's own blocks, each named by the Detail fields it shows. */
   const OPTIONS = ["Profile", "Options"];

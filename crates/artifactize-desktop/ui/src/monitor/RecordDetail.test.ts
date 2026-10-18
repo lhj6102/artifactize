@@ -24,6 +24,7 @@ const card = (change: Partial<CardView> = {}): CardView => ({
 const detail = (change: Partial<DetailView> = {}): DetailView => ({
   run: "run-a",
   node: "e:app/rules",
+  target: "eval",
   title: "app/rules · Rules",
   summary: "RED 3m 12s · agent codex gpt-6.1-sol",
   request: null,
@@ -134,6 +135,7 @@ it("shows an Artifact's path, and its other facts only under Debug", async () =>
   render(RecordDetail, {
     detail: detail({
       node: "a:app",
+      target: "artifact",
       profile: null,
       mark: null,
       card: null,

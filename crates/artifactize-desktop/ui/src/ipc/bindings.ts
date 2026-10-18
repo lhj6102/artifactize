@@ -251,9 +251,13 @@ export type CurrentGraph = {
 	structure: string,
 };
 
+/**  What a Detail describes, from the library's [`Target`]. */
+export type DetailTarget = "run" | "artifact" | "eval";
+
 export type DetailView = {
 	run: string,
 	node: string,
+	target: DetailTarget,
 	title: string,
 	/**  One-line outcome: state, elapsed time, profile and dependencies. */
 	summary: string,
