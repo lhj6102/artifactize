@@ -117,8 +117,9 @@ type Frame = { file: string; at: number };
  * for its whole length, and how long its last frame stays. */
 type Segment = { frames: Frame[]; speed: number; caption: string; hold: number };
 
-/** Take frames until `done` resolves, then one more, so the final state is in the recording. */
-async function record(browser: WebdriverIO.Browser, directory: string, done: Promise<unknown>): Promise<Frame[]> {
+/** Take frames until `done` resolves and the app shows the final state `final` waits for,
+ * then one more, so that final state is the recording's last frame. */
+async function record(browser: WebdriverIO.Browser, directory: string, done: Promise<unknown>, final: () => Promise<boolean>): Promise<Frame[]> {
   const frames: Frame[] = [];
   let finished = false;
   void done.finally(() => { finished = true; });
@@ -129,7 +130,11 @@ async function record(browser: WebdriverIO.Browser, directory: string, done: Pro
   };
   while (!finished) await take();
   await done;
-  await browser.pause(600);
+  const until = performance.now() + WAIT;
+  while (!await final()) {
+    if (performance.now() > until) throw new Error("the app did not show the Run's final state");
+    await take();
+  }
   await take();
   return frames;
 }
@@ -218,7 +223,8 @@ payload.instruction = "Run the ${id} of {${artifact.name}}${uses ? ` with ${uses
 
 async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Segment[]> {
   const root = join(candidate.root, "fixtures", "fixture-review-loop");
-  const fixture = { root, repo: join(root, "example"), state: join(root, "state") };
+  // The build's cleanup settles the Runs of fixture roots laid out as root/repo and root/state.
+  const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   mkdirSync(fixture.repo, { recursive: true });
   loopProject(root, fixture.repo);
   e2e.git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
@@ -227,6 +233,24 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   const segments: Segment[] = [];
   try {
     const first = '[aria-label="Runs"] [data-index="0"]';
+    /** The Run `id`'s panel shows its own graph, not the one drawn before it was opened: a
+     * graph of another Run is replaced by a new canvas. */
+    const opened = (id: string) => browser.execute((id) => {
+      const canvas = document.querySelector(`[aria-label="Run ${id}"] .svelte-flow`);
+      const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
+      const box = node?.getBoundingClientRect();
+      return !!canvas && canvas !== (window as unknown as { before?: Element }).before && !!box && box.width > 0
+        && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
+    }, id);
+    /** The Run `id` ended and its graph is lit as it ended: every Artifact settled, and exactly
+     * `fails` red. */
+    const ended = (id: string, fails: string[]) => browser.execute((id, fails, count) => {
+      const panel = document.querySelector(`[aria-label="Run ${id}"]`);
+      const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => [node.dataset.id ?? "", node.dataset.light ?? ""]);
+      return (panel?.querySelector(".headline")?.textContent ?? "").includes("at Run end") && lights.length === count
+        && lights.every(([, light]) => light !== "waiting" && light !== "active")
+        && lights.filter(([, light]) => light === "red").map(([node]) => node.slice(2)).sort().join() === [...fails].sort().join();
+    }, id, fails, LOOP.length);
     for (const [index, fails] of FAILS.entries()) {
       const frames = join(work, `loop-${index + 1}`);
       mkdirSync(frames);
@@ -235,19 +259,28 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       // Open the new Run as soon as the Monitor lists it first, then record it until it ends.
       await browser.waitUntil(() => browser.$(first).getText().then((text) => text.includes(id), () => false),
         { timeout: WAIT, timeoutMsg: `the Monitor lists ${id}` });
+      await browser.execute(() => { (window as unknown as { before?: Element | null }).before = document.querySelector(".svelte-flow"); });
       await browser.$(first).click();
-      await e2e.graphShown(browser, "a:release", WAIT);
-      const settled = new Promise<string>((done, failed) => {
+      await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Monitor draws ${id}'s graph` });
+      // `run show --wait` exits with the Run's outcome: 0 when it is satisfied.
+      const settled = new Promise<{ code: number | null; text: string }>((done, failed) => {
         const watcher = spawn(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", id, "--wait", "--json"], { env });
         let text = "";
         watcher.stdout.on("data", (chunk) => { text += chunk; });
         watcher.once("error", failed);
-        watcher.once("close", () => done(text));
+        watcher.once("close", (code) => done({ code, text }));
       });
-      segments.push({ frames: await record(browser, frames, settled), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
-      const view = JSON.parse(await settled) as { requests: { evalId: string; status: string }[] };
+      segments.push({ frames: await record(browser, frames, settled, () => ended(id, fails)), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
+      const { code, text } = await settled;
+      const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string }[] };
       const red = [...new Set(view.requests.filter((request) => request.status === "RED").map((request) => request.evalId.split("/")[0]))].sort();
-      if (red.join() !== [...fails].sort().join()) throw new Error(`try ${index + 1} failed ${red.join(", ") || "nothing"}, not ${fails.join(", ") || "nothing"}`);
+      const last = fails.length === 0;
+      // Every request settled as planned: GREEN, RED where the BUG still is, BLOCKED below it.
+      const unexpected = view.requests.filter((request) => !["GREEN", "RED", "BLOCKED"].includes(request.status));
+      if (red.join() !== [...fails].sort().join() || unexpected.length > 0 || view.status !== (last ? "GREEN" : "RED")
+        || view.validation?.satisfied !== last || (code === 0) !== last) {
+        throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with RED ${red.join(", ") || "nothing"} and ${unexpected.map((request) => `${request.evalId} ${request.status}`).join(", ") || "no other states"}; planned RED ${fails.join(", ") || "nothing"}`);
+      }
       // The fix: remove the BUG from what just failed, as an AI would fix the code.
       for (const name of fails) writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
     }
@@ -370,7 +403,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
 async function capture(output: string, work: string): Promise<void> {
   const base = "../../crates/artifactize-desktop/ui/e2e";
   const { adopt, cleanup, prepare } = await import(`${base}/build.ts`);
-  const e2e = { ...await import(`${base}/environment.ts`), ...await import(`${base}/graph-view.ts`) };
+  const e2e = await import(`${base}/environment.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
   mkdirSync(work, { recursive: true });
   const candidate = adopt(await prepare(join(work, "build")));
@@ -389,8 +422,11 @@ async function capture(output: string, work: string): Promise<void> {
       renameSync(`${gif}.new.gif`, gif);
     }
   } finally {
-    await cleanup(candidate.root);
-    rmSync(work, { recursive: true, force: true });
+    try {
+      await cleanup(candidate.root);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
   }
   for (const name of DEMOS) console.log(`${name}: ${(statSync(join(output, name)).size / 1e6).toFixed(1)} MB`);
 }

@@ -54,7 +54,10 @@ always there: with no Run selected, while loading, on an error or with an empty
 graph, the area stays and says so. What went wrong, such as Runs on the page that
 cannot be read, shows as one line in the Run pane's header; click it to read it
 in full and again to fold it. It never moves or hides the graph. New Runs, claims
-and submissions made elsewhere appear without a manual reload. Run-end validation
+and submissions made elsewhere appear without a manual reload. A read that fails
+leaves what was last read on screen: graphs, request states and claims can be
+stale while ages keep counting, so refresh the Monitor (Ctrl+R) or the Review
+list after fixing what the notice names. Run-end validation
 stays historical: a later Human submission can change the current request display
 without rewriting the old verdict. Damaged records are
 [marked unreadable](../features/others/state.md#unreadable-records), not treated
@@ -100,7 +103,9 @@ whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversat
 with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
 not a live log stream). Missing or remote conversations explain why they are
 unavailable on this machine. A Human eval's chip holds its review and sign-off, with
-the controls described below. A Run's Detail keeps its sections, where `t` toggles
+the controls described below. An eval outside the Run's selection, such as one a
+partial `verify` left out, has no request in that Run: its chip shows its sections
+read-only, with no Summary of a result, no Human controls and no Tool log. A Run's Detail keeps its sections, where `t` toggles
 Technical and `w` or the pending-evals control reveals the unfinished checks behind
 an upstream wait.
 
@@ -216,7 +221,9 @@ Esc cancels active work, then leaves the form, then leaves Detail.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
 GREEN and RED keep separate drafts. Monitor and Review share the same request's
 review state, Tool log included, within this app session, rather than creating
-independent forms.
+independent forms. This holds while the state stays the same: when the app finds its
+state database replaced, it closes open Details, forgets cached reviews, drafts and
+Tool logs, and cancels running Human tool and submit jobs.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.

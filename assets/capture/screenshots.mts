@@ -142,9 +142,9 @@ async function capture(output: string, work: string): Promise<void> {
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
   mkdirSync(output, { recursive: true });
   const candidate = adopt(await prepare(work));
-  // The build cleans up fixture roots named like this one, with every Run it settled.
+  // The build's cleanup settles the Runs of fixture roots named and laid out like this one.
   const root = join(candidate.root, "fixtures", "fixture-screenshots");
-  const fixture = { root, repo: join(root, "example"), state: join(root, "state") };
+  const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   let browser: WebdriverIO.Browser | undefined;
   try {
     mkdirSync(fixture.repo, { recursive: true });
@@ -186,6 +186,14 @@ async function capture(output: string, work: string): Promise<void> {
     // B. cli's Detail on its Artifact tab: cli between the core it uses and the docs that use
     // it, its evals with their verdicts below.
     await openArtifact(app, "a:cli", "Artifact cli");
+    await app.waitUntil(() => app.execute(() => {
+      const neighbours = document.querySelector('[aria-label="Neighbours"]');
+      const drawn = ["a:core", "a:cli", "a:docs"].every((id) => {
+        const box = neighbours?.querySelector(`.svelte-flow__node[data-id="${id}"]`)?.getBoundingClientRect();
+        return !!box && box.width > 0 && box.height > 0;
+      });
+      return drawn && (neighbours?.querySelectorAll(".svelte-flow__edge").length ?? 0) >= 2;
+    }), { timeout: WAIT, timeoutMsg: "cli's Neighbours show core, cli and docs and their edges" });
     await shot("detail.png");
 
     // C. The release sign-off in Review: claimed, its notes tool run, the GREEN form open.
@@ -204,9 +212,12 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$('[aria-label="Human review"] .form').waitForExist({ timeout: WAIT });
     await shot("review.png");
   } finally {
-    if (browser) await service.cleanupWdioSession(browser);
-    await cleanup(candidate.root);
-    rmSync(work, { recursive: true, force: true });
+    try {
+      if (browser) await service.cleanupWdioSession(browser);
+      await cleanup(candidate.root);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
   }
 }
 
