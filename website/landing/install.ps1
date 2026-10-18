@@ -2,8 +2,8 @@
 #
 #   irm https://artifactize.dev/install.ps1 | iex
 #
-# winget (lhj6102.Artifactize) and the Microsoft Store install the same commands; the
-# Store version is signed, so prefer it where Smart App Control is on. See
+# This script is the default Windows install method. winget (lhj6102.Artifactize)
+# and the Microsoft Store are in preparation and not available yet. See
 # https://artifactize.dev/docs/getting-started/install.html
 #
 # Downloads the release zip for Windows x64 over https, checks its SHA-256 against
@@ -128,7 +128,7 @@
                 if ($LASTEXITCODE -ne 0) { throw "--version exited with code $LASTEXITCODE" }
                 if ($output -ne "$command $version") { throw "--version printed '$output', not '$command $version'" }
             } catch {
-                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block this unsigned download. Install the signed Microsoft Store version instead: https://apps.microsoft.com/detail/9PB6W4LL165D"
+                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block this unsigned download. Do not bypass your application-control policy. The Microsoft Store channel is awaiting certification and is not available yet. See https://artifactize.dev/docs/getting-started/install.html"
             }
         }
 

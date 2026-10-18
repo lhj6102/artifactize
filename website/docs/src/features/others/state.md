@@ -10,6 +10,22 @@ One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
+
+The **Microsoft Store package** (not available yet; certification is pending) uses
+Windows' default AppData virtualization, with
+no Flexible Virtualization exclusions. New state under AppData is package-private:
+the Store version keeps its own Runs, sign-in and cache instead of sharing them
+with winget, zip or Cargo installs. Windows removes that private state on uninstall.
+The path above is the app's logical view, not necessarily its physical disk location.
+
+This is not a sandbox or a guarantee that existing unpackaged state is inaccessible.
+[Microsoft documents](https://learn.microsoft.com/en-us/windows/msix/desktop/flexible-virtualization#default-msix-behavior)
+that on Windows 10 1903 and later, reads can fall back to existing unvirtualized
+AppData files, and modifications to those existing files can affect the real files.
+Do not rely on side-by-side Store and unpackaged installs to isolate existing data.
+State explicitly placed outside AppData is not covered by AppData virtualization or
+the Store's private-state uninstall cleanup.
+
 `--state-dir PATH` moves the whole state, including
 private output directories under `PATH/runs`. Saved Runs stay readable after the
 original repository is removed. State/output inside the reviewed repository or
