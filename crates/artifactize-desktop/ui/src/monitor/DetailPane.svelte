@@ -243,8 +243,11 @@
     overflow: auto;
     padding-top: 8px;
   }
+  /* The neighbours, the eval list and the Artifact's own detail each keep their full
+     height and the tab scrolls as one, so no part is squeezed under the next. */
   .content.listing {
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: max-content;
   }
   .evals {
     list-style: none;
