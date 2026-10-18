@@ -159,7 +159,13 @@ async function record(browser: WebdriverIO.Browser, directory: string, done: Pro
     if (performance.now() > until) throw new Error("the app did not show the Run's final state");
     await take();
   }
+  // The last frame holds the longest: keep it only if the final state still shows after it.
   await take();
+  while (!await final()) {
+    if (performance.now() > until) throw new Error("the app did not keep the Run's final state");
+    frames.pop();
+    await take();
+  }
   return frames;
 }
 
@@ -285,7 +291,12 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
      * exactly `fails` red, and every edge drawn. */
     const ended = (id: string, fails: string[]) => browser.execute((id, fails, count, edges) => {
       const panel = document.querySelector(`[aria-label="Run ${id}"]`);
-      if (panel?.querySelectorAll(".svelte-flow__edge").length !== edges) return false;
+      // Every edge drawn as a visible line, not only present in the page.
+      const lines = [...(panel?.querySelectorAll<SVGPathElement>(".svelte-flow__edge path.svelte-flow__edge-path") ?? [])].filter((line) => {
+        const box = line.getBoundingClientRect();
+        return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
+      });
+      if (lines.length !== edges) return false;
       const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => [node.dataset.id ?? "", node.dataset.light ?? ""]);
       return (panel?.querySelector(".headline")?.textContent ?? "").includes("at Run end") && lights.length === count
         && lights.every(([, light]) => light !== "waiting" && light !== "active")

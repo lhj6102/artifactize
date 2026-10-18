@@ -47,9 +47,12 @@
         id: node.id,
         type: "artifact",
         position: positions.get(node.id)!,
-        // A fixed size: recoloured nodes keep their dimensions and never re-measure.
+        // A fixed size: recoloured nodes keep their dimensions and never re-measure. A node
+        // object without `measured` makes Svelte Flow drop its handle positions, which hides
+        // its edges until it is measured again; every recolour would make them flicker.
         width: NODE.width,
         height: NODE.height,
+        measured: { width: NODE.width, height: NODE.height },
         data: { name: node.name, light: node.light, open: node.id === opened },
         draggable: false,
         connectable: false,
