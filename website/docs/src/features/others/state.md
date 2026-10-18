@@ -77,9 +77,6 @@ A new 0.9 state reviews every executable eval once, Human sign-offs included,
 and then reuses as before. Reuse-key v2 matches no earlier records, including
 script fingerprints and team-store records. See
 [Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
-A schema-6 state from 0.9 is supported: it upgrades additively to schema 8 and
-passes [`doctor`](#doctor-models-and-prune)'s schema check. Unsupported earlier
-schemas and newer schemas remain hard errors.
 
 Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
 sign-in and the review store token, is refused when it lies inside a git work tree or

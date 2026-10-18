@@ -115,7 +115,7 @@ pub(super) fn in_snapshot_cached(
     facts.runs = retained;
     let mut statement = db.prepare_cached(
         "SELECT q.run_id,q.status,q.execution_id,coalesce(json_extract(e.data,'$.provenance.requestId'),json_extract(q.data,'$.provenance.requestId'),q.id)
-        FROM requests q LEFT JOIN executions e ON e.id=q.execution_id WHERE q.status IN ('RED','ERROR','WAITING_HUMAN') ORDER BY q.run_id,q.ordinal",
+        FROM requests q LEFT JOIN executions e ON e.id=q.execution_id WHERE q.status IN ('RED','ERROR','WAITING_HUMAN','DEFERRED') ORDER BY q.run_id,q.ordinal",
     )?;
     let attention = statement.query_map([], |row| {
         Ok((
@@ -131,7 +131,8 @@ pub(super) fn in_snapshot_cached(
             match status {
                 RequestStatus::Red => run.red += 1,
                 RequestStatus::Error => run.error += 1,
-                RequestStatus::WaitingHuman => run
+                // A deferred sign-off waits for a person as well, after its Run has ended too.
+                RequestStatus::WaitingHuman | RequestStatus::Deferred => run
                     .waiting
                     .push(execution.map_or(Signoff::Request(request), Signoff::Execution)),
                 _ => unreachable!("attention query filters states"),

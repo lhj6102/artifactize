@@ -19,12 +19,14 @@ to that program, not artifactize.
 `SELECTOR` is exactly one of positional `ARTIFACT` or qualified `ARTIFACT/EVAL`,
 `--eval ID`, `--evals CSV`,
 `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or `--all`.
+`--evals` and `--artifacts` may each be repeated; their values add up in order,
+duplicates dropped.
 `help [COMMAND]` and `-h`/`--help` print help. `-V`/`--version` prints the version
 on the root command and on `artifactize tools`.
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait` | 0 accepted; outcome with `--wait` |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait`; JSON-line events with `--watch` | 0 accepted; outcome with `--wait` or `--watch` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `mcp` | | [MCP stdio protocol](../agent-plugin/mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |

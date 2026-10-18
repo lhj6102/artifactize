@@ -14,11 +14,7 @@ printf 'WALK directory: %s\n' "$WALK"
 ```
 
 `mktemp -d` creates a new temporary folder outside the checkout; `WALK` holds its
-path. Print it now and keep the value:
-
-```sh
-printf '%s\n' "$WALK"
-```
+path, printed by the last line. Keep that value.
 
 Use a separate terminal for the server, Alice, Bob and the local CI demonstration.
 **In each new terminal**, run the following, replacing `COPIED_WALK_PATH` with the

@@ -102,7 +102,6 @@ def archive_case(area, evidence_root, records):
     records[area.name] = archive.as_posix()
     manifest = json.dumps({"version": 1, "cases": records}, indent=2)
     (evidence_root / "index.json").write_text(manifest)
-    (ROOT / "live-evidence.json").write_text(manifest)
     return archive
 
 

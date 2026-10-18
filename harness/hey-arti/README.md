@@ -24,22 +24,20 @@ python3 -I harness/hey-arti/driver.py check --artifactize <absolute-candidate-bi
 ```
 
 The first checks source runtime commands, private external copies and scripted
-edits, session readiness/stop, JSON envelopes, bounded UTF-8 reads, denied
-host/traversal/hidden paths and rejection of fake evidence as live. It also checks
-the monorepo preview against actual UI/API bytes, including an API edit. It starts
-no coding host/provider or Human review.
+edits, denied traversal and symlinked paths, the skill's TOML examples and the
+live-run lifecycle. It also checks the monorepo preview session against actual
+UI/API bytes, including an API edit. It starts no coding host/provider or Human
+review.
 
 The second additionally uses a deterministic fake builder and the **explicit
 candidate** for `config check`, graph/status JSON and one private session-bound
 `tools check --execute`. Cargo's `hey_arti` integration test supplies its candidate,
 so these checks run in ordinary CI. Fake declarations stay in private copies and
-never substitute for actual builder/reuse/Human-boundary evidence. Deterministic
-sessions use a deliberately absent evidence index; locally available live output
-cannot turn a source-driver assertion into a live success.
+never substitute for actual builder/reuse/Human-boundary evidence.
 
 The runtime eval runs the first form. Temporary outputs live in a named private
-subdirectory of the external TMPDIR, never loose files in its root. Readiness is a
-newline barrier and observation deadlines bound failures, not ordering.
+subdirectory of the external TMPDIR, never loose files in its root. Observation
+deadlines bound failures, not ordering.
 
 ## Manual host registration smoke
 
@@ -105,35 +103,9 @@ repository snapshots, candidate SHA-256/host/model identity, actual transcripts,
 state and post-host cancellation audit. A successful host exit alone is not a
 quality verdict; missing work and permission failures remain actual evidence.
 
-The archive's `index.json` names these external records. A machine-local ignored
-`live-evidence.json` points at the latest archive; it is not a declaration or
-fingerprint input. For a different checkout, supply the archive index through
-`HEY_ARTI_EVIDENCE_INDEX` in the author environment. Output repositories, state
-and transcripts never become reviewed source-fixture/fingerprint inputs.
+The archive's `index.json` names these external records. Output repositories,
+state and transcripts never become reviewed source-fixture/fingerprint inputs.
 
-## Review tool session and live evidence gate
-
-`index.artf` declares the `cases` start/stop session and bounded `case`/`source`
-command tools. They use the existing version-1 JSON envelope. Reviewers cannot
-choose host paths, launch builders or control session lifetime:
-
-- `case`: `{"case":"monorepo"}` returns agreed goals, original source files,
-  imported builder file names and actual live-evidence availability/identity.
-- `read`: `{"case":"monorepo","path":"builder-evidence.json","offset":0,"limit":16384}`
-  reads UTF-8 bytes with `next_offset`. Also inspect `evidence/transcript.jsonl`,
-  `evidence/live.json` and `evidence/cleanup.json`; reads are bounded. When the
-  record names a post-fix inspection follow-up, read its actual products under
-  `evidence/inspection-recheck/` as well; missing fields in an earlier candidate
-  are not promoted to success without that live follow-up.
-- `start`/`stop`: internal empty-argument operations, called only by artifactize.
-
-Before its readiness newline, start materializes private cases and imports the
-selected archive's actual repository/evidence snapshots. It excludes host config,
-credentials, symlinks and hidden inputs except CI workflow YAML, then remains
-alive on its private stop endpoint. Artifactize owns stop, joining and final
-session-directory cleanup. It starts no builders during an Agent review. Reads
-stay confined to that case, never arbitrary host paths. These trusted commands
-are not an OS sandbox.
-
-No eval judges the live archive: the skill's quality is judged by the skill's own
-evals against written guidance, and live builder runs remain a manual aid.
+No eval reads the live archive: the skill's quality is judged by the skill's own
+evals against written guidance, and live builder runs remain a manual aid for a
+person to read.

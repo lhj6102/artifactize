@@ -197,9 +197,9 @@ keeping outstanding claims. The quit prompt sets a form aside without dropping i
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
 one back. Esc never quits either UI.
 
-After a standalone submission the list returns if the current page of the search
-still lists requests; when that page is empty `review` exits, even if earlier pages
-still hold matching requests. Monitor keeps the completed result open in Detail. Both use the
+After a standalone submission the list returns. A page emptied by reviews goes
+back to the nearest earlier page that still lists requests; `review` exits only
+when no request matches the search any more. Monitor keeps the completed result open in Detail. Both use the
 same in-process lifecycle jobs; monitor does not launch the standalone command.
 
 ## Monitor
@@ -257,8 +257,9 @@ a level. Widen the terminal when the focused pane needs more room.
   running work, timing, budgets, executed/reused counts and full spent/saved
   usage in Detail.
 
-Scope badges and the header share `!N ✗N ◐N ?N` attention counters. These cover the
-catalog, not just the visible Run page. Followers of one Human execution count as
+Scope badges and the header share `!N ✗N ◐N ?N` attention counters: requests in
+ERROR and RED, Runs still running, and sign-offs waiting for a person, deferred ones
+included. These cover the catalog, not just the visible Run page. Followers of one Human execution count as
 one waiting sign-off.
 
 ### Artifacts and evals

@@ -5,32 +5,10 @@ tags = ["type:harness"]
 list = { builtin = "list" }
 read = { builtin = "read" }
 
-[views.agent_sessions.cases]
-start = { command = "python3", args = ["-I", "{arti-harness}/driver.py", "start"], execution_paths = ["harness/hey-arti/driver.py"] }
-stop = { command = "python3", args = ["-I", "{arti-harness}/driver.py", "stop"], execution_paths = ["harness/hey-arti/driver.py"] }
-
-[views.agent_tools.case]
-session = "cases"
-description = "Read one case's agreed goals, source list and actual live-builder evidence availability. Deterministic records are not live evidence."
-command = "python3"
-args = ["-I", "{arti-harness}/driver.py", "case"]
-protocol = "json"
-input_schema = { type = "object", properties = { case = { type = "string", enum = ["library-consumer", "docs-assets", "monorepo"] } }, required = ["case"], additionalProperties = false }
-execution_paths = ["harness/hey-arti/driver.py"]
-
-[views.agent_tools.source]
-session = "cases"
-description = "Read bounded UTF-8 source or builder declarations in one private fixture checkout, without exposing unrelated host files. Offsets are byte offsets; follow next_offset."
-command = "python3"
-args = ["-I", "{arti-harness}/driver.py", "read"]
-protocol = "json"
-input_schema = { type = "object", properties = { case = { type = "string", enum = ["library-consumer", "docs-assets", "monorepo"] }, path = { type = "string", minLength = 1, maxLength = 4096 }, offset = { type = "integer", minimum = 0 }, limit = { type = "integer", minimum = 1, maximum = 16384 } }, required = ["case", "path"], additionalProperties = false }
-execution_paths = ["harness/hey-arti/driver.py"]
-
 [evals.deterministic]
-title = "The fixture driver and tool-session checks pass without a live builder"
+title = "The fixture driver checks pass without a live builder"
 profile = { kind = "runtime", command = "python3", args = ["-I", "{arti-harness}/driver.py", "check"], timeout_ms = 180000 }
-payload.instruction = "Run deterministic fixture, JSON envelope, private materialization, bounded read, session cleanup and canonical TOML example checks for {hey-arti}. These tests do not prove live skill quality."
+payload.instruction = "Run deterministic fixture, private materialization, live-run cleanup and canonical TOML example checks for {hey-arti}. These tests do not prove live skill quality."
 
 [evals.follows-test-rules]
 title = "The Python driver tests and harness lifecycle follow the test rules"

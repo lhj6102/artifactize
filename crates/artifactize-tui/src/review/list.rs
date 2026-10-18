@@ -15,10 +15,17 @@ impl Review {
             self.complete(completion);
         }
         let found = match &self.filter {
-            Ok(query) => {
+            Ok(query) => loop {
                 let start = *self.pages.last().expect("a page");
-                search::search(&self.state, query, &self.reviewer, start).await?
-            }
+                let found = search::search(&self.state, query, &self.reviewer, start).await?;
+                // A later page emptied by reviews goes back to the nearest page that still
+                // lists matches; only an empty first page means nothing matches.
+                if found.requests.is_empty() && self.pages.len() > 1 {
+                    self.pages.pop();
+                    continue;
+                }
+                break found;
+            },
             Err(_) => search::Found::default(),
         };
         let selected = self.selected().map(|view| view.request.id.clone());

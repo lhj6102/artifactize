@@ -172,7 +172,7 @@ fn excerpt(
             let root =
                 crate::platform::canonicalize(&state.join("runs")).map_err(|e| e.to_string())?;
             let canonical = crate::platform::canonicalize(&path).map_err(|e| e.to_string())?;
-            if !canonical.starts_with(&root) {
+            if !crate::platform::is_within(&canonical, &root) {
                 return Err("Runtime log is outside saved Run output.".into());
             }
             let file = std::fs::File::open(&canonical).map_err(|e| e.to_string())?;
@@ -209,11 +209,21 @@ fn excerpt(
         };
         if let Some(text) = audit {
             let (lines, next_start) = select(Cursor::new(text.as_bytes()), query)?;
-            return Ok(LogExcerpt { stream, evidence: Evidence::SavedAudit,
-                note: match result.truncated.value() {
-                    Some(false) => "Full capture unavailable (older, remote or pruned); saved cleaned audit reports no truncation.",
-                    _ => "Full capture unavailable (older, remote or pruned); audit may contain only the first 128 KiB. Missing tail cannot be recovered.",
-                }.into(), lines, next_start });
+            let note = match result.truncated.value() {
+                Some(false) => {
+                    "Full capture unavailable (older, remote or pruned); saved cleaned audit reports no truncation."
+                }
+                _ => {
+                    "Full capture unavailable (older, remote or pruned); audit may contain only the first 128 KiB. Missing tail cannot be recovered."
+                }
+            };
+            return Ok(LogExcerpt {
+                stream,
+                evidence: Evidence::SavedAudit,
+                note: note.into(),
+                lines,
+                next_start,
+            });
         }
     }
     Ok(absent(

@@ -37,10 +37,15 @@ be folded into a group: Space or a click reveals or hides them. Runs appear
 newest first. Move past the list's first or last row to load newer or older
 pages, or use its newer/older arrow buttons.
 
-**Attention counters** read `!N ✗N ◐N ?N`: requests in ERROR, RED, running and
-waiting for a Human. The window header always shows the totals of the whole
-catalog, every repository (the ALL row), whatever scope, Run or page is selected;
-each Scope row shows its own totals, and each Run row its own request counts.
+Scope lists ALL, then each Git repository, whose row covers every worktree that
+shares its Git directory, with its worktrees below it; a folder outside Git is a
+workspace row of its own. Selecting a row shows the Runs of that scope.
+
+**Attention counters** read `!N ✗N ◐N ?N`: requests in ERROR and RED, Runs still
+running, and sign-offs waiting for a person, deferred ones included even after
+their Run ended. The window header always shows the totals of the whole catalog,
+every repository (the ALL row), whatever scope, Run or page is selected; each
+Scope row shows its own totals, and each Run row its own request counts.
 Followers of one Human execution count as one waiting sign-off.
 
 Selecting a Run updates its graph while Runs keeps the keyboard; Enter moves the
