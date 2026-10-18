@@ -211,8 +211,9 @@ schema ([the shapes it may use](../features/declarations.md#human-result-schemas
 a text box, a number box, true/false, a choice, a list of text with **+ Add** and
 ✕ per item, or repeated groups of fields with **+ Add** for a group and ✕ per
 group (one empty group always stays to type in). Constants are filled in and not
-shown; `*` marks a required field and an empty optional one says *Optional* in
-grey. Tab moves between controls. Ctrl+G/Ctrl+R switches verdicts. Enter in a field
+shown; `*` marks a required field. An empty optional text or number field, a text
+list item included, says *Optional* in grey; an optional yes/no or choice shows `–`
+while unset. Tab moves between controls. Ctrl+G/Ctrl+R switches verdicts. Enter in a field
 does not submit; Ctrl+S or activating the **Submit** button submits, including
 Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
@@ -232,8 +233,10 @@ The verdict is already recorded; retry publication with Settings' **Push results
 
 ### Leave and quit
 
-`q` quits outside a text field, except while Human Detail is editing or busy:
-leave or cancel that work first. Closing the window also starts quitting. If
+`q` quits outside a text field, except while the keyboard is in a Human Detail that
+is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
+such as after closing Commands, `q` starts quitting even while that review stays
+open. Closing the window also starts quitting. If
 this window still holds unsubmitted Human claims, choose **Stay** (Esc),
 **Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a claim leaves it
 held for this reviewer; it is not a verdict.

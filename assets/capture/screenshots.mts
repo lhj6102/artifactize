@@ -209,6 +209,9 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$('[aria-label="Runs"] [role="option"]').waitForExist({ timeout: WAIT });
     await app.$('[aria-label="Runs"] [role="option"]').click();
     await graphShown(app, "a:release", WAIT);
+    // core → cli, core → release and cli → docs.
+    await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
+      { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges" });
     await shot("monitor.png");
 
     // B. cli's Detail on its Artifact tab: cli between the core it uses and the docs that use
@@ -225,6 +228,8 @@ async function capture(output: string, work: string): Promise<void> {
     await shot("detail.png");
 
     // C. The release sign-off in Review: claimed, its notes tool run, the GREEN form open.
+    // Review opens on its default search, kind:human status:waiting_human, which includes the
+    // deferred sign-off that verify --defer-human left (core's review/search.rs says so).
     await app.keys(["Control", "2"]);
     await app.$('[aria-label="Requests"] [role="option"]').waitForExist({ timeout: WAIT });
     await app.$('[aria-label="Requests"] [role="option"]').click();

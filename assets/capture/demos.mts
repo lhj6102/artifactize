@@ -219,6 +219,9 @@ async function launch(service: any, app: string, args: string[], env: NodeJS.Pro
   return browser;
 }
 
+/** Demo A's input → consumer edges, one per Artifact a declaration uses. */
+const EDGES = (): number => LOOP.reduce((count, artifact) => count + artifact.uses.length, 0);
+
 /** Demo A's project. Each Artifact's evals run check.mjs on it: the check takes its seconds,
  * then fails while the Artifact's code.txt contains BUG. */
 const LOOP: { name: string; uses: string[]; evals: [string, number][]; bug?: boolean }[] = [
@@ -269,23 +272,25 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
     const first = '[aria-label="Runs"] [data-index="0"]';
     /** The Run `id`'s panel shows its own graph, not the one drawn before it was opened: a
      * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
-    const opened = (id: string) => browser.execute((id) => {
+    const opened = (id: string) => browser.execute((id, edges) => {
       const canvas = document.querySelector(`[aria-label="Run ${id}"] .svelte-flow`);
       const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
       const box = node?.getBoundingClientRect();
       const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
       return !!canvas && (canvas !== before?.canvas || before.run === `Run ${id}`) && !!box && box.width > 0
+        && canvas.querySelectorAll(".svelte-flow__edge").length === edges
         && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
-    }, id);
-    /** The Run `id` ended and its graph is lit as it ended: every Artifact settled, and exactly
-     * `fails` red. */
-    const ended = (id: string, fails: string[]) => browser.execute((id, fails, count) => {
+    }, id, EDGES());
+    /** The Run `id` ended and its graph is drawn and lit as it ended: every Artifact settled,
+     * exactly `fails` red, and every edge drawn. */
+    const ended = (id: string, fails: string[]) => browser.execute((id, fails, count, edges) => {
       const panel = document.querySelector(`[aria-label="Run ${id}"]`);
+      if (panel?.querySelectorAll(".svelte-flow__edge").length !== edges) return false;
       const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => [node.dataset.id ?? "", node.dataset.light ?? ""]);
       return (panel?.querySelector(".headline")?.textContent ?? "").includes("at Run end") && lights.length === count
         && lights.every(([, light]) => light !== "waiting" && light !== "active")
         && lights.filter(([, light]) => light === "red").map(([node]) => node.slice(2)).sort().join() === [...fails].sort().join();
-    }, id, fails, LOOP.length);
+    }, id, fails, LOOP.length, EDGES());
     for (const [index, fails] of FAILS.entries()) {
       const frames = join(work, `loop-${index + 1}`);
       mkdirSync(frames);
