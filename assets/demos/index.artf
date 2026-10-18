@@ -1,0 +1,10 @@
+name = "demos"
+
+[evals.current]
+title = "The demos were recorded from the current app and script"
+profile = { kind = "runtime", command = "node", args = ["{demos-script}", "--check"] }
+payload.instruction = "Compare the hash {demos} recorded in version.json with the current fingerprints of {desktop} and {demos-script}; a difference means the demos are stale and the script runs again."
+
+[views.agent_tools]
+list = { builtin = "list" }
+view_image = { builtin = "view_image" }

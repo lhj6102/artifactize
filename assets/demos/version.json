@@ -1,0 +1,7 @@
+{
+  "inputs": {
+    "desktop": "artifactsum:be439d1a672945a40547511b62a6dec97ab3ac5793011e3728fafbb28f4a4176",
+    "demos-script": "artifactsum:8d95aa335282c45eae8ef4033027a74421accb66c5547802258418749eda8559"
+  },
+  "hash": "2da42983b025d11356282369e2b3f7a4fa33f09fb5288d7e03a7306352eb1ae5"
+}
