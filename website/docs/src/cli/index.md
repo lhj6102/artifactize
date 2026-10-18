@@ -82,7 +82,9 @@ Current-directory tools (`tools read`, `list`, `glob`, `grep`, `section`, `help`
 `open`) retain the shared tool runner's exit 1 and unchanged diagnostics, even with
 `--json`. A Human tool that `request tool` ran and that failed prints its normal
 result on stdout (rendered content, or `{"content":[…],"isError":true}` with
-`--json`) and exits 2. Usage errors of both still follow the generic rule. There is no
+`--json`) and exits 2. `tools check` reports declaration, preflight, execution and
+cleanup failures, including a failed `--execute` call, in its diagnostic report
+and exits 1. Usage errors of all three still follow the generic rule. There is no
 `plan`, `history` or `--full`.
 
 List options `--reuse-only` and `server token add --scopes` may be repeated;
