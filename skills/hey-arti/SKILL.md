@@ -130,8 +130,8 @@ never a way around a required person.
   existing reviews.
 
 **A reviewer needs to see the running application**: declare a tool session for the
-Artifact (section 4's starter) so artifactize starts and stops it for each review,
-and give the reviewer read-only tools that look at it.
+Artifact (section 4's starter) so artifactize starts it on the first bound tool call
+and stops it at review end. Give the reviewer read-only tools that look at it.
 
 **Working as a team and in CI**: set up the shared review store following
 [Working as a team](https://artifactize.dev/docs/features/team/index.html); keep
@@ -249,7 +249,8 @@ The reviewer reads the requirements through `read_spec`: tools are published as
 
 When a reviewer must inspect something running, add a session and a tool bound to
 it, with the program inside the Artifact so its fingerprint covers it; artifactize
-starts, stops and cleans it up ([Agent tools and sessions](https://artifactize.dev/docs/features/tools/agent.html)):
+starts it on the first bound tool call, then stops and cleans it up at review end
+([Agent tools and sessions](https://artifactize.dev/docs/features/tools/agent.html)):
 
 ```toml
 [views.agent_sessions.preview]

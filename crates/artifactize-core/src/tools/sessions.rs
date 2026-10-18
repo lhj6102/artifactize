@@ -3,7 +3,12 @@
 
 use std::{collections::BTreeMap, ffi::OsString, io, path::Path, time::Duration};
 
-use tokio::{io::AsyncReadExt, sync::oneshot, task::JoinHandle, time::Instant};
+use tokio::{
+    io::AsyncReadExt,
+    sync::{Mutex, oneshot},
+    task::JoinHandle,
+    time::Instant,
+};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 mod journal;
@@ -27,28 +32,144 @@ const LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(30);
 const DRAIN_BYTES: usize = 8192;
 
 #[derive(Default)]
-pub struct Sessions(BTreeMap<(ArtifactName, ToolOperationName), Session>);
+pub struct Sessions(BTreeMap<(ArtifactName, ToolOperationName), Mutex<Session>>);
 
-struct Session {
-    environment: BTreeMap<OsString, OsString>,
+enum Session {
+    Pending(Box<Start>),
+    Starting {
+        running: Running,
+        ready: oneshot::Receiver<Result<BTreeMap<OsString, OsString>, String>>,
+    },
+    Ready {
+        running: Running,
+        environment: BTreeMap<OsString, OsString>,
+    },
+    Failed {
+        running: Option<Running>,
+        error: String,
+    },
+}
+
+struct Start {
+    commands: Result<(Invocation, Invocation), String>,
+    workspace: std::path::PathBuf,
+    state: std::path::PathBuf,
+    cancellation: CancellationToken,
+}
+
+struct Running {
     owner: std::sync::Arc<Ownership>,
     stop: DropGuard,
     finished: JoinHandle<Result<(), String>>,
 }
 
+impl Start {
+    async fn spawn(self) -> Result<Session, String> {
+        let (start, stop) = self.commands?;
+        let root = workspace::prepare_directory(&self.state.join("tool-sessions"), &self.workspace)
+            .map_err(|error| error.to_string())?;
+        let (directory, lease) =
+            crate::task::joined(tokio::task::spawn_blocking(move || allocate(&root)).await)
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?;
+        let stop_token = CancellationToken::new();
+        let guard = stop_token.clone().drop_guard();
+        let owner = Ownership::new(directory.path(), lease);
+        let (send, ready) = oneshot::channel();
+        let finished = executor()
+            .map_err(|error| error.to_string())?
+            .spawn(supervise(
+                start,
+                stop,
+                self.workspace,
+                directory,
+                self.cancellation,
+                stop_token,
+                owner.clone(),
+                send,
+            ));
+        Ok(Session::Starting {
+            running: Running {
+                owner,
+                stop: guard,
+                finished,
+            },
+            ready,
+        })
+    }
+}
+
+impl Session {
+    fn failed(error: String) -> Self {
+        Self::Failed {
+            running: None,
+            error,
+        }
+    }
+
+    fn running(self) -> Option<Running> {
+        match self {
+            Self::Pending(_) => None,
+            Self::Starting { running, .. } | Self::Ready { running, .. } => Some(running),
+            Self::Failed { running, .. } => running,
+        }
+    }
+}
+
 impl Sessions {
-    pub(crate) fn call(&self, name: &(ArtifactName, ToolOperationName)) -> Option<ownership::Call> {
-        let session = self.0.get(name)?;
-        session.owner.call(&session.environment)
+    pub(crate) async fn call(
+        &self,
+        name: &(ArtifactName, ToolOperationName),
+    ) -> Result<ownership::Call, String> {
+        let ended = || format!("The tool session `{}` ended.", name.1);
+        let session = self.0.get(name).ok_or_else(ended)?;
+        // Keep startup and readiness serialized, including if tools later allow parallel calls.
+        let mut session = session.lock().await;
+        if matches!(*session, Session::Pending(_)) {
+            let Session::Pending(start) =
+                std::mem::replace(&mut *session, Session::failed("start was dropped".into()))
+            else {
+                unreachable!()
+            };
+            *session = start.spawn().await.unwrap_or_else(Session::failed);
+        }
+        if let Session::Starting { ready, .. } = &mut *session {
+            // Store the supervisor before waiting: a dropped call still leaves close
+            // owning its stop guard and join handle, even before readiness.
+            let ready = ready.await.unwrap_or_else(|error| Err(error.to_string()));
+            let running =
+                std::mem::replace(&mut *session, Session::failed("start was dropped".into()))
+                    .running()
+                    .expect("starting session owns its supervisor");
+            *session = match ready {
+                Ok(environment) => Session::Ready {
+                    running,
+                    environment,
+                },
+                Err(error) => Session::Failed {
+                    running: Some(running),
+                    error,
+                },
+            };
+        }
+        match &*session {
+            Session::Ready {
+                running,
+                environment,
+            } => running.owner.call(environment).ok_or_else(ended),
+            Session::Failed { error, .. } => Err(format!("Tool session {}: {error}", name.1)),
+            _ => unreachable!("session startup resolved"),
+        }
     }
 
     pub async fn close(self) -> Result<(), String> {
-        let sessions: Vec<_> = self.0.into_values().collect();
-        let finished: Vec<_> = sessions
-            .into_iter()
-            .map(|session| {
-                drop(session.stop);
-                session.finished
+        let finished: Vec<_> = self
+            .0
+            .into_values()
+            .filter_map(|session| session.into_inner().running())
+            .map(|running| {
+                drop(running.stop);
+                running.finished
             })
             .collect();
         let mut result = Ok(());
@@ -65,112 +186,44 @@ impl Sessions {
 }
 
 impl Registry<'_> {
-    /// Start only referenced sessions, or the selected diagnostic tool's session.
-    /// Listing and static checks never call this function.
-    pub async fn start_sessions(
+    /// Register lazy sessions for admitted tools, or the selected diagnostic tool.
+    /// No process or session directory is created until a bound call.
+    pub fn sessions(
         &self,
         state: &Path,
         selected: Option<&str>,
         cancellation: CancellationToken,
-    ) -> Result<Sessions, String> {
-        let required = self.tools.iter().any(|(name, tool)| {
-            selected.is_none_or(|selected| name == selected)
-                && matches!(tool.declaration, AgentTool::Command(command) if command.session.is_some())
-        });
-        if !required {
-            return Ok(Sessions::default());
-        }
-        let root = workspace::prepare_directory(&state.join("tool-sessions"), &self.config.root)
-            .map_err(|error| error.to_string())?;
+    ) -> Sessions {
         let mut sessions = Sessions::default();
-        let result = async {
-            for (tool_name, tool) in &self.tools {
-                if selected.is_some_and(|selected| tool_name != selected) {
-                    continue;
-                }
-                let AgentTool::Command(tool_declaration) = tool.declaration else {
-                    continue;
-                };
-                let Some(name) = &tool_declaration.session else {
-                    continue;
-                };
-                let owner = &tool.definition.artifact_id;
-                let key = session_key(name, owner);
-                if sessions.0.contains_key(&key) {
-                    continue;
-                }
-                let declaration = &self.scope.artifacts[owner].views.agent_sessions[name];
-                let start = self.prepare_session(owner, &declaration.start)?;
-                let stop = self.prepare_session(owner, &declaration.stop)?;
-                let workspace = self.config.root.clone();
-                let root = root.clone();
-                let (directory, lease) =
-                    crate::task::joined(tokio::task::spawn_blocking(move || allocate(&root)).await)
-                        .map_err(|error| error.to_string())?
-                        .map_err(|error| error.to_string())?;
-                let stop_token = CancellationToken::new();
-                let guard = stop_token.clone().drop_guard();
-                let owner = Ownership::new(directory.path(), lease);
-                let (send, receive) = oneshot::channel();
-                let finished = executor()
-                    .map_err(|error| error.to_string())?
-                    .spawn(supervise(
-                        start,
-                        stop,
-                        workspace,
-                        directory,
-                        cancellation.clone(),
-                        stop_token,
-                        owner.clone(),
-                        send,
-                    ));
-                let ready = match receive.await {
-                    Ok(ready) => ready,
-                    Err(error) => {
-                        // The supervisor ended without reporting; a panic in it continues here.
-                        crate::task::joined(finished.await)
-                            .map_err(|error| error.to_string())??;
-                        return Err(error.to_string());
-                    }
-                };
-                match ready {
-                    Ok(environment) => {
-                        sessions.0.insert(
-                            key,
-                            Session {
-                                environment,
-                                owner,
-                                stop: guard,
-                                finished,
-                            },
-                        );
-                    }
-                    Err(error) => {
-                        drop(guard);
-                        let cleaned = crate::task::joined(finished.await)
-                            .map_err(|error| error.to_string())
-                            .and_then(|result| result);
-                        return Err(format!(
-                            "Tool session {name}: {}",
-                            cleanup_message(error, cleaned)
-                        ));
-                    }
-                }
+        for (tool_name, tool) in &self.tools {
+            if selected.is_some_and(|selected| tool_name != selected) {
+                continue;
             }
-            Ok(())
+            let AgentTool::Command(tool_declaration) = tool.declaration else {
+                continue;
+            };
+            let Some(name) = &tool_declaration.session else {
+                continue;
+            };
+            let owner = &tool.definition.artifact_id;
+            let key = session_key(name, owner);
+            sessions.0.entry(key).or_insert_with(|| {
+                let declaration = &self.scope.artifacts[owner].views.agent_sessions[name];
+                let commands = self
+                    .prepare_session(owner, &declaration.start)
+                    .and_then(|start| {
+                        self.prepare_session(owner, &declaration.stop)
+                            .map(|stop| (start, stop))
+                    });
+                Mutex::new(Session::Pending(Box::new(Start {
+                    commands,
+                    workspace: self.config.root.clone(),
+                    state: state.to_owned(),
+                    cancellation: cancellation.clone(),
+                })))
+            });
         }
-        .await;
-        match result {
-            Ok(()) => Ok(sessions),
-            Err(error) => Err(cleanup_message(error, sessions.close().await)),
-        }
-    }
-}
-
-fn cleanup_message(error: String, cleanup: Result<(), String>) -> String {
-    match cleanup {
-        Err(cleanup) if cleanup != error => format!("{error}; {cleanup}"),
-        _ => error,
+        sessions
     }
 }
 
@@ -236,8 +289,8 @@ async fn supervise_inner(
     let (command, input) = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
-            let _ = send.send(Err(error.clone()));
-            return Cleanup::error(error);
+            let _ = send.send(Err(error));
+            return Cleanup::default();
         }
     };
     let environment = command.env.clone();
@@ -255,12 +308,9 @@ async fn supervise_inner(
     let mut child = match child {
         Ok(child) => child,
         Err(error) => {
-            let message = error.to_string();
-            let _ = send.send(Err(message.clone()));
+            let _ = send.send(Err(error.to_string()));
             record.after_run::<()>(&Err(error));
-            let mut cleanup = record.finish();
-            cleanup.merge(Cleanup::error(message));
-            return cleanup;
+            return record.finish();
         }
     };
     let mut stdout = child.stdout().take().expect("stdout is piped");

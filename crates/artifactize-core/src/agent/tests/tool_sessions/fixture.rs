@@ -103,12 +103,26 @@ impl OwnedFixture {
         }
     }
 
-    pub fn start_sessions(
+    pub fn sessions(&self, cancellation: CancellationToken) -> OwnedSessions {
+        self.owner
+            .cancellations
+            .lock()
+            .unwrap()
+            .push(cancellation.clone());
+        let registry = Registry::new(&self.config, &self.config.evals[0].id).unwrap();
+        OwnedSessions {
+            sessions: Some(registry.sessions(&self.state(), None, cancellation)),
+            owner: self.owner.clone(),
+        }
+    }
+
+    pub fn ready_sessions(
         &self,
         cancellation: CancellationToken,
     ) -> Pin<Box<dyn Future<Output = Result<OwnedSessions, String>> + Send>> {
         let config = read_workspace_config(&self.config.root).unwrap();
         let state = self.state();
+        let output = self.output.clone();
         let owner = self.owner.clone();
         owner
             .cancellations
@@ -117,11 +131,24 @@ impl OwnedFixture {
             .push(cancellation.clone());
         let (send, receive) = oneshot::channel();
         let startup_owner = owner.clone();
-        // Startup itself stays owned if the readiness waiter is dropped before
-        // Registry::start_sessions can return its admitted session collection.
+        // The bound probe and its close stay owned if the readiness waiter is dropped.
         let started = owner.spawn(async move {
             let result = match Registry::new(&config, &config.evals[0].id) {
-                Ok(registry) => registry.start_sessions(&state, None, cancellation).await,
+                Ok(registry) => {
+                    let sessions = registry.sessions(&state, None, cancellation.clone());
+                    let result = registry
+                        .with_session_scope(&sessions)
+                        .unwrap()
+                        .call("probe_a", serde_json::json!({}), &output, cancellation)
+                        .await;
+                    if let crate::tools::ToolResult::Error(error) = result {
+                        let message = error.as_str().to_owned();
+                        sessions.close().await.unwrap();
+                        Err(message)
+                    } else {
+                        Ok(sessions)
+                    }
+                }
                 Err(error) => Err(error),
             }
             .map(|sessions| OwnedSessions {

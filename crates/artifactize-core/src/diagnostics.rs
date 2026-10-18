@@ -343,9 +343,7 @@ async fn execute_tool(
                 .tempdir_in(root)
                 .map_err(|e| e.to_string())?;
             let args = options.args.clone().unwrap_or(json!({}));
-            let sessions = registry
-                .start_sessions(&state, Some(name), cancellation.clone())
-                .await?;
+            let sessions = registry.sessions(&state, Some(name), cancellation.clone());
             let registry = registry.with_session_scope(&sessions)?;
             let result = registry
                 .call(name, args, directory.path(), cancellation)

@@ -140,7 +140,8 @@ graph`, `artifactize status --all` and `artifactize tools check`.
 When a reviewer must inspect something running, the skill shows a session declared
 with `views.agent_sessions.<name>.start`/`stop` and a command tool bound with
 `session = "<name>"`, its program inside the Artifact so the fingerprint covers it.
-artifactize starts, stops and cleans up sessions; there are no lifetime or port
+artifactize starts sessions on the first bound tool call, then stops and cleans
+them up at review end; there are no lifetime or port
 options, and `execution_paths` record provenance, not reuse inputs. Declared
 commands are trusted local programs, **not an OS sandbox**. See
 [Tool sessions](../features/tools/agent.md#tool-sessions).
