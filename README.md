@@ -9,7 +9,7 @@ Artifactize brings human and agent work together and keeps your project consiste
 **Who is it for?**
 
 - People who want to build together with others, reviewing efficiently and developing in modules.
-- People who want to trust AI-made changes without overseeing every step.
+- People who want to trust changes made by AI agents without overseeing every step.
 - People who want code, documents, images, and running applications to stay consistent as the project grows.
 
 <p align="center">

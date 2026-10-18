@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Build together on an Artifact Graph.</title>
-<meta name="description" content="Build together on an Artifact Graph. Split a project into Artifacts with their own evals: every teammate, human or agent, works their own way, and integration reuses every review that still holds.">
+<meta name="description" content="Build together on an Artifact Graph. Split a project into Artifacts, pieces with their own checks: every teammate, human or AI agent, works their own way, and integration reuses every review that still holds.">
 <link rel="canonical" href="https://artifactize.dev/">
 <meta name="theme-color" content="#090B0F">
 <meta name="color-scheme" content="dark light">
@@ -12,7 +12,7 @@
 <meta property="og:site_name" content="Artifactize">
 <meta property="og:url" content="https://artifactize.dev/">
 <meta property="og:title" content="Build together on an Artifact Graph.">
-<meta property="og:description" content="Build together on an Artifact Graph. Every part carries its own evals, and integration never pays for the same review twice.">
+<meta property="og:description" content="Build together on an Artifact Graph. Every part carries its own checks, and integration never pays for the same review twice.">
 <meta property="og:image" content="https://artifactize.dev/media/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -77,9 +77,9 @@
       <p class="logline">Artifactize brings human and agent work together and keeps your project consistent.</p>
       <div class="audience" aria-labelledby="audience-title">
         <h2 id="audience-title">Who is it for?</h2>
-        <ul>
+        <ul class="audience-list">
           <li>People who want to build together with others, reviewing efficiently and developing in modules.</li>
-          <li>People who want to trust AI-made changes without overseeing every step.</li>
+          <li>People who want to trust changes made by AI agents without overseeing every step.</li>
           <li>People who want code, documents, images, and running applications to stay consistent as the project grows.</li>
         </ul>
       </div>
@@ -90,7 +90,7 @@
       <figure class="hero-demo">
         <img src="/media/review-loop.gif" width="1280" height="720" loading="eager" decoding="async"
              alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes.">
-        <figcaption>Real recording of the desktop app preview: four Runs of an example, eight times faster.</figcaption>
+        <figcaption>Each box is an Artifact, a piece of the project with its own checks; the lines between them make up the Artifact Graph. Real recording of the desktop app preview: four Runs of an example, eight times faster.</figcaption>
       </figure>
       <a class="scroll-cue" href="#story">Watch a project grow
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v10M3.5 8.5 8 13l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -98,20 +98,10 @@
     </div>
   </section>
 
-  <section class="band why" id="why" aria-labelledby="why-title">
-    <div class="wrap why-inner">
-      <p class="kicker">Why I built it</p>
-      <h2 id="why-title">Solo got fast with AI. Teamwork should too.</h2>
-      <p>Building games with AI made solo work faster. I wanted teammates and their assistants to work their own way too, without repeating reviews every time we brought our work together.</p>
-    </div>
-  </section>
-
   <section class="story" id="story" aria-labelledby="story-title" data-story>
     <div class="wrap story-head">
       <p class="kicker">The story</p>
-      <h2 id="story-title">Grow a project together, and watch what gets reviewed again.</h2>
-      <p>Follow an illustrated example from an idea to a team project. Each piece is called an Artifact, each check is an eval, and the graph shows how they connect. A card’s short code identifies its contents: when the code changes, earlier checks may need to run again.</p>
-      <p>The drawing uses short names: <code>src</code> is the project’s code, <code>api</code> is the part other programs talk to, and <code>cli</code> is the commands people type. <code>CI</code> runs automatic checks before publishing; its “read-only token” gives it permission to read review results, not submit them.</p>
+      <h2 id="story-title">Watch a project grow.</h2>
     </div>
 
     <div class="story-grid">
