@@ -113,6 +113,7 @@ try {
         [IO.File]::WriteAllText((Join-Path $probe 'index.artf'), @'
 name = "virtualization-probe"
 [evals.appdata]
+title = "Measure packaged child AppData writes"
 profile = { kind = "runtime", command = "powershell.exe", args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "write-appdata.ps1"] }
 [evals.appdata.payload]
 instruction = "Write a new AppData file to measure packaged child-process redirection."
