@@ -92,7 +92,8 @@ only attached process and both stdin and stdout are consoles. It never pauses
 with arguments, from an existing terminal, or with redirected input/output. Linux
 and macOS retain the ordinary no-argument help and immediate exit.
 
-The Microsoft Store package has one visible **Artifactize** entry and one command
+The prepared Microsoft Store package (not available yet; certification is pending)
+has one visible **Artifactize** entry and one command
 alias, `artifactize`; its tools are available as `artifactize tools`. Non-Store
 channels also ship the standalone `artifactize-tools` command.
 
@@ -100,5 +101,8 @@ channels also ship the standalone `artifactize-tools` command.
 
 The state directory is `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`,
 else `%LOCALAPPDATA%\artifactize` on Windows, else `~/.local/state/artifactize` (also
-on macOS). On Windows, every install for one user shares it, the Microsoft Store app
-included; WSL keeps its own. See [State](state.md#state).
+on macOS). Unpackaged Windows installs for one user share that default. The Store
+version uses Windows' default AppData virtualization and keeps its own package-private
+Runs, sign-in and cache; it does not use the unpackaged installs' shared state as its
+storage contract. Windows removes the private state on uninstall. WSL keeps its own
+Linux state. See [State](state.md#state), including the Windows overlay caveat.

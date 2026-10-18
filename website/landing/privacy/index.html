@@ -50,7 +50,7 @@
 
 <main id="main" class="wrap privacy">
   <h1>Privacy policy</h1>
-  <p class="effective">Effective date: <time datetime="2026-10-11">2026-10-11</time></p>
+  <p class="effective">Effective date: <time datetime="2026-10-18">2026-10-18</time></p>
   <p>Artifactize is an open-source command-line tool, licensed under <a href="https://github.com/lhj6102/artifactize/blob/main/LICENSE">Apache-2.0</a> and published by Hyukjin LIM (<a href="https://github.com/lhj6102">lhj6102</a>). For privacy questions, <a href="https://github.com/lhj6102/artifactize/issues">contact the publisher through GitHub issues</a>. Do not post secrets in public issues.</p>
 
   <h2>The publisher collects nothing</h2>
@@ -59,7 +59,7 @@
   <h2>Local data</h2>
   <p>Run history, review results, reuse caches, captured output and saved Agent conversations stay in your local state directory unless you choose to share them. Codex sign-in tokens and shared review server credentials are stored there too.</p>
   <ul>
-    <li>Windows: <code>%LOCALAPPDATA%\artifactize</code> by default.</li>
+    <li>Windows unpackaged installs: <code>%LOCALAPPDATA%\artifactize</code> by default. The prepared Microsoft Store package (not available yet; certification is pending) uses Windows' default AppData virtualization and keeps new state in a package-private location, not shared Runs, sign-in or cache with other install methods. Windows may still read or modify existing unvirtualized AppData files; see the <a href="/docs/features/others/state.html#state">Windows overlay caveat</a>.</li>
     <li>Linux and macOS: <code>$XDG_STATE_HOME/artifactize</code> when set, otherwise <code>~/.local/state/artifactize</code>.</li>
   </ul>
   <p><code>--state-dir</code> or <code>ARTIFACTIZE_STATE_HOME</code> overrides the location; <code>XDG_STATE_HOME</code> also takes precedence on Windows. OpenAI and Anthropic API keys are read from <code>OPENAI_API_KEY</code> and <code>ANTHROPIC_API_KEY</code>, not saved by Artifactize. An optional <code>ARTIFACTIZE_CODEX_AUTH_FILE</code> points to an existing sign-in file that Artifactize only reads.</p>
@@ -73,7 +73,7 @@
   <p>If you run or connect to <code>artifactize server</code>, verdicts and review metadata are shared with that server, operated by you or your team. The default summary includes owner fields, fingerprints, declared profiles, reviewer/producer names and timestamps; choosing full sharing also sends captured output. See <a href="/docs/features/team/index.html">shared review server details</a>.</p>
 
   <h2>Removing data</h2>
-  <p>Delete the state directory printed by <code>artifactize doctor</code> to remove local history, caches and stored sign-ins. API keys in your environment and an external Codex auth file are separate. Uninstalling through winget or the Microsoft Store, or deleting extracted zip binaries, removes the programs but keeps the state directory. See <a href="/docs/getting-started/install.html#cleanup-and-uninstall">cleanup and uninstall</a>.</p>
+  <p>Delete the state directory printed by <code>artifactize doctor</code> to remove local history, caches and stored sign-ins. API keys in your environment and an external Codex auth file are separate. Removing an unpackaged install keeps its state directory. Uninstalling the Store package removes its package-private state. Project files, exported files, files written by user-configured commands outside the package-private view, existing unvirtualized AppData files and state explicitly placed outside AppData are not removed with the package; delete those separately if no longer needed. See <a href="/docs/getting-started/install.html#cleanup-and-uninstall">cleanup and uninstall</a>.</p>
 
   <h2>Changes</h2>
   <p>This policy is <a href="https://github.com/lhj6102/artifactize/blob/main/website/landing/privacy/index.html">versioned in the public repository</a>. Changes will update the effective date above.</p>
