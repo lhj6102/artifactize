@@ -46,7 +46,9 @@ const WAIT = 60000;
 /** Demo A plays back this many times faster than it ran. */
 const SPEED = 8;
 /** The GIFs' width, frame rate and palette; one step of demo B stays this long. */
-const GIF = { width: 1280, fps: 10, colours: 128, step: 1.6, hold: 1.5 };
+const GIF = { width: 1280, fps: 25, colours: 128, step: 1.6, hold: 1.5 };
+/** The progress bar: its height in GIF pixels and its colour, the introduction video's. */
+const PROGRESS = { height: 4, colour: "0x3EE08F", track: "0xE3E8EE" };
 
 /** A virtual display of its own: Xvfb on the first free display number from a random start.
  * A number another server holds makes Xvfb exit at once, so captures running at the same
@@ -175,7 +177,8 @@ function drawn(text: string): string {
 }
 
 /** Encode `segments` into one GIF at `gif`: frames keep their recorded spacing divided by the
- * segment's speed, and each caption stays at `at`, the graph's top-left corner, for its segment. */
+ * segment's speed, and each caption stays at `at`, the graph's top-left corner, for its segment.
+ * A green bar along the bottom fills as the GIF plays, so it reads as a recording, not a still. */
 function encode(segments: Segment[], gif: string, work: string, at: { x: number; y: number }): void {
   const list: string[] = [];
   const captions: string[] = [];
@@ -194,9 +197,26 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   list.push(`file '${segments.at(-1)!.frames.at(-1)!.file}'`);
   const concat = join(work, `${basename(gif)}.txt`);
   writeFileSync(concat, `${list.join("\n")}\n`);
+  // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line.
+  const { height, colour, track } = PROGRESS;
+  // The last GIF frame starts one frame before the end; the bar is full there.
+  const end = clock - 1 / GIF.fps;
+  const progress = `drawbox=x=0:y=ih-${height}:w=iw:h=${height}:color=${track}:t=fill[track];` +
+    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min(t/${end.toFixed(3)},1)':y=H-h:shortest=1`;
+  // The repeated last entry would otherwise play its hold a second time: end at the planned length.
+  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=duration=${clock.toFixed(3)},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
+  // The bar's few pixels would not earn its colours a palette entry: generate the palette with
+  // two entries to spare, then set the last two to the bar and its track exactly.
+  const generated = join(work, `${basename(gif)}.palette.png`);
+  const palette = join(work, `${basename(gif)}.pinned.png`);
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat,
-    "-filter_complex", `[0:v]${captions.join(",")},fps=${GIF.fps},scale=${GIF.width}:-1:flags=lanczos,split[a][b];` +
-    `[a]palettegen=max_colors=${GIF.colours}:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
+    "-filter_complex", `${frames},palettegen=max_colors=${GIF.colours - 2}:stats_mode=diff:reserve_transparent=0`,
+    "-update", "1", generated]);
+  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", generated, "-vf",
+    `drawbox=x=14:y=15:w=1:h=1:color=${colour}:t=fill,drawbox=x=15:y=15:w=1:h=1:color=${track}:t=fill`,
+    "-update", "1", palette]);
+  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-i", palette,
+    "-filter_complex", `${frames}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
     gif]);
 }
 
