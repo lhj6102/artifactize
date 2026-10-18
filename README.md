@@ -4,20 +4,13 @@
 
 # Build together on an Artifact Graph.
 
+Artifactize brings human and agent work together and keeps your project consistent.
+
 **Who is it for?**
 
 - People who want to make it easier for others to build together.
 - People who want to keep code, documents, images, and running applications consistent.
 - People who want to review efficiently and develop in modules.
-
-**Our principles**
-
-- We don't restrict how you build. Use your preferred tools and agent harnesses (the apps that run your AI assistants).
-- We don't restrict individuality. Create freely within loose guardrails.
-- AI doesn't make every decision. Vision, taste, and important decisions about direction remain in human hands.
-
-Bring your tests, AI reviews and human sign-offs to the team. Artifactize records
-their results so teammates can see which parts of your work they can build on.
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
@@ -27,6 +20,12 @@ their results so teammates can see which parts of your work they can build on.
   <br>
   <sub>27-second introduction, no sound. Select it for the full-quality video.</sub>
 </p>
+
+**Our principles**
+
+- We don't restrict how you build. Use your preferred tools and agent harnesses (the apps that run your AI assistants).
+- We don't restrict individuality. Create freely within loose guardrails.
+- AI doesn't make every decision. Vision, taste, and important decisions about direction remain in human hands.
 
 An **Artifact** is a piece of the project: code, writing, a design or an image.
 The **graph** shows how these pieces connect. Give each piece its own checks—a test,
