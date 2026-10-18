@@ -19,6 +19,8 @@ to that program, not artifactize.
 `SELECTOR` is exactly one of positional `ARTIFACT` or qualified `ARTIFACT/EVAL`,
 `--eval ID`, `--evals CSV`,
 `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or `--all`.
+`--evals` and `--artifacts` may each be repeated; their values add up in order,
+duplicates dropped.
 `help [COMMAND]` and `-h`/`--help` print help. `-V`/`--version` prints the version
 on the root command and on `artifactize tools`.
 
