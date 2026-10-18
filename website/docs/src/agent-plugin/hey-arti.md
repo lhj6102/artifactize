@@ -52,16 +52,34 @@ rather than bending code or weakening a review.
 - One obligation per eval. Use a runtime eval when a command can check it, an
   [Agent eval](../features/agent.md) when it needs judgment, and a
   [Human eval](../features/human.md) only where a person must add judgment or
-  authority.
+  authority. A person is asked only after the Artifact's runtime and Agent evals are
+  GREEN.
 - Criteria for one Artifact go inside its eval; rules many Artifacts share go in a
   rule document their evals read.
+- Keep result schemas small: a summary on GREEN, concrete findings on RED (syntax
+  in [Declarations](../features/declarations.md)).
 - Keep the default fingerprint (artifactsum); give reviewers only the read-only
   tools they need.
-- Recurring combinations: library and consumer, spec and app, app and E2E tests (the
-  app's eval runs the suite), docs and assets, monorepo contracts, generated files,
-  and rule documents.
-- Steer away from implicit dependencies, whole-repository reviews, anti-cheat evals,
-  unrequested execution options, and weakening an eval to reach GREEN.
+
+Combinations it recommends, with who owns each check and what it references:
+
+- **Library and consumer**: the library owns its tests; the consumer's review
+  references `{library}`.
+- **Spec and app**: the app owns its tests (runtime) and a review against `{spec}`
+  (Agent).
+- **App and E2E tests**: running the suite is the app's eval, with `{e2e-tests}` in
+  its arguments; the test code's own evals review its style and coverage.
+- **Docs and assets**: the docs are reviewed against the code they describe; each
+  asset is its own file Artifact, with a person's sign-off when it needs one.
+- **Monorepo contract**: UI and API each own their checks; an integration eval
+  references both and the contract between them.
+- **Generated files**: either review the generator and its inputs, or review the
+  output with the generator referenced.
+- **Rule documents**: the rules are an Artifact, often with a Human sign-off, read
+  by the evals of the Artifacts they govern.
+
+It steers away from implicit dependencies, whole-repository reviews, anti-cheat
+evals, unrequested execution options, and weakening an eval to reach GREEN.
 
 Changing an eval's instruction, result schema or runtime command changes its
 judgment; tags, titles, execution options and tool declarations do not. After an

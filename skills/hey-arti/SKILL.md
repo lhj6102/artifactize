@@ -66,7 +66,7 @@ Use these words with the user, briefly:
   of docs, style), and Human only where a person must add judgment or authority
   (design, licensing, release). Keep the project's existing Human responsibilities;
   explain and agree before adding a new sign-off. A person is asked only after the
-  Artifact's other evals are GREEN.
+  Artifact's runtime and Agent evals are GREEN.
 - Write criteria that belong to one Artifact inside its eval. Put rules that many
   Artifacts share in a rule document that their evals read; that document is then
   what enforces them.
