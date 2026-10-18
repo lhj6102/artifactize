@@ -121,23 +121,17 @@ with no Evals supplies no execution gates: referring to it does not gate executi
 on its own inputs or children. Those still belong to the final approval obligations,
 so the consumer may execute without the Run being able to finish GREEN.
 
-Its own Artifact and the Artifacts in a dependency cycle with it are excluded.
-For example, if `docs`'s eval references `cli` and `cli`'s eval references `docs`,
-the two form a cycle: a RED `cli/tests` does not block `docs/matches-cli`, since
-either may be the one to fix. Both run, and both must pass before anything outside
-the cycle that uses them can.
+An Eval's own Artifact and its dependency-cycle peers are excluded from these
+gates, apart from the [Human sibling prerequisite](#human-sign-offs). Cycles follow
+Eval references and children: a child that references its parent, directly or
+through a chain, is its parent's cycle peer. A reference to a cycle peer carries
+the cycle's external gates; a reference to another cycle carries every Eval of
+that cycle. These gates also determine waiting and speculative cancellation.
 
-Cycle peers are evaluated together: none can be fixed first. Cycles are the ones
-Eval references and children form: a child that references its parent, directly
-or through a chain, is its parent's cycle peer. A RED sibling Eval on the same
-Artifact or a RED Eval of a cycle peer never blocks an Eval or replaces its actual
-verdict, and peers never wait for one another. A Human Eval is the one exception
-for siblings; see [Human sign-offs](#human-sign-offs). A reference to a cycle peer stands for what the
-cycle references outside itself; a reference to an Artifact in another cycle
-stands for every Eval of that cycle. Waiting follows the same set: plain `verify`
-holds an Eval only for those Evals, and `--speculate` cancels only Evals that a
-RED makes invalid this way. Every result in a cycle must pass before consumers
-outside the cycle can proceed.
+For example, if `docs`'s eval references `cli` and `cli`'s eval references `docs`,
+they form a cycle: a RED `cli/tests` does not block `docs/matches-cli` or replace
+its verdict. Both run independently and must pass before consumers outside the
+cycle can proceed.
 
 A BLOCKED Eval's reason names the RED Evals at the root of the block, for example
 `Dependency verdict RED: core/tests`, never Evals that were merely still running.

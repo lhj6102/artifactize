@@ -63,7 +63,10 @@ pub enum End {
 impl End {
     pub(crate) fn exited(status: &std::process::ExitStatus) -> Self {
         Self::Exited {
-            code: status.code(),
+            code: match crate::platform::process_end(status) {
+                crate::platform::ProcessEnd::Exited(code) => Some(code),
+                crate::platform::ProcessEnd::Signaled(_) => None,
+            },
             text: crate::platform::exit_description(status),
         }
     }

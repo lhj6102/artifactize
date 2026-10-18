@@ -91,6 +91,11 @@ way. A blocked sign-off is never offered to a person. How the Run ends
 [Speculation and deferred sign-offs](run.md#speculation-and-deferred-sign-offs);
 that reuse needs fingerprints, so `fingerprint = false` disables it.
 
+A newer request for the same eval in the same working tree retires earlier
+DEFERRED sign-offs with a different reuse key, removing them from Review. See
+[the Run rules](run.md#speculation-and-deferred-sign-offs) for retirement, joining
+and submitting a sign-off after its Run ends.
+
 For a sign-off whose rejection would waste substantial downstream work, retain
 the strict pending gate explicitly:
 

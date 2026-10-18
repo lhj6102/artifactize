@@ -118,6 +118,14 @@ reuses unchanged provisional machine results: GREEN sign-offs allow SATISFIED;
 RED sign-offs block dependents. `--reuse-only agent,human` never treats a pending
 sign-off as GREEN and stays suitable for CI.
 
+When a newer Run issues a Human request for the same eval in the same working
+tree, earlier DEFERRED sign-offs with a different reuse key end as ERROR/SUPERSEDED,
+including requests joined to them. Claimed sign-offs are retired too. They leave
+Review and cannot be claimed again. The same key still joins the existing review;
+original sign-offs in another working tree and live WAITING_HUMAN originals stay
+untouched. Until retirement, a deferred sign-off can still be submitted after its
+Run ends; submission rechecks the fingerprints and refuses changed files.
+
 `status` labels current deferred waits and provisional results, but its execution
 prediction remains strict: a new default verify still waits for Human evidence.
 Run/result readers expose SIGNOFFS_PENDING as terminal and not satisfied.

@@ -79,7 +79,7 @@ impl Runs {
                         }
                         .to_owned()
                     })
-                    .unwrap_or_else(|| command.to_owned());
+                    .unwrap_or_else(|| crate::platform::path_text(std::path::Path::new(command)));
                 Self::Command(super::shell(
                     std::iter::once(program.as_str()).chain(args.iter().copied()),
                 ))

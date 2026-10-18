@@ -178,22 +178,50 @@ impl Receipts {
             let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let run = load(&transaction, &id)?;
             if let Some(Control { worker: Worker::Admitted { owner }, .. }) = run.control {
-                let at = crate::broker::now();
-                let waiting = {
-                    let mut statement = transaction.prepare("SELECT q.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE e.owner_pid=?1 AND e.owner_start_time=?2 AND e.status='WAITING_HUMAN' AND q.status IN ('WAITING_HUMAN','DEFERRED')")?;
-                    statement.query_map(params![owner.pid, owner.start_time as i64], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?
+                let executions = {
+                    let mut statement = transaction.prepare("SELECT id FROM executions WHERE owner_pid=?1 AND owner_start_time=?2 AND status IN ('RUNNING','WAITING_HUMAN')")?;
+                    statement.query_map(params![owner.pid, owner.start_time as i64], |row| row.get(0))?.collect::<Result<Vec<crate::types::ExecutionId>, _>>()?
                 };
-                transaction.execute("UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Run worker stopped.','$.errorCode',?1,'$.result',NULL,'$.completedAt',?2) WHERE owner_pid=?3 AND owner_start_time=?4 AND status IN ('RUNNING','WAITING_HUMAN')", params![code,at,owner.pid,owner.start_time as i64])?;
-                for data in waiting {
-                    let mut request: Request = serde_json::from_str(&data)?;
-                    request.state = super::RequestState::failed("Run worker stopped.".into(), Some(code), at);
-                    super::receipts::update_request(&transaction, &request)?;
+                for id in executions {
+                    retire_execution(&transaction, &id, code, "Run worker stopped.")?;
                 }
             }
             transaction.commit()?;
             Ok(())
         }).await.map_err(|e| e.to_string())
     }
+}
+
+/// End an active execution and every Human request still waiting on it.
+pub(super) fn retire_execution(
+    db: &rusqlite::Connection,
+    id: &crate::types::ExecutionId,
+    code: crate::types::FailureCode,
+    error: &str,
+) -> Result<(), Error> {
+    let at = crate::broker::now();
+    let waiting = {
+        let mut statement = db.prepare("SELECT q.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE e.id=? AND e.status='WAITING_HUMAN' AND q.status IN ('WAITING_HUMAN','DEFERRED')")?;
+        statement
+            .query_map([id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    db.execute("UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error',?1,'$.errorCode',?2,'$.result',NULL,'$.completedAt',?3) WHERE id=?4 AND status IN ('RUNNING','WAITING_HUMAN')", params![error,code,at,id])?;
+    for data in waiting {
+        retire_request(db, serde_json::from_str(&data)?, code, error, at)?;
+    }
+    Ok(())
+}
+
+pub(super) fn retire_request(
+    db: &rusqlite::Connection,
+    mut request: Request,
+    code: crate::types::FailureCode,
+    error: &str,
+    at: crate::types::Timestamp,
+) -> Result<(), Error> {
+    request.state = super::RequestState::failed(error.into(), Some(code), at);
+    super::receipts::update_request(db, &request)
 }
 
 /// Compact observations don't decode saved graphs, owner payloads or execution logs.
