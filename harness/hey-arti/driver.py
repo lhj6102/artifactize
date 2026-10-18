@@ -66,10 +66,11 @@ def wait_for_exit(owner):
 def spawn(command, **options):
     """Each harness subprocess owns a fresh process group, including its children.
 
-    Windows is refused: once a leader exits, nothing here would still own its
-    descendants, so their working files could not be released safely."""
-    if os.name != "posix":
-        raise RuntimeError("The hey-arti harness runs on Linux and macOS only.")
+    Only Linux is supported: descendants are observed through /proc, so elsewhere
+    nothing here would still own them once the leader exits, and their working
+    files could not be released safely."""
+    if sys.platform != "linux":
+        raise RuntimeError("The hey-arti harness runs on Linux only.")
     options["start_new_session"] = True
     return subprocess.Popen(command, **options)
 
@@ -88,14 +89,13 @@ def stop_child(process):
 
 def _stop_child(process):
     owners = []
-    if sys.platform == "linux":
-        for stat in Path("/proc").glob("[0-9]*/stat"):
-            try:
-                fields = stat.read_text().rsplit(")", 1)[1].split()
-                if int(fields[2]) == process.pid and fields[0] not in {"Z", "X", "x"}:
-                    owners.append({"pid": int(stat.parent.name), "start_time": int(fields[19])})
-            except (FileNotFoundError, ProcessLookupError):
-                continue
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+            if int(fields[2]) == process.pid and fields[0] not in {"Z", "X", "x"}:
+                owners.append({"pid": int(stat.parent.name), "start_time": int(fields[19])})
+        except (FileNotFoundError, ProcessLookupError):
+            continue
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:

@@ -389,7 +389,9 @@ hash only their target by default. Tags are not hashed and do not change the Eva
 reuse key.
 
 Walks follow scoped path rules. Symlinks and special files fail closed unless they
-are ignored, nothing is followed out of the owner, and a walk stops with an error
+are ignored. Every applicable `.gitignore` is read as rule metadata even when it is
+itself ignored as content, so it must be a regular file, not a symlink, and at most
+1 MiB. Nothing is followed out of the owner, and a walk stops with an error
 after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
 rechecks. Files a review writes into ignored paths, such as Python's `__pycache__`,
 therefore never cause `INPUT_CHANGED`. Artifactsum records a manifest with the
