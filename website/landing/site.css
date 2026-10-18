@@ -690,24 +690,6 @@ p {
   }
 }
 
-/* ---------- Why ---------- */
-
-.why {
-  text-align: center;
-}
-
-.why-inner {
-  max-width: 800px;
-}
-
-.why-inner > p:not(.kicker) {
-  max-width: 700px;
-  margin: 18px auto 0;
-  color: var(--dim);
-  font-size: 18px;
-  text-wrap: pretty;
-}
-
 /* ---------- Get started ---------- */
 
 .start {
