@@ -365,8 +365,8 @@ artifactize logout codex    # revoke and delete artifactize's tokens
 - **An existing Codex sign-in.** With `ARTIFACTIZE_CODEX_AUTH_FILE` set, for example
   to `~/.codex/auth.json`, artifactize reads that file's `tokens.access_token` (and
   `tokens.account_id`) on every turn instead of its own tokens. It never writes,
-  copies or refreshes the file. Once the token expires, reviews fail with a message
-  to sign in with Codex again, for example with `codex login`. `logout codex` leaves
+  copies or refreshes the file. Once the token has a minute or less left, reviews
+  fail with a message to sign in with Codex again, for example with `codex login`. `logout codex` leaves
   the file alone.
 - **Requests.** Each turn streams one Responses request with `store:false`,
   `include: ["reasoning.encrypted_content"]`, the review's tools as function tools and

@@ -345,44 +345,6 @@ async fn next(
         .kind
 }
 
-/// Owns a launched fixture program that waits for its release file: dropping it, also when
-/// an assertion unwinds first, releases the program and waits for it to exit, so it never
-/// outlives the repository it runs in.
-struct Release {
-    file: std::path::PathBuf,
-    pid: std::path::PathBuf,
-}
-
-impl Release {
-    fn new(root: &Path) -> Self {
-        Self {
-            file: root.join("release"),
-            pid: root.join("pid"),
-        }
-    }
-
-    fn release(&self) {
-        let _ = fs::write(&self.file, "");
-    }
-}
-
-impl Drop for Release {
-    fn drop(&mut self) {
-        self.release();
-        let Some(pid) = fs::read_to_string(&self.pid)
-            .ok()
-            .and_then(|pid| pid.parse().ok())
-        else {
-            return;
-        };
-        // Bounded without a panic: a second panic while unwinding would abort the test binary.
-        let deadline = std::time::Instant::now() + Duration::from_secs(60);
-        while support::os::running(pid) && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-}
-
 #[tokio::test]
 async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_program_exits() {
     use artifactize_core::review::log::{End, Kind, Stream, channel};
@@ -437,19 +399,17 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
 
     // A launch returns at once; what its program prints keeps arriving in the same run until
     // it exits, here once the test lets it.
-    let release = Release::new(repo.path());
+    let mut launched = Launched::new(support::os::tempdir());
     let waits = format!(
-        "import os, sys, time\nwith open({:?}, 'w') as f: f.write(str(os.getpid()))\nprint('started', flush=True)\nfor _ in range(6000):\n    if os.path.exists({:?}): break\n    time.sleep(0.01)\nprint('after', file=sys.stderr, flush=True)",
-        support::os::path_text(&release.pid),
-        support::os::path_text(&release.file)
+        "import sys\nprint('started', flush=True)\n{LAUNCH}print('after', file=sys.stderr, flush=True)"
     );
     write_artifact(
-        repo.path(),
+        launched.path(),
         "a",
         json!({"inspect":tool("launch", support::os::python_program(), &python(&waits))}),
         "Review.",
     );
-    let config = read_workspace_config(repo.path()).unwrap();
+    let config = read_workspace_config(launched.path()).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     let result = registry
         .call_logged(
@@ -467,7 +427,9 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
             text: "started".into()
         }
     );
-    release.release();
+    // Adopted while it runs, so its exit is confirmed before its repository is removed.
+    support::os::wait_until(Duration::from_secs(30), || launched.own().is_some());
+    fs::write(launched.path().join("release"), "").unwrap();
     assert_eq!(
         next(&mut events).await,
         Kind::Line {
