@@ -162,7 +162,8 @@ fingerprint; the default artifactsum covers the Artifact's own files.
 ## `artifactize-tools` CLI
 
 `artifactize tools` exposes the same current-directory tools on every install,
-including the Microsoft Store. Non-Store channels also put `artifactize-tools`
+including the prepared Microsoft Store package (not available yet; certification is
+pending). Non-Store channels also put `artifactize-tools`
 next to `artifactize`; either spelling uses the same parser and runner, output and
 exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
 rather than running a current-directory tool.

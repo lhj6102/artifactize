@@ -6,8 +6,9 @@ standalone `artifactize-tools` command.
 Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
 prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Apple
 silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum. Stable
-releases are also published on [crates.io](https://crates.io/crates/artifactize),
-Homebrew, winget and the Microsoft Store. It is open source under the
+releases are also published on [crates.io](https://crates.io/crates/artifactize)
+and Homebrew. winget and Microsoft Store distribution are in preparation and are
+not available yet. It is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 Before v1, the Linux build gates a release; the macOS and Windows archives are attached
@@ -49,7 +50,7 @@ Start with the default for your OS, or choose an alternative below:
 |---|---|---|
 | Linux | [Install script](#linux) | [Cargo binaries](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
 | macOS | [Homebrew](#macos) | [Install script](#macos), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
-| Windows | [winget](#windows) | [Microsoft Store or PowerShell script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| Windows | [PowerShell install script](#windows) | [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms); [winget and Microsoft Store](#windows) are in preparation, not available yet |
 
 
 ### Linux
@@ -97,37 +98,12 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 
 ### Windows
 
-```powershell
-winget install lhj6102.Artifactize
-artifactize --version   # in a new terminal
-```
-
-The [winget](https://learn.microsoft.com/windows/package-manager/winget/) package
-`lhj6102.Artifactize` installs both commands from the release zip and follows stable
-releases.
-
-**Microsoft Store.** Install
-[Artifactize from the Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D),
-or from a terminal:
-
-```powershell
-winget install 9PB6W4LL165D --source msstore
-```
-
-Microsoft signs the Store version, and the Store keeps it up to date. The Store
-package provides `artifactize` as an app execution alias; run its tools as
-`artifactize tools read FILE`, `artifactize tools list`, and so on. Other channels
-also provide the standalone `artifactize-tools` command. There is one Start menu
-entry, **Artifactize**. Launching it without arguments shows help and a hint to open
-Windows Terminal or PowerShell, then waits for Enter when it owns the console
-alone; terminal launches and redirected input/output never pause. The Store uses
-the same state directory, `%LOCALAPPDATA%\artifactize`, as the other Windows installs.
-
-**Install script.** In PowerShell (Windows PowerShell 5.1 or PowerShell 7), without
-administrator rights:
+**PowerShell install script (default).** In Windows PowerShell 5.1 or PowerShell 7,
+without administrator rights:
 
 ```powershell
 irm https://artifactize.dev/install.ps1 | iex
+artifactize --version   # in a new terminal
 ```
 
 The [script](https://artifactize.dev/install.ps1) checks the zip's SHA-256, runs both
@@ -136,12 +112,44 @@ new binaries, then installs `artifactize.exe` and `artifactize-tools.exe` to
 open a new terminal afterwards. It reads the same environment variables as
 `install.sh`.
 
-**Smart App Control.** The release zip, which winget and the install script use, is
-not code-signed yet. On a machine with Smart App Control on, Windows may block a new
-release even when an earlier one ran. Use the Microsoft Store version there. If
-Windows blocks the new binaries, the install script stops before replacing anything:
-your previous `artifactize` and `artifactize-tools` stay installed and runnable, and
-`Path` is left unchanged.
+**Smart App Control.** The release zip used by the install script is not code-signed
+yet. On a machine with Smart App Control on, Windows may block a new release even
+when an earlier one ran. If Windows blocks the new binaries, the script stops before
+replacing anything: your previous `artifactize` and `artifactize-tools` stay installed
+and runnable, and `Path` is left unchanged. Do not bypass your application-control
+policy. The signed Store channel is still awaiting certification and is not an
+available workaround.
+
+**winget (in preparation — not available yet).** `lhj6102.Artifactize` has not been
+accepted into [winget](https://learn.microsoft.com/windows/package-manager/winget/).
+Use the PowerShell script above now. After the package is published, the intended
+command is:
+
+```powershell
+winget install lhj6102.Artifactize
+```
+
+That package installs both commands from the release zip and follows stable releases.
+
+**Microsoft Store (in preparation — not available yet).** The submission has not
+passed certification. The [reserved product page](https://apps.microsoft.com/detail/9PB6W4LL165D)
+and the command below are for use after publication, not a working install method yet:
+
+```powershell
+winget install 9PB6W4LL165D --source msstore
+```
+
+Microsoft signs published Store packages, and the Store keeps them up to date. The
+prepared package provides `artifactize` as an app execution alias; its tools run as
+`artifactize tools read FILE`, `artifactize tools list`, and so on. Other channels
+also provide the standalone `artifactize-tools` command. There is one Start menu
+entry, **Artifactize**. Launching it without arguments shows help and a hint to open
+Windows Terminal or PowerShell, then waits for Enter when it owns the console alone;
+terminal launches and redirected input/output never pause. The Store package uses
+Windows' default AppData virtualization: it keeps its own package-private state
+rather than sharing Runs, sign-in and cache with winget, zip or Cargo installs.
+Windows removes that private state when you uninstall the Store app. See
+[State](../features/others/state.md#state) for the Windows overlay caveat.
 
 **WSL.** Inside WSL 2, artifactize is the Linux build: install it in the distribution
 with the [Linux](#linux) instructions. It is separate from a Windows install and keeps
@@ -208,7 +216,8 @@ artifactize-desktop
 
 The frontend must be built before Cargo: the normal app embeds `ui/dist`. Keep
 the default Cargo features and do not enable the test-only `e2e` feature for a
-normal app. The app uses the same state home and credentials as the CLI.
+normal app. The app uses the same state home and credentials as the unpackaged CLI,
+not the Store app's private state.
 
 ## Update
 
@@ -216,14 +225,16 @@ normal app. The app uses the same state home and credentials as the CLI.
 |---|---|
 | `install.sh` or `install.ps1` | Run the same command again |
 | Homebrew | `brew upgrade artifactize` |
-| winget | `winget upgrade lhj6102.Artifactize` |
-| Microsoft Store | Automatic; or **Library → Get updates** in the Store app |
+| winget (not available yet) | After publication: `winget upgrade lhj6102.Artifactize` |
+| Microsoft Store (not available yet) | After publication: automatic; or **Library → Get updates** in the Store app |
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`; from a checkout, `git pull` and repeat `cargo install --path` |
 
-The install scripts and cargo get a release as soon as it is published. Homebrew,
-winget and the Store follow stable releases only; winget and the Store can lag
-behind while the update is reviewed. Updating keeps your state.
+The install scripts and Cargo get a release as soon as it is published. Homebrew
+follows stable releases only. The prepared winget and Store channels target stable
+releases only; their first
+publications are still pending. After publication, updates can lag while reviewed.
+Updating keeps your state.
 
 ### Upgrading from 0.11
 
@@ -281,7 +292,9 @@ with the reuse records, Human claims and backend slots), Run output under `runs/
 saved Agent conversations under `agent-sessions/`, and the Codex sign-in and the
 review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
 `$XDG_STATE_HOME/artifactize`, else (on Windows) `%LOCALAPPDATA%\artifactize`, else
-`~/.local/state/artifactize`.
+`~/.local/state/artifactize`. For the Store version, Windows redirects new AppData
+files into the package's private location instead of the real Windows state directory;
+see [State](../features/others/state.md#state).
 
 `--state-dir PATH` moves the whole state for one command. Use the same value for
 `login`, `verify`, `request`, `run` and `monitor`. State must be outside the repository
@@ -349,19 +362,28 @@ cargo uninstall artifactize artifactize-tools                # cargo install or 
 On Windows:
 
 ```powershell
-winget uninstall lhj6102.Artifactize                       # winget
+winget uninstall lhj6102.Artifactize                       # future winget install, after publication
 Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\artifactize"   # install.ps1
 ```
 
-Uninstall the Microsoft Store version from **Settings → Apps → Installed apps**, or
-right-click Artifactize in the Start menu. After removing an `install.ps1` install,
+Once the Store version is available, uninstall it from **Settings → Apps → Installed
+apps**, or right-click Artifactize in the Start menu. After removing an `install.ps1` install,
 also remove its directory from your user `Path` (search the Start menu for "Edit
 environment variables for your account").
 
-Uninstalling keeps the state directory, so a later install finds your Runs and saved
-results again. `prune` never touches active Runs, database rows or the repository. To
-remove everything, delete the state directory that `artifactize doctor` prints on its
-first line.
+Uninstalling the **Store app** removes its package-private state, including Runs,
+saved results, sign-in and cache. Other install methods keep their state directory,
+so a later unpackaged install finds those Runs and results again. `prune` never
+touches active Runs, database rows or the repository. To remove retained unpackaged
+state, delete the state directory that `artifactize doctor` prints on its first line.
+
+Uninstall does not remove your project files, exported files, or state explicitly
+placed outside AppData with `--state-dir` or an environment override. Files written
+by user-configured commands outside the package-private view can remain too; the
+Windows packaging test measured a Runtime child's new AppData file in the real
+location. Remove those separately if you no longer need them. Existing unvirtualized
+AppData files are also outside the Store package's cleanup; see the
+[Windows behavior and overlay caveat](../features/others/state.md#state).
 
 Next, take the [Quick start](guide.md): a five-minute tour that needs no model.
 

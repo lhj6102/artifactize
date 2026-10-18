@@ -42,6 +42,18 @@ class ChannelsTest(unittest.TestCase):
         self.assertEqual(alias.get("{" + ns["desktop4"] + "}Subsystem"), "console")
         self.assertEqual([item.get("Alias") for item in alias], ["artifactize.exe"])
 
+    def test_store_uses_default_virtualization_and_keeps_windows_10_support(self):
+        manifest = ET.parse(SCRIPT.parent.parent / "packaging/AppxManifest.xml")
+        foundation = "{http://schemas.microsoft.com/appx/manifest/foundation/windows10}"
+        restricted = "{http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities}"
+        capabilities = manifest.find(foundation + "Capabilities")
+        self.assertEqual([(item.tag, item.get("Name")) for item in capabilities],
+                         [(restricted + "Capability", "runFullTrust")])
+        self.assertFalse(any("Virtualization" in item.tag for item in manifest.iter()))
+        family = manifest.find(foundation + "Dependencies/" + foundation + "TargetDeviceFamily")
+        self.assertEqual(family.get("MinVersion"), "10.0.18362.0")
+        self.assertEqual(manifest.getroot().get("IgnorableNamespaces"), "uap uap5 desktop4 rescap")
+
     def dry_run(self, channel, version, env, fixture=None):
         command = [sys.executable, "-I", str(SCRIPT), "publish", channel, "--version", version, "--dry-run"]
         with tempfile.TemporaryDirectory() as tmp:

@@ -438,15 +438,6 @@ p {
   white-space: nowrap;
 }
 
-.lede {
-  max-width: 760px;
-  text-wrap: balance;
-  margin: 26px auto 0;
-  color: var(--dim);
-  font-size: clamp(17px, 2.1vw, 20px);
-  line-height: 1.6;
-}
-
 .logline {
   max-width: 760px;
   text-wrap: balance;
@@ -482,6 +473,26 @@ p {
 
 .hero .cta {
   justify-content: center;
+}
+
+.hero-demo {
+  max-width: 1080px;
+  margin: 36px auto 0;
+}
+
+.hero-demo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(15, 20, 27, 0.12);
+}
+
+.hero-demo figcaption {
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: 13px;
 }
 
 .scroll-cue {
