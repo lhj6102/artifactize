@@ -133,7 +133,5 @@ session-directory cleanup. It starts no builders during an Agent review. Reads
 stay confined to that case, never arbitrary host paths. These trusted commands
 are not an OS sandbox.
 
-`builder-quality` must be RED for missing/blocked evidence and judges actual
-builder behavior in all three fixtures, not one preferred partition. Neither
-deterministic checks nor a host exit-zero record establish skill quality. The full verification includes the skill and harness judgments without an
-additional readiness Eval or a discretionary Human gate.
+No eval judges the live archive: the skill's quality is judged by the skill's own
+evals against written guidance, and live builder runs remain a manual aid.
