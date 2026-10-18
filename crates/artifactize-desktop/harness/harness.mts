@@ -2,7 +2,8 @@
 // start wraps the whole harness in the platform's standard headless environment;
 // serve delegates app provisioning, launch and shutdown to @wdio/tauri-service.
 // Tools communicate over loopback TCP, using the private session directory's token.
-// An explicit DESKTOP_TEST_CANDIDATE is snapshotted once, never found or rebuilt.
+// start builds its own candidate while preparing, or snapshots an explicit
+// DESKTOP_TEST_CANDIDATE once; it never finds or shares another build.
 import { createConnection, createServer, type Socket } from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -14,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { create, createdRoots, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
 import { asNativePath, assertHarnessPlatform, embeddedPorts, harnessEnvironment, nativePath, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
-import { cargoGate, cleanup, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
+import { adopt, cargoGate, cleanup, prepare, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
 import { assertAppsStopped } from "../ui/e2e/observation.ts";
 import { settleFixtureRuns } from "../ui/e2e/runs.ts";
@@ -439,7 +440,9 @@ async function serve(): Promise<void> {
   try {
     await commands.run(async () => {
       startupStarted = true;
-      candidate = await snapshotCandidate(asNativePath(sessionDir));
+      candidate = process.env.DESKTOP_TEST_CANDIDATE
+        ? await snapshotCandidate(asNativePath(sessionDir))
+        : adopt(await prepare(asNativePath(sessionDir)));
       if (stopping) return;
       fixture = await create();
       if (stopping) return;
