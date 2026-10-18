@@ -172,7 +172,7 @@ fn excerpt(
             let root =
                 crate::platform::canonicalize(&state.join("runs")).map_err(|e| e.to_string())?;
             let canonical = crate::platform::canonicalize(&path).map_err(|e| e.to_string())?;
-            if !canonical.starts_with(&root) {
+            if !crate::platform::is_within(&canonical, &root) {
                 return Err("Runtime log is outside saved Run output.".into());
             }
             let file = std::fs::File::open(&canonical).map_err(|e| e.to_string())?;

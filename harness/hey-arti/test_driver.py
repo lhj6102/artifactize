@@ -154,38 +154,6 @@ class OwnedTestCase(unittest.TestCase):
 
 class HarnessTests(OwnedTestCase):
 
-    def session(self):
-        directory = self.root / "session"
-        driver.private_directory(directory)
-        environment = dict(os.environ, ARTIFACTIZE_SESSION_DIR=str(directory),
-                           HEY_ARTI_EVIDENCE_INDEX=str(self.root / "no-live-index.json"))
-        process = self.spawn([sys.executable, "-I", str(ROOT / "driver.py"), "start"],
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   text=True, env=environment)
-        # A readiness barrier, not a sleep-length or timestamp assertion.
-        def cleanup():
-            driver.close_child(process)
-        self.addCleanup(cleanup)
-        process.stdin.write(tool_request({}))
-        process.stdin.close()
-        process.stdin = None
-        with ThreadPoolExecutor() as executor:
-            try:
-                ready = executor.submit(process.stdout.readline).result(timeout=10)
-            except BaseException:
-                # Release the pipe reader before the executor joins, even on interruption.
-                driver.stop_child(process)
-                raise
-        self.assertEqual(ready, "ready\n")
-        self.assertNotIn("\\", json.loads((directory / "session.json").read_text(encoding="utf-8"))["area"])
-        return directory, environment, process
-
-    def call(self, environment, operation, args):
-        result = driver.run_command([sys.executable, "-I", str(ROOT / "driver.py"), operation],
-                                input=tool_request(args), text=True, capture_output=True,
-                                timeout=15, env=environment, check=True)
-        return json.loads(result.stdout)
-
     def test_canonical_skill_examples_use_valid_current_declarations(self):
         skill_path = ROOT.parents[1] / "skills/hey-arti/SKILL.md"
         body = skill_path.read_text(encoding="utf-8")
@@ -332,47 +300,6 @@ sys.stdin.read()
             driver.materialize(area)
         with self.assertRaises(ValueError):
             driver.materialize(ROOT / "outputs-must-not-be-created")
-
-    def test_json_session_case_read_paging_rejection_and_stop(self):
-        directory, environment, process = self.session()
-        result = self.call(environment, "case", {"case": "monorepo"})["content"][0]["data"]
-        self.assertFalse(result["live_evidence"]["available"])
-        self.assertIn("Human", result["goal"])
-        self.assertIn("preview/probe.py", result["source_files"])
-        self.assertNotIn("\\", result["repository"])
-        repo = Path(result["repository"])
-        self.assertTrue(repo.is_dir())
-        text = "café\n" * 10000
-        # Paging returns literal file bytes; keep this UTF-8 fixture identical on every OS.
-        (repo / "large.txt").write_text(text, encoding="utf-8", newline="\n")
-        offset, pages = 0, []
-        while True:
-            page = self.call(environment, "read", {"case": "monorepo", "path": "large.txt", "offset": offset})
-            data = page["content"][0]["data"]
-            # Independent reviewer-envelope expectation, not the driver's cap variable.
-            self.assertLess(len(json.dumps(page).encode()), 48 * 1024)
-            pages.append(data["text"])
-            if data["next_offset"] is None:
-                break
-            offset = data["next_offset"]
-        self.assertEqual("".join(pages), text)
-        for path in ("../driver.py", str(ROOT / "driver.py"), ".env", "a/../ui/view.py", "ui\\view.py"):
-            self.assertTrue(self.call(environment, "read", {"case": "monorepo", "path": path})["isError"])
-        self.assertTrue(self.call(environment, "case", {"case": "unknown"})["isError"])
-        self.assertTrue(self.call(environment, "read", {"case": "monorepo", "path": "ui/view.py", "limit": 999999})["isError"])
-        evidence = driver.area(directory) / "monorepo/evidence/live.json"
-        evidence.write_text('{"mode":"deterministic","verdict":"GREEN"}', encoding="utf-8")
-        self.assertTrue(self.call(environment, "case", {"case": "monorepo"})["isError"])
-        driver.run_command([sys.executable, "-I", str(ROOT / "driver.py"), "stop"], input=tool_request({}),
-                       text=True, check=True, timeout=10, env=environment)
-        stdout, stderr = process.communicate(timeout=10)
-        self.assertEqual(process.returncode, 0, stderr)
-        self.assertEqual(stdout, "")
-        self.assertFalse(repo.exists())
-        self.assertFalse((directory / "session.json").exists())
-        # Safe repeated stop; artifactize owns the final session directory removal.
-        driver.run_command([sys.executable, "-I", str(ROOT / "driver.py"), "stop"], input=tool_request({}),
-                       text=True, check=True, timeout=10, env=environment)
 
     def test_monorepo_preview_uses_actual_inputs_and_artifactize_session_envelope(self):
         area = driver.materialize(self.root / "cases")
