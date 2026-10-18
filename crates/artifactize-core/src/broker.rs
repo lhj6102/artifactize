@@ -910,24 +910,18 @@ impl Scheduler<'_, '_> {
                                                     &config,
                                                     &request.eval_id,
                                                 ) {
-                                                    Ok(registry) => match registry
-                                                        .start_sessions(
-                                                            &state,
-                                                            None,
-                                                            cancellation.clone(),
-                                                        )
-                                                        .await
-                                                    {
-                                                        Ok(tools) => {
-                                                            Ok(execution::Prepared::Agent {
-                                                                state,
-                                                                session,
-                                                                saving,
-                                                                tools,
-                                                            })
-                                                        }
-                                                        Err(error) => Err(error),
-                                                    },
+                                                    Ok(registry) => {
+                                                        Ok(execution::Prepared::Agent {
+                                                            state: state.clone(),
+                                                            session,
+                                                            saving,
+                                                            tools: registry.sessions(
+                                                                &state,
+                                                                None,
+                                                                cancellation.clone(),
+                                                            ),
+                                                        })
+                                                    }
                                                     Err(error) => Err(error),
                                                 }
                                             }

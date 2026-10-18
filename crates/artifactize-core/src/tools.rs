@@ -320,9 +320,12 @@ impl<'a> Registry<'a> {
         };
         let environment = if let Some(name) = &command.session {
             let key = sessions::session_key(name, &tool.definition.artifact_id);
-            match self.sessions.and_then(|sessions| sessions.call(&key)) {
-                Some(call) => Some(call),
-                None => return ToolResult::error(format!("The tool session `{name}` ended.")),
+            let Some(sessions) = self.sessions else {
+                return ToolResult::error(format!("The tool session `{name}` ended."));
+            };
+            match sessions.call(&key).await {
+                Ok(call) => Some(call),
+                Err(error) => return ToolResult::error(error),
             }
         } else {
             None

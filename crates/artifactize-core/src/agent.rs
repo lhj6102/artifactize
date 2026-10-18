@@ -582,9 +582,7 @@ async fn continue_conversation(
     request.chat_history = history;
     request.chat_history.push(question.clone());
     request.additional_params = Some(Client::parameters(backend, reasoning, recorder.id())?);
-    let tools = registry
-        .start_sessions(continuation.state, None, cancellation.clone())
-        .await?;
+    let tools = registry.sessions(continuation.state, None, cancellation.clone());
     let registry = registry.with_sessions(&tools);
     let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
     request.tools = definitions(&registry);
