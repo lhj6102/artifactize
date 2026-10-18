@@ -257,8 +257,9 @@ a level. Widen the terminal when the focused pane needs more room.
   running work, timing, budgets, executed/reused counts and full spent/saved
   usage in Detail.
 
-Scope badges and the header share `!N ✗N ◐N ?N` attention counters. These cover the
-catalog, not just the visible Run page. Followers of one Human execution count as
+Scope badges and the header share `!N ✗N ◐N ?N` attention counters: requests in
+ERROR and RED, Runs still running, and sign-offs waiting for a person, deferred ones
+included. These cover the catalog, not just the visible Run page. Followers of one Human execution count as
 one waiting sign-off.
 
 ### Artifacts and evals

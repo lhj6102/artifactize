@@ -72,7 +72,9 @@ block; fixed `read`, `section` and `help` return text blocks:
   Unlike scoped command-tool executables, help uses ordinary program lookup:
   absolute paths, parent-relative paths and executable symlinks are accepted.
   Relative paths start at the declaring Artifact's folder; subcommand arguments
-  are forwarded unchanged, without scope resolution. The program runs in that folder with empty stdin. It must finish within 10 seconds, exit 0 and
+  are forwarded unchanged, without scope resolution. The program runs in that folder with empty stdin,
+in the environment of whoever runs it minus every `ARTIFACTIZE_*` variable (matched
+ignoring case), and gets no private output or temporary directories. It must finish within 10 seconds, exit 0 and
   print at most 64 KiB, stdout and stderr together. It runs a real program, so name
   only programs you trust.
 - **`open`** (Human only) opens one file, folder or `http://`/`https://` URL in the
