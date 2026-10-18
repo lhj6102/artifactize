@@ -130,7 +130,7 @@ async fn hanging_stop_cannot_retain_the_group_or_session_directory() {
 }
 
 #[tokio::test]
-async fn readiness_timeout_cleans_a_started_but_unready_harness() {
+async fn an_unready_harness_prepares_without_a_fixed_bound_until_cancelled() {
     let _clock = CLOCK.lock().await;
     let mut fixture = fixture("stop");
     let log = fixture.directory.path().join("log");
@@ -140,13 +140,21 @@ async fn readiness_timeout_cleans_a_started_but_unready_harness() {
     crate::test_declaration::write(&path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let state = fixture.state();
-    let mut start = fixture.start_sessions(CancellationToken::new());
+    let cancellation = CancellationToken::new();
+    let mut start = fixture.start_sessions(cancellation.clone());
     tokio::select! {
         _ = reached(|| !harness::records(&log, "start").is_empty()) => {},
         _ = &mut start => panic!("unready session was admitted"),
     }
+    // Well past the stop bound, a harness still preparing is neither admitted nor failed.
     advance_lifecycle_clock().await;
-    assert!(start.await.err().unwrap().contains("start timed out"));
+    tokio::select! {
+        biased;
+        _ = &mut start => panic!("an unready harness was given up on"),
+        _ = tokio::task::yield_now() => {},
+    }
+    cancellation.cancel();
+    assert!(start.await.err().unwrap().contains("start was cancelled"));
     harness::assert_cleaned(&state, &log, 1);
 }
 

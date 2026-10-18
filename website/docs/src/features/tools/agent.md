@@ -259,11 +259,13 @@ start or stop.
 
 After execution-path pinning, artifactize starts only the sessions referenced by
 the eval's admitted tools, while holding the review's backend slot. Every session
-must be ready before the first model request. Spawn failure, exit before readiness,
-or readiness timeout produces `PREPARATION_FAILED` with no model request; already
-started sessions undergo stop and cleanup rollback. Any cleanup failure is also
-reported, with unconfirmed state retained for recovery. Readiness has an internal
-30-second bound. After readiness, stdout and stderr are drained and discarded.
+must be ready before the first model request. Spawn failure or exit before readiness
+produces `PREPARATION_FAILED` with no model request; already started sessions undergo
+stop and cleanup rollback. Any cleanup failure is also reported, with unconfirmed
+state retained for recovery. Readiness has no fixed bound: start may prepare for as
+long as it needs, such as building what the harness runs, while its process lives;
+cancelling the review ends the wait. After readiness, stdout and stderr are drained
+and discarded.
 
 If the start process exits during the review, artifactize immediately kills its
 remaining process group/Job and cancels in-flight bound calls. The cleaned group
