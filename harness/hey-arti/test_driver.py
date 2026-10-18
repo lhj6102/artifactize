@@ -187,7 +187,7 @@ class HarnessTests(OwnedTestCase):
         return json.loads(result.stdout)
 
     def test_canonical_skill_examples_use_valid_current_declarations(self):
-        skill_path = ROOT.parents[1] / "crates/artifactize-core/integrations/hey-arti/SKILL.md"
+        skill_path = ROOT.parents[1] / "skills/hey-arti/SKILL.md"
         body = skill_path.read_text(encoding="utf-8")
         frontmatter = dict(line.split(":", 1) for line in body.split("---", 2)[1].strip().splitlines())
         self.assertEqual(frontmatter["name"].strip(), "hey-arti")
@@ -216,7 +216,7 @@ class HarnessTests(OwnedTestCase):
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_skill_examples_are_semantic_when_sections_reorder_or_new_fragments_appear(self):
-        body = (ROOT.parents[1] / "crates/artifactize-core/integrations/hey-arti/SKILL.md").read_text()
+        body = (ROOT.parents[1] / "skills/hey-arti/SKILL.md").read_text()
         snippets = re.findall(r"```toml\n(.*?)```", body, re.DOTALL)
         changed = "\n".join("```toml\n" + snippet + "```" for snippet in reversed(snippets))
         changed += '\n```toml\nfingerprint = false\n```\n'
@@ -477,7 +477,7 @@ class HostLifecycleTests(OwnedTestCase):
         self.evidence = self.root / "saved"
         harness = self.root / "project/harness/hey-arti"
         harness.mkdir(parents=True)
-        skill = self.root / "project/crates/artifactize-core/integrations/hey-arti/SKILL.md"
+        skill = self.root / "project/skills/hey-arti/SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("Declared fixture skill input.\n")
         patch = mock.patch.object(live, "ROOT", harness)

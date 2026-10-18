@@ -9,8 +9,8 @@ and it never approves anything in a person's place. (The name comes from
 *Artifactizer*.)
 
 Its instruction guide, called a **skill**, is
-[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/crates/artifactize-core/integrations/hey-arti/SKILL.md),
-inside the published core crate. There is one body, not separate instructions per
+[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/skills/hey-arti/SKILL.md),
+in the repository's `skills/` folder. There is one body, not separate instructions per
 host. Plugin-marketplace installation is separate; no plugin exporter or release
 bundle is required for the MCP registration below.
 
