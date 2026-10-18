@@ -175,5 +175,16 @@ are package-private and that real `%LOCALAPPDATA%\artifactize` was not created. 
 record the actual database paths, runner OS and whether the child's new AppData file
 was redirected. This checks a fresh runner, not migration from existing unpackaged
 state. The test removes its package, certificate and probe files.
-Windows/macOS remain non-gating before
-v1, so inspect individual step outcomes, not just the overall workflow conclusion.
+
+[Windows rehearsal 39138230810](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
+passed on Windows Server build 26100 (`windows-2025-vs2026`). Both `state.sqlite` and
+`review-store.sqlite` landed under
+`%LOCALAPPDATA%\Packages\lhj6102.Artifactize_ayfzfzbsv48sg\LocalCache\Local\artifactize`,
+and real `%LOCALAPPDATA%\artifactize` was absent. The Runtime PowerShell child's new
+AppData file was **not redirected**: it landed in real `%LOCALAPPDATA%`, not beneath
+the package. Do not extend this one runner/command observation to all child programs
+or supported Windows versions; command-created files outside the private view can
+remain after uninstall.
+
+Windows/macOS remain non-gating before v1, so inspect individual step outcomes, not
+just the overall workflow conclusion.

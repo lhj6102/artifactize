@@ -17,6 +17,18 @@ no Flexible Virtualization exclusions. New state under AppData is package-privat
 the Store version keeps its own Runs, sign-in and cache instead of sharing them
 with winget, zip or Cargo installs. Windows removes that private state on uninstall.
 The path above is the app's logical view, not necessarily its physical disk location.
+The [Windows packaging smoke test](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
+measured both `state.sqlite` and `review-store.sqlite` under
+`%LOCALAPPDATA%\Packages\lhj6102.Artifactize_ayfzfzbsv48sg\LocalCache\Local\artifactize`,
+with no real `%LOCALAPPDATA%\artifactize` directory created on its fresh Windows
+Server runner (build 26100).
+
+That same test launched a PowerShell child through a Runtime eval. The child's new
+`%LOCALAPPDATA%` file was **not redirected**: the unpackaged shell found it in real
+AppData, not in the package-private location. This measures that runner and command,
+not every child program or Windows version. User-configured commands run with the
+user's rights; do not assume their AppData writes are package-private or removed
+when the Store app is uninstalled.
 
 This is not a sandbox or a guarantee that existing unpackaged state is inaccessible.
 [Microsoft documents](https://learn.microsoft.com/en-us/windows/msix/desktop/flexible-virtualization#default-msix-behavior)

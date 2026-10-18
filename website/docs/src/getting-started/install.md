@@ -378,9 +378,12 @@ touches active Runs, database rows or the repository. To remove retained unpacka
 state, delete the state directory that `artifactize doctor` prints on its first line.
 
 Uninstall does not remove your project files, exported files, or state explicitly
-placed outside AppData with `--state-dir` or an environment override. Remove those
-separately if you no longer need them. Existing unvirtualized AppData files are also
-outside the Store package's cleanup; see the [overlay caveat](../features/others/state.md#state).
+placed outside AppData with `--state-dir` or an environment override. Files written
+by user-configured commands outside the package-private view can remain too; the
+Windows packaging test measured a Runtime child's new AppData file in the real
+location. Remove those separately if you no longer need them. Existing unvirtualized
+AppData files are also outside the Store package's cleanup; see the
+[Windows behavior and overlay caveat](../features/others/state.md#state).
 
 Next, take the [Quick start](guide.md): a five-minute tour that needs no model.
 
