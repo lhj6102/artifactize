@@ -4,8 +4,13 @@
 
 # Build together on an Artifact Graph.
 
-Bring your tests, AI reviews and human sign-offs to the team. Artifactize records
-their results so teammates can see which parts of your work they can build on.
+Artifactize brings human and agent work together and keeps your project consistent.
+
+**Who is it for?**
+
+- People who want to make it easier for others to build together.
+- People who want to keep code, documents, images, and running applications consistent.
+- People who want to review efficiently and develop in modules.
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
@@ -15,6 +20,12 @@ their results so teammates can see which parts of your work they can build on.
   <br>
   <sub>27-second introduction, no sound. Select it for the full-quality video.</sub>
 </p>
+
+**Our principles**
+
+- We don't restrict how you build. Use your preferred tools and agent harnesses (the apps that run your AI assistants).
+- We don't restrict individuality. Create freely within loose guardrails.
+- AI doesn't make every decision. Vision, taste, and important decisions about direction remain in human hands.
 
 An **Artifact** is a piece of the project: code, writing, a design or an image.
 The **graph** shows how these pieces connect. Give each piece its own checks—a test,
@@ -43,17 +54,21 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 
 ### Windows
 
+In PowerShell, without administrator rights:
+
 ```powershell
-winget install lhj6102.Artifactize
+irm https://artifactize.dev/install.ps1 | iex
 ```
 
-If Windows’ Smart App Control security setting is enabled, use the
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D) version instead.
-If you use Linux inside Windows through WSL 2, use the Linux method.
+Open a new terminal afterwards. The download is not code-signed yet, so Windows’
+Smart App Control security setting may block it. If you use Linux inside Windows
+through WSL 2, use the Linux method.
+
+> winget and Microsoft Store packages are in preparation.
 
 The [full installation guide](https://artifactize.dev/docs/getting-started/install.html)
-explains the alternatives—install scripts, Cargo and building from source—along
-with prerequisites, updates and uninstalling.
+explains the alternatives—Cargo and building from source—along with prerequisites,
+updates and uninstalling.
 
 Once installed, take the
 [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
@@ -92,9 +107,9 @@ and release waits for a person's sign-off.
 
 <img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example Run graph where core passed, cli failed, docs is blocked and release waits for a sign-off.">
 
-**Detail:** cli between the core it uses and the docs that use it, with its evals.
+**Detail:** cli between the core it uses and the docs that use it, with its checks.
 
-<img src="assets/screenshots/detail.png" width="1200" alt="Real Artifactize desktop Detail of the cli Artifact: its neighbours core and docs, and its lint and tests evals.">
+<img src="assets/screenshots/detail.png" width="1200" alt="Real Artifactize desktop Detail of the cli Artifact: its neighbours core and docs, and its lint and tests checks.">
 
 **Review:** the release sign-off, claimed by the example reviewer, after running its
 notes tool, with the GREEN form open.

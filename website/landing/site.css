@@ -447,6 +447,39 @@ p {
   line-height: 1.6;
 }
 
+.logline {
+  max-width: 760px;
+  text-wrap: balance;
+  margin: 22px auto 0;
+  font-size: clamp(19px, 2.4vw, 23px);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.audience {
+  max-width: 640px;
+  margin: 26px auto 0;
+  padding: 18px 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--glass);
+  text-align: left;
+}
+
+.audience h2 {
+  margin: 0 0 8px;
+  color: var(--faint);
+  font: 600 13px/1.2 var(--mono);
+  letter-spacing: 0;
+}
+
+.audience ul {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--dim);
+  line-height: 1.6;
+}
+
 .hero .cta {
   justify-content: center;
 }

@@ -18,8 +18,8 @@ instruction = """
 Read the shared checklist {writer-introduction} and the
 root README {readme}. Check every W- item and this Artifact's own criteria:
 - R-FLOW: Badges are at the top; the exact project sentence is the first headline, followed by
-  the core hook and introduction video, a short explanation, installation, and real product
-  screenshots at the bottom.
+  a one-line logline, who it is for, the introduction video, the project's principles, a short explanation,
+  installation, and real product screenshots at the bottom.
 - R-INSTALL-OS: The README guides installation itself by operating system. Default methods
   per OS plus a pointer to alternatives are sufficient. It must not replace those defaults
   with only a link to the docs installation page.
