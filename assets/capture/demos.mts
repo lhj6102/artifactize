@@ -183,15 +183,12 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   const list: string[] = [];
   const captions: string[] = [];
   let clock = 0;
-  // The last frame starts here; the bar is full from then on.
-  let last = 0;
   for (const segment of segments) {
     const start = clock;
     segment.frames.forEach((frame, index) => {
       const next = segment.frames[index + 1];
       const duration = next ? Math.max((next.at - frame.at) / segment.speed, 0.01) : segment.hold;
       list.push(`file '${frame.file}'`, `duration ${duration.toFixed(3)}`);
-      last = clock;
       clock += duration;
     });
     captions.push(`drawtext=font=DejaVu Sans:fontsize=40:fontcolor=white:box=1:boxcolor=0x262E3BE6:boxborderw=18:x=${at.x}:y=${at.y}:text='${drawn(segment.caption)}':enable='gte(t,${start.toFixed(3)})*lt(t,${clock.toFixed(3)})'`);
@@ -202,9 +199,12 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   writeFileSync(concat, `${list.join("\n")}\n`);
   // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line.
   const { height, colour, track } = PROGRESS;
+  // The last GIF frame starts one frame before the end; the bar is full there.
+  const end = clock - 1 / GIF.fps;
   const progress = `drawbox=x=0:y=ih-${height}:w=iw:h=${height}:color=${track}:t=fill[track];` +
-    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min(t/${last.toFixed(3)},1)':y=H-h:shortest=1`;
-  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
+    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min(t/${end.toFixed(3)},1)':y=H-h:shortest=1`;
+  // The repeated last entry would otherwise play its hold a second time: end at the planned length.
+  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=duration=${clock.toFixed(3)},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
   // The bar's few pixels would not earn its colours a palette entry: generate the palette with
   // two entries to spare, then set the last two to the bar and its track exactly.
   const generated = join(work, `${basename(gif)}.palette.png`);
