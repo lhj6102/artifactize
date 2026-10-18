@@ -25,6 +25,9 @@
   });
   const usable = $derived(review.owned && !review.busy && !review.settled);
 
+  /** `HH:MM:SS` of `at` (milliseconds since the epoch), local time. */
+  const clock = (at: number | null) => (at === null ? "--:--:--" : new Date(at).toTimeString().slice(0, 8));
+
   function run(tool: ToolView) {
     void review.run(tools.indexOf(tool));
   }
@@ -87,7 +90,7 @@
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div class="log" tabindex="0" role="log" aria-label="Tool log" {@attach follow}>
     {#each review.log as entry (entry.run)}
-      <p class="start">▶ {entry.at} · {entry.operation} · {entry.artifact}</p>
+      <p class="start">▶ {clock(entry.at)} · {entry.operation} · {entry.artifact}</p>
       {#each entry.lines as line, at (at)}
         <p class:error={line.error}>{line.text}</p>
       {/each}

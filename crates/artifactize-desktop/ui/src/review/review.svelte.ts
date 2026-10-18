@@ -3,7 +3,6 @@
 // is whatever the backend last read.
 import { SvelteMap } from "svelte/reactivity";
 import type { Jobs } from "../ipc/jobs.svelte";
-import { logged, type LogEntry } from "./tool-log";
 import { CommandError, call, commands, message, type Commands } from "../ipc/client";
 import type {
   Acted,
@@ -12,7 +11,7 @@ import type {
   FormField,
   FormView,
   HumanView,
-  LogLine,
+  LogEntry,
   Notice,
   Settled,
   Verdict,
@@ -284,9 +283,9 @@ export class Review {
     }
   }
 
-  /** Take in Tool log lines of this review's runs, as the backend sends them. */
-  logged(lines: LogLine[]): void {
-    this.log = logged(this.log, lines);
+  /** This review's Tool log, whole, as the backend sends it after each change. */
+  logged(entries: LogEntry[]): void {
+    this.log = entries;
   }
 
   cancel(): void {

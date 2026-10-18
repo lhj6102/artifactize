@@ -1,0 +1,65 @@
+name = "demos"
+
+# The review records the demos again into its own folder, outside the repository.
+[views.agent_sessions.record]
+start = { command = "node", args = ["{demos-script}", "session"] }
+stop = { command = "node", args = ["{demos-script}", "stop"] }
+
+[views.agent_tools]
+list = { builtin = "list" }
+
+[views.agent_tools.stored]
+description = "A demo GIF saved in {artifactName}: without at, its length in seconds and frame count; with at, its frame about at seconds in, as an image."
+command = "node"
+args = ["{demos-script}", "gif", "stored"]
+protocol = "json"
+
+[views.agent_tools.stored.input_schema]
+type = "object"
+properties.name = { enum = ["review-loop.gif", "graph-growth.gif"] }
+properties.at = { type = "number", minimum = 0 }
+required = ["name"]
+additionalProperties = false
+
+[views.agent_tools.fresh]
+session = "record"
+description = "A demo GIF just recorded from the current app by the demos' script: without at, its length in seconds and frame count; with at, its frame about at seconds in, as an image."
+command = "node"
+args = ["{demos-script}", "gif", "fresh"]
+protocol = "json"
+
+[views.agent_tools.fresh.input_schema]
+type = "object"
+properties.name = { enum = ["review-loop.gif", "graph-growth.gif"] }
+properties.at = { type = "number", minimum = 0 }
+required = ["name"]
+additionalProperties = false
+
+[evals.matches-recording]
+title = "The saved demos show what the script records from the current app"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+
+[evals.matches-recording.payload]
+instruction = """
+{demos} holds the demo GIFs {demos-script} recorded from the desktop app, built from \
+{desktop-backend} and {desktop-ui} and driven through {desktop-e2e}. For each of review-loop.gif and graph-growth.gif, ask \
+stored and fresh for its length, then view frames of both at matching moments, enough to \
+cover each step of the demo: each try of the review loop, and each release of the graph's \
+growth. Ignore what differs on every recording: Run IDs, times, durations, temporary paths \
+and a frame's exact timing. Submit GREEN when both recordings of each demo show the same \
+steps with the same screens, captions and outcomes. Otherwise submit RED with one finding \
+per demo that differs, saying what changed; the script then runs again to replace the saved \
+demos.
+"""
+
+[evals.matches-recording.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.matches-recording.fail_schema]
+type = "object"
+properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { demo = { enum = ["review-loop.gif", "graph-growth.gif"] }, change = { type = "string", minLength = 1 } }, required = ["demo", "change"], additionalProperties = false } }
+required = ["findings"]
+additionalProperties = false

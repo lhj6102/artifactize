@@ -56,7 +56,9 @@ it stops new admission and owned active work, waits for cleanup, and records
 ERROR/CANCELLED without erasing committed evidence. It does not kill an execution
 this Run joined from another Run. Its sign-offs still waiting, deferred ones
 included, end as ERROR too, and so do the requests other Runs joined to them; the
-next `verify` asks again. Dead workers reconcile as ERROR/OWNER_DIED;
+next `verify` asks again. This applies only while the Run is running: a Run that
+already ended SIGNOFFS_PENDING is finished, so cancelling it changes nothing and its
+deferred sign-offs keep waiting. Dead workers reconcile as ERROR/OWNER_DIED;
 interrupted work is not replayed automatically.
 
 Acceptance saves the resolved definitions for the selected scope. Before execution,

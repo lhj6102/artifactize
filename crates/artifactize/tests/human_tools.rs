@@ -345,15 +345,6 @@ async fn next(
         .kind
 }
 
-/// Lets a launched fixture program finish, also when an assertion unwinds first.
-struct Release(std::path::PathBuf);
-
-impl Drop for Release {
-    fn drop(&mut self) {
-        let _ = fs::write(&self.0, "");
-    }
-}
-
 #[tokio::test]
 async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_program_exits() {
     use artifactize_core::review::log::{End, Kind, Stream, channel};
@@ -408,18 +399,17 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
 
     // A launch returns at once; what its program prints keeps arriving in the same run until
     // it exits, here once the test lets it.
-    let release = Release(repo.path().join("release"));
+    let mut launched = Launched::new(support::os::tempdir());
     let waits = format!(
-        "import os, sys, time\nprint('started', flush=True)\nfor _ in range(6000):\n    if os.path.exists({:?}): break\n    time.sleep(0.01)\nprint('after', file=sys.stderr, flush=True)",
-        support::os::path_text(&release.0)
+        "import sys\nprint('started', flush=True)\n{LAUNCH}print('after', file=sys.stderr, flush=True)"
     );
     write_artifact(
-        repo.path(),
+        launched.path(),
         "a",
         json!({"inspect":tool("launch", support::os::python_program(), &python(&waits))}),
         "Review.",
     );
-    let config = read_workspace_config(repo.path()).unwrap();
+    let config = read_workspace_config(launched.path()).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     let result = registry
         .call_logged(
@@ -437,7 +427,9 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
             text: "started".into()
         }
     );
-    drop(release);
+    // Adopted while it runs, so its exit is confirmed before its repository is removed.
+    support::os::wait_until(Duration::from_secs(30), || launched.own().is_some());
+    fs::write(launched.path().join("release"), "").unwrap();
     assert_eq!(
         next(&mut events).await,
         Kind::Line {

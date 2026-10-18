@@ -122,6 +122,11 @@ on its own inputs or children. Those still belong to the final approval obligati
 so the consumer may execute without the Run being able to finish GREEN.
 
 Its own Artifact and the Artifacts in a dependency cycle with it are excluded.
+For example, if `docs`'s eval references `cli` and `cli`'s eval references `docs`,
+the two form a cycle: a RED `cli/tests` does not block `docs/matches-cli`, since
+either may be the one to fix. Both run, and both must pass before anything outside
+the cycle that uses them can.
+
 Cycle peers are evaluated together: none can be fixed first. Cycles are the ones
 Eval references and children form: a child that references its parent, directly
 or through a chain, is its parent's cycle peer. A RED sibling Eval on the same

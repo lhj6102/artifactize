@@ -1,7 +1,7 @@
 // The window's own facts, each with one owner: the launch the backend reported, a failure to
 // start, the shown screen and the two dialogs. Shared with createContext.
 import { createContext } from "svelte";
-import { commands as bindings, type LaunchView, type LogLine } from "../ipc/client";
+import { commands as bindings, type LaunchView, type RequestLog } from "../ipc/client";
 import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
 import { Registry } from "./commands.svelte";
@@ -46,10 +46,9 @@ export class AppState {
     return canonical;
   }
 
-  /** Tool log lines go to the review of their request; one nobody opened drops them. */
-  logged(lines: LogLine[]): void {
-    const requests = lines.map((line) => line.request).filter((request, at, all) => all.indexOf(request) === at);
-    for (const request of requests) this.reviews[request]?.logged(lines.filter((line) => line.request === request));
+  /** Each Tool log goes to the review of its request; one nobody opened drops it. */
+  logged(logs: RequestLog[]): void {
+    for (const { request, entries } of logs) this.reviews[request]?.logged(entries);
   }
 
   /** A replaced state: the reviews and drafts of the old one no longer apply. */

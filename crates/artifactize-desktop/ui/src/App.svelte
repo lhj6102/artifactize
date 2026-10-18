@@ -40,7 +40,7 @@
     const clock = setInterval(() => void browse.redraw(), 1000);
     const unchanged = onStateChanged((resync) => browse.refresh(resync));
     // What Human tools print, for whichever review shows it.
-    const unlogged = onHumanToolLog((lines) => app.logged(lines));
+    const unlogged = onHumanToolLog((logs) => app.logged(logs));
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()

@@ -140,7 +140,8 @@ graph`, `artifactize status --all` and `artifactize tools check`.
 When a reviewer must inspect something running, the skill shows a session declared
 with `views.agent_sessions.<name>.start`/`stop` and a command tool bound with
 `session = "<name>"`, its program inside the Artifact so the fingerprint covers it.
-artifactize starts, stops and cleans up sessions; there are no lifetime or port
+artifactize starts sessions on the first bound tool call, then stops and cleans
+them up at review end; there are no lifetime or port
 options, and `execution_paths` record provenance, not reuse inputs. Declared
 commands are trusted local programs, **not an OS sandbox**. See
 [Tool sessions](../features/tools/agent.md#tool-sessions).
@@ -160,6 +161,20 @@ the cost of work an upstream RED cancels; `defer_human` lets machine work finish
 while sign-offs wait, ending SIGNOFFS_PENDING, which is **not full approval**.
 `gate = "blocking"` keeps a sign-off a hard gate. Neither choice may be used to get
 around a required person.
+
+How Arti treats each result:
+
+- **GREEN**: done for this content.
+- **RED**: explains the finding and fixes the Artifact the eval judges, then verifies
+  again.
+- **BLOCKED**: something the eval waits on failed, usually a RED or ERROR eval of an
+  input it uses. Arti fixes that first, then verifies again.
+- **ERROR**: the check could not run. Arti reads `request_logs` or `session_show` and
+  repairs the cause, such as a missing program, never the verdict.
+- **SIGNOFFS_PENDING**: everything else passed and a person's sign-off waits. It is
+  not full approval; Arti hands off (below).
+- **INCOMPLETE**: required evidence is missing, for example where CI only reuses
+  existing reviews. Arti gets that evidence with a verify that runs the missing evals.
 
 ## Hand off to the person, then yield
 

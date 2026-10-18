@@ -251,9 +251,13 @@ export type CurrentGraph = {
 	structure: string,
 };
 
+/**  What a Detail describes, from the library's [`Target`]. */
+export type DetailTarget = "run" | "artifact" | "eval";
+
 export type DetailView = {
 	run: string,
 	node: string,
+	target: DetailTarget,
 	title: string,
 	/**  One-line outcome: state, elapsed time, profile and dependencies. */
 	summary: string,
@@ -356,9 +360,9 @@ export type GraphNode = {
 	light: Light,
 };
 
-/**  Lines of Human tool runs, oldest first. */
+/**  The Tool logs that changed, each whole. */
 export type HumanToolLog = {
-	lines: LogLine[],
+	logs: RequestLog[],
 };
 
 /**  One request in the shared Human Detail. */
@@ -424,12 +428,6 @@ export type Light =
 /**  Every eval is GREEN. */
 "green";
 
-export type Line = 
-/**  A run started, at milliseconds since the Unix epoch. */
-{ kind: "start"; at: number | null; operation: string; artifact: string } | { kind: "stdout"; text: string } | { kind: "stderr"; text: string } | 
-/**  The run's end line, `■ exit 0` or how it ended. */
-{ kind: "end"; text: string; error: boolean };
-
 /**  One request the search found. */
 export type Listed = {
 	id: string,
@@ -444,12 +442,26 @@ export type Listed = {
 	repository: string,
 };
 
-export type LogLine = {
-	/**  The review the run belongs to. */
-	request: string,
-	/**  The run, unique while the app runs: later lines find their own entry. */
+/**
+ *  One tool run: its start line's facts, what it printed as it ran, and its end line once it
+ *  ended. A launched program's lines keep arriving after its tool returned.
+ */
+export type LogEntry = {
+	/**  The run, unique while the app runs. */
 	run: string,
-	line: Line,
+	/**  Its start, at milliseconds since the Unix epoch. */
+	at: number | null,
+	operation: string,
+	artifact: string,
+	lines: LogText[],
+	/**  The run's end line, `■ exit 0` or how it ended. */
+	end: LogText | null,
+};
+
+/**  One line of a run: what it printed, red when it went to stderr or the run failed. */
+export type LogText = {
+	text: string,
+	error: boolean,
 };
 
 /**  A status with its glyph, as badges, headlines and counts show it. */
@@ -527,6 +539,12 @@ export type RepositoryKey =
 { kind: "git"; path: PathKey } | 
 /**  A non-Git workspace. */
 { kind: "workspace"; path: PathKey };
+
+/**  The Tool log of one review: one entry per run, in the order they started. */
+export type RequestLog = {
+	request: string,
+	entries: LogEntry[],
+};
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };

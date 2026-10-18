@@ -54,7 +54,10 @@ always there: with no Run selected, while loading, on an error or with an empty
 graph, the area stays and says so. What went wrong, such as Runs on the page that
 cannot be read, shows as one line in the Run pane's header; click it to read it
 in full and again to fold it. It never moves or hides the graph. New Runs, claims
-and submissions made elsewhere appear without a manual reload. Run-end validation
+and submissions made elsewhere appear without a manual reload. A read that fails
+leaves what was last read on screen: graphs, request states and claims can be
+stale while ages keep counting, so refresh the Monitor (Ctrl+R) or the Review
+list after fixing what the notice names. Run-end validation
 stays historical: a later Human submission can change the current request display
 without rewriting the old verdict. Damaged records are
 [marked unreadable](../features/others/state.md#unreadable-records), not treated
@@ -76,9 +79,7 @@ work, timing, budgets, executed/reused work and usage. Drag the Detail's left ed
 to resize it; it keeps that width, also in the next launch.
 
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`:
-the Artifact's own chip, the Artifact icon before its name, then one per eval with
-its verdict's glyph and colour. Available pane width can cut a long name short in
-both the chip and the Detail title. Eval chips that do not fit wrap onto the next line.
+the Artifact's own chip, then one per eval with its verdict's glyph and colour.
 
 The Artifact's chip shows it between its neighbours, drawn with the Run graph's
 nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
@@ -89,18 +90,17 @@ its chip) and its path; every other fact, what it waits for included, folds unde
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
-result; then **Execution options**, **Execution metadata** and **Fingerprint** when
-it has them. In the result, `summary` appears as text without its field name; other
-text fields show their names. Lists become numbered items: `item` and `where`, when
-present, form an item's heading. Its remaining fields show their names unless only
-one remains, in which case its text stands alone. Every other fact, including what
-it waits for, folds under **Debug**. An eval with a log switches
+result, with findings as numbered items headed by their `item` and `where`; then
+**Execution options**, **Execution metadata** and **Fingerprint** when it has them.
+Other facts fold under **Debug**. An eval with a log switches
 below the chips between its Summary, shown first, and its log, a plain-text choice
 whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
 with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
 not a live log stream). Missing or remote conversations explain why they are
 unavailable on this machine. A Human eval's chip holds its review and sign-off, with
-the controls described below. A Run's Detail keeps its sections, where `t` toggles
+the controls described below. An eval outside the Run's selection, such as one a
+partial `verify` left out, has no request in that Run: its chip shows its sections
+read-only, with no Summary of a result, no Human controls and no Tool log. A Run's Detail keeps its sections, where `t` toggles
 Technical and `w` or the pending-evals control reveals the unfinished checks behind
 an upstream wait.
 
@@ -206,8 +206,9 @@ schema ([the shapes it may use](../features/declarations.md#human-result-schemas
 a text box, a number box, true/false, a choice, a list of text with **+ Add** and
 ✕ per item, or repeated groups of fields with **+ Add** for a group and ✕ per
 group (one empty group always stays to type in). Constants are filled in and not
-shown; `*` marks a required field and an empty optional one says *Optional* in
-grey. Tab moves between controls. Ctrl+G/Ctrl+R switches verdicts. Enter in a field
+shown; `*` marks a required field. An empty optional text or number field, a text
+list item included, says *Optional* in grey; an optional yes/no or choice shows `–`
+while unset. Tab moves between controls. Ctrl+G/Ctrl+R switches verdicts. Enter in a field
 does not submit; Ctrl+S or activating the **Submit** button submits, including
 Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
@@ -216,7 +217,9 @@ Esc cancels active work, then leaves the form, then leaves Detail.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
 GREEN and RED keep separate drafts. Monitor and Review share the same request's
 review state, Tool log included, within this app session, rather than creating
-independent forms.
+independent forms. This holds while the state stays the same: when the app finds its
+state database replaced, it closes open Details, forgets cached reviews, drafts and
+Tool logs, and cancels running Human tool and submit jobs.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.
@@ -225,8 +228,10 @@ The verdict is already recorded; retry publication with Settings' **Push results
 
 ### Leave and quit
 
-`q` quits outside a text field, except while Human Detail is editing or busy:
-leave or cancel that work first. Closing the window also starts quitting. If
+`q` quits outside a text field, except while the keyboard is in a Human Detail that
+is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
+such as after closing Commands, `q` starts quitting even while that review stays
+open. Closing the window also starts quitting. If
 this window still holds unsubmitted Human claims, choose **Stay** (Esc),
 **Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a claim leaves it
 held for this reviewer; it is not a verdict.

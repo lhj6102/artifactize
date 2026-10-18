@@ -23,9 +23,11 @@ root README {readme}. Check every W- item and this Artifact's own criteria:
 - R-INSTALL-OS: The README guides installation itself by operating system. Default methods
   per OS plus a pointer to alternatives are sufficient. It must not replace those defaults
   with only a link to the docs installation page.
-- R-REAL-SCREENS: The bottom images show the actual product running, not mockups. Inspect
-  {screenshots}. Example
-  data is labeled as such and must not present fabricated Human approvals as genuine.
+- R-REAL-SCREENS: This covers the product images at the bottom; the introduction video near
+  the top is R-FLOW's. The README may attach the screenshots in assets/screenshots/ and the
+  demos in assets/demos/, which are captured from the real app. It references them by
+  those paths, never as copies elsewhere. Example data
+  is labeled as such and must not present fabricated Human approvals as genuine.
 Submit GREEN only when no shared item or own criterion is clearly violated. Otherwise submit
 RED with up to 20 violations, most important first, each with the item id, a README path:line
 and one sentence on what to change in the README.

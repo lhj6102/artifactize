@@ -9,7 +9,7 @@ import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
 import { greenForm, humanView, redForm } from "./fixtures";
-import type { FormView, LogLine, ToolView } from "../ipc/client";
+import type { FormView, ToolView } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
@@ -290,15 +290,11 @@ describe("HumanDetail", () => {
     expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
     await user.click(screen.getByRole("button", { name: "▶ preview" }));
     await waitFor(() => expect(ran).toEqual(["preview_brand"]));
-    // The launched program keeps printing after its button returned; a later run's lines
-    // join their own entry.
-    const line = (run: string, line: LogLine["line"]): LogLine => ({ request: "run-a-2", run, line });
+    // The launched program keeps printing after its button returned, under its own entry.
     review.logged([
-      line("1", { kind: "start", at: 0, operation: "preview", artifact: "brand" }),
-      line("1", { kind: "stdout", text: "clicked (412, 1)" }),
-      line("2", { kind: "start", at: 0, operation: "notes", artifact: "release" }),
-      line("1", { kind: "stderr", text: "clicked (412, 2)" }),
-      line("2", { kind: "end", text: "■ exit 0", error: false }),
+      { run: "1", at: 0, operation: "preview", artifact: "brand", end: null,
+        lines: [{ text: "clicked (412, 1)", error: false }, { text: "clicked (412, 2)", error: true }] },
+      { run: "2", at: 0, operation: "notes", artifact: "release", lines: [], end: { text: "■ exit 0", error: false } },
     ]);
     const log = screen.getByRole("log", { name: "Tool log" });
     await waitFor(() => expect(log.textContent).toContain("clicked (412, 2)"));

@@ -70,16 +70,33 @@ the assistant the workflow instructions.
 
 ## The product running
 
-These are real screenshots of the experimental desktop app built from this branch,
-using an isolated example project. The human review is pending; no approval was
-claimed or submitted to make these pictures. The text-based app (CLI) also provides
-Monitor and Review screens.
+These are real recordings and screenshots of the desktop app, made by scripts
+([demos](assets/capture/demos.mts), [screenshots](assets/capture/screenshots.mts)) from
+projects they verify for real. The example reviewer "alice" claims a sign-off to show
+the review form; nothing is submitted. The text-based app (CLI) also provides Monitor
+and Review screens.
 
-**Monitor:** inspect the documentation check's saved result alongside the project.
-It passed; a human sign-off and the shipping check that needs it are still waiting.
+**Fix until it passes:** four Runs of an example, eight times faster. Between Runs the
+recording script removes what failed, standing in for an AI fixing the code; work that
+didn't change is reused at once.
 
-<img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example project has a passed documentation check and a waiting human sign-off.">
+<img src="assets/demos/review-loop.gif" width="1200" alt="Real recording of the Artifactize desktop Monitor over four Runs: failures turn red, are fixed between Runs, unchanged work is reused, and the fourth Run is satisfied.">
 
-**Review:** the same waiting request can be inspected before anyone claims it.
+**How this project grew:** Artifactize's own Artifact graph at each release, from
+0.7.0 to today.
 
-<img src="assets/screenshots/review.png" width="1200" alt="Real Artifactize desktop Review: the example's unclaimed human review shows its instruction and declared tools.">
+<img src="assets/demos/graph-growth.gif" width="1200" alt="Real recording of the Artifactize desktop graph view showing this repository's Artifact graph growing release by release from 0.7.0 to the current main.">
+
+**Monitor:** the example's Run: core passed, cli's tests failed so docs is blocked,
+and release waits for a person's sign-off.
+
+<img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example Run graph where core passed, cli failed, docs is blocked and release waits for a sign-off.">
+
+**Detail:** cli between the core it uses and the docs that use it, with its evals.
+
+<img src="assets/screenshots/detail.png" width="1200" alt="Real Artifactize desktop Detail of the cli Artifact: its neighbours core and docs, and its lint and tests evals.">
+
+**Review:** the release sign-off, claimed by the example reviewer, after running its
+notes tool, with the GREEN form open.
+
+<img src="assets/screenshots/review.png" width="1200" alt="Real Artifactize desktop Review: the example's claimed sign-off with its instruction, notes tool, tool log and GREEN form.">

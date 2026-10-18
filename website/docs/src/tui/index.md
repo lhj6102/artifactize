@@ -71,7 +71,8 @@ list stays there, never quits. The standalone UI has no `?` help overlay or `!` 
 navigation; those keys belong to the monitor.
 
 Mouse capture is on by default: click a list row to select it, then click it again
-to open it; the wheel scrolls the list. **Human** Detail has the same mouse
+to open it; the wheel scrolls the list while the list has focus, not the compact
+list beside an open Detail. **Human** Detail has the same mouse
 interactions as Monitor. Standalone Review's non-Human Detail is keyboard-only:
 its transcript groups and content do not respond to clicks or the wheel. F2 turns
 capture off for terminal text selection; the header shows `mouse off · F2`.

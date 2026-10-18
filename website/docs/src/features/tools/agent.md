@@ -257,15 +257,15 @@ on the same Artifact. Choose ports/displays through standard OS mechanisms
 starts its own headless display. The Agent sees no instance ID and cannot call
 start or stop.
 
-After execution-path pinning, artifactize starts only the sessions referenced by
-the eval's admitted tools, while holding the review's backend slot. Every session
-must be ready before the first model request. Spawn failure or exit before readiness
-produces `PREPARATION_FAILED` with no model request; already started sessions undergo
-stop and cleanup rollback. Any cleanup failure is also reported, with unconfirmed
-state retained for recovery. Readiness has no fixed bound: start may prepare for as
-long as it needs, such as building what the harness runs, while its process lives;
-cancelling the review ends the wait. After readiness, stdout and stderr are drained
-and discarded.
+Execution-path pinning still happens at review start. A tool session starts only
+when the Agent first calls a tool bound to it; later bound calls reuse that session.
+An admitted session whose tools are never called starts no process and creates no
+session directory. Startup and readiness count toward the review's timeout.
+Spawn failure or exit before readiness is returned to the Agent as that tool call's
+error, not `PREPARATION_FAILED`. Later calls to the same session return the same
+startup error without restarting it. Readiness has no separate fixed bound: start
+may prepare while its process lives, until the review times out or is cancelled.
+After readiness, stdout and stderr are drained and discarded.
 
 If the start process exits during the review, artifactize immediately kills its
 remaining process group/Job and cancels in-flight bound calls. The cleaned group
@@ -275,10 +275,12 @@ without skipping cancellation/join of bound calls or stop. Later bound calls ret
 ``The tool session `app` ended.``; there is no restart. This is an ordinary tool
 error in the saved conversation, not a new event kind.
 
-Stop is attempted after the Agent loop and before input revalidation, fingerprint recheck
-and result commit, on every ending: verdict, error, timeout, cancellation or dropped
-review future, including a review panic. Cleanup cancels and awaits in-flight bound
-calls before running stop. Stop uses its own cancellation token and an internal
+Every session that started goes through stop and cleanup on every review ending:
+verdict, error, timeout, cancellation or dropped review future, including a review
+panic. A start that exits before readiness is cleaned up immediately; otherwise
+stop is attempted after the Agent loop and before input revalidation, fingerprint
+recheck and result commit. Cleanup cancels and awaits in-flight bound calls before
+running stop. Stop uses its own cancellation token and an internal
 30-second bound, then artifactize kills and reaps the session group/Job. Its
 directory and admission records are removed only after all owned-process cleanup
 is confirmed, even when stop itself fails or hangs. Windows cleanup waits for all
@@ -311,10 +313,11 @@ Start/stop execution-path pins use `<session>_<artifact>.start` and `.stop` keys
 in the result's existing `executionPaths` provenance, including remote records.
 `tools check` statically checks the referenced session's executables and operands
 without running it. `tools check --execute` on a bound tool and `session send`
-each own a fresh tool session and clean it up afterward.
+each own fresh lazy sessions: they start on the first bound call and clean up
+afterward. A follow-up that calls no bound tools starts nothing.
 
-Internal callers start sessions with
-`registry.start_sessions(state, selected_tool_or_none, cancellation).await`,
+Internal callers register lazy sessions with
+`registry.sessions(state, selected_tool_or_none, cancellation)`,
 attach them with `registry.with_sessions(&sessions)`, then release and await
 `sessions.close().await` after their calls. Dropping the guard also starts cleanup.
 Session commands remain **trusted, not sandboxed**: commands can modify the

@@ -27,6 +27,10 @@ fn fixture(stop: &str) -> OwnedFixture {
     let path = fixture.config.root.join("index.artf");
     let mut definition = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
     let mut views = harness::views(&log, "start", stop, "hold");
+    let mut probe = views["agent_tools"]["act"].clone();
+    probe["args"][1] = json!("probe");
+    probe["input_schema"] = json!({"type":"object"});
+    views["agent_tools"]["probe"] = probe;
     views["agent_tools"]["act"]["input_schema"] = json!({"type":"object"});
     definition["views"] = views;
     crate::test_declaration::write(&path, definition.to_string()).unwrap();
@@ -36,7 +40,7 @@ fn fixture(stop: &str) -> OwnedFixture {
 }
 
 async fn owned_review(fixture: &OwnedFixture, cancellation: CancellationToken) -> Review {
-    let sessions = fixture.start_sessions(cancellation.clone()).await.unwrap();
+    let sessions = fixture.sessions(cancellation.clone());
     let http = SequencedHttpClient::new(vec![
         openai_response(
             "exact-model",
@@ -80,30 +84,82 @@ async fn reached(condition: impl Fn() -> bool) {
 }
 
 #[tokio::test]
-async fn cancellation_and_dropped_review_run_stop_with_an_independent_token() {
+async fn cancellation_and_dropped_review_run_stop_even_before_readiness() {
     let _clock = CLOCK.lock().await;
-    for cancel in [true, false] {
-        let fixture = fixture("stop");
-        let log = fixture.directory.path().join("log");
-        let cancellation = CancellationToken::new();
-        let mut future = Box::pin(owned_review(&fixture, cancellation.clone()));
-        tokio::select! {
-            _ = reached(|| !harness::records(&log, "call").is_empty()) => {},
-            _ = &mut future => panic!("review completed before tool handshake"),
+    for mode in ["start", "unready"] {
+        for cancel in [true, false] {
+            let mut fixture = fixture("stop");
+            let path = fixture.config.root.join("index.artf");
+            let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+            declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!(mode);
+            crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+            fixture.config = read_workspace_config(&fixture.config.root).unwrap();
+            let log = fixture.directory.path().join("log");
+            let cancellation = CancellationToken::new();
+            let mut future = Box::pin(owned_review(&fixture, cancellation.clone()));
+            let handshake = if mode == "start" { "call" } else { "start" };
+            tokio::select! {
+                _ = reached(|| !harness::records(&log, handshake).is_empty()) => {},
+                _ = &mut future => panic!("review completed before tool handshake"),
+            }
+            if cancel {
+                cancellation.cancel();
+                assert_eq!(future.await.result.unwrap_err().code, Code::Cancelled);
+            } else {
+                drop(future);
+            }
+            reached(|| {
+                !harness::records(&log, "stop").is_empty()
+                    && harness::directories(&fixture.state()).is_empty()
+            })
+            .await;
+            harness::assert_cleaned(&fixture.state(), &log, 1);
         }
-        if cancel {
-            cancellation.cancel();
-            assert_eq!(future.await.result.unwrap_err().code, Code::Cancelled);
-        } else {
-            drop(future);
-        }
-        reached(|| {
-            !harness::records(&log, "stop").is_empty()
-                && harness::directories(&fixture.state()).is_empty()
-        })
-        .await;
-        harness::assert_cleaned(&fixture.state(), &log, 1);
     }
+}
+
+#[tokio::test]
+async fn waiting_for_session_readiness_consumes_the_review_timeout() {
+    let _clock = CLOCK.lock().await;
+    let mut fixture = fixture("stop");
+    let path = fixture.config.root.join("index.artf");
+    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!("unready");
+    declaration["evals"][0]["profile"]["timeout_ms"] = json!(60_000);
+    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    fixture.config = read_workspace_config(&fixture.config.root).unwrap();
+    let log = fixture.directory.path().join("log");
+    let mut future = Box::pin(owned_review(&fixture, CancellationToken::new()));
+    tokio::select! {
+        _ = reached(|| !harness::records(&log, "start").is_empty()) => {},
+        _ = &mut future => panic!("review completed before startup handshake"),
+    }
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(60)).await;
+    let result = future.await;
+    tokio::time::resume();
+    assert_eq!(result.result.unwrap_err().code, Code::Timeout);
+    assert!(harness::records(&log, "call").is_empty());
+    harness::assert_cleaned(&fixture.state(), &log, 1);
+}
+
+#[tokio::test]
+async fn concurrent_first_bound_calls_share_one_session_start() {
+    let _clock = CLOCK.lock().await;
+    let fixture = fixture("stop");
+    let cancellation = CancellationToken::new();
+    let sessions = fixture.sessions(cancellation.clone());
+    let registry = Registry::new(&fixture.config, &fixture.config.evals[0].id)
+        .unwrap()
+        .with_sessions(&sessions);
+    let (first, second) = tokio::join!(
+        registry.call("probe_a", json!({}), &fixture.output, cancellation.clone()),
+        registry.call("probe_a", json!({}), &fixture.output, cancellation),
+    );
+    assert!(!first.is_error(), "{first:?}");
+    assert!(!second.is_error(), "{second:?}");
+    sessions.close().await.unwrap();
+    harness::assert_cleaned(&fixture.state(), &fixture.directory.path().join("log"), 1);
 }
 
 #[tokio::test]
@@ -130,7 +186,7 @@ async fn hanging_stop_cannot_retain_the_group_or_session_directory() {
 }
 
 #[tokio::test]
-async fn an_unready_harness_prepares_without_a_fixed_bound_until_cancelled() {
+async fn an_unready_bound_call_waits_without_a_fixed_bound_until_cancelled() {
     let _clock = CLOCK.lock().await;
     let mut fixture = fixture("stop");
     let log = fixture.directory.path().join("log");
@@ -141,7 +197,7 @@ async fn an_unready_harness_prepares_without_a_fixed_bound_until_cancelled() {
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let state = fixture.state();
     let cancellation = CancellationToken::new();
-    let mut start = fixture.start_sessions(cancellation.clone());
+    let mut start = fixture.ready_sessions(cancellation.clone());
     tokio::select! {
         _ = reached(|| !harness::records(&log, "start").is_empty()) => {},
         _ = &mut start => panic!("unready session was admitted"),
@@ -165,7 +221,7 @@ fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
         let fixture = fixture("stop");
         let log = fixture.directory.path().join("log");
         let config = read_workspace_config(&fixture.config.root).unwrap();
-        let starting = fixture.start_sessions(CancellationToken::new());
+        let starting = fixture.ready_sessions(CancellationToken::new());
         let output = fixture.output.clone();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -210,7 +266,7 @@ async fn directory_cleanup_failure_is_recovered_after_lease_release_even_with_a_
     let log = fixture.directory.path().join("log");
     let state = fixture.state();
     let sessions = fixture
-        .start_sessions(CancellationToken::new())
+        .ready_sessions(CancellationToken::new())
         .await
         .unwrap();
     assert!(sessions.close().await.is_err());
@@ -229,7 +285,7 @@ async fn directory_cleanup_failure_is_recovered_after_lease_release_even_with_a_
     crate::test_declaration::write(&path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let next = fixture
-        .start_sessions(CancellationToken::new())
+        .ready_sessions(CancellationToken::new())
         .await
         .unwrap();
     assert!(!directory.exists());
@@ -248,7 +304,7 @@ fn fixture_unwind_joins_sessions_before_removing_their_inputs() {
             .build()
             .unwrap();
         let _sessions = runtime
-            .block_on(fixture.start_sessions(CancellationToken::new()))
+            .block_on(fixture.ready_sessions(CancellationToken::new()))
             .unwrap();
         let start = harness::records(&fixture.directory.path().join("log"), "start")
             .pop()
