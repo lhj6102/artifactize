@@ -1,7 +1,6 @@
 # Reuse: status predicts, verify reviews everything once, the next verify reuses it all.
 # Record with website/demo/record.sh (from the repository root).
 Output website/demo/media/reuse.gif
-Output website/demo/media/reuse.mp4
 Source website/demo/settings.tape
 Set Height 830
 Set LoopOffset 92%

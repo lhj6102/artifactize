@@ -56,3 +56,45 @@ properties.where = { type = "string", minLength = 1 }
 properties.change = { type = "string", minLength = 1 }
 required = ["item", "where", "change"]
 additionalProperties = false
+
+[evals.matches-landing-install]
+title = "The README's installation matches the landing page's install section"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+
+[evals.matches-landing-install.payload]
+instruction = """
+Read the installation section of the root README {readme} and the install section of index.html
+of {landing}. For each operating system (Linux, macOS, Windows), compare what the two tell a
+reader to do: the default install command must be identical, an alternative method both name
+must be the same, and both must agree on which channels are not available yet. Wording and
+layout may differ, and either may mention a detail the other leaves out as long as nothing
+contradicts.
+Submit GREEN when they agree. Otherwise submit RED with one finding per mismatch, naming the
+operating system, the README path:line and the landing page path:line, and one sentence on what to
+change in the README.
+"""
+
+[evals.matches-landing-install.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.matches-landing-install.fail_schema]
+type = "object"
+required = ["findings"]
+additionalProperties = false
+
+[evals.matches-landing-install.fail_schema.properties.findings]
+type = "array"
+minItems = 1
+maxItems = 10
+
+[evals.matches-landing-install.fail_schema.properties.findings.items]
+type = "object"
+properties.os = { type = "string", minLength = 1 }
+properties.readme = { type = "string", minLength = 1 }
+properties.landing = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["os", "readme", "landing", "change"]
+additionalProperties = false

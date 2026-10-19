@@ -1,6 +1,7 @@
-// artifactize.dev: the theme toggle, and play/pause and captions for the
-// promo video and the terminal recordings on pages that have them. The promo
-// pauses while it is off screen and never autoplays under reduced motion.
+// artifactize.dev: the theme toggle, play/pause and captions for the promo video on
+// pages that have it, the install tabs, the story's scroll cue and the desktop
+// recordings. The promo pauses while it is off screen and never autoplays under
+// reduced motion.
 
 // Theme toggle: dark (the docs' "navy") or light. It writes the docs'
 // localStorage key, so the choice carries across the site.
@@ -81,89 +82,6 @@
       }
     }, { threshold: 0.15 }).observe(video);
   }
-})();
-
-// Terminal recordings: they load only when played, play while on screen (never
-// under reduced motion), and a pause button stops them for good.
-(function () {
-  var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var demos = document.querySelectorAll('.demo');
-  Array.prototype.forEach.call(demos, function (demo) {
-    var video = demo.querySelector('video');
-    var button = demo.querySelector('.demo-play');
-    var label = button.querySelector('.vc-label');
-    var frame = demo.querySelector('.demo-frame');
-    var userPaused = reduced;
-    var visible = false;
-
-    function play() {
-      var p = video.play();
-      if (p && p.catch) p.catch(function () {});
-    }
-    function sync() {
-      var paused = video.paused;
-      button.setAttribute('aria-pressed', paused ? 'true' : 'false');
-      button.setAttribute('aria-label', paused ? 'Play the recording' : 'Pause the recording');
-      label.textContent = paused ? 'Play' : 'Pause';
-    }
-
-    button.hidden = false;
-    button.addEventListener('click', function () {
-      if (video.paused) {
-        userPaused = false;
-        play();
-      } else {
-        userPaused = true;
-        video.pause();
-      }
-    });
-    video.addEventListener('play', sync);
-    video.addEventListener('pause', sync);
-    sync();
-
-    Array.prototype.forEach.call(demo.querySelectorAll('.demo-tab'), function (tab) {
-      tab.addEventListener('click', function () {
-        Array.prototype.forEach.call(demo.querySelectorAll('.demo-tab'), function (t) {
-          t.setAttribute('aria-pressed', t === tab ? 'true' : 'false');
-        });
-        var name = tab.getAttribute('data-name');
-        frame.style.aspectRatio = '1000 / ' + tab.getAttribute('data-height');
-        video.setAttribute('height', tab.getAttribute('data-height'));
-        var caption = demo.querySelector('.demo-caption');
-        if (caption) caption.textContent = tab.getAttribute('data-label');
-        video.poster = '/media/demo/' + name + '.webp';
-        video.querySelector('source').src = '/media/demo/' + name + '.mp4';
-        video.load();
-        if (visible && !userPaused) play();
-        sync();
-      });
-    });
-
-    // Nothing loads until the recording nears the viewport: the poster (a still
-    // frame) then, and the video only when it plays.
-    function showPoster() {
-      if (!video.poster && video.getAttribute('data-poster')) video.poster = video.getAttribute('data-poster');
-    }
-    if ('IntersectionObserver' in window) {
-      var near = new IntersectionObserver(function (entries) {
-        if (entries[0].isIntersecting) {
-          showPoster();
-          near.disconnect();
-        }
-      }, { rootMargin: '300px 0px' });
-      near.observe(video);
-      new IntersectionObserver(function (entries) {
-        visible = entries[0].isIntersecting;
-        if (!visible && !video.paused) {
-          video.pause();
-        } else if (visible && video.paused && !userPaused) {
-          play();
-        }
-      }, { threshold: 0.35 }).observe(video);
-    } else {
-      showPoster();
-    }
-  });
 })();
 
 // Install tabs: show the command for the visitor's OS first. Without JS every panel
@@ -285,5 +203,49 @@
     // The class makes room for the button.
     panel.classList.add('copyable');
     button.hidden = false;
+  });
+})();
+
+// The story's scroll cue: shown while the story fills the middle of the screen, with a
+// bar that fills as the steps advance and an arrow until the last step.
+(function () {
+  var cue = document.querySelector('[data-story-scroll]');
+  var steps = document.querySelector('.story-steps');
+  if (!cue || !steps) return;
+  var frame = 0;
+
+  function update() {
+    frame = 0;
+    var box = steps.getBoundingClientRect();
+    var middle = window.innerHeight / 2;
+    var progress = Math.min(1, Math.max(0, (middle - box.top) / Math.max(1, box.height - middle)));
+    cue.style.setProperty('--story-progress', progress.toFixed(3));
+    cue.classList.toggle('is-visible', box.top < middle && box.bottom > middle);
+    cue.classList.toggle('is-end', progress > 0.97);
+  }
+
+  function schedule() {
+    if (!frame) frame = requestAnimationFrame(update);
+  }
+
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('resize', schedule);
+  update();
+})();
+
+// The desktop app recordings: each tab swaps the GIF, its description and caption.
+(function () {
+  var demo = document.querySelector('[data-app-demo]');
+  if (!demo) return;
+  var img = demo.querySelector('img');
+  var caption = demo.querySelector('.app-demo-caption');
+  var tabs = Array.prototype.slice.call(demo.querySelectorAll('.demo-tab'));
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      tabs.forEach(function (t) { t.setAttribute('aria-pressed', t === tab ? 'true' : 'false'); });
+      img.src = tab.getAttribute('data-src');
+      img.alt = tab.getAttribute('data-alt');
+      if (caption) caption.textContent = tab.getAttribute('data-label');
+    });
   });
 })();

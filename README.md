@@ -49,8 +49,11 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 ### macOS
 
 ```sh
-curl -fsSL https://artifactize.dev/install.sh | sh
+brew install lhj6102/tap/artifactize
 ```
+
+> This uses [Homebrew](https://brew.sh/). Without Homebrew, use the install script:
+> `curl -fsSL https://artifactize.dev/install.sh | sh`
 
 ### Windows
 
