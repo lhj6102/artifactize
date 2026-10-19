@@ -103,7 +103,15 @@ case $format in
     dmg)
         mount="$work/mount"
         mkdir "$mount"
-        hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$file" >/dev/null || fail "dmg: hdiutil cannot mount $file"
+        hdiutil verify "$file" >"$work/hdiutil.log" 2>&1 || { cat "$work/hdiutil.log"; fail "dmg: $file is not a valid disk image"; }
+        # Hosted macOS runners sometimes report the disk-image service busy; that is the
+        # runner, not the image, so retry the mount only.
+        i=0
+        until hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$file" >"$work/hdiutil.log" 2>&1; do
+            i=$((i + 1))
+            if [ "$i" -ge 3 ]; then cat "$work/hdiutil.log"; hdiutil info; fail "dmg: hdiutil cannot mount $file"; fi
+            sleep 5
+        done
         mkdir "$work/Applications"
         cp -R "$mount/Artifactize.app" "$work/Applications/"
         hdiutil detach -quiet "$mount"
