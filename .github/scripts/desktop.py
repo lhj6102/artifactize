@@ -14,7 +14,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 
 REPO = Path(__file__).resolve().parents[2]
@@ -67,7 +66,7 @@ def build(target, version, output, scratch, e2e=False):
             {**window, "backgroundThrottling": "disabled"} for window in declared["app"]["windows"]]}
     overlay = scratch / "bundle.json"
     overlay.write_text(json.dumps(config))
-    args = ["node", UI / "node_modules/@tauri-apps/cli/tauri.js", "build", "--target", target,
+    args = ["node", UI / "node_modules/@tauri-apps/cli/tauri.js", "build", "--verbose", "--target", target,
             "--config", overlay]
     if windows:
         args += ["--no-bundle"]
@@ -87,9 +86,9 @@ def build(target, version, output, scratch, e2e=False):
         if signed:
             run("spctl", "--assess", "--type", "execute", "--verbose=2", app)
             run("xcrun", "stapler", "validate", app)
-        archive = output / f"Artifactize-v{version}-{target}.app.tar.gz"
-        with tarfile.open(archive, "w:gz") as tar:
-            tar.add(app, arcname=app.name)
+        archive = output / f"Artifactize-v{version}-{target}.app.zip"
+        # Preserve macOS resource forks and metadata, including the notarized app.
+        run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, archive)
         packages = list((binaries / "bundle/dmg").glob("*.dmg"))
     else:
         packages = list((binaries / "bundle/appimage").glob("*.AppImage"))
@@ -100,13 +99,13 @@ def build(target, version, output, scratch, e2e=False):
         # Include the Rust target, including macOS's two architectures, in asset names.
         dest = output / f"Artifactize-v{version}-{target}{package.suffix}"
         shutil.copy2(package, dest)
-        if signed:
-            run("xcrun", "stapler", "staple", dest)
-            run("xcrun", "stapler", "validate", dest)
     for path in output.iterdir():
         if path.is_file() and not path.name.endswith(".sha256"):
             with path.open("rb") as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                digest = hashlib.sha256()
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                digest = digest.hexdigest()
             path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n")
 
 
@@ -160,26 +159,33 @@ def test_unix(target, packages, scratch, version, e2e=False):
     observer = target_directory(target) / "artifactize-e2e-observe"
     macos = "apple" in target
     if macos:
-        mount = scratch / "volume"
-        mount.mkdir()
-        dmg, = packages.glob("*.dmg")
-        run("hdiutil", "attach", dmg, "-nobrowse", "-readonly", "-mountpoint", mount)
         app = Path("/Applications/Artifactize.app")
-        try:
+        for kind in ("dmg", "app.zip"):
+            owned = scratch / kind
+            owned.mkdir()
             if app.exists():
                 raise RuntimeError(f"refuse to replace an existing app: {app}")
-            run("ditto", mount / "Artifactize.app", app)
-        finally:
-            run("hdiutil", "detach", mount)
-        try:
-            binaries = app / "Contents/MacOS"
-            versions(binaries, version)
-            if e2e:
-                journeys(binaries / "artifactize-desktop", binaries / "artifactize", binaries, observer, scratch)
+            package, = packages.glob(f"*.{kind}")
+            if kind == "dmg":
+                mount = owned / "volume"
+                mount.mkdir()
+                run("hdiutil", "attach", package, "-nobrowse", "-readonly", "-mountpoint", mount)
+                try:
+                    run("ditto", mount / "Artifactize.app", app)
+                finally:
+                    run("hdiutil", "detach", mount)
             else:
-                launch(app, scratch, macos=True)
-        finally:
-            shutil.rmtree(app)
+                run("ditto", "-x", "-k", package, owned)
+                run("ditto", owned / "Artifactize.app", app)
+            try:
+                binaries = app / "Contents/MacOS"
+                versions(binaries, version)
+                if e2e:
+                    journeys(binaries / "artifactize-desktop", binaries / "artifactize", binaries, observer, owned)
+                else:
+                    launch(app, owned, macos=True)
+            finally:
+                shutil.rmtree(app)
     else:
         image, = packages.glob("*.AppImage")
         image.chmod(0o755)

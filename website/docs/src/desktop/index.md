@@ -199,7 +199,8 @@ under its own run until it exits, even while you write the result. The log wraps
 scrolls on its own and follows the newest line; scroll up to read and it stays,
 scroll back to the bottom and it follows again. Its text is ordinary selectable
 text, so copy what a tool printed into the result. It lasts while the app runs and
-is cleared by a submission; nothing is saved.
+is cleared by a submission through this app; nothing is saved. A review settled
+outside the app can retain its Tool log for the rest of the session.
 
 After claiming, `g` opens GREEN and `r` RED, each a form built from the eval's
 schema ([the shapes it may use](../features/declarations.md#human-result-schemas)):
@@ -231,10 +232,12 @@ The verdict is already recorded; retry publication with Settings' **Push results
 `q` quits outside a text field, except while the keyboard is in a Human Detail that
 is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
 such as after closing Commands, `q` starts quitting even while that review stays
-open. Closing the window also starts quitting. If
-this window still holds unsubmitted Human claims, choose **Stay** (Esc),
-**Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a claim leaves it
-held for this reviewer; it is not a verdict.
+open. Closing the window also starts quitting. For Human claims remembered by this
+window, choose **Stay** (Esc), **Release and quit** (`u`) or **Keep and quit** (`k`).
+Keeping an unsettled claim leaves it held for this reviewer; it is not a verdict.
+A request submitted or released outside the app can still appear in this quit
+checklist. If releasing fails because the request is already settled or released,
+choose **Keep and quit**; that choice does not reopen or reclaim the request.
 
 ## Settings
 
