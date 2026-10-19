@@ -110,8 +110,7 @@ website/demo/record.sh               # or: website/demo/record.sh human
 
 `record.sh` needs `vhs` (with `ttyd`), `ffmpeg`, `tmux` and `unshare`, and records
 `target/release/artifactize` (set `ARTIFACTIZE_BIN` for another build). It writes
-`demo/media/NAME.gif` for the README and `landing/media/demo/NAME.{mp4,webp}` for the
-landing page. Each tape starts `demo/session.sh`, which runs the shell in private
+`demo/media/NAME.gif`. Each tape starts `demo/session.sh`, which runs the shell in private
 user, mount, UTS, network and PID namespaces: user alice on host `laptop` with a
 throwaway home, state and `/tmp`, a loopback-only network for the review store, and
 no provider calls or GUI programs in the fixture. VHS itself needs a Chromium

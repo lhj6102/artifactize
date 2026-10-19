@@ -159,6 +159,7 @@
   opacity: 0.45;
 }
 
+
 @media (min-width: 761px) {
   .js .story-grid {
     grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
@@ -402,6 +403,76 @@
 .story-rail a[aria-current="step"]::before {
   background: var(--green);
   transform: scale(1.5);
+}
+
+/* ---------- Scroll cue: a vertical bar on the right edge while the story is on screen ---------- */
+
+/* The bar fills as the story advances; the arrow says there is more below. Wide screens
+   only, and only with JS (site.js shows it and sets --story-progress). */
+.story-scroll {
+  display: none;
+}
+
+@media (min-width: 761px) {
+  .js .story-scroll {
+    position: fixed;
+    z-index: 20;
+    top: 50%;
+    right: max(14px, calc((100vw - 1320px) / 2 - 44px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: var(--green);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-50%);
+    transition: opacity 0.3s ease;
+  }
+  .js .story-scroll.is-visible {
+    opacity: 1;
+  }
+}
+
+.story-scroll-label {
+  font: 600 11.5px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+}
+
+.story-scroll-track {
+  position: relative;
+  width: 3px;
+  height: 140px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.story-scroll-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: var(--green);
+  transform: scaleY(var(--story-progress, 0));
+  transform-origin: top;
+}
+
+.story-scroll-arrow {
+  font-size: 16px;
+  line-height: 1;
+  animation: story-scroll-bob 1.6s ease-in-out infinite;
+}
+
+/* At the last step there is nothing further down to scroll to. */
+.story-scroll.is-end .story-scroll-arrow {
+  visibility: hidden;
+}
+
+@keyframes story-scroll-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(5px); }
 }
 
 /* ---------- Phones: the stage on top, the steps beneath ---------- */

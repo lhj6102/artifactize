@@ -2,7 +2,6 @@
 # remote reuse and his verify reuses all of Alice's verdicts. Both laptops are panes on one
 # machine, each with its own checkout and state. Record with website/demo/record.sh.
 Output website/demo/media/team.gif
-Output website/demo/media/team.mp4
 Source website/demo/settings.tape
 Set Height 900
 Set LineHeight 1.05
