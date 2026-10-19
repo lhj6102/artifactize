@@ -1,12 +1,12 @@
 import { renderHosted as render } from "../test-host";
 // The Run graph against a mocked command boundary and layout: nodes take their lights, a click
-// zooms into an Artifact and lists its evals from the tree, selecting one moves the tree's
-// selection and Enter opens Detail, Esc zooms out, and a new snapshot recolours in place.
+// (or Enter on a focused node) on an Artifact asks for its Detail and one on the background
+// closes it, and a new snapshot recolours in place.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
-import type { RunGraph as Graph, TreeNode } from "../ipc/client";
+import type { RunGraph as Graph } from "../ipc/client";
 import RunGraph from "./RunGraph.svelte";
 import { LIMIT } from "./graph";
 
@@ -50,52 +50,24 @@ function graph(release: Graph["nodes"][number]["light"], ship = "waiting" as con
       { id: "a:release", name: "release", light: release },
       { id: "a:ship", name: "ship", light: ship },
     ],
-    edges: [{ source: "a:release", target: "a:ship", light: release, dependency: false }],
+    edges: [{ source: "a:release", target: "a:ship", light: release }],
   };
 }
-
-const evalNode = (id: string, name: string, text: string): TreeNode => ({
-  id,
-  kind: "eval",
-  glyph: "?",
-  tone: "human",
-  weight: "bold",
-  name,
-  marks: "",
-  text: [{ text, tone: null }],
-  right: "3s",
-  changed: false,
-  done: false,
-  attention: true,
-  urgent: true,
-  upstream: [],
-  children: [],
-});
-
-const tree: TreeNode[] = [
-  {
-    ...evalNode("a:release", "release", "in progress: signoff"),
-    kind: "artifact",
-    right: "0/2",
-    children: [evalNode("e:release/signoff", "signoff", "Human sign-off · unclaimed"), evalNode("e:release/notes", "notes", "GREEN")],
-  },
-  { ...evalNode("a:ship", "ship", "waits for release"), kind: "artifact", children: [] },
-];
 
 function setup(served: () => Graph) {
   mockIPC((cmd) => (cmd === "run_graph" ? served() : null));
   layout.mockImplementation(async (laid: Graph) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
-  const onselect = vi.fn();
   const onopen = vi.fn();
-  const view = render(RunGraph, { run: "run-a", revision: 1, tree, selected: [], onselect, onopen });
-  return { ...view, onselect, onopen };
+  const onclose = vi.fn();
+  const view = render(RunGraph, { run: "run-a", revision: 1, onopen, onclose });
+  return { ...view, onopen, onclose };
 }
 
 const node = (id: string) => document.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
 
 describe("RunGraph", () => {
-  it("lights nodes and edges, zooms into an Artifact's evals and selects and opens one", async () => {
-    const { onselect, onopen } = setup(() => graph("active"));
+  it("lights nodes and edges, and asks for an Artifact's Detail on a click or Enter and closes it on the background", async () => {
+    const { onopen, onclose, rerender } = setup(() => graph("active"));
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     expect(node("a:release")?.dataset.light).toBe("active");
     expect(node("a:ship")?.dataset.light).toBe("waiting");
@@ -103,29 +75,21 @@ describe("RunGraph", () => {
     // Edges draw between measured handles, which jsdom never lays out; the e2e sees them.
 
     await fireEvent.click(node("a:release")!);
-    const list = await screen.findByRole("listbox", { name: "Evals" });
-    expect(screen.getByText("signoff")).not.toBeNull();
-    expect(screen.getByText("Human sign-off · unclaimed")).not.toBeNull();
-    expect(onselect).toHaveBeenLastCalledWith(["a:release", "e:release/signoff"]);
-    await fireEvent.keyDown(list, { key: "ArrowDown" });
-    expect(onselect).toHaveBeenLastCalledWith(["a:release", "e:release/notes"]);
-    await fireEvent.keyDown(list, { key: "Enter" });
-    expect(onopen).toHaveBeenCalledOnce();
-    await fireEvent.keyDown(list, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("listbox", { name: "Evals" })).toBeNull());
-    expect(onselect).toHaveBeenLastCalledWith(["a:release"]);
-  });
-
-  it("moves along edges with arrows and zooms in with Enter on a focused node", async () => {
-    const { onselect } = setup(() => graph("active"));
-    await waitFor(() => expect(node("a:release")).not.toBeNull());
-    node("a:release")!.focus();
-    await fireEvent.keyDown(node("a:release")!, { key: "ArrowRight" });
-    expect(onselect).toHaveBeenLastCalledWith(["a:ship"]);
-    expect(document.activeElement).toBe(node("a:ship"));
+    expect(onopen).toHaveBeenLastCalledWith("a:release");
+    // The opened Artifact is marked in the graph.
+    await rerender({ opened: "a:release" });
+    expect(node("a:release")?.querySelector(".open")).not.toBeNull();
+    expect(node("a:ship")?.querySelector(".open")).toBeNull();
+    // A focused node takes Enter as a click; no other key opens anything.
+    node("a:ship")!.focus();
+    await fireEvent.keyDown(node("a:ship")!, { key: "ArrowLeft" });
+    await fireEvent.keyDown(node("a:ship")!, { key: "o" });
+    expect(onopen).toHaveBeenCalledTimes(1);
     await fireEvent.keyDown(node("a:ship")!, { key: "Enter" });
-    await screen.findByRole("listbox", { name: "Evals" });
-    expect(screen.getByText("No evals.")).not.toBeNull();
+    expect(onopen).toHaveBeenLastCalledWith("a:ship");
+    expect(document.activeElement).toBe(node("a:ship"));
+    await fireEvent.click(document.querySelector<HTMLElement>(".svelte-flow__pane")!);
+    expect(onclose).toHaveBeenCalledOnce();
   });
 
   it("recolours a new snapshot in place and lays out again only for a new shape", async () => {
@@ -161,7 +125,7 @@ describe("RunGraph", () => {
       }
       return Promise.resolve(new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
     });
-    const props = { run: "run-a", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn() };
+    const props = { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() };
     const { rerender } = render(RunGraph, props);
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     await rerender({ run: "run-b", revision: 2 });
@@ -179,24 +143,6 @@ describe("RunGraph", () => {
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
-  it("opens the highlighted eval after the tree's selection left it on a live completion", async () => {
-    let served = graph("active");
-    const { rerender, onselect, onopen } = setup(() => served);
-    await waitFor(() => expect(node("a:release")).not.toBeNull());
-    await fireEvent.click(node("a:release")!);
-    const list = await screen.findByRole("listbox", { name: "Evals" });
-    await rerender({ selected: ["a:release", "e:release/signoff"] });
-    // The sign-off completes elsewhere: the tree folds the done Artifact and selects it.
-    served = graph("green");
-    await rerender({ revision: 2, selected: ["a:release"] });
-    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
-    expect(screen.getByRole("option", { selected: true }).textContent).toContain("signoff");
-    onselect.mockClear();
-    await fireEvent.keyDown(list, { key: "Enter" });
-    expect(onselect).toHaveBeenCalledWith(["a:release", "e:release/signoff"]);
-    expect(onselect.mock.invocationCallOrder[0]).toBeLessThan(onopen.mock.invocationCallOrder[0]);
-  });
-
   it("asks before laying out more than the limit, once per Run", async () => {
     let size = LIMIT + 1;
     const many = (run: string): Graph => ({
@@ -206,7 +152,7 @@ describe("RunGraph", () => {
     });
     mockIPC((cmd, args) => (cmd === "run_graph" ? many((args as { run: string }).run) : null));
     layout.mockImplementation(async (laid: Graph) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
-    const props = { run: "run-a", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn() };
+    const props = { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() };
     const { rerender } = render(RunGraph, props);
     await screen.findByText(new RegExp(`has ${LIMIT + 1} Artifacts`));
     expect(layout).not.toHaveBeenCalled();
@@ -237,7 +183,7 @@ describe("RunGraph", () => {
       if (failing) throw new Error("layout failed");
       return new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }]));
     });
-    const props = { run: "run-0", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn() };
+    const props = { run: "run-0", revision: 1, onopen: vi.fn(), onclose: vi.fn() };
     const { rerender } = render(RunGraph, props);
     await screen.findByText("layout failed");
     // A failed layout is not kept: the next snapshot tries again.
@@ -260,84 +206,6 @@ describe("RunGraph", () => {
     expect(layout).toHaveBeenCalledTimes(11);
   });
 
-  it("lets go of keyboard focus when its screen hides and does not take it back unasked", async () => {
-    const { rerender } = setup(() => graph("active"));
-    await waitFor(() => expect(node("a:release")).not.toBeNull());
-    // Start the controlled frame clock before focus schedules its first watch.
-    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
-    const frame = async () => {
-      vi.advanceTimersToNextFrame();
-      await tick();
-    };
-    node("a:release")!.focus();
-    expect(document.activeElement).toBe(node("a:release"));
-
-    // Another screen shows an already open Detail: nothing there takes focus.
-    await rerender({ active: false });
-    (document.activeElement as HTMLElement).blur();
-    await frame();
-    expect(document.activeElement).toBe(document.body);
-    await frame();
-    expect(document.activeElement).toBe(document.body);
-
-    // Back on the graph's screen: no hold returns until a node is focused afresh.
-    await rerender({ active: true });
-    await frame();
-    expect(document.activeElement).toBe(document.body);
-
-    // A hidden ancestor (the screen's hidden attribute) ends a fresh hold the same way.
-    node("a:release")!.focus();
-    const screenElement = node("a:release")!.closest(".graph")!.parentElement!;
-    screenElement.setAttribute("hidden", "");
-    (document.activeElement as HTMLElement).blur();
-    await frame();
-    expect(document.activeElement).toBe(document.body);
-    await frame();
-    expect(document.activeElement).toBe(document.body);
-    screenElement.removeAttribute("hidden");
-    await frame();
-    expect(document.activeElement).toBe(document.body);
-  });
-
-  it("keeps a key that lands on the page while a redraw drops the held node's focus", async () => {
-    const { rerender, onselect } = setup(() => graph("active"));
-    await waitFor(() => expect(node("a:release")).not.toBeNull());
-    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
-    node("a:release")!.focus();
-    onselect.mockClear();
-    // The redraw's gap: focus is on the page when the key arrives, before any frame.
-    (document.activeElement as HTMLElement).blur();
-    await fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    expect(onselect).toHaveBeenCalledWith(["a:ship"]);
-    vi.advanceTimersToNextFrame();
-    await tick();
-    expect(document.activeElement).toBe(node("a:ship"));
-
-    // A hidden graph's hold is gone: a key on the page is not the graph's.
-    await rerender({ active: false });
-    (document.activeElement as HTMLElement).blur();
-    onselect.mockClear();
-    await fireEvent.keyDown(document.body, { key: "ArrowLeft" });
-    expect(onselect).not.toHaveBeenCalled();
-    expect(document.activeElement).toBe(document.body);
-  });
-
-  it("puts focus back as soon as a redraw removes the focused node", async () => {
-    setup(() => graph("active"));
-    await waitFor(() => expect(node("a:release")).not.toBeNull());
-    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
-    node("a:release")!.focus();
-    // Culling takes the node out and draws it again in one update.
-    const element = node("a:release")!;
-    const parent = element.parentElement!;
-    const next = element.nextSibling;
-    element.remove();
-    parent.insertBefore(element, next);
-    // Before any frame or key: the observer has run by the next microtask checkpoint.
-    await Promise.resolve();
-    expect(document.activeElement).toBe(element);
-  });
-
   it("shows ERROR apart from RED, and a legend of all six lights", async () => {
     setup(() => ({
       run: "run-a",
@@ -346,7 +214,7 @@ describe("RunGraph", () => {
         { id: "a:ship", name: "ship", light: "error" },
         { id: "a:docs", name: "docs", light: "blocked" },
       ],
-      edges: [{ source: "a:ship", target: "a:docs", light: "error", dependency: false }],
+      edges: [{ source: "a:ship", target: "a:docs", light: "error" }],
     }));
     await waitFor(() => expect(node("a:ship")).not.toBeNull());
     expect(node("a:release")?.getAttribute("aria-label")).toBe("release: RED");

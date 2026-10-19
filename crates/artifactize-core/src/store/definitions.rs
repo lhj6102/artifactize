@@ -105,8 +105,6 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing")]
     pub views: Field<Views>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub mounts: Field<BTreeMap<config::MountAlias, crate::types::ArtifactName>>,
-    #[serde(default, skip_serializing_if = "missing")]
     pub basis: Field<bool>,
     #[serde(default, skip_serializing_if = "missing")]
     pub fingerprint: Field<Fingerprint>,
@@ -220,6 +218,8 @@ pub struct Eval {
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
     #[serde(default, skip_serializing_if = "missing")]
+    pub mutex: Field<Vec<config::MutexTag>>,
+    #[serde(default, skip_serializing_if = "missing")]
     pub gate: Field<config::Gate>,
     #[serde(default, skip_serializing_if = "missing")]
     pub id: Field<crate::config::LocalEvalId>,
@@ -280,8 +280,7 @@ impl<'de> Deserialize<'de> for Relation {
             serde_json::from_value(take("kind")?).map_err(serde::de::Error::custom)?;
         let names: &[&str] = match kind_name.as_str() {
             "child" => &["path"],
-            "mount" => &["alias"],
-            "instruction" | "dependency" => &["evalId", "name"],
+            "instruction" => &["evalId", "name"],
             "argv" => &["evalId", "index", "name", "path"],
             _ => &[],
         };
@@ -323,16 +322,6 @@ pub enum RelationKind {
     Child {
         #[serde(default, skip_serializing_if = "missing")]
         path: Field<config::ChildPrefix>,
-    },
-    Mount {
-        #[serde(default, skip_serializing_if = "missing")]
-        alias: Field<config::MountAlias>,
-    },
-    Dependency {
-        #[serde(rename = "evalId", default, skip_serializing_if = "missing")]
-        eval_id: Field<crate::types::EvalId>,
-        #[serde(default, skip_serializing_if = "missing")]
-        name: Field<config::ReferenceName>,
     },
     Instruction {
         #[serde(rename = "evalId")]

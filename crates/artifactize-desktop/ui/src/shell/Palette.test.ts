@@ -47,6 +47,12 @@ function enterQuery(field: HTMLInputElement, query: string) {
   field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
 }
 
+/** Drain the accepted command's microtask after the controlled render boundary. */
+async function activationFrame() {
+  vi.advanceTimersToNextFrame();
+  await new Promise<void>((done) => queueMicrotask(done));
+}
+
 describe("command palette", () => {
   it("runs exactly the newly filtered command when input and Enter arrive together, after reopening too", async () => {
     const { view, monitor, review } = setup();
@@ -76,15 +82,18 @@ describe("command palette", () => {
   it("keeps arrow selection and leaves composition Enter to the input method", async () => {
     const { monitor, review } = setup();
     const field = await focusedInput();
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
     await waitFor(() => expect(screen.getByRole("option", { name: "Show Monitor" }).getAttribute("aria-selected")).toBe("true"));
     await fireEvent.keyDown(field, { key: "ArrowDown" });
     await waitFor(() => expect(screen.getByRole("option", { name: "Show Review" }).getAttribute("aria-selected")).toBe("true"));
     await fireEvent.keyDown(field, { key: "Enter", isComposing: true });
     await fireEvent.keyDown(field, { key: "Enter", keyCode: 229 });
+    await activationFrame();
     expect(screen.getByRole("dialog")).not.toBeNull();
     expect(monitor).not.toHaveBeenCalled();
     expect(review).not.toHaveBeenCalled();
     await fireEvent.keyDown(field, { key: "Enter" });
+    await activationFrame();
     await waitFor(() => expect(review).toHaveBeenCalledTimes(1));
     expect(monitor).not.toHaveBeenCalled();
   });
@@ -96,7 +105,7 @@ describe("command palette", () => {
     enterQuery(field, "Show Review");
     await fireEvent.keyDown(field, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
-    vi.advanceTimersToNextFrame();
+    await activationFrame();
     expect(monitor).not.toHaveBeenCalled();
     expect(review).not.toHaveBeenCalled();
   });

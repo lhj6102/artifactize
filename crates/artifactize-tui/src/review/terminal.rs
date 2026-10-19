@@ -1,5 +1,5 @@
-//! The standalone review's terminal loop: draw, read events, run jobs, suspend for the editor.
-use super::{Action, Outcome, REFRESH, Review, SPIN, editor::edit};
+//! The standalone review's terminal loop: draw, read events, run jobs, show the Tool log.
+use super::{Action, Outcome, REFRESH, Review, SPIN};
 use crate::types::RequestId;
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::{FutureExt, StreamExt};
@@ -61,14 +61,6 @@ async fn drive(
                         jobs.action = Some(Box::pin(review.start(job)));
                         Action::None
                     }
-                    Action::Edit(text) => {
-                        // The editor owns the terminal; no event reader may compete for its input.
-                        drop(events);
-                        let edited = crate::monitor::suspend(terminal, edit(text)).await;
-                        crate::monitor::input::protocols(review.mouse_capture, true)?;
-                        events = EventStream::new();
-                        review.edited(edited?)
-                    }
                     Action::Capture(capture) => {
                         crate::monitor::input::protocols(capture, true)?;
                         Action::None
@@ -125,6 +117,10 @@ async fn drive(
                         crate::monitor::repaint(terminal)?;
                     }
                     review.finish(outcome)
+                }
+                event = review.log_event() => {
+                    review.logged(event);
+                    Action::None
                 }
                 _ = spin.tick(), if review.busy() => Action::None,
                 _ = tick.tick() => Action::None,

@@ -15,7 +15,6 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                 "path":"pages",
                 "name":"page",
                 "children":{},
-                "mounts":{},
                 "basis":null,
                 "fingerprint":{
                     "script":{
@@ -162,7 +161,6 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                 "name":"app",
                 "tags":[],
                 "children":{},
-                "mounts":{},
                 "basis":null,
                 "views":{"agentSessions":{},"agentTools":{"read":{"builtin":"read"}},"humanTools":{}},
                 "fingerprint":{"script":{
@@ -272,7 +270,7 @@ fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
     let saved = r#"{"id":17,"artifacts":["app"],"dependencies":[0,10],"gates":["spec/check"],"cyclic":false}"#;
     let component: Component = serde_json::from_str(saved).unwrap();
     assert_eq!(serde_json::to_string(&component).unwrap(), saved);
-    let saved = r#"{"children":{"nested/child":"child"},"mounts":{"spec":"input"}}"#;
+    let saved = r#"{"children":{"nested/child":"child"}}"#;
     let artifact: Artifact = serde_json::from_str(saved).unwrap();
     assert_eq!(serde_json::to_string(&artifact).unwrap(), saved);
     let saved = r#"{"profileVariants":{"sol-max":{"kind":"human"}}}"#;
@@ -284,9 +282,7 @@ fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
     }
     for invalid in [
         json!({"artifacts":{"app":{"children":{"../outside":"child"}}}}),
-        json!({"artifacts":{"app":{"mounts":{"bad/name":"input"}}}}),
         json!({"evals":[{"id":"app/check","target":"app","declaration":{"profileVariants":{"bad.name":{"kind":"human"}}}}]}),
-        json!({"relations":[{"source":"input","target":"app","kind":"mount","alias":"bad/name"}]}),
         json!({"relations":[{"source":"input","target":"app","kind":"instruction","evalId":"app/check","name":"bad.name"}]}),
     ] {
         assert!(

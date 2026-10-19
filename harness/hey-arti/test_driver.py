@@ -65,17 +65,12 @@ payload.instruction = {json.dumps(instruction)}
         write("site/theme/index.artf", runtime("theme"))
         write("assets/LICENSE.txt.artf", 'name = "license"\nbasis = true\n')
         write("assets/banner.svg.artf", runtime("banner", "Check {banner} against {license}."))
-        write("site/index.artf", '''name = "site"
-[evals.ready]
-title = "Site inputs are ready"
-profile = { kind = "dependency", depends_on = ["content", "theme", "banner"] }
-''')
+        write("site/index.artf", runtime("site", "Check {content}, {theme} and {banner}.").replace('"site"]', '"all"]'))
     else:
         write("api/index.artf", runtime("api", "Check API against {contract}."))
         write("contract/index.artf", runtime("contract"))
         write("preview/probe.py.artf", 'name = "preview-driver"\nbasis = true\n')
-        ui = runtime("ui", "Check UI consumes {api} and {contract}.").replace(
-            'name = "ui"\n', 'name = "ui"\nmounts = { preview = "preview-driver", backend = "api", schema = "contract" }\n')
+        ui = runtime("ui", "Check UI consumes {api} and {contract}.")
         write("ui/index.artf", ui + f'''
 [views.agent_sessions.preview]
 start = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "start"] }}
@@ -123,8 +118,6 @@ def skill_examples(body):
             role = "application"
         elif "human" in kinds:
             role = "human"
-        elif "dependency" in kinds:
-            role = "dependency"
         elif declaration.get("views", {}).get("agent_sessions"):
             role = "preview"
         else:
@@ -161,52 +154,17 @@ class OwnedTestCase(unittest.TestCase):
 
 class HarnessTests(OwnedTestCase):
 
-    def session(self):
-        directory = self.root / "session"
-        driver.private_directory(directory)
-        environment = dict(os.environ, ARTIFACTIZE_SESSION_DIR=str(directory),
-                           HEY_ARTI_EVIDENCE_INDEX=str(self.root / "no-live-index.json"))
-        process = self.spawn([sys.executable, "-I", str(ROOT / "driver.py"), "start"],
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   text=True, env=environment)
-        # A readiness barrier, not a sleep-length or timestamp assertion.
-        def cleanup():
-            driver.close_child(process)
-        self.addCleanup(cleanup)
-        process.stdin.write(tool_request({}))
-        process.stdin.close()
-        process.stdin = None
-        with ThreadPoolExecutor() as executor:
-            try:
-                ready = executor.submit(process.stdout.readline).result(timeout=10)
-            except TimeoutError:
-                driver.stop_child(process)
-                raise
-        self.assertEqual(ready, "ready\n")
-        self.assertNotIn("\\", json.loads((directory / "session.json").read_text(encoding="utf-8"))["area"])
-        return directory, environment, process
-
-    def call(self, environment, operation, args):
-        result = driver.run_command([sys.executable, "-I", str(ROOT / "driver.py"), operation],
-                                input=tool_request(args), text=True, capture_output=True,
-                                timeout=15, env=environment, check=True)
-        return json.loads(result.stdout)
-
     def test_canonical_skill_examples_use_valid_current_declarations(self):
-        skill_path = ROOT.parents[1] / "crates/artifactize-core/integrations/hey-arti/SKILL.md"
+        skill_path = ROOT.parents[1] / "skills/hey-arti/SKILL.md"
         body = skill_path.read_text(encoding="utf-8")
         frontmatter = dict(line.split(":", 1) for line in body.split("---", 2)[1].strip().splitlines())
         self.assertEqual(frontmatter["name"].strip(), "hey-arti")
         self.assertTrue(frontmatter["description"].strip())
         roles = skill_examples(body)
-        self.assertTrue({"basis", "application", "human", "dependency", "preview"} <= roles.keys())
+        self.assertTrue({"basis", "application", "human", "preview"} <= roles.keys())
         basis = roles["basis"][1]["name"]
         application = roles["application"][1]["name"]
         human = roles["human"][1]["name"]
-        dependency = roles["dependency"][1]["name"]
-        readiness = roles["dependency"][1]["evals"]
-        self.assertTrue(any(set(evaluation["profile"]["depends_on"]) == {application, human}
-                            for evaluation in readiness.values()))
         self.assertIn("{" + application + "}", roles["preview"][0])
         if CANDIDATE is None:
             self.skipTest("explicit candidate validates example references")
@@ -214,7 +172,6 @@ class HarnessTests(OwnedTestCase):
         products = {f"{basis}/index.artf": roles["basis"][0],
                     f"{application}/index.artf": roles["application"][0] + roles["preview"][0],
                     f"{human}.svg.artf": roles["human"][0],
-                    f"{dependency}/index.artf": roles["dependency"][0],
                     f"{basis}/requirements.md": "Fixture requirements.\n", f"{human}.svg": "<svg/>\n",
                     f"{application}/src/lib.rs": "// Source fixture.\n",
                     f"{application}/tools/preview.py": "# Static example only.\n"}
@@ -227,13 +184,13 @@ class HarnessTests(OwnedTestCase):
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_skill_examples_are_semantic_when_sections_reorder_or_new_fragments_appear(self):
-        body = (ROOT.parents[1] / "crates/artifactize-core/integrations/hey-arti/SKILL.md").read_text()
+        body = (ROOT.parents[1] / "skills/hey-arti/SKILL.md").read_text()
         snippets = re.findall(r"```toml\n(.*?)```", body, re.DOTALL)
         changed = "\n".join("```toml\n" + snippet + "```" for snippet in reversed(snippets))
         changed += '\n```toml\nfingerprint = false\n```\n'
         roles = skill_examples(changed)
-        self.assertEqual({role: roles[role][1]["name"] for role in ("basis", "application", "human", "dependency")},
-                         {"basis": "spec", "application": "app", "human": "logo", "dependency": "delivery"})
+        self.assertEqual({role: roles[role][1]["name"] for role in ("basis", "application", "human")},
+                         {"basis": "spec", "application": "app", "human": "logo"})
         self.assertIn("preview", roles["preview"][1]["views"]["agent_sessions"])
 
     def test_check_keeps_suite_in_process_and_cleans_interrupted_fixtures(self):
@@ -344,47 +301,6 @@ sys.stdin.read()
         with self.assertRaises(ValueError):
             driver.materialize(ROOT / "outputs-must-not-be-created")
 
-    def test_json_session_case_read_paging_rejection_and_stop(self):
-        directory, environment, process = self.session()
-        result = self.call(environment, "case", {"case": "monorepo"})["content"][0]["data"]
-        self.assertFalse(result["live_evidence"]["available"])
-        self.assertIn("Human", result["goal"])
-        self.assertIn("preview/probe.py", result["source_files"])
-        self.assertNotIn("\\", result["repository"])
-        repo = Path(result["repository"])
-        self.assertTrue(repo.is_dir())
-        text = "café\n" * 10000
-        # Paging returns literal file bytes; keep this UTF-8 fixture identical on every OS.
-        (repo / "large.txt").write_text(text, encoding="utf-8", newline="\n")
-        offset, pages = 0, []
-        while True:
-            page = self.call(environment, "read", {"case": "monorepo", "path": "large.txt", "offset": offset})
-            data = page["content"][0]["data"]
-            # Independent reviewer-envelope expectation, not the driver's cap variable.
-            self.assertLess(len(json.dumps(page).encode()), 48 * 1024)
-            pages.append(data["text"])
-            if data["next_offset"] is None:
-                break
-            offset = data["next_offset"]
-        self.assertEqual("".join(pages), text)
-        for path in ("../driver.py", str(ROOT / "driver.py"), ".env", "a/../ui/view.py", "ui\\view.py"):
-            self.assertTrue(self.call(environment, "read", {"case": "monorepo", "path": path})["isError"])
-        self.assertTrue(self.call(environment, "case", {"case": "unknown"})["isError"])
-        self.assertTrue(self.call(environment, "read", {"case": "monorepo", "path": "ui/view.py", "limit": 999999})["isError"])
-        evidence = driver.area(directory) / "monorepo/evidence/live.json"
-        evidence.write_text('{"mode":"deterministic","verdict":"GREEN"}', encoding="utf-8")
-        self.assertTrue(self.call(environment, "case", {"case": "monorepo"})["isError"])
-        driver.run_command([sys.executable, "-I", str(ROOT / "driver.py"), "stop"], input=tool_request({}),
-                       text=True, check=True, timeout=10, env=environment)
-        stdout, stderr = process.communicate(timeout=10)
-        self.assertEqual(process.returncode, 0, stderr)
-        self.assertEqual(stdout, "")
-        self.assertFalse(repo.exists())
-        self.assertFalse((directory / "session.json").exists())
-        # Safe repeated stop; artifactize owns the final session directory removal.
-        driver.run_command([sys.executable, "-I", str(ROOT / "driver.py"), "stop"], input=tool_request({}),
-                       text=True, check=True, timeout=10, env=environment)
-
     def test_monorepo_preview_uses_actual_inputs_and_artifactize_session_envelope(self):
         area = driver.materialize(self.root / "cases")
         repo = area / "monorepo/repo"
@@ -403,7 +319,8 @@ sys.stdin.read()
         with ThreadPoolExecutor() as executor:
             try:
                 ready = executor.submit(process.stdout.readline).result(timeout=10)
-            except TimeoutError:
+            except BaseException:
+                # Release the pipe reader before the executor joins, even on interruption.
                 driver.stop_child(process)
                 raise
             self.assertEqual(ready, "ready\n")
@@ -451,7 +368,7 @@ sys.stdin.read()
             after_edit = status_keys()
             changed = {key for key in baseline if baseline[key] != after_edit[key]}
             expected = {"library-consumer": {"pricing/check", "receipt/check"},
-                        "docs-assets": {"content/check"},
+                        "docs-assets": {"content/check", "site/check"},
                         "monorepo": {"api/check", "ui/check", "ui/review", "integration/signoff"}}
             self.assertEqual(changed, expected[case_id], "real consumers, not independent inputs, must invalidate")
             declaration = {"library-consumer": "independent/index.artf", "docs-assets": "site/theme/index.artf",
@@ -467,8 +384,8 @@ sys.stdin.read()
             edited.write_text(source, encoding="utf-8")
             # Exercise actual session admission/cleanup through the candidate, not just Popen.
             if case_id == "monorepo":
-                result = driver.run_command(command + ["tools", "check", "--execute", "--artifact", "ui",
-                                                   "--audience", "agent", "--tool", "inspect"],
+                result = driver.run_command(command + ["tools", "check", "--execute", "--eval", "ui/review",
+                                                   "--tool", "inspect_ui"],
                                         capture_output=True, text=True, timeout=30, env=environment)
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 self.assertIn("Hello orchard", result.stdout)
@@ -487,7 +404,7 @@ class HostLifecycleTests(OwnedTestCase):
         self.evidence = self.root / "saved"
         harness = self.root / "project/harness/hey-arti"
         harness.mkdir(parents=True)
-        skill = self.root / "project/crates/artifactize-core/integrations/hey-arti/SKILL.md"
+        skill = self.root / "project/skills/hey-arti/SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("Declared fixture skill input.\n")
         patch = mock.patch.object(live, "ROOT", harness)
@@ -825,8 +742,8 @@ payload.instruction = "Keep this request pending; the fixture cancels without ap
     # executes shebang fixtures; portable host lifecycle tests above run on every OS.
     @unittest.skipUnless(os.name == "posix", "Native Codex inventory uses POSIX pipe observation and shebang fixtures")
     def test_codex_host_is_joined_and_transcript_preserved_on_success_rpc_error_and_broken_input(self):
-        tool_names = ["verify_start", "verify_status", "verify_wait", "verify_result", "verify_cancel",
-                      "status", "config_check", "run_list", "run_show", "request_list", "request_show",
+        tool_names = ["verify_start", "verify_status", "verify_wait", "verify_watch", "verify_result", "verify_cancel",
+                      "status", "config_check", "config_graph", "request_logs", "run_list", "run_show", "request_list", "request_show",
                       "session_show", "tools_check", "doctor", "models", "remote_status", "cache_show"]
         # Execute a genuinely renamed candidate through the registered command,
         # with an executable artifactize on PATH that must never be selected.

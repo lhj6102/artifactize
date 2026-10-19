@@ -1,37 +1,49 @@
 # Summary
 
-[Introduction](introduction.md)
+# Getting Started
 
-# Getting started
+- [Intro](getting-started/intro.md)
+- [Installation](getting-started/install.md)
+- [Guide](getting-started/guide.md)
+  - [Examples](getting-started/examples.md)
 
-- [Install](getting-started/install.md)
-- [Quick start](getting-started/quick-start.md)
-- [Examples](getting-started/examples.md)
+# Features
 
-# Concepts
+- [Artifact](features/artifact.md)
+  - [Declarations and Artifact Graph](features/declarations.md)
+- [Eval](features/eval.md)
+  - [Agent](features/agent.md)
+  - [Agent responses](features/tools/agent-responses.md)
+  - [Human](features/human.md)
+  - [Runtime](features/runtime.md)
+- [Fingerprint](features/fingerprint.md)
+- [Evaluation Run](features/run.md)
+- [Tools](features/tools/index.md)
+  - [Built-in tools](features/tools/builtin.md)
+  - [Agent tools and sessions](features/tools/agent.md)
+  - [Human tools](features/tools/human.md)
+- [Working as a team](features/team/index.md)
+  - [Walkthrough: two machines and CI](features/team/walkthrough.md)
+  - [CI](features/team/ci.md)
+  - [Review store reference](features/team/reference.md)
+- [Others](features/others/index.md)
+  - [State, cache and limits](features/others/state.md)
+  - [Operating systems](features/others/platforms.md)
+  - [Supporting reference](features/others/reference.md)
 
-- [Artifacts and evals](concepts/artifacts-and-evals.md)
-- [Fingerprints and reuse](concepts/fingerprints-and-reuse.md)
-- [Runs, status and validation](concepts/runs-and-status.md)
+# Desktop
 
-# Guides
+- [Desktop](desktop/index.md)
 
-- [Hey Arti: structure a project's reviews](guides/hey-arti.md)
-- [Agent evals and backends](guides/agent-evals.md)
-- [Human reviews](guides/human-reviews.md)
-- [Team review store](guides/team-review-store.md)
-  - [Walkthrough: two machines and CI](guides/team-walkthrough.md)
-- [CI](guides/ci.md)
+# Agent plugin
 
-# Reference
+- [Hey Arti](agent-plugin/hey-arti.md)
+- [MCP](agent-plugin/mcp.md)
 
-- [Overview](reference/overview.md)
-- [CLI](reference/cli.md)
-- [MCP](reference/mcp.md)
-- [Declarations (.artf)](reference/declarations.md)
-- [Agent tools](reference/agent-tools.md)
-- [Human tools](reference/human-tools.md)
-- [Built-in tools](reference/builtin-tools.md)
-- [State, cache and limits](reference/state-cache-limits.md)
-- [Review store server and client](reference/review-store.md)
-- [Operating systems](reference/platforms.md)
+# CLI
+
+- [CLI](cli/index.md)
+
+# TUI
+
+- [TUI](tui/index.md)

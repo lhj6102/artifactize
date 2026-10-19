@@ -381,7 +381,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
             row.get(0)
         })
         .unwrap();
-    db.execute_batch("UPDATE runs SET data=json_remove(data,'$.control','$.requestKey'); DROP INDEX run_request_key; ALTER TABLE runs DROP COLUMN request_key; PRAGMA user_version=6;").unwrap();
+    db.execute_batch("UPDATE runs SET data=json_remove(data,'$.control','$.requestKey'); DROP INDEX run_request_key; ALTER TABLE runs DROP COLUMN request_key; DROP INDEX active_key; ALTER TABLE executions DROP COLUMN profile_identity; CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN'); PRAGMA user_version=6;").unwrap();
     drop(db);
     // Existing-state read preflight upgrades too; no receipt/cache/approval is replaced.
     let migrated = store::read_run(&fixture.state, &started.run).await.unwrap();
@@ -421,7 +421,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
-        7
+        store::STATE_SCHEMA_VERSION
     );
     assert_eq!(
         db.query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {

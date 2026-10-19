@@ -1,11 +1,11 @@
-// The public camera-command seam has controlled completion: an old fit's shared
-// completion must not interrupt a newer zoom-out transition at its intermediate zoom.
+// The public camera-command seam: a click on an Artifact asks for its Detail and one on the
+// background closes it, and the graph's camera stays where the person left it.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen } from "@testing-library/svelte";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { tick } from "svelte";
-import type { RunGraph as Graph, TreeNode } from "../ipc/client";
+import type { RunGraph as Graph } from "../ipc/client";
 import RunGraph from "./RunGraph.svelte";
 
 const camera = vi.hoisted(() => ({ fitView: vi.fn(), setViewport: vi.fn(), setCenter: vi.fn(), getViewport: vi.fn() }));
@@ -44,59 +44,60 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function pendingMove() {
-  let resolve!: (moved: boolean) => void;
-  const promise = new Promise<boolean>((done) => { resolve = done; });
-  return { promise, resolve };
-}
-
-it("does not let an old fit completion interrupt the pending zoom-out camera move", async () => {
+it("opens and closes an Artifact's Detail without moving the camera", async () => {
   const graph: Graph = {
     run: "run-a", nodes: [{ id: "a:app", name: "app", light: "green" }, { id: "a:other", name: "other", light: "green" }], edges: [],
   };
-  const tree: TreeNode[] = [{
-    id: "a:app", kind: "artifact", name: "app", glyph: "", tone: "green", weight: "normal",
-    marks: "", text: [], right: "", changed: false, done: true, attention: false,
-    urgent: false, upstream: [], children: [],
-  }];
   mockIPC((command) => command === "run_graph" ? graph : null);
-  const into = pendingMove();
-  const whole = pendingMove();
-  // fitView shares one pending resolver, whereas setViewport owns each transition's
-  // completion. Let the older transition finish while the new one has not finished.
-  camera.fitView.mockReturnValue(into.promise);
-  camera.setViewport.mockReturnValueOnce(into.promise).mockReturnValueOnce(whole.promise);
-  camera.setCenter.mockResolvedValue(true);
-  const viewport = { x: 0, y: 0, zoom: 1.6 };
-  camera.getViewport.mockImplementation(() => viewport);
-  renderHosted(RunGraph, {
-    run: "run-a", revision: 1, tree, selected: ["a:app"], onselect: vi.fn(), onopen: vi.fn(),
-  });
+  camera.getViewport.mockImplementation(() => ({ x: 0, y: 0, zoom: 1 }));
+  const onopen = vi.fn();
+  const onclose = vi.fn();
+  const { rerender } = renderHosted(RunGraph, { run: "run-a", revision: 1, onopen, onclose });
   const node = await screen.findByLabelText("app: GREEN");
-  const canvas = node.closest<HTMLElement>(".canvas")!;
-  vi.spyOn(canvas, "clientWidth", "get").mockReturnValue(600);
-  vi.spyOn(canvas, "clientHeight", "get").mockReturnValue(400);
-  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 400));
-  // At the zoom-out endpoint the selected Artifact needs to be brought back into view.
-  vi.spyOn(node, "getBoundingClientRect").mockReturnValue(new DOMRect(1000, 0, 168, 44));
+  camera.fitView.mockClear();
   await fireEvent.click(node);
-  const evals = await screen.findByRole("listbox", { name: "Evals" });
-  expect(document.activeElement).toBe(evals);
-  expect(camera.setViewport).toHaveBeenLastCalledWith(expect.objectContaining({ zoom: 1.6 }), { duration: 250 });
-  await fireEvent.keyDown(evals, { key: "Escape" });
-  expect(screen.queryByRole("listbox", { name: "Evals" })).toBeNull();
-  expect(document.activeElement).toBe(node);
-  expect(camera.setViewport).toHaveBeenLastCalledWith(expect.objectContaining({ zoom: 0.05 }), { duration: 250 });
-
-  into.resolve(true);
-  await into.promise;
+  expect(onopen).toHaveBeenCalledWith("a:app");
+  await rerender({ opened: "a:app" });
+  await fireEvent.click(document.querySelector<HTMLElement>(".svelte-flow__pane")!);
+  expect(onclose).toHaveBeenCalledOnce();
+  await rerender({ opened: null });
   await tick();
-  // Recentring now would use the intermediate zoom and interrupt the zoom-out animation.
+  // The nodes stay where they were: neither opening nor closing a Detail moves the viewport.
+  expect(camera.setViewport).not.toHaveBeenCalled();
   expect(camera.setCenter).not.toHaveBeenCalled();
-  viewport.zoom = 0.05;
-  whole.resolve(true);
-  await whole.promise;
-  await tick();
-  expect(camera.setCenter).toHaveBeenLastCalledWith(84, 22, { zoom: 0.05, duration: 0 });
-  expect(document.activeElement).toBe(node);
+  expect(camera.fitView).not.toHaveBeenCalled();
+});
+
+it("fits a graph drawn in a hidden screen once its canvas first has a size, then keeps the camera", async () => {
+  const observed: ResizeObserverCallback[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback: ResizeObserverCallback) {
+      observed.push(callback);
+    }
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  });
+  const graph: Graph = {
+    run: "run-a", nodes: [{ id: "a:app", name: "app", light: "green" }, { id: "a:other", name: "other", light: "green" }], edges: [],
+  };
+  mockIPC((command) => command === "run_graph" ? graph : null);
+  camera.getViewport.mockImplementation(() => ({ x: 0, y: 0, zoom: 1 }));
+  renderHosted(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+  await screen.findByLabelText("app: GREEN");
+  const canvas = document.querySelector<HTMLElement>(".canvas")!;
+  const resize = (width: number, height: number) => {
+    Object.defineProperty(canvas, "clientWidth", { configurable: true, value: width });
+    Object.defineProperty(canvas, "clientHeight", { configurable: true, value: height });
+    const entry = { target: canvas, contentRect: { width, height } } as unknown as ResizeObserverEntry;
+    for (const callback of observed) callback([entry], {} as ResizeObserver);
+  };
+  // Drawn hidden: the canvas had no size, so nothing was fitted yet.
+  expect(camera.setViewport).not.toHaveBeenCalled();
+  resize(1200, 800);
+  expect(camera.setViewport).toHaveBeenCalledOnce();
+  // Later resizes leave the Run view's camera where the person put it.
+  resize(1000, 700);
+  expect(camera.setViewport).toHaveBeenCalledOnce();
+  vi.unstubAllGlobals();
 });

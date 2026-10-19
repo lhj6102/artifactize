@@ -1,9 +1,11 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
 import { inspect } from "node:util";
+import { assertAppsStopped } from "./observation.ts";
+import { checkIntegrity } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nodeProgram, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment,
+  nativeCrashReports, nodeProgram, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -29,17 +31,61 @@ async function batch(): Promise<void> {
   try {
     const code = await launcher.run();
     if (code !== 0) failures.push(new Error(`WDIO batch failed with exit code ${code}`));
+    const { selectedScenarios } = await import("./catalog.ts");
+    const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
+    const cases = selectedScenarios(ids);
+    if (code === 0 && cases.some((item) => item.relaunched)) {
+      if (cases.length !== 1) throw new Error("a relaunch case owns its own Launcher batch");
+      const candidate = readCandidate();
+      const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
+      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+      // The first birth record attests an exited owner. Retire it only after that
+      // observation; the next native lifetime must create its own fresh birth record.
+      for (const id of ids) removeTree(nativePath(output, `${id}.owner.json`));
+      setVariable("DESKTOP_TEST_RELAUNCH", "1");
+      const next = new Launcher(suitePath("wdio.conf.ts"));
+      await next.initialize();
+      const again = await next.run();
+      if (again !== 0) failures.push(new Error(`relaunched WDIO case failed with exit code ${again}`));
+    }
   } catch (error) {
     failures.push(configuration.preparationFailure === undefined ? error
       : new Error("Desktop scenario preparation failed", { cause: configuration.preparationFailure }));
   }
-  try { await configuration.releasePrepared(); } catch (error) { failures.push(error); }
-  if (failures.length) throw new AggregateError(failures, "desktop WDIO batch failed");
+  try {
+    const candidate = readCandidate();
+    const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
+    const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
+    if (configuration.preparationFailure !== undefined) {
+      // SevereServiceError refused app admission. Release domain workers acquired
+      // during preparation, then attest that no native-app ownership was acquired.
+      await configuration.releasePrepared();
+      writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
+    } else {
+      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+      await configuration.releasePrepared();
+    }
+  } catch (error) { failures.push(error); }
+  if (failures.length) {
+    try {
+      const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "failed batches retain service diagnostics"));
+      for (const log of serviceFailureLogs(output)) console.error(log);
+    } catch (error) { failures.push(error); }
+    throw new AggregateError(failures, "desktop WDIO batch failed");
+  }
 }
 
 async function suite(ids: string[]): Promise<void> {
   const { selectedScenarios } = await import("./catalog.ts");
   const selected = selectedScenarios(ids);
+  // A relaunch is one complete scenario with two service-owned app lifetimes. Keep it
+  // alone; unrelated cases neither inherit its state nor get run a second time.
+  const batches: typeof selected[] = [];
+  for (const item of selected) {
+    const previous = batches.at(-1);
+    if (item.relaunched || !previous || previous.some((item) => item.relaunched) || previous.length === CAPABILITIES_PER_INVOCATION) batches.push([item]);
+    else previous.push(item);
+  }
   const scratch = scratchDirectory();
   const declaredOutput = variable("ARTIFACTIZE_OUTPUT_DIR");
   const output = newDirectory(declaredOutput === undefined ? scratch : asNativePath(declaredOutput), "desktop-e2e-");
@@ -49,40 +95,58 @@ async function suite(ids: string[]): Promise<void> {
   const candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratch) : await prepare();
   console.error(`Desktop E2E diagnostics: ${output}`);
   const failures: unknown[] = [];
+  let confirmed = true;
   try {
-    for (let offset = 0; offset < selected.length; offset += CAPABILITIES_PER_INVOCATION) {
-      const ids = selected.slice(offset, offset + CAPABILITIES_PER_INVOCATION).map((item) => item.id);
+    for (const [index, batch] of batches.entries()) {
+      const ids = batch.map((item) => item.id);
       const env = {
         ...inheritedEnvironment(),
         DESKTOP_TEST_CANDIDATE: candidate.manifest,
         DESKTOP_TEST_RESOURCES: candidate.root,
         DESKTOP_TEST_BATCH: JSON.stringify(ids),
-        DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${offset / CAPABILITIES_PER_INVOCATION + 1}`),
+        DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${index + 1}`),
       };
+      confirmed = false;
       try {
         const code = await execute(nodeProgram, [file, "batch"], env);
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
+      try {
+        const output = asNativePath(env.DESKTOP_TEST_BATCH_OUTPUT);
+        const refused = nativePath(output, "prelaunch-refused.json");
+        if (!exists(refused) || (readJson(refused) as { refused?: boolean }).refused !== true) {
+          assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+        }
+        confirmed = true;
+      } catch (error) { failures.push(error); }
+      if (!confirmed) break;
       if (interrupted) {
         failures.push(new Error("desktop E2E was interrupted; no further batches were started"));
         break;
       }
     }
   } finally {
-    try { await cleanup(candidate.root); } catch (error) { failures.push(error); }
+    if (failures.length) {
+      try { for (const report of nativeCrashReports(candidate.app)) console.error(report); }
+      catch (error) { failures.push(error); }
+    }
+    if (confirmed) {
+      try { await cleanup(candidate.root); } catch (error) { failures.push(error); }
+    } else failures.push(new Error(`Native shutdown unconfirmed; retained inputs at ${candidate.root}`));
   }
   if (failures.length) throw new AggregateError(failures, "desktop E2E failures");
 }
 
 async function unit(): Promise<void> {
   const harness = absolutePath(suitePath(), "../../harness");
-  const files = ["commands.test.ts", "keys.test.ts", "observation.test.ts", "runner.test.ts"].map((name) => suitePath(name));
+  const files = ["input.test.ts", "commands.test.ts", "keys.test.ts", "observation.test.ts", "runner.test.ts"].map((name) => suitePath(name));
   if (exists(harness)) files.push(...listFiles(harness).filter((path) => path.endsWith(".test.mts")));
   process.exitCode = await execute(nodeProgram, ["--test", ...files], inheritedEnvironment());
 }
 
 const mode = process.argv[2] ?? "suite";
 try {
+  if (mode === "suite" || mode === "prepare") checkIntegrity();
   if (mode === "suite" || mode === "batch") assertRunnerMachine();
   if (mode === "prepare") console.log((await prepare()).manifest);
   else if (mode === "cleanup") await cleanup(readCandidate(process.argv[3]).root);

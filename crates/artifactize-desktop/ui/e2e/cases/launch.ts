@@ -8,6 +8,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
+import { detail, evalAt, graphShown, nodeAt, openArtifact } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -85,44 +86,43 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-SCOPE-MOVE E-MON-RUNS-MOVE
   scenario<{ initialRun: string; worktreeRuns: string[] }>(
     "launch-catalog",
-    "catalogs the repositories, their Runs and the verdicts of a Run's tree",
+    "catalogs the repositories, their Runs and the verdicts of a Run's Artifacts and evals",
     async () => prepareMonitor(),
     async (browser, { data }) => {
       const { text, scopes } = monitor(browser);
       const { initialRun } = data;
-      await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
+      await graphShown(browser, "a:release");
       assert.equal(await nativeTitle(browser), "Artifactize", "the native window opened on the Monitor is titled Artifactize");
       const entries = await scopes();
       assert.ok(entries.some((entry) => entry.startsWith("ALL")), `ALL is listed: ${entries.join(" | ")}`);
       assert.ok(entries.some((entry) => entry.includes("other")), "the other repository is listed");
       assert.ok(entries.some((entry) => entry.includes("third")), "the third repository is listed");
-      // Identify the saved Run before checking the verdicts of its own tree rows.
+      // Identify the saved Run before checking the verdicts of its own Artifacts and evals.
       const selectedRun = await browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0]);
       assert.equal(selectedRun, initialRun);
-      const docs = await browser.$('[role="treeitem"][data-path="a:docs"]');
-      await browser.$('[role="tree"]').click();
-      await docs.click();
-      await press(browser, ["l"], async () => (await docs.getAttribute("aria-expanded")) === "true", "the completed docs eval unfolded");
-      const verdict = (path: string) => browser.execute((id) => {
-        const row = [...document.querySelectorAll('[role="treeitem"]')].find((entry) => entry.getAttribute("data-path") === id);
+      // This fixture has a waiting Human release, its waiting consumer and GREEN docs: each
+      // Artifact's node and each eval its Detail lists display that state.
+      for (const [id, label] of [["a:release", "release: in progress"], ["a:ship", "ship: waiting"], ["a:docs", "docs: GREEN"]]) {
+        await waitFor(browser, async () => (await browser.$(nodeAt(id)).getAttribute("aria-label")) === label, `${id} drawn as ${label} in ${initialRun}`);
+      }
+      const verdict = (path: string) => browser.execute((selector) => {
+        const row = document.querySelector(selector);
         return {
           glyph: row?.querySelector(".glyph")?.textContent?.trim(),
           status: row?.querySelector(".status")?.textContent?.trim(),
         };
-      }, path);
-      // This fixture has a waiting Human release, its waiting consumer and GREEN docs.
-      // The Artifact summaries and their individual evals must each display that state.
-      for (const [path, glyph, status] of [
-        ["a:release", "?", /in progress: signoff/],
-        ["a:release/e:release/signoff", "?", /Human sign-off · unclaimed/],
-        ["a:ship", "…", /waits for release/],
-        ["a:ship/e:ship/check", "…", /waits for release/],
-        ["a:docs", "✓", /^$/],
-        ["a:docs/e:docs/lint", "✓", /^GREEN(?: · reused)?$/],
+      }, evalAt(path));
+      for (const [artifact, path, glyph, status] of [
+        ["release", "e:release/signoff", "?", /Human sign-off · unclaimed/],
+        ["ship", "e:ship/check", "…", /waits for release/],
+        ["docs", "e:docs/lint", "✓", /^GREEN(?: · reused)?$/],
       ] as const) {
+        await openArtifact(browser, `a:${artifact}`, `Artifact ${artifact}`);
         const shown = await verdict(path);
         assert.equal(shown.glyph, glyph, `${path}'s verdict glyph in ${initialRun}`);
         assert.match(shown.status ?? "missing row", status, `${path}'s own status in ${initialRun}`);
+        // Closed again, so the Detail covers none of the next Artifact.
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${artifact}'s Detail closed`);
       }
       // Another scope lists its own Runs.
       const runIds = () =>
@@ -132,7 +132,7 @@ export const scenarios: Scenario[] = [
       const before = await runIds();
       const other = await browser.$('//ul[@aria-label="Scope"]//li[contains(., "other")]');
       await other.click();
-      await waitFor(browser, async () => (await browser.$('nav[aria-label="Breadcrumb"]').getText()).includes("other"), "the other scope selected");
+      await waitFor(browser, async () => /other/.test(await browser.$('[aria-label="Scope"] [aria-selected="true"]').getText()), "the other scope selected");
       await waitFor(browser, async () => /Runs \(1\)/i.test(await text()), "its one Run");
       // The Runs pane now lists that repository's own Run, not the earlier scope's.
       await waitFor(browser, async () => {
@@ -147,9 +147,8 @@ export const scenarios: Scenario[] = [
     "narrows to one worktree and aggregates both at the repository boundary",
     async () => prepareMonitor(),
     async (browser, { data }) => {
-      const { text } = monitor(browser);
       const { initialRun, worktreeRuns } = data;
-      await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
+      await graphShown(browser, "a:release");
       const ids = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')]
         .map((row) => /run-\S+/.exec(row.innerText)?.[0] ?? ""));
       const scope = (name: string) => browser.$(`//ul[@aria-label="Scope"]//li[span[text()="${name}"]]`);
@@ -169,9 +168,9 @@ export const scenarios: Scenario[] = [
     "switches screens with Ctrl+, Ctrl+2 and Ctrl+1",
     async () => prepareMonitor(),
     async (browser) => {
-      const { text, active, settingsShown } = monitor(browser);
-      await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
-      await browser.$('[role="tree"]').click();
+      const { active, settingsShown } = monitor(browser);
+      await graphShown(browser, "a:release");
+      await waitFor(browser, () => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), "the Runs pane focused");
       await press(browser, [primaryModifier, ","], settingsShown, "Settings shown");
       await press(browser, [primaryModifier, "2"], async () => (await active()) === "Review", "Review active");
       await press(browser, [primaryModifier, "1"], async () => (await active()) === "Monitor", "Monitor active");
@@ -184,7 +183,7 @@ export const scenarios: Scenario[] = [
     async () => prepareRepositories(),
     async (browser) => {
       const { text, selectedScope } = allMonitor(browser);
-      await waitFor(browser, async () => (await text()).includes("signoff"), "the Run tree");
+      await graphShown(browser, "a:release");
       assert.match(await selectedScope(), /^ALL/);
       await waitFor(browser, async () => /Runs \(3\)/i.test(await text()), "the Runs of all three repositories");
       const runIds = () =>

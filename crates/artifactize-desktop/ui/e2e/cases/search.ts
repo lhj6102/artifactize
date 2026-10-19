@@ -40,7 +40,7 @@ function search(browser: WebdriverIO.Browser) {
       title: pane.querySelector("header h2")?.textContent?.trim(),
       fields: Object.fromEntries([...opened.querySelectorAll("dt")].map((key) => [key.textContent?.trim(), key.nextElementSibling?.textContent?.trim()])),
       editable: !!opened.querySelector('input, textarea, select, [contenteditable="true"], [aria-label="Human review"]'),
-      close: !!pane.querySelector('button[title="Back to the list"]'),
+      close: [...pane.querySelectorAll("header button")].some((button) => /^Close/.test(button.textContent?.trim() ?? "")),
     };
   });
   const suggestions = () =>
@@ -99,7 +99,9 @@ export const scenarios: Scenario[] = [
       await press(browser, ["/"], focused("Search requests"), "search focused without a Requests list");
       assert.equal(await query(), kept, "the shortcut focuses search without typing a slash");
       await press(browser, ["Escape"], holds(""), "the waiting query cleared for typing");
+      const beforeTyped = await checkpoint(browser);
       await type("release/signoff ");
+      await commandsRendered(browser, beforeTyped);
       assert.equal(await query(), "release/signoff ", "a slash typed in the field remains part of the query");
       await waitFor(browser, async () => (await rows()).length === 3 &&
         (await rows()).every((row) => row.includes("release/signoff")), "the typed query searches the saved sign-offs");
@@ -126,8 +128,11 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], holds(""), "the query cleared");
       await type("kind:hu");
       await waitFor(browser, async () => (await suggestions()).includes("kind:human"), "the kind suggestion again");
+      const beforeKind = await checkpoint(browser);
       await press(browser, ["Tab"], holds("kind:human "), "the kind taken");
-      await waitFor(browser, async () => (await rows()).length === 3, "the three sign-offs");
+      await commandsRendered(browser, beforeKind);
+      await waitFor(browser, async () => (await rows()).length === 3 &&
+        (await rows()).every((row) => row.includes("release/signoff")), "the accepted kind's three sign-offs");
 
       await type("rep");
       await waitFor(browser, async () => (await suggestions()).includes("repo:"), "the repo key");
@@ -139,7 +144,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the repository values");
       await type("oth");
       await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the other repository");
+      const beforeRepository = await checkpoint(browser);
       await press(browser, ["Tab"], holds("kind:human repo:other "), "the repository taken");
+      await commandsRendered(browser, beforeRepository);
       await waitFor(browser, async () => {
         const shown = await rows();
         return shown.length === 1 && /release\/signoff/.test(shown[0]) && /other/.test(shown[0]);
@@ -197,18 +204,18 @@ export const scenarios: Scenario[] = [
         const opened = await detail();
         return opened?.title === "docs/lint · Docs build · read-only" && opened.close;
       }, "the non-Human read-only Detail opened");
-      await waitFor(browser, async () => (await detail())?.fields.Request === requestId, "the default Detail identifies the exact opened request without Technical");
+      // Its Summary first; the request and every other fact fold under Debug.
+      await waitFor(browser, async () => (await record().getText()).includes("Build the docs."), "the opened Detail's Summary");
       const opened = await detail();
       assert.ok(opened);
-      assert.equal(opened.fields.Request, requestId, "this opened Detail belongs to the exact listed request by default");
       assert.equal(opened.title, "docs/lint · Docs build · read-only", "this Detail names the eval and its read-only state");
       assert.equal(opened.editable, false, "this non-Human Detail has no review form or editing controls");
-      assert.ok(opened.close, "the opened Detail offers Back to the list");
-      assert.equal(opened.fields.Fingerprint, undefined, "additional technical fields start folded");
-      const technical = () => record().$("button*=Technical");
-      await technical().click();
-      await waitFor(browser, async () => (await technical().getAttribute("aria-expanded")) === "true" && !!(await detail())?.fields.Fingerprint, "the opened Detail renders its additional technical record");
-      assert.equal((await detail())?.fields.Request, requestId, "Technical preserves the opened request's identity");
+      assert.ok(opened.close, "the opened Detail offers Close back to the list");
+      assert.equal(opened.fields.Request, undefined, "the Debug facts start folded");
+      const debug = () => record().$("button*=Debug");
+      await debug().click();
+      await waitFor(browser, async () => (await debug().getAttribute("aria-expanded")) === "true" && (await detail())?.fields.Request === requestId,
+        "Debug identifies the exact opened request");
       await press(browser, ["Escape"], async () => !(await record().isExisting()) && await focused("Requests")(), "the opened Detail closed back to the list");
     },
   ),

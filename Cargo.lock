@@ -137,11 +137,13 @@ name = "artifactize"
 version = "0.0.0-dev"
 dependencies = [
  "artifactize-core",
+ "artifactize-mcp",
  "artifactize-tools",
  "artifactize-tui",
  "axum",
  "base64 0.22.1",
  "bytes",
+ "clap",
  "crossterm",
  "futures-util",
  "getrandom 0.4.3",
@@ -184,7 +186,6 @@ dependencies = [
  "reqwest",
  "rig-core",
  "rig-reqwest",
- "rmcp",
  "rusqlite",
  "serde",
  "serde_json",
@@ -209,8 +210,11 @@ dependencies = [
  "artifactize-core",
  "artifactize-tools",
  "base64 0.22.1",
+ "cc",
  "clap",
+ "gtk",
  "libc",
+ "pkg-config",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -227,7 +231,23 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 1.1.8+spec-1.1.0",
+ "webkit2gtk",
+ "webview2-com",
+ "windows-core",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "artifactize-mcp"
+version = "0.0.0-dev"
+dependencies = [
+ "artifactize-core",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

@@ -1,5 +1,7 @@
 //! Shared non-interactive JSON projections. Interfaces add rendering and paging only.
-pub(crate) mod session;
+mod logs;
+pub mod session;
+pub use logs::{LogQuery, Stream, logs};
 
 use crate::{config::read_workspace_config, types::RequestId};
 use serde::Serialize;

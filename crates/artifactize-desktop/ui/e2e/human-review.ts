@@ -9,3 +9,12 @@ export function reviewing(browser: WebdriverIO.Browser, selector = '[aria-label=
     return !!detail && (detail.textContent ?? "").includes("REVIEW (yours)") && !detail.querySelector(".busy");
   }, selector);
 }
+
+/** The Human review waits for a claim: its stage reads CLAIM and its Claim button is usable. */
+export function claimable(browser: WebdriverIO.Browser, selector = '[aria-label="Human review"]'): Promise<boolean> {
+  return browser.execute((query) => {
+    const detail = document.querySelector(query);
+    const claim = [...(detail?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.trim() === "Claim to review");
+    return !!detail && detail.querySelector(".stage")?.textContent?.trim() === "CLAIM" && !!claim && !claim.disabled && !detail.querySelector(".busy");
+  }, selector);
+}

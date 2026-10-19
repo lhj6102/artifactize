@@ -1,11 +1,11 @@
 <script lang="ts">
   // The Run graph: Artifacts and their dependency edges, lit by the backend's `run_graph` from
-  // the same snapshot as the tree. Every accepted snapshot recolours the graph in place; only a
+  // the same snapshot as the Run's tree of Artifacts and evals. Every accepted snapshot recolours the graph in place; only a
   // change of Artifacts or edges lays it out again, so nodes never jump on a state change.
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
-  import { call, useIpc, message, type RunGraph, type TreeNode } from "../ipc/client";
+  import { call, useIpc, message, type RunGraph } from "../ipc/client";
   import { RunGraphState, setRunGraphState } from "./run-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
   import { LIMIT, shape } from "./graph";
@@ -13,26 +13,19 @@
   let {
     run,
     revision,
-    tree,
-    selected,
-    zoomed = $bindable(null),
-    active = true,
-    onselect,
+    opened = null,
     onopen,
-    onready,
+    onclose,
   }: {
     run: string;
     /** The browse revision: a new one means a new snapshot to read the graph from. */
     revision: number;
-    tree: TreeNode[];
-    selected: string[];
-    zoomed?: string | null;
-    /** The graph's screen is shown; a hidden graph holds no keyboard focus. */
-    active?: boolean;
-    onselect: (path: string[]) => void;
-    onopen: () => void;
-    /** The graph is mounted and can accept a requested keyboard-focus handoff. */
-    onready?: (focus: () => void) => void;
+    /** The Artifact whose Detail is open. */
+    opened?: string | null;
+    /** Open the Detail of an Artifact. */
+    onopen: (id: string) => void;
+    /** Close the open Detail. */
+    onclose: () => void;
   } = $props();
   const commands = useIpc();
   const g = new RunGraphState();
@@ -86,7 +79,6 @@
   <div class="note">
     <p>
       This Run has {g.pending.nodes.length} Artifacts; the graph lays out at most {LIMIT} at once, which can take a while.
-      The tree shows every Run at once (<kbd>v</kbd>).
     </p>
     <button
       class="button"
@@ -103,7 +95,7 @@
 {:else}
   {#key g.shown.graph.run}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} {onready} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {opened} {onopen} {onclose} />
     </SvelteFlowProvider>
   {/key}
 {/if}

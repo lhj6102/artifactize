@@ -1,8 +1,7 @@
 name = "spec"
-mounts = { reqs = "requirements" }
 
 [views.agent_tools]
-read = { builtin = "read", description = "Read lines of a text file in {artifactName}; the requirements are at reqs/requirements.md." }
+read = { builtin = "read", description = "Read lines of a text file in {artifactName}, such as spec.md." }
 grep = { builtin = "grep" }
 view_image = { builtin = "view_image", description = "View an image in {artifactName}, such as diagram.png." }
 
@@ -16,7 +15,7 @@ description = "List each requirement for {artifactName} with the spec.md lines t
 input_schema = { type = "object", properties = { id = { type = "string", pattern = "^R[0-9]+$" } }, additionalProperties = false }
 protocol = "json"
 command = "python3"
-args = ["coverage.py", "{reqs}/requirements.md"]
+args = ["coverage.py", "{requirements}/requirements.md"]
 timeout_ms = 10000
 
 [views.human_tools]
@@ -33,11 +32,11 @@ codex = { kind = "agent", backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", re
 
 [evals.review.payload]
 instruction = """
-Review spec.md in {spec} against every requirement in {reqs}. Start with coverage_spec to see which \
-lines cite each requirement ID, then read the cited sections with section_spec or read_spec, and use \
-grep_spec to search for anything the coverage report misses. Use view_image_spec to check that \
-diagram.png matches the Diagram section. Answer GREEN only if each requirement is fully specified \
-and the diagram matches; otherwise answer RED with one finding per problem."""
+Review spec.md in {spec} against every requirement in {requirements}. Start with the coverage report to see \
+which lines cite each requirement ID, then read the cited sections and search for anything the \
+coverage report misses. Inspect diagram.png to check that it matches the Diagram section. Answer \
+GREEN only if each requirement is fully specified and the diagram matches; otherwise answer RED \
+with one finding per problem."""
 
 [evals.review.pass_schema]
 type = "object"

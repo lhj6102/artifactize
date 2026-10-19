@@ -15,7 +15,7 @@ use std::io::{self, Read};
 
 #[derive(serde::Deserialize)]
 struct Identity {
-    pid: u32,
+    pid: artifactize_core::process::ProcessId,
     #[serde(deserialize_with = "start_time")]
     start_time: u64,
 }
@@ -40,12 +40,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
     let owners: Vec<Identity> = serde_json::from_str(&input)?;
-    if owners.iter().any(|owner| owner.pid == 0) {
-        return Err("an observed process identity must have a nonzero pid".into());
-    }
     let running: Vec<_> = owners
         .into_iter()
-        .map(|owner| observation::same_process_running(owner.pid, owner.start_time))
+        .map(|owner| observation::same_process_running(owner.pid.get(), owner.start_time))
         .collect();
     println!("{}", serde_json::to_string(&running)?);
     Ok(())

@@ -1,20 +1,22 @@
 <script lang="ts">
-  // Scope → Runs → Run tree → Detail as resizable panes. Focus moves between the panes; the
-  // Detail follows the tree's selection as a peek until it is opened.
+  // Scope and Runs on the left, the selected Run's graph on the right, always with the divider
+  // between them. Focus moves between the panes with the keys; a click on an Artifact or on the
+  // Run's headline opens its Detail, floating over the graph's right side. Dragging the Detail's
+  // left edge sets its width, kept like the split ratio.
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { BrowseView } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { MonitorState, setMonitorState, type Focus } from "./monitor-state.svelte";
-  import { find } from "./tree.svelte";
+  import { find } from "./tree";
+  import { GAP, clampWidth, saveWidth } from "./detail-width";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";
   import RunPane from "./RunPane.svelte";
   import DetailPane from "./DetailPane.svelte";
   import { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
-  import { plain } from "../shell/keys";
 
   let { active }: { active: boolean } = $props();
   const app = getAppState();
@@ -22,30 +24,23 @@
 
   const m = new MonitorState();
   setMonitorState(m);
-  const { tree, panes } = m;
+  const { panes } = m;
 
   const view = $derived(browse.view);
   const run = $derived(view?.run ?? null);
-  const selectedNode = $derived(tree.selected.at(-1) ?? null);
 
   /** What a snapshot changes here, as it is accepted. */
   function accept(shown: BrowseView) {
     const at = shown.run;
-    if (at) tree.sync(at.id, at.tree);
     // A replaced state: Details, drafts and sessions of the old one no longer apply.
     if (shown.replaced) {
       m.opened = null;
       app.forgetReviews();
-      if (m.focus === "detail") m.focus = "tree";
+      if (m.focus === "detail") m.focus = "graph";
     }
-    // Leaving the selected Run (or losing it) closes its Detail.
-    if (m.opened !== null && m.opened !== at?.id) m.opened = null;
-    // Another Run's graph starts zoomed out.
-    const id = at?.id ?? null;
-    if (id !== m.zoomRun) {
-      m.zoomRun = id;
-      m.zoomed = null;
-    }
+    // Leaving the selected Run (or losing it, or the node) closes its Detail.
+    const opened = m.opened;
+    if (opened !== null && (opened.run !== at?.id || !find(at.tree, [opened.node]))) m.opened = null;
   }
 
   onMount(() => {
@@ -55,53 +50,77 @@
 
   /** The Review of a request, if one was opened: rendering only looks. */
   const review = (id: string): Review | undefined => app.reviews[id];
-  /** Open the Review of a request when its Detail arrives, never while rendering. */
+  /** Open the Review of a request when its Detail arrives, never while rendering; the open
+   * Detail notes it, so leaving the Detail asks that review first. */
   function openReview(id: string): void {
     app.review(id);
+    if (m.opened && m.opened.request !== id) m.opened = { ...m.opened, request: id };
   }
 
-  /** Move focus to a pane's list, tree or review, or else to the pane itself. */
+  /** Move focus to a pane's list or review, or else to the pane itself; the graph's pane takes
+   * it itself, and Tab goes on to its Artifacts. */
   async function move(to: Focus) {
     m.focus = to;
     await tick();
     const pane = panes[to];
-    (pane?.querySelector<HTMLElement>('[tabindex="0"]') ?? pane)?.focus();
+    if (to === "graph") pane?.focus();
+    else (pane?.querySelector<HTMLElement>('[tabindex="0"]') ?? pane)?.focus();
   }
 
-  function openDetail() {
-    if (!run || !selectedNode) return;
-    m.opened = run.id;
-    void move("detail");
+  /** A click on an Artifact: its Detail, on the Artifact's own tab. */
+  function openNode(node: string) {
+    if (!run) return;
+    m.opened = { run: run.id, node, tab: null };
   }
 
-  function leaveDetail() {
+  /** A click on the Run's headline: the Run's Detail. */
+  function openRun() {
+    const row = run?.tree.find((node) => node.kind === "run");
+    if (!run || !row) return;
+    m.opened = { run: run.id, node: row.id, tab: null };
+  }
+
+  /** Another tab of the open Detail; a Human review's tab notes its request when it arrives. */
+  function showTab(tab: string | null) {
+    if (m.opened && m.opened.tab !== tab) m.opened = { run: m.opened.run, node: m.opened.node, tab };
+  }
+
+  /** Close the Detail; focus that was in it goes back to the graph. Leaving one step at a time:
+   * a Human review shown in it first cancels its running work, then leaves its form, and only
+   * then the Detail closes. */
+  function closeDetail() {
+    if (m.opened === null) return;
+    const held = m.opened.request === undefined ? undefined : app.reviews[m.opened.request];
+    if (held && !held.escape()) return;
+    const inside = panes.detail?.contains(document.activeElement) ?? false;
     m.opened = null;
-    void move("tree");
+    if (inside) void move("graph");
   }
 
-  /** `!`: the next ERROR, RED or waiting Human eval; from Detail, open its Detail. */
-  function attention() {
-    if (!run) {
-      m.notice = "Open a Run to find what needs attention.";
-      return;
-    }
-    const fromDetail = m.opened !== null;
-    if (!tree.nextAttention(run.tree)) {
-      m.notice = "Nothing in this Run needs attention.";
-      return;
-    }
-    m.notice = null;
-    if (fromDetail) openDetail();
-    else void move("tree");
+  /** Esc in the graph closes its Detail, else steps back to the Runs. */
+  function back() {
+    if (m.opened) closeDetail();
+    else void move("runs");
   }
 
-  /** Screen-wide: `!` works wherever focus is while the Monitor shows. */
-  function keydown(event: KeyboardEvent) {
-    if (!active || event.defaultPrevented) return;
-    if (plain(event, "!")) {
-      event.preventDefault();
-      attention();
-    }
+  /** Dragging the Detail's left edge: the mouse moves it wherever it goes until the button is
+   * released, as the pane dividers follow it. */
+  function grab(event: MouseEvent) {
+    if (event.button !== 0) return;
+    const stage = (event.currentTarget as HTMLElement).closest(".stage");
+    if (!stage) return;
+    event.preventDefault();
+    const drag = (moved: MouseEvent) => {
+      const room = stage.getBoundingClientRect();
+      m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width);
+    };
+    const drop = () => {
+      window.removeEventListener("mousemove", drag);
+      window.removeEventListener("mouseup", drop);
+      if (m.detailWidth !== null) saveWidth(m.detailWidth);
+    };
+    window.addEventListener("mousemove", drag);
+    window.addEventListener("mouseup", drop);
   }
 
   /** The Runs pane has focus first, as in the terminal monitor. */
@@ -112,61 +131,29 @@
     }
   };
 
-  /** `artifactize › scope › Run › node`, up to the focused level, as in the terminal. */
-  const crumbs = $derived.by(() => {
-    const parts = [view?.scopeLabel ?? "…"];
-    if (m.focus !== "scope" && view?.selectedRun) parts.push(view.selectedRun);
-    if ((m.focus === "tree" || m.focus === "detail") && run) {
-      const node = find(run.tree, tree.selected);
-      if (node) parts.push(node.kind === "run" ? "Run" : node.name);
-    }
-    return parts;
-  });
-
   useCommands(() =>
     active
       ? [
           { id: "monitor.refresh", group: "Monitor", label: "Refresh", keys: "Ctrl+R", run: () => browse.refresh() },
-          { id: "monitor.attention", group: "Monitor", label: "Next attention", keys: "!", run: attention },
           { id: "monitor.scope", group: "Monitor", label: "Focus Scope", run: () => void move("scope") },
           { id: "monitor.runs", group: "Monitor", label: "Focus Runs", run: () => void move("runs") },
-          { id: "monitor.tree", group: "Monitor", label: "Focus Run tree", run: () => void move("tree") },
+          { id: "monitor.graph", group: "Monitor", label: "Focus Run graph", run: () => void move("graph") },
+          { id: "monitor.run", group: "Monitor", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
           {
-            id: "monitor.view",
+            id: "monitor.close",
             group: "Monitor",
-            label: m.runView === "tree" ? "Show the Run graph" : "Show the Run tree",
-            keys: "v",
-            run: () => {
-              m.runView = m.runView === "tree" ? "graph" : "tree";
-              void move("tree");
-            },
-          },
-          {
-            id: "monitor.open",
-            group: "Monitor",
-            label: "Open Detail of the selected row",
-            keys: "Enter",
-            enabled: () => selectedNode !== null,
-            run: openDetail,
+            label: "Close the Detail",
+            keys: "Esc",
+            enabled: () => m.opened !== null,
+            run: closeDetail,
           },
         ]
       : [],
   );
 </script>
 
-<svelte:window onkeydown={keydown} />
-
 <div class="monitor" {@attach begin}>
-  <nav class="crumbs" aria-label="Breadcrumb">
-    <span class="root">artifactize</span>
-    {#each crumbs as crumb, index (index)}
-      <span class="sep">›</span><span>{crumb}</span>
-    {/each}
-    {#if m.notice || browse.error || view?.error}
-      <span class="notice" role="status">{m.notice ?? browse.error ?? view?.error}</span>
-    {/if}
-  </nav>
-  <PaneGroup direction="horizontal" autoSaveId="monitor-columns" class="columns">
+  <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
     <Pane defaultSize={24} minSize={12}>
       <PaneGroup direction="vertical" autoSaveId="monitor-sidebar">
         <Pane defaultSize={38} minSize={15}>
@@ -183,74 +170,100 @@
             focused={m.focus === "runs"}
             bind:element={panes.runs}
             onfocus={() => (m.focus = "runs")}
-            onnext={() => void move("tree")}
+            onnext={() => void move("graph")}
             onback={() => void move("scope")}
           />
         </Pane>
       </PaneGroup>
     </Pane>
     <PaneResizer class="resizer" />
-    <Pane defaultSize={36} minSize={18}>
-      <RunPane
-        {tree}
-        bind:view={m.runView}
-        bind:zoomed={m.zoomed}
-        {active}
-        focused={m.focus === "tree"}
-        bind:element={panes.tree}
-        onfocus={() => (m.focus = "tree")}
-        onopen={openDetail}
-        onback={() => void move("runs")}
-        onattention={attention}
-      />
-    </Pane>
-    <PaneResizer class="resizer" />
-    <Pane defaultSize={40} minSize={20}>
-      <DetailPane
-        run={run?.id ?? null}
-        node={selectedNode}
-        full={m.opened !== null}
-        focused={m.focus === "detail"}
-        {active}
-        {review}
-        {openReview}
-        bind:element={panes.detail}
-        onfocus={() => (m.focus = "detail")}
-        onopen={openDetail}
-        onback={leaveDetail}
-      />
+    <Pane defaultSize={76} minSize={30}>
+      <div class="stage">
+        <RunPane
+          notice={browse.error ?? view?.error ?? null}
+          bind:noticeOpen={m.noticeOpen}
+          opened={m.opened && m.opened.run === run?.id ? m.opened.node : null}
+          focused={m.focus === "graph"}
+          bind:element={panes.graph}
+          onfocus={() => (m.focus = "graph")}
+          onopen={openNode}
+          onclose={closeDetail}
+          onrun={openRun}
+          onback={back}
+        />
+        {#if m.opened && run && m.opened.run === run.id}
+          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
+            <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
+                 the resize cursor. -->
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onmousedown={grab}></div>
+            <DetailPane
+              run={m.opened.run}
+              node={m.opened.node}
+              tab={m.opened.tab}
+              tree={run.tree}
+              focused={m.focus === "detail"}
+              {active}
+              {review}
+              {openReview}
+              bind:element={panes.detail}
+              onfocus={() => (m.focus = "detail")}
+              ontab={showTab}
+              onopen={openNode}
+              onback={closeDetail}
+            />
+          </aside>
+        {/if}
+      </div>
     </Pane>
   </PaneGroup>
 </div>
 
 <style>
   .monitor {
-    display: grid;
-    grid-template-rows: auto 1fr;
     height: 100%;
-  }
-  .crumbs {
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-    padding: 8px var(--pad);
-    border-bottom: 1px solid var(--border);
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .root,
-  .sep {
-    color: var(--muted);
-  }
-  .notice {
-    margin-left: auto;
-    color: var(--red);
-    font-weight: 400;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-height: 0;
+    min-width: 0;
   }
   :global(.columns) {
     min-height: 0;
+  }
+  /* The graph's own layers (canvas, Detail) stack inside the stage, so none of them covers the
+   * divider's grab zone on the graph's side, and the Detail never sits beside Scope or Runs. */
+  .stage {
+    position: relative;
+    isolation: isolate;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+  }
+  /* Docked toward the graph's right edge with a gap; the graph stays visible behind it. The
+   * Detail sets its own width, by default or by a drag, within the graph's area (as
+   * detail-width.ts fits a drag); its content never sizes it, and wraps or scrolls in its own
+   * boxes. */
+  .dock {
+    position: absolute;
+    z-index: 20;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: var(--detail-width, min(46%, 680px));
+    min-width: min(320px, calc(100% - 24px));
+    max-width: calc(100% - 108px);
+    contain: inline-size;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
+  }
+  .edge {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
   }
 </style>

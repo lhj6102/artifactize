@@ -3,16 +3,13 @@ mod os;
 #[path = "support/process.rs"]
 mod process;
 
-fn tools() -> std::process::Command {
-    os::tools(env!("CARGO_BIN_EXE_artifactize-tools"))
-}
 fn call(root: &std::path::Path, args: &[&str]) -> Output {
     os::call(env!("CARGO_BIN_EXE_artifactize-tools"), root, args)
 }
 use std::{fs, process::Output};
 
 fn text(output: Output) -> String {
-    assert!(output.status.success(), "{output:?}");
+    assert!(os::succeeded(&output.status), "{output:?}");
     String::from_utf8(output.stdout).unwrap()
 }
 
@@ -79,6 +76,26 @@ fn subcommands_share_scoped_files_and_exit_codes() {
     let help = text(call(root.path(), &["--help"]));
     assert!(help.contains("symlinks are refused"));
     assert_eq!(call(root.path(), &["unknown"]).status.code(), Some(2));
+}
+
+#[test]
+fn searches_validate_cli_patterns_and_keep_the_declared_flags() {
+    let root = os::tempdir();
+    fs::write(root.path().join("notes.md"), "ALPHA\nbeta\n").unwrap();
+    for args in [["grep", "", "."], ["glob", "", "."], ["grep", "[", "."]] {
+        let output = call(root.path(), &args);
+        assert_eq!(output.status.code(), Some(1), "{args:?}");
+        assert!(!output.stderr.is_empty(), "{args:?}");
+    }
+    let output = text(call(
+        root.path(),
+        &["grep", "alpha", "--case-insensitive", "--glob", "*.md"],
+    ));
+    let result: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(
+        result["matches"],
+        serde_json::json!([{"path":"notes.md","line":1,"text":"ALPHA"}])
+    );
 }
 
 #[test]
@@ -149,7 +166,7 @@ fn open_passes_one_absolute_target_to_the_recording_opener() {
         root.path(),
         "space ; notes.md",
     );
-    assert!(output.status.success(), "{output:?}");
+    assert!(os::succeeded(&output.status), "{output:?}");
     assert_eq!(
         fs::read_to_string(record).unwrap(),
         format!("1\n{}\n", root.path().join("space ; notes.md").display())
@@ -158,8 +175,8 @@ fn open_passes_one_absolute_target_to_the_recording_opener() {
 
 #[test]
 fn version_matches_the_shared_workspace_version() {
-    let output = tools().arg("--version").output().unwrap();
-    assert!(output.status.success());
+    let output = os::tools_output(env!("CARGO_BIN_EXE_artifactize-tools"), &["--version"]);
+    assert!(os::succeeded(&output.status));
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
         format!("artifactize-tools {}\n", env!("CARGO_PKG_VERSION"))

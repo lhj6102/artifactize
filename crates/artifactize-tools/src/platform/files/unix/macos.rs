@@ -17,6 +17,8 @@ pub fn exact_name(file: &File, name: &OsStr) -> io::Result<bool> {
 
 /// Ask the pinned directory's volume, since APFS supports both case policies.
 pub fn case_sensitive(directory: &File) -> io::Result<bool> {
+    // std and rustix 1.1 expose neither fpathconf nor a typed _PC_CASE_SENSITIVE
+    // selector. Query the pinned volume directly, without creating a probe file.
     // SAFETY: fpathconf queries a live descriptor and writes no user memory.
     let sensitive = unsafe { libc::fpathconf(directory.as_raw_fd(), libc::_PC_CASE_SENSITIVE) };
     if sensitive == -1 {

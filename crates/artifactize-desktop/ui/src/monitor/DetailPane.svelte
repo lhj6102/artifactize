@@ -1,35 +1,44 @@
 <script lang="ts">
-  // The Detail of the selected tree row: a peek that follows the selection, or the opened
-  // Detail — sections and saved logs, an Agent transcript, or the shared Human Detail.
+  // The Detail of an Artifact or of the Run, floating over the graph. An Artifact's Detail has
+  // tabs, a chip choice that reads as a path: `[Artifact icon] {name} / [eval] [eval] …`. The Artifact's
+  // own lists its evals with their verdicts; then comes one per eval. An eval's tab shows its Summary or its log (an Agent's transcript, a runtime's
+  // saved output), or the shared Human Detail. Its width is the Detail's: everything in it wraps
+  // or scrolls in its own box.
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, message } from "../ipc/client";
+  import { call, useIpc, message, type TreeNode } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import type { Review } from "../review/review.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
   import Panel from "../shell/Panel.svelte";
   import RecordDetail from "./RecordDetail.svelte";
-  import Sections from "./Sections.svelte";
-  import Transcript from "./Transcript.svelte";
+  import Neighbours from "./Neighbours.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
+  import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let {
     run,
     node,
-    full,
+    tab,
+    tree,
     focused,
     active,
     review,
     openReview,
     element = $bindable(),
     onfocus,
+    ontab,
     onopen,
     onback,
   }: {
-    run: string | null;
-    node: string | null;
-    full: boolean;
+    run: string;
+    /** The Artifact (or the Run) the Detail is of. */
+    node: string;
+    /** The eval whose tab is shown, or `null` for the Artifact's own. */
+    tab: string | null;
+    /** The Run's tree: an Artifact's evals and their verdicts come from there. */
+    tree: TreeNode[];
     focused: boolean;
     /** The Monitor is the shown screen; only then its review offers palette commands. */
     active: boolean;
@@ -38,7 +47,10 @@
     openReview: (id: string) => void;
     element?: HTMLElement;
     onfocus: () => void;
-    onopen: () => void;
+    /** Show the tab of an eval, or the Artifact's own for `null`. */
+    ontab: (tab: string | null) => void;
+    /** Open another Artifact's Detail: a neighbour in the Artifact tab. */
+    onopen: (node: string) => void;
     onback: () => void;
   } = $props();
   const commands = useIpc();
@@ -46,29 +58,30 @@
   setDetailPaneState(d);
   const { browse } = getAppState();
 
-  
-  
-  /** The folds belong to one row: another opened row starts folded, as the terminal's Detail
-   * does. */
-  
-  const technical = $derived(d.folds.node === node && d.folds.technical);
-  const pending = $derived(d.folds.node === node && d.folds.pending);
-  /** An Agent's summary sections instead of its transcript. */
-  const details = $derived(d.folds.node === node && d.folds.details);
-  function fold(change: Partial<{ technical: boolean; pending: boolean; details: boolean }>) {
-    d.folds = { node, technical, pending, details, ...change };
+  const row = $derived(tree.find((top) => top.id === node) ?? null);
+  const evals = $derived(row?.kind === "artifact" ? row.children : []);
+  const tabbed = $derived(row?.kind === "artifact");
+  /** The node whose Detail is read: the shown eval, else the Artifact or the Run. */
+  const target = $derived(tab ?? node);
+
+  /** The folds belong to one node: another opened node starts folded, as the terminal's
+   * Detail does. */
+  const technical = $derived(d.folds.node === target && d.folds.technical);
+  const pending = $derived(d.folds.node === target && d.folds.pending);
+  /** The eval's log rather than its Summary. */
+  const log = $derived(d.folds.node === target && d.folds.log);
+  /** The eval's Debug facts unfolded. */
+  const debug = $derived(d.folds.node === target && d.folds.debug);
+  function fold(change: Partial<{ technical: boolean; pending: boolean; log: boolean; debug: boolean }>) {
+    d.folds = { node: target, technical, pending, log, debug, ...change };
   }
 
   /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
   const read: Attachment<HTMLElement> = () => {
     void browse.revision;
-    const [at, target] = [run, node];
-    if (!at || !target) {
-      d.detail = null;
-      return;
-    }
+    const [at, wanted] = [run, target];
     let current = true;
-    call(commands.detail(at, target)).then(
+    call(commands.detail(at, wanted)).then(
       (view) => {
         if (current) {
           // A Human review gets its owner now, so rendering never has to make one.
@@ -86,82 +99,203 @@
     };
   };
 
-  const human = $derived(full && d.detail?.profile === "human" && d.detail.request !== null);
-  const agent = $derived(d.detail?.profile === "agent" && d.detail.request !== null);
+  /** Only this node's Detail: another node's, still held while this one is read, is not. */
+  const detail = $derived(d.detail?.run === run && d.detail.node === target ? d.detail : null);
+  const human = $derived(detail?.profile === "human" && detail.request !== null);
+  /** An Artifact's or an eval's Summary keeps its technical facts under Debug; a Run's
+   * sections keep theirs under Technical. */
+  const folded = $derived(detail !== null && (detail.card !== null || detail.target === "artifact"));
+
+  /** The Human review this tab shows, while it runs work or edits its form: ← leaves it alone,
+   * and Esc steps through it first (the Monitor's close asks it). */
+  const holding = $derived.by(() => {
+    const reviewing = human && detail?.request ? review(detail.request) : undefined;
+    return reviewing !== undefined && (reviewing.busy !== null || reviewing.editing);
+  });
 
   function keydown(event: KeyboardEvent) {
-    if (human) return;
-    if (plain(event, "Escape") || plain(event, "ArrowLeft")) {
-      if (details) fold({ details: false });
-      else onback();
-    } else if (plain(event, "t") && (!agent || details)) fold({ technical: !technical });
-    else if (plain(event, "w") && (!agent || details)) fold({ pending: !pending });
-    else if (plain(event, "d") && agent) fold({ details: !details });
+    // A Human review takes its own keys; from the tabs only Esc and ← close.
+    if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
+    if (plain(event, "ArrowLeft") && holding) return;
+    if (plain(event, "Escape") || plain(event, "ArrowLeft")) onback();
+    else if (human || log) return;
+    else if (plain(event, "t")) fold(folded ? { debug: !debug } : { technical: !technical });
+    else if (plain(event, "w")) fold({ pending: !pending });
     else return;
     event.preventDefault();
   }
 </script>
 
-<Panel title={human ? "Human review" : (d.detail?.title ?? "Detail")} focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
+<Panel title={human ? "Human review" : (detail?.title ?? "Detail")} focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
   {#snippet actions()}
-    {#if full && !human}
-      {#if agent}
-        <button class="button small" onclick={() => fold({ details: !details })} aria-pressed={details}>
-          Details <kbd>d</kbd>
-        </button>
-      {/if}
-      <button class="button small" onclick={onback} title="Back to the tree">Close <kbd>Esc</kbd></button>
-    {/if}
+    <!-- The one window-level control; a Human review has its own Close among its controls. -->
+    {#if !human}<button class="button small" onclick={onback}>Close <kbd>Esc</kbd></button>{/if}
   {/snippet}
-  {#if d.error}
-    <p class="error">{d.error}</p>
-  {:else if !d.detail}
-    <p class="empty">Select a node.</p>
-  {:else if human && d.detail.request}
-    {#key d.detail.request}
-      {@const reviewing = review(d.detail.request)}
-      {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
-    {/key}
-  {:else if full}
-    <RecordDetail
-      detail={d.detail}
-      bind:technical={() => technical, (value) => fold({ technical: value })}
-      bind:pending={() => pending, (value) => fold({ pending: value })}
-      bind:details={() => details, (value) => fold({ details: value })}
-    />
-  {:else}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="peek" role="button" tabindex="-1" onclick={onopen} title="Open">
-      {#if d.detail.summary}<p class="summary {tone(d.detail.mark?.status)}">{d.detail.summary}</p>{/if}
-      <Sections sections={d.detail.sections} peek />
-      {#if agent && d.detail.running && d.detail.request}
-        {#key d.detail.request}
-          <Transcript id={d.detail.request} peek />
-        {/key}
+  <div class="detail" class:tabbed>
+    {#if tabbed && row}
+      <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}">
+        <!-- The `/` stays with the Artifact's chip: only eval chips flow onto further lines. -->
+        <span class="head">
+          <button class="chip" role="tab" aria-selected={tab === null} aria-label="Artifact {row.name}" onclick={() => ontab(null)}>
+            <img class="mark" src={brandMark} alt="" /><span class="label">{row.name}</span>
+          </button>
+          {#if evals.length > 0}<span class="slash" aria-hidden="true">/</span>{/if}
+        </span>
+        {#each evals as item (item.id)}
+          <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
+            <span class="glyph {tone(item.tone)}">{item.glyph}</span>{item.name}
+          </button>
+        {/each}
+      </div>
+    {/if}
+    <div class="content" class:listing={tabbed && tab === null} role={tabbed ? "tabpanel" : undefined}>
+      {#if tabbed && row && tab === null}
+        <Neighbours {run} {node} {onopen} />
+        <ul class="evals" aria-label="Evals of {row.name}">
+          {#each evals as item (item.id)}
+            <li>
+              <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => ontab(item.id)}>
+                <span class="glyph {tone(item.tone)}">{item.glyph}</span>
+                <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
+                <span class="status">
+                  {#each item.text as segment, part (part)}<span class={tone(segment.tone)}>{segment.text}</span>{/each}
+                </span>
+                <span class="muted right">{item.right}</span>
+              </button>
+            </li>
+          {:else}
+            <li class="muted none">No evals.</li>
+          {/each}
+        </ul>
       {/if}
-      <p class="hint">Enter or click: open</p>
+      {#if d.error}
+        <p class="error">{d.error}</p>
+      {:else if !detail}
+        <p class="empty">Loading…</p>
+      {:else if human && detail.request}
+        {#key detail.request}
+          {@const reviewing = review(detail.request)}
+          {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
+        {/key}
+      {:else}
+        <RecordDetail
+          {detail}
+          bind:technical={() => technical, (value) => fold({ technical: value })}
+          bind:pending={() => pending, (value) => fold({ pending: value })}
+          bind:log={() => log, (value) => fold({ log: value })}
+          bind:debug={() => debug, (value) => fold({ debug: value })}
+        />
+      {/if}
     </div>
-  {/if}
+  </div>
 </Panel>
 
 <style>
-  .empty,
-  .hint {
+  .detail {
+    height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .detail.tabbed {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  /* Many tabs wrap onto further lines; they never widen the Detail. */
+  .strip {
+    align-items: baseline;
+    padding: 2px var(--pad) 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  /* The Artifact's chip and its `/` wrap as one; a long name is cut inside the chip. */
+  .head {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  /* The icon always shows; only the name is cut short. */
+  .head .chip {
+    flex: 0 1 auto;
+    min-width: 0;
+    align-items: center;
+  }
+  .mark {
+    flex: none;
+    width: 1.1em;
+    height: 1.1em;
+  }
+  .label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .slash {
+    flex: none;
+    color: var(--muted);
+  }
+  .content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+    overflow: auto;
+    padding-top: 8px;
+  }
+  /* The neighbours, the eval list and the Artifact's own detail each keep their full
+     height and the tab scrolls as one, so no part is squeezed under the next. */
+  .content.listing {
+    grid-template-rows: none;
+    grid-auto-rows: max-content;
+  }
+  .evals {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+  }
+  .eval {
+    display: grid;
+    grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr) auto;
+    gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 4px var(--pad);
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .eval:hover {
+    background: var(--surface-2);
+  }
+  .eval .name,
+  .eval .status {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .weight-bold .name,
+  .weight-bold .status {
+    font-weight: 600;
+  }
+  .weight-dim {
+    color: var(--muted);
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .none {
+    padding: 0 var(--pad);
+  }
+  .empty {
     color: var(--muted);
     padding: 0 var(--pad);
   }
   .error {
     color: var(--red);
     padding: 0 var(--pad);
-  }
-  .summary {
-    margin: 0 0 10px;
-    padding: 0 var(--pad);
-    font-weight: 500;
-  }
-  .peek {
-    cursor: pointer;
-    height: 100%;
-    outline: none;
+    overflow-wrap: anywhere;
   }
 </style>

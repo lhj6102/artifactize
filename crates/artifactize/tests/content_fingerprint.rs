@@ -82,17 +82,16 @@ impl Fixture {
     }
 }
 
-fn artifact(name: &str, fingerprint: Value, mounts: Value, args: &[&str]) -> Value {
+fn artifact(name: &str, fingerprint: Value, instruction: &str, args: &[&str]) -> Value {
     json!({
         "name": name,
-        "mounts": mounts,
         "fingerprint": fingerprint,
         "evals": [
             {
                 "id":"check",
                 "title":"Check",
                 "profile":{"kind":"runtime","command":shell(),"args":args},
-                "payload":{"instruction":"Check."},
+                "payload":{"instruction":instruction},
             },
         ],
     })
@@ -103,15 +102,12 @@ const PASS: &[&str] = &["-c", "exit 0"];
 #[test]
 fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerprint() {
     let fixture = Fixture::new();
-    fixture.artifact("base", artifact("base", json!({}), json!({}), PASS));
+    fixture.artifact("base", artifact("base", json!({}), "Check.", PASS));
     fixture.artifact(
         "mid",
-        artifact("mid", json!({}), json!({"base":"base"}), PASS),
+        artifact("mid", json!({}), "Check with {base}.", PASS),
     );
-    fixture.artifact(
-        "top",
-        artifact("top", json!({}), json!({"mid":"mid"}), PASS),
-    );
+    fixture.artifact("top", artifact("top", json!({}), "Check with {mid}.", PASS));
     for name in ["base", "mid", "top"] {
         fixture.file(&format!("{name}/file.txt"), "v1");
     }
@@ -120,7 +116,7 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
         ["base/check", "mid/check", "top/check"]
     );
     assert!(fixture.fresh_results(0).is_empty());
-    // mid mounts base, so its key covers base's fingerprint; top is two connections away.
+    // mid references base, so its key covers base's fingerprint; top is two connections away.
     fixture.file("base/file.txt", "v2");
     assert_eq!(fixture.fresh_results(0), ["base/check", "mid/check"]);
     fixture.file("mid/file.txt", "v2");
@@ -130,7 +126,7 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
     let covered = json!({"script":{"command":shell(),"args":[
         "-c", "cat file.txt \"$1\" | cksum | tr ' ' -", "fixture", "{base}/file.txt"
     ]}});
-    fixture.artifact("top", artifact("top", covered, json!({"mid":"mid"}), PASS));
+    fixture.artifact("top", artifact("top", covered, "Check with {mid}.", PASS));
     assert_eq!(fixture.fresh_results(0), ["top/check"]);
     fixture.file("base/file.txt", "v3");
     assert_eq!(
@@ -149,7 +145,7 @@ fn a_dependency_disabling_fingerprints_leaves_its_dependents_unkeyed() {
     fixture.file("core/lib.txt", "v1");
     fixture.artifact(
         "api",
-        artifact("api", json!({}), json!({"core":"core"}), PASS),
+        artifact("api", json!({}), "Check with {core}.", PASS),
     );
     for _ in 0..2 {
         let run = fixture.json(&["verify", "--wait", "--all"], 0);
@@ -177,7 +173,7 @@ fn equal_fingerprints_of_different_artifacts_never_share_a_result() {
     let fixture = Fixture::new();
     let same = json!({"script":{"command":echo_program(),"args":["same-output"]}});
     for name in ["first", "second"] {
-        fixture.artifact(name, artifact(name, same.clone(), json!({}), PASS));
+        fixture.artifact(name, artifact(name, same.clone(), "Check.", PASS));
     }
     let run = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["executionsStarted"], 2);
@@ -191,7 +187,7 @@ fn equal_fingerprints_of_different_artifacts_never_share_a_result() {
 #[test]
 fn a_tool_declaration_change_alone_reuses() {
     let fixture = Fixture::new();
-    let mut declaration = artifact("app", json!({}), json!({}), PASS);
+    let mut declaration = artifact("app", json!({}), "Check.", PASS);
     let tool = |description: &str| {
         json!({
             "agent_tools":{
@@ -226,13 +222,13 @@ fn a_merge_rereviews_only_the_new_pairing_by_default() {
     let fixture = Fixture::new();
     let default = json!({});
     for side in ["left", "right"] {
-        fixture.artifact(side, artifact(side, default.clone(), json!({}), PASS));
+        fixture.artifact(side, artifact(side, default.clone(), "Check.", PASS));
         fixture.file(&format!("{side}/part.txt"), "v1");
     }
     let mut pair = artifact(
         "pair",
         default.clone(),
-        json!({}),
+        "Check.",
         &[
             "-c",
             "cat \"$1\" \"$2\"",
@@ -243,10 +239,7 @@ fn a_merge_rereviews_only_the_new_pairing_by_default() {
     );
     pair["evals"][0]["payload"]["instruction"] = json!("Check that {left} and {right} fit.");
     fixture.artifact("pair", pair);
-    fixture.artifact(
-        "app",
-        artifact("app", default, json!({"pair":"pair"}), PASS),
-    );
+    fixture.artifact("app", artifact("app", default, "Check with {pair}.", PASS));
     assert_eq!(
         fixture
             .fresh_results(0)
@@ -264,7 +257,7 @@ fn a_merge_rereviews_only_the_new_pairing_by_default() {
 #[test]
 fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
     let fixture = Fixture::new();
-    let mut declaration = artifact("py", json!({}), json!({}), &["check.py"]);
+    let mut declaration = artifact("py", json!({}), "Check.", &["check.py"]);
     declaration["evals"][0]["profile"]["command"] = json!(support::os::python_program());
     fixture.artifact("py", declaration);
     fixture.file("py/helper.py", "VALUE = 1\n");
@@ -289,12 +282,7 @@ fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
 
     fixture.artifact(
         "py",
-        artifact(
-            "py",
-            json!({}),
-            json!({}),
-            &["-c", "echo stray > stray.txt"],
-        ),
+        artifact("py", json!({}), "Check.", &["-c", "echo stray > stray.txt"]),
     );
     let run = fixture.json(&["verify", "--wait", "--all"], 2);
     assert_eq!(run["requests"][0]["errorCode"], "INPUT_CHANGED");
@@ -303,8 +291,8 @@ fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
 #[test]
 fn dependency_cycles_terminate() {
     let fixture = Fixture::new();
-    fixture.artifact("a", artifact("a", json!({}), json!({"peer":"b"}), PASS));
-    fixture.artifact("b", artifact("b", json!({}), json!({"peer":"a"}), PASS));
+    fixture.artifact("a", artifact("a", json!({}), "Check with {b}.", PASS));
+    fixture.artifact("b", artifact("b", json!({}), "Check with {a}.", PASS));
     fixture.file("a/file.txt", "v1");
     fixture.file("b/file.txt", "v1");
     assert_eq!(fixture.fresh_results(0), ["a/check", "b/check"]);
@@ -319,7 +307,7 @@ fn status_explains_which_inputs_and_dependencies_changed() {
     fixture.file("core/lib.txt", "v1");
     fixture.artifact(
         "api",
-        artifact("api", json!({}), json!({"core":"core"}), PASS),
+        artifact("api", json!({}), "Check with {core}.", PASS),
     );
     fixture.file("api/src/a.py", "v1");
     fixture.file("api/old.md", "v1");
@@ -328,7 +316,7 @@ fn status_explains_which_inputs_and_dependencies_changed() {
         artifact(
             "legacy",
             json!({"script":{"command":cat_program(),"args":["key"]}}),
-            json!({}),
+            "Check.",
             PASS,
         ),
     );
@@ -383,12 +371,11 @@ fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
     );
     fixture.artifact(
         "api",
-        artifact("api", json!({}), json!({"core":"core"}), PASS),
+        artifact("api", json!({}), "Check with {core}.", PASS),
     );
-    fixture.artifact(
-        "web",
-        artifact("web", json!({}), json!({"loose":"loose"}), PASS),
-    );
+    for name in ["mobile", "web"] {
+        fixture.artifact(name, artifact(name, json!({}), "Check with {loose}.", PASS));
+    }
     let status = fixture.json(&["status"], 1);
     let eval = |id: &str| {
         status["evals"]
@@ -418,7 +405,8 @@ fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
     assert!(web["fingerprints"]["web"].is_string());
     assert_eq!(web["key"], Value::Null);
     assert_eq!(
-        web["evalDefHash"], hash,
+        web["evalDefHash"],
+        eval("mobile/check")["evalDefHash"],
         "the same strategy, another Artifact"
     );
 
@@ -445,7 +433,7 @@ fn default_artifactsum_reuses_and_tags_appear_in_graph_status_and_saved_monitor_
     let fixture = Fixture::new();
     fixture.artifact("basis", json!({"name":"basis","basis":true}));
     fixture.file("basis/rules.txt", "rules");
-    let mut declaration = artifact("app", json!({}), json!({"rules":"basis"}), PASS);
+    let mut declaration = artifact("app", json!({}), "Check with {basis}.", PASS);
     declaration.as_object_mut().unwrap().remove("fingerprint");
     declaration["tags"] = json!(["type:image", "scope:combat"]);
     fixture.artifact("app", declaration.clone());
@@ -500,7 +488,7 @@ fn fingerprint_false_disables_end_of_review_checks_and_reports_the_explicit_choi
         artifact(
             "app",
             json!(false),
-            json!({}),
+            "Check.",
             &["-c", "echo run >> output.txt"],
         ),
     );
@@ -555,7 +543,7 @@ fn an_ignore_rule_in_another_case_never_hides_a_change() {
         } else {
             json!({})
         };
-        fixture.artifact("app", artifact("app", fingerprint, json!({}), PASS));
+        fixture.artifact("app", artifact("app", fingerprint, "Check.", PASS));
         if !declared {
             fixture.file(".gitignore", "secret/\n");
         }

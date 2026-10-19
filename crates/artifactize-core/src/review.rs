@@ -6,8 +6,10 @@ mod form;
 mod runs;
 pub mod search;
 
+/// The Tool log every review interface shows; see [`log::Sink`].
+pub use crate::tools::human::log;
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
-pub use form::{Field, Form, Input, Key, boundary, template};
+pub use form::{Field, Form, Input, Key, Row, check as check_schema};
 pub use runs::Runs;
 
 use crate::{
@@ -196,12 +198,22 @@ impl Outcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
     pub name: ToolName,
+    /// The Artifact that declares the tool.
+    pub artifact: crate::types::ArtifactName,
     pub kind: HumanToolKind,
     pub description: String,
     pub declared: Runs,
 }
 
 impl Tool {
+    /// Its name in the Artifact that declares it: `open` of `notes` is `open_notes`.
+    pub fn operation(&self) -> &str {
+        self.name
+            .as_str()
+            .strip_suffix(&format!("_{}", self.artifact))
+            .unwrap_or(self.name.as_str())
+    }
+
     /// What running the tool does, as the Tools pane shows it: a command's resolved line once
     /// `resolved` is known, else its declaration; a builtin's action on its logical target.
     pub fn action(&self, resolved: Option<&Result<CommandLine, String>>) -> String {
@@ -217,22 +229,16 @@ impl Tool {
     }
 }
 
-/// The last tool result or failure, shown in the output pane.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Output {
-    pub title: String,
-    pub text: String,
-    pub error: bool,
-}
-
 impl Job {
     /// Carry out the job through the `human` lifecycle API, as `request` does; every UI runs
-    /// its Human actions through here.
+    /// its Human actions through here. A tool run logs to `log` from its start line to its end,
+    /// failures included; a launched program's output keeps arriving after the job returns.
     pub async fn run(
         self,
         state: PathBuf,
         reviewer: crate::types::ReviewerId,
         cancel: CancellationToken,
+        log: log::Sink,
     ) -> Outcome {
         let mut claimed = None;
         match self {
@@ -251,13 +257,40 @@ impl Job {
                 tool,
                 claim: first,
             } => {
+                // The entry names the tool as the saved request declares it.
+                let declared = store::read_request(&state, &id)
+                    .await
+                    .ok()
+                    .and_then(|view| {
+                        tools(&view.request)
+                            .into_iter()
+                            .find(|declared| declared.name == tool)
+                    });
+                let run = match &declared {
+                    Some(declared) => {
+                        log.start(&id, declared.operation(), declared.artifact.as_str())
+                    }
+                    None => log.start(&id, tool.as_str(), ""),
+                };
                 let result = async {
-                    let (receipts, _) = human::open(&state, &id).await?;
+                    let (receipts, _) = match human::open(&state, &id).await {
+                        Ok(opened) => opened,
+                        Err(error) => {
+                            run.end(log::End::Failed(error.clone()));
+                            return Err(error);
+                        }
+                    };
                     let result = async {
                         if first {
-                            claimed = Some(human::claim(&receipts, &id, &reviewer).await?);
+                            match human::claim(&receipts, &id, &reviewer).await {
+                                Ok(claim) => claimed = Some(claim),
+                                Err(error) => {
+                                    run.end(log::End::Failed(error.clone()));
+                                    return Err(error);
+                                }
+                            }
                         }
-                        human::run_human_tool(&receipts, &id, &reviewer, &tool, cancel).await
+                        human::run_human_tool(&receipts, &id, &reviewer, &tool, cancel, run).await
                     }
                     .await;
                     let closed = receipts.close().await;
@@ -360,6 +393,7 @@ pub fn tools(request: &Request) -> Vec<Tool> {
                     };
                     Some(Tool {
                         name: format!("{operation}_{id}").parse().ok()?,
+                        artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),
                         declared: Runs::parse(artifacts, id, tool),
@@ -405,35 +439,6 @@ pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
         }
     };
     words.into_iter().map(quote).collect::<Vec<_>>().join(" ")
-}
-
-/// The output pane's view of a tool run: its text, or why it failed.
-pub fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
-    match result {
-        Ok(result) => Output {
-            title: if result.is_error() {
-                format!("{tool} · tool error")
-            } else {
-                tool.to_owned()
-            },
-            text: result
-                .content()
-                .iter()
-                .map(|content| match content {
-                    Content::Text { text } => text.trim_end().to_owned(),
-                    Content::Launch { launched: true } => "launched".into(),
-                    Content::Launch { launched: false } => "not launched".into(),
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-            error: result.is_error(),
-        },
-        Err(error) => Output {
-            title: format!("{tool} · failed"),
-            text: error,
-            error: true,
-        },
-    }
 }
 
 #[cfg(test)]

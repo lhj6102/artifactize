@@ -35,7 +35,7 @@ impl State {
         )
     }
 }
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Counts {
     pub total: u64,
     pub completed: u64,

@@ -36,7 +36,7 @@ fn history() -> (tempfile::TempDir, session::Live) {
             )),
         );
     }
-    let mut live = session::Live::new(1, source);
+    let mut live = session::Live::new(1.into(), source);
     live.geometry(80, 10);
     complete(&mut live);
     (root, live)
@@ -63,7 +63,7 @@ fn expanded_activity_remains_open_after_late_completion_and_resize_while_paused(
     });
     append(&source, &format!("{message}\n"));
     append(&source, &answer("following prose ".repeat(100).as_str()));
-    let mut live = session::Live::new(1, source);
+    let mut live = session::Live::new(1.into(), source);
     live.geometry(40, 6);
     complete(&mut live);
     live.movement(Move::Top);
@@ -490,7 +490,7 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
     monitor.peek = Some(Peek {
         request: id,
         stamp: evidence::EvidenceStamp::new(monitor.selected_request().unwrap()),
-        live: Some(session::Live::new(7, source)),
+        live: Some(session::Live::new(7.into(), source)),
         text: String::new(),
     });
     let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();

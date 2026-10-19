@@ -12,9 +12,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-test-rules.payload]
 instruction = """
-Read the TEST- rules of {code-style} with read_style_code-style. Review the Python tests and harness \
-entry points directly owned by {arti-onramp}, using list_arti-onramp, glob_arti-onramp, grep_arti-onramp \
-and read_arti-onramp. The nested {arti-harness} has its own test-rule review: do not duplicate it. \
+Read the TEST- rules of {code-style}. Review the Python tests and harness \
+entry points directly owned by {arti-onramp}. The nested {arti-harness} has its own test-rule review: do not duplicate it. \
 Check every TEST- rule against observable boundaries, exact async states, controlled ordering or \
 expiry times, read-only observations, owned cleanup, and declared executables and inputs. Submit \
 GREEN when none is clearly violated. Otherwise submit RED with up to 20 violations, each with the \
@@ -32,7 +31,3 @@ type = "object"
 properties.violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } }
 required = ["violations"]
 additionalProperties = false
-
-[evals.ready]
-title = "The canonical skill and actual harness builder judgments are ready"
-profile = { kind = "dependency", depends_on = ["hey-arti", "arti-harness"] }

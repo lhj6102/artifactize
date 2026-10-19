@@ -282,19 +282,20 @@ async fn repositories_share_one_state_database() {
 }
 
 #[tokio::test]
-async fn schema_allows_only_one_active_execution_per_key() {
+async fn schema_allows_only_one_active_execution_per_key_and_profile() {
     let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     let _receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     let db = Connection::open(state.join(DATABASE)).unwrap();
-    let insert = "INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?, ?, 'hash', 1, 1, ?, '{}')";
+    let insert = "INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,profile_identity,data) VALUES (?, ?, 'hash', 1, 1, ?, 'profile', '{}')";
     db.execute(insert, ["first", "shared", "RUNNING"]).unwrap();
     assert!(
         db.execute(insert, ["second", "shared", "WAITING_HUMAN"])
             .is_err()
     );
+    db.execute("INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,profile_identity,data) VALUES ('other-profile','shared','hash',1,1,'RUNNING','other-profile','{}')", []).unwrap();
     db.execute(insert, ["different", "other", "WAITING_HUMAN"])
         .unwrap();
     db.execute(insert, ["completed", "shared", "GREEN"])

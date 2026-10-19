@@ -205,7 +205,8 @@
       if (r.record?.request !== view.request) {
         r.technical = false;
         r.pending = false;
-        r.details = false;
+        r.log = false;
+        r.debug = false;
       }
       r.record = view;
       r.focus = "detail";
@@ -284,13 +285,11 @@
   }
 
   function recordKey(event: KeyboardEvent) {
-    const agent = r.record?.profile === "agent";
-    if (plain(event, "Escape") || plain(event, "ArrowLeft")) {
-      if (r.details) r.details = false;
-      else void back();
-    } else if (plain(event, "t") && (!agent || r.details)) r.technical = !r.technical;
-    else if (plain(event, "w") && (!agent || r.details)) r.pending = !r.pending;
-    else if (plain(event, "d") && agent) r.details = !r.details;
+    if (plain(event, "Escape") || plain(event, "ArrowLeft")) void back();
+    else if (r.log) return;
+    else if (plain(event, "t") && r.record?.card) r.debug = !r.debug;
+    else if (plain(event, "t")) r.technical = !r.technical;
+    else if (plain(event, "w")) r.pending = !r.pending;
     else return;
     event.preventDefault();
   }
@@ -346,8 +345,8 @@
       >
         {#snippet actions()}
           {#if page > 1 || next !== null}
-            <button class="button small" disabled={r.previous.length === 0} onclick={newer} title="Newer requests (PgUp)">‹ Newer</button>
-            <button class="button small" disabled={next === null} onclick={older} title="Older requests (PgDn)">Older ›</button>
+            <button class="button small" disabled={r.previous.length === 0} onclick={newer}>‹ Newer</button>
+            <button class="button small" disabled={next === null} onclick={older}>Older ›</button>
           {/if}
           <button class="button small" onclick={() => (r.asking = true)}>Open ID <kbd>Ctrl+O</kbd></button>
         {/snippet}
@@ -417,15 +416,12 @@
       >
         {#snippet actions()}
           {#if r.focus === "detail" && r.record}
-            {#if r.record.profile === "agent"}
-              <button class="button small" onclick={() => (r.details = !r.details)} aria-pressed={r.details}>Details <kbd>d</kbd></button>
-            {/if}
-            <button class="button small" onclick={() => void back()} title="Back to the list">Close <kbd>Esc</kbd></button>
+            <button class="button small" onclick={() => void back()}>Close <kbd>Esc</kbd></button>
           {/if}
         {/snippet}
         {#if r.focus === "detail" && r.record}
           {#key r.record.request}
-            <RecordDetail detail={r.record} bind:technical={r.technical} bind:pending={r.pending} bind:details={r.details} />
+            <RecordDetail detail={r.record} bind:technical={r.technical} bind:pending={r.pending} bind:log={r.log} bind:debug={r.debug} />
           {/key}
         {:else if r.focus === "detail" && r.review}
           {#key r.review}

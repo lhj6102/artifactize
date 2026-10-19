@@ -10,7 +10,7 @@ use ratatui::{
 };
 use time::OffsetDateTime;
 
-use super::{Focus, Form, Input, Mode, Review, detail};
+use super::{Focus, Form, Input, Mode, Review, Row as FormRow, detail};
 use crate::monitor::{
     crumbs, duration, fit,
     layout::{self, Density},
@@ -23,10 +23,6 @@ const LEVELS: usize = 2;
 const MAX_NOTICE_LINES: usize = 4;
 /// Two opposing borders consume one cell each in either dimension.
 const BORDER_CELLS: u16 = 2;
-/// Keep one spare content row below the JSON caret, in addition to the two border rows.
-const JSON_RESERVED_ROWS: u16 = BORDER_CELLS + 1;
-/// Keep one spare content column after the JSON caret, in addition to the border columns.
-const JSON_RESERVED_COLUMNS: u16 = BORDER_CELLS + 1;
 /// Fixed columns of the Full waiting list: claim and waiting time.
 const CLAIM_WIDTH: u16 = 16;
 const WAITING_WIDTH: u16 = 8;
@@ -387,33 +383,43 @@ impl Review {
         }
     }
 
-    pub(super) fn draw_output(&self, frame: &mut Frame, area: Rect) {
-        let Some(output) = &self.output else {
+    /// The Tool log: each run's start line, its stdout and red stderr, and its end line. It
+    /// wraps, scrolls on its own, and follows the bottom unless the reader scrolled up.
+    pub(super) fn draw_log(&self, frame: &mut Frame, area: Rect) {
+        let block = Block::bordered().title(" Tool log ");
+        if self.log.is_empty() {
             frame.render_widget(
-                Paragraph::new(
-                    "Enter runs the selected tool. A launch tool opens on its own; \
-                     an output tool's text appears here.",
-                )
-                .wrap(Wrap { trim: false })
-                .dark_gray()
-                .block(Block::bordered().title(" Output ")),
+                Paragraph::new("What the tools print shows here while this review is open.")
+                    .wrap(Wrap { trim: false })
+                    .dark_gray()
+                    .block(block),
                 area,
             );
             return;
-        };
-        let title = format!(" Output · {} ", output.title);
-        let block = if output.error {
-            Block::bordered().title(Span::styled(title, Style::new().fg(Color::Red)))
-        } else {
-            Block::bordered().title(title)
-        };
-        frame.render_widget(
-            Paragraph::new(output.text.clone())
-                .wrap(Wrap { trim: false })
-                .scroll((self.scroll, 0))
-                .block(block),
-            area,
-        );
+        }
+        let mut lines = Vec::new();
+        for entry in self.log.entries() {
+            lines.push(Line::from(entry.start_text(time::UtcOffset::UTC)).dark_gray());
+            lines.extend(entry.lines.iter().map(|(stream, text)| match stream {
+                super::log::Stream::Stdout => Line::from(text.clone()),
+                super::log::Stream::Stderr => Line::from(text.clone()).red(),
+            }));
+            if let Some(end) = &entry.end {
+                let line = Line::from(end.text());
+                lines.push(if end.error() {
+                    line.red()
+                } else {
+                    line.dark_gray()
+                });
+            }
+        }
+        let inner = block.inner(area);
+        let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+        let rows = u16::try_from(paragraph.line_count(inner.width)).unwrap_or(u16::MAX);
+        let bottom = rows.saturating_sub(inner.height);
+        self.log_bottom.set(bottom);
+        let top = self.scroll.map_or(bottom, |top| top.min(bottom));
+        frame.render_widget(paragraph.scroll((top, 0)).block(block), area);
     }
 }
 
@@ -435,55 +441,71 @@ fn column_widths(rows: &[[String; 6]]) -> [u16; 5] {
     widths
 }
 
-fn field_line(field: &super::Field, selected: bool) -> Line<'static> {
-    let marker = if field.required { "*" } else { "" };
-    let mut value = field.display();
-    if selected
-        && matches!(
-            field.input,
-            Input::Text(_) | Input::Integer(_) | Input::Number(_)
-        )
-    {
-        value.push('▏');
-    }
-    let line = Line::from(vec![
-        Span::styled(format!("{}{marker}: ", field.name), Modifier::BOLD),
-        Span::raw(value),
-        Span::styled(format!("   {}", field.hint), Style::new().dark_gray()),
-    ]);
-    let line = if selected {
-        line.add_modifier(Modifier::REVERSED)
-    } else {
-        line
+/// What one form row shows: a field, a field of one group (named by the group's number), or
+/// a group list's `+ Add`.
+fn row_line(form: &Form, row: FormRow, selected: bool) -> Line<'static> {
+    let Some(field) = form.field(row) else {
+        return Line::default();
     };
-    if matches!(field.input, Input::Fixed(_)) {
-        line.dark_gray()
+    let line = match row {
+        FormRow::Add(_) => Line::from(vec![
+            Span::styled(format!("+ Add {}", field.name), Modifier::BOLD),
+            Span::styled(
+                format!("   Enter adds a group · {}", field.hint),
+                Style::new().dark_gray(),
+            ),
+        ]),
+        FormRow::Field(_) | FormRow::Item { .. } => {
+            let name = match row {
+                FormRow::Item {
+                    field: list, item, ..
+                } => {
+                    format!("{} {} · {}", form.fields[list].name, item + 1, field.name)
+                }
+                _ => field.name.clone(),
+            };
+            let marker = if field.required { "*" } else { "" };
+            let mut value = field.display();
+            if selected
+                && matches!(
+                    field.input,
+                    Input::Text(_) | Input::Integer(_) | Input::Number(_) | Input::List(_)
+                )
+            {
+                value.push('▏');
+            }
+            Line::from(vec![
+                Span::styled(format!("{name}{marker}: "), Modifier::BOLD),
+                Span::raw(value),
+                Span::styled(format!("   {}", field.hint), Style::new().dark_gray()),
+            ])
+        }
+    };
+    if selected {
+        line.add_modifier(Modifier::REVERSED)
     } else {
         line
     }
 }
 
-/// Same ratatui wrapping as rendering, so a continuation line belongs to its actual field.
+/// Same ratatui wrapping as rendering, so a continuation line belongs to its actual row.
 pub(super) fn field_hits(area: Rect, form: &Form, scroll: u16) -> Vec<(Rect, usize)> {
-    if form.json.is_some() {
-        return Vec::new();
-    }
     let inner = Block::bordered().inner(area);
-    let mut row = 0usize;
-    form.fields
-        .iter()
+    let mut top = 0usize;
+    form.rows()
+        .into_iter()
         .enumerate()
-        .filter_map(|(index, field)| {
-            let height = Paragraph::new(field_line(field, index == form.selected))
+        .filter_map(|(index, row)| {
+            let height = Paragraph::new(row_line(form, row, index == form.selected))
                 .wrap(Wrap { trim: false })
                 .line_count(inner.width);
-            let first = row.saturating_sub(usize::from(scroll));
-            let last = row
+            let first = top.saturating_sub(usize::from(scroll));
+            let last = top
                 .saturating_add(height)
                 .saturating_sub(usize::from(scroll))
                 .min(usize::from(inner.height));
-            let visible = row.saturating_add(height) > usize::from(scroll) && first < last;
-            row += height;
+            let visible = top.saturating_add(height) > usize::from(scroll) && first < last;
+            top += height;
             visible.then(|| {
                 (
                     Rect::new(
@@ -511,49 +533,6 @@ pub(super) fn draw_inline_form(
     } else {
         Style::default()
     };
-    let Some(json) = &form.json else {
-        draw_fields(frame, area, form, scroll, border);
-        return;
-    };
-    // Boundary-safe even for a cursor left inside a multibyte character.
-    let cursor = super::boundary(json, form.cursor);
-    let before = &json[..cursor];
-    let row = before
-        .chars()
-        .filter(|character| *character == '\n')
-        .count();
-    let height = usize::from(area.height.saturating_sub(JSON_RESERVED_ROWS));
-    let scroll = if scroll == 0 {
-        row.saturating_sub(height.saturating_sub(1))
-    } else {
-        usize::from(scroll)
-    };
-    let column = Line::from(before.rsplit('\n').next().unwrap_or_default()).width();
-    let visible_width = usize::from(area.width.saturating_sub(JSON_RESERVED_COLUMNS));
-    let horizontal = column.saturating_sub(visible_width.saturating_sub(1));
-    let mut text = format!("{}▏{}", before, &json[cursor..]);
-    if let Some(error) = &form.error {
-        text.push_str(&format!("\n{error}"));
-    }
-    frame.render_widget(
-        Paragraph::new(text)
-            .scroll((
-                u16::try_from(scroll).unwrap_or(u16::MAX),
-                u16::try_from(horizontal).unwrap_or(u16::MAX),
-            ))
-            .block(
-                Block::bordered()
-                    .title(format!(
-                        " {} JSON · Enter newline · Ctrl-S submit ",
-                        form.verdict
-                    ))
-                    .border_style(border),
-            ),
-        area,
-    );
-}
-
-fn draw_fields(frame: &mut Frame, area: Rect, form: &Form, scroll: u16, border: Style) {
     let color = if form.verdict == crate::runtime::Verdict::Green {
         Color::Green
     } else {
@@ -565,14 +544,15 @@ fn draw_fields(frame: &mut Frame, area: Rect, form: &Form, scroll: u16, border: 
             Style::new().fg(color),
         ))
         .border_style(border);
+    let rows = form.rows();
     let mut text = Vec::new();
-    if form.fields.is_empty() {
+    if rows.is_empty() {
         text.push(Line::from(
-            "No owner fields; Ctrl-S or Submit records this verdict.",
+            "This verdict asks for nothing more; Ctrl-S or Submit records it.",
         ));
     }
-    for (index, field) in form.fields.iter().enumerate() {
-        text.push(field_line(field, index == form.selected));
+    for (index, row) in rows.into_iter().enumerate() {
+        text.push(row_line(form, row, index == form.selected));
     }
     if let Some(error) = &form.error {
         text.push(Line::default());

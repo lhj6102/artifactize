@@ -430,7 +430,7 @@ const WAIT_SCRIPT: &str =
     "echo $$ >> \"$1\"; while [ ! -e \"$2\" ]; do sleep 0.05; done; printf original";
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
+    let deadline = Instant::now() + support::os::patience(OBSERVATION_BOUND);
     while !condition() {
         assert!(Instant::now() < deadline, "condition was not reached");
         thread::sleep(Duration::from_millis(10));
@@ -989,6 +989,41 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
 }
 
 #[test]
+fn schema_seven_live_claim_upgrades_without_starting_a_duplicate() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", WAIT_SCRIPT);
+    let owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.starts() == 1);
+    // Pause the current binary while supplying the prior schema: only the upgrading
+    // reader may query the database until its current columns have been restored.
+    let suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &source));
+    // Supply the prior schema, including a genuinely live owner, at the upgrade seam.
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    db.execute_batch("BEGIN IMMEDIATE;
+        DROP INDEX active_key;
+        ALTER TABLE executions DROP COLUMN profile_identity;
+        CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
+        PRAGMA user_version=7;
+        COMMIT;").unwrap();
+    assert_eq!(
+        fixture.command(&target, &["status"], 1)["evals"][0]["action"],
+        "wait"
+    );
+    drop(suspended);
+    let waiter = fixture.spawn(&target, &[]);
+    fixture.waiting_request();
+    fixture.release();
+    let first = finish(owner, 0);
+    let second = finish(waiter, 0);
+    assert_eq!(
+        first["requests"][0]["executionId"],
+        second["requests"][0]["executionId"]
+    );
+    assert_eq!(fixture.starts(), 1);
+}
+
+#[test]
 fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
@@ -998,12 +1033,26 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let orphans = orphan_group(&fixture);
     let waiter = fixture.spawn(&target, &["--max-executions", "1"]);
     let waiting = fixture.waiting_request();
+    let second_waiter = fixture.spawn(&target, &[]);
+    wait_until(|| {
+        fixture.count("requests WHERE status='QUEUED' AND execution_id IS NOT NULL") == 2
+    });
     let worker = fixture.execution(waiting["executionId"].as_str().unwrap())["ownerPid"]
         .as_u64()
         .unwrap() as u32;
     support::os::kill(worker);
     finish(owner, 2);
     let recovered = finish(waiter, 0);
+    let second = finish(second_waiter, 0);
+    assert_eq!(
+        second["requests"][0]["executionId"],
+        recovered["requests"][0]["executionId"]
+    );
+    assert_eq!(
+        second["executionsStarted"].as_u64().unwrap()
+            + recovered["executionsStarted"].as_u64().unwrap(),
+        1
+    );
     let dead = fixture.execution(waiting["executionId"].as_str().unwrap());
     assert_eq!(dead["status"], "ERROR");
     assert_eq!(dead["errorCode"], "OWNER_DIED");
@@ -1016,50 +1065,71 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     assert_eq!(fixture.count("executions"), 2);
     assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
-    assert_eq!(recovered["executionsStarted"], 1);
     drop(orphans);
 }
 
 #[test]
-fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
+fn joined_owner_error_is_shared_but_not_a_later_cache_hit() {
     let provider = ClaimProvider::new(false);
     let fixture = Fixture::with_provider(&provider.provider);
     let source = fixture.agent_repo("source", "owner");
-    let target = fixture.agent_repo("target", "retry");
+    let target = fixture.agent_repo("target", "owner");
     let owner = fixture.spawn(&source, &[]);
     provider.owner_started();
     let waiter = fixture.spawn(&target, &[]);
     let waiting = fixture.waiting_request();
-    assert_eq!(fixture.count("executions"), 1);
+    assert!(
+        waiting["blockedReason"]
+            .as_str()
+            .unwrap()
+            .contains(waiting["executionId"].as_str().unwrap())
+    );
     provider.gate.open();
     let failed = finish(owner, 2);
-    let recovered = finish(waiter, 0);
-    assert_eq!(failed["requests"][0]["status"], "ERROR");
-    assert_eq!(failed["requests"][0]["errorCode"], "PROVIDER_ERROR");
-    assert!(failed["requests"][0]["result"].is_null());
-    assert_eq!(failed["executionsStarted"], 1);
-    assert_eq!(recovered["executionsStarted"], 1);
-    assert_eq!(recovered["requests"][0]["status"], "GREEN");
-    assert_eq!(recovered["requests"][0]["result"]["profile"], "retry");
+    let shared = finish(waiter, 2);
+    for field in ["executionId", "error", "errorCode", "provenance"] {
+        assert_eq!(
+            shared["requests"][0][field], failed["requests"][0][field],
+            "{field}"
+        );
+    }
+    assert_eq!(shared["requests"][0]["errorCode"], "PROVIDER_ERROR");
+    assert_eq!(shared["executionsStarted"], 0);
+    assert_eq!(shared["requests"][0]["source"]["kind"], "joined");
+    assert_eq!(fixture.count("executions"), 1);
+    assert_eq!(fixture.records(), 0);
+    assert_eq!(provider.provider.requests().len(), 1);
+    let later = fixture.command(&target, &["verify", "--wait", "--all"], 2);
+    assert_eq!(later["executionsStarted"], 1);
+    assert_ne!(later["requests"][0]["executionId"], waiting["executionId"]);
+}
+
+#[test]
+fn different_profiles_execute_independently_for_the_same_reuse_key() {
+    let provider = ClaimProvider::new(true);
+    let fixture = Fixture::with_provider(&provider.provider);
+    let source = fixture.agent_repo("source", "owner");
+    let target = fixture.agent_repo("target", "retry");
+    let mut owner = fixture.spawn(&source, &[]);
+    provider.owner_started();
+    assert_eq!(
+        fixture.command(&target, &["status"], 1)["evals"][0]["action"],
+        "execute"
+    );
+    let other = finish(fixture.spawn(&target, &[]), 0);
+    assert!(owner.try_wait().unwrap().is_none());
+    assert_eq!(other["executionsStarted"], 1);
+    assert_eq!(other["requests"][0]["profile"]["model"], "retry");
+    assert_eq!(fixture.count("executions WHERE status='RUNNING'"), 1);
+    provider.gate.open();
+    let original = finish(owner, 0);
+    assert_eq!(other["requests"][0]["key"], original["requests"][0]["key"]);
     assert_ne!(
-        recovered["requests"][0]["executionId"],
-        waiting["executionId"]
+        other["requests"][0]["executionId"],
+        original["requests"][0]["executionId"]
     );
-    assert_eq!(
-        recovered["requests"][0]["profile"],
-        recovered["requests"][0]["requestedProfile"]
-    );
-    assert_eq!(recovered["requests"][0]["profile"]["model"], "retry");
-    assert_eq!(fixture.count("executions"), 2);
-    assert_eq!(fixture.records(), 1);
-    let requests = provider.provider.requests();
-    assert_eq!(
-        requests.len(),
-        2,
-        "one failed owner and one own-profile retry"
-    );
-    assert_eq!(requests[0].body["model"], "owner");
-    assert_eq!(requests[1].body["model"], "retry");
+    assert_eq!(provider.provider.requests().len(), 2);
+    assert_eq!(fixture.records(), 2);
 }
 
 #[tokio::test]
@@ -1147,6 +1217,28 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
     assert_ne!(recovered["requests"][0]["executionId"], id);
     assert_eq!(fixture.execution(id)["errorCode"], "OWNER_DIED");
     assert_eq!(fixture.starts(), 2);
+}
+
+#[test]
+fn joined_waiter_keeps_its_execution_when_a_forced_result_completes_first() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", "printf forced");
+    let owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.starts() == 1);
+    let waiter = fixture.spawn(&target, &[]);
+    let waiting = fixture.waiting_request();
+    let forced = fixture.command(&target, &["verify", "--wait", "--all", "--force"], 0);
+    assert_eq!(forced["requests"][0]["result"]["stdout"], "forced");
+    fixture.release();
+    let original = finish(owner, 0);
+    let joined = finish(waiter, 0);
+    assert_eq!(joined["requests"][0]["executionId"], waiting["executionId"]);
+    assert_eq!(
+        joined["requests"][0]["result"],
+        original["requests"][0]["result"]
+    );
+    assert_eq!(joined["executionsStarted"], 0);
 }
 
 #[tokio::test]
@@ -1281,12 +1373,12 @@ fn source_names_the_execution_a_result_came_from_and_how() {
 }
 
 #[test]
-fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
+fn zero_budget_can_join_an_owner_and_receive_its_success_or_error() {
     for success in [true, false] {
         let provider = ClaimProvider::new(success);
         let fixture = Fixture::with_provider(&provider.provider);
         let source = fixture.agent_repo("source", "owner");
-        let target = fixture.agent_repo("target", "replacement");
+        let target = fixture.agent_repo("target", "owner");
         let owner = fixture.spawn(&source, &[]);
         provider.owner_started();
         let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
@@ -1294,7 +1386,7 @@ fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
         assert_eq!(fixture.count("executions"), 1);
         provider.gate.open();
         let original = finish(owner, if success { 0 } else { 2 });
-        let joined = finish(waiter, if success { 0 } else { 4 });
+        let joined = finish(waiter, if success { 0 } else { 2 });
         assert_eq!(original["executionsStarted"], 1);
         assert_eq!(joined["executionsStarted"], 0);
         assert_eq!(fixture.count("executions"), 1);
@@ -1302,7 +1394,7 @@ fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
         assert_eq!(
             requests.len(),
             1,
-            "zero budget never starts its replacement profile"
+            "zero budget shares the owner without starting"
         );
         assert_eq!(requests[0].body["model"], "owner");
         if success {
@@ -1325,10 +1417,33 @@ fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
                 original["requests"][0]["executionId"],
                 waiting["executionId"]
             );
-            assert_eq!(joined["requests"][0]["status"], "BUDGET_EXHAUSTED");
+            assert_eq!(joined["requests"][0]["status"], "ERROR");
+            assert_eq!(joined["requests"][0]["errorCode"], "PROVIDER_ERROR");
             assert_eq!(fixture.records(), 0);
         }
     }
+}
+
+#[test]
+fn zero_budget_waiter_does_not_replace_a_crashed_owner() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", WAIT_SCRIPT);
+    let owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.starts() == 1);
+    let orphans = orphan_group(&fixture);
+    let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
+    let waiting = fixture.waiting_request();
+    let worker = fixture.execution(waiting["executionId"].as_str().unwrap())["ownerPid"]
+        .as_u64()
+        .unwrap() as u32;
+    support::os::kill(worker);
+    finish(owner, 2);
+    let ended = finish(waiter, 4);
+    assert_eq!(ended["requests"][0]["status"], "BUDGET_EXHAUSTED");
+    assert_eq!(ended["executionsStarted"], 0);
+    assert_eq!(fixture.starts(), 1);
+    drop(orphans);
 }
 
 #[test]

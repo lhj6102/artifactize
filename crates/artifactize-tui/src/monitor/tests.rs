@@ -65,7 +65,14 @@ pub(super) fn live() -> (RunView, Vec<RequestView>) {
             eval("p2/check", &[]),
         ],
         "relations":[
-            {"source":"lib","target":"app","kind":"mount","alias":"shared","cyclic":false},
+            {
+                "source":"lib",
+                "target":"app",
+                "kind":"instruction",
+                "name":"lib",
+                "evalId":"app/check",
+                "cyclic":false,
+            },
             {
                 "source":"dep",
                 "target":"app",
@@ -152,7 +159,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
         [("p2/check".into(), "[SPAWN] spawn failed".into())]
     );
     assert_eq!(progress.budget, "executions 2/5 · jobs unlimited");
-    assert_eq!(progress.work, "executed 0 · reused 0 · derived 0");
+    assert_eq!(progress.work, "executed 0 · reused 0");
     assert_eq!(
         progress.counts.iter().map(|(_, n)| n).sum::<u64>(),
         4,
@@ -255,7 +262,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
     assert_eq!(app.field("Gates"), Some("- dep/check not in Run"));
     assert_eq!(
         app.field("Inputs"),
-        Some("lib — mount shared\ndep — {dep} in app/check")
+        Some("lib — {lib} in app/check\ndep — {dep} in app/check")
     );
     // Runs saved without definitions still expose every requested Artifact and eval.
     let mut bare = run(Value::Null);
@@ -536,10 +543,7 @@ fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_deta
         detail.field("Budget"),
         Some("executions 2/5 · jobs unlimited")
     );
-    assert_eq!(
-        detail.field("Work"),
-        Some("executed 2 · reused 0 · derived 0")
-    );
+    assert_eq!(detail.field("Work"), Some("executed 2 · reused 0"));
     assert!(
         detail
             .field("Usage")

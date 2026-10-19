@@ -29,7 +29,7 @@ pub enum Content {
     Image {
         data: String,
         #[serde(rename = "mimeType")]
-        mime_type: String,
+        mime_type: image::Mime,
     },
 }
 
@@ -201,14 +201,14 @@ enum WireImage {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct InlineImage {
-    mime_type: String,
+    mime_type: image::Mime,
     data: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImageFile {
-    mime_type: String,
+    mime_type: image::Mime,
     path: String,
 }
 
@@ -239,10 +239,11 @@ pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutp
                 Content::Json { data }
             }
             WireContent::Image(WireImage::Data(InlineImage { mime_type, data })) => {
-                image::from_base64(&data, &mime_type).map_err(|_| InvalidOutput)?
+                image::from_base64(&data, mime_type.as_str()).map_err(|_| InvalidOutput)?
             }
             WireContent::Image(WireImage::Path(ImageFile { mime_type, path })) => {
-                image::from_output(output_dir, &path, &mime_type).map_err(|_| InvalidOutput)?
+                image::from_output(output_dir, &path, mime_type.as_str())
+                    .map_err(|_| InvalidOutput)?
             }
             _ => return Err(InvalidOutput),
         };

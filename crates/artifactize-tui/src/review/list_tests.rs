@@ -342,6 +342,39 @@ async fn page_keys_move_through_more_matches_than_one_page() {
     assert_eq!(listed(&review), first);
 }
 
+/// Reviewing every request of a later page goes back to the nearest page that still lists
+/// requests; the standalone review stays open while any match remains.
+#[tokio::test]
+async fn an_emptied_later_page_returns_to_the_requests_still_waiting() {
+    let root = crate::test_os::tempdir();
+    let state = root.path().join("state");
+    let repo = root.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let human = json!({"kind":"human"});
+    let eval = |index: usize| format!("app/sign{index:03}");
+    let requests: Vec<_> = (0..105)
+        .map(|index| request("run-w", &eval(index), "WAITING_HUMAN", human.clone()))
+        .collect();
+    run(&state, &repo, "run-w", &requests).await;
+    let mut review = Review::new(state.clone(), None, "alice".parse().unwrap(), None);
+    review.refresh().await;
+    press(&mut review, KeyEvent::from(KeyCode::PageDown)).await;
+    assert_eq!(listed(&review).len(), 5);
+    // The second page's requests are reviewed, as a submission settles them.
+    let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
+    for index in 100..105 {
+        receipts
+            .save_request(&request("run-w", &eval(index), "GREEN", human.clone()))
+            .await
+            .unwrap();
+    }
+    review.submitted = true;
+    assert_eq!(review.refresh().await, Action::None);
+    let first: Vec<_> = (0..100).map(eval).collect();
+    assert_eq!(listed(&review), first);
+    assert!(screen(&mut review).contains("page 1"));
+}
+
 /// A paste is one edit of the search: it searches again from the first page, like typing.
 #[tokio::test]
 async fn a_paste_into_the_search_requeries_from_the_first_page() {

@@ -41,6 +41,14 @@ struct NativeTree {
     stream: std::net::TcpStream,
 }
 
+impl Drop for NativeTree {
+    fn drop(&mut self) {
+        // Keep the TCP handshake owned until the worker has cancelled and reaped
+        // its process tree, even when the caller is aborted or unwinds.
+        self.running.stop();
+    }
+}
+
 impl NativeTree {
     async fn start(root: &Path) -> Self {
         let program = compile(
@@ -127,6 +135,11 @@ impl NativeRun {
         }
     }
 
+    fn stop(&mut self) {
+        self.cancellation.cancel();
+        self.join();
+    }
+
     fn join(&mut self) {
         if let Some(worker) = self.worker.take()
             && let Err(panic) = worker.join()
@@ -139,8 +152,8 @@ impl NativeRun {
 
 impl Drop for NativeRun {
     fn drop(&mut self) {
-        self.cancellation.cancel();
-        self.join();
+        // Startup can be cancelled before NativeTree acquires the TCP stream.
+        self.stop();
     }
 }
 

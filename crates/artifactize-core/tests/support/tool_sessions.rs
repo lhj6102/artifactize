@@ -43,6 +43,8 @@ elif mode in ['stop', 'hang-stop', 'fail-stop', 'readonly-stop']:
     if mode == 'hang-stop': wait(log / 'release')
     if mode == 'fail-stop': exit_session(1)
     if mode == 'readonly-stop': deny_session_directory_writes(session)
+elif mode == 'probe':
+    print(json.dumps({'content':[{'type':'text','text':'ready'}]}))
 elif mode in ['act', 'plain', 'hold', 'hold-tree', 'ignore-term', 'freeze-cleanup', 'crash']:
     child = None
     if mode in ['hold-tree', 'ignore-term', 'freeze-cleanup']:

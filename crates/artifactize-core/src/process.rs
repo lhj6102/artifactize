@@ -17,7 +17,10 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::platform::{self, Child};
+use crate::{
+    platform::{self, Child},
+    tools::human::log::{End, Lines, Run, Stream},
+};
 
 /// Retain bounded stdout/stderr audit per stream while continuing to drain the pipes.
 const OUTPUT_LIMIT: usize = 128 * 1024;
@@ -256,8 +259,43 @@ where
             command,
             input,
             output_limit,
+            Capture::default(),
             cancellation,
             register,
+        ))
+        .await,
+    )?
+}
+
+/// Where a run's output goes besides its bounded capture: its log files, and the lines a
+/// Tool log shows while it runs.
+#[derive(Default)]
+struct Capture {
+    logs: Option<PathBuf>,
+    lines: Option<(Lines, Lines)>,
+}
+
+/// Run a Human output tool, its output reaching `run`'s Tool log line by line as it arrives
+/// as well as its bounded capture.
+pub(crate) async fn run_watched(
+    command: Command,
+    cancellation: CancellationToken,
+    run: &Run,
+) -> Result<Output, Error> {
+    let cancellation = cancellation.child_token();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    let capture = Capture {
+        logs: None,
+        lines: Some((run.lines(Stream::Stdout), run.lines(Stream::Stderr))),
+    };
+    crate::task::joined(
+        tokio::spawn(run_inner(
+            command,
+            None,
+            OUTPUT_LIMIT,
+            capture,
+            cancellation,
+            |_| async { Ok(()) },
         ))
         .await,
     )?
@@ -267,6 +305,7 @@ async fn run_inner<F, R>(
     command: Command,
     input: Option<Vec<u8>>,
     output_limit: usize,
+    Capture { logs, lines }: Capture,
     cancellation: CancellationToken,
     register: F,
 ) -> Result<Output, Error>
@@ -329,9 +368,23 @@ where
         cleanup.map_err(Error::Cleanup)?;
         result
     };
+    let (stdout_lines, stderr_lines) = lines.unzip();
     let capture = async {
         let read = async {
-            tokio::try_join!(capture(stdout, output_limit), capture(stderr, output_limit))
+            tokio::try_join!(
+                capture(
+                    stdout,
+                    output_limit,
+                    logs.as_ref().map(|dir| dir.join("runtime.stdout")),
+                    stdout_lines,
+                ),
+                capture(
+                    stderr,
+                    output_limit,
+                    logs.as_ref().map(|dir| dir.join("runtime.stderr")),
+                    stderr_lines,
+                )
+            )
         };
         tokio::pin!(read);
         tokio::select! {
@@ -449,6 +502,58 @@ pub(crate) fn launch_detached(
     let mut child = platform::spawn_detached(command).map_err(Error::Spawn)?;
     tokio::spawn(async move {
         let _ = child.wait().await;
+    });
+    Ok(())
+}
+
+/// A desktop handoff whose output a Tool log shows: like [`launch_detached`] it is never
+/// owned, killed or waited on by the review, but its stdout and stderr are pipes, drained
+/// line by line into `run` until the program closes them and exits, whoever still listens.
+/// An unwatched run gets the plain handoff. A failed spawn hands the run back to be ended.
+pub(crate) fn launch_watched(
+    program: &std::ffi::OsStr,
+    args: &[String],
+    cwd: &std::path::Path,
+    run: Run,
+) -> Result<(), (Error, Run)> {
+    if !run.watched() {
+        return match launch_detached(program, args, cwd) {
+            Ok(()) => {
+                run.end(End::Launched);
+                Ok(())
+            }
+            Err(error) => Err((error, run)),
+        };
+    }
+    let program = match platform::program::resolve(program, cwd) {
+        Ok(program) => program,
+        Err(error) => return Err((Error::Spawn(error), run)),
+    };
+    let mut command = tokio::process::Command::new(program);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(false);
+    let mut child = match platform::spawn_watched(command) {
+        Ok(child) => child,
+        Err(error) => return Err((Error::Spawn(error), run)),
+    };
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let stderr = child.stderr.take().expect("stderr is piped");
+    tokio::spawn(async move {
+        // Nothing is retained: the lines go to the log, the rest is discarded.
+        let (status, _, _) = tokio::join!(
+            child.wait(),
+            capture(stdout, 0, None, Some(run.lines(Stream::Stdout))),
+            capture(stderr, 0, None, Some(run.lines(Stream::Stderr))),
+        );
+        run.end(match status {
+            Ok(status) => End::exited(&status),
+            Err(error) => End::Failed(error.to_string()),
+        });
     });
     Ok(())
 }
@@ -571,14 +676,77 @@ async fn terminate(child: &mut Child) -> io::Result<()> {
     Ok(())
 }
 
-async fn capture(mut pipe: impl AsyncRead + Unpin, limit: usize) -> io::Result<(Vec<u8>, bool)> {
+/// Runtime logs live with their Run and are pruned with it. Protocol callers retain
+/// prefix-only capture: changing protocol bytes to head/tail would corrupt replies.
+pub(crate) async fn run_logged<F, R>(
+    command: Command,
+    directory: PathBuf,
+    cancellation: CancellationToken,
+    register: F,
+) -> Result<Output, Error>
+where
+    F: FnOnce(ChildIdentity) -> R + Send + 'static,
+    R: Future<Output = io::Result<()>> + Send + 'static,
+{
+    let cancellation = cancellation.child_token();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    crate::task::joined(
+        tokio::spawn(run_inner(
+            command,
+            None,
+            OUTPUT_LIMIT,
+            Capture {
+                logs: Some(directory),
+                lines: None,
+            },
+            cancellation,
+            register,
+        ))
+        .await,
+    )?
+}
+
+async fn capture(
+    mut pipe: impl AsyncRead + Unpin,
+    limit: usize,
+    path: Option<PathBuf>,
+    mut lines: Option<Lines>,
+) -> io::Result<(Vec<u8>, bool)> {
+    let mut log = path
+        .as_ref()
+        .map(|path| {
+            let mut options = platform::private_options();
+            options.write(true).create_new(true);
+            options.open(path).map(tokio::fs::File::from_std)
+        })
+        .transpose()?;
     let mut output = Vec::new();
     let mut buffer = [0; CAPTURE_BUFFER_BYTES];
     let mut truncated = false;
     loop {
         let count = pipe.read(&mut buffer).await?;
         if count == 0 {
+            if let Some(lines) = &mut lines {
+                lines.finish();
+            }
+            if let (Some(log), Some(path)) = (&mut log, &path) {
+                log.flush().await?;
+                let mut options = platform::private_options();
+                options.write(true).create_new(true);
+                let extension = path.extension().expect("stream extension");
+                options.open(
+                    path.with_extension(format!("{}.complete", extension.to_string_lossy())),
+                )?;
+            }
             return Ok((output, truncated));
+        }
+        if let Some(log) = &mut log {
+            log.write_all(&buffer[..count]).await?;
+            // Make captured evidence available while the process is still running.
+            log.flush().await?;
+        }
+        if let Some(lines) = &mut lines {
+            lines.push(&buffer[..count]);
         }
         let retained = count.min(limit - output.len());
         output.extend_from_slice(&buffer[..retained]);

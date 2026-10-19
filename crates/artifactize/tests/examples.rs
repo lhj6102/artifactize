@@ -1,5 +1,6 @@
 //! The example projects run offline from the built binary, as their READMEs describe.
-//! Commands run from each example folder with an isolated state home; no Agent eval runs.
+//! Commands run from each example folder with an isolated state home; an Agent eval runs
+//! only against a local fake provider.
 
 #[path = "support/run.rs"]
 mod owned_run;
@@ -189,7 +190,7 @@ fn every_example_passes_static_queries_and_reports_status() {
         .collect();
     kinds.sort();
     kinds.dedup();
-    assert_eq!(kinds, ["argv", "child", "instruction", "mount"]);
+    assert_eq!(kinds, ["argv", "child", "instruction"]);
     assert_eq!(graph["artifacts"]["glossary"]["basis"], true);
     assert_eq!(
         graph["artifacts"]["guide"]["children"],
@@ -288,7 +289,6 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         assert_eq!(artifact["kind"], "file");
         assert_eq!(artifact["path"], format!("{name}.md"));
         assert_eq!(artifact["children"], json!({}));
-        assert_eq!(artifact["mounts"], json!({"style": "house-style"}));
     }
     assert!(
         graph["relations"]
@@ -425,7 +425,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
     );
     fs::write(&tip, &original).unwrap();
 
-    // The mounted basis covers the shared checker and rules, not just each post.
+    // The referenced basis covers the shared checker and rules, not just each post.
     append(
         &copy.join("house-style/check.py"),
         "\n# Shared checker change.\n",
@@ -483,6 +483,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
             vec![
                 "coverage_spec",
                 "grep_spec",
+                "read_requirements",
                 "read_spec",
                 "section_spec",
                 "view_image_spec"
@@ -491,7 +492,30 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         ]
     );
 
-    // The declared json tool and built-in section tool run through an explicit check.
+    // The declared json tool reads {requirements}, so it runs in spec/review's scope.
+    let coverage = session.json(
+        &repo,
+        &[
+            "tools",
+            "check",
+            "--execute",
+            "--eval",
+            "spec/review",
+            "--tool",
+            "coverage_spec",
+            "--args",
+            "{}",
+        ],
+        0,
+    )["result"]["content"][0]
+        .clone();
+    assert_eq!(coverage["type"], "json");
+    assert_eq!(coverage["data"]["uncited"], json!([]));
+    assert_eq!(
+        coverage["data"]["requirements"].as_array().unwrap().len(),
+        4
+    );
+    // Built-in tools run through an explicit check of their Artifact.
     let execute = |tool: &str, args: &str| {
         let args = [
             "tools",
@@ -508,13 +532,6 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         ];
         session.json(&repo, &args, 0)["result"]["content"][0].clone()
     };
-    let coverage = execute("coverage", "{}");
-    assert_eq!(coverage["type"], "json");
-    assert_eq!(coverage["data"]["uncited"], json!([]));
-    assert_eq!(
-        coverage["data"]["requirements"].as_array().unwrap().len(),
-        4
-    );
     let section = execute("section", r#"{"heading":"Dry run"}"#);
     assert!(
         section["text"]
@@ -524,6 +541,45 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     );
     let image = execute("view_image", r#"{"path":"diagram.png"}"#);
     assert_eq!(image["mimeType"], "image/png");
+
+    // README: no person is asked before spec/review is GREEN.
+    let early = session.json(
+        &repo,
+        &["verify", "--wait", "--eval", "spec/signoff", "--json"],
+        4,
+    );
+    assert_ne!(statuses(&early)["spec/signoff"], "WAITING_HUMAN");
+    assert!(
+        session
+            .json(&repo, &["request", "list", "--json"], 0)
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|request| request["status"] != "WAITING_HUMAN")
+    );
+    let provider = support::FakeProvider::start(|request| {
+        support::openai::completed(
+            request,
+            vec![support::openai::message(
+                &json!({"result":{"verdict":"GREEN","verdictFields":{"covered":["R1","R2","R3","R4"],"diagramMatches":true}}}).to_string(),
+            )],
+            support::openai::usage(1, 1),
+        )
+    });
+    let review = ["verify", "--wait", "--eval", "spec/review", "--json"];
+    let reviewed = parse(&expect(
+        session
+            .command(&repo, &review)
+            .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
+            .env("OPENAI_API_KEY", "fake-openai-key")
+            .env("ARTIFACTIZE_REMOTE", "off")
+            .record_output()
+            .unwrap(),
+        &review,
+        4,
+    ));
+    // INCOMPLETE until the sign-off: spec is satisfied only when all its evals are GREEN.
+    assert_eq!(statuses(&reviewed), map(&[("spec/review", "GREEN")]));
 
     // README: the Human sign-off through request claim, tool and submit, while verify waits.
     let signoff = ["verify", "--wait", "--eval", "spec/signoff", "--json"];
@@ -538,8 +594,11 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let run_id = loop {
         let listed = session.json(&repo, &["request", "list", "--json"], 0);
         // The request is saved QUEUED first, then turns WAITING_HUMAN.
-        if let Some(request) = listed.as_array().unwrap().first()
-            && request["status"] == "WAITING_HUMAN"
+        if let Some(request) = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|request| request["status"] == "WAITING_HUMAN")
         {
             break request["runId"].as_str().unwrap().to_owned();
         }
@@ -571,9 +630,9 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     ]
     .concat();
     session.output(&repo, &submit, 0);
-    // The waiting verify records the sign-off; the Run stays INCOMPLETE without spec/review.
-    let run = parse(&expect(verify.wait_with_output().unwrap(), &signoff, 4));
-    assert_eq!(run["status"], "INCOMPLETE");
+    // The waiting verify records the sign-off; with the reused review, spec is GREEN.
+    let run = parse(&expect(verify.wait_with_output().unwrap(), &signoff, 0));
+    assert_eq!(run["status"], "GREEN");
     assert_eq!(run, session.json(&repo, &["run", "show", &run_id], 0));
     assert_eq!(statuses(&run), map(&[("spec/signoff", "GREEN")]));
     assert_eq!(requests(&run)["spec/signoff"]["result"]["approved"], true);

@@ -100,7 +100,6 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     );
     assert_eq!(config.artifacts["parent"].views.agent_tools.len(), 1);
     assert!(config.artifacts["child"].views.agent_tools.is_empty());
-    assert!(config.artifacts["child"].mounts.is_empty());
     assert_eq!(config.evals.len(), 1);
     let scope = artifact_scope(&config, &[&"parent".parse().unwrap()]).unwrap();
     assert_eq!(
@@ -151,41 +150,30 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
 }
 
 #[test]
-fn aliases_keep_canonical_ids_and_cycles_consume_components() {
+fn references_keep_canonical_ids() {
     let fixture = Fixture::new();
     fixture.artifact(
         "review",
-        json!({"name":"review","mounts":{"one":"input","two":"input"},
-        "evals":[eval("Read {one}/file, {two}, {review}; \\{literal} {{literal}}.")]}),
+        json!({"name":"review",
+        "evals":[eval("Read {input}/file, {input}, {review}; \\{literal} {{literal}}.")]}),
     );
-    fixture.artifact("data", json!({"name":"input","mounts":{"back":"review"}}));
+    fixture.artifact("data", json!({"name":"input"}));
     fixture.write("data/file", "not instruction text");
     let config = fixture.config();
     let eval = &config.evals[0];
     assert_eq!(
         eval.references,
         BTreeMap::from([
-            ("one".parse().unwrap(), "input".parse().unwrap()),
-            ("two".parse().unwrap(), "input".parse().unwrap()),
+            ("input".parse().unwrap(), "input".parse().unwrap()),
             ("review".parse().unwrap(), "review".parse().unwrap()),
         ])
     );
     assert_eq!(eval.deps, ["input"]);
     let scope = eval_scope(&config, eval).unwrap();
     assert_eq!(scope.artifacts.len(), 2);
-    let location = scope
-        .resolve_path(&"review".parse().unwrap(), "one/back/two/file")
-        .unwrap();
-    assert_eq!(
-        location,
-        ScopedPath {
-            artifact_id: ArtifactId::new("input").unwrap(),
-            path: "file".into()
-        }
-    );
     assert_eq!(
         scope
-            .resolve_input(&config.root, &"review".parse().unwrap(), "two/file")
+            .resolve_input(&config.root, &"input".parse().unwrap(), "file")
             .unwrap(),
         fixture.0.join("data/file")
     );
@@ -207,7 +195,6 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
         "{unknown}"
     );
     assert!(!source.contains("not instruction text"));
-    assert!(!fixture.0.join("review/one").exists());
 }
 
 #[test]
@@ -219,11 +206,10 @@ fn observation_scope_never_follows_other_evals_instructions() {
     );
     fixture.artifact(
         "data",
-        json!({"name":"input","mounts":{"support":"support"},"evals":[eval("Read {hidden}.")]}),
+        json!({"name":"input","evals":[eval("Read {hidden}.")]}),
     );
     fixture.artifact("data/child", json!({"name":"child"}));
     fixture.artifact("hidden", json!({"name":"hidden"}));
-    fixture.artifact("support", json!({"name":"support"}));
     let config = fixture.config();
     let eval = config
         .evals
@@ -237,7 +223,7 @@ fn observation_scope_never_follows_other_evals_instructions() {
             .keys()
             .map(ArtifactName::as_str)
             .collect::<Vec<_>>(),
-        ["child", "input", "review", "support"]
+        ["child", "input", "review"]
     );
     assert!(
         scope
@@ -252,63 +238,6 @@ fn observation_scope_never_follows_other_evals_instructions() {
             InstructionPart::Text("{hidden} ".into()),
             InstructionPart::Artifact("input".parse().unwrap()),
         ]
-    );
-}
-
-#[test]
-fn mount_validation_rejects_unknown_ambiguous_and_physical_aliases() {
-    let fixture = Fixture::new();
-    fixture.artifact("input", json!({"name":"input"}));
-    fixture.artifact("third", json!({"name":"third"}));
-    for (alias, target, message) in [
-        ("source", "missing", "Unknown mount target"),
-        ("input", "third", "Ambiguous mount alias"),
-        ("review", "input", "Ambiguous mount alias"),
-    ] {
-        fixture.artifact("review", json!({"name":"review","mounts":{alias: target}}));
-        assert!(
-            read_workspace_config(&fixture.0)
-                .unwrap_err()
-                .to_string()
-                .contains(message)
-        );
-    }
-    fixture.artifact(
-        "review",
-        json!({"name":"review","mounts":{"input":"input","self":"review"}}),
-    );
-    fixture.config();
-    fixture.write("review/input", "physical file");
-    assert!(
-        read_workspace_config(&fixture.0)
-            .unwrap_err()
-            .to_string()
-            .contains("physical entry")
-    );
-    fs::remove_file(fixture.0.join("review/input")).unwrap();
-    fs::create_dir(fixture.0.join("review/input")).unwrap();
-    assert!(
-        read_workspace_config(&fixture.0)
-            .unwrap_err()
-            .to_string()
-            .contains("physical entry")
-    );
-    fs::remove_dir(fixture.0.join("review/input")).unwrap();
-    if symlink_file("missing", fixture.0.join("review/input")).is_some() {
-        assert!(
-            read_workspace_config(&fixture.0)
-                .unwrap_err()
-                .to_string()
-                .contains("physical entry")
-        );
-        fs::remove_file(fixture.0.join("review/input")).unwrap();
-    }
-    crate::test_os::link_dir(&fixture.0, &fixture.0.join("review/input"));
-    assert!(
-        read_workspace_config(&fixture.0)
-            .unwrap_err()
-            .to_string()
-            .contains("physical entry")
     );
 }
 
@@ -459,7 +388,6 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     let args = json!([
         "{input}/nested/file",
         "--data={input}/nested/file",
-        "{review}/source/nested/file",
         "{input}",
         "$ARTIFACTIZE_FIXTURE_VALUE",
         "literal;command",
@@ -470,10 +398,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     let mut declared = eval("No instruction dependencies.");
     declared["profile"] =
         json!({"kind":"runtime","command":crate::test_os::echo_program(),"args":args});
-    fixture.artifact(
-        "review",
-        json!({"name":"review","mounts":{"source":"input"},"evals":[declared]}),
-    );
+    fixture.artifact("review", json!({"name":"review","evals":[declared]}));
     fixture.artifact("data", json!({"name":"input"}));
     fixture.artifact("data/nested", json!({"name":"child"}));
     fixture.write("data/nested/file", "input");
@@ -499,22 +424,21 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     let file = fixture.0.join("data").join("nested").join("file");
     let file = crate::platform::path_text(&file);
     assert_eq!(
-        &resolved[..4],
+        &resolved[..3],
         [
             file.clone(),
             format!("--data={file}"),
-            file,
             crate::platform::path_text(&fixture.0.join("data"))
         ]
     );
-    assert_eq!(&resolved[4..], &args[4..]);
+    assert_eq!(&resolved[3..], &args[3..]);
     assert_eq!(*command, crate::test_os::echo_program());
     let restricted = artifact_scope(&config, &[&"child".parse().unwrap()]).unwrap();
     assert!(resolve_argv(&config, &restricted, &"review".parse().unwrap(), args).is_err());
 }
 
 #[test]
-fn argument_only_global_reference_is_an_edge_even_without_a_mount() {
+fn argument_only_reference_is_an_edge() {
     let fixture = Fixture::new();
     let mut declared = eval("Inspect.");
     declared["profile"] =

@@ -655,7 +655,7 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
         .unwrap()
         .mode()
     {
-        review::Mode::Form(form) => form.draft(),
+        review::Mode::Form(form) => form.fields.clone(),
         _ => panic!("form"),
     };
     let before = draft(&monitor);
@@ -750,7 +750,7 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     assert_eq!(monitor.focus, Pane::Detail);
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.paste(" off");
-    assert!(draft(&monitor).contains(" off"));
+    assert!(draft(&monitor)[0].display().contains(" off"));
     assert_eq!(
         monitor.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
         Action::Quit

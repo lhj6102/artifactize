@@ -28,8 +28,13 @@ export function launched(fixture: Fixture): boolean {
   return exists(nativePath(fixture.root, "launched"));
 }
 
+/** Let the fixture's `talk` stand-in go on: it prints its last lines and exits. */
+export function finishTalk(fixture: Fixture): void {
+  writeText(nativePath(fixture.root, "talk.gate"), "go");
+}
+
 /** Declared Human content, captured in the request before the app starts. */
-export type SignoffDefinition = { title: string; instruction: string };
+export type SignoffDefinition = { title: string; instruction: string; scalars?: boolean; report?: boolean };
 const DEFAULT_SIGNOFF: SignoffDefinition = {
   title: "A person approves the release",
   instruction: "Read the release notes and approve them.",
@@ -40,9 +45,11 @@ tags = ["type:release"]
 fingerprint = { files = ["."] }
 
 [views.human_tools]
+${signoff.report ? `report = { description = "Print long lines on both output streams.", kind = "output", ${commandFields("report")} }` : ""}
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", textPath("{artifactPath}", "notes.md"))} }
 open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", portablePath(nativePath(root, "launched")))} }
 fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }
+talk = { description = "Open a stand-in that prints what the reviewer chose.", kind = "launch", ${commandFields("talk", portablePath(nativePath(root, "talk.gate")))} }
 slow = { description = "Wait until cancelled; serve the owned lifetime endpoint.", kind = "output", ${commandFields("slow", portablePath(nativePath(root, "slow.endpoint")))} }
 
 [evals.signoff]
@@ -56,12 +63,18 @@ instruction = ${JSON.stringify(signoff.instruction)}
 type = "object"
 properties.approved = { const = true }
 properties.comment = { type = "string", description = "What you checked." }
+${signoff.scalars ? `properties.score = { type = "number" }
+properties.note = { type = "string" }
+properties.confirmed = { type = "boolean" }
+properties.channel = { enum = ["stable", "preview"] }` : ""}
 required = ["approved", "comment"]
 additionalProperties = false
 
 [evals.signoff.fail_schema]
 type = "object"
 properties.reason = { type = "string", minLength = 3 }
+properties.findings = { type = "array", items = { type = "object", properties = { problem = { type = "string", minLength = 1 }, severity = { enum = ["low", "high"] } }, required = ["problem"], additionalProperties = false } }
+properties.steps = { type = "array", items = { type = "string" } }
 required = ["reason"]
 additionalProperties = false
 `;
@@ -78,6 +91,9 @@ Ship {release}."""
 `;
 
 const DOCS = `name = "docs"
+
+[views.human_tools]
+reference = { description = "Print documentation review notes.", builtin = "read", args = ["{artifactPath}/notes.md"] }
 
 [evals.lint]
 title = "Docs build"
@@ -148,6 +164,7 @@ function declare(repo: NativePath, notes = "# Release notes\n- Ready to ship.\n"
     writeText(nativePath(makeDirectory(nativePath(repo, name)), "index.artf"), text);
   }
   writeText(nativePath(repo, "release", "notes.md"), notes);
+  writeText(nativePath(repo, "docs", "notes.md"), "Documentation checked.\n");
   git(repo, "init", "-q", "--initial-branch=master", repo);
 }
 
@@ -357,6 +374,50 @@ export function createPagedRequests(): { fixture: Fixture; expected: string[] } 
 }
 
 /**
+ * One GREEN Artifact `n000` verified four times. The three older Runs are rewritten as Runs saved
+ * with a profile kind this version no longer reads (as before `dependency` was removed), so they
+ * cannot be read; the newest stays readable. `restore` writes them back as they were saved, so
+ * teardown settles every Run through the public CLI.
+ */
+export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture; readable: string; unreadable: string[]; restore: () => void } {
+  const fixture = createChain(1);
+  return prepareFixture(() => {
+    const runs = savedRuns(fixture).map((run) => run.id);
+    for (let index = 0; index < 3; index += 1) {
+      const completed = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json"],
+        { env: environment(fixture) });
+      if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+      runs.push((JSON.parse(completed.stdout) as { id: string }).id);
+    }
+    // Join every writer before rewriting saved Runs, so finalization cannot overwrite them.
+    settleRuns(cli(), fixture.repo, fixture.state);
+    if (runs.length !== 4) throw new Error(`expected four fixture Runs, saved ${runs.join(", ")}`);
+    const saved = requests(fixture);
+    const unreadable = allUnreadable ? runs : runs.slice(0, 3);
+    const database = nativePath(fixture.state, "state.sqlite");
+    const rewrite = (from: string, to: string) => updateDatabase(database, (db) => {
+      for (const id of unreadable) {
+        const changed = db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run(from, to, id);
+        if (changed.changes !== 1) throw new Error(`Run ${id} was not rewritten`);
+      }
+    });
+    updateDatabase(database, (db) => {
+      // Explicit times make the readable Run the newest, independently of clock resolution.
+      runs.forEach((id, index) => {
+        const created = `2000-01-0${index + 1}T00:00:00.000000000Z`;
+        db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, id);
+        for (const request of saved.filter((request) => request.runId === id)) {
+          db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
+        }
+      });
+    });
+    const [current, removed] = ['"kind":"runtime"', '"kind":"dependency"'];
+    rewrite(current, removed);
+    return { fixture, readable: runs[3], unreadable, restore: () => rewrite(removed, current) };
+  }, fixture.root);
+}
+
+/**
  * A fresh repository with one Artifact in each state of a Run that is not simply GREEN:
  * `red` fails, `crash` exceeds its runtime deadline (ERROR), `down` is blocked by `red`, `after` by
  * `crash`, `fine` is GREEN, and `later` waits for the Human sign-off of `gate`. Three of them have no dependency, so they share the graph's first column.
@@ -416,7 +477,7 @@ export async function createStates(): Promise<Fixture> {
 
 /**
  * A fresh repository whose one Artifact `app` has an eval for each of `names`, all verified
- * GREEN: a zoomed Artifact with several evals to move through.
+ * GREEN: an Artifact whose Detail has a tab for each of several evals.
  */
 export function createEvals(names: string[]): Fixture {
   return prepareFixture((root) => {
@@ -456,9 +517,4 @@ export function createOutside(): Fixture & { remove: () => Promise<void> } {
     const remove = () => releaseFixtures([root]);
     return { root, repo, state: nativePath(root, "state"), remove };
   });
-}
-
-if (import.meta.main) {
-  const fixture = await create();
-  console.log(JSON.stringify(fixture));
 }

@@ -286,11 +286,13 @@ kbd {
   margin: 4px 0;
 }
 
-/* Resizable panes. */
+/* Resizable panes. The grab zone reaches 3px over both neighbouring panes, so the divider
+   stacks above them: a press on either side of the line starts the drag. */
 .resizer {
   width: 1px;
   background: var(--border);
   position: relative;
+  z-index: 1;
 }
 .resizer::after {
   content: "";
@@ -306,4 +308,45 @@ kbd {
 }
 .resizer[data-active] {
   background: var(--accent);
+}
+
+/* A chip choice: one of a few rounded choices, the chosen one filled. Hover only highlights.
+   Chips that do not fit on one line wrap onto the next; they never widen their pane. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.chip {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  max-width: 100%;
+  margin: 0;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.chip:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.chip[aria-selected="true"] {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }

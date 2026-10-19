@@ -1,13 +1,12 @@
 //! Dependency edges, strongly connected components, gates, and obligations.
 
-use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::{algo::kosaraju_scc, graph::DiGraph};
 use thiserror::Error;
 
 use crate::{
-    config::{ArtifactName, EvalId, Profile, RepoConfig},
+    config::{ArtifactName, EvalId, RepoConfig},
     runtime::Verdict,
 };
 
@@ -54,7 +53,8 @@ pub struct Component<'a> {
     pub artifacts: Vec<&'a ArtifactName>,
     /// Direct condensation dependencies, always earlier in the component list.
     pub dependencies: Vec<ComponentId>,
-    /// External Eval gates shared by every member; never includes SCC peers.
+    /// Aggregate external obligations for the material projection, not execution gates.
+    /// Each Eval’s actual gates come from the Eval-level schedule.
     pub gates: Vec<&'a EvalId>,
 }
 
@@ -63,8 +63,7 @@ pub struct Graph<'a> {
     artifacts: BTreeMap<ArtifactName, ArtifactNode<'a>>,
     evals: BTreeMap<EvalId, &'a ArtifactName>,
     components: Vec<Component<'a>>,
-    derived: BTreeMap<EvalId, Vec<&'a ArtifactName>>,
-    derived_order: Vec<&'a EvalId>,
+    schedule: schedule::Schedule<'a>,
 }
 
 impl<'a> Graph<'a> {
@@ -159,59 +158,22 @@ impl<'a> Graph<'a> {
             components[index].dependencies = dependencies.into_iter().collect();
             components[index].gates = gates;
         }
-        let derived: BTreeMap<_, _> = config
-            .evals
-            .iter()
-            .filter(|eval| matches!(eval.declaration.profile(), Profile::Dependency { .. }))
-            .map(|eval| (eval.id.clone(), eval.deps.iter().collect::<Vec<_>>()))
-            .collect();
-        let mut waits = DiGraph::<&EvalId, ()>::new();
-        let waiting: BTreeMap<_, _> = derived.keys().map(|id| (id, waits.add_node(id))).collect();
-        for (id, targets) in &derived {
-            for target in targets {
-                for dependency in &artifacts[target.as_str()].evals {
-                    if let Some(&node) = waiting.get(dependency) {
-                        waits.add_edge(waiting[id], node, ());
-                    }
-                }
-            }
-        }
-        let derived_order = petgraph::algo::toposort(&waits, None)
-            .map_err(|_| {
-                let mut cycles: Vec<_> = kosaraju_scc(&waits)
-                    .into_iter()
-                    .filter(|members| members.len() > 1)
-                    .flatten()
-                    .map(|node| waits[node])
-                    .collect();
-                cycles.sort_unstable();
-                GraphError(format!(
-                    "Dependency Eval cycle: {}. Dependency Evals cannot wait on each other.",
-                    cycles
-                        .iter()
-                        .map(|id| id.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-            })?
-            .into_iter()
-            .rev()
-            .map(|node| {
-                config
-                    .evals
-                    .iter()
-                    .find(|eval| eval.id == *waits[node])
-                    .expect("derived Eval exists")
-                    .id
-                    .borrow()
-            })
-            .collect();
+        let schedule = schedule::Schedule::new(
+            config.evals.iter().map(|eval| schedule::Input {
+                id: &eval.id,
+                target: &eval.target,
+                deps: eval.deps.iter().collect(),
+                human: eval.declaration.profile().kind() == crate::config::ProfileKind::Human,
+            }),
+            config.artifacts.iter().flat_map(|(parent, artifact)| {
+                artifact.children.values().map(move |child| (parent, child))
+            }),
+        );
         Ok(Self {
             artifacts,
             evals,
             components,
-            derived,
-            derived_order,
+            schedule,
         })
     }
 
@@ -264,158 +226,92 @@ impl<'a> Graph<'a> {
         errors_block: bool,
     ) -> Evaluation<'_> {
         let mut evals: BTreeMap<EvalId, EvalEvaluation<'_>> = BTreeMap::new();
-        for component in &self.components {
-            let unmet_gates: Vec<_> = component
-                .gates
+        for &id in &self.schedule.order {
+            let gates = &self.schedule.gates[id];
+            let unmet_gates: Vec<_> = gates
                 .iter()
                 .copied()
                 .filter(|id| !evals[id.as_str()].status.passes_gate())
                 .collect();
-            let readiness = if unmet_gates.iter().any(|id| {
-                matches!(
-                    evals[id.as_str()].status,
-                    EvalStatus::Red | EvalStatus::Blocked
-                ) || (errors_block && evals[id.as_str()].status == EvalStatus::Error)
-            }) {
+            // Only a Human eval's sibling machine evals share its Artifact; their ERROR blocks
+            // it too, since a person signs off only on passing machine evals.
+            let target = self.evals[id.as_str()];
+            // A BLOCKED gate passes on its own causes: the root is always a RED upstream.
+            let causes: Vec<_> = unmet_gates
+                .iter()
+                .flat_map(|&gate| {
+                    let eval = &evals[gate.as_str()];
+                    let sibling = self.evals[gate.as_str()] == target;
+                    match eval.status {
+                        EvalStatus::Red if sibling => vec![Cause::SiblingRed(gate)],
+                        EvalStatus::Red => vec![Cause::Red(gate)],
+                        EvalStatus::Error if sibling => vec![Cause::SiblingError(gate)],
+                        EvalStatus::Error if errors_block => vec![Cause::Error(gate)],
+                        EvalStatus::Blocked => {
+                            eval.causes.iter().map(|cause| cause.upstream()).collect()
+                        }
+                        _ => Vec::new(),
+                    }
+                })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            let readiness = if !causes.is_empty() {
                 Readiness::Blocked
             } else if unmet_gates.is_empty() {
                 Readiness::Ready
             } else {
                 Readiness::Wait
             };
-            let ordinary = component
-                .artifacts
-                .iter()
-                .flat_map(|id| &self.artifacts[id.as_str()].evals)
-                .copied()
-                .filter(|id| !self.derived.contains_key(id.as_str()));
-            let derived = self
-                .derived_order
-                .iter()
-                .copied()
-                .filter(|id| component.artifacts.contains(&self.evals[id.as_str()]));
-            for id in ordinary.chain(derived) {
-                if let Some(targets) = self.derived.get(id.as_str()) {
-                    if evidence.get(id.as_str()) == Some(&Evidence::OperationalError) {
-                        evals.insert(
-                            id.clone(),
-                            EvalEvaluation {
-                                status: EvalStatus::Error,
-                                readiness: Readiness::Ready,
-                                evidence: Some(Evidence::OperationalError),
-                                unmet_gates: Vec::new(),
-                                blocked_by: Vec::new(),
-                                derived: true,
-                            },
-                        );
-                        continue;
+            let provisional = gates.iter().any(|id| {
+                matches!(
+                    evals[id.as_str()].status,
+                    EvalStatus::Deferred | EvalStatus::Provisional
+                )
+            });
+            let evidence = evidence.get(id.as_str()).copied();
+            let status = match readiness {
+                Readiness::Blocked => EvalStatus::Blocked,
+                Readiness::Wait => match evidence {
+                    Some(Evidence::Current(Verdict::Red)) if errors_block => EvalStatus::Red,
+                    Some(Evidence::OperationalError) if errors_block => EvalStatus::Error,
+                    _ => EvalStatus::Wait,
+                },
+                Readiness::Ready => match evidence {
+                    Some(Evidence::Deferred) => EvalStatus::Deferred,
+                    Some(Evidence::Current(Verdict::Green)) if provisional => {
+                        EvalStatus::Provisional
                     }
-                    let unmet: Vec<_> = targets
-                        .iter()
-                        .flat_map(|target| &self.artifacts[target.as_str()].evals)
-                        .copied()
-                        .filter(|id| !evals[id.as_str()].status.passes_gate())
-                        .collect();
-                    let mut blocked_by = Vec::new();
-                    for target in targets {
-                        let pending: Vec<_> = self.artifacts[target.as_str()]
-                            .evals
-                            .iter()
-                            .copied()
-                            .filter(|id| !evals[id.as_str()].status.passes_gate())
-                            .collect();
-                        if !pending.is_empty() {
-                            blocked_by.push(BlockedReference::Artifact(target));
-                            blocked_by.extend(pending.into_iter().map(BlockedReference::Eval));
-                        }
-                    }
-                    let readiness = if unmet.iter().any(|id| {
-                        matches!(
-                            evals[id.as_str()].status,
-                            EvalStatus::Red | EvalStatus::Blocked
-                        ) || (errors_block && evals[id.as_str()].status == EvalStatus::Error)
-                    }) {
-                        Readiness::Blocked
-                    } else if unmet.is_empty() {
-                        Readiness::Ready
-                    } else {
-                        Readiness::Wait
-                    };
-                    evals.insert(
-                        id.clone(),
-                        EvalEvaluation {
-                            status: match readiness {
-                                Readiness::Ready
-                                    if unmet.is_empty()
-                                        && targets
-                                            .iter()
-                                            .flat_map(|target| {
-                                                &self.artifacts[target.as_str()].evals
-                                            })
-                                            .any(|id| {
-                                                matches!(
-                                                    evals[id.as_str()].status,
-                                                    EvalStatus::Deferred | EvalStatus::Provisional
-                                                )
-                                            }) =>
-                                {
-                                    EvalStatus::Provisional
-                                }
-                                Readiness::Ready => EvalStatus::Green,
-                                Readiness::Blocked => EvalStatus::Blocked,
-                                Readiness::Wait => EvalStatus::Wait,
-                            },
-                            readiness,
-                            evidence: None,
-                            unmet_gates: unmet,
-                            blocked_by,
-                            derived: true,
-                        },
-                    );
-                    continue;
-                }
-                let provisional = component.gates.iter().any(|id| {
-                    matches!(
-                        evals[id.as_str()].status,
-                        EvalStatus::Deferred | EvalStatus::Provisional
-                    )
-                });
-                let evidence = evidence.get(id.as_str()).copied();
-                let status = match readiness {
-                    Readiness::Blocked => EvalStatus::Blocked,
-                    Readiness::Wait => match evidence {
-                        Some(Evidence::Current(Verdict::Red)) if errors_block => EvalStatus::Red,
-                        Some(Evidence::OperationalError) if errors_block => EvalStatus::Error,
-                        _ => EvalStatus::Wait,
-                    },
-                    Readiness::Ready => match evidence {
-                        Some(Evidence::Deferred) => EvalStatus::Deferred,
-                        Some(Evidence::Current(Verdict::Green)) if provisional => {
-                            EvalStatus::Provisional
-                        }
-                        Some(Evidence::Current(Verdict::Green)) => EvalStatus::Green,
-                        Some(Evidence::Current(Verdict::Red)) => EvalStatus::Red,
-                        Some(Evidence::OperationalError) => EvalStatus::Error,
-                        Some(Evidence::Stale) => EvalStatus::Stale,
-                        None => EvalStatus::Unreviewed,
-                    },
-                };
-                evals.insert(
-                    id.clone(),
-                    EvalEvaluation {
-                        readiness,
-                        status,
-                        evidence,
-                        unmet_gates: unmet_gates.clone(),
-                        blocked_by: unmet_gates
-                            .iter()
-                            .copied()
-                            .map(BlockedReference::Eval)
-                            .collect(),
-                        derived: false,
-                    },
-                );
-            }
+                    Some(Evidence::Current(Verdict::Green)) => EvalStatus::Green,
+                    Some(Evidence::Current(Verdict::Red)) => EvalStatus::Red,
+                    Some(Evidence::OperationalError) => EvalStatus::Error,
+                    Some(Evidence::Stale) => EvalStatus::Stale,
+                    None => EvalStatus::Unreviewed,
+                },
+            };
+            let blocked_by = if causes.is_empty() {
+                unmet_gates
+                    .iter()
+                    .copied()
+                    .map(BlockedReference::Eval)
+                    .collect()
+            } else {
+                causes
+                    .iter()
+                    .map(|cause| BlockedReference::Eval(cause.eval()))
+                    .collect()
+            };
+            evals.insert(
+                id.clone(),
+                EvalEvaluation {
+                    readiness,
+                    status,
+                    evidence,
+                    unmet_gates,
+                    blocked_by,
+                    causes,
+                },
+            );
         }
         let own_satisfied: BTreeMap<_, _> = self
             .artifacts
@@ -512,16 +408,7 @@ impl<'a> Graph<'a> {
     }
 
     pub(crate) fn gates(&self, id: &EvalId) -> Vec<&'a EvalId> {
-        if let Some(targets) = self.derived.get(id) {
-            targets
-                .iter()
-                .flat_map(|target| self.artifacts[target.as_str()].evals.iter().copied())
-                .collect()
-        } else {
-            self.components[self.artifacts[self.evals[id].as_str()].component.index()]
-                .gates
-                .clone()
-        }
+        self.schedule.gates[id].clone()
     }
 
     pub fn eval_target(&self, id: &str) -> Option<&'a ArtifactName> {
@@ -567,8 +454,39 @@ pub struct EvalEvaluation<'a> {
     /// Retained for audit even when gates mask its effective status.
     pub evidence: Option<Evidence>,
     pub unmet_gates: Vec<&'a EvalId>,
+    /// BLOCKED: the root causes; otherwise the unmet gates it waits for.
     pub blocked_by: Vec<BlockedReference<'a>>,
-    pub derived: bool,
+    /// Why the eval is BLOCKED, followed through BLOCKED gates to the failed evals upstream;
+    /// empty unless BLOCKED.
+    pub causes: Vec<Cause<'a>>,
+}
+
+/// The failed eval at the root of a block: a RED verdict, or in a Run that treats
+/// operational failures as blockers (`--speculate`), an ERROR. A Human eval is also blocked
+/// by a RED or ERROR machine eval of its own Artifact, its sibling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Cause<'a> {
+    Red(&'a EvalId),
+    Error(&'a EvalId),
+    SiblingRed(&'a EvalId),
+    SiblingError(&'a EvalId),
+}
+
+impl<'a> Cause<'a> {
+    pub fn eval(self) -> &'a EvalId {
+        match self {
+            Self::Red(id) | Self::Error(id) | Self::SiblingRed(id) | Self::SiblingError(id) => id,
+        }
+    }
+
+    /// The same failure as seen from downstream, where it is an upstream dependency.
+    fn upstream(self) -> Self {
+        match self {
+            Self::SiblingRed(id) => Self::Red(id),
+            Self::SiblingError(id) => Self::Error(id),
+            cause => cause,
+        }
+    }
 }
 
 /// A blocked dependency names either material or an Eval, never an unclassified string.
@@ -600,9 +518,43 @@ impl EvalStatus {
 impl EvalEvaluation<'_> {
     /// Operational errors require an explicit retry, not automatic redispatch.
     pub fn can_execute(&self) -> bool {
-        !self.derived
-            && self.readiness == Readiness::Ready
-            && matches!(self.evidence, None | Some(Evidence::Stale))
+        self.readiness == Readiness::Ready && matches!(self.evidence, None | Some(Evidence::Stale))
+    }
+
+    /// Names the failed evals that block this one, RED verdicts first; `None` unless BLOCKED.
+    /// Each cause is final within a Run, but more can follow, so settlement saves it again.
+    pub fn blocked_reason(&self) -> Option<String> {
+        let names = |kind: fn(&Cause<'_>) -> bool| {
+            self.causes
+                .iter()
+                .filter(|cause| kind(cause))
+                .map(|cause| cause.eval().as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let parts: Vec<_> = [
+            (
+                "Sibling machine eval RED",
+                names(|cause| matches!(cause, Cause::SiblingRed(_))),
+            ),
+            (
+                "Sibling machine eval ERROR",
+                names(|cause| matches!(cause, Cause::SiblingError(_))),
+            ),
+            (
+                "Dependency verdict RED",
+                names(|cause| matches!(cause, Cause::Red(_))),
+            ),
+            (
+                "Dependency ERROR",
+                names(|cause| matches!(cause, Cause::Error(_))),
+            ),
+        ]
+        .into_iter()
+        .filter(|(_, names)| !names.is_empty())
+        .map(|(label, names)| format!("{label}: {names}"))
+        .collect();
+        (!parts.is_empty()).then(|| parts.join("; "))
     }
 }
 
@@ -684,3 +636,5 @@ impl From<BlockedReference<'_>> for crate::store::Blocker {
         }
     }
 }
+
+pub(crate) mod schedule;

@@ -216,16 +216,15 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
         &[
             "%s\n",
             "{artifactPath}",
-            "--input={source}/input",
-            "{a}/source/input",
+            "--input={b}/input",
+            "{b}/input",
             "literal $(touch injected)",
         ],
     );
-    write_artifact(&owner, "a", json!({"inspect":command}), "Review.");
-    let marker = owner.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&marker).unwrap()).unwrap();
-    declaration["mounts"] = json!({"source":"b"});
-    support::declaration::write(&marker, declaration.to_string()).unwrap();
+    // An operand outside the eval's scope fails: the eval must reference what it uses.
+    write_artifact(&owner, "a", json!({"inspect":command.clone()}), "Review.");
+    assert!(call(repo).await.is_error());
+    write_artifact(&owner, "a", json!({"inspect":command}), "Review with {b}.");
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
     let input = repo.join("b").join("input");
@@ -250,10 +249,6 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
             .await
             .is_error()
     );
-    declaration.as_object_mut().unwrap().remove("mounts");
-    declaration["views"]["human_tools"]["inspect"]["args"] = json!(["{b}"]);
-    support::declaration::write(marker, declaration.to_string()).unwrap();
-    assert!(call(repo).await.is_error());
 }
 
 #[tokio::test]
@@ -336,6 +331,116 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         assert!(text.len() <= 65536);
         assert!(text.ends_with("[output truncated]"));
     }
+}
+
+/// Every event a watched run has logged so far, waiting for at most a generous bound so a
+/// broken stream fails the test instead of hanging it.
+async fn next(
+    events: &mut artifactize_core::review::log::Events,
+) -> artifactize_core::review::log::Kind {
+    tokio::time::timeout(Duration::from_secs(60), events.recv())
+        .await
+        .expect("the run logs its next event")
+        .expect("the sink is alive")
+        .kind
+}
+
+#[tokio::test]
+async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_program_exits() {
+    use artifactize_core::review::log::{End, Kind, Stream, channel};
+    let repo = support::os::tempdir();
+    write_artifact(
+        repo.path(),
+        "a",
+        json!({
+            "inspect":tool(
+                "output",
+                support::os::python_program(),
+                &python("import sys; print('one'); print('oops', file=sys.stderr); print('two'); sys.exit(2)"),
+            ),
+        }),
+        "Review.",
+    );
+    let config = read_workspace_config(repo.path()).unwrap();
+    let (sink, mut events) = channel();
+    let request = "run-1-1".parse().unwrap();
+    let name = "inspect_a".parse().unwrap();
+    let registry = Registry::new(&config, "a/review").unwrap();
+    let result = registry
+        .call_logged(
+            &name,
+            CancellationToken::new(),
+            sink.start(&request, "inspect", "a"),
+        )
+        .await;
+    assert!(result.is_error());
+    assert!(
+        matches!(next(&mut events).await, Kind::Start { operation, .. } if operation == "inspect")
+    );
+    let mut lines = Vec::new();
+    let end = loop {
+        match next(&mut events).await {
+            Kind::Line { stream, text } => lines.push((stream, text)),
+            Kind::End(end) => break end,
+            other => panic!("{other:?}"),
+        }
+    };
+    // Each stream keeps its own order; the two pipes interleave as they arrive.
+    let of = |wanted: Stream| -> Vec<&str> {
+        lines
+            .iter()
+            .filter(|(stream, _)| *stream == wanted)
+            .map(|(_, text)| text.as_str())
+            .collect()
+    };
+    assert_eq!(of(Stream::Stdout), ["one", "two"]);
+    assert_eq!(of(Stream::Stderr), ["oops"]);
+    assert_eq!(end.text(), "■ exit 2");
+
+    // A launch returns at once; what its program prints keeps arriving in the same run until
+    // it exits, here once the test lets it.
+    let mut launched = Launched::new(support::os::tempdir());
+    let waits = format!(
+        "import sys\nprint('started', flush=True)\n{LAUNCH}print('after', file=sys.stderr, flush=True)"
+    );
+    write_artifact(
+        launched.path(),
+        "a",
+        json!({"inspect":tool("launch", support::os::python_program(), &python(&waits))}),
+        "Review.",
+    );
+    let config = read_workspace_config(launched.path()).unwrap();
+    let registry = Registry::new(&config, "a/review").unwrap();
+    let result = registry
+        .call_logged(
+            &name,
+            CancellationToken::new(),
+            sink.start(&request, "inspect", "a"),
+        )
+        .await;
+    assert_eq!(result.content(), [Content::Launch { launched: true }]);
+    assert!(matches!(next(&mut events).await, Kind::Start { .. }));
+    assert_eq!(
+        next(&mut events).await,
+        Kind::Line {
+            stream: Stream::Stdout,
+            text: "started".into()
+        }
+    );
+    // Adopted while it runs, so its exit is confirmed before its repository is removed.
+    support::os::wait_until(Duration::from_secs(30), || launched.own().is_some());
+    fs::write(launched.path().join("release"), "").unwrap();
+    assert_eq!(
+        next(&mut events).await,
+        Kind::Line {
+            stream: Stream::Stderr,
+            text: "after".into()
+        }
+    );
+    assert!(matches!(
+        next(&mut events).await,
+        Kind::End(End::Exited { code: Some(0), .. })
+    ));
 }
 
 #[tokio::test]

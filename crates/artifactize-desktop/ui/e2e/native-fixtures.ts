@@ -6,7 +6,7 @@ import { nodeProgram, portablePath, suitePath } from "./platform.ts";
 export const command = portablePath(nodeProgram);
 export const script = portablePath(suitePath("domain-fixtures", "command.ts"));
 
-export type Operation = "pass" | "fail" | "read" | "launch" | "slow" | "hold";
+export type Operation = "pass" | "fail" | "read" | "launch" | "talk" | "slow" | "hold" | "report";
 
 /** JSON strings/arrays are also TOML basic strings/arrays, including Windows paths. */
 export function commandFields(operation: Operation, ...args: string[]): string {

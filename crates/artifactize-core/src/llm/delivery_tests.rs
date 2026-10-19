@@ -18,6 +18,8 @@ fn frame(mut value: serde_json::Value, sequence: usize) -> String {
 }
 /// Bound fixture input so a malformed request cannot grow an unbounded test buffer.
 const REQUEST_BYTES: usize = 1024 * 1024;
+/// Read fixture HTTP input in small chunks without putting the full request bound on the stack.
+const READ_BYTES: usize = 4096;
 
 /// Read the complete fake request before answering; TCP may split both headers and body.
 async fn read_request(socket: &mut tokio::net::TcpStream) {
@@ -28,7 +30,7 @@ async fn read_request(socket: &mut tokio::net::TcpStream) {
 async fn read_request_bytes(socket: &mut tokio::net::TcpStream) {
     let mut bytes = Vec::new();
     let header_end = loop {
-        let mut chunk = [0; 4096];
+        let mut chunk = [0; READ_BYTES];
         let count = socket.read(&mut chunk).await.unwrap();
         assert_ne!(count, 0, "fixture request ended before its headers");
         bytes.extend_from_slice(&chunk[..count]);
@@ -49,7 +51,7 @@ async fn read_request_bytes(socket: &mut tokio::net::TcpStream) {
         .filter(|end| *end <= REQUEST_BYTES)
         .expect("fixture request length within bound");
     while bytes.len() < request_end {
-        let mut chunk = [0; 4096];
+        let mut chunk = [0; READ_BYTES];
         let count = socket.read(&mut chunk).await.unwrap();
         assert_ne!(count, 0, "fixture request ended before its body");
         bytes.extend_from_slice(&chunk[..count]);

@@ -16,6 +16,20 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
    * target before one WebDriver click, rather than clicking during that transition. */
   async function clickArtifact(name: string) {
     const selector = `.current .svelte-flow__node[data-id="a:${name}"]`;
+    // Where the node, the canvas and the camera were, read only when the node was no target.
+    const placed = () => browser.execute((selector) => {
+      const node = document.querySelector(selector);
+      const box = node?.getBoundingClientRect();
+      const canvas = node?.closest(".svelte-flow")?.getBoundingClientRect();
+      const hit = box && document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return {
+        window: [innerWidth, innerHeight],
+        node: box && [box.left, box.top, box.right, box.bottom].map(Math.round),
+        canvas: canvas && [canvas.left, canvas.top, canvas.right, canvas.bottom].map(Math.round),
+        camera: document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style"),
+        hit: hit ? `${hit.tagName}.${hit.getAttribute("class") ?? ""}` : null,
+      };
+    }, selector);
     await browser.waitUntil(() => browser.executeAsync<boolean, [string]>((selector, done) => {
       const node = document.querySelector(selector);
       if (!node) return done(false);
@@ -28,7 +42,9 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
           !!canvas && after.left >= canvas.left && after.right <= canvas.right && after.top >= canvas.top && after.bottom <= canvas.bottom &&
           hit?.closest(".svelte-flow__node") === node);
       });
-    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` });
+    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` }).catch(async (error: unknown) => {
+      throw new Error(`${name} is a stable, visible graph pointer target: ${JSON.stringify(await placed())}`, { cause: error });
+    });
     await browser.$(selector).click();
   }
 
@@ -65,10 +81,10 @@ function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
 }
 
 export const scenarios: Scenario[] = [
-  // J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-ZOOM → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
+  // J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-EVALS → E-CURRENT-STRUCTURE → E-CURRENT-CLOSE → E-CURRENT-REFRESH
   scenario<Record<string, never>>(
     "current-graph-refresh",
-    "opens without a saved Run, zooms into complete criteria and relations, then refreshes changed declarations",
+    "opens without a saved Run, docks an Artifact's evals on a click, expands complete criteria and relations, closes the evals, then refreshes changed declarations",
     async () => {
       const fixture = createGraph();
       return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
@@ -82,12 +98,20 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$(".legend").getText(), "Current structure · arrows: input → consumer");
       await assertDeclarationsOnly();
       await clickArtifact("release");
-      const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
+      const evals = await browser.$('aside[aria-label="Detail"] [aria-label="Evals of release"]');
       await evals.waitForExist({ timeout: 10000 });
       assert.match(await evals.getText(), /A person approves the release/);
-      // Opening the selected eval exposes criteria, not a historical request Detail.
-      await evals.click();
-      await press(browser, ["Enter"], expanded, "structure text expanded from the selected eval");
+      // The evals dock over the graph's right side; a click on one exposes its criteria, not a
+      // historical request Detail.
+      const docked = await browser.execute(() => {
+        const dock = document.querySelector('.current aside[aria-label="Detail"]')!.getBoundingClientRect();
+        const canvas = document.querySelector(".current .canvas")!.getBoundingClientRect();
+        return dock.left > canvas.left && dock.right < canvas.right && dock.top >= canvas.top && dock.bottom <= canvas.bottom;
+      });
+      assert.ok(docked, "the evals float within the graph, docked toward its right edge with a gap");
+      assert.equal(await expanded(), false, "the structure text starts folded");
+      await evals.$('button[data-eval="e:release/signoff"]').click();
+      await browser.waitUntil(expanded, { timeout: 15000, timeoutMsg: "structure text expanded from the clicked eval" });
       const shown = await structure();
       const criteria: Record<string, unknown> = {};
       let evalId = "";
@@ -104,7 +128,10 @@ export const scenarios: Scenario[] = [
           passSchema: { type: "object", properties: { approved: { const: true },
             comment: { type: "string", description: "What you checked." } },
             required: ["approved", "comment"], additionalProperties: false },
-          failSchema: { type: "object", properties: { reason: { type: "string", minLength: 3 } },
+          failSchema: { type: "object", properties: { reason: { type: "string", minLength: 3 },
+            findings: { type: "array", items: { type: "object", properties: { problem: { type: "string", minLength: 1 }, severity: { enum: ["low", "high"] } },
+              required: ["problem"], additionalProperties: false } },
+            steps: { type: "array", items: { type: "string" } } },
             required: ["reason"], additionalProperties: false },
         },
         "ship/check": { target: "ship", title: "Ship the release", gate: null,
@@ -119,8 +146,15 @@ export const scenarios: Scenario[] = [
         'release → ship {"kind":"instruction","eval_id":"ship/check","name":"release"}',
       ], "the concrete input-to-consumer relation carries its instruction label");
       assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false);
+      // Esc closes the evals; Close does too.
+      const dock = () => browser.$('.current aside[aria-label="Detail"]');
+      await press(browser, ["Escape"], async () => !(await dock().isExisting()), "Esc closed release's evals");
+      await clickArtifact("release");
+      await dock().waitForExist({ timeout: 15000, timeoutMsg: "release's evals docked again" });
+      await dock().$("button*=Close").click();
+      await dock().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "Close closed release's evals" });
 
-      // Continue the same launch, zoom and complete-structure journey: the text remains
+      // Continue the same launch, evals and complete-structure journey: the text remains
       // expanded while each real refresh reloads this window's changed declaration.
       const declaration = nativePath(fixture.repo, "docs", "index.artf");
       let previousTitle = "Docs build";
@@ -136,9 +170,9 @@ export const scenarios: Scenario[] = [
         // Use the real node control after refresh; observation never installs focus.
         await clickArtifact("docs");
         await browser.waitUntil(() => browser.execute((expected) =>
-          document.querySelector('[role="listbox"][aria-label="Evals"]')?.textContent?.includes(expected) ?? false,
+          document.querySelector('[aria-label="Evals of docs"]')?.textContent?.includes(expected) ?? false,
         title), { timeout: 15000, timeoutMsg: `the refreshed docs node exposes ${title}` });
-        const currentEvals = await browser.$('[role="listbox"][aria-label="Evals"]').getText();
+        const currentEvals = await browser.$('[aria-label="Evals of docs"]').getText();
         assert.match(currentEvals, new RegExp(title));
         assert.ok(!currentEvals.includes(previousTitle), "the graph's evals replaced the previous declaration title");
         const currentStructure = await structure();
@@ -146,6 +180,8 @@ export const scenarios: Scenario[] = [
         assert.ok(!currentStructure.includes(previousTitle), "the structure text replaced the previous declaration title");
         assert.match(await browser.execute(() => document.body.innerText), /Declarations only · no Run verdicts/);
         await assertDeclarationsOnly();
+        // Close docs' evals so the next refresh's camera has every node in view and reachable.
+        await press(browser, ["Escape"], async () => !(await dock().isExisting()), "docs' evals closed");
         previousTitle = title;
       }
       // Only after every declarations-only/no-Run check, create a real Run in this

@@ -85,38 +85,35 @@ async fn execute(tool: Tool) -> Result<(), String> {
                 kind: ArtifactKind::Folder,
                 name: "cwd".into(),
                 children: BTreeMap::new(),
-                mounts: BTreeMap::new(),
             },
         )]),
     };
     let cancellation = CancellationToken::new();
-    let (tool, args, input) = match tool {
-        Tool::Read { path } => (Builtin::Read, Some(vec![logical(path)]), json!({})),
-        Tool::List { path } => (Builtin::List, Some(vec![logical(path)]), json!({})),
-        Tool::Section { path, heading } => (
-            Builtin::Section,
-            Some(vec![logical(path), heading]),
-            json!({}),
-        ),
-        Tool::Help { args } => (Builtin::Help, Some(args), json!({})),
-        Tool::Glob { pattern, path } => (
-            Builtin::Glob,
-            None,
-            json!({"pattern":pattern,"path":logical(path)}),
-        ),
+    enum Invocation {
+        Fixed(Builtin, Vec<String>),
+        Dynamic(builtin::Input),
+    }
+    let invocation = match tool {
+        Tool::Read { path } => Invocation::Fixed(Builtin::Read, vec![logical(path)]),
+        Tool::List { path } => Invocation::Fixed(Builtin::List, vec![logical(path)]),
+        Tool::Section { path, heading } => {
+            Invocation::Fixed(Builtin::Section, vec![logical(path), heading])
+        }
+        Tool::Help { args } => Invocation::Fixed(Builtin::Help, args),
+        Tool::Glob { pattern, path } => {
+            Invocation::Dynamic(builtin::Input::glob(&pattern, logical(path))?)
+        }
         Tool::Grep {
             pattern,
             path,
             glob,
             case_insensitive,
-        } => {
-            let mut input =
-                json!({"pattern":pattern,"path":logical(path),"caseInsensitive":case_insensitive});
-            if let Some(glob) = glob {
-                input["glob"] = json!(glob);
-            }
-            (Builtin::Grep, None, input)
-        }
+        } => Invocation::Dynamic(builtin::Input::grep(
+            &pattern,
+            logical(path),
+            glob.as_deref(),
+            case_insensitive,
+        )?),
         Tool::Open { target } => {
             let target = if builtin::is_url(&target) {
                 target.into()
@@ -131,24 +128,23 @@ async fn execute(tool: Tool) -> Result<(), String> {
                 .map_err(|error| error.to_string());
         }
     };
-    let result = if let Some(args) = args {
-        let context = builtin::Context {
-            root: &root,
-            scope: &scope,
-            owner: &owner,
-            launcher: &crate::launch::Standalone,
-        };
-        builtin::call_fixed(tool, &args, input, context, &cancellation).await
-    } else {
-        let validator = crate::schema::compile(&builtin::input_schema(tool))?;
-        crate::schema::validate(&validator, &input)?;
-        builtin::call(
-            builtin::Input::parse(tool, input)?,
-            &root,
-            &scope,
-            &owner,
-            &cancellation,
-        )
+    let result = match invocation {
+        Invocation::Fixed(tool, args) => {
+            builtin::call_fixed(
+                tool,
+                &args,
+                json!({}),
+                builtin::Context {
+                    root: &root,
+                    scope: &scope,
+                    owner: &owner,
+                    launcher: &crate::launch::Standalone,
+                },
+                &cancellation,
+            )
+            .await
+        }
+        Invocation::Dynamic(input) => builtin::call(input, &root, &scope, &owner, &cancellation),
     };
     let (mut stdout, mut stderr) = (std::io::stdout().lock(), std::io::stderr().lock());
     for content in result.content() {

@@ -23,8 +23,8 @@ const HUMAN: Section = {
     ["Ctrl+G / Ctrl+R", "Switch verdict while editing"],
     ["Ctrl+S", "Submit the form"],
     ["Ctrl+U", "Release while editing"],
-    ["Enter", "Run the selected tool (Tools focused)"],
-    ["↑ / ↓ · j / k", "Select a tool"],
+    ["Click · Enter", "Run a tool (its ▶ button)"],
+    ["Tab", "Move between tools and fields"],
     ["i / t", "Expand instruction / Technical"],
     ["Esc", "Cancel work, stop editing, then leave"],
   ],
@@ -32,37 +32,49 @@ const HUMAN: Section = {
 
 export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]> = {
   graph: [
-    { title: "Current Artifact graph", keys: [["← / →", "Upstream / downstream Artifact"], ["↑ / ↓", "Artifact above / below; select an eval while zoomed"], ["Enter / click", "Zoom into an Artifact"], ["Enter on eval", "Expand structure and evaluation criteria"], ["Esc", "Zoom out"], ["Ctrl+R / F5", "Reload current declarations"]] },
+    {
+      title: "Current Artifact graph",
+      keys: [
+        ["Click an Artifact", "Show its evals over the graph's right side"],
+        ["Click an eval", "Expand structure and evaluation criteria"],
+        ["Esc · click the background", "Close the evals"],
+        ["Ctrl+R / F5", "Reload current declarations"],
+      ],
+    },
     COMMON,
   ],
   monitor: [
     {
       title: "Navigate",
       keys: [
-        ["↑ / ↓ · j / k", "Select a row"],
-        ["Enter / →", "Next level; on a tree row, open Detail"],
-        ["o / double-click", "Open the tree row's Detail"],
+        ["↑ / ↓ · j / k", "Select a scope or a Run"],
+        ["Enter / →", "Next level: Scope, Runs, the Run's graph"],
         ["← / Esc", "Step back"],
-        ["Space", "Worktrees without Runs; fold a tree row"],
-        ["h / l", "Fold / unfold"],
-        ["b / Backspace", "Upstream blocker / back"],
-        ["!", "Next ERROR, RED or waiting Human eval"],
-        ["t / w / d", "Technical / pending evals / Agent details"],
+        ["Space", "Worktrees without Runs"],
       ],
     },
     {
       title: "Run graph",
       keys: [
-        ["v", "Switch the Run between tree and graph"],
-        ["← / →", "Upstream / downstream Artifact"],
-        ["↑ / ↓", "Artifact above / below in the same column"],
-        ["Enter / click", "Zoom into the Artifact: its evals"],
-        ["↑ / ↓ · Enter", "In the evals: select (Detail follows) / open Detail"],
-        ["Esc", "Zoom out, then step back"],
+        ["Click an Artifact", "Open its Detail; another Artifact switches it"],
+        ["Click the headline", "Open the Run's Detail"],
+        ["Click the background", "Close the Detail"],
+        ["Tab · Enter", "Focus an Artifact · open its Detail"],
+        ["Esc", "Close the Detail, then step back"],
         [
           "Colours",
           "green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked by an upstream RED, ERROR or block",
         ],
+      ],
+    },
+    {
+      title: "Detail",
+      keys: [
+        ["Click a tab or an eval", "Show the Artifact or that eval"],
+        ["Click Summary · a log", "Show the eval's Summary, or its Agent or Runtime log"],
+        ["t / w", "Technical / pending evals"],
+        ["Drag the left edge", "Resize the Detail"],
+        ["Esc / ← · Close", "Close the Detail"],
       ],
     },
     HUMAN,

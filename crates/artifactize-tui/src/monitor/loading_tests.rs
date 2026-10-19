@@ -50,7 +50,7 @@ async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_ev
             .unwrap();
         ready.await.unwrap();
         let (session_root, source) = crate::test_session_files::fixture();
-        let mut live = crate::monitor::session::Live::new(1, source);
+        let mut live = crate::monitor::session::Live::new(1.into(), source);
         live.geometry(80, 10);
         let mut job = live.job().unwrap();
         let (release_session, session_gate) = std::sync::mpsc::channel();

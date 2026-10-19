@@ -28,17 +28,19 @@ export const commands = {
 	humanForm: (id: string, verdict: Verdict, kept: {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
-	json: string | null,
 } | null) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict, kept })),
-	/**
-	 *  The owner-fields JSON of `draft`, to edit a typed form as JSON: what the terminal review
-	 *  hands to `$EDITOR`.
-	 */
-	humanJson: (id: string, draft: Draft) => typedError<string, Failure>(__TAURI_INVOKE("human_json", { id, draft })),
 	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
 	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
-	/**  `draft` of request `id` with its owner-fields JSON replaced. */
-	humanEditJson: (id: string, draft: Draft, json: string) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_json", { id, draft, json })),
+	/**
+	 *  `draft` of request `id` with an empty item added to its list field `name`, as the library's
+	 *  form adds it.
+	 */
+	humanAddItem: (id: string, draft: Draft, name: string) => typedError<Draft, Failure>(__TAURI_INVOKE("human_add_item", { id, draft, name })),
+	/**
+	 *  `draft` of request `id` with item `item` removed from its list field `name`; the library's
+	 *  form keeps one empty item.
+	 */
+	humanRemoveItem: (id: string, draft: Draft, name: string, item: number) => typedError<Draft, Failure>(__TAURI_INVOKE("human_remove_item", { id, draft, name, item })),
 	/**
 	 *  Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
 	 *  for release on quit, whichever screen took it.
@@ -46,9 +48,11 @@ export const commands = {
 	humanClaim: (id: string, job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_claim", { id, job })),
 	/**
 	 *  Run tool `tool` of request `id`; job number `job` cancels it. The run needs this
-	 *  reviewer's claim on a request that still waits and unchanged declarations.
+	 *  reviewer's claim on a request that still waits and unchanged declarations. What it prints
+	 *  arrives as [`log::HumanToolLog`] events while it runs; a launch tool answers at once and its
+	 *  program's output keeps arriving until it exits.
 	 */
-	humanRun: (id: string, tool: string, job: JobId) => typedError<ToolRun, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
+	humanRun: (id: string, tool: string, job: JobId) => typedError<Notice, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
 	/**  Cancel running job `job`: a tool, or a submission's fingerprint recheck. */
 	humanCancel: (job: JobId) => __TAURI_INVOKE<void>("human_cancel", { job }),
 	/**
@@ -131,6 +135,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	humanToolLog: makeEvent<HumanToolLog>("human-tool-log"),
 	sessionChanged: makeEvent<SessionChanged>("session-changed"),
 	stateChanged: makeEvent<StateChanged>("state-changed"),
 };
@@ -171,6 +176,19 @@ export type BrowseView = {
 	 *  when it grows.
 	 */
 	revision: number,
+};
+
+/**  An eval at a glance, from the library's [`monitor::Card`]. */
+export type CardView = {
+	instruction: string,
+	/**  `None` until the eval has a result. */
+	result: ResultEntry[] | null,
+	exitCode: number | null,
+	error: string | null,
+	reused: boolean,
+	took: string | null,
+	tokens: number | null,
+	model: string | null,
 };
 
 export type Claimant = {
@@ -233,9 +251,13 @@ export type CurrentGraph = {
 	structure: string,
 };
 
+/**  What a Detail describes, from the library's [`Target`]. */
+export type DetailTarget = "run" | "artifact" | "eval";
+
 export type DetailView = {
 	run: string,
 	node: string,
+	target: DetailTarget,
 	title: string,
 	/**  One-line outcome: state, elapsed time, profile and dependencies. */
 	summary: string,
@@ -247,15 +269,16 @@ export type DetailView = {
 	sections: SectionView[],
 	/**  Saved runtime stdout/stderr, or why there are none. */
 	evidence: Evidence | null,
+	/**  An eval's status line, instruction and result; `None` for an Artifact or the Run. */
+	card: CardView | null,
 	/**  A running request: its Detail follows live changes. */
 	running: boolean,
 };
 
-/**  The frontend's draft of one verdict: field values by name, or JSON text. */
+/**  The frontend's draft of one verdict: field values by name. */
 export type Draft = {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
-	json: string | null,
 };
 
 export type Evidence = {
@@ -289,15 +312,21 @@ export type Field = {
 
 /**  How one owner field is entered. */
 export type FieldInput = 
-/**  A `const`: prefilled and fixed; `value` is its JSON. */
+/**  A `const`: filled in and fixed; `value` is its JSON. */
 { kind: "fixed"; value: string } | { kind: "bool" } | 
 /**  String `enum` options, as their JSON text. */
-{ kind: "choice"; options: string[] } | { kind: "text" } | { kind: "integer" } | { kind: "number" };
+{ kind: "choice"; options: string[] } | { kind: "text" } | { kind: "integer" } | { kind: "number" } | 
+/**  An array of strings, entered one item at a time. */
+{ kind: "list" } | 
+/**  An array of flat objects: a group of these fields per item. */
+{ kind: "groups"; fields: FormField[] };
 
 /**  A field's draft value, by the field's kind. */
 export type FieldValue = { kind: "fixed" } | { kind: "bool"; value: boolean | null } | 
 /**  The chosen option's index. */
-{ kind: "choice"; value: number | null } | { kind: "text"; value: string } | { kind: "integer"; value: string } | { kind: "number"; value: string };
+{ kind: "choice"; value: number | null } | { kind: "text"; value: string } | { kind: "integer"; value: string } | { kind: "number"; value: string } | { kind: "list"; value: string[] } | 
+/**  Each group's field values by name. */
+{ kind: "groups"; value: (([string, FieldValue])[])[] };
 
 /**  What a read-only Codex auth file says of its token. */
 export type FileExpiry = { state: "usable"; expiresAt: UnixSeconds | null } | { state: "expired" };
@@ -310,14 +339,10 @@ export type FormField = {
 	input: FieldInput,
 };
 
-/**
- *  A new form: typed `fields`, or `json` text to edit when the schema is not flat, with the
- *  draft the library starts it from.
- */
+/**  A new form: its typed fields, with the draft the library starts it from. */
 export type FormView = {
 	verdict: Verdict,
 	fields: FormField[],
-	json: string | null,
 	draft: Draft,
 };
 
@@ -326,8 +351,6 @@ export type GraphEdge = {
 	source: string,
 	target: string,
 	light: Light,
-	/**  A dependency eval of the target names the source and lights the edge. */
-	dependency: boolean,
 };
 
 export type GraphNode = {
@@ -337,11 +360,18 @@ export type GraphNode = {
 	light: Light,
 };
 
+/**  The Tool logs that changed, each whole. */
+export type HumanToolLog = {
+	logs: RequestLog[],
+};
+
 /**  One request in the shared Human Detail. */
 export type HumanView = {
 	/**  The request every action goes to: a waiting follower's original. */
 	id: string,
 	title: string,
+	/**  The Artifact the reviewed eval belongs to: its tools come first. */
+	artifact: string,
 	/**  Status, claim and waiting time in one line. */
 	meta: string,
 	/**  For a follower: which request and repository its actions go to. */
@@ -412,6 +442,28 @@ export type Listed = {
 	repository: string,
 };
 
+/**
+ *  One tool run: its start line's facts, what it printed as it ran, and its end line once it
+ *  ended. A launched program's lines keep arriving after its tool returned.
+ */
+export type LogEntry = {
+	/**  The run, unique while the app runs. */
+	run: string,
+	/**  Its start, at milliseconds since the Unix epoch. */
+	at: number | null,
+	operation: string,
+	artifact: string,
+	lines: LogText[],
+	/**  The run's end line, `■ exit 0` or how it ended. */
+	end: LogText | null,
+};
+
+/**  One line of a run: what it printed, red when it went to stderr or the run failed. */
+export type LogText = {
+	text: string,
+	error: boolean,
+};
+
 /**  A status with its glyph, as badges, headlines and counts show it. */
 export type Mark = {
 	status: Status,
@@ -455,12 +507,6 @@ session: string } |
 /**  Why the conversation cannot be shown. */
 { kind: "unavailable"; text: string };
 
-export type Output = {
-	title: string,
-	text: string,
-	error: boolean,
-};
-
 /**  Which way to page through the selected scope's Runs. */
 export type Paging = "older" | "newer";
 
@@ -470,7 +516,7 @@ export type Paging = "older" | "newer";
  */
 export type PathKey = string;
 
-export type Profile = "runtime" | "agent" | "human" | "dependency";
+export type Profile = "runtime" | "agent" | "human";
 
 /**  A backend, as the CLI names it. */
 export type Provider = "openai" | "anthropic" | "codex";
@@ -493,6 +539,21 @@ export type RepositoryKey =
 { kind: "git"; path: PathKey } | 
 /**  A non-Git workspace. */
 { kind: "workspace"; path: PathKey };
+
+/**  The Tool log of one review: one entry per run, in the order they started. */
+export type RequestLog = {
+	request: string,
+	entries: LogEntry[],
+};
+
+/**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
+export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
+
+/**  A finding: its rule and place as the head (`item · where`), then its other fields. */
+export type ResultItem = {
+	head: string | null,
+	fields: Field[],
+};
 
 /**  A page of what the query found. */
 export type Results = {
@@ -655,14 +716,11 @@ export type ToolKind =
 /**  Waits and captures the output. */
 "output";
 
-/**  A finished tool run: its output pane and notice. */
-export type ToolRun = {
-	output: Output,
-	notice: Notice,
-};
-
 export type ToolView = {
 	name: string,
+	/**  The Artifact that declares it, and its name there: `open` of `notes` is `open_notes`. */
+	artifact: string,
+	operation: string,
 	kind: ToolKind,
 	description: string,
 	/**  What running it does: the resolved command line, or a builtin's action. */
@@ -678,6 +736,9 @@ export type TranscriptView = {
 	rows: Row[],
 	/**  Row position, bottom or history, following or paused. */
 	indicator: string,
+	/**  The first shown row and how many laid-out rows there are: the scrollbar's position. */
+	top: number,
+	total: number,
 	status: string | null,
 	following: boolean,
 	/**  More indexing or layout is pending; ask again for the rest. */
@@ -693,7 +754,7 @@ export type TreeNode = {
 	tone: Tone,
 	weight: Weight,
 	name: string,
-	/**  Dim markers after the name: `↻ peer`, `[file]`, `[dep]`. */
+	/**  Dim markers after the name: `↻ peer`, `[file]`. */
 	marks: string,
 	text: Segment[],
 	/**  Elapsed time of an eval, `passed/total` of an Artifact. */

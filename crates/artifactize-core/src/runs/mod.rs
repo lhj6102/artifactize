@@ -3,6 +3,7 @@
 mod lifetime_tests;
 mod observe;
 mod result;
+mod watch;
 mod worker;
 use crate::{
     process,
@@ -14,7 +15,9 @@ pub use observe::{Counts, RunObservation, State, status, view, wait};
 pub use result::{Finding, ResultCursor, ResultState, RunResultPage, RunVerdict, result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-pub(crate) use worker::{execute, supervise};
+pub use watch::{RunEvent, watch};
+#[doc(hidden)]
+pub use worker::{execute, supervise};
 
 /// Per-Run execution modes. Future modes extend this type, not transport signatures.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +98,16 @@ pub struct Context {
     executable: PathBuf,
 }
 impl Context {
+    /// The canonical repository this endpoint serves.
+    pub fn repo(&self) -> &Path {
+        &self.repo
+    }
+
+    /// The canonical state directory shared by this endpoint and its Run workers.
+    pub fn state(&self) -> &Path {
+        &self.state
+    }
+
     pub fn new(repo: &Path, state: Option<&Path>, executable: &Path) -> Result<Self, String> {
         Ok(Self {
             repo: crate::workspace::canonical_target(repo).map_err(|e| e.to_string())?,

@@ -6,8 +6,15 @@
 
 #[path = "os/checkpoints.rs"]
 mod checkpoints;
+#[path = "os/creation.rs"]
+mod creation;
 #[path = "os/files.rs"]
 mod files;
+
+/// Reject new files in a fixture directory, restoring its permissions before teardown.
+pub fn deny_creates(directory: &Path) -> creation::CreationDenied {
+    creation::deny_creates(directory)
+}
 
 /// Choose a fixture directory spelling supported by its volume.
 pub fn case_alias_or_original(directory: &Path, alternate_name: &str) -> std::path::PathBuf {
@@ -837,7 +844,13 @@ pub fn fifo(path: &Path) {
 /// A bound Unix socket at `path`, another special entry; it stays bound while held.
 #[cfg(unix)]
 pub fn socket(path: &Path) -> std::os::unix::net::UnixListener {
-    std::os::unix::net::UnixListener::bind(path).unwrap()
+    // Evaluations put TMPDIR under their private run output. That full path can exceed
+    // sockaddr_un even though the filesystem accepts it. Bind through a short, owned
+    // alias; the actual socket entry remains at `path` after the alias is removed.
+    let alias = tempfile::tempdir_in("/tmp").unwrap();
+    let parent = alias.path().join("parent");
+    std::os::unix::fs::symlink(path.parent().unwrap().canonicalize().unwrap(), &parent).unwrap();
+    std::os::unix::net::UnixListener::bind(parent.join(path.file_name().unwrap())).unwrap()
 }
 
 /// Special native entries held for tool input/output rejection tests. Windows has no
@@ -2150,6 +2163,19 @@ pub fn run_test(test: &str, environment: &[(&str, std::ffi::OsString)]) -> std::
     test_command(test, environment).output().unwrap()
 }
 
+/// Run one exact probe without selected inherited variables; the parent environment stays intact.
+pub fn run_test_without(
+    test: &str,
+    environment: &[(&str, std::ffi::OsString)],
+    without: &[&str],
+) -> std::process::Output {
+    let mut command = test_command(test, environment);
+    for name in without {
+        command.env_remove(name);
+    }
+    command.output().unwrap()
+}
+
 /// The same isolated probe, started in the directory whose CLI behavior it checks.
 pub fn run_test_in(
     test: &str,
@@ -2171,28 +2197,6 @@ pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> C
     }
     worker::prepare_probe(&mut command);
     command
-}
-
-/// An external editor fixture, compiled rather than relying on a Python installation or
-/// shell shebang. The platform editor receives its quoted path as a command.
-pub fn editor_command(directory: &Path, text: &str) -> String {
-    let source = directory.join("draft-editor.rs");
-    std::fs::write(&source, format!("fn main() {{ std::fs::write(std::env::args_os().nth(1).unwrap(), {text:?}).unwrap(); }}")).unwrap();
-    let executable = directory.join(format!("draft-editor{}", std::env::consts::EXE_SUFFIX));
-    let rustc = fixture_compiler();
-    let output = Command::new(rustc)
-        .args(["--edition", "2024", "-o"])
-        .arg(&executable)
-        .arg(&source)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    // cmd, which runs the editor on Windows, cannot start a `\\?\` verbatim path.
-    format!("\"{}\"", canonical(&executable).to_string_lossy())
 }
 
 /// Create or replace an owner-only fixture file. Replacement keeps the inode for tests
@@ -2841,6 +2845,11 @@ pub fn human_tool_prefix() -> &'static str {
     "/reviewer-home|real-environment|"
 }
 
+/// Node used by the publication runtime fixture, installed on every CI platform.
+pub fn node_program() -> &'static str {
+    "node"
+}
+
 /// Python used by multimodal command-tool fixtures, installed on all CI platforms.
 pub fn python_program() -> &'static str {
     worker::python_program()
@@ -3002,13 +3011,6 @@ pub fn stdin_waiter() -> tokio::process::Command {
     command
 }
 
-/// A Windows editor command with an argument of its own: copy this source over its operand.
-/// Only Windows has the cmd built-in used by this editor fixture.
-#[cfg(windows)]
-pub fn copy_editor_command(source: &Path) -> String {
-    format!("copy /y \"{}\"", source.display())
-}
-
 /// Run a relative script file through the platform's shared shell fixture, as argv.
 pub fn script_file(path: &Path) -> (String, Vec<String>) {
     (shell(), vec![path.to_str().unwrap().to_owned()])
@@ -3145,6 +3147,32 @@ pub fn drive_relative() -> &'static str {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    // Filesystem Unix sockets have no Windows equivalent.
+    #[cfg(unix)]
+    #[test]
+    fn special_files_remain_native_entries_under_long_review_output_paths() {
+        use std::os::unix::fs::FileTypeExt;
+        let root = super::tempdir();
+        let directory = root.path().join("review-output-".repeat(12));
+        std::fs::create_dir(&directory).unwrap();
+        let files = super::special_files(&directory);
+        assert!(
+            std::fs::symlink_metadata(directory.join("socket"))
+                .unwrap()
+                .file_type()
+                .is_socket()
+        );
+        assert!(
+            std::fs::symlink_metadata(directory.join("pipe"))
+                .unwrap()
+                .file_type()
+                .is_fifo()
+        );
+        drop(files);
+        assert!(!directory.join("socket").exists());
+        assert!(!directory.join("pipe").exists());
+    }
+
     use super::*;
 
     const DIRECTORY_RECORD: &str = "ARTIFACTIZE_TEST_FIXTURE_DIRECTORY_RECORD";

@@ -80,7 +80,6 @@ struct ContextArtifact {
     path: PathBuf,
     kind: crate::config::ArtifactKind,
     children: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
-    mounts: BTreeMap<crate::config::MountAlias, crate::config::ArtifactName>,
 }
 #[derive(Serialize)]
 struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
@@ -321,9 +320,12 @@ impl<'a> Registry<'a> {
         };
         let environment = if let Some(name) = &command.session {
             let key = sessions::session_key(name, &tool.definition.artifact_id);
-            match self.sessions.and_then(|sessions| sessions.call(&key)) {
-                Some(call) => Some(call),
-                None => return ToolResult::error(format!("The tool session `{name}` ended.")),
+            let Some(sessions) = self.sessions else {
+                return ToolResult::error(format!("The tool session `{name}` ended."));
+            };
+            match sessions.call(&key).await {
+                Ok(call) => Some(call),
+                Err(error) => return ToolResult::error(error),
             }
         } else {
             None
@@ -430,7 +432,6 @@ impl<'a> Registry<'a> {
                         path,
                         kind: artifact.kind,
                         children: artifact.children.clone(),
-                        mounts: artifact.mounts.clone(),
                     },
                 ))
             })

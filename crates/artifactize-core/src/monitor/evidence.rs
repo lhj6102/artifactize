@@ -47,7 +47,7 @@ pub struct Evidence {
     pub text: String,
 }
 impl Evidence {
-    /// Human and Dependency evals have no evidence beside their sections.
+    /// Human evals have no evidence beside their sections.
     pub fn is_empty(&self) -> bool {
         self.title.is_empty() && self.text.is_empty()
     }
@@ -103,6 +103,6 @@ pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
                 text,
             }
         }
-        ProfileKind::Human | ProfileKind::Dependency => Evidence::default(),
+        ProfileKind::Human => Evidence::default(),
     }
 }

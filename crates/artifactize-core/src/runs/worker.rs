@@ -58,7 +58,7 @@ async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> 
 }
 
 /// A separate artifactize supervisor settles an executor crash even with no observers.
-pub(crate) async fn supervise(context: &Context, id: &RunId) -> Result<(), String> {
+pub async fn supervise(context: &Context, id: &RunId) -> Result<(), String> {
     admission(context, id).await?;
     let receipts = Receipts::open(&context.state, &context.repo).await?;
     let result = supervise_open(context, id, &receipts).await;
@@ -101,7 +101,7 @@ async fn supervise_open(context: &Context, id: &RunId, receipts: &Receipts) -> R
     Ok(())
 }
 
-pub(crate) async fn execute(context: &Context, id: &RunId) -> Result<(), String> {
+pub async fn execute(context: &Context, id: &RunId) -> Result<(), String> {
     let run = admission(context, id).await?;
     let receipts = Receipts::open(&context.state, &context.repo).await?;
     let mut changes = crate::changes::Subscription::new(&context.state).await;

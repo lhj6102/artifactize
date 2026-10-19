@@ -22,48 +22,41 @@ pub enum Audience {
     Human,
 }
 
-#[derive(Debug, Default, clap::Args)]
+#[derive(Debug, Default)]
 pub struct ToolCheckOptions {
     /// Select one Agent or Human eval's admitted scope (same as --eval).
-    #[arg(conflicts_with = "eval")]
     pub selector: Option<crate::types::EvalId>,
     /// Select one Agent or Human eval's admitted scope.
-    #[arg(long, value_name = "ID")]
     pub eval: Option<crate::types::EvalId>,
     /// Check tools declared for one Artifact.
-    #[arg(long, value_name = "ID")]
     pub artifact: Option<crate::types::ArtifactName>,
     /// Restrict --artifact to Agent or Human tools.
-    #[arg(long, value_enum)]
     pub audience: Option<Audience>,
     /// Check one tool by short or published name.
-    #[arg(long, value_name = "NAME")]
     pub tool: Option<crate::config::ToolName>,
     /// Invoke exactly one explicitly selected tool; never create review evidence.
-    #[arg(long)]
     pub execute: bool,
     /// JSON arguments for an executed Agent tool.
-    #[arg(long, value_name = "JSON", value_parser = json_arguments)]
     pub args: Option<serde_json::Value>,
 }
 
 impl ToolCheckOptions {
     pub fn validate(&self) -> Result<(), String> {
-        if (self.eval.is_some() || self.selector.is_some())
-            && (self.artifact.is_some()
-                || self.audience.is_some()
-                || self.tool.is_some()
-                || self.execute)
-        {
+        let eval = self.eval.is_some() || self.selector.is_some();
+        if eval && (self.artifact.is_some() || self.audience.is_some()) {
             return Err(
-                "An eval selector determines scope and audience; do not combine it with --artifact, --audience, --tool or --execute."
+                "An eval selector determines scope and audience; do not combine it with --artifact or --audience."
                     .into(),
             );
         }
         if self.execute
-            && (self.artifact.is_none() || self.audience.is_none() || self.tool.is_none())
+            && (self.tool.is_none()
+                || (!eval && (self.artifact.is_none() || self.audience.is_none())))
         {
-            return Err("--execute requires --artifact, --audience and --tool.".into());
+            return Err(
+                "--execute requires --tool, with an eval selector or with --artifact and --audience."
+                    .into(),
+            );
         }
         if self.args.is_some() && (!self.execute || self.audience == Some(Audience::Human)) {
             return Err(
@@ -72,11 +65,6 @@ impl ToolCheckOptions {
         }
         Ok(())
     }
-}
-
-/// `--args`, parsed once where it is given.
-fn json_arguments(text: &str) -> Result<serde_json::Value, String> {
-    serde_json::from_str(text).map_err(|e| format!("Invalid --args JSON: {e}"))
 }
 
 #[derive(Debug, Serialize)]
@@ -200,13 +188,28 @@ pub async fn check_tools(
     {
         return Err("Select a declared Agent or Human eval.".into());
     }
+    if options.args.is_some()
+        && let Some(id) = selected
+        && config
+            .evals
+            .iter()
+            .any(|eval| &eval.id == id && matches!(eval.declaration.profile(), Profile::Human {}))
+    {
+        return Err(
+            "--args requires Agent tool execution; Human tools take no free arguments.".into(),
+        );
+    }
     if let Some(id) = &options.artifact
         && !config.artifacts.contains_key(id)
     {
         return Err(format!("Unknown Artifact: {id}"));
     }
     let mut catalogs = Vec::new();
-    if options.artifact.is_some() || options.audience.is_some() || options.tool.is_some() {
+    // An eval selector keeps the eval's own scope, also for one selected tool.
+    if options.artifact.is_some()
+        || options.audience.is_some()
+        || (options.tool.is_some() && selected.is_none())
+    {
         let artifacts: Vec<_> = options.artifact.as_ref().map_or_else(
             || config.artifacts.keys().map(|name| name.as_str()).collect(),
             |id| vec![id.as_str()],
@@ -241,7 +244,7 @@ pub async fn check_tools(
                     Audience::Human,
                     human::Registry::new(&config, &eval.id).map(Catalog::Human),
                 ),
-                Profile::Runtime { .. } | Profile::Dependency { .. } => continue,
+                Profile::Runtime { .. } => continue,
             };
             catalogs.push((Some(&eval.id), None, audience, catalog));
         }
@@ -267,10 +270,11 @@ pub async fn check_tools(
                 report.check(
                     ToolCheckStage::Preflight,
                     Some(name),
-                    Err(
-                        "The selected tool is not registered for this Artifact and audience."
-                            .into(),
-                    ),
+                    Err(if eval.is_some() {
+                        "The selected tool is not published to this eval.".into()
+                    } else {
+                        "The selected tool is not registered for this Artifact and audience.".into()
+                    }),
                 );
             }
         }
@@ -339,9 +343,7 @@ async fn execute_tool(
                 .tempdir_in(root)
                 .map_err(|e| e.to_string())?;
             let args = options.args.clone().unwrap_or(json!({}));
-            let sessions = registry
-                .start_sessions(&state, Some(name), cancellation.clone())
-                .await?;
+            let sessions = registry.sessions(&state, Some(name), cancellation.clone());
             let registry = registry.with_session_scope(&sessions)?;
             let result = registry
                 .call(name, args, directory.path(), cancellation)

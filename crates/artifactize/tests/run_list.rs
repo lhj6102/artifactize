@@ -123,6 +123,18 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
                     "profile":{"kind":"runtime","command":false_program(),"args":[]},
                     "payload":{"instruction":"Fail."},
                 },
+            ],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // A sign-off on its own file Artifact, so the RED machine eval above does not block it.
+    fs::write(second.join("notes.md"), "notes").unwrap();
+    support::declaration::write(
+        second.join("notes.md.artf"),
+        json!({
+            "name":"notes",
+            "evals":[
                 {
                     "id":"human",
                     "title":"Human",

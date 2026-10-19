@@ -175,27 +175,35 @@ fn static_check_resolves_start_without_running_it() {
 }
 
 #[test]
-fn start_failure_never_calls_provider_and_stops_sessions_already_started() {
-    for second in [false, true] {
-        let fixture = Fixture::new(if second { "start" } else { "exit" }, "stop", "act", 0);
-        if second {
-            fixture.rewrite(|definition| {
-                let mut session = definition["views"]["agent_sessions"]["app"].clone();
-                session["start"]["command"] = json!("missing-second-session-program");
-                definition["views"]["agent_sessions"]["second"] = session;
-                let mut tool = definition["views"]["agent_tools"]["act"].clone();
-                tool["session"] = json!("second");
-                definition["views"]["agent_tools"]["z_second"] = tool;
-            });
-        }
-        let run = fixture.json(&["verify", "--wait", "--all"], 2);
-        assert_eq!(
-            run["requests"][0]["errorCode"], "PREPARATION_FAILED",
-            "{run}"
-        );
-        assert!(fixture.provider.requests().is_empty());
-        harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
-    }
+fn admitted_but_uncalled_sessions_never_start_or_create_a_session_directory() {
+    let fixture = Fixture::new("exit", "stop", "act", 0);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
+    assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
+    assert_eq!(fixture.provider.requests().len(), 1);
+    assert!(fixture.records("start").is_empty());
+    assert!(fixture.records("stop").is_empty());
+    assert!(!fixture.state().join("tool-sessions").exists());
+}
+
+#[test]
+fn a_start_exiting_before_readiness_is_a_cached_tool_error_and_the_review_continues() {
+    let fixture = Fixture::new("exit", "stop", "act", 2);
+    let run = fixture.json(&["verify", "--wait", "--all"], 0);
+    assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
+    let requests = fixture.provider.requests();
+    assert_eq!(requests.len(), 3);
+    let errors: Vec<_> = requests[2].body["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["type"] == "function_call_output")
+        .map(|item| item["output"].clone())
+        .collect();
+    assert_eq!(errors.len(), 2, "{requests:?}");
+    assert_eq!(errors[0], errors[1]);
+    assert!(errors[0].to_string().contains("exited before readiness"));
+    assert!(fixture.records("call").is_empty());
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
 }
 
 #[test]
@@ -272,8 +280,10 @@ fn execute_diagnostic_and_follow_up_get_their_own_sessions() {
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
     assert!(fixture.provider.requests().is_empty());
     let run = fixture.json(&["verify", "--wait", "--all"], 0);
-    harness::assert_cleaned(&fixture.state(), &fixture.log(), 2);
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
     let id = run["requests"][0]["id"].as_str().unwrap();
+    fixture.json(&["session", "send", id, "Explain without tools."], 0);
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
     let calls = AtomicUsize::new(0);
     fixture.provider = FakeProvider::start(move |request| {
         let result = if calls.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -291,7 +301,7 @@ fn execute_diagnostic_and_follow_up_get_their_own_sessions() {
             .to_string()
             .contains("started first")
     );
-    harness::assert_cleaned(&fixture.state(), &fixture.log(), 3);
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 2);
 }
 
 #[test]
@@ -305,6 +315,13 @@ fn concurrent_reviews_have_distinct_sessions_and_both_cleanup() {
     });
     let log = fixture.log();
     fixture.provider = FakeProvider::start(move |request| {
+        if !request.body.to_string().contains("function_call_output") {
+            return openai::completed(
+                request,
+                vec![openai::function_call("call", "act_app", &json!({}))],
+                openai::usage(10, 5),
+            );
+        }
         support::os::wait_until(Duration::from_secs(10), || {
             harness::records(&log, "start").len() == 2
         });
@@ -573,6 +590,13 @@ fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants(
 fn red_reviews_stop_and_cleanup_before_the_result_is_published() {
     let mut fixture = Fixture::new("start", "stop", "act", 0);
     fixture.provider = FakeProvider::start(|request| {
+        if !request.body.to_string().contains("function_call_output") {
+            return openai::completed(
+                request,
+                vec![openai::function_call("call", "act_app", &json!({}))],
+                openai::usage(10, 5),
+            );
+        }
         openai::completed(
             request,
             vec![openai::message(&json!({"verdict":"RED"}).to_string())],
@@ -591,6 +615,13 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
     let mut fixture = Fixture::new("start", "stop", "act", 0);
     let log = fixture.log();
     fixture.provider = FakeProvider::start(move |request| {
+        if !request.body.to_string().contains("function_call_output") {
+            return openai::completed(
+                request,
+                vec![openai::function_call("call", "act_app", &json!({}))],
+                openai::usage(10, 5),
+            );
+        }
         support::os::wait_until(Duration::from_secs(10), || {
             fs::read_to_string(log.join("verdict")).unwrap_or_default() == "ready"
         });
@@ -797,16 +828,21 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
     assert!(harness::directories(&fixture.state()).is_empty());
 }
 
-// Unix directory modes can reject admission writes; the Windows directory readonly
-// attribute does not reject file creation and is not an equivalent setup.
-#[cfg(unix)]
 #[test]
 fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_cleanup() {
     let mut fixture = Fixture::new("start", "stop", "act", 0);
+    fixture.rewrite(|definition| {
+        let mut probe = definition["views"]["agent_tools"]["act"].clone();
+        probe["args"][1] = json!("probe");
+        definition["views"]["agent_tools"]["probe"] = probe;
+    });
     let log = fixture.log();
     let calls = AtomicUsize::new(0);
     fixture.provider = FakeProvider::start(move |request| {
-        let content = if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+        let turn = calls.fetch_add(1, Ordering::SeqCst);
+        let content = if turn == 0 {
+            openai::function_call("probe", "probe_app", &json!({}))
+        } else if turn == 1 {
             support::os::wait_until(Duration::from_secs(10), || {
                 fs::read_to_string(log.join("admit")).unwrap_or_default() == "ready"
             });
@@ -832,7 +868,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
     });
     let start = fixture.records("start").pop().unwrap();
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
-    let denied = support::os::read_only(&directory);
+    let denied = support::os::deny_creates(&directory);
     fs::write(fixture.log().join("admit"), "ready").unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
         fs::read_to_string(fixture.log().join("rejected")).unwrap_or_default() == "rejected"
@@ -847,7 +883,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        fixture.provider.requests()[1]
+        fixture.provider.requests()[2]
             .body
             .to_string()
             .contains("Agent tool execution failed.")

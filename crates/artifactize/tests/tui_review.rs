@@ -305,14 +305,12 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     press(&mut review, KeyCode::Char('k')).await;
     press(&mut review, KeyCode::Enter).await;
     let failed = screen(&mut review);
+    // The Tool log shows the run under its start line and ends it with its exit code.
     assert!(
-        failed.contains("Output · fail_release · tool error"),
+        failed.contains("· fail · release") && failed.contains("■ exit 1"),
         "{failed}"
     );
-    assert!(
-        failed.contains("Human tool exited unsuccessfully"),
-        "{failed}"
-    );
+    assert!(failed.contains("fail_release failed"), "{failed}");
     press(&mut review, KeyCode::Char('j')).await;
     press(&mut review, KeyCode::Char('j')).await;
     // Install pending-handoff ownership before the launch key can accept a child.
@@ -335,7 +333,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     press(&mut review, KeyCode::Enter).await;
     let section = screen(&mut review);
     assert!(
-        section.contains("Output · summary_release") && section.contains("- Ready."),
+        section.contains("· summary · release")
+            && section.contains("- Ready.")
+            && section.contains("■ done"),
         "{section}"
     );
 
@@ -352,7 +352,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     assert_eq!(view.request.status().as_str(), "WAITING_HUMAN");
     press(&mut review, KeyCode::Esc).await;
     press(&mut review, KeyCode::Char('g')).await;
-    assert!(screen(&mut review).contains("approved*: true (fixed)"));
+    // The constant is the form's own: not shown, yet submitted below.
+    assert!(matches!(review.mode(), Mode::Form(_)));
+    assert!(!screen(&mut review).contains("approved"));
     // Nothing else waits after the submission, so the review hands back to its caller.
     assert_eq!(press(&mut review, ctrl('s')).await, Action::Quit);
 

@@ -34,6 +34,7 @@ pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
 pub(crate) mod reader;
 mod requests;
+pub(crate) use executions::read_profiled_executions;
 pub use executions::{
     Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,
     read_keyed_executions, read_latest_cached,
@@ -45,7 +46,7 @@ pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
     StoppedBackend, read_latest_requests, read_run, read_state_id, schema_error, state_schema,
 };
-pub(crate) use requests::read_request_repo;
+pub use requests::read_request_repo;
 pub use requests::{
     RequestView, read_original, read_request, read_request_batch, read_requests, read_requests_in,
     read_run_requests, read_session_request, read_waiting, read_waiting_originals,
@@ -131,9 +132,9 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     canonical_target(&path).map_err(|e| e.to_string())
 }
 
-/// SQLite `user_version`; caller attempt keys extend Runs additively in schema 7.
-/// Earlier state is not migrated.
-pub const STATE_SCHEMA_VERSION: u32 = 7;
+/// SQLite `user_version`; schema 8 scopes active claims by key and profile.
+/// Versions from schema 6 upgrade additively.
+pub const STATE_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set {}", state_home_variables())]

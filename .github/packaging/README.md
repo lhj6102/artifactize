@@ -10,6 +10,11 @@ be mistaken for a publication. Successful publications write their outcome to th
 summary too (Store submission ID, winget PR URL when available, or Homebrew formula). These scripts never sign or
 submit a Windows zip.
 
+winget and Microsoft Store distribution are in preparation, not available yet:
+the winget submissions are still open and the Store submission has not passed
+certification. Use the PowerShell install script for Windows today; the setup and
+publication instructions below describe the prepared channels.
+
 ## Policy and credentials
 
 Create these secrets in **lhj6102/artifactize → Settings → Environments → release
@@ -92,9 +97,10 @@ the same files. Do not upload the throwaway CI-signed package; it is test-only.
 1. In **Partner Center → Apps and games → Artifactize**, complete the first
    submission manually: listing, screenshots, age ratings, pricing/availability,
    and packages. Upload the release `.msixupload`. Explain the restricted
-   `runFullTrust` and `unvirtualizedResources` capabilities. The latter is needed
-   so Store and zip/winget installs share runs, authentication and cache under
-   real `%LOCALAPPDATA%\artifactize`, and retain this state after uninstall.
+   `runFullTrust` capability only: Artifactize is a desktop CLI that reads the
+   user's selected projects and launches their configured evaluation/tool commands
+   with the user's rights. It does not request `unvirtualizedResources`; new AppData
+   state uses Windows' default package-private virtualization and is removed on uninstall.
    First submission must be published before automation can clone it.
 2. In **Partner Center → Account settings → Tenants**, associate a Microsoft
    Entra tenant. In **Account settings → User management**, add an Entra
@@ -115,9 +121,16 @@ the same files. Do not upload the throwaway CI-signed package; it is test-only.
    a subsequent stable release also retries by creating its own new submission.
 
 No Store credentials or Partner Center changes are needed for build/test.
-The package declares `desktop6:FileSystemWriteVirtualization` as `disabled` plus
-`rescap:Capability Name="unvirtualizedResources"`; it does not change registry
-virtualization. The MSIX has one visible Application (`Artifactize`) and one console
+The package uses Microsoft's default file-system and registry virtualization. It
+has no virtualization-disable properties, no Flexible Virtualization exclusions and
+no `unvirtualizedResources` capability; `runFullTrust` remains. Windows 10 1903
+support is unchanged. New AppData state is package-private, not shared Runs,
+authentication or cache with zip/winget/Cargo installs, and Windows removes that
+private state on uninstall. This is not a sandbox: on supported Windows versions,
+Microsoft documents that reads can fall back to existing unvirtualized AppData files
+and writes to those existing files can affect the real files. Explicit state outside
+AppData and user project/exported files are not removed with the package.
+The MSIX has one visible Application (`Artifactize`) and one console
 execution alias (`artifactize.exe`); tools run as `artifactize tools <subcommand>`.
 It has no headless Application or `AppListEntry="none"`, so no HeadlessAppBypass
 waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
@@ -155,8 +168,23 @@ silently substituting metadata checks for installation.
 
 The MSIX seam packs with SDK schema validation, signs a *copy* with a throwaway
 certificate, installs via `Add-AppxPackage`, invokes the WindowsApps `artifactize` execution
-alias and its tools facade, then runs offline `artifactize server token list` (no verify/provider
-calls). The unpackaged shell checks that SQLite state was created in real
-`%LOCALAPPDATA%\artifactize`, not anywhere in the package-private directory. The
-test removes its package and certificate. Windows/macOS remain non-gating before
-v1, so inspect individual step outcomes, not just the overall workflow conclusion.
+alias and its tools facade, then runs offline `artifactize server token list` and a
+Runtime-only verification that creates a unique new AppData file in a child PowerShell
+process (no provider calls). The unpackaged shell checks that both SQLite databases
+are package-private and that real `%LOCALAPPDATA%\artifactize` was not created. Logs
+record the actual database paths, runner OS and whether the child's new AppData file
+was redirected. This checks a fresh runner, not migration from existing unpackaged
+state. The test removes its package, certificate and probe files.
+
+[Windows rehearsal 39138230810](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
+passed on Windows Server build 26100 (`windows-2025-vs2026`). Both `state.sqlite` and
+`review-store.sqlite` landed under
+`%LOCALAPPDATA%\Packages\lhj6102.Artifactize_ayfzfzbsv48sg\LocalCache\Local\artifactize`,
+and real `%LOCALAPPDATA%\artifactize` was absent. The Runtime PowerShell child's new
+AppData file was **not redirected**: it landed in real `%LOCALAPPDATA%`, not beneath
+the package. Do not extend this one runner/command observation to all child programs
+or supported Windows versions; command-created files outside the private view can
+remain after uninstall.
+
+Windows/macOS remain non-gating before v1, so inspect individual step outcomes, not
+just the overall workflow conclusion.

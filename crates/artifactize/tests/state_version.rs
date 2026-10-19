@@ -177,6 +177,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             "owner_pid",
             "owner_start_time",
             "backend",
+            "profile_identity",
             "completed_at",
             "bytes",
             "last_used",

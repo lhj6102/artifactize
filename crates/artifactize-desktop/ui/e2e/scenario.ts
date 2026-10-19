@@ -16,6 +16,8 @@ export type Scenario = {
   title: string;
   prepare: () => Promise<Prepared>;
   run: (browser: WebdriverIO.Browser, input: Prepared) => Promise<void>;
+  /** A second service-owned app lifetime, on this case's still-owned fixture. */
+  relaunched?: (browser: WebdriverIO.Browser, input: Prepared) => Promise<void>;
 };
 
 export function scenario<T>(
@@ -23,11 +25,13 @@ export function scenario<T>(
   title: string,
   prepare: () => Promise<Prepared<T>>,
   run: (browser: WebdriverIO.Browser, input: Prepared<T>) => Promise<void>,
+  relaunched?: (browser: WebdriverIO.Browser, input: Prepared<T>) => Promise<void>,
 ): Scenario {
   return {
     id,
     title,
     prepare,
     run: (browser, input) => run(browser, input as Prepared<T>),
+    ...(relaunched ? { relaunched: (browser: WebdriverIO.Browser, input: Prepared) => relaunched(browser, input as Prepared<T>) } : {}),
   };
 }

@@ -1,36 +1,21 @@
-// Moving through the Monitor in the real app: the keys help, a refresh, folding the Run tree,
-// jumping to what needs attention and to an upstream blocker, and stepping back out of a
-// Detail; and quitting a window that holds no claim.
+// Moving through the Monitor in the real app: the keys help, a refresh, the pointer that only
+// highlights, a Detail opened by a click and stepped back out of, unreadable Runs beside a
+// readable one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { verifyWaiting, create, createNavigationFixture, createStates, requests } from "../fixture.ts";
+import { verifyWaiting, create, createNavigationFixture, createUnreadableRuns, requests } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { nativePath } from "../platform.ts";
+import { nativePath, requestWindowClose, shortcutLabel } from "../platform.ts";
+import { visibleCenter } from "../pointer.ts";
+import { aside, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
 
 function monitorNavigation(browser: WebdriverIO.Browser) {
-  const text = () => browser.execute(() => document.body.innerText);
-
-  const selected = () => browser.$('[role="treeitem"][aria-selected="true"]').getText();
-
-  /** The tree row of an Artifact (level 1) or of an eval (level 2) by its name. */
-  const row = (level: 1 | 2, name: string) =>
-    browser.$(`//li[@role="treeitem"][@aria-level="${level}"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "${name}")]]`);
-
   const helpOpen = () => browser.execute(() => !!document.querySelector('[role="dialog"]'));
-  return { text, selected, row, helpOpen };
-}
-
-function detailNavigation(browser: WebdriverIO.Browser) {
-  /** The Detail pane's title: the Monitor's fourth pane (Scope, Runs, Run, Detail). */
-  const detail = () =>
-    browser.execute(() => document.querySelectorAll("section.panel h2")[3]?.textContent?.trim() ?? "");
-
-  const row = (level: 1 | 2, name: string) =>
-    browser.$(`//li[@role="treeitem"][@aria-level="${level}"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "${name}")]]`);
-  return { detail, row };
+  const runsFocused = () => browser.$('[role="listbox"][aria-label="Runs"]').isFocused();
+  return { helpOpen, runsFocused };
 }
 
 function paneNavigation(browser: WebdriverIO.Browser) {
@@ -44,35 +29,28 @@ function paneNavigation(browser: WebdriverIO.Browser) {
   const chosen = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"]')]
     .findIndex((option) => option.getAttribute("aria-selected") === "true"));
 
-  /** Assert the historical criterion in the actual Tree, unfolding a finished Artifact
-   * through the UI if needed. Current declarations cannot substitute for the selected Run. */
-  async function treeShows(run: { id: string; eval: string }) {
-    const artifact = await browser.$('[role="treeitem"][data-path="a:subject"]');
-    await artifact.waitForExist();
-    await artifact.click();
-    await press(browser, ["l"], async () => (await artifact.getAttribute("aria-expanded")) === "true", "the historical evals unfolded");
-    await browser.waitUntil(async () => (await tree()).evals.includes(run.eval), { timeout: 15000, timeoutMsg: `${run.id}'s criterion is in the Tree` });
-    assert.deepEqual((await tree()).evals, [run.eval], "the other Run's criterion is absent");
-  }
-  /** The Run pane's title, which names the Run its Tree shows. */
+  /** The Run pane's title, which names the Run its graph shows. */
   const runTitle = () => browser.execute(() => [...document.querySelectorAll("section.panel h2")]
     .map((title) => title.textContent?.trim() ?? "").find((title) => title.startsWith("Run ")) ?? "");
 
-  /** The Tree's current Artifact and its eval rows, read without moving the focus. */
-  const tree = () => browser.execute(() => ({
-    artifact: document.querySelector('[role="treeitem"][data-path="a:subject"]')?.getAttribute("aria-expanded") ?? null,
-    evals: [...document.querySelectorAll('[role="treeitem"][aria-level="2"] .name')].map((name) => name.firstChild?.textContent?.trim() ?? ""),
-  }));
+  /** The graph's pane has the keyboard. */
+  const graphFocused = () => browser.$('section.panel[aria-label^="Run run-"]').isFocused();
 
-  /** Moving in Runs replaces the Tree with the newly selected Run while Runs keeps the focus. */
-  async function treeFollows(run: { id: string; eval: string }) {
-    const shown = await tree();
-    assert.equal(await runTitle(), `Run ${run.id}`, "the Run pane shows the selected Run");
-    assert.notEqual(shown.artifact, null, "the selected Run's Artifact is in the Tree");
-    assert.deepEqual(shown.evals, shown.artifact === "true" ? [run.eval] : [], "only the selected Run's criterion is in the Tree");
-    assert.ok(await listbox("Runs").isFocused(), "Runs keeps the focus while the Tree follows");
+  /** A click on subject opens its Detail: the selected Run's own historical criterion, and no
+   * other. Current declarations cannot substitute for it. Esc closes the Detail again. */
+  async function graphShows(run: { id: string; eval: string }) {
+    const shown = await openArtifact(browser, "a:subject", "Artifact subject");
+    assert.deepEqual(shown.evals.map((row) => row.name), [run.eval], "only the selected Run's criterion is in subject's Detail");
+    await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
   }
-  return { listbox, runIds, selectedRun, chosen, treeShows, runTitle, treeFollows };
+
+  /** Moving in Runs replaces the graph with the newly selected Run while Runs keeps the focus. */
+  async function graphFollows(run: { id: string; eval: string }) {
+    assert.equal(await runTitle(), `Run ${run.id}`, "the Run pane shows the selected Run");
+    await graphShown(browser, "a:subject");
+    assert.ok(await listbox("Runs").isFocused(), "Runs keeps the focus while the graph follows");
+  }
+  return { listbox, runIds, selectedRun, chosen, graphFocused, graphShows, runTitle, graphFollows };
 }
 
 export const scenarios: Scenario[] = [
@@ -85,9 +63,9 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      const { text, helpOpen } = monitorNavigation(browser);
-      await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$('[role="tree"]').click();
+      const { helpOpen, runsFocused } = monitorNavigation(browser);
+      await graphShown(browser, "a:release");
+      await browser.waitUntil(runsFocused, { timeout: 15000, timeoutMsg: "the Runs pane focused" });
       await press(browser, ["?"], helpOpen, "the keys dialog");
       const dialog = browser.$('[role="dialog"]');
       assert.match(await dialog.getText(), /Keyboard shortcuts/);
@@ -96,17 +74,38 @@ export const scenarios: Scenario[] = [
         action: key.nextElementSibling?.textContent?.trim() ?? "",
       })));
       const expected: [RegExp, RegExp][] = [
-        [/(?:^|[\s/])b(?:$|[\s/])/, /Upstream blocker/],
-        [/h\s*\/\s*l/, /Fold\s*\/\s*unfold/],
-        [/^!$/, /Next ERROR, RED or waiting Human eval/],
-        [/^v$/, /Switch.*tree and graph/],
+        [/^Click an Artifact$/, /Open its Detail/],
+        [/^Click the background$/, /Close the Detail/],
+        [/^Click a tab or an eval$/, /Show the Artifact or that eval/],
         [/\bF5\b/, /^Refresh$/],
       ];
       for (const [keys, action] of expected) {
         assert.ok(shortcuts.some((entry) => keys.test(entry.keys) && action.test(entry.action)),
           `the Monitor Help pairs ${keys} with ${action}: ${JSON.stringify(shortcuts)}`);
       }
+      assert.ok(!shortcuts.some((entry) => /^v$/.test(entry.keys)), "no key switches to a tree");
+      assert.ok(!shortcuts.some((entry) => /^(?:!|o|b \/ Backspace|← \/ →)$/.test(entry.keys)), `the graph has no keys of its own: ${JSON.stringify(shortcuts)}`);
       await press(browser, ["Escape"], async () => !(await helpOpen()), "the keys dialog closed");
+    },
+  ),
+
+  // UX edges: E-HELP-OPEN E-HELP-CLOSE
+  scenario<Record<string, never>>(
+    "navigation-review-help",
+    "opens Review-specific search, request-opening and paging Help with the question key",
+    async () => ({ fixture: await create(), args: ["review"], data: {} }),
+    async (browser) => {
+      const list = () => browser.$('[aria-label="Requests"]');
+      await list().waitForExist({ timeout: 15000 });
+      await list().click();
+      const opened = () => browser.$('[role="dialog"]').isExisting();
+      await press(browser, ["?"], opened, "Review's Help dialog");
+      const shortcuts = await browser.execute(() => [...document.querySelectorAll('[role="dialog"] dt')].map((key) => ({ keys: key.textContent ?? "", action: key.nextElementSibling?.textContent ?? "" })));
+      for (const [keys, action] of [[shortcutLabel("Ctrl+F"), /Search requests/], [shortcutLabel("Ctrl+O"), /Open a request by ID/], ["PgDn / PgUp", /Older.*newer page/]] as const) {
+        assert.ok(shortcuts.some((entry) => entry.keys.includes(keys) && action.test(entry.action)), `Review Help pairs ${keys} with ${action}`);
+      }
+      assert.ok(!shortcuts.some((entry) => entry.keys.includes("Click an Artifact")), "Monitor Help is not reused for Review");
+      await press(browser, ["Escape"], async () => !(await opened()), "Review Help closed");
     },
   ),
 
@@ -119,8 +118,7 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
-      const { text } = monitorNavigation(browser);
-      await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
+      await graphShown(browser, "a:release");
       const rows = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')].map((row) => row.innerText));
       const before = await rows();
       const id = await verifyWaiting(fixture);
@@ -143,11 +141,10 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: { before, after, worktree: nativePath(fixture.root, after) } };
     },
     async (browser, { fixture, data }) => {
-      const { text } = monitorNavigation(browser);
       const { runIds } = paneNavigation(browser);
       const labels = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"] .label')]
         .map((label) => label.textContent?.trim() ?? ""));
-      await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
+      await graphShown(browser, "a:release");
       const previousRuns = await runIds();
       assert.ok(previousRuns.length > 0, "the fixture's saved Run is visible before the Git-only change");
       // Open the existing without-Runs group first, so F5 itself must reveal the
@@ -163,209 +160,182 @@ export const scenarios: Scenario[] = [
       assert.ok(refreshed.includes(data.before), "refresh preserves the expanded group and its existing worktree");
       assert.ok(refreshed.includes(data.after), "refresh displays the exact worktree created by this case");
       assert.deepEqual(await runIds(), previousRuns, "the Git-only change created no Run and keeps the selected scope's saved Runs");
-      assert.equal(await browser.$('nav[aria-label="Breadcrumb"] [role="status"]').isExisting(), false, "the refresh completed without a native read error");
+      assert.equal(await browser.$('.monitor [role="status"]').isExisting(), false, "the refresh completed without a native read error");
       assert.equal(await browser.$('[role="tab"][data-state="active"]').getText(), "Monitor", "on the same screen");
     },
   ),
 
-  // UX edges: E-MON-TREE-FOLD
-  scenario<Record<string, never>>(
-    "navigation-fold",
-    "folds and unfolds an Artifact's evals with h, l and Space",
-    async () => {
-      const fixture = await create();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser) => {
-      const { text, row } = monitorNavigation(browser);
-      await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      const release = await row(1, "release");
-      await browser.$('[role="tree"]').click();
-      await release.click();
-      const expanded = async () => (await row(1, "release")).getAttribute("aria-expanded");
-      // The release Artifact's one eval row is what folding hides and unfolding restores.
-      const evalShown = async () => (await row(2, "signoff")).isDisplayed();
-      const folded = async () => (await expanded()) === "false" && !(await evalShown());
-      const unfolded = async () => (await expanded()) === "true" && await evalShown();
-      assert.ok(await unfolded(), "release starts unfolded with its eval row");
-      await press(browser, ["h"], folded, "release and its eval row folded by h");
-      await press(browser, ["l"], unfolded, "release and its eval row unfolded by l");
-      await press(browser, [" "], folded, "release and its eval row folded by Space");
-      await press(browser, [" "], unfolded, "release and its eval row unfolded by Space");
-    },
-  ),
-
-  // UX edges: E-MON-BLOCKER
-  scenario<Record<string, never>>(
-    "navigation-blocker",
-    "jumps from a blocked eval to the upstream Artifact it waits for with b",
-    async () => {
-      const fixture = await create();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser) => {
-      const { text, selected, row } = monitorNavigation(browser);
-      await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$('[role="tree"]').click();
-      await (await row(2, "check")).click();
-      const level = () => browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("aria-level");
-      await press(
-        browser,
-        ["b"],
-        async () => (await level()) === "1" && /release/.test(await selected()),
-        "the upstream Artifact selected",
-      );
-    },
-  ),
-
-  // UX edges: E-MON-DETAIL-TECHNICAL E-MON-DETAIL-BACK
+  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "navigation-technical-detail",
-    "shows the technical record of an opened Detail with t and steps back to the tree",
+    "shows the Debug facts of an eval's Summary with t and closes the Detail back to the graph",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
-      const { text, row } = monitorNavigation(browser);
-      await browser.waitUntil(async () => (await text()).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$('[role="tree"]').click();
-      await (await row(2, "check")).click();
-      const close = () => browser.$("button*=Close");
-      await press(browser, ["Enter"], () => close().isExisting(), "the Detail opened");
+      await graphShown(browser, "a:ship");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      await openTab(browser, "e:ship/check");
       const request = requests(fixture).find((saved) => saved.evalId === "ship/check");
       assert.ok(request, "the fixture independently identifies ship/check");
-      const field = (name: string) => browser.execute((key) => [...document.querySelectorAll('[role="document"] dt')]
-        .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
-      await browser.waitUntil(async () => (await field("Request")) === request.id, { timeout: 15000, timeoutMsg: "the opened Detail identifies ship/check by default" });
-      const technical = () => browser.$("button*=Technical").getAttribute("aria-expanded");
-      assert.equal(await technical(), "false");
-      assert.equal(await field("Fingerprint"), "");
-      await press(browser, ["t"], async () => (await technical()) === "true" && (await field("Fingerprint")) !== "", "the actual additional technical record shown");
-      await press(browser, ["t"], async () => (await technical()) === "false" && (await field("Fingerprint")) === "", "the additional technical record hidden");
-      assert.equal(await field("Request"), request.id, "hiding Technical does not hide the default request");
-      await press(browser, ["Escape"], async () => !(await close().isExisting()), "the Detail closed");
-      await browser.waitUntil(() => browser.$('[role="tree"]').isFocused(), { timeout: 15000, timeoutMsg: "focus back on the tree" });
+      await browser.waitUntil(async () => (await summary(browser)).instruction.startsWith("Ship"), { timeout: 15000, timeoutMsg: "ship/check's Summary" });
+      assert.equal((await summary(browser)).debug, false, "Debug starts folded");
+      assert.equal(await fact(browser, "Request"), "");
+      assert.equal(await fact(browser, "Waits for"), "", "the waiting eval's input facts start hidden");
+      await aside(browser).$('[role="document"]').click();
+      await press(browser, ["t"], async () => (await summary(browser)).debug === true && (await fact(browser, "Request")) === request.id
+        && (await fact(browser, "Waits for")).includes("release"), "the request and its waiting input inside Debug");
+      assert.match(await fact(browser, "Waits for"), /signoff/);
+      await press(browser, ["t"], async () => (await summary(browser)).debug === false && (await fact(browser, "Request")) === ""
+        && (await fact(browser, "Waits for")) === "", "the Debug facts and waits hidden again");
+      assert.ok((await summary(browser)).instruction.startsWith("Ship"), "folding Debug keeps the Summary");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+      // The graph as it was, every Artifact still drawn and reachable.
+      for (const id of ["a:release", "a:ship", "a:docs"]) await graphShown(browser, id);
     },
   ),
 
-  // UX edges: E-MON-TREE-MOVE E-MON-ATTENTION
+  // The pointer rule of the UX journeys: hovering opens nothing; information opens on a click.
   scenario<Record<string, never>>(
-    "navigation-attention-order",
-    "visits the next ERROR, RED and waiting Human eval in tree order, then wraps",
-    async () => {
-      const fixture = await createStates();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser, { fixture }) => {
-      await browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
-      const eligible = new Map([
-        ["crash", { eval: "check", status: "ERROR" }],
-        ["red", { eval: "check", status: "RED" }],
-        ["gate", { eval: "signoff", status: "WAITING_HUMAN" }],
-      ]);
-      const saved = requests(fixture);
-      for (const [artifact, expected] of eligible) {
-        assert.equal(saved.find((request) => request.evalId === `${artifact}/${expected.eval}`)?.status, expected.status,
-          `${artifact} actually reached its declared attention state`);
-      }
-      // The UX says next in the shown tree, without prescribing a topological tie-break.
-      // Read its Artifact order, but use fixture-owned statuses, not the app's urgent flags.
-      const order = (await browser.execute(() => [...document.querySelectorAll('[role="treeitem"][aria-level="1"]')]
-        .map((row) => row.getAttribute("data-path")?.slice(2) ?? ""))).filter((name) => eligible.has(name));
-      assert.deepEqual([...order].sort(), [...eligible.keys()].sort());
-      await browser.$(`[role="treeitem"][data-path="a:${order[0]}"]`).click();
-      for (const artifact of [...order, order[0]]) {
-        const expected = eligible.get(artifact)!;
-        const path = `a:${artifact}/e:${artifact}/${expected.eval}`;
-        await press(browser, ["!"], async () =>
-          (await browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("data-path")) === path,
-        `the next eligible eval is ${artifact}/${expected.eval} (${expected.status})`);
-        assert.equal(await browser.$('[role="treeitem"][aria-selected="true"]').getAttribute("aria-level"), "2", "an eval, not its Artifact");
-      }
-    },
-  ),
-
-  // UX edges: E-MON-TREE-MOVE E-MON-TREE-DETAIL
-  scenario<Record<string, never>>(
-    "navigation-detail-after-enter",
-    "shows the newly selected row after the Detail was opened with Enter",
+    "navigation-hover-opens-nothing",
+    "opens nothing for the Artifact under the pointer, and opens its Detail on a click",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      const { detail, row } = detailNavigation(browser);
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$('[role="tree"]').click();
-      await (await row(2, "check")).click();
-      await browser.waitUntil(async () => /check/.test(await detail()), { timeout: 15000, timeoutMsg: "the peek of ship/check" });
-      const close = () => browser.$("button*=Close");
-      await press(browser, ["Enter"], () => close().isExisting(), "the Detail opened");
-      // Return to the focusable tree pane, then select another row with the pointer.
-      await browser.$('[role="tree"]').click();
-      await (await row(1, "docs")).click();
-      await browser.waitUntil(async () => /docs/.test(await detail()), { timeout: 15000, timeoutMsg: "the Detail shows docs after a click" });
-      // ... and the selection moves by key.
-      await press(browser, ["k"], async () => !/docs/.test(await detail()), "the Detail leaves docs after k");
-      await press(browser, ["j"], async () => /docs/.test(await detail()), "the Detail returns to docs after j");
+      await graphShown(browser, "a:ship");
+      // Where the pointer's moves landed, logged before any handler without changing them.
+      await browser.execute(() => {
+        const log: string[] = [];
+        (window as unknown as { overs: string[] }).overs = log;
+        document.addEventListener("mousemove", (event) => {
+          const node = (event.target as Element | null)?.closest?.(".svelte-flow__node");
+          if (node) log.push(node.getAttribute("data-id") ?? "");
+        }, true);
+      });
+      const look = () => browser.execute((selector) => ({
+        over: (window as unknown as { overs: string[] }).overs.slice(),
+        opened: !!document.querySelector('aside[aria-label="Detail"], [aria-label="Summary"], [aria-label^="Evals of "], [role="tooltip"]'),
+        tooltip: !!document.querySelector(selector)?.querySelector("[title]") || !!document.querySelector(selector)?.closest("[title]"),
+      }), nodeAt("a:ship"));
+      const point = await visibleCenter(browser, await browser.$(nodeAt("a:ship")).getElement());
+      await browser.action("pointer").move(point).perform();
+      await browser.waitUntil(async () => (await look()).over.includes("a:ship"), { timeout: 15000, timeoutMsg: "the pointer moved over ship" });
+      const hovered = await look();
+      assert.equal(hovered.opened, false, "hovering opens no Detail, summary, eval list or tooltip");
+      assert.equal(hovered.tooltip, false, "the Artifact carries no tooltip");
+      // The same probe sees what a click opens.
+      await browser.$(nodeAt("a:ship")).click();
+      await browser.waitUntil(async () => (await look()).opened, { timeout: 15000, timeoutMsg: "a click opened ship's Detail" });
+      assert.equal((await detail(browser))?.title, "Artifact ship");
     },
   ),
 
-  // UX edges: E-MON-TREE-MOVE E-MON-TREE-DETAIL
-  scenario<Record<string, never>>(
-    "navigation-detail-after-click",
-    "shows the newly selected row after a click into the Detail",
-    async () => {
-      const fixture = await create();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser) => {
-      const { detail, row } = detailNavigation(browser);
-      await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("signoff"), { timeout: 15000, timeoutMsg: "the Run tree" });
-      await browser.$('[role="tree"]').click();
-      await (await row(2, "check")).click();
-      await browser.waitUntil(async () => /check/.test(await detail()), { timeout: 15000, timeoutMsg: "the Detail shows ship/check" });
-      const panes = await browser.$$("section.panel");
-      await panes[3].click();
-      await (await row(1, "docs")).click();
-      await browser.waitUntil(async () => /docs/.test(await detail()), { timeout: 15000, timeoutMsg: "the Detail shows docs after a click" });
-      await browser.$('[role="tree"]').click();
-      await (await row(2, "check")).click();
-      await browser.waitUntil(async () => /check/.test(await detail()), { timeout: 15000, timeoutMsg: "the Detail follows back to ship/check" });
-    },
-  ),
-
-  // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-MOVE E-MON-RUNS-TREE
+  // UX edges: E-MON-GRAPH-TO-RUNS E-MON-RUNS-MOVE E-MON-RUNS-GRAPH
   scenario<NavigationData>(
     "navigation-run-history",
-    "switches identified Runs with the keyboard and replaces the Tree with each saved criterion",
+    "switches identified Runs with the keyboard and pops up each Run's saved criterion",
     async () => {
       const example = await createNavigationFixture();
       const fixture = example.fixture;
       return { fixture, args: ["--repo", fixture.repo], data: { scopes: example.scopes, runs: example.runs } };
     },
     async (browser, { data: example }) => {
-      const { listbox, runIds, selectedRun, treeShows, runTitle, treeFollows } = paneNavigation(browser);
+      const { listbox, runIds, selectedRun, graphFocused, graphShows, runTitle, graphFollows } = paneNavigation(browser);
       await browser.waitUntil(async () => JSON.stringify(await runIds()) === JSON.stringify([...example.scopes.repo].sort()), { timeout: 15000, timeoutMsg: "the repository's exact Runs" });
-      await browser.$('[role="tree"]').click();
+      await browser.waitUntil(() => listbox("Runs").isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
       const [older, newer] = example.runs;
       assert.equal(await selectedRun(), newer.id, "the explicitly newer fixture Run is selected first");
-      await treeShows(newer);
+      await press(browser, ["Enter"], graphFocused, "the newer Run's graph focused");
+      await graphShows(newer);
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
       await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id && (await runTitle()) === `Run ${older.id}`, "the older identified Run selected and shown");
-      await treeFollows(older);
-      await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the older Run's Tree focused");
-      await treeShows(older);
+      await graphFollows(older);
+      await press(browser, ["Enter"], graphFocused, "the older Run's graph focused");
+      await graphShows(older);
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "back to Runs");
       await press(browser, ["ArrowUp"], async () => (await selectedRun()) === newer.id && (await runTitle()) === `Run ${newer.id}`, "the newer identified Run selected and shown again");
-      await treeFollows(newer);
-      await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the newer Run's Tree focused");
-      await treeShows(newer);
+      await graphFollows(newer);
+      await press(browser, ["Enter"], graphFocused, "the newer Run's graph focused again");
+      await graphShows(newer);
     },
   ),
 
-  // UX edges: E-MON-TREE-TO-RUNS E-MON-RUNS-TO-SCOPE E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-TREE
+  // UX edges: E-MON-NOTICE
+  // J-MON-CATALOG: the selected Run fills the graph area as its graph, beside the divider, also
+  // while other Runs on the page cannot be read and the Run pane's notice says so.
+  scenario<{ readable: string; unreadable: string[] }>(
+    "navigation-unreadable-runs",
+    "keeps the selected Run's graph within its pane while the notice names the Runs that cannot be read, in full on a click",
+    async () => {
+      const { fixture, readable, unreadable, restore } = createUnreadableRuns();
+      return { fixture, args: ["--repo", fixture.repo], data: { readable, unreadable }, release: async () => restore() };
+    },
+    async (browser, { data: { readable, unreadable } }) => {
+      const { runTitle } = paneNavigation(browser);
+      await browser.waitUntil(async () => (await runTitle()) === `Run ${readable}`, { timeout: 15000, timeoutMsg: "the readable newest Run is shown" });
+      const pane = () => browser.execute((title) => {
+        const section = document.querySelector<HTMLElement>(`section.panel[aria-label="${title}"]`);
+        const heading = section?.querySelector<HTMLElement>("h2");
+        const notice = section?.querySelector<HTMLElement>('[role="status"]');
+        const toggle = notice?.querySelector<HTMLElement>("button");
+        const node = section?.querySelector<HTMLElement>('.svelte-flow__node[data-id="a:n000"]');
+        const divider = document.querySelectorAll<HTMLElement>(".monitor [data-pane-resizer]")[1];
+        if (!section || !heading || !notice || !toggle || !node || !divider) return null;
+        const box = section.getBoundingClientRect();
+        const within = (element: HTMLElement) => {
+          const inner = element.getBoundingClientRect();
+          return inner.width > 0 && inner.left >= box.left && inner.right <= box.right;
+        };
+        const line = divider.getBoundingClientRect();
+        return {
+          // The pane stays inside the window, and what it shows stays inside the pane.
+          inWindow: box.left >= 0 && box.right <= window.innerWidth,
+          bodyWithin: [...section.children].every((child) => within(child as HTMLElement)),
+          graph: (() => { const at = section.querySelector(".graph")!.getBoundingClientRect(); return [at.left, at.top, at.width, at.height].map(Math.round); })(),
+          nodeWithin: within(node),
+          noticeWithin: within(notice),
+          titleWhole: within(heading) && heading.scrollWidth <= heading.clientWidth,
+          // The divider between the left side and the graph stays on screen, left of the pane.
+          divider: line.width > 0 && line.left > 0 && line.right <= box.left + 1,
+          text: toggle.textContent ?? "",
+          cut: toggle.scrollWidth > toggle.clientWidth,
+          open: toggle.getAttribute("aria-expanded") === "true",
+          tall: toggle.getBoundingClientRect().height > heading.getBoundingClientRect().height * 2,
+        };
+      }, `Run ${readable}`);
+      let last: Awaited<ReturnType<typeof pane>> = null;
+      await browser.waitUntil(async () => {
+        last = await pane();
+        return !!last && last.inWindow && last.bodyWithin && last.nodeWithin && last.noticeWithin && last.titleWhole && last.divider;
+      }, { timeout: 15000, timeoutMsg: "the Run pane keeps its title, notice and graph within its width" })
+        .catch((error: unknown) => { throw new Error(`${String(error)}; the pane last showed ${JSON.stringify(last)}`); });
+      await graphShown(browser, "a:n000");
+      const folded = (await pane())!;
+      assert.ok(folded.cut && !folded.open, "the notice is one line, cut to the header's room");
+      for (const id of unreadable) assert.match(folded.text, new RegExp(`Unreadable run ${id}: unknown variant \`dependency\``), `the notice names ${id}`);
+      assert.doesNotMatch(folded.text, new RegExp(readable), "the readable Run is not named unreadable");
+      // A click shows the notice in full; the graph stays within the pane. Another folds it.
+      await browser.$(`section.panel[aria-label="Run ${readable}"] [role="status"] button`).click();
+      await browser.waitUntil(async () => {
+        const shown = await pane();
+        return !!shown && shown.open && !shown.cut && shown.tall && shown.bodyWithin && shown.inWindow;
+      }, { timeout: 15000, timeoutMsg: "the whole notice shown, wrapped within the pane" });
+      assert.deepEqual((await pane())?.graph, folded.graph, "opening the full notice does not move or resize the graph");
+      await graphShown(browser, "a:n000");
+      await browser.$(`section.panel[aria-label="Run ${readable}"] [role="status"] button`).click();
+      await browser.waitUntil(async () => {
+        const shown = await pane();
+        return !!shown && !shown.open && shown.cut;
+      }, { timeout: 15000, timeoutMsg: "the notice folded back to one line" });
+      assert.deepEqual((await pane())?.graph, folded.graph, "collapsing the notice keeps the same graph geometry");
+      await graphShown(browser, "a:n000");
+    },
+  ),
+
+  // UX edges: E-MON-GRAPH-TO-RUNS E-MON-RUNS-TO-SCOPE E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-GRAPH
   scenario<NavigationData>(
     "navigation-repository-scopes",
     "narrows to different repositories and ALL with keyboard scopes and lists their exact Run IDs",
@@ -375,9 +345,10 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: { scopes: example.scopes, runs: example.runs } };
     },
     async (browser, { data: example }) => {
-      const { listbox, runIds, chosen } = paneNavigation(browser);
+      const { listbox, runIds, chosen, graphFocused } = paneNavigation(browser);
       await browser.waitUntil(async () => JSON.stringify(await runIds()) === JSON.stringify([...example.scopes.repo].sort()), { timeout: 15000, timeoutMsg: "the repository's exact Runs" });
-      await browser.$('[role="tree"]').click();
+      await browser.waitUntil(() => listbox("Runs").isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
+      await press(browser, ["Enter"], graphFocused, "the graph focused");
       await press(browser, ["Escape"], () => listbox("Runs").isFocused(), "the Runs focused");
       await press(browser, ["ArrowLeft"], () => listbox("Scope").isFocused(), "the Scope focused");
       const select = async (label: string, ids: string[]) => {
@@ -397,7 +368,7 @@ export const scenarios: Scenario[] = [
       await select("other", example.scopes.other);
       await select("repo", example.scopes.repo);
       await press(browser, ["Enter"], () => listbox("Runs").isFocused(), "the narrowed Runs focused");
-      await press(browser, ["Enter"], () => browser.$('[role="tree"]').isFocused(), "the narrowed Tree focused");
+      await press(browser, ["Enter"], graphFocused, "the narrowed Run's graph focused");
     },
   ),
 
@@ -410,8 +381,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      await browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
-      await browser.$('[role="tree"]').click();
+      await graphShown(browser, "a:release");
+      await browser.waitUntil(monitorNavigation(browser).runsFocused, { timeout: 15000, timeoutMsg: "the Runs pane focused" });
       // Observe the real window's exit before retiring the ended WebDriver client session.
       await sessionEndedByApp(browser, () => browser.keys(["q"]));
     },
@@ -426,8 +397,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      await browser.$('[role="tree"]').waitForExist({ timeout: 15000 });
-      await sessionEndedByApp(browser, () => browser.closeWindow());
+      await graphShown(browser, "a:release");
+      await sessionEndedByApp(browser, () => requestWindowClose(browser));
     },
   ),
 ];

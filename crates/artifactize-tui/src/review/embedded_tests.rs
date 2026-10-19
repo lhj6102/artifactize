@@ -142,7 +142,12 @@ async fn refused_review_jobs_release_database_before_returning() {
         },
     ] {
         let outcome = job
-            .run(state.clone(), reviewer.clone(), CancellationToken::new())
+            .run(
+                state.clone(),
+                reviewer.clone(),
+                CancellationToken::new(),
+                super::log::channel().0,
+            )
             .await;
         assert!(
             matches!(
@@ -231,35 +236,30 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
 }
 
 #[test]
-fn nested_json_is_utf8_editable_and_enter_is_not_submit() {
+fn text_is_utf8_editable_enter_is_not_submit_and_paste_is_bounded() {
     let schema = json!({
         "type":"object",
         "properties":{
-            "nested":{"type":"object","properties":{"name":{"type":"string"}}},
             "list":{"type":"array","items":{"type":"string"}},
+            "note":{"type":"string"},
         },
     });
-    let mut form = Form::new(crate::runtime::Verdict::Red, Some(&schema));
-    form.json = Some(String::new());
-    form.cursor = 0;
-    form.paste("{\"nested\":{\"name\":\"한글\"},\"list\":[\"é\"]}");
-    let valid = form.result().unwrap();
-    assert_eq!(valid["nested"]["name"], "한글");
-    assert_eq!(valid["list"][0], "é");
+    let mut form = Form::new(crate::runtime::Verdict::Red, Some(&schema)).unwrap();
+    form.paste("é");
     form.inline_key(Key::Enter, false);
-    assert!(form.json.as_ref().unwrap().ends_with('\n'));
+    form.paste("한글");
+    form.key(Key::Down);
+    form.paste("한");
     form.inline_key(Key::Backspace, false);
-    form.json = Some("a한é".into());
-    form.cursor = "a한é".len();
-    form.inline_key(Key::Left, false);
-    form.inline_key(Key::Backspace, false);
-    assert_eq!(form.json.as_deref(), Some("aé"));
-    assert_eq!(form.cursor, 1);
-    form.inline_key(Key::Delete, false);
-    assert_eq!(form.json.as_deref(), Some("a"));
-    let before = form.json.clone();
+    form.inline_key(Key::Char('a'), false);
+    form.inline_key(Key::Enter, false);
+    assert_eq!(
+        form.result().unwrap(),
+        json!({"verdict":"RED","list":["é","한글"],"note":"a"})
+    );
+    let before = form.fields.clone();
     form.paste(&"x".repeat(crate::human::MAX_RESULT_BYTES));
-    assert_eq!(form.json, before);
+    assert_eq!(form.fields, before);
     assert!(form.error.is_some());
 }
 
@@ -314,13 +314,13 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
     review.finish_single(outcome);
     review.refresh().await;
     let draft = match review.mode() {
-        Mode::Form(form) => form.draft(),
+        Mode::Form(form) => form.fields.clone(),
         _ => panic!("draft retained"),
     };
     press(&mut review, KeyEvent::from(KeyCode::Char('x')));
     assert_eq!(
         match review.mode() {
-            Mode::Form(form) => form.draft(),
+            Mode::Form(form) => form.fields.clone(),
             _ => panic!("form"),
         },
         draft
@@ -392,7 +392,7 @@ async fn a_tool_runs_at_once_and_keeps_the_open_draft() {
     review.control(Control::Red);
     review.paste_single("draft with 한글");
     let draft = match review.mode() {
-        Mode::Form(form) => form.draft(),
+        Mode::Form(form) => form.fields.clone(),
         _ => panic!("form"),
     };
     // No confirmation step: the run job starts at once, and the form stays open meanwhile.
@@ -404,7 +404,7 @@ async fn a_tool_runs_at_once_and_keeps_the_open_draft() {
     review.finish_single(outcome);
     assert_eq!(
         match review.mode() {
-            Mode::Form(form) => form.draft(),
+            Mode::Form(form) => form.fields.clone(),
             _ => panic!("kept form"),
         },
         draft
@@ -523,14 +523,15 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
         "{outcome:?}"
     );
     review.finish_single(outcome);
+    // Before reconciliation, the refused run leaves the user's visible draft intact.
+    let Mode::Form(form) = review.mode() else {
+        panic!("the refused run dropped the form");
+    };
+    assert_eq!(form.fields[0].display(), "draft with 한글");
     review.refresh().await;
     assert!(review.settled());
     assert_eq!(review.control(Control::RunTool), Action::None);
     assert_eq!(review.mode(), &Mode::Request);
-    assert_eq!(
-        review.drafts[&crate::runtime::Verdict::Red].fields[0].display(),
-        "draft with 한글"
-    );
 }
 
 #[tokio::test]
@@ -666,7 +667,8 @@ fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
                 "c":{"type":"string"},
             },
         })),
-    );
+    )
+    .unwrap();
     for (width, scroll) in [(22, 0), (22, 2), (100, 0)] {
         let area = ratatui::layout::Rect::new(5, 4, width, 20);
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(
@@ -714,34 +716,6 @@ fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
         } else {
             assert_eq!(rows[0], 1, "the wider rendering fits the hint on one row");
         }
-    }
-}
-
-#[test]
-fn long_json_line_keeps_unicode_cursor_visible() {
-    let mut form = Form::new(
-        crate::runtime::Verdict::Red,
-        Some(&json!({"type":"object","properties":{"nested":{"type":"object"}}})),
-    );
-    form.json = Some(format!("{}한글", "x".repeat(140)));
-    form.cursor = form.json.as_ref().unwrap().len();
-    for (width, height) in [(12, 5), (32, 8), (80, 24)] {
-        let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
-        terminal
-            .draw(|frame| view::draw_inline_form(frame, frame.area(), &form, 0, true))
-            .unwrap();
-        let text: String = terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
-        assert!(
-            text.contains('한') && text.contains('글') && text.contains('▏'),
-            "{width}x{height}: {text}"
-        );
     }
 }
 
@@ -797,10 +771,13 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
     let properties: serde_json::Map<String, Value> = (0..30)
         .map(|n| (format!("field-{n:02}"), json!({"type":"string"})))
         .collect();
-    review.mode = Mode::Form(Form::new(
-        crate::runtime::Verdict::Red,
-        Some(&json!({"type":"object","properties":properties})),
-    ));
+    review.mode = Mode::Form(
+        Form::new(
+            crate::runtime::Verdict::Red,
+            Some(&json!({"type":"object","properties":properties})),
+        )
+        .unwrap(),
+    );
     press(&mut review, KeyEvent::from(KeyCode::PageDown));
     assert_eq!(review.field_scroll, 10);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
@@ -989,8 +966,10 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
         json!({"verdict":"GREEN","approved":true})
     );
     let screen = drawn(&mut review);
-    assert!(screen.contains("true (fixed)"), "{screen}");
-    assert!(!screen.contains("No owner fields"), "{screen}");
+    assert!(
+        screen.contains("comment: ") && !screen.contains("approved*:"),
+        "{screen}"
+    );
     let action = review.control(Control::Submit);
     let outcome = job(&mut review, action).await;
     assert!(
@@ -1023,7 +1002,7 @@ fn a_request_without_a_recorded_definition_never_offers_an_empty_form() {
 }
 
 #[test]
-fn const_properties_are_fixed_fields_with_or_without_a_type() {
+fn const_properties_are_filled_in_with_or_without_a_type() {
     for approved in [
         json!({"const":true}),
         json!({"type":"boolean","const":true,"description":"Approve the artwork."}),
@@ -1034,10 +1013,10 @@ fn const_properties_are_fixed_fields_with_or_without_a_type() {
             "required":["approved"],
             "additionalProperties":false,
         });
-        let form = Form::new(crate::runtime::Verdict::Green, Some(&schema));
-        assert!(form.json.is_none(), "{schema}");
+        let form = Form::new(crate::runtime::Verdict::Green, Some(&schema)).unwrap();
         assert_eq!(form.fields[0].input, Input::Fixed(json!(true)));
-        assert_eq!(form.fields[0].display(), "true (fixed)");
+        // A constant is filled in, never a row to type into.
+        assert_eq!(form.rows(), [super::Row::Field(1)]);
         assert_eq!(
             form.result().unwrap(),
             json!({"verdict":"GREEN","approved":true})

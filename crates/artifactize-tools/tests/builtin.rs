@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, fs};
 use artifactize_tools::{
     Builtin, Content,
     builtin::{self, Input},
-    scope::{Artifact, ArtifactId, ArtifactKind, MountAlias, Scope},
+    scope::{Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope},
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -16,8 +16,9 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
     let directory = os::tempdir();
     let root = directory.path();
     fs::write(root.join("notes.md"), "alpha\r\nbeta\nlast").unwrap();
-    fs::create_dir(root.join("mounted")).unwrap();
-    fs::write(root.join("mounted/extra.md"), "alpha\n").unwrap();
+    fs::create_dir(root.join("docs")).unwrap();
+    fs::write(root.join("docs/extra.md"), "alpha\n").unwrap();
+    fs::create_dir(root.join("assets")).unwrap();
     let id = |name| ArtifactId::new(name).unwrap();
     let owner = id("owner");
     let folder = |path| Artifact {
@@ -25,18 +26,17 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
         kind: ArtifactKind::Folder,
         name: "fixture".into(),
         children: BTreeMap::new(),
-        mounts: BTreeMap::new(),
     };
     let scope = Scope {
         artifacts: BTreeMap::from([
             (
                 owner.clone(),
                 Artifact {
-                    mounts: BTreeMap::from([(MountAlias::new("docs").unwrap(), id("target"))]),
+                    children: BTreeMap::from([(ChildPrefix::new("docs").unwrap(), id("target"))]),
                     ..folder("".into())
                 },
             ),
-            (id("target"), folder("mounted".into())),
+            (id("target"), folder("docs".into())),
         ]),
     };
     let call = |tool, input| {
@@ -75,7 +75,7 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
         listing,
         json!({
             "artifactId":"owner","path":"",
-            "entries":[{"artifactId":"target","kind":"mount","name":"docs","path":"docs"}],
+            "entries":[{"kind":"directory","name":"assets","path":"assets"}],
             "totalEntries":3,"truncated":true,"nextOffset":1,
         })
     );
@@ -84,8 +84,8 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
         json!({
             "artifactId":"owner", "path":"",
             "entries":[
-                {"artifactId":"target","kind":"mount","name":"docs","path":"docs"},
-                {"kind":"directory","name":"mounted","path":"mounted"},
+                {"kind":"directory","name":"assets","path":"assets"},
+                {"kind":"directory","name":"docs","path":"docs"},
                 {"kind":"file","name":"notes.md","path":"notes.md"},
             ],
             "totalEntries":3,"truncated":false,"nextOffset":null,
@@ -114,7 +114,6 @@ fn folder_scope(owner: &ArtifactId) -> Scope {
                 kind: ArtifactKind::Folder,
                 name: "fixture".into(),
                 children: BTreeMap::new(),
-                mounts: BTreeMap::new(),
             },
         )]),
     }
@@ -154,7 +153,10 @@ async fn help_maps_the_launcher_deadline_to_a_tool_error() {
         started: Mutex::new(Some(started)),
     };
     let cancellation = CancellationToken::new();
-    let args = [program.to_str().unwrap().to_owned(), "subcommand".into()];
+    let args = [
+        artifactize_tools::files::path_text(&program),
+        "subcommand".into(),
+    ];
     let mut running = Box::pin(builtin::call_fixed(
         Builtin::Help,
         &args,
@@ -174,7 +176,10 @@ async fn help_maps_the_launcher_deadline_to_a_tool_error() {
     // The documented help budget is independent of implementation constants.
     const HELP_BUDGET: Duration = Duration::from_secs(10);
     assert_eq!(launch.timeout, HELP_BUDGET);
-    assert_eq!(launch.program, program);
+    assert_eq!(
+        artifactize_tools::files::path_text(&launch.program),
+        artifactize_tools::files::path_text(&program)
+    );
     assert_eq!(launch.cwd, root.path());
     assert_eq!(launch.args, ["subcommand", "--help"]);
     assert_eq!(launch.output_limit, 64 * 1024);

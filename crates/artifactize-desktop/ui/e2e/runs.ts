@@ -79,9 +79,9 @@ export function settleRuns(program: NativePath, repo: NativePath, state: NativeP
   if (failures.length > 1) throw new AggregateError(failures, "fixture Run settlement and worker join failed");
 }
 
-/** Call only after the runner/service has exited the app. This function owns domain
- * Runs and files, not native app admission, WebViews, drivers or service processes. */
-export function removeFixture(program: NativePath, root: NativePath, observer = readCandidate().observer): void {
+/** Settle domain workers without deleting inputs: failed native admission/shutdown
+ * still must not leave the fixture's already-submitted Runs alive. */
+export function settleFixtureRuns(program: NativePath, root: NativePath, observer = readCandidate().observer): void {
   if (!exists(root)) return;
   const failures: unknown[] = [];
   for (const state of states(root)) {
@@ -89,5 +89,12 @@ export function removeFixture(program: NativePath, root: NativePath, observer = 
   }
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, "fixture Run cleanup failed; preserve inputs");
+}
+
+/** Call only after the runner/service has exited the app. Domain settlement and file
+ * deletion are separate, so an unconfirmed native owner can retain its inputs safely. */
+export function removeFixture(program: NativePath, root: NativePath, observer = readCandidate().observer): void {
+  if (!exists(root)) return;
+  settleFixtureRuns(program, root, observer);
   removeTree(root);
 }

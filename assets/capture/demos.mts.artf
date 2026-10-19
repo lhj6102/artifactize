@@ -1,0 +1,48 @@
+name = "demos-script"
+tags = ["type:capture"]
+
+[views.agent_tools]
+read = { builtin = "read" }
+
+[evals.records-demos]
+title = "The script records demos A and B from the real app"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high" }
+
+[evals.records-demos.payload]
+instruction = """
+Read {demos-script}, the app's feature journeys in {ux-features} and graph rules in \
+{ux-graph}, and the app in {desktop-backend}, {desktop-ui} and {desktop-e2e} as far as the \
+demos need. Judge whether running the \
+script records each demo below from the real desktop app at 1920×1080, with real Runs made \
+through the real CLI and nothing mocked:
+
+A. The review loop, played back fast: an example project goes through four Runs of real \
+verify in the Monitor (J-MON-CATALOG, J-GRAPH-COLOURS). Between Runs the script changes the \
+files that just failed, standing in for an AI fixing the code; unchanged work is reused; the \
+last Run is SATISFIED. An overlay names the try (try n/4) and the speed (×8).
+B. The graph's growth: this repository's own Artifact graph in the graph view, one step per \
+release on main from 0.7.0 to the current main, with the release in the graph's top-left corner; one \
+step says 0.1.0–0.6.0 had no Artifacts; examples/ is left out; 0.7–0.8 declarations are \
+converted once to the current format so the lineage shows.
+
+Both GIFs carry a thin progress bar along the bottom edge, in the introduction video's light \
+green (#3EE08F) on a light track: it advances smoothly on every GIF frame, in proportion to \
+the time played, and is full on the last frame, so a reader sees a recording, not a still.
+
+Check that each step's selectors and actions reach the state described, that the script \
+waits for that state rather than a fixed delay alone before recording it, that it checks each \
+try failed what it should, and that it cleans up the app, the build and the projects it made. \
+Submit GREEN when both demos are recorded; otherwise RED with one finding per problem.
+"""
+
+[evals.records-demos.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.records-demos.fail_schema]
+type = "object"
+properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { demo = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["demo", "where", "change"], additionalProperties = false } }
+required = ["findings"]
+additionalProperties = false

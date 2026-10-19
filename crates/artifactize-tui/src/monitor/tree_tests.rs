@@ -16,14 +16,27 @@ fn runtime(id: &str) -> Value {
         "declaration":{"title":"Title","profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]}}})
 }
 
-fn dependency(id: &str, on: &[&str]) -> Value {
+fn referenced(id: &str, on: &[&str]) -> Value {
     json!({"id":id,"target":id.split('/').next(),"deps":on,
-        "declaration":{"title":"Title","profile":{"kind":"dependency","dependsOn":on}}})
+        "declaration":{"title":"Title","profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]}}})
 }
 
 /// Saved definitions: `components` lists `(members, dependencies)` with saved ids from 10 up,
 /// so lookups must use the saved id rather than the list position.
-fn definitions(components: &[(&[&str], &[usize])], evals: Vec<Value>) -> Value {
+fn definitions(components: &[(&[&str], &[usize])], mut evals: Vec<Value>) -> Value {
+    for eval in &mut evals {
+        if eval["deps"].as_array().is_some_and(Vec::is_empty) {
+            let target = eval["target"].as_str().unwrap();
+            let deps: Vec<_> = components
+                .iter()
+                .find(|(members, _)| members.contains(&target))
+                .into_iter()
+                .flat_map(|(_, deps)| deps.iter())
+                .flat_map(|&index| components[index].0.iter().copied())
+                .collect();
+            eval["deps"] = json!(deps);
+        }
+    }
     let artifacts: serde_json::Map<String, Value> = components
         .iter()
         .flat_map(|(members, _)| members.iter())
@@ -354,7 +367,7 @@ fn every_x_waiting_adds_one_level_of_root_cause() {
     );
 }
 
-/// style ← {api, web} (one SCC) with a dependency eval in api naming its peer web.
+/// style ← {api, web} (one SCC) with a runtime Eval in api naming web.
 fn cycle(
     dependency_status: &str,
 ) -> (
@@ -366,7 +379,7 @@ fn cycle(
         vec![
             runtime("style/tokens"),
             runtime("api/schema"),
-            dependency("api/ready", &["web"]),
+            referenced("api/ready", &["web"]),
             runtime("web/colors"),
         ],
     );
@@ -380,7 +393,7 @@ fn cycle(
         request(
             "api/ready",
             dependency_status,
-            json!({"profile":{"kind":"dependency","dependsOn":["web"]},"deps":["web"]}),
+            json!({"profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},"deps":["web"]}),
         ),
         request("web/colors", "QUEUED", json!({})),
     ];
@@ -392,55 +405,7 @@ fn cycle(
 }
 
 #[test]
-fn cycle_peers_never_wait_for_each_other_unless_a_dependency_eval_names_one() {
-    let (nodes, index) = cycle("WAIT_DEPENDENCY");
-    // Peers in condensation order by name; ordinary evals by id, dependency evals last.
-    assert_eq!(
-        nodes.iter().map(|node| node.line()).collect::<Vec<_>>(),
-        [
-            "◐ style  in progress: tokens  0/1",
-            // The dependency eval names its peer: the only wait between peers.
-            "… api  ↻ web  waits for style, web  0/2",
-            "… web  ↻ api  waits for style  0/1",
-        ]
-    );
-    assert_eq!(
-        find(&nodes, "a:api")
-            .children
-            .iter()
-            .map(|node| node.id.as_str())
-            .collect::<Vec<_>>(),
-        ["e:api/schema", "e:api/ready"]
-    );
-    assert_eq!(
-        index,
-        [
-            ("api/ready".parse().unwrap(), x(&["web"])),
-            ("api/schema".parse().unwrap(), x(&["style"])),
-            ("style/tokens".parse().unwrap(), x(&[])),
-            ("web/colors".parse().unwrap(), x(&["style"])),
-        ]
-    );
-    assert_eq!(
-        line(&nodes, "e:api/schema"),
-        "… schema  waits for style ◐ in progress"
-    );
-    // The dependency eval waits for its peer, which waits for style: one level of root.
-    assert_eq!(
-        line(&nodes, "e:api/ready"),
-        "… ready  [dep]  waits for web … waiting (web waits for style)"
-    );
-    // With web complete, the derived verdict is GREEN by the graph's rule.
-    let (nodes, _) = cycle("GREEN");
-    assert_eq!(view(&nodes, "api/ready"), &EvalView::Done(Source::Derived));
-    assert_eq!(
-        line(&nodes, "e:api/ready"),
-        "✓ ready  [dep]  GREEN · derived"
-    );
-}
-
-#[test]
-fn dependency_evals_wait_for_their_artifacts_with_at_most_two_x() {
+fn referencing_evals_wait_for_their_inputs_with_at_most_two_x() {
     let definitions = definitions(
         &[
             (&["engine"], &[]),
@@ -454,7 +419,7 @@ fn dependency_evals_wait_for_their_artifacts_with_at_most_two_x() {
             runtime("hero-art/svg-valid"),
             runtime("level/check"),
             runtime("player-movement/walks"),
-            dependency("player/ready", &["player-movement", "hero-art", "level"]),
+            referenced("player/ready", &["player-movement", "hero-art", "level"]),
         ],
     );
     let mut definitions = definitions;
@@ -476,7 +441,7 @@ fn dependency_evals_wait_for_their_artifacts_with_at_most_two_x() {
             "player/ready",
             "WAIT_DEPENDENCY",
             json!({
-                "profile":{"kind":"dependency","dependsOn":["player-movement","hero-art","level"]},
+                "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
                 "deps":["player-movement","hero-art","level"],
             }),
         ),
@@ -493,7 +458,7 @@ fn dependency_evals_wait_for_their_artifacts_with_at_most_two_x() {
     );
     assert_eq!(
         line(&nodes, "e:player/ready"),
-        "… ready  [dep]  waits for hero-art ?, level · +1"
+        "… ready  waits for hero-art ?, level · +1"
     );
     assert_eq!(find(&nodes, "e:player/ready").compact, "←3");
     assert_eq!(line(&nodes, "a:engine"), "◇ engine  basis");
@@ -650,14 +615,24 @@ fn speculative_readiness_and_saved_blocked_requests() {
 }
 
 #[test]
-fn upstream_index_falls_back_to_relations_and_request_deps() {
-    // Components saved without dependencies: follow relations into whole components.
+fn upstream_index_uses_each_evals_references_and_its_targets_children() {
+    // A component alone adds no Eval gates: a/x references nothing in its cycle with b, and
+    // d/x depends on its child c as if it referenced it.
     let definitions = json!({
-        "artifacts":{"a":{"path":"a"},"b":{"path":"b"},"c":{"path":"c"},"d":{"path":"d"}},
-        "evals":[runtime("a/x"), runtime("b/x"), runtime("c/x"), runtime("d/x")],
+        "artifacts":{
+            "a":{"path":"a"},"b":{"path":"b"},"c":{"path":"c"},
+            "d":{"path":"d","children":{"c":"c"}},
+        },
+        "evals":[
+            runtime("a/x"),
+            referenced("a/y", &["b"]),
+            referenced("b/x", &["a"]),
+            referenced("c/x", &["a"]),
+            runtime("d/x"),
+        ],
         "relations":[
-            {"source":"a","target":"b","kind":"mount","alias":"base"},
-            {"source":"b","target":"a","kind":"child","path":"a"},
+            {"source":"b","target":"a","kind":"instruction","name":"b","evalId":"a/y"},
+            {"source":"a","target":"b","kind":"instruction","name":"a","evalId":"b/x"},
             {"source":"a","target":"c","kind":"instruction","name":"a","evalId":"c/x"},
             {"source":"c","target":"d","kind":"child","path":"c"},
         ],
@@ -672,13 +647,14 @@ fn upstream_index_falls_back_to_relations_and_request_deps() {
         upstream_index(&run, &requests),
         [
             ("a/x".parse().unwrap(), x(&[])),
-            ("b/x".parse().unwrap(), x(&[])),
+            ("a/y".parse().unwrap(), x(&["b"])),
+            ("b/x".parse().unwrap(), x(&["a"])),
             ("c/x".parse().unwrap(), x(&["a", "b"])),
             ("d/x".parse().unwrap(), x(&["c"])),
         ]
     );
     let nodes = tree(&run, &requests, now());
-    assert_eq!(line(&nodes, "a:a"), "- a  ↻ b  not in this Run  0/1");
+    assert_eq!(line(&nodes, "a:a"), "- a  ↻ b  not in this Run  0/2");
     // Runs saved without definitions: the request's referenced Artifacts.
     let requests = vec![
         request("lib/x", "GREEN", json!({})),
@@ -707,7 +683,7 @@ fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
             "cli":{"path":"c"},
             "engine":{"path":"e","basis":true},
         },
-        "evals":[runtime("code-style/approved"), runtime("cli/follows-style")],
+        "evals":[runtime("code-style/approved"), referenced("cli/follows-style", &["code-style"])],
         "relations":[
             {
                 "source":"code-style",
@@ -716,12 +692,11 @@ fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
                 "name":"code-style",
                 "evalId":"cli/follows-style",
             },
-            {"source":"engine","target":"cli","kind":"mount","alias":"base"},
         ],
         "components":[
             {"id":0,"artifacts":["code-style"]},
             {"id":1,"artifacts":["engine"]},
-            {"id":2,"artifacts":["cli"],"dependencies":[0,1]},
+            {"id":2,"artifacts":["cli"],"dependencies":[0]},
         ],
     });
     let requests = vec![
@@ -742,7 +717,7 @@ fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
     assert_eq!(
         detail.field("Waits for"),
         Some(
-            "↑ code-style ? in progress · {code-style} in cli/follows-style\n  ? approved  Human sign-off · unclaimed\n↑ engine ✓ complete · mount base"
+            "↑ code-style ? in progress · {code-style} in cli/follows-style\n  ? approved  Human sign-off · unclaimed"
         )
     );
     assert_eq!(detail.fields[1].0, "Waits for", "right after Status");
@@ -871,7 +846,7 @@ fn upstream_rows_are_marked_counted_off_screen_and_reached_with_b() {
 }
 
 #[test]
-fn a_dependency_eval_marks_a_peer_below_it() {
+fn a_referencing_eval_marks_a_peer_below_it() {
     let (nodes, _) = cycle("WAIT_DEPENDENCY");
     let path = [
         "a:api".parse::<crate::monitor::model::NodeId>().unwrap(),
@@ -1097,7 +1072,7 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
         "⊘ matches-cli  not run: blocked by cli ⊘ blocked"
     );
     assert!(!find(&nodes, "a:docs").changed);
-    // A dependency eval on the held Artifact is blocked too: speculation never
+    // A runtime Eval referencing the held Artifact is blocked too: speculation never
     // waives a known RED dependency.
     let definitions = definitions(
         &[(&["code-style"], &[]), (&["cli"], &[0]), (&["docs"], &[1])],
@@ -1105,7 +1080,7 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
             runtime("code-style/approved"),
             runtime("cli/follows-style"),
             runtime("docs/matches-cli"),
-            dependency("docs/ready", &["cli"]),
+            referenced("docs/ready", &["cli"]),
         ],
     );
     let requests = vec![
@@ -1115,7 +1090,7 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
         request(
             "docs/ready",
             "WAIT_DEPENDENCY",
-            json!({"profile":{"kind":"dependency","dependsOn":["cli"]},"deps":["cli"]}),
+            json!({"profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},"deps":["cli"]}),
         ),
     ];
     let (mut run, requests) = saved(definitions, true, requests);
@@ -1573,18 +1548,11 @@ fn lit(graph: &Graph) -> Vec<(String, Light)> {
         .collect()
 }
 
-fn lit_edges(graph: &Graph) -> Vec<(String, String, Light, bool)> {
+fn lit_edges(graph: &Graph) -> Vec<(String, String, Light)> {
     graph
         .edges
         .iter()
-        .map(|edge| {
-            (
-                edge.from.to_string(),
-                edge.to.to_string(),
-                edge.light,
-                edge.dependency,
-            )
-        })
+        .map(|edge| (edge.from.to_string(), edge.to.to_string(), edge.light))
         .collect()
 }
 
@@ -1618,12 +1586,12 @@ fn the_graph_lights_artifacts_with_the_six_states_of_the_tree() {
             names.iter().cloned().zip(lights).collect::<Vec<_>>(),
             "{statuses:?}"
         );
-        // Without dependency evals, each edge takes its upstream Artifact's light.
+        // Each edge takes its upstream Artifact's light.
         assert_eq!(
             lit_edges(&graph),
             vec![
-                ("code-style".into(), "cli".into(), lights[0], false),
-                ("cli".into(), "docs".into(), lights[1], false),
+                ("code-style".into(), "cli".into(), lights[0]),
+                ("cli".into(), "docs".into(), lights[1]),
             ],
             "{statuses:?}"
         );
@@ -1631,70 +1599,9 @@ fn the_graph_lights_artifacts_with_the_six_states_of_the_tree() {
 }
 
 #[test]
-fn a_dependency_eval_lights_its_edge_and_other_edges_follow_their_upstream() {
-    use Light::{Active, Error, Green, Red, Waiting};
-    // app depends on lib through a dependency eval and is gated on base by its components.
-    let definitions = definitions(
-        &[(&["base"], &[]), (&["lib"], &[]), (&["app"], &[0])],
-        vec![
-            runtime("base/check"),
-            runtime("lib/check"),
-            runtime("app/check"),
-            dependency("app/needs-lib", &["lib"]),
-        ],
-    );
-    let lit_run = |statuses: [&str; 4]| {
-        let requests = ["base/check", "lib/check", "app/check", "app/needs-lib"]
-            .into_iter()
-            .zip(statuses)
-            .map(|(eval, status)| request(eval, status, json!({})))
-            .collect();
-        let (run, requests) = saved(definitions.clone(), true, requests);
-        graph(&tree(&run, &requests, now()))
-    };
-    // lib GREEN yet its dependency eval RED: the edge shows the dependency eval.
-    let graph = lit_run(["RUNNING", "GREEN", "QUEUED", "RED"]);
-    assert_eq!(
-        lit(&graph),
-        [
-            ("base".into(), Active),
-            ("lib".into(), Green),
-            ("app".into(), Red)
-        ]
-    );
-    assert_eq!(
-        lit_edges(&graph),
-        [
-            ("base".into(), "app".into(), Active, false),
-            ("lib".into(), "app".into(), Red, true),
-        ]
-    );
-    // A dependency eval in ERROR lights its edge ERROR, and its Artifact.
-    let graph = lit_run(["RUNNING", "GREEN", "QUEUED", "ERROR"]);
-    assert_eq!(graph.nodes[2].light, Error);
-    assert_eq!(
-        lit_edges(&graph),
-        [
-            ("base".into(), "app".into(), Active, false),
-            ("lib".into(), "app".into(), Error, true),
-        ]
-    );
-    // Both GREEN: the derived dependency eval and the gate edge are GREEN.
-    let graph = lit_run(["GREEN", "GREEN", "QUEUED", "GREEN"]);
-    assert_eq!(
-        lit_edges(&graph),
-        [
-            ("base".into(), "app".into(), Green, false),
-            ("lib".into(), "app".into(), Green, true),
-        ]
-    );
-    assert_eq!(graph.nodes[2].light, Waiting, "app/check is still queued");
-}
-
-#[test]
 fn an_artifact_takes_the_first_light_of_its_evals_in_precedence_order() {
     use Light::{Active, Blocked, Error, Green, Red, Waiting};
-    // app has two runtime evals and two dependency evals, one on base and one on lib; app's
+    // app has two independent runtime Evals and two referencing runtime Evals, one on base and one on lib; app's
     // runtime evals are not gated.
     let definitions = definitions(
         &[(&["base"], &[]), (&["lib"], &[]), (&["app"], &[])],
@@ -1703,8 +1610,8 @@ fn an_artifact_takes_the_first_light_of_its_evals_in_precedence_order() {
             runtime("lib/check"),
             runtime("app/one"),
             runtime("app/two"),
-            dependency("app/needs-base", &["base"]),
-            dependency("app/needs-lib", &["lib"]),
+            referenced("app/needs-base", &["base"]),
+            referenced("app/needs-lib", &["lib"]),
         ],
     );
     let started = json!({"startedAt":"2026-01-01T00:08:00Z"});
@@ -1770,4 +1677,39 @@ fn an_artifact_without_evals_is_green() {
     );
     let graph = graph(&tree(&run, &requests, now()));
     assert_eq!(graph.nodes[0].light, Light::Green);
+}
+
+#[test]
+fn a_cycle_peer_neither_blocks_nor_holds_an_eval() {
+    let definitions = definitions(
+        &[(&["a", "b"], &[])],
+        vec![
+            referenced("a/cycle", &["b"]),
+            runtime("a/input"),
+            referenced("b/cycle", &["a"]),
+        ],
+    );
+    let requests = vec![
+        request("a/cycle", "RED", json!({})),
+        request("a/input", "RUNNING", json!({})),
+        request("b/cycle", "QUEUED", json!({})),
+    ];
+    let (run, requests) = saved(definitions, true, requests);
+    let nodes = tree(&run, &requests, now());
+    assert_eq!(view(&nodes, "a/cycle"), &EvalView::Failed { verdict: true });
+    // Neither the peer's RED nor its running sibling holds b/cycle: it only awaits admission.
+    assert!(matches!(
+        view(&nodes, "b/cycle"),
+        EvalView::InProgress(Activity::Queued(_))
+    ));
+    let graph = graph(&nodes);
+    assert_eq!(
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.name == "b")
+            .unwrap()
+            .light,
+        Light::Waiting
+    );
 }

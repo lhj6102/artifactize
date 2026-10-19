@@ -1314,8 +1314,6 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
             "\u{E006}" => ("Enter", "NumpadEnter", 13),
             "\u{E00C}" => ("Escape", "Escape", 27),
             "\u{E00D}" => (" ", "Space", 32),
-            "\u{E00E}" => ("PageUp", "PageUp", 33),
-            "\u{E00F}" => ("PageDown", "PageDown", 34),
             "\u{E012}" => ("ArrowLeft", "ArrowLeft", 37),
             "\u{E013}" => ("ArrowUp", "ArrowUp", 38),
             "\u{E014}" => ("ArrowRight", "ArrowRight", 39),
@@ -1642,11 +1640,6 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
             PointerEventType::Click => "click",
         };
 
-        let pointer_event_name = match event_type {
-            PointerEventType::Down => "pointerdown",
-            PointerEventType::Up => "pointerup",
-            _ => "",
-        };
         let buttons = if matches!(event_type, PointerEventType::Down) {
             1 << button
         } else {
@@ -1657,20 +1650,6 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
                 var el = document.elementFromPoint({x}, {y});
                 if (!el) el = document.body;
 
-                if ('{pointer_event_name}') {{
-                    el.dispatchEvent(new PointerEvent('{pointer_event_name}', {{
-                        pointerId: 1,
-                        pointerType: 'mouse',
-                        isPrimary: true,
-                        bubbles: true,
-                        cancelable: true,
-                        composed: true,
-                        clientX: {x},
-                        clientY: {y},
-                        button: {button},
-                        buttons: {buttons}
-                    }}));
-                }}
                 var event = new MouseEvent('{event_name}', {{
                     bubbles: true,
                     cancelable: true,

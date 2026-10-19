@@ -150,6 +150,7 @@ impl Receipts {
                     )?;
                 }
                 update_request(&transaction, &request)?;
+                supersede_deferred(&transaction, &request)?;
                 transaction.commit()?;
                 Ok(())
             })
@@ -182,6 +183,9 @@ impl Receipts {
                     receive(&mut request, &execution);
                 }
                 update_request(&transaction, &request)?;
+                if request.status().is_human_wait() {
+                    supersede_deferred(&transaction, &request)?;
+                }
                 transaction.commit()?;
                 Ok(request)
             })
@@ -332,6 +336,37 @@ impl Receipts {
             .await
             .map_err(|e| e.to_string())
     }
+}
+
+/// Issuance and retirement share the write lock, including when the new request joins.
+fn supersede_deferred(db: &rusqlite::Connection, request: &Request) -> Result<(), Error> {
+    let deferred = {
+        let mut statement = db.prepare("SELECT q.data,json_extract(e.data,'$.provenance.requestId'),e.id FROM requests q JOIN executions e ON e.id=q.execution_id JOIN runs r ON r.id=q.run_id WHERE e.status='WAITING_HUMAN' AND q.status='DEFERRED' AND q.eval_id=?1 AND r.repo=(SELECT repo FROM runs WHERE id=?2) AND json_extract(q.data,'$.key') IS NOT ?3 AND q.id<>?4")?;
+        statement
+            .query_map(
+                params![request.eval_id, request.run_id, request.key, request.id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, crate::types::RequestId>(1)?,
+                        row.get::<_, crate::types::ExecutionId>(2)?,
+                    ))
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    for (data, original, execution) in deferred {
+        let request: Request = serde_json::from_str(&data)?;
+        let code = crate::types::FailureCode::Superseded;
+        let error = "Superseded by a newer Human request for this eval in this working tree.";
+        if request.id == original {
+            super::run_control::retire_execution(db, &execution, code, error)?;
+        } else {
+            // Retiring a follower must not end another tree's sign-off or a strict wait.
+            super::run_control::retire_request(db, request, code, error, crate::broker::now())?;
+        }
+    }
+    Ok(())
 }
 
 /// A completed record for the key settles a local Human wait, as a submission settles

@@ -2,12 +2,11 @@
   // One Artifact of the Run graph: its name and how it is lit, nothing about its evals.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
   import type { Light } from "../ipc/client";
-  import { WORDS } from "./graph";
 
-  let { data, selected }: NodeProps & { data: { name: string; light: Light; zoomed: boolean; structural?: boolean } } = $props();
+  let { data, selected }: NodeProps & { data: { name: string; light: Light; open: boolean } } = $props();
 </script>
 
-<div class="artifact light-{data.light}" class:selected class:zoomed={data.zoomed} title={data.structural ? `${data.name}: current structure` : `${data.name}: ${WORDS[data.light]}`}>
+<div class="artifact light-{data.light}" class:selected class:open={data.open}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="dot" aria-hidden="true"></span>
   <span class="name">{data.name}</span>
@@ -31,8 +30,12 @@
   .light-waiting {
     background: var(--surface);
   }
+  /* The pointer only highlights the Artifact under it. */
+  .artifact:hover {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
   .selected,
-  .zoomed {
+  .open {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
   }
   .dot {

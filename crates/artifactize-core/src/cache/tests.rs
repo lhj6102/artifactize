@@ -256,13 +256,16 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
 }
 
 #[test]
-fn an_eval_depends_on_its_target_mounts_children_and_named_artifacts_only() {
+fn an_eval_depends_on_its_target_children_and_named_artifacts_only() {
+    let check = |instruction: &str| {
+        json!([{"id":"check","title":"Check","profile":{"kind":"human"},
+            "payload":{"instruction":instruction}}])
+    };
     let repo = Repo::new();
     repo.artifact(
         "a",
         json!({
             "name":"a",
-            "mounts":{"next":"b"},
             "evals":[
                 {
                     "id":"plain",
@@ -279,20 +282,22 @@ fn an_eval_depends_on_its_target_mounts_children_and_named_artifacts_only() {
             ],
         }),
     );
-    repo.artifact("b", json!({"name":"b","mounts":{"next":"c"}}));
-    repo.artifact("c", json!({"name":"c","mounts":{"next":"a"}}));
-    repo.artifact("a/child", json!({"name":"child","mounts":{"far":"c"}}));
+    repo.artifact("c", json!({"name":"c","evals":check("Check {a}.")}));
+    repo.artifact(
+        "a/child",
+        json!({"name":"child","evals":check("Check {c}.")}),
+    );
     repo.artifact("d", json!({"name":"d"}));
     repo.write("d/x", "x");
-    repo.artifact("e", json!({"name":"e","mounts":{"far":"c"}}));
+    repo.artifact("e", json!({"name":"e","evals":check("Check {c}.")}));
     let config = read_workspace_config(repo.root.path()).unwrap();
     let names = |id: &str| {
         let eval = config.evals.iter().find(|eval| eval.id == id).unwrap();
         dependencies(&config, eval).into_iter().collect::<Vec<_>>()
     };
-    // Two connections away (b's mount c, child's mount c) is never followed.
-    assert_eq!(names("a/plain"), ["a", "b", "child"]);
-    assert_eq!(names("a/named"), ["a", "b", "child", "d", "e"]);
+    // Two connections away (c, which child and e reference) is never followed.
+    assert_eq!(names("a/plain"), ["a", "child"]);
+    assert_eq!(names("a/named"), ["a", "child", "d", "e"]);
 }
 
 #[test]
@@ -602,9 +607,9 @@ async fn missing_dependency_keeps_its_validated_artifact_name_and_omits_eval_key
     let repo = Repo::new();
     repo.artifact(
         "app",
-        json!({"name":"app","mounts":{"rules":"basis"},"evals":[{
+        json!({"name":"app","evals":[{
             "id":"check","title":"Check","profile":{"kind":"human"},
-            "payload":{"instruction":"Check."}
+            "payload":{"instruction":"Check against {basis}."}
         }]}),
     );
     repo.artifact(

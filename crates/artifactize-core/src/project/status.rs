@@ -92,7 +92,6 @@ pub struct Counts {
     pub artifacts: BTreeMap<ArtifactCondition, usize>,
     pub evals: BTreeMap<EvalCondition, usize>,
     pub execute: usize,
-    pub derive: usize,
     pub reuse: usize,
     pub wait: usize,
     pub blocked: usize,
@@ -156,14 +155,21 @@ pub async fn status(
         .filter(|(id, _)| !(options.force && selected_ids.contains(*id)))
         .map(|(id, key)| (*id, key))
         .collect();
-    let mut cached = store::read_keyed_executions(
+    let mut cached = store::read_profiled_executions(
         &state,
-        &keys
-            .values()
-            .map(|key| key.value.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>(),
+        config
+            .evals
+            .iter()
+            .filter_map(|eval| {
+                keys.get(&eval.id).map(|key| {
+                    (
+                        eval.id.clone(),
+                        key.value.clone(),
+                        eval.declaration.profile().into(),
+                    )
+                })
+            })
+            .collect(),
     )
     .await?;
     // Read-only: a store record that completed after the local latest counts as reuse without
@@ -180,16 +186,18 @@ pub async fn status(
             .collect();
         for execution in remote.lookup(&all).await? {
             let key = execution.key.clone().expect("remote key");
-            let newer = match cached.get(&key) {
-                Some(Claim::Reuse(local)) => execution.completed_after(local),
-                _ => true,
-            };
-            if newer {
-                cached.insert(key, Claim::Reuse(Box::new(execution)));
+            for (id, _) in keys.iter().filter(|(_, candidate)| candidate.value == key) {
+                let newer = match cached.get(*id) {
+                    Some(Claim::Reuse(local)) => execution.completed_after(local),
+                    _ => true,
+                };
+                if newer {
+                    cached.insert((*id).clone(), Claim::Reuse(Box::new(execution.clone())));
+                }
             }
         }
     }
-    let claim = |id: &crate::types::EvalId| keys.get(id).and_then(|key| cached.get(&key.value));
+    let claim = |id: &crate::types::EvalId| cached.get(id);
     // Explain changed keys against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()
@@ -287,25 +295,8 @@ pub async fn status(
         let current = &evaluation.evals[eval.id.as_str()];
         let selected = selected_ids.contains(&eval.id);
         let included = included_ids.contains(&eval.id);
-        let derived = matches!(eval.declaration.profile(), Profile::Dependency { .. });
-        let force = options.force && selected && !derived;
+        let force = options.force && selected;
         let (action, reason) = match current.readiness {
-            _ if derived => (
-                VerifyAction::Derive,
-                if current.blocked_by.is_empty() {
-                    "Derived from current GREEN dependency evidence; no execution or reuse.".into()
-                } else {
-                    format!(
-                        "Derived dependency verdict: waiting for current GREEN evidence from {}.",
-                        current
-                            .blocked_by
-                            .iter()
-                            .map(ToString::to_string)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                },
-            ),
             // verify takes cached results before gates resolve, even behind RED; the state keeps
             // the gate.
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
@@ -345,12 +336,13 @@ pub async fn status(
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ),
+                        // Status never treats an ERROR as a blocker, so every cause is RED.
                         Readiness::Blocked => format!(
                             "; its gates are blocked by RED: {}",
                             current
-                                .unmet_gates
+                                .causes
                                 .iter()
-                                .map(ToString::to_string)
+                                .map(|cause| cause.eval().as_str())
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ),
@@ -359,15 +351,7 @@ pub async fn status(
             ),
             Readiness::Blocked => (
                 VerifyAction::Blocked,
-                format!(
-                    "Dependency verdict RED: {}",
-                    current
-                        .unmet_gates
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
+                current.blocked_reason().unwrap_or_default(),
             ),
             Readiness::Wait => (
                 VerifyAction::Wait,
@@ -391,7 +375,6 @@ pub async fn status(
                 )
             }
             Readiness::Ready => match eval.declaration.profile() {
-                Profile::Dependency { .. } => unreachable!("derived above"),
                 Profile::Human { .. } => (
                     VerifyAction::Execute,
                     "Record a request awaiting a Human claim and submission.".into(),
@@ -406,7 +389,6 @@ pub async fn status(
                                 "The current eval and fingerprints have no completed cached result."
                                     .into()
                             }
-                            Err(cache::Unkeyed::Derived) => unreachable!("derived above"),
                             Err(cache::Unkeyed::Target) => {
                                 "The Artifact declares fingerprint: false; saved noncached results satisfy only their own Run."
                                     .into()
@@ -496,7 +478,6 @@ impl Counts {
     fn action(&mut self, action: VerifyAction) {
         match action {
             VerifyAction::Execute => self.execute += 1,
-            VerifyAction::Derive => self.derive += 1,
             VerifyAction::Reuse => self.reuse += 1,
             VerifyAction::Wait => self.wait += 1,
             VerifyAction::Blocked => self.blocked += 1,

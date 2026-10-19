@@ -79,7 +79,7 @@ impl Runs {
                         }
                         .to_owned()
                     })
-                    .unwrap_or_else(|| command.to_owned());
+                    .unwrap_or_else(|| crate::platform::path_text(std::path::Path::new(command)));
                 Self::Command(super::shell(
                     std::iter::once(program.as_str()).chain(args.iter().copied()),
                 ))
@@ -111,35 +111,20 @@ fn folder(path: &str) -> String {
 }
 
 /// A builtin target as a repository-relative logical path: `{artifactPath}[/path]`,
-/// `{name}[/path]` through the owner's mounts, or a path in the owner that may enter a mount.
-/// A target the definition cannot place is shown as declared.
+/// `{name}[/path]` or a path in the owner. A target the definition cannot place is shown as
+/// declared.
 fn logical(
     artifacts: &BTreeMap<ArtifactName, Artifact>,
     owner: &ArtifactName,
     arg: &str,
 ) -> String {
-    let mount = |id: &str, name: &str| {
-        artifacts
-            .get(id)
-            .and_then(|artifact| artifact.mounts.value())
-            .and_then(|mounts| mounts.get(name))
-            .map(ToString::to_string)
+    let (id, rest) = match arg.strip_prefix('{').and_then(|arg| arg.split_once('}')) {
+        Some(("artifactPath", rest)) => (owner.as_str(), rest),
+        Some((name, rest)) => (name, rest),
+        None => (owner.as_str(), arg),
     };
-    let (mut id, rest) = match arg.strip_prefix('{').and_then(|arg| arg.split_once('}')) {
-        Some(("artifactPath", rest)) => (owner.to_string(), rest),
-        Some((name, rest)) => (mount(owner, name).unwrap_or_else(|| name.to_owned()), rest),
-        None => (owner.to_string(), arg),
-    };
-    let mut rest = rest.strip_prefix('/').unwrap_or(rest);
-    // A first segment that names a mount continues in the mounted Artifact, as in the scope.
-    loop {
-        let (first, after) = rest.split_once('/').unwrap_or((rest, ""));
-        match mount(&id, first) {
-            Some(mounted) if !first.is_empty() => (id, rest) = (mounted, after),
-            _ => break,
-        }
-    }
-    let Some(artifact) = artifacts.get(id.as_str()) else {
+    let rest = rest.strip_prefix('/').unwrap_or(rest);
+    let Some(artifact) = artifacts.get(id) else {
         return arg.to_owned();
     };
     let Some(path) = artifact.path.value() else {

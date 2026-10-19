@@ -188,7 +188,7 @@ fn repair_detail_names_bounded_failing_paths_of_json_results() {
     let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
     let repair = |text: &str| {
         let error = schema.parse(text).unwrap_err();
-        schema.repair_detail(text, error)
+        schema.repair_detail(text, error, None)
     };
     // Unparseable or envelope errors have no paths to name.
     for (text, expected) in [

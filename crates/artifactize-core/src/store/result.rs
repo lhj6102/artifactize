@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::{agent::verdict::ValidatedResult, runtime::Verdict};
 
-/// Agent, Human and derived results retain opaque owner fields. Runtime metadata is
+/// Agent and Human results retain opaque owner fields. Runtime metadata is
 /// parsed once when a saved record enters the core, including reduced remote records.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExecutionResult {
@@ -195,7 +195,6 @@ mod tests {
     fn saved_envelopes_round_trip_without_tags_or_field_changes() {
         for value in [
             json!({"verdict":"GREEN","approved":true,"nested":{"a":[1,null]},"truncated":"owner"}),
-            json!({"verdict":"GREEN","derived":true}),
             json!({"verdict":"RED","exitCode":7,"durationMs":123,"stdout":"out","stderr":"err","truncated":true}),
             json!({"verdict":"RED","exitCode":7,"durationMs":123,"truncated":false}),
             json!({"verdict":"RED","exitCode":null,"durationMs":null,"truncated":null,"future":[]}),

@@ -22,12 +22,58 @@ fn parse(value: Value) -> Result<ArtifactDeclaration, String> {
 }
 
 #[test]
+fn eval_mutex_declarations_are_typed_and_excluded_from_criteria() {
+    let declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
+    let baseline = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
+    for tags in [
+        json!([]),
+        json!(["use-computer"]),
+        json!(["use-computer:db:users", "use-computer:browser"]),
+    ] {
+        let mut changed = declared.clone();
+        changed["mutex"] = tags.clone();
+        let parsed = parse(json!({"name":"a","evals":[changed]})).unwrap();
+        assert_eq!(serde_json::to_value(&parsed.evals[0].mutex).unwrap(), tags);
+        assert_eq!(
+            crate::cache::eval_definition_hash(&parsed.evals[0]),
+            crate::cache::eval_definition_hash(&baseline.evals[0])
+        );
+    }
+    for tags in [
+        json!("use-computer"),
+        json!([7]),
+        json!(["other"]),
+        json!([""]),
+        json!(["use-computer:"]),
+        json!(["use-computer::db"]),
+        json!(["use-computer:db:"]),
+        json!(["use-computer:bad segment"]),
+        json!(["use-computer:db/users"]),
+        json!(["use-computer", "use-computer"]),
+        json!(vec!["use-computer:db"; 65]),
+    ] {
+        let mut changed = declared.clone();
+        changed["mutex"] = tags.clone();
+        assert!(
+            parse(json!({"name":"a","evals":[changed]})).is_err(),
+            "accepted {tags}"
+        );
+    }
+    let mut changed = eval(json!({"kind":"human"}));
+    changed["mutex"] = json!([]);
+    let error = parse(json!({"name":"a","evals":[changed]})).unwrap_err();
+    assert!(
+        error.contains("mutex is supported only on runtime and agent"),
+        "{error}"
+    );
+}
+
+#[test]
 fn defaults_and_payload_are_preserved_without_interpolation() {
     let empty = parse(json!({ "name": "input" })).unwrap();
     assert!(empty.evals.is_empty());
     assert!(empty.views.agent_tools.is_empty());
     assert!(empty.views.human_tools.is_empty());
-    assert!(empty.mounts.is_empty());
     assert_eq!(empty.basis, None);
 
     let original = eval(json!({ "kind": "human" }));
@@ -99,7 +145,6 @@ fn identifiers_and_eval_requirements_are_strict() {
             .unwrap_err()
             .contains("payload.instruction")
     );
-    assert!(parse(json!({"name": "a", "mounts": {"bad/alias": "b"}})).is_err());
 }
 
 #[test]
@@ -297,12 +342,42 @@ fn response_schemas_are_validated_without_rewriting_owner_fields() {
         "properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}},
         "ownerKeyword":true,
     });
-    let mut declared = eval(json!({"kind": "human"}));
+    let mut declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
     declared["pass_schema"] = schema.clone();
     let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
     assert_eq!(
         declaration.evals[0].pass_schema().unwrap(),
         schema.as_object().unwrap()
+    );
+}
+
+#[test]
+fn a_human_result_schema_takes_only_shapes_a_person_can_enter() {
+    let declared = |schema: Value| {
+        let mut declared = eval(json!({"kind": "human"}));
+        declared["fail_schema"] = schema;
+        parse(json!({"name": "a", "evals": [declared]}))
+    };
+    declared(json!({
+        "type": "object",
+        "properties": {
+            "changes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "findings": {"type": "array", "items": {
+                "type": "object",
+                "properties": {"where": {"type": "string"}, "severity": {"enum": ["low", "high"]}}
+            }}
+        },
+        "required": ["changes"]
+    }))
+    .unwrap();
+    let error = declared(json!({
+        "type": "object",
+        "properties": {"ownerField": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}
+    }))
+    .unwrap_err();
+    assert!(
+        error.contains("fail_schema") && error.contains("properties.ownerField"),
+        "{error}"
     );
 }
 

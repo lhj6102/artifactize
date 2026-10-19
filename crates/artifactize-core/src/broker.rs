@@ -16,7 +16,7 @@ use crate::{
     agent::error::Code,
     cache,
     config::{ProfileKind, RepoConfig},
-    graph::{EvalEvaluation, EvalStatus, Evidence, Graph},
+    graph::{EvalStatus, Evidence, Graph},
     limits::Limits,
     process,
     remote::Session,
@@ -197,6 +197,7 @@ enum Admission {
     /// Joining a live execution uses a job slot; awaiting backend capacity does not.
     Joining,
     Capacity,
+    Mutex,
     Blocked,
 }
 
@@ -221,7 +222,7 @@ impl Admission {
     }
 
     fn waiting(&self) -> bool {
-        matches!(self, Self::Joining | Self::Capacity)
+        matches!(self, Self::Joining | Self::Capacity | Self::Mutex)
     }
 
     fn stop(&mut self, reason: modes::Stop) {
@@ -246,58 +247,6 @@ struct Scheduler<'a, 'g> {
     remote: Option<Arc<Session>>,
     cancellation: CancellationToken,
     tasks: &'a mut JoinSet<Result<(usize, Request), String>>,
-}
-
-/// A dependency request is audit-only: no execution, claim, capacity or cache evidence.
-/// A GREEN or BLOCKED request completes at `at`.
-pub(crate) fn derive(
-    request: &mut Request,
-    eval: &EvalEvaluation<'_>,
-    at: crate::types::Timestamp,
-) {
-    request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
-    request.queue = None;
-    request.blocked_reason = (!request.blocked_by.is_empty()).then(|| {
-        format!(
-            "Derived dependency verdict: waiting for current GREEN evidence from {}.",
-            request
-                .blocked_by
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    });
-    request.state = if eval.status.passes_gate() {
-        crate::store::RequestState::completed(
-            crate::agent::verdict::ValidatedResult {
-                verdict: crate::runtime::Verdict::Green,
-                fields: serde_json::Map::from_iter([(
-                    "derived".into(),
-                    serde_json::Value::Bool(true),
-                )]),
-            }
-            .into(),
-            at,
-        )
-    } else {
-        crate::store::RequestState::pending(
-            crate::project::verify::status(eval.status),
-            (eval.status == EvalStatus::Blocked).then_some(at),
-        )
-        .expect("derived pending state")
-    };
-    if eval.status == EvalStatus::Provisional
-        && let crate::store::RequestState::Completed { result, at } = &request.state
-    {
-        request.state = crate::store::RequestState::Provisional {
-            result: result
-                .clone()
-                .try_into()
-                .expect("provisional evidence is GREEN"),
-            at: *at,
-        };
-    }
 }
 
 impl Scheduler<'_, '_> {
@@ -471,17 +420,8 @@ impl Scheduler<'_, '_> {
                 // Failures cancel transitively, including tasks, joined waits and sign-offs.
                 for (request, admission) in self.requests.iter_mut().zip(admissions.iter_mut()) {
                     let eval = &evaluation.evals[request.eval_id.as_str()];
-                    let sibling_failed = self.run.modes.defer_human
-                        && request.profile.kind() == ProfileKind::Human
-                        && modes::machines(&self.config, request).any(|id| {
-                            matches!(
-                                evidence.get(id),
-                                Some(Evidence::Current(Verdict::Red))
-                                    | Some(Evidence::OperationalError)
-                            )
-                        });
                     if (self.run.modes.speculate || self.run.modes.defer_human)
-                        && (eval.readiness == crate::graph::Readiness::Blocked || sibling_failed)
+                        && eval.readiness == crate::graph::Readiness::Blocked
                         && !admission.blocked()
                     {
                         evidence.remove(&request.eval_id);
@@ -496,11 +436,8 @@ impl Scheduler<'_, '_> {
                             .expect("blocked state");
                             request.blocked_by =
                                 eval.blocked_by.iter().copied().map(Into::into).collect();
-                            request.blocked_reason = Some(if sibling_failed {
-                                "Artifact machine eval failed; sign-off withdrawn.".into()
-                            } else {
-                                crate::project::verify::gate_reason(eval)
-                            });
+                            request.blocked_reason =
+                                Some(crate::project::verify::gate_reason(eval));
                             request.queue = None;
                             self.receipts.block_request(request).await?;
                         }
@@ -519,15 +456,9 @@ impl Scheduler<'_, '_> {
                     }
                     let current = &self.requests[index];
                     let eval = &evaluation.evals[current.eval_id.as_str()];
-                    let late_ready = !self.run.modes.defer_human
-                        || current.profile.kind() != ProfileKind::Human
-                        || modes::machines(&self.config, current).all(|id| {
-                            matches!(evidence.get(id), Some(Evidence::Current(Verdict::Green)))
-                        });
-                    let ready = late_ready
-                        && (eval.can_execute()
-                            || (deferred.contains(&current.eval_id)
-                                && eval.readiness == crate::graph::Readiness::Ready));
+                    let ready = eval.can_execute()
+                        || (deferred.contains(&current.eval_id)
+                            && eval.readiness == crate::graph::Readiness::Ready);
                     let can_start = current.profile.kind() == ProfileKind::Human
                         || self
                             .run
@@ -586,36 +517,16 @@ impl Scheduler<'_, '_> {
                     {
                         continue;
                     }
-                    if request.profile.kind() == ProfileKind::Dependency {
-                        let declared = self
-                            .config
-                            .evals
-                            .iter()
-                            .find(|eval| eval.id == request.eval_id)
-                            .expect("included Eval");
-                        if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
-                            request.state = crate::store::RequestState::failed(
-                                error,
-                                Some(crate::types::FailureCode::PreparationFailed),
-                                now(),
-                            );
-                            self.receipts.save_request(request).await?;
-                            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
-                            continue;
-                        }
-                        let eval = &evaluation.evals[request.eval_id.as_str()];
-                        let status = crate::project::verify::status(eval.status);
-                        let blocked_by: Vec<_> =
-                            eval.blocked_by.iter().copied().map(Into::into).collect();
-                        if request.status() != status || request.blocked_by != blocked_by {
-                            derive(request, eval, now());
-                            self.receipts.save_request(request).await?;
-                        }
-                        continue;
-                    }
                     let eval = &evaluation.evals[request.eval_id.as_str()];
+                    // People are never asked before the machine evals of their Artifact pass.
+                    let siblings_pending = request.profile.kind() == ProfileKind::Human
+                        && eval
+                            .unmet_gates
+                            .iter()
+                            .any(|gate| self.graph.eval_target(gate) == Some(&request.target));
                     let speculative = self.run.modes.speculate
                         && eval.readiness == crate::graph::Readiness::Wait
+                        && !siblings_pending
                         && matches!(eval.evidence, None | Some(Evidence::Stale));
                     let deferred_human = deferred.contains(&request.eval_id);
                     let may_execute = eval.can_execute()
@@ -638,15 +549,11 @@ impl Scheduler<'_, '_> {
                         }
                         continue;
                     }
+                    // Deferral asks for a sign-off only once its gates are met, never
+                    // speculatively.
                     if self.run.modes.defer_human
                         && request.profile.kind() == ProfileKind::Human
-                        && (eval.readiness != crate::graph::Readiness::Ready
-                            || modes::machines(&self.config, request).any(|id| {
-                                !matches!(
-                                    evidence.get(id),
-                                    Some(Evidence::Current(_)) | Some(Evidence::OperationalError)
-                                )
-                            }))
+                        && eval.readiness != crate::graph::Readiness::Ready
                     {
                         continue;
                     }
@@ -784,6 +691,23 @@ impl Scheduler<'_, '_> {
                         };
                     }
                     match claim {
+                        Claim::Mutex { eval_id, run_id } => {
+                            admissions[index] = Admission::Mutex;
+                            let reason = format!(
+                                "Waiting for mutex tags held by eval {eval_id} in Run {run_id}."
+                            );
+                            if request.blocked_reason.as_ref() != Some(&reason) {
+                                request.state = crate::store::RequestState::pending(
+                                    crate::types::RequestStatus::Queued,
+                                    None,
+                                )
+                                .expect("mutex waiter is queued");
+                                request.queue = None;
+                                request.blocked_reason = Some(reason);
+                                self.receipts.save_request(request).await?;
+                            }
+                            continue;
+                        }
                         Claim::Full => {
                             let (backend, limit) = limited.as_ref().expect("a limited backend");
                             full.insert(*backend);
@@ -803,9 +727,9 @@ impl Scheduler<'_, '_> {
                             admissions[index] = Admission::Idle;
                             evidence.insert(
                                 request.eval_id.clone(),
-                                Evidence::Current(
-                                    execution.verdict().expect("completed cache entry"),
-                                ),
+                                execution
+                                    .verdict()
+                                    .map_or(Evidence::OperationalError, Evidence::Current),
                             );
                             cache::reuse(request, &execution, now());
                             self.receipts.reuse_execution(request).await?;
@@ -867,16 +791,16 @@ impl Scheduler<'_, '_> {
                         Claim::Wait(id) => {
                             admissions[index] = Admission::Joining;
                             if request.execution_id.as_ref() != Some(&id) {
-                                request.execution_id = Some(id);
+                                request.execution_id = Some(id.clone());
                                 request.state = crate::store::RequestState::pending(
                                     crate::types::RequestStatus::Queued,
                                     request.completed_at(),
                                 )
                                 .expect("pending request state");
                                 request.queue = None;
-                                request.blocked_reason = Some(
-                                    "Waiting for the active execution of this reuse key.".into(),
-                                );
+                                request.blocked_reason = Some(format!(
+                                    "Waiting for execution {id} with the same reuse key and profile."
+                                ));
                                 self.receipts.save_request(request).await?;
                             }
                             continue;
@@ -986,24 +910,18 @@ impl Scheduler<'_, '_> {
                                                     &config,
                                                     &request.eval_id,
                                                 ) {
-                                                    Ok(registry) => match registry
-                                                        .start_sessions(
-                                                            &state,
-                                                            None,
-                                                            cancellation.clone(),
-                                                        )
-                                                        .await
-                                                    {
-                                                        Ok(tools) => {
-                                                            Ok(execution::Prepared::Agent {
-                                                                state,
-                                                                session,
-                                                                saving,
-                                                                tools,
-                                                            })
-                                                        }
-                                                        Err(error) => Err(error),
-                                                    },
+                                                    Ok(registry) => {
+                                                        Ok(execution::Prepared::Agent {
+                                                            state: state.clone(),
+                                                            session,
+                                                            saving,
+                                                            tools: registry.sessions(
+                                                                &state,
+                                                                None,
+                                                                cancellation.clone(),
+                                                            ),
+                                                        })
+                                                    }
                                                     Err(error) => Err(error),
                                                 }
                                             }

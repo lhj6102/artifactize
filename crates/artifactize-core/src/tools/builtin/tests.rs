@@ -30,16 +30,15 @@ impl Fixture {
         let root = directory.path().join("repo");
         fs::create_dir(&root).unwrap();
         let fixture = Self { directory, root };
-        fixture.artifact("a", "a", json!({}), "Review.");
+        fixture.artifact("a", "a", "Review.");
         fixture
     }
 
-    fn artifact(&self, path: &str, name: &str, mounts: Value, instruction: &str) {
+    fn artifact(&self, path: &str, name: &str, instruction: &str) {
         self.write(
             &format!("{path}/index.artf"),
             json!({
                 "name":name,
-                "mounts":mounts,
                 "views":{
                     "agent_tools":{
                         "read":{"builtin":"read"},
@@ -100,12 +99,11 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
     use base64::{Engine, engine::general_purpose::STANDARD};
 
     let fixture = Fixture::new();
-    fixture.artifact("a", "a", json!({"source":"b"}), "Review.");
-    fixture.artifact("b", "b", json!({}), "Refers to {hidden}.");
-    fixture.artifact("hidden", "hidden", json!({}), "Review.");
+    fixture.artifact("a/source", "b", "Refers to {hidden}.");
+    fixture.artifact("hidden", "hidden", "Review.");
     fixture.write("hidden/secret", &image::tests::fixtures()[0].1);
     for (mime, bytes) in image::tests::fixtures() {
-        fixture.write("b/image.txt", &bytes);
+        fixture.write("a/source/image.txt", &bytes);
         let result = fixture
             .call("view_image_a", json!({"path":"source/image.txt"}))
             .await;
@@ -114,7 +112,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
             result.content(),
             vec![Content::Image {
                 data: STANDARD.encode(&bytes),
-                mime_type: mime.into()
+                mime_type: mime.parse().unwrap()
             }]
         );
     }
@@ -484,8 +482,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
         );
     }
     fixture.write("bare/index.artf", r#"{"name":"bare"}"#);
-    fixture.artifact("other", "other", json!({}), "Review.");
-    fixture.artifact("a", "a", json!({"bare":"bare"}), "Review.");
+    fixture.artifact("other", "other", "Review.");
     let config = read_workspace_config(&fixture.root).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     assert_eq!(
@@ -516,12 +513,11 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
 }
 
 #[tokio::test]
-async fn listing_pages_are_sorted_and_include_logical_mounts_and_children() {
+async fn listing_pages_are_sorted_and_include_children() {
     let fixture = Fixture::new();
-    fixture.artifact("a", "a", json!({"source":"b"}), "Review.");
-    fixture.artifact("b", "b", json!({"back":"a"}), "Refers to {hidden}.");
-    fixture.artifact("hidden", "hidden", json!({}), "Review.");
-    fixture.write("b/input.txt", "mounted\n");
+    fixture.artifact("a/source", "b", "Refers to {hidden}.");
+    fixture.artifact("hidden", "hidden", "Review.");
+    fixture.write("a/source/input.txt", "child\n");
     fixture.write(
         "a/nested/cases/index.artf",
         json!({"name":"cases"}).to_string(),
@@ -537,7 +533,7 @@ async fn listing_pages_are_sorted_and_include_logical_mounts_and_children() {
             .collect::<Vec<_>>(),
         ["index.artf", "nested", "source"]
     );
-    assert_eq!(data["entries"][2]["kind"], "mount");
+    assert_eq!(data["entries"][2]["kind"], "directory");
     let data = fixture.data("list_a", json!({"path":"nested"})).await;
     assert_eq!(
         data["entries"][0],

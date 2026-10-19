@@ -5,8 +5,29 @@ use crate::agent::session::{
     live::{Reader, Source, Window},
 };
 
+/// Identity of one selected-session reader, distinct from its layout revision.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ReaderId(u64);
+
+impl ReaderId {
+    /// Retire the current reader identity when a selection creates its replacement.
+    pub fn next(self) -> Self {
+        Self(
+            self.0
+                .checked_add(1)
+                .expect("session reader identity exhausted"),
+        )
+    }
+}
+
+impl From<u64> for ReaderId {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 pub struct Live {
-    pub serial: u64,
+    pub serial: ReaderId,
     pub source: Source,
     pub reader: Option<Reader>,
     pub scroll: Scroll,
@@ -22,7 +43,7 @@ pub struct Live {
 }
 
 pub struct Job {
-    pub serial: u64,
+    pub serial: ReaderId,
     pub revision: u64,
     pub width: usize,
     pub height: usize,
@@ -31,7 +52,7 @@ pub struct Job {
     pub expanded: std::collections::BTreeSet<crate::agent::session::transcript::BlockId>,
 }
 impl Live {
-    pub fn new(serial: u64, source: Source) -> Self {
+    pub fn new(serial: ReaderId, source: Source) -> Self {
         Self {
             serial,
             source: source.clone(),

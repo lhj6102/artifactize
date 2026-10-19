@@ -136,7 +136,10 @@ pub(crate) async fn reserve(
                 profile: (eval.declaration.profile()).into(),
                 requested_profile: (eval.declaration.profile()).into(),
                 eval_def_hash: cache::eval_definition_hash(&eval.declaration),
-                options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref()),
+                options: ExecutionOptions {
+                    mutex: eval.declaration.mutex.clone(),
+                    ..ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref())
+                },
                 execution_id: None,
                 provenance: None,
                 usage: None,
@@ -151,12 +154,7 @@ pub(crate) async fn reserve(
                 payload: eval.declaration.payload().into(),
                 references: eval.references.clone(),
                 deps: eval.deps.clone(),
-                force: options.force
-                    && selected_ids.contains(&eval.id)
-                    && !matches!(
-                        eval.declaration.profile(),
-                        crate::config::Profile::Dependency { .. }
-                    ),
+                force: options.force && selected_ids.contains(&eval.id),
                 fingerprint: None,
                 key: None,
                 fingerprints: Default::default(),
@@ -338,21 +336,21 @@ pub(crate) async fn execute(
     };
     let evaluation = graph.evaluate_for_run(&evidence, run.modes.speculate);
     for request in &mut requests {
-        if request.profile.kind() == ProfileKind::Dependency {
-            if request.status() == crate::types::RequestStatus::Error {
-                continue;
-            }
-            broker::derive(request, &evaluation.evals[request.eval_id.as_str()], now());
-            continue;
-        }
-        if evidence.contains_key(request.eval_id.as_str())
-            || (request.status().is_human_wait() && !cancellation.is_cancelled())
+        // A cancelled Run withdraws its waiting sign-offs too, deferred ones included.
+        let withdrawn = request.status().is_human_wait() && cancellation.is_cancelled();
+        if (evidence.contains_key(request.eval_id.as_str()) && !withdrawn)
+            || (request.status().is_human_wait() && !withdrawn)
         {
             continue;
         }
         let eval = &evaluation.evals[request.eval_id.as_str()];
         if request.status() == crate::types::RequestStatus::Blocked && !cancellation.is_cancelled()
         {
+            // A block saved mid-Run named the causes known then; the settled Run names all.
+            if eval.status == EvalStatus::Blocked {
+                request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
+                request.blocked_reason = Some(gate_reason(eval));
+            }
             continue;
         }
         if cancellation.is_cancelled() {
@@ -564,19 +562,16 @@ pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {
 
 /// The same gate explanation is saved during scheduling and at Run settlement.
 pub(crate) fn gate_reason(eval: &crate::graph::EvalEvaluation<'_>) -> String {
-    format!(
-        "{}: {}",
-        if eval.status == EvalStatus::Blocked {
-            "Dependency verdict RED"
-        } else {
-            "Waiting for current GREEN dependency evidence"
-        },
-        eval.unmet_gates
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
+    eval.blocked_reason().unwrap_or_else(|| {
+        format!(
+            "Waiting for current GREEN dependency evidence: {}",
+            eval.unmet_gates
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })
 }
 
 /// Fingerprints and remote I/O can take time; check the accepted declarations again at the

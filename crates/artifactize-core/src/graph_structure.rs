@@ -65,9 +65,6 @@ pub struct Eval {
 pub enum Criteria {
     Agent,
     Human,
-    Dependency {
-        depends_on: Vec<ArtifactName>,
-    },
     Runtime {
         command: String,
         args: Vec<Argument>,
@@ -86,13 +83,6 @@ pub struct Relation {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Edge {
     Child,
-    Mount {
-        alias: crate::config::MountAlias,
-    },
-    Dependency {
-        eval_id: EvalId,
-        name: crate::config::ReferenceName,
-    },
     Instruction {
         eval_id: EvalId,
         name: crate::config::ReferenceName,
@@ -146,9 +136,6 @@ pub fn extract(config: &RepoConfig) -> Structure {
             let criteria = match declaration.profile() {
                 Profile::Agent { .. } => Criteria::Agent,
                 Profile::Human {} => Criteria::Human,
-                Profile::Dependency { depends_on } => Criteria::Dependency {
-                    depends_on: depends_on.clone(),
-                },
                 Profile::Runtime { command, args, .. } => Criteria::Runtime {
                     command: command.clone(),
                     args: args.clone(),
@@ -176,13 +163,6 @@ pub fn extract(config: &RepoConfig) -> Structure {
             target: relation.target.clone(),
             kind: match &relation.kind {
                 RelationKind::Child { .. } => Edge::Child,
-                RelationKind::Mount { alias } => Edge::Mount {
-                    alias: alias.clone(),
-                },
-                RelationKind::Dependency { eval_id, name } => Edge::Dependency {
-                    eval_id: eval_id.clone(),
-                    name: name.clone(),
-                },
                 RelationKind::Instruction { eval_id, name } => Edge::Instruction {
                     eval_id: eval_id.clone(),
                     name: name.clone(),
@@ -271,13 +251,24 @@ impl Structure {
 
 /// The existing desktop application's detached launch path, with a current-project graph
 /// screen rather than a historical Run. No shell or second renderer is involved.
-pub fn launch(repo: &Path) -> Result<(), String> {
+/// Open the graph viewer on `repo`; its output reaches `run`'s Tool log until it exits. A
+/// failure hands the run back to be ended.
+pub(crate) fn launch(
+    repo: &Path,
+    run: crate::tools::human::log::Run,
+) -> Result<(), (String, crate::tools::human::log::Run)> {
     // Validate the same structure before handing it to the desktop viewer.
-    read(repo)?;
-    let program =
-        crate::platform::program::resolve(std::ffi::OsStr::new("artifactize-desktop"), repo)
-            .map_err(|error| format!("Cannot find artifactize-desktop: {error}"))?;
-    crate::process::launch_detached(
+    if let Err(error) = read(repo) {
+        return Err((error, run));
+    }
+    let program = match crate::platform::program::resolve(
+        std::ffi::OsStr::new("artifactize-desktop"),
+        repo,
+    ) {
+        Ok(program) => program,
+        Err(error) => return Err((format!("Cannot find artifactize-desktop: {error}"), run)),
+    };
+    crate::process::launch_watched(
         program.as_os_str(),
         &[
             "graph".into(),
@@ -285,8 +276,9 @@ pub fn launch(repo: &Path) -> Result<(), String> {
             crate::platform::path_text(repo),
         ],
         repo,
+        run,
     )
-    .map_err(|error| error.to_string())
+    .map_err(|(error, run)| (error.to_string(), run))
 }
 
 #[cfg(test)]

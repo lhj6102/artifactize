@@ -8,22 +8,25 @@ use serde::{Deserialize, Serialize};
 pub use crate::types::{ArtifactName, EvalId};
 mod identities;
 pub use identities::{
-    ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, MountAlias,
-    ProfileVariantName, ReferenceName, ToolName, ToolOperationName,
+    ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, ProfileVariantName,
+    ReferenceName, ToolName, ToolOperationName,
 };
 use serde_json::{Map, Value};
 use thiserror::Error;
 
 mod discovery;
 mod location;
+mod mutex;
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;
 use discovery::{logical_join, read_regular_text};
+pub use mutex::MutexTag;
 mod plain;
 mod stored;
 mod tools;
 pub(crate) mod validation;
 pub use stored::{Field, StoredPayload, StoredProfile};
+pub use validation::MAX_TIMEOUT_MS;
 
 pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanBuiltinTool, HumanCommandTool, HumanTool,
@@ -200,10 +203,6 @@ pub enum Profile {
         max_tokens: Option<u64>,
     },
     Human {},
-    Dependency {
-        #[serde(rename(serialize = "dependsOn", deserialize = "depends_on"))]
-        depends_on: Vec<ArtifactName>,
-    },
     Runtime {
         command: String,
         args: Vec<crate::scope::Argument>,
@@ -237,22 +236,6 @@ impl Profile {
                 Ok(())
             }
             Self::Human {} => Ok(()),
-            Self::Dependency { depends_on } => {
-                if depends_on.is_empty()
-                    || depends_on.len() > MAX_DECLARED_ITEMS
-                    || depends_on.iter().collect::<BTreeSet<_>>().len() != depends_on.len()
-                {
-                    return Err(location.child("depends_on").error(
-                        "Dependency profile depends_on must contain 1–64 unique Artifact names.",
-                    ));
-                }
-                for name in depends_on {
-                    location
-                        .child("depends_on")
-                        .check(identifier(name, "Dependency Artifact name"))?;
-                }
-                Ok(())
-            }
             Self::Runtime { command, args, .. } => location.check(script(command, args)),
         }
     }
@@ -261,7 +244,6 @@ impl Profile {
         match self {
             Self::Agent { .. } => ProfileKind::Agent,
             Self::Human {} => ProfileKind::Human,
-            Self::Dependency { .. } => ProfileKind::Dependency,
             Self::Runtime { .. } => ProfileKind::Runtime,
         }
     }
@@ -279,8 +261,6 @@ pub enum ProfileKind {
     Agent,
     /// Human evals: a person's sign-off.
     Human,
-    /// Dependency evals: derived from current required Artifact evidence.
-    Dependency,
 }
 
 impl ProfileKind {
@@ -289,7 +269,6 @@ impl ProfileKind {
             Self::Runtime => "runtime",
             Self::Agent => "agent",
             Self::Human => "human",
-            Self::Dependency => "dependency",
         }
     }
 }
@@ -364,91 +343,56 @@ pub struct EvalDeclaration {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gate: Option<Gate>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mutex: Vec<MutexTag>,
     #[serde(flatten)]
     body: EvalBody,
 }
 
-/// Dependency declarations have no payload, schemas or execution variants.
-/// Private construction parses the cross-field invariant once at the configuration edge.
-#[derive(Debug, Clone)]
-enum EvalBody {
-    Dependency {
-        profile: Profile,
-    },
-    Executable {
-        profile: Profile,
-        profile_variants: BTreeMap<ProfileVariantName, Profile>,
-        payload: EvalPayload,
-        pass_schema: Option<Map<String, Value>>,
-        fail_schema: Option<Map<String, Value>>,
-    },
+/// Every Eval has an instruction and a complete execution profile.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EvalBody {
+    profile: Profile,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    profile_variants: BTreeMap<ProfileVariantName, Profile>,
+    payload: EvalPayload,
+    pass_schema: Option<Map<String, Value>>,
+    fail_schema: Option<Map<String, Value>>,
 }
 
 impl EvalDeclaration {
     pub fn profile(&self) -> &Profile {
-        match &self.body {
-            EvalBody::Dependency { profile } | EvalBody::Executable { profile, .. } => profile,
-        }
+        &self.body.profile
     }
     pub fn payload(&self) -> Option<&EvalPayload> {
-        match &self.body {
-            EvalBody::Dependency { .. } => None,
-            EvalBody::Executable { payload, .. } => Some(payload),
-        }
+        Some(&self.body.payload)
     }
     pub fn profile_variants(&self) -> &BTreeMap<ProfileVariantName, Profile> {
-        static EMPTY: std::sync::OnceLock<BTreeMap<ProfileVariantName, Profile>> =
-            std::sync::OnceLock::new();
-        match &self.body {
-            EvalBody::Dependency { .. } => EMPTY.get_or_init(BTreeMap::new),
-            EvalBody::Executable {
-                profile_variants, ..
-            } => profile_variants,
-        }
+        &self.body.profile_variants
     }
     pub fn pass_schema(&self) -> Option<&Map<String, Value>> {
-        match &self.body {
-            EvalBody::Dependency { .. } => None,
-            EvalBody::Executable { pass_schema, .. } => pass_schema.as_ref(),
-        }
+        self.body.pass_schema.as_ref()
     }
     pub fn fail_schema(&self) -> Option<&Map<String, Value>> {
-        match &self.body {
-            EvalBody::Dependency { .. } => None,
-            EvalBody::Executable { fail_schema, .. } => fail_schema.as_ref(),
-        }
+        self.body.fail_schema.as_ref()
     }
     #[cfg(test)]
     pub(crate) fn profile_mut(&mut self) -> &mut Profile {
-        match &mut self.body {
-            EvalBody::Dependency { profile } | EvalBody::Executable { profile, .. } => profile,
-        }
+        &mut self.body.profile
     }
     #[cfg(test)]
     pub(crate) fn pass_schema_mut(&mut self) -> &mut Option<Map<String, Value>> {
-        match &mut self.body {
-            EvalBody::Executable { pass_schema, .. } => pass_schema,
-            _ => panic!("dependency schema is impossible"),
-        }
+        &mut self.body.pass_schema
     }
     #[cfg(test)]
     pub(crate) fn fail_schema_mut(&mut self) -> &mut Option<Map<String, Value>> {
-        match &mut self.body {
-            EvalBody::Executable { fail_schema, .. } => fail_schema,
-            _ => panic!("dependency schema is impossible"),
-        }
+        &mut self.body.fail_schema
     }
-    /// Only a declared, same-kind executable variant can replace the active profile.
     pub(crate) fn select_profile(&mut self, name: &ProfileVariantName) -> Result<(), String> {
-        let EvalBody::Executable {
-            profile,
-            profile_variants,
-            ..
-        } = &mut self.body
-        else {
-            return Err("Dependency Evals cannot select profile variants.".into());
-        };
-        *profile = profile_variants
+        self.body.profile = self
+            .body
+            .profile_variants
             .get(name)
             .ok_or_else(|| format!("Unknown profile variant: {name}"))?
             .clone();
@@ -462,6 +406,8 @@ struct EvalFields {
     title: String,
     #[serde(default)]
     gate: Option<Gate>,
+    #[serde(default, deserialize_with = "present")]
+    mutex: Option<Vec<MutexTag>>,
     profile: Profile,
     #[serde(default, deserialize_with = "present")]
     profile_variants: Option<BTreeMap<ProfileVariantName, Profile>>,
@@ -476,37 +422,28 @@ struct EvalFields {
 impl EvalDeclaration {
     /// Check the fields of the `[evals.<id>]` table that every profile needs together.
     fn new(id: LocalEvalId, fields: EvalFields) -> Result<Self, String> {
-        if matches!(fields.profile, Profile::Dependency { .. }) {
-            if fields.payload.is_some()
-                || fields.pass_schema.is_some()
-                || fields.fail_schema.is_some()
-                || fields.profile_variants.is_some()
-            {
-                return Err(
-                    "Dependency Evals cannot declare payload, pass_schema, fail_schema or profile_variants."
-                        .into(),
-                );
-            }
-        } else if fields.payload.is_none() {
-            return Err("Eval payload is required for runtime, agent and human profiles.".into());
+        if fields.mutex.is_some()
+            && !matches!(
+                fields.profile.kind(),
+                ProfileKind::Runtime | ProfileKind::Agent
+            )
+        {
+            return Err("mutex is supported only on runtime and agent Evals.".into());
         }
-        let body = if matches!(fields.profile, Profile::Dependency { .. }) {
-            EvalBody::Dependency {
-                profile: fields.profile,
-            }
-        } else {
-            EvalBody::Executable {
-                profile: fields.profile,
-                profile_variants: fields.profile_variants.unwrap_or_default(),
-                payload: fields.payload.expect("executable payload checked above"),
-                pass_schema: fields.pass_schema,
-                fail_schema: fields.fail_schema,
-            }
+        let body = EvalBody {
+            profile: fields.profile,
+            profile_variants: fields.profile_variants.unwrap_or_default(),
+            payload: fields
+                .payload
+                .ok_or("Eval payload is required for runtime, agent and human profiles.")?,
+            pass_schema: fields.pass_schema,
+            fail_schema: fields.fail_schema,
         };
         Ok(Self {
             id,
             title: fields.title,
             gate: fields.gate,
+            mutex: fields.mutex.unwrap_or_default(),
             body,
         })
     }
@@ -523,6 +460,9 @@ impl EvalDeclaration {
                 .child("instruction")
                 .check(text(&payload.instruction, "Eval payload.instruction"))?;
         }
+        location
+            .child("mutex")
+            .check(mutex::validate(&self.mutex))?;
         self.profile().validate(&location.child("profile"))?;
         for (key, schema) in [
             ("pass_schema", self.pass_schema()),
@@ -532,6 +472,12 @@ impl EvalDeclaration {
                 location
                     .child(key)
                     .check(crate::agent::verdict::validate_schema(schema))?;
+                // A person enters a Human result in a form: only shapes it can enter.
+                if self.profile().kind() == ProfileKind::Human {
+                    location
+                        .child(key)
+                        .check(crate::review::check_schema(schema))?;
+                }
             }
         }
         if self.profile_variants().len() > MAX_DECLARED_ITEMS {
@@ -719,7 +665,7 @@ impl TryFrom<Map<String, Value>> for Fingerprint {
         } else {
             if object.contains_key("dependencies") {
                 return Err(serde::de::Error::custom(
-                    "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its mounts, children and referenced Artifacts. Remove the field.",
+                    "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its children and referenced Artifacts. Remove the field.",
                 ));
             }
             let ArtifactsumForm { files, ignore } = serde_json::from_value(Value::Object(object))?;
@@ -808,8 +754,6 @@ pub struct ArtifactDeclaration {
     pub evals: Vec<EvalDeclaration>,
     #[serde(default)]
     pub views: Views,
-    #[serde(default)]
-    pub mounts: BTreeMap<MountAlias, ArtifactName>,
     #[serde(default, deserialize_with = "present")]
     pub basis: Option<bool>,
     #[serde(
@@ -835,13 +779,6 @@ impl ArtifactDeclaration {
                 .error(format!("Basis Artifact {} cannot own Evals.", self.name)));
         }
         self.views.validate(&location.child("views"))?;
-        for (alias, target) in &self.mounts {
-            let mounts = location.child("mounts");
-            mounts.key(alias).check(identifier(alias, "Mount alias"))?;
-            mounts
-                .child(alias)
-                .check(identifier(target, "Mount target"))?;
-        }
         if let Some(fingerprint) = &self.fingerprint {
             fingerprint.validate(&location.child("fingerprint"))?;
         }
@@ -986,24 +923,6 @@ fn validate_identity_locations(
             .child("name")
             .check(identifier(name, "Artifact name"))?;
     }
-    if let Some(mounts) = document
-        .get_ref()
-        .get("mounts")
-        .and_then(|value| value.get_ref().as_table())
-    {
-        for (alias, target) in mounts {
-            location
-                .child("mounts")
-                .key(alias.get_ref())
-                .check(identifier(alias.get_ref(), "Mount alias"))?;
-            if let DeValue::String(target) = target.get_ref() {
-                location
-                    .child("mounts")
-                    .child(alias.get_ref())
-                    .check(identifier(target, "Mount target"))?;
-            }
-        }
-    }
     if let Some(evals) = document
         .get_ref()
         .get("evals")
@@ -1085,17 +1004,17 @@ fn reject_non_json_values(
 
 pub use artifactize_tools::scope::ArtifactKind;
 
-/// Child paths or mount aliases with their target Artifacts as tool-side IDs. Declarations
-/// validated both, so a failure here is a bug.
-fn tool_ids<K: Ord, T: Ord + AsRef<str>>(
-    targets: &BTreeMap<T, ArtifactName>,
-    key: impl Fn(&str) -> Result<K, artifactize_tools::scope::ScopeError>,
-) -> BTreeMap<K, artifactize_tools::scope::ArtifactId> {
-    targets
+/// Child paths with their target Artifacts as tool-side IDs. Discovery validated both, so a
+/// failure here is a bug.
+fn tool_children(
+    children: &BTreeMap<ChildPrefix, ArtifactName>,
+) -> BTreeMap<artifactize_tools::scope::ChildPrefix, artifactize_tools::scope::ArtifactId> {
+    children
         .iter()
         .map(|(path, name)| {
             (
-                key(path.as_ref()).expect("validated child prefix or mount alias"),
+                artifactize_tools::scope::ChildPrefix::new(path.as_ref())
+                    .expect("validated child prefix"),
                 crate::scope::tool_id(name),
             )
         })
@@ -1112,7 +1031,6 @@ pub struct Artifact {
     pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
-    pub mounts: BTreeMap<MountAlias, ArtifactName>,
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
 }
@@ -1123,12 +1041,7 @@ impl Artifact {
             path: self.path.clone(),
             kind: self.kind,
             name: self.name.to_string(),
-            children: tool_ids(&self.children, |path| {
-                artifactize_tools::scope::ChildPrefix::new(path)
-            }),
-            mounts: tool_ids(&self.mounts, |alias| {
-                artifactize_tools::scope::MountAlias::new(alias)
-            }),
+            children: tool_children(&self.children),
         }
     }
 
@@ -1204,39 +1117,3 @@ impl RepoConfig {
 
 #[cfg(test)]
 mod tests;
-
-impl Serialize for EvalBody {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("profile", self.profile())?;
-        match self {
-            Self::Dependency { .. } => {
-                map.serialize_entry("passSchema", &Option::<()>::None)?;
-                map.serialize_entry("failSchema", &Option::<()>::None)?;
-            }
-            Self::Executable {
-                profile_variants,
-                payload,
-                pass_schema,
-                fail_schema,
-                ..
-            } => {
-                if !profile_variants.is_empty() {
-                    map.serialize_entry("profileVariants", profile_variants)?;
-                }
-                map.serialize_entry("payload", payload)?;
-                map.serialize_entry("passSchema", pass_schema)?;
-                map.serialize_entry("failSchema", fail_schema)?;
-            }
-        }
-        map.end()
-    }
-}
-impl EvalBody {
-    fn profile(&self) -> &Profile {
-        match self {
-            Self::Dependency { profile } | Self::Executable { profile, .. } => profile,
-        }
-    }
-}

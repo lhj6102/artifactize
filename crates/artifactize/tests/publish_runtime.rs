@@ -15,10 +15,11 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-const CRATES: [&str; 4] = [
+const CRATES: [&str; 5] = [
     "artifactize-tools",
     "artifactize-core",
     "artifactize-tui",
+    "artifactize-mcp",
     "artifactize",
 ];
 
@@ -113,7 +114,7 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
     )
     .unwrap();
     let mut command = runtime::Command::prepare(
-        "node".into(),
+        support::os::node_program().into(),
         vec![helper.into_os_string()],
         &workspace,
         &root.path().join("runs"),

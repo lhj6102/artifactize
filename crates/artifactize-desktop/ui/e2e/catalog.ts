@@ -3,6 +3,8 @@ import { scenarios as accounts } from "./cases/accounts.ts";
 import { scenarios as settings } from "./cases/settings.ts";
 import { scenarios as currentGraph } from "./cases/current-graph.ts";
 import { scenarios as graph } from "./cases/graph.ts";
+import { scenarios as detailContent } from "./cases/detail-content.ts";
+import { scenarios as catalogLayout } from "./cases/catalog-layout.ts";
 import { scenarios as navigation } from "./cases/navigation.ts";
 import { scenarios as states } from "./cases/states.ts";
 import { scenarios as monitor } from "./cases/monitor.ts";
@@ -17,7 +19,7 @@ import type { Scenario } from "./scenario.ts";
 
 export const scenarios: Scenario[] = [
   ...accounts, ...settings, ...currentGraph, ...graph, ...navigation, ...states,
-  ...monitor, ...review, ...canonicalReview, ...humanSubmitFocus, ...launch,
+  ...detailContent, ...catalogLayout, ...monitor, ...review, ...canonicalReview, ...humanSubmitFocus, ...launch,
   ...requests, ...search, ...palette,
 ];
 

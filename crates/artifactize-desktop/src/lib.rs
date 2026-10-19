@@ -7,6 +7,8 @@
 
 mod browse;
 mod detail;
+#[cfg(feature = "e2e")]
+mod e2e_input;
 mod failure;
 mod generation;
 mod graph;
@@ -42,9 +44,9 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             detail::detail,
             human::human_open,
             human::human_form,
-            human::human_json,
             human::human_edit_field,
-            human::human_edit_json,
+            human::human_add_item,
+            human::human_remove_item,
             human::human_claim,
             human::human_run,
             human::human_cancel,
@@ -72,7 +74,11 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             settings::remote_logout,
             settings::remote_push,
         ])
-        .events(collect_events![watch::StateChanged, watch::SessionChanged])
+        .events(collect_events![
+            watch::StateChanged,
+            watch::SessionChanged,
+            human::log::HumanToolLog
+        ])
 }
 
 /// Write the TypeScript bindings to `path`.
@@ -127,12 +133,22 @@ impl App {
 pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tauri::Builder<R> {
     let specta = bindings::<R>();
     let state = launch.state.clone();
+    let commands = specta.invoke_handler();
     builder
         .manage(App::new(launch))
-        .invoke_handler(specta.invoke_handler())
+        .invoke_handler(move |invoke| {
+            #[cfg(feature = "e2e")]
+            if invoke.message.command() == "e2e_input" {
+                return e2e_input::handle(invoke);
+            }
+            commands(invoke)
+        })
         .setup(move |app| {
             specta.mount_events(app);
             watch::spawn(app.handle().clone(), state);
+            if let Some(events) = app.state::<App>().human.take_events() {
+                human::log::forward(app.handle().clone(), events);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

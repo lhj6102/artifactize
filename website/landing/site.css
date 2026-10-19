@@ -438,17 +438,89 @@ p {
   white-space: nowrap;
 }
 
-.lede {
-  max-width: 760px;
+.logline {
+  max-width: 720px;
   text-wrap: balance;
-  margin: 26px auto 0;
+  margin: 22px auto 0;
+  color: var(--text);
+  font-size: clamp(19px, 2.3vw, 24px);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.audience {
+  max-width: 1000px;
+  margin: 40px auto 0;
+}
+
+.audience h2 {
+  margin: 0 0 14px;
+  color: var(--green);
+  font: 600 13px/1.2 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.audience-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: audience;
+  text-align: left;
+}
+
+.audience-list li {
+  counter-increment: audience;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--glass);
   color: var(--dim);
-  font-size: clamp(17px, 2.1vw, 20px);
-  line-height: 1.6;
+  font-size: 15.5px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.audience-list li::before {
+  content: counter(audience, decimal-leading-zero);
+  display: block;
+  margin-bottom: 8px;
+  color: var(--green);
+  font: 600 12px/1 var(--mono);
 }
 
 .hero .cta {
   justify-content: center;
+  margin-top: 30px;
+}
+
+@media (max-width: 820px) {
+  .audience-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hero-demo {
+  max-width: 1080px;
+  margin: 36px auto 0;
+}
+
+.hero-demo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(15, 20, 27, 0.12);
+}
+
+.hero-demo figcaption {
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: 13px;
 }
 
 .scroll-cue {
@@ -644,24 +716,6 @@ p {
   .vc-label {
     display: none;
   }
-}
-
-/* ---------- Why ---------- */
-
-.why {
-  text-align: center;
-}
-
-.why-inner {
-  max-width: 800px;
-}
-
-.why-inner > p:not(.kicker) {
-  max-width: 700px;
-  margin: 18px auto 0;
-  color: var(--dim);
-  font-size: 18px;
-  text-wrap: pretty;
 }
 
 /* ---------- Get started ---------- */

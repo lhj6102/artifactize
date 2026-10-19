@@ -23,7 +23,7 @@ fn owns_console() -> bool {
 }
 
 /// Only a no-argument desktop launch with console input AND output may wait for Enter.
-pub(crate) fn pause_after_help(has_args: bool) -> io::Result<()> {
+pub fn pause_after_help(has_args: bool) -> io::Result<()> {
     if !has_args
         && io::stdout().is_terminal()
         && should_pause(owns_console(), has_args, io::stdin().is_terminal())

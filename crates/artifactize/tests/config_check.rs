@@ -52,12 +52,11 @@ fn json_output(output: &Output) -> Value {
 }
 
 #[test]
-fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs() {
+fn config_check_reports_bad_references_without_opening_runtime_inputs() {
     let fixture = Fixture::new();
     fixture.write("input/index.artf", r#"{"name":"input"}"#);
     let mut declaration = json!({
         "name":"review",
-        "mounts":{"source":"input"},
         "evals":[
             {
                 "id":"run",
@@ -65,9 +64,9 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
                 "profile":{
                     "kind":"runtime",
                     "command":"missing-command",
-                    "args":["{source}/missing-file"],
+                    "args":["{input}/missing-file"],
                 },
-                "payload":{"instruction":"Read {source}."},
+                "payload":{"instruction":"Read {input}."},
             },
         ],
     });
@@ -111,8 +110,6 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
             .unwrap()
             .contains("Unknown Artifact reference {missing}")
     );
-    declaration["mounts"]["source"] = json!("missing");
-    fixture.write("review/index.artf", &declaration.to_string());
     let output = fixture
         .command()
         .args(["config", "check"])
@@ -120,7 +117,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown mount target"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown Artifact reference"));
     assert!(!fixture.0.join("state-home").exists());
 }
 
@@ -281,7 +278,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
             .as_ref()
             .unwrap()
             .instruction,
-        "Check {source}."
+        "Check {input}."
     );
 
     fixture.write(

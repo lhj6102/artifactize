@@ -82,7 +82,7 @@ impl Monitor {
                     self.tree = Default::default();
                     self.folds = Default::default();
                     self.framed = None;
-                    self.serial += 1;
+                    self.serial = self.serial.next();
                 }
                 self.origin = snapshot.origin;
                 self.catalog = snapshot.catalog;

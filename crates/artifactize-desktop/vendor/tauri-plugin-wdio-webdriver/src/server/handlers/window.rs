@@ -87,7 +87,7 @@ pub async fn close_window<R: Runtime>(
         // Close the current window
         if let Some(window) = state.app.webview_windows().get(&current_window).cloned() {
             window
-                .close()
+                .destroy()
                 .map_err(|e| WebDriverErrorResponse::unknown_error(&e.to_string()))?;
 
             // Return remaining window handles

@@ -39,10 +39,10 @@ const SCHEMA: &str =
     "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, request_key TEXT);
     CREATE UNIQUE INDEX run_request_key ON runs(repo,request_key) WHERE request_key IS NOT NULL;
     CREATE TABLE requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT, data TEXT NOT NULL, UNIQUE(run_id, eval_id), UNIQUE(run_id, ordinal));
-    CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL);
+    CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, profile_identity TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL);
     CREATE TABLE state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE INDEX active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
-    CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
+    CREATE UNIQUE INDEX active_key ON executions(key,profile_identity) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
     CREATE INDEX key_history ON executions(key, completed_at);
     CREATE INDEX definition_history ON executions(eval_def_hash, completed_at);
     CREATE INDEX running_backend ON executions(backend) WHERE status='RUNNING';";
@@ -304,7 +304,7 @@ pub struct Request {
     pub argv: Option<Vec<String>>,
     pub child: Option<super::ChildIdentity>,
     pub blocked_reason: Option<String>,
-    /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
+    /// Unfulfilled Evals behind this request’s dependency gates.
     pub blocked_by: Vec<super::Blocker>,
     /// What a queued request waits for besides a job; `blocked_reason` says it in words.
     pub queue: Option<QueueReason>,
@@ -391,7 +391,7 @@ pub(crate) struct RequestWire {
     pub error: Option<String>,
     pub error_code: Option<crate::types::FailureCode>,
     pub blocked_reason: Option<String>,
-    /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
+    /// Unfulfilled Evals behind this request’s dependency gates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked_by: Vec<super::Blocker>,
     /// Absent from requests saved before it existed, which read as waiting for a job.
@@ -877,7 +877,11 @@ pub(super) fn schema_initialized(transaction: &rusqlite::Transaction<'_>) -> Res
 /// Reject non-regular state files and a database of another schema before any read or write.
 pub(super) fn check_files(state: &Path) -> Result<(), String> {
     match state_schema(state)? {
-        Some(6) => super::migrations::open_existing(state),
+        Some(version)
+            if (super::migrations::FIRST_VERSION..STATE_SCHEMA_VERSION).contains(&version) =>
+        {
+            super::migrations::open_existing(state)
+        }
         Some(version) if version != 0 && version != STATE_SCHEMA_VERSION => {
             Err(schema_error(version))
         }
@@ -903,7 +907,7 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
     let version = read().map_err(|e| e.to_string())?;
-    if version == super::migrations::FIRST_VERSION {
+    if (super::migrations::FIRST_VERSION..STATE_SCHEMA_VERSION).contains(&version) {
         super::migrations::open_existing(&state)?;
         return read().map(Some).map_err(|e| e.to_string());
     }

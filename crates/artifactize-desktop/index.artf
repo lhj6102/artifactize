@@ -1,7 +1,7 @@
 name = "desktop"
 
-# The app runs headless for the whole review. start snapshots the explicitly prepared
-# candidate manifest into its own session; it never consumes shared Cargo output names.
+# The app runs headless for the whole review. start builds a candidate into its own
+# session (or snapshots an explicitly prepared one); it never consumes shared Cargo output names.
 [views.agent_tools]
 list = { builtin = "list" }
 glob = { builtin = "glob" }
@@ -67,9 +67,6 @@ args = ["harness/harness.mts", "change-declaration"]
 protocol = "json"
 input_schema = { type = "object", properties = {}, additionalProperties = false }
 
-[evals.ready]
-title = "The backend, the UI and the journeys are ready"
-profile = { kind = "dependency", depends_on = ["desktop-backend", "desktop-ui", "ux-features"] }
 
 [evals.lint]
 title = "The desktop-owned TypeScript automation harness lint passes"
@@ -80,13 +77,14 @@ payload.instruction = "Run eslint with no inline config over the TypeScript auto
 title = "The desktop automation harness follows the test rules"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 payload.instruction = """
-Read the TEST- rules of {code-style} with read_style_code-style. Review the automation harness owned by {desktop} (harness/), using list_desktop, glob_desktop, grep_desktop and read_desktop. The tests of {desktop-ui} and {desktop-e2e} have their own reviews: do not duplicate them. Check every TEST- rule: exact async states, controlled ordering or expiry times, read-only observations, owned processes/connections/temporary files and cleanup, declared executables and inputs, and observable seams without over-verification. Submit GREEN when none is clearly violated. Otherwise submit RED with up to 20 violations, each with the TEST- rule id (item), a path:line (where), and one sentence on what to change.
+Read the TEST- rules of {code-style}. Review the automation harness owned by {desktop} (harness/). The tests of {desktop-ui} and {desktop-e2e} have their own reviews: do not duplicate them. Check every TEST- rule: exact async states, controlled ordering or expiry times, read-only observations, owned processes/connections/temporary files and cleanup, declared executables and inputs, and observable seams without over-verification. Submit GREEN when none is clearly violated. Otherwise submit RED with up to 20 violations, each with the TEST- rule id (item), a path:line (where), and one sentence on what to change.
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
 fail_schema = { type = "object", properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }, required = ["violations"], additionalProperties = false }
 
 [evals.suite-passes]
 title = "The end-to-end suite passes on a headless display"
+mutex = ["use-computer"]
 profile = { kind = "runtime", command = "pnpm", args = ["-C", "ui", "e2e"], timeout_ms = 1800000 }
 
 [evals.suite-passes.payload]

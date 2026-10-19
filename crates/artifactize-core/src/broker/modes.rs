@@ -25,28 +25,8 @@ pub(super) fn deferred(config: &RepoConfig, run: &Run, requests: &[Request]) -> 
         .collect()
 }
 
-/// Late means after this Artifact's machine evidence is final, never after a guessed
-/// duration. A same-Artifact RED/ERROR withdraws the sign-off rather than asking a person.
-pub(super) fn machines<'a>(
-    config: &'a RepoConfig,
-    request: &Request,
-) -> impl Iterator<Item = &'a EvalId> {
-    let target = request.target.clone();
-    config
-        .evals
-        .iter()
-        .filter(move |eval| eval.target == target)
-        .filter(|eval| {
-            !matches!(
-                eval.declaration.profile().kind(),
-                ProfileKind::Human | ProfileKind::Dependency
-            )
-        })
-        .map(|eval| &eval.id)
-}
-
 /// Longest remaining dependency path is counted in eval obligations, not wall-clock
-/// guesses. SCC peers do not gate one another; derived evals use their explicit targets.
+/// guesses. Artifact cycle peers do not gate one another; each Eval uses its own references.
 pub(super) fn order(
     graph: &Graph<'_>,
     requests: &[Request],
@@ -78,7 +58,6 @@ pub(super) fn order(
         let eval = &evaluation.evals[id.as_str()];
         usize::from(
             eval.status != crate::graph::EvalStatus::Blocked
-                && !(eval.derived && eval.status.passes_gate())
                 && !matches!(
                     evidence.get(id),
                     Some(Evidence::Current(_)) | Some(Evidence::OperationalError)

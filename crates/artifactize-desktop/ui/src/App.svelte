@@ -5,7 +5,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
-  import { call, message, onStateChanged } from "./ipc/client";
+  import { call, message, onHumanToolLog, onStateChanged } from "./ipc/client";
   import CurrentGraph from "./monitor/CurrentGraph.svelte";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewScreen from "./review/ReviewScreen.svelte";
@@ -32,7 +32,6 @@
     call(commands.launch()).then(
       (view) => {
         app.start(view);
-
       },
       (error) => (app.failure = message(error)),
     );
@@ -40,6 +39,8 @@
     // Ages and running times redraw from the snapshot; nothing is read.
     const clock = setInterval(() => void browse.redraw(), 1000);
     const unchanged = onStateChanged((resync) => browse.refresh(resync));
+    // What Human tools print, for whichever review shows it.
+    const unlogged = onHumanToolLog((logs) => app.logged(logs));
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
@@ -49,6 +50,7 @@
       hideActivity();
       clearInterval(clock);
       unchanged();
+      unlogged();
       unlisten?.();
     };
   });
@@ -108,14 +110,13 @@
     <div class="spacer"></div>
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
     <Badge counts={browse.view?.badge ?? []} />
-    {#if app.launch}<span class="muted" title="Reviewer">{app.launch.reviewer}</span>{/if}
+    {#if app.launch}<span class="muted" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
     <button
       class="button"
       aria-pressed={app.screen === "settings"}
-      onclick={() => app.show("settings")}
-      title="Accounts, keys, models and the remote store (Ctrl+,)">Settings</button
+      onclick={() => app.show("settings")}>Settings</button
     >
-    <button class="button" onclick={() => (app.palette = true)} title="Command palette">
+    <button class="button" onclick={() => (app.palette = true)}>
       Commands <kbd>Ctrl+K</kbd>
     </button>
   </header>
@@ -146,9 +147,11 @@
 />
 
 <style>
+  /* Nothing a screen shows widens the window's layout. */
   .app {
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     height: 100%;
   }
   .bar {

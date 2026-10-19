@@ -9,6 +9,39 @@ use crate::scope;
 
 use super::Content;
 
+/// The only image formats accepted by tool results and provider turns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Mime {
+    #[serde(rename = "image/png")]
+    Png,
+    #[serde(rename = "image/jpeg")]
+    Jpeg,
+    #[serde(rename = "image/webp")]
+    Webp,
+}
+
+impl Mime {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::Jpeg => "image/jpeg",
+            Self::Webp => "image/webp",
+        }
+    }
+}
+
+impl std::str::FromStr for Mime {
+    type Err = &'static str;
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "image/png" => Ok(Self::Png),
+            "image/jpeg" => Ok(Self::Jpeg),
+            "image/webp" => Ok(Self::Webp),
+            _ => Err("Image MIME type must be image/png, image/jpeg or image/webp."),
+        }
+    }
+}
+
 /// Bound decoded image memory and base64 provider payloads while allowing review screenshots.
 pub const IMAGE_LIMIT: usize = 4 * 1024 * 1024;
 /// The eight bytes every PNG file starts with.
@@ -79,18 +112,18 @@ pub fn normalize(bytes: &[u8], declared: Option<&str>) -> Result<Content, String
     }
     let mime_type = mime_type(bytes)
         .ok_or("Image must be PNG, JPEG or WebP; GIF, BMP and animated PNG are not supported.")?;
-    if declared.is_some_and(|declared| declared != mime_type) {
+    if declared.is_some_and(|declared| declared != mime_type.as_str()) {
         return Err("Image bytes do not match declared MIME type.".into());
     }
     Ok(Content::Image {
         data: STANDARD.encode(bytes),
-        mime_type: mime_type.into(),
+        mime_type,
     })
 }
 
-fn mime_type(bytes: &[u8]) -> Option<&'static str> {
+fn mime_type(bytes: &[u8]) -> Option<Mime> {
     if bytes.starts_with(JPEG_START) && bytes.get(JPEG_START.len()) != Some(&JPEG_LS_MARKER) {
-        Some("image/jpeg")
+        Some(Mime::Jpeg)
     } else if bytes.starts_with(PNG_SIGNATURE) {
         let ihdr = PNG_SIGNATURE.len()..PNG_SIGNATURE.len() + PNG_IHDR_HEADER.len();
         if bytes.get(ihdr) != Some(PNG_IHDR_HEADER) {
@@ -109,13 +142,13 @@ fn mime_type(bytes: &[u8]) -> Option<&'static str> {
                 return None;
             }
             if kind == PNG_END {
-                return Some("image/png");
+                return Some(Mime::Png);
             }
             offset = end;
         }
         None
     } else if bytes.starts_with(RIFF_SIGNATURE) && bytes.get(RIFF_FORM_TYPE) == Some(WEBP_FORM) {
-        Some("image/webp")
+        Some(Mime::Webp)
     } else {
         None
     }

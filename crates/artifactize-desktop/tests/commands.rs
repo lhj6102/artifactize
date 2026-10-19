@@ -1,6 +1,6 @@
 //! The command boundary: JSON in and out of the IPC handler, on state a real `verify` made.
-//! A Human sign-off with a built-in tool and owner schemas waits; a dependency eval waits for
-//! it. Built-in tools and dependency evals run alike on every OS.
+//! A Human sign-off with a built-in tool and owner schemas waits; a runtime Eval
+//! references it. Built-in tools and runtime Evals run alike on every OS.
 use artifactize_core::project::{VerifyOptions, selection::Selection};
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
@@ -38,6 +38,7 @@ additionalProperties = false
 [evals.signoff.fail_schema]
 type = "object"
 properties.reason = { type = "string", minLength = 3 }
+properties.steps = { type = "array", items = { type = "string" } }
 required = ["reason"]
 additionalProperties = false
 "#;
@@ -45,8 +46,9 @@ additionalProperties = false
 const SHIP: &str = r#"name = "ship"
 
 [evals.check]
-title = "The release is signed off"
-profile = { kind = "dependency", depends_on = ["release"] }
+title = "The signed release passes the shipping check"
+profile = { kind = "runtime", command = "fixture-runtime", args = [] }
+payload.instruction = "Inspect {release} before shipping."
 "#;
 
 struct Fixture {
@@ -71,6 +73,10 @@ fn fixture_with(extra: &[(&str, &str)]) -> Fixture {
         .chain(extra.iter().copied())
     {
         fs::create_dir_all(repo.join(name)).unwrap();
+        let text = text.replace(
+            "\"fixture-runtime\"",
+            &serde_json::to_string(&os::true_program()).unwrap(),
+        );
         fs::write(repo.join(name).join("index.artf"), text).unwrap();
     }
     fs::write(repo.join("release/notes.md"), "# Release notes\n- Ready.\n").unwrap();
@@ -315,16 +321,40 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         json!({"id": id, "tool": "notes_release", "job": 3}),
     )
     .unwrap();
-    assert_eq!(ran["output"]["text"], "# Release notes\n- Ready.");
-    assert_eq!(ran["notice"]["text"], "notes_release finished.");
+    // What it printed reaches the Tool log as events; the command answers with the notice.
+    assert_eq!(ran["text"], "notes_release finished.");
 
     let red = invoke(&window, "human_form", json!({"id": id, "verdict": "RED"})).unwrap();
     assert_eq!(red["fields"][0]["name"], "reason");
     assert_eq!(red["fields"][0]["input"], json!({"kind": "text"}));
+    // The library's form adds and removes a list's items and keeps one to type in.
+    let steps = |draft: &Value| draft["fields"][1][1].clone();
+    let draft = json!({"verdict": "RED", "fields": [["reason", {"kind": "text", "value": ""}], ["steps", {"kind": "list", "value": ["a"]}]]});
+    let added = invoke(
+        &window,
+        "human_add_item",
+        json!({"id": id, "draft": draft, "name": "steps"}),
+    )
+    .unwrap();
+    assert_eq!(steps(&added), json!({"kind": "list", "value": ["a", ""]}));
+    let removed = invoke(
+        &window,
+        "human_remove_item",
+        json!({"id": id, "draft": added, "name": "steps", "item": 0}),
+    )
+    .unwrap();
+    assert_eq!(steps(&removed), json!({"kind": "list", "value": [""]}));
+    let removed = invoke(
+        &window,
+        "human_remove_item",
+        json!({"id": id, "draft": removed, "name": "steps", "item": 0}),
+    )
+    .unwrap();
+    assert_eq!(steps(&removed), json!({"kind": "list", "value": [""]}));
     let invalid = invoke(
         &window,
         "human_submit",
-        json!({"id": id, "job": 4, "draft": {"verdict": "RED", "fields": [["reason", {"kind": "text", "value": "no"}]], "json": null}}),
+        json!({"id": id, "job": 4, "draft": {"verdict": "RED", "fields": [["reason", {"kind": "text", "value": "no"}]]}}),
     )
     .unwrap_err();
     assert_eq!(invalid["kind"], "invalid");
@@ -342,8 +372,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         green["fields"][0]["input"],
         json!({"kind": "fixed", "value": "true"})
     );
-    // The typed draft as owner-fields JSON, as the terminal review hands it to $EDITOR.
-    let draft = json!({"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]], "json": null});
+    let draft = json!({"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]]});
     // Choosing the verdict again hands the kept draft to the library, which answers with it.
     let again = invoke(
         &window,
@@ -352,15 +381,12 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     )
     .unwrap();
     assert_eq!(again["draft"]["fields"][1][1]["value"], "확인했습니다");
-    let text = invoke(&window, "human_json", json!({"id": id, "draft": draft})).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Value>(text.as_str().unwrap()).unwrap(),
-        json!({"approved": true, "comment": "확인했습니다"})
-    );
+    // The editor of owner-fields JSON is gone: a Human result is entered in the form only.
+    assert!(invoke(&window, "human_json", json!({"id": id, "draft": draft})).is_err());
     let submitted = invoke(
         &window,
         "human_submit",
-        json!({"id": id, "job": 5, "draft": {"verdict": "GREEN", "fields": [], "json": text}}),
+        json!({"id": id, "job": 5, "draft": draft}),
     )
     .unwrap();
     assert_eq!(submitted["settled"], "published");
@@ -424,6 +450,25 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
 
 #[test]
 fn a_publication_failure_after_local_settlement_is_saved_locally() {
+    const ISOLATED: &str = "ARTIFACTIZE_TEST_PUBLICATION_FAILURE";
+    if os::environment_variable(ISOLATED).is_none() {
+        let output = os::run_test_without(
+            "a_publication_failure_after_local_settlement_is_saved_locally",
+            &[(ISOLATED, "1".into())],
+            &[
+                "ARTIFACTIZE_REMOTE",
+                "ARTIFACTIZE_REMOTE_TOKEN",
+                "ARTIFACTIZE_REMOTE_SHARE",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
     let fixture = fixture();
     // No real credentials: a loopback store rejects a fake token after local settlement.
     let server = FakeProvider::start(|_| Reply::Json(403, json!({"error": "forbidden"})));
@@ -726,14 +771,14 @@ fn the_review_search_lists_any_request_and_opens_a_read_only_detail() {
         .map(|row| row["eval"].clone())
         .collect();
     assert_eq!(evals, [json!("release/signoff")]);
-    // Any kind and status: the dependency eval that waits for the sign-off.
-    let dependency = search("kind:dependency");
+    // Any kind and status: the runtime Eval that waits for the sign-off.
+    let dependency = search("kind:runtime eval:ship/check");
     assert_eq!(dependency["waiting"], json!(false));
     assert_eq!(dependency["rows"][0]["eval"], "ship/check");
-    assert_eq!(dependency["rows"][0]["kind"], "dependency");
+    assert_eq!(dependency["rows"][0]["kind"], "runtime");
     let id = dependency["rows"][0]["id"].as_str().unwrap().to_owned();
     let detail = invoke(&window, "review_detail", json!({"id": id})).unwrap();
-    assert_eq!(detail["profile"], "dependency");
+    assert_eq!(detail["profile"], "runtime");
     assert_eq!(detail["sections"][0]["name"], "outcome");
     // An invalid query lists nothing and says why.
     let invalid = search("kind:robot");
@@ -743,7 +788,7 @@ fn the_review_search_lists_any_request_and_opens_a_read_only_detail() {
     let completion = invoke(
         &window,
         "review_complete",
-        json!({"query": "kind:dependency eval:"}),
+        json!({"query": "kind:runtime eval:ship/check eval:"}),
     )
     .unwrap();
     assert_eq!(completion["candidates"], json!(["eval:ship/check"]));
@@ -789,8 +834,8 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     let graph = |window: &WebviewWindow<MockRuntime>| {
         invoke(window, "run_graph", json!({"run": run})).unwrap()
     };
-    // release waits for its Human; ship's dependency eval waits for release and lights the
-    // edge itself (waiting), not with release's own light (active).
+    // Release waits for its Human; the downstream runtime Eval waits for release.
+    // The edge shows its input Artifact’s active light.
     let before = graph(&monitor);
     assert_eq!(
         before["nodes"],
@@ -801,7 +846,7 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     );
     assert_eq!(
         before["edges"],
-        json!([{"source": "a:release", "target": "a:ship", "light": "waiting", "dependency": true}])
+        json!([{"source": "a:release", "target": "a:ship", "light": "active"}])
     );
 
     let id = saved(&fixture, "release/signoff").request.id.to_string();
@@ -813,12 +858,38 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
         json!({"id": id, "job": 2, "draft": {"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "ok"}]], "json": null}}),
     )
     .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        // A portable observation bound, not a scheduling or duration assertion.
+        const SETTLEMENT_BOUND: std::time::Duration = std::time::Duration::from_secs(30);
+        let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
+        let settled = tokio::time::timeout(SETTLEMENT_BOUND, async {
+            loop {
+                let current = artifactize_core::store::read_run(&fixture.state, &run)
+                    .await
+                    .unwrap();
+                if current.run.status() != artifactize_core::types::RunStatus::Running {
+                    break current;
+                }
+                changes.next_reconciled().await;
+            }
+        })
+        .await;
+        changes.close().await.unwrap();
+        assert_eq!(
+            settled.unwrap().run.status(),
+            artifactize_core::types::RunStatus::Green
+        );
+    });
     invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
     let after = graph(&monitor);
     assert_eq!(after["nodes"][0]["light"], "green");
     assert_eq!(
         after["nodes"][1]["light"], "green",
-        "the derived eval follows"
+        "the downstream runtime Eval completes"
     );
     assert_eq!(after["edges"][0]["light"], "green");
     // Another Run than the shown one is refused.
@@ -873,7 +944,7 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
         .unwrap();
     assert_eq!(
         edge,
-        &json!({"source": "a:broken", "target": "a:after", "light": "error", "dependency": false})
+        &json!({"source": "a:broken", "target": "a:after", "light": "error"})
     );
 }
 
@@ -918,7 +989,7 @@ fn graph_view_projects_the_same_structure_as_the_fingerprint_and_agent_tool() {
     );
     assert_eq!(
         view["graph"]["edges"],
-        json!([{"source":"a:app", "target":"a:graph", "light":"waiting", "dependency":false}])
+        json!([{"source":"a:app", "target":"a:graph", "light":"waiting"}])
     );
     assert_eq!(view["tree"][1]["children"][0]["name"], "Review the graph");
     // There was never a verification or saved Run. Refresh reads the changed declaration.

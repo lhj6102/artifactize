@@ -113,7 +113,7 @@ pub struct Progress {
     pub counts: Vec<(Status, u64)>,
     /// Executions against their budget, and jobs.
     pub budget: String,
-    /// Executed, reused and derived requests.
+    /// Executed and reused requests.
     pub work: String,
     /// Every spent token counter, and the counters reuse saved.
     pub usage: String,
@@ -287,9 +287,6 @@ fn reused(view: &RequestView) -> bool {
 
 fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
     let request = &view.request;
-    if view.request.profile.kind() == crate::config::ProfileKind::Dependency {
-        return Some("derived".into());
-    }
     if reused(view) {
         return Some("reused".into());
     }
@@ -384,8 +381,8 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                 .map_or("unlimited".into(), |limit| limit.to_string()),
         ),
         work: format!(
-            "executed {} · reused {} · derived {}",
-            summary.executed.total, summary.reused.kinds.total, summary.derived,
+            "executed {} · reused {}",
+            summary.executed.total, summary.reused.kinds.total,
         ),
         usage,
         saved,
@@ -504,7 +501,7 @@ pub fn run_node(run: &RunView) -> Node {
         compact: String::new(),
         changed: false,
         upstream: Vec::new(),
-        dependency: false,
+        held: false,
         children: Vec::new(),
     }
 }
@@ -670,18 +667,6 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
                 path.value().map_or("", crate::config::ChildPrefix::as_str)
             )
         }
-        RelationKind::Mount { alias } => {
-            format!(
-                "mount {}",
-                alias.value().map_or("", crate::config::MountAlias::as_str)
-            )
-        }
-        RelationKind::Dependency { name, eval_id } => format!(
-            "dependency {} in {}",
-            name.value()
-                .map_or("", crate::config::ReferenceName::as_str),
-            eval_id.value().map_or("", crate::types::EvalId::as_str)
-        ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,
@@ -722,7 +707,6 @@ fn profile(profile: &crate::config::StoredProfile) -> String {
             format!("runtime {command} {}", args.join(" "))
         }
         StoredProfile::Human {} => "human".into(),
-        StoredProfile::Dependency { depends_on } => format!("dependency {}", depends_on.join(", ")),
     }
 }
 
@@ -781,18 +765,6 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     );
     detail.push("Request", request.id.as_str());
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
-    if request.profile.kind() == crate::config::ProfileKind::Dependency {
-        detail.push("Source", "derived (no execution)");
-        detail.push(
-            "Blocked by",
-            request
-                .blocked_by
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
     detail.push("Error", error(view).unwrap_or_default());
     detail.push("Instruction", request.payload.instruction());
     detail.push("Profile", profile(&request.profile));
@@ -911,6 +883,77 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     detail
 }
 
+/// An eval at a glance: what it checks, its result once it has one, and what running it cost.
+/// For a reused result, `took` and `tokens` are what reuse saved. Everything else about the
+/// request stays in its [`Detail`]'s fields.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Card {
+    pub instruction: String,
+    /// The result's own entries, without its verdict and saved output.
+    pub result: Option<serde_json::Map<String, Value>>,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+    pub reused: bool,
+    /// The execution's own span: from its start to its end, or to `now` while it runs.
+    pub took: Option<String>,
+    /// Total tokens over every attempt.
+    pub tokens: Option<u64>,
+    pub model: Option<String>,
+}
+
+pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
+    use crate::config::StoredProfile;
+    use crate::store::ExecutionResult;
+    let request = &view.request;
+    let reused = reused(view);
+    let result = request.result();
+    let attempts = if reused {
+        request.reused_usage.as_ref()
+    } else {
+        request.usage.as_ref()
+    };
+    let tokens = attempts
+        .map(|attempts| {
+            attempts
+                .iter()
+                .filter_map(|attempt| attempt.usage.get("totalTokens"))
+                .sum::<u64>()
+        })
+        .filter(|tokens| *tokens > 0);
+    Card {
+        instruction: request.payload.instruction().to_owned(),
+        result: result.map(|result| {
+            let mut entries = result.to_json().as_object().cloned().unwrap_or_default();
+            for key in [
+                "verdict",
+                "stdout",
+                "stderr",
+                "exitCode",
+                "durationMs",
+                "truncated",
+            ] {
+                entries.remove(key);
+            }
+            entries
+        }),
+        exit_code: match result {
+            Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
+            _ => None,
+        },
+        error: error(view),
+        reused,
+        took: view
+            .execution
+            .as_ref()
+            .and_then(|execution| span(execution.started_at, execution.completed_at(), now)),
+        tokens,
+        model: match &request.profile {
+            StoredProfile::Agent { model, .. } => Some(model.to_string()),
+            _ => None,
+        },
+    }
+}
+
 pub fn detail(
     run: &RunView,
     requests: &[RequestView],
@@ -1011,6 +1054,7 @@ pub fn detail(
             );
             detail.summary = tree::artifact_status(&saved, id, now);
             detail.push("Status", detail.summary.clone());
+            detail.push("Waits for", tree::artifact_waits(&saved, id, now));
             let snapshot = saved.validation(id);
             if let Some(status) = snapshot.and_then(|s| s.status.value()) {
                 detail.push(

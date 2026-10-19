@@ -5,10 +5,12 @@ import { isDeepStrictEqual } from "node:util";
 import { verifyWaiting, addRepository, create, requests } from "../fixture.ts";
 import { press, typeText } from "../keys.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
-import { checkpoint, reviewRefreshed } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 
 import { scenario, type Scenario } from "../scenario.ts";
 import { portablePath, primaryModifier, type NativePath } from "../platform.ts";
+import { graphShown } from "../graph-view.ts";
+import { clickAt } from "../pointer.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -74,26 +76,47 @@ function palette(browser: WebdriverIO.Browser) {
     await choosePaletteCommand(browser, label);
     await press(browser, ["Enter"], hidden, `${label} selected and palette closed`);
   };
-  const refresh = async (expected: ListedRequest[], selected: string) => {
-    const before = await checkpoint(browser);
-    await run("Refresh the list");
-    await reviewRefreshed(browser, before);
+  // Reopening regression: run a command with a new visible outcome. An unchanged
+  // list plus a completion counter cannot establish that Refresh actually reloaded it.
+  const help = async (expected: ListedRequest[], selected: string) => {
+    await run("Keyboard shortcuts");
+    const dialog = () => browser.$('[role="dialog"]');
+    await waitFor(browser, async () => await dialog().isDisplayed() &&
+      (await dialog().getText()).includes("Keyboard shortcuts"), "the palette command opened keyboard help");
+    await press(browser, ["Escape"], async () => !(await dialog().isExisting()), "the keyboard help closed");
     await listShown(browser, expected, selected);
   };
   /** Open the palette with Ctrl+K, or close it with Esc. */
   const ctrlK = (how: string) => press(browser, [primaryModifier, "k"], shown, `the palette opens (${how})`);
   const escape = (how: string) => press(browser, ["Escape"], hidden, `the palette closes (${how})`);
   /** Open a request by ID with Ctrl+O; its Human review shows. */
-  const openId = async (id: string) => {
+  const openId = async (id: string, canonical = id) => {
     await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
     await browser.$('[aria-label="Request ID"]').click();
     await typeText(browser, id);
+    const before = await checkpoint(browser);
+    const completed = before.activity.commands.reviewDetail?.completed ?? 0;
     await browser.$('[role="dialog"] button[type="submit"]').click();
+    // Opening an already shown original/follower can leave the same review visible.
+    // Correlate this ID lookup's completion before accepting the rendered review.
+    await waitFor(browser, async () => ((await checkpoint(browser)).activity.commands.reviewDetail?.completed ?? 0) === completed + 1,
+      `the lookup of ${id} completed`);
+    await commandsRendered(browser, before);
     await waitFor(browser, async () =>
       !(await browser.$('[aria-label="Request ID"]').isExisting()) && await browser.$('[aria-label="Human review"]').isExisting(),
     `the request ID dialog resolves to the review of ${id}`);
+    assert.equal(await browser.$(".review .crumbs .error").isExisting(), false, "the ID lookup succeeded");
+    await browser.$('[aria-label="Human review"] header').waitForDisplayed({ timeout: 15000 });
+    const technical = browser.$('[aria-label="Human review"]').$("button*=Technical");
+    const expanded = await technical.getAttribute("aria-expanded") === "true";
+    if (!expanded) await technical.click();
+    await waitFor(browser, () => browser.execute((expected) => {
+      const key = [...document.querySelectorAll('[aria-label="Human review"] dt')].find((field) => field.textContent === "Request");
+      return key?.nextElementSibling?.textContent === expected;
+    }, canonical), `the rendered canonical request is ${canonical}`);
+    if (!expanded) await technical.click();
   };
-  return { shown, opened, closed, hidden, run, refresh, ctrlK, escape, openId };
+  return { shown, opened, closed, hidden, run, help, ctrlK, escape, openId };
 }
 
 export const scenarios: Scenario[] = [
@@ -134,17 +157,18 @@ export const scenarios: Scenario[] = [
         (window as unknown as { errors: string[] }).errors = errors;
         window.addEventListener("error", (event) => errors.push(event.message));
       });
-      await browser.$('[role="treeitem"][aria-selected="true"]').waitForExist({ timeout: 15000 });
+      await graphShown(browser, "a:release");
       const listed = () => browser.execute(() => [...document.querySelectorAll("[data-command-item]")]
         .map((item) => item.querySelector("span")?.textContent?.trim() ?? "").sort());
       await ctrlK("filter");
       // An unopened Monitor Detail offers Monitor navigation, not Review or Human actions.
       // These are the person's commands for this screen, not a registry-derived oracle.
-      assert.deepEqual(await listed(), [
+      const expected = [
         "Command palette", "Keyboard shortcuts", "Show Monitor", "Show Review", "Show Settings", "Quit",
-        "Refresh", "Next attention", "Focus Scope", "Focus Runs", "Focus Run tree",
-        "Show the Run graph", "Open Detail of the selected row",
-      ].sort(), "all and only the enabled commands of the Monitor");
+        "Refresh", "Focus Scope", "Focus Runs", "Focus Run graph", "Open the Run's Detail",
+      ].sort();
+      await waitFor(browser, async () => isDeepStrictEqual(await listed(), expected), "the enabled Monitor commands are rendered");
+      assert.deepEqual(await listed(), expected, "all and only the enabled commands of the Monitor");
       await typeText(browser, "Show Review");
       await waitFor(browser, async () => JSON.stringify(await listed()) === JSON.stringify(["Show Review"]), "only the matching command remains");
       assert.deepEqual(await listed(), ["Show Review"]);
@@ -185,7 +209,7 @@ export const scenarios: Scenario[] = [
     "opens after requests were opened by ID on the review screen, a follower included",
     async () => preparePalette(),
     async (browser, { fixture, data }) => {
-      const { opened, refresh, ctrlK, escape, openId } = palette(browser);
+      const { opened, help, ctrlK, escape, openId } = palette(browser);
       await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
       // Errors the page throws (a broken palette threw while rendering) fail the scenario.
       await browser.execute(() => {
@@ -210,10 +234,10 @@ export const scenarios: Scenario[] = [
       );
       await listShown(browser, expected, original.id);
       for (const id of [original.id, follower.id, original.id]) {
-        await openId(id);
+        await openId(id, original.id);
         await browser.$("button*=Commands").click();
         await opened(`button after opening ${id}`);
-        await refresh(expected, original.id);
+        await help(expected, original.id);
         await ctrlK(`Ctrl+K after opening ${id}`);
         await escape("Esc");
       }
@@ -224,7 +248,7 @@ export const scenarios: Scenario[] = [
     "opens after a request opened by ID, Esc and a search of every repository",
     async () => preparePalette(),
     async (browser, { fixture, data }) => {
-      const { opened, closed, run, refresh, ctrlK, openId } = palette(browser);
+      const { opened, closed, run, help, ctrlK, openId } = palette(browser);
       await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
       // Errors the page throws (a broken palette threw while rendering) fail the scenario.
       await browser.execute(() => {
@@ -232,7 +256,8 @@ export const scenarios: Scenario[] = [
         (window as unknown as { errors: string[] }).errors = errors;
         window.addEventListener("error", (event) => errors.push(event.message));
       });
-      await press(browser, [primaryModifier, "2"], () => browser.$('[aria-label="Search requests"]').isExisting(), "this case's Review screen");
+      await press(browser, [primaryModifier, "2"], () => browser.execute(() =>
+        document.querySelector('[role="tab"][data-state="active"]')?.textContent === "Review"), "this case's Review screen");
       const original = requests(fixture).find((request) => request.id === data.originalId);
       assert.ok(original);
       const all = [waitingRequest(data.otherId, data.otherRepo), waitingRequest(original.id, fixture.repo)];
@@ -257,15 +282,17 @@ export const scenarios: Scenario[] = [
           "the search cleared",
         );
         // A space ends the term and closes the suggestions, so Enter leaves the field.
+        const beforeSearch = await checkpoint(browser);
         await typeText(browser, "kind:human status:waiting_human ");
+        await commandsRendered(browser, beforeSearch);
         await waitFor(browser, async () => (await listed()) === 2, "the sign-offs of both repositories");
         await press(browser, ["Enter"], focused("Requests"), "focus on the list");
         const selected = await browser.$('[aria-label="Requests"] [aria-selected="true"] .mono').getText();
-        assert.ok(all.some((request) => request.id === selected), "one of the exact prepared requests is selected before Refresh");
+        assert.ok(all.some((request) => request.id === selected), "one of the exact prepared requests is selected before opening help");
         await listShown(browser, all, selected);
         await browser.$("button*=Commands").click();
         await opened(`button after the search, round ${round}`);
-        await refresh(all, selected);
+        await help(all, selected);
         await ctrlK(`Ctrl+K after the search, round ${round}`);
         await run("Show waiting Human reviews");
         await closed("the search reset");
@@ -288,7 +315,7 @@ export const scenarios: Scenario[] = [
         window.addEventListener("error", (event) => errors.push(event.message));
       });
       await ctrlK("Ctrl+K");
-      await browser.action("pointer").move({ x: 20, y: 600 }).down().up().perform();
+      await clickAt(browser, { x: 20, y: 600 });
       await closed("outside click");
       await ctrlK("after the outside click");
       await escape("Esc");

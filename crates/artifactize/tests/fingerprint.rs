@@ -442,10 +442,9 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     );
     fs::write(fixture.repo.join("core/lib.txt"), "v1").unwrap();
     // The JSON from issue #48: a global Artifact name in both fingerprint and runtime argv.
-    let api = |reference: &str, mounts: Value| {
+    let api = |reference: &str| {
         json!({
             "name":"api",
-            "mounts":mounts,
             "fingerprint":{
                 "script":{"command":support::os::python_program(),"args":["../fingerprint.py",".",reference]},
             },
@@ -463,7 +462,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
             ],
         })
     };
-    fixture.write("api/index.artf", api("{core}", json!({})));
+    fixture.write("api/index.artf", api("{core}"));
     fs::write(
         fixture.repo.join("api/test_api.py"),
         "import pathlib, sys\nassert (pathlib.Path(sys.argv[1]) / 'lib.txt').is_file()\n",
@@ -493,17 +492,12 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     assert_ne!(second["requests"][0]["fingerprint"], fingerprint.as_str());
     assert_eq!(second["executionsStarted"], 1);
 
-    // Mount aliases keep working.
-    fixture.write("api/index.artf", api("{lib}", json!({"lib":"core"})));
-    assert_eq!(run(&["config", "check"]).0, Some(0));
-    fixture.verify(&["--all"], 0);
-
     // Unknown and escaping references fail closed in config check and status alike.
     for (reference, message) in [
         ("{missing}", "Unknown Artifact reference {missing}"),
         ("{core}/../api", "safe relative logical path"),
     ] {
-        fixture.write("api/index.artf", api(reference, json!({})));
+        fixture.write("api/index.artf", api(reference));
         for command in [&["config", "check"][..], &["status"]] {
             let (code, _, stderr) = run(command);
             assert_eq!(code, Some(2), "{command:?} {reference}: {stderr}");
@@ -564,7 +558,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
     markers
 }
 
-/// The most fingerprint scripts that ran at once, then reset the notes.
+/// Observe the most fingerprint scripts that ran at once, preserving their notes.
 fn most_at_once(markers: &Path) -> usize {
     let mut most = 0;
     for entry in fs::read_dir(markers).unwrap() {
@@ -579,9 +573,24 @@ fn most_at_once(markers: &Path) -> usize {
             .chain([most])
             .max()
             .unwrap();
-        fs::remove_file(path).unwrap();
     }
     most
+}
+
+/// Reset only completed count evidence between phases; the release gate has its own lifetime.
+fn reset_counts(markers: &Path) {
+    for entry in fs::read_dir(markers).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("counts.")
+        {
+            fs::remove_file(path).unwrap();
+        }
+    }
 }
 
 #[test]
@@ -638,15 +647,18 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
     };
     let (one, most) = status("1");
     assert_eq!(most, 1);
+    reset_counts(&markers);
     fs::remove_file(markers.join("release")).unwrap();
     let (three, most) = status("3");
     assert_eq!(most, 3);
     assert_eq!(three, one);
+    reset_counts(&markers);
 
     // verify bounds preparation and the end-of-review rechecks alike, and records the bound.
     let run = fixture.verify(&["--all", "--fingerprint-jobs", "3"], 0);
     assert_eq!(run["fingerprintJobs"], 3);
     assert!(most_at_once(&markers) <= 3);
+    reset_counts(&markers);
     let default = fixture.verify(&["--all"], 0);
     assert!(default["fingerprintJobs"].as_u64().unwrap() >= 1);
     assert_eq!(default["executionsStarted"], 0);

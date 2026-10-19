@@ -1,10 +1,8 @@
 //! Eval view states: what one tree row shows, derived from the saved definitions and the
 //! current request states with the readiness rules of [`crate::graph`].
 //!
-//! Dependencies target Artifacts. An ordinary eval waits for every Artifact of its own
-//! component's direct dependency components (its gates); a dependency eval waits for its
-//! `depends_on` Artifacts, which may be cycle peers. Cycle peers never wait for each other
-//! otherwise.
+//! Each Eval has its own references and gates, and its target's children count as references;
+//! its own Artifact and that Artifact's cycle peers never gate it.
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -12,7 +10,6 @@ use std::{
 
 use super::Saved;
 use crate::{
-    config::ProfileKind,
     graph::EvalStatus,
     store::RequestView,
     types::{ArtifactName, EvalId, RequestStatus, RunStatus},
@@ -24,7 +21,6 @@ pub enum Source {
     Executed,
     Provisional,
     Reused,
-    Derived,
     /// A saved result the Run used for an eval it has no request for.
     Saved,
 }
@@ -160,7 +156,9 @@ pub(super) struct Index<'a> {
     pub evals: BTreeMap<&'a ArtifactName, Vec<&'a EvalId>>,
     /// Eval → direct dependency Artifacts, in display order.
     pub upstream: BTreeMap<&'a EvalId, Vec<&'a ArtifactName>>,
-    pub dependency: BTreeSet<&'a EvalId>,
+    gates: BTreeMap<&'a EvalId, Vec<&'a EvalId>>,
+    execution_order: Vec<&'a EvalId>,
+    targets: BTreeMap<&'a EvalId, &'a ArtifactName>,
     /// Artifact → its cycle peers (same component), by name.
     pub peers: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
     pub cyclic: BTreeSet<&'a ArtifactName>,
@@ -203,53 +201,21 @@ impl<'a> Index<'a> {
                 }
             }
         }
-        let mut dependency = BTreeSet::new();
-        let mut evals = BTreeMap::new();
-        for &artifact in &order {
-            let mut ids: Vec<(bool, &EvalId)> = targets
-                .remove(artifact)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|eval| {
-                    let kind = definitions
-                        .get(eval)
-                        .and_then(|eval| eval.declaration.value())
-                        .and_then(|declaration| declaration.profile.value())
-                        .map(|profile| profile.known.kind())
-                        .or_else(|| requests.get(eval).map(|view| view.request.profile.kind()));
-                    (kind == Some(ProfileKind::Dependency), eval)
-                })
-                .collect();
-            // Ordinary evals by id, then dependency evals.
-            ids.sort();
-            dependency.extend(
-                ids.iter()
-                    .filter(|(derived, _)| *derived)
-                    .map(|(_, id)| *id),
-            );
-            evals.insert(artifact, ids.into_iter().map(|(_, id)| id).collect());
-        }
-        let components = saved.components();
-        let by_id: HashMap<crate::graph::ComponentId, &Component> = components
+        let evals: BTreeMap<_, _> = order
             .iter()
-            .enumerate()
-            .map(|(index, component)| {
-                let id = component
-                    .id
-                    .value()
-                    .copied()
-                    .unwrap_or_else(|| crate::graph::ComponentId::from_position(index));
-                (id, component)
+            .map(|&artifact| {
+                let mut ids = targets.remove(artifact).unwrap_or_default();
+                ids.sort_unstable();
+                (artifact, ids)
             })
             .collect();
-        let mut component_of: HashMap<&ArtifactName, &Component> = HashMap::new();
+        let components = saved.components();
         let mut peers = BTreeMap::new();
         let mut cyclic = BTreeSet::new();
         for component in components {
             let mut names = members(component);
             names.sort_unstable();
             for &artifact in &names {
-                component_of.entry(artifact).or_insert(component);
                 peers.insert(
                     artifact,
                     names.iter().copied().filter(|id| *id != artifact).collect(),
@@ -259,78 +225,88 @@ impl<'a> Index<'a> {
                 }
             }
         }
-        let mut upstream = BTreeMap::new();
-        for (&artifact, ids) in &evals {
-            let component = component_of.get(artifact).copied();
-            let own = component.map(members).unwrap_or_else(|| vec![artifact]);
-            let gates: Option<Vec<&ArtifactName>> = component.map(|component| {
-                match component.dependencies.value() {
-                    Some(dependencies) => dependencies
-                        .iter()
-                        .filter_map(|id| by_id.get(id))
-                        .flat_map(|component| members(component))
-                        .collect(),
-                    // Saved before components named their dependencies: follow relations.
-                    None => saved
-                        .definitions()
-                        .into_iter()
-                        .flat_map(|graph| graph.relations())
-                        .filter(|relation| {
-                            own.contains(&&relation.target) && !own.contains(&&relation.source)
-                        })
-                        .flat_map(|relation| {
-                            component_of
-                                .get(&relation.source)
-                                .map(|component| members(component))
-                                .unwrap_or_else(|| vec![&relation.source])
-                        })
-                        .collect(),
-                }
-            });
-            for &eval in ids {
-                let request = requests.get(eval).map(|view| &view.request);
-                let deps: Vec<&ArtifactName> = if dependency.contains(eval) {
-                    let definition = definitions
-                        .get(eval)
-                        .and_then(|definition| definition.deps.value());
-                    match (definition, request) {
-                        (Some(deps), _) => deps.iter().collect(),
-                        (None, Some(request)) => request.deps.iter().collect(),
-                        (None, None) => Vec::new(),
-                    }
-                } else {
-                    match (&gates, request) {
-                        (Some(gates), _) => gates.clone(),
-                        // Runs saved without definitions: the request's referenced Artifacts.
-                        (None, Some(request)) => request.deps.iter().collect(),
-                        (None, None) => Vec::new(),
-                    }
-                };
-                let mut deps: Vec<&ArtifactName> = deps
+        let targets: BTreeMap<_, _> = evals
+            .iter()
+            .flat_map(|(&target, ids)| ids.iter().map(move |&id| (id, target)))
+            .collect();
+        let children: BTreeMap<_, Vec<_>> = saved
+            .artifacts()
+            .map(|(parent, artifact)| {
+                let children = artifact.children.value().into_iter().flatten();
+                (parent, children.map(|(_, child)| child).collect())
+            })
+            .collect();
+        // An eval depends on what it references and, like every eval of its target, on the
+        // target's children.
+        let inputs: BTreeMap<_, Vec<_>> = targets
+            .iter()
+            .map(|(&eval, &target)| {
+                let mut deps: Vec<_> = definitions
+                    .get(eval)
+                    .and_then(|definition| definition.deps.value())
+                    .map(|deps| deps.iter().collect())
+                    .unwrap_or_else(|| {
+                        requests
+                            .get(eval)
+                            .map_or(Vec::new(), |view| view.request.deps.iter().collect())
+                    });
+                deps.extend(children.get(target).into_iter().flatten().copied());
+                (eval, deps)
+            })
+            .collect();
+        let human = |eval: &EvalId| match requests.get(eval) {
+            Some(view) => view.request.profile.kind() == crate::config::ProfileKind::Human,
+            None => definitions
+                .get(eval)
+                .and_then(|definition| definition.declaration.value())
+                .and_then(|declaration| declaration.profile.value())
+                .is_some_and(|profile| {
+                    matches!(profile.known, crate::config::StoredProfile::Human { .. })
+                }),
+        };
+        let schedule = crate::graph::schedule::Schedule::new(
+            targets
+                .iter()
+                .map(|(&eval, &target)| crate::graph::schedule::Input {
+                    id: eval,
+                    target,
+                    deps: inputs[eval].clone(),
+                    human: human(eval),
+                }),
+            children
+                .iter()
+                .flat_map(|(&parent, children)| children.iter().map(move |&child| (parent, child))),
+        );
+        let upstream = inputs
+            .into_iter()
+            .map(|(eval, mut deps)| {
+                deps.extend(schedule.gates[eval].iter().map(|gate| targets[gate]));
+                let mut deps: Vec<_> = deps
                     .into_iter()
-                    .filter(|id| *id != artifact)
-                    .filter(|id| dependency.contains(eval) || !own.contains(id))
                     .collect::<BTreeSet<_>>()
                     .into_iter()
                     .collect();
                 deps.sort_by_key(|id| position.get(id).copied().unwrap_or(usize::MAX));
-                upstream.insert(eval, deps);
-            }
-        }
+                (eval, deps)
+            })
+            .collect();
+        let execution_order = schedule.order;
         Self {
             order,
             position,
             requests,
             evals,
             upstream,
-            dependency,
+            gates: schedule.gates,
+            execution_order,
+            targets,
             peers,
             cyclic,
         }
     }
 }
 
-/// Lazily derived views over one Run; dependency evals may read peers in any order.
+/// Lazily derived views over one Run, using the same Eval gates as live scheduling.
 pub(super) struct States<'a> {
     run: &'a crate::store::Run,
     #[cfg(any(test, feature = "test-support"))]
@@ -341,6 +317,7 @@ pub(super) struct States<'a> {
     effective: RefCell<HashMap<&'a EvalId, Option<EvalStatus>>>,
     completions: RefCell<HashMap<&'a ArtifactName, Completion>>,
     waits: RefCell<HashMap<&'a ArtifactName, Vec<ArtifactName>>>,
+    held: HashMap<&'a EvalId, bool>,
 }
 
 impl<'a> States<'a> {
@@ -348,7 +325,7 @@ impl<'a> States<'a> {
     /// is memoized and no derivation recurses along a long dependency chain.
     pub fn new(saved: &Saved<'a>) -> Self {
         let run = &saved.run.run;
-        let states = Self {
+        let mut states = Self {
             run,
             #[cfg(any(test, feature = "test-support"))]
             derivations: std::cell::Cell::new(0),
@@ -358,11 +335,19 @@ impl<'a> States<'a> {
             effective: RefCell::new(HashMap::new()),
             completions: RefCell::new(HashMap::new()),
             waits: RefCell::new(HashMap::new()),
+            held: HashMap::new(),
         };
+        for &eval in &states.index.execution_order {
+            states.effective(eval);
+            let held = states.index.gates[eval].iter().any(|&gate| {
+                matches!(
+                    states.effective(gate),
+                    EvalStatus::Red | EvalStatus::Blocked | EvalStatus::Error
+                ) || states.held[gate]
+            });
+            states.held.insert(eval, held);
+        }
         for artifact in states.upstream_first() {
-            for &eval in states.evals(artifact) {
-                states.effective(eval);
-            }
             states.completion(artifact);
             states.waits_of(artifact);
         }
@@ -370,7 +355,7 @@ impl<'a> States<'a> {
     }
 
     /// Every Artifact after the Artifacts its evals depend on (an iterative depth-first
-    /// post-order; a dependency eval naming a cycle peer may come either way).
+    /// post-order; projected Artifact cycles may come either way).
     fn upstream_first(&self) -> Vec<&'a ArtifactName> {
         let mut done = HashSet::new();
         let mut seen = HashSet::new();
@@ -459,7 +444,7 @@ impl<'a> States<'a> {
 
     pub fn view(&self, eval: &'a EvalId) -> EvalView {
         if let Some(view) = self.views.borrow().get(eval) {
-            // A wait cycle among dependency evals (rejected by graph.rs) reads as not run.
+            // Artifact-level presentation can revisit an Eval through a projected cycle.
             return view.clone().unwrap_or(EvalView::NotRun(NotRun::Unreviewed));
         }
         self.views.borrow_mut().insert(eval, None);
@@ -474,7 +459,7 @@ impl<'a> States<'a> {
     /// gates are unmet still waits or is blocked, and never fulfils a downstream gate.
     pub fn effective(&self, eval: &'a EvalId) -> EvalStatus {
         if let Some(status) = self.effective.borrow().get(eval) {
-            // Dependency evals cannot wait on each other (graph.rs rejects it).
+            // Eval gates are acyclic; a revisit cannot supply a verdict.
             return status.unwrap_or(EvalStatus::Wait);
         }
         self.effective.borrow_mut().insert(eval, None);
@@ -492,32 +477,23 @@ impl<'a> States<'a> {
         let status = request
             .map(|request| request.status())
             .or_else(|| self.outside(eval));
-        let derived = self.index.dependency.contains(eval);
-        if derived && status == Some(RequestStatus::Error) {
-            return EvalStatus::Error;
-        }
-        let mut unmet = Vec::new();
+        let unmet: Vec<_> = self
+            .index
+            .gates
+            .get(eval)
+            .into_iter()
+            .flatten()
+            .map(|&gate| (gate, self.effective(gate)))
+            .filter(|(_, status)| !status.passes_gate())
+            .collect();
+        if unmet
+            .iter()
+            .any(|&(gate, status)| self.status_blocks(eval, gate, status))
         {
-            for artifact in self.upstream(eval) {
-                for &gate in self.evals(artifact) {
-                    let status = self.effective(gate);
-                    if !status.passes_gate() {
-                        unmet.push(status);
-                    }
-                }
-            }
-        }
-        if unmet.iter().any(|status| {
-            matches!(status, EvalStatus::Red | EvalStatus::Blocked)
-                || (self.run.modes.speculate && *status == EvalStatus::Error)
-        }) {
             return EvalStatus::Blocked;
         }
         if !unmet.is_empty() {
             return EvalStatus::Wait;
-        }
-        if derived {
-            return EvalStatus::Green;
         }
         match status {
             Some(RequestStatus::Deferred) => EvalStatus::Deferred,
@@ -528,13 +504,6 @@ impl<'a> States<'a> {
             Some(RequestStatus::Stale) => EvalStatus::Stale,
             _ => EvalStatus::Unreviewed,
         }
-    }
-
-    /// Every eval of the Artifact is effectively GREEN: it fulfils downstream gates.
-    fn gate_met(&self, artifact: &ArtifactName) -> bool {
-        self.evals(artifact)
-            .iter()
-            .all(|eval| self.effective(eval).passes_gate())
     }
 
     fn met(&self, artifact: &ArtifactName) -> bool {
@@ -555,12 +524,9 @@ impl<'a> States<'a> {
             };
         };
         let request = &view.request;
-        let dependency = request.profile.kind() == ProfileKind::Dependency;
         match request.status() {
             RequestStatus::Provisional => EvalView::Done(Source::Provisional),
-            RequestStatus::Green => EvalView::Done(if dependency {
-                Source::Derived
-            } else if crate::query::reused(request) {
+            RequestStatus::Green => EvalView::Done(if crate::query::reused(request) {
                 Source::Reused
             } else {
                 Source::Executed
@@ -577,16 +543,16 @@ impl<'a> States<'a> {
             | RequestStatus::WaitDependency
             | RequestStatus::Unreviewed
             | RequestStatus::Blocked => {
-                let unmet = self.unmet(self.upstream(eval));
+                let unmet = self.unmet(eval);
                 let blocking: Vec<_> = unmet
                     .iter()
-                    .filter(|artifact| self.blocks(artifact))
+                    .filter(|artifact| self.gate_blocks(eval, artifact))
                     .cloned()
                     .collect();
                 if !blocking.is_empty() {
                     return EvalView::BlockedBy(blocking);
                 }
-                if self.run.modes.speculate && !dependency {
+                if self.run.modes.speculate {
                     return self.ready(view);
                 }
                 if !unmet.is_empty() {
@@ -599,9 +565,6 @@ impl<'a> States<'a> {
                     } else {
                         EvalView::NotRun(NotRun::Dependency(waits))
                     };
-                }
-                if dependency {
-                    return EvalView::Done(Source::Derived);
                 }
                 self.ready(view)
             }
@@ -627,18 +590,22 @@ impl<'a> States<'a> {
         ))
     }
 
-    /// Dependency Artifacts whose gates are not met, most actionable first.
-    pub fn unmet(&self, artifacts: &[&'a ArtifactName]) -> Vec<crate::types::ArtifactName> {
-        let mut unmet: Vec<_> = artifacts
-            .iter()
-            .filter(|artifact| !self.gate_met(artifact))
-            .map(|artifact| (*artifact, self.completion(artifact)))
-            .collect();
-        unmet.sort_by_key(|(artifact, completion)| (completion.rank(), self.position(artifact)));
-        unmet
+    /// Only this Eval's gates contribute waits; its own Artifact and cycle peers never do.
+    fn unmet(&self, eval: &EvalId) -> Vec<ArtifactName> {
+        let mut artifacts: Vec<_> = self
+            .index
+            .gates
+            .get(eval)
             .into_iter()
-            .map(|(artifact, _)| artifact.clone())
-            .collect()
+            .flatten()
+            .filter(|&&gate| !self.effective(gate).passes_gate())
+            .map(|gate| self.index.targets[gate])
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        artifacts
+            .sort_by_key(|artifact| (self.completion(artifact).rank(), self.position(artifact)));
+        artifacts.into_iter().cloned().collect()
     }
 
     fn views_of(&self, artifact: &ArtifactName) -> Vec<EvalView> {
@@ -691,6 +658,36 @@ impl<'a> States<'a> {
         completion
     }
 
+    /// Group only this Eval's actual gates, never unrelated Evals on the same material.
+    fn gate_blocks(&self, eval: &EvalId, artifact: &ArtifactName) -> bool {
+        self.index
+            .gates
+            .get(eval)
+            .into_iter()
+            .flatten()
+            .filter(|gate| self.index.targets[*gate] == artifact)
+            .any(|&gate| self.status_blocks(eval, gate, self.effective(gate)))
+    }
+
+    /// A RED or blocked gate blocks; an ERROR blocks under `--speculate`, and always when the
+    /// gate is a machine eval of a Human eval's own Artifact.
+    fn status_blocks(&self, eval: &EvalId, gate: &EvalId, status: EvalStatus) -> bool {
+        match status {
+            EvalStatus::Red | EvalStatus::Blocked => true,
+            EvalStatus::Error => {
+                self.run.modes.speculate
+                    || self.index.targets.get(gate) == self.index.targets.get(eval)
+            }
+            _ => false,
+        }
+    }
+
+    /// Graph lights treat an external ERROR as held too, without treating cycle peers
+    /// or unrelated sibling Evals as gates.
+    pub fn held_for_run(&self, eval: &EvalId) -> bool {
+        self.held.get(eval).copied().unwrap_or(false)
+    }
+
     /// The graph's Blocked readiness downstream: an effective RED or blocked eval.
     fn blocks(&self, artifact: &ArtifactName) -> bool {
         self.evals(artifact).iter().any(|eval| {
@@ -709,8 +706,8 @@ impl<'a> States<'a> {
                 EvalStatus::Wait
             };
             if matches!(self.view(eval), EvalView::Done(_)) && self.effective(eval) == wanted {
-                for id in self.unmet(self.upstream(eval)) {
-                    if (!blocked || self.blocks(&id)) && !x.contains(&id) {
+                for id in self.unmet(eval) {
+                    if (!blocked || self.gate_blocks(eval, &id)) && !x.contains(&id) {
                         x.push(id);
                     }
                 }

@@ -73,7 +73,7 @@ pub struct Node {
     pub tone: Tone,
     pub weight: Weight,
     pub name: String,
-    /// Dim markers after the name: `↻ peer`, `[file]`, `[dep]`.
+    /// Dim markers after the name: `↻ peer`, `[file]`.
     pub marks: String,
     pub text: Vec<Segment>,
     /// Right column: elapsed time for evals, `passed/total` for Artifacts.
@@ -84,8 +84,8 @@ pub struct Node {
     pub changed: bool,
     /// Eval rows: every dependency Artifact, unmet ones first in X order.
     pub upstream: Vec<Upstream>,
-    /// A dependency eval row: its verdict derives from its `depends_on` Artifacts.
-    pub dependency: bool,
+    /// A waiting Eval cannot proceed in this Run because an actual external gate failed.
+    pub(crate) held: bool,
     /// Timed eval rows, so a cached tree can redraw its elapsed times.
     pub clock: Option<Clock>,
     pub children: Vec<Node>,
@@ -253,7 +253,7 @@ fn findings(result: Option<&crate::store::ExecutionResult>) -> String {
     let fields = fields.filter(|(key, _)| {
         !matches!(
             key.as_str(),
-            "verdict" | "stdout" | "stderr" | "truncated" | "derived" | "durationMs"
+            "verdict" | "stdout" | "stderr" | "truncated" | "durationMs"
         )
     });
     let parts: Vec<_> = fields
@@ -287,7 +287,6 @@ fn short_profile(profile: &crate::config::StoredProfile) -> String {
         ),
         StoredProfile::Runtime { command, .. } => format!("runtime {command}"),
         StoredProfile::Human {} => "human".into(),
-        StoredProfile::Dependency { .. } => "dependency".into(),
     }
 }
 
@@ -297,7 +296,6 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
         EvalView::Done(Source::Provisional) => plain("PROVISIONAL · sign-offs remain"),
         EvalView::Done(Source::Executed) => plain("GREEN"),
         EvalView::Done(Source::Reused) => plain("GREEN · reused"),
-        EvalView::Done(Source::Derived) => plain("GREEN · derived"),
         EvalView::Done(Source::Saved) => plain("GREEN · saved result, not in this Run"),
         EvalView::Failed { verdict: true } => {
             let findings = findings(request.and_then(|view| view.request.result()));
@@ -404,17 +402,13 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a EvalId, now: OffsetDateTime) -> 
         tone,
         weight,
         name: local(eval).to_owned(),
-        dependency: states.index.dependency.contains(eval),
-        marks: if states.index.dependency.contains(eval) {
-            "  [dep]".into()
-        } else {
-            String::new()
-        },
+        marks: String::new(),
         text: text(states, &view, request),
         compact: compact(&view, &right),
         right,
         changed: false,
         upstream: states.upstream_states(eval),
+        held: states.held_for_run(eval),
         children: Vec::new(),
         kind: Kind::Eval(view),
     }
@@ -610,7 +604,7 @@ fn artifact_node<'a>(
         right,
         changed: false,
         upstream: Vec::new(),
-        dependency: false,
+        held: false,
         children,
     }
 }
@@ -762,6 +756,39 @@ pub(super) fn artifact_status(saved: &Saved, id: &ArtifactName, now: OffsetDateT
 /// completion and why the eval depends on it, then its evals that are not done yet.
 pub(super) fn waits_for(saved: &Saved, eval: &EvalId, now: OffsetDateTime) -> String {
     let states = States::new(saved);
+    format_waits(
+        saved,
+        &states,
+        eval,
+        now,
+        &mut std::collections::HashSet::new(),
+    )
+}
+
+/// An Artifact combines its evals' input groups by identity, not by rendered text:
+/// different inputs may each have a pending eval named `check`.
+pub(super) fn artifact_waits(
+    saved: &Saved,
+    artifact: &ArtifactName,
+    now: OffsetDateTime,
+) -> String {
+    let states = States::new(saved);
+    let mut seen = std::collections::HashSet::new();
+    let blocks = states
+        .evals(artifact)
+        .iter()
+        .map(|eval| format_waits(saved, &states, eval, now, &mut seen))
+        .filter(|block| !block.is_empty());
+    super::join(blocks, "\n")
+}
+
+fn format_waits(
+    saved: &Saved,
+    states: &States<'_>,
+    eval: &EvalId,
+    now: OffsetDateTime,
+    seen: &mut std::collections::HashSet<ArtifactName>,
+) -> String {
     let Some((&target, _)) = states
         .index
         .evals
@@ -775,6 +802,9 @@ pub(super) fn waits_for(saved: &Saved, eval: &EvalId, now: OffsetDateTime) -> St
     own.push(target);
     let mut lines = Vec::new();
     for upstream in states.upstream_states(eval) {
+        if !seen.insert(upstream.artifact.clone()) {
+            continue;
+        }
         let (glyph, _, word) = completion(upstream.completion);
         let id = &upstream.artifact;
         let mut origins: Vec<String> = saved
@@ -803,7 +833,7 @@ pub(super) fn waits_for(saved: &Saved, eval: &EvalId, now: OffsetDateTime) -> St
             continue;
         }
         for &pending in states.evals(id) {
-            let node = eval_node(&states, pending, now);
+            let node = eval_node(states, pending, now);
             if !matches!(node.kind, Kind::Eval(EvalView::Done(_))) {
                 lines.push(format!("  {} {}  {}", node.glyph, node.name, node.status()));
             }

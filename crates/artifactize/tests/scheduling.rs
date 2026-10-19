@@ -434,6 +434,68 @@ async fn completion_releases_a_dependent_while_an_independent_eval_is_still_runn
     assert_eq!(run["executionsStarted"], 3);
 }
 
+#[tokio::test]
+async fn a_settled_block_names_every_red_that_blocks_it_and_nothing_else() {
+    let fixture = Fixture::new(vec![]);
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
+        r#"{"name":"root","basis":true}"#,
+    )
+    .unwrap();
+    for (name, script, instruction) in [
+        ("consumer", "pass", "Check {early} and {late}."),
+        ("early", "raise SystemExit(1)", "Check."),
+        (
+            "late",
+            "import pathlib,time\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)\nraise SystemExit(1)",
+            "Check.",
+        ),
+    ] {
+        let folder = fixture.repo.join(name);
+        fs::create_dir(&folder).unwrap();
+        let mut check = eval("check", script);
+        check["payload"]["instruction"] = json!(instruction);
+        support::declaration::write(
+            folder.join("index.artf"),
+            json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
+        )
+        .unwrap();
+    }
+    let child = fixture.spawn(&["--speculate"]);
+    let status = |view: &artifactize_core::store::RunView, eval: &str| {
+        let request = view
+            .requests
+            .iter()
+            .find(|request| request.eval_id == eval)
+            .unwrap();
+        (request.status(), request.blocked_reason.clone())
+    };
+    // The block is saved while late/check still runs: only the RED known then is named.
+    let blocked = observed(&fixture, &child.run(), |view| {
+        status(view, "consumer/check").0 == artifactize_core::types::RequestStatus::Blocked
+            && status(view, "late/check").0 == artifactize_core::types::RequestStatus::Running
+    })
+    .await;
+    assert_eq!(
+        status(&blocked, "consumer/check").1.as_deref(),
+        Some("Dependency verdict RED: early/check")
+    );
+    fs::write(fixture.repo.join("late/release"), "").unwrap();
+    let run = finish(child, 1);
+    let consumer = run["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["evalId"] == "consumer/check")
+        .unwrap();
+    assert_eq!(consumer["status"], "BLOCKED");
+    assert_eq!(
+        consumer["blockedReason"],
+        "Dependency verdict RED: early/check, late/check"
+    );
+    assert_eq!(consumer["blockedBy"], json!(["early/check", "late/check"]));
+}
+
 #[test]
 fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
     let fixture = Fixture::recorded(|address| {

@@ -1,25 +1,27 @@
-//! Saved conversation lookup shared by interfaces.
+//! Saved conversation lookup and continuation shared by interfaces.
+mod send;
 use crate::{
     agent::session::{self, Conversation, SessionRef, Summary},
     store::{self, Producer, RequestView},
 };
+pub use send::{Sent, send};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 /// The review whose conversation a reference names, in this state.
-pub(crate) struct Located {
+pub struct Located {
     /// The request whose Agent review ran as the session.
-    pub(crate) request: RequestView,
+    pub request: RequestView,
     /// The request the reference named, when it reused that review's result.
-    pub(crate) reused_by: Option<crate::types::RequestId>,
-    pub(crate) id: crate::types::SessionId,
+    pub reused_by: Option<crate::types::RequestId>,
+    pub id: crate::types::SessionId,
     /// Set once the conversation was saved; absent when saving was off.
-    pub(crate) reference: Option<SessionRef>,
-    pub(crate) path: PathBuf,
+    pub reference: Option<SessionRef>,
+    pub path: PathBuf,
 }
 
 impl Located {
     /// The saved conversation, or why there is none.
-    pub(crate) fn load(&self) -> Result<Conversation, String> {
+    pub fn load(&self) -> Result<Conversation, String> {
         Conversation::load(&self.path)?.ok_or_else(|| {
             let request = &self.request.request.id;
             if self.reference.is_some() {
@@ -56,7 +58,7 @@ fn here(state: &Path, reference: &SessionRef) -> Result<(), String> {
 }
 
 /// Resolve a full reference, a request id or a session id to its review's request.
-pub(crate) async fn locate(state: &Path, text: &str) -> Result<Located, String> {
+pub async fn locate(state: &Path, text: &str) -> Result<Located, String> {
     let mut view = if let Some(reference) = SessionRef::parse(text) {
         here(state, &reference)?;
         let view = store::read_request(state, &reference.request_id)

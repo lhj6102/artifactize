@@ -32,14 +32,15 @@ use unix as os;
 use windows as os;
 
 pub(crate) use os::{
-    CRLF_LINE_ENDINGS, Child, DEFAULT_EDITOR, ENV_NAMES_IGNORE_CASE, HOME_VARIABLE, HiddenInput,
-    PrivateTempDir, STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, VISIBLE_INPUT_FALLBACK,
-    create_private_dir, create_private_dir_all, editor, exit_signal, file_identity, home_directory,
-    host_name, ipc, is_owner_only, is_private_dir, is_private_file, kill_saved_group,
-    kill_saved_session, path_from_bytes, private_options, private_tempdir_in, process_start_time,
-    remove_abandoned_directory, resolve_system_aliases, restrict_file, running_process_start_time,
-    spawn_detached, spawn_gated, spawn_run, stop_requested, sync_dir, transient_file_access,
+    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, HOME_VARIABLE, PrivateTempDir,
+    STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, create_private_dir, create_private_dir_all,
+    exit_signal, file_identity, home_directory, host_name, ipc, is_owner_only, is_private_dir,
+    is_private_file, kill_saved_group, kill_saved_session, path_from_bytes, private_options,
+    private_tempdir_in, process_start_time, remove_abandoned_directory, resolve_system_aliases,
+    restrict_file, running_process_start_time, spawn_detached, spawn_gated, spawn_run,
+    spawn_watched, sync_dir, transient_file_access,
 };
+pub use os::{HiddenInput, VISIBLE_INPUT_FALLBACK, stop_requested};
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
 /// A file's identity on its volume. Two open files with equal identities are the same file,
@@ -78,11 +79,11 @@ pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {
 pub(crate) const FILE_LOCK_RETRY_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(25);
 
-pub use artifactize_tools::files::path_text;
 pub(crate) use artifactize_tools::files::{
     EntryName, FileKind, canonicalize, entry_kind, link_target, open_directory, open_entry,
-    open_no_follow, open_nonblocking, read_dir,
+    open_no_follow, read_dir,
 };
+pub use artifactize_tools::files::{open_nonblocking, path_text};
 
 /// Open an existing regular file for reading without following a link in its last
 /// component (on Windows, any reparse point), and check what was opened.
@@ -225,10 +226,9 @@ mod state_directory_tests {
 }
 
 mod console;
-pub(crate) use console::pause_after_help;
+pub use console::pause_after_help;
 
 mod interaction;
-pub use interaction::{PrivateTempFile, private_temp_file, run_editor, selected_editor};
 pub(crate) use interaction::{is_within, label, paths_equal, private_anonymous_file};
 
 /// Whether an entry exists without following links (including dangling links).

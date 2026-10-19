@@ -36,12 +36,20 @@ function testWindows(): unknown[] {
   return declared.app.windows.map((window) => ({ ...window, backgroundThrottling: "disabled" }));
 }
 
-/** The e2e frontend is never written into ui/dist or borrowed from a previous build. */
+/** Build independent release/e2e bundles and check the bundler's actual input graph.
+ * The release bundle must not contain the test-only frontend plugin, while the E2E
+ * bundle must include it. Neither bundle is written to ui/dist or borrowed. */
 async function frontend(root: NativePath): Promise<Environment> {
-  const dist = nativePath(root, "frontend");
   const env = cargoEnvironment(root);
-  const frontend = packageCommand(["-C", ui, "build", "--mode", "e2e", "--outDir", dist]);
-  await runStep(frontend.program, frontend.args, { env, cwd: workspace });
+  for (const mode of ["production", "e2e"] as const) {
+    const dist = nativePath(root, `frontend-${mode}`);
+    const frontend = packageCommand(["-C", ui, "build", "--mode", mode, "--outDir", dist, "--manifest"]);
+    await runStep(frontend.program, frontend.args, { env, cwd: workspace });
+    const manifest = readJson(nativePath(dist, ".vite", "manifest.json")) as Record<string, unknown>;
+    const plugin = Object.keys(manifest).some((key) => key.includes("/@wdio/tauri-plugin/"));
+    if (plugin !== (mode === "e2e")) throw new Error(`${mode} frontend has the wrong WebDriver plugin inputs`);
+  }
+  const dist = nativePath(root, "frontend-e2e");
   const app = { withGlobalTauri: true, windows: testWindows() };
   // frontendDist takes a URL or a folder. A URL makes the app browse it instead of embedding
   // and serving the frontend, so the folder is given in a form that cannot be a URL.
@@ -55,8 +63,8 @@ function save(root: NativePath, cli: NativePath, app: NativePath, observer: Nati
 }
 
 /** Cargo's artifact stream identifies the executables; no shared target/debug lookup. */
-export async function prepare(): Promise<Candidate> {
-  const root = resourceRoot();
+export async function prepare(directory?: NativePath): Promise<Candidate> {
+  const root = resourceRoot(directory);
   try {
     const env = await frontend(root);
     const output = await runStep("cargo", ["build", "--locked", "-p", "artifactize", "-p", "artifactize-desktop",
@@ -93,6 +101,14 @@ export function readCandidate(manifest = variable("DESKTOP_TEST_CANDIDATE")): Ca
   return item as Candidate;
 }
 
+/** Makes `candidate` the one this process's fixtures and temporary files belong to. */
+export function adopt(candidate: Candidate): Candidate {
+  setVariable("DESKTOP_TEST_CANDIDATE", candidate.manifest);
+  setVariable("DESKTOP_TEST_RESOURCES", candidate.root);
+  setVariable("TMPDIR", nativePath(candidate.root, "tmp"));
+  return candidate;
+}
+
 /** A harness owns just its immutable binaries and fixture inputs, with no lifecycle lease. */
 export async function snapshotCandidate(directory: NativePath): Promise<Candidate> {
   const source = readCandidate();
@@ -102,11 +118,7 @@ export async function snapshotCandidate(directory: NativePath): Promise<Candidat
     const app = nativePath(root, executableName("artifactize-desktop"));
     const observer = nativePath(root, executableName("artifactize-e2e-observe"));
     for (const [from, to] of [[source.cli, cli], [source.app, app], [source.observer, observer]]) copyFile(from, to);
-    const candidate = save(root, cli, app, observer);
-    setVariable("DESKTOP_TEST_CANDIDATE", candidate.manifest);
-    setVariable("DESKTOP_TEST_RESOURCES", root);
-    setVariable("TMPDIR", nativePath(root, "tmp"));
-    return candidate;
+    return adopt(save(root, cli, app, observer));
   } catch (error) {
     removeTree(root);
     throw error;
