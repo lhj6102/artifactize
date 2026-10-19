@@ -59,7 +59,8 @@ jobs:
     name: Build ${{ matrix.target }}
     if: inputs.platform != 'linux-desktop'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    # macOS also bundles the desktop app after the CLI channels.
+    timeout-minutes: 60
     continue-on-error: ${{ matrix.best-effort || false }}
     strategy:
       fail-fast: false
