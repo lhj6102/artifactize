@@ -1,7 +1,7 @@
 // Immutable executable inputs. App/driver lifetimes belong exclusively to WDIO's Tauri service.
 import {
   absolutePath, asNativePath, childDirectories, copyFile, executableName, exists, inheritedEnvironment, isInside,
-  makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, readJson, readText, removeTree, runStep, scratchDirectory,
+  makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, programEntryExists, readJson, readText, removeTree, runStep, scratchDirectory,
   setVariable, suitePath, variable, writeJson, type Environment, type NativePath,
 } from "./platform.ts";
 
@@ -103,7 +103,8 @@ export function readCandidate(manifest = variable("DESKTOP_TEST_CANDIDATE")): Ca
     // The observer, manifest, fixtures and cleanup root always stay invocation-local.
     const installed = (key === "cli" || key === "app") && typeof item.installation === "string"
       && isInside(asNativePath(item.installation), executable);
-    if ((!isInside(root, executable) && !installed) || !exists(executable)) throw new Error(`candidate input is missing or outside its root: ${path}`);
+    const present = key === "cli" || key === "app" ? programEntryExists(executable) : exists(executable);
+    if ((!isInside(root, executable) && !installed) || !present) throw new Error(`candidate input is missing or outside its root: ${path}`);
   }
   return item as Candidate;
 }

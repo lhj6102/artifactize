@@ -114,6 +114,17 @@ export function exists(path: NativePath): boolean {
   return existsSync(path);
 }
 
+/** An executable input may be an OS activation entry rather than a normal file.
+ * Windows AppExecLinks run through CreateProcess, but stat/exists cannot follow
+ * their reparse tag. Observe the entry itself and let process launch validate it. */
+export function programEntryExists(path: NativePath): boolean {
+  try { lstatSync(path); return true; }
+  catch (error) {
+    if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+    throw error;
+  }
+}
+
 /** Create a directory and its parents; `private` keeps it to the current user. */
 export function makeDirectory(path: NativePath, { private: owner = false } = {}): NativePath {
   mkdirSync(path, { recursive: true, ...(owner ? { mode: 0o700 } : {}) });
