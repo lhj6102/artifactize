@@ -17,6 +17,7 @@
     children,
     label,
     attach,
+    wholeTitle = false,
   }: {
     title: string;
     focused: boolean;
@@ -32,6 +33,8 @@
     label?: string;
     /** Follows the pane's element for as long as it exists (an `{@attach}`). */
     attach?: Attachment<HTMLElement>;
+    /** The title wraps to show a long name whole rather than cut to one line. */
+    wholeTitle?: boolean;
   } = $props();
 </script>
 
@@ -48,7 +51,7 @@
   {onkeydown}
 >
   <header>
-    <h2>{title}</h2>
+    <h2 class:whole={wholeTitle}>{title}</h2>
     {#if notice}
       <div class="notice" class:open={noticeOpen} role="status">
         <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>
@@ -88,6 +91,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  h2.whole {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
   }
   .focused h2 {
     color: var(--text);

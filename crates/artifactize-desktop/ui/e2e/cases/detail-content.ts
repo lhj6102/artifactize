@@ -49,6 +49,20 @@ export const scenarios: Scenario[] = [
           selected: tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true"),
         };
       });
+      // Only the chip cuts the long name short: the title shows it whole, within the Detail.
+      const heading = await browser.execute(() => {
+        const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
+        const title = document.querySelector<HTMLElement>('aside[aria-label="Detail"] h2')!;
+        const box = title.getBoundingClientRect();
+        return {
+          text: title.innerText,
+          clipped: title.scrollWidth > title.clientWidth || title.scrollHeight > title.clientHeight,
+          ellipsis: getComputedStyle(title).textOverflow === "ellipsis",
+          within: box.left >= dock.left && box.right <= dock.right && box.width > 0 && box.height > 0,
+        };
+      });
+      assert.ok(heading.text.replace(/\s+/g, "").includes(LONG_NAME) && !heading.clipped && !heading.ellipsis && heading.within,
+        `the Detail title shows the long name whole: ${JSON.stringify(heading)}`);
       const initial = await chips();
       assert.ok(initial.clipped && initial.icon && initial.slash && initial.rows > 1 && initial.contained && initial.rounded, JSON.stringify(initial));
       assert.notEqual(initial.fills[0], initial.fills[1], "the chosen Artifact chip is filled, unlike the eval chips");

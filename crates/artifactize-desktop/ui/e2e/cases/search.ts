@@ -61,6 +61,8 @@ export const scenarios: Scenario[] = [
       assert.match((await rows())[0], /release\/signoff/);
       assert.match(await query(), /^kind:human status:waiting_human repo:/);
       await commandsRendered(browser);
+      // The row can render before the search records its completion; wait for that record.
+      await waitFor(browser, async () => (await checkpoint(browser)).activity.search?.completed === true, "the search completion record");
       const activity = (await checkpoint(browser)).activity;
       assert.ok(activity.commands.reviewSearch?.started > 0, "the context-captured search dispatch is observed");
       assert.ok(activity.commands.reviewSearch?.completed > 0, "normal search completion is observed");

@@ -33,9 +33,9 @@ class ChannelsTest(unittest.TestCase):
         self.assertEqual([(item.get("Id"), item.get("Executable")) for item in applications],
                          [("Artifactize", "artifactize.exe"), ("ArtifactizeDesktop", "artifactize-desktop.exe")])
         app, desktop = applications
-        # Start lists only the window app; the console facade stays reachable through its alias.
-        self.assertEqual(app.find("uap:VisualElements", ns).get("AppListEntry"), "none")
-        self.assertNotEqual(desktop.find("uap:VisualElements", ns).get("AppListEntry"), "none")
+        # Both stay listed in Start: a hidden Application would need a HeadlessAppBypass waiver.
+        for application in applications:
+            self.assertNotEqual(application.find("uap:VisualElements", ns).get("AppListEntry"), "none")
         self.assertEqual(desktop.findall("f:Extensions/uap5:Extension", ns), [])
         extensions = app.findall("f:Extensions/uap5:Extension", ns)
         self.assertEqual(len(extensions), 1)
