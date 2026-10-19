@@ -12,6 +12,12 @@
 # ~/.local/bin. It never uses sudo and never edits shell startup files; if the
 # directory is not on PATH, it prints the line to add. Run it again to update.
 #
+# It also installs the desktop app, checked the same way, where the release has one
+# for this system: on macOS Artifactize.app in ~/Applications; on x86_64 Linux with
+# glibc the AppImage, unpacked once (no FUSE needed) into ~/.local/share/artifactize/
+# desktop, with an artifactize-desktop launcher beside the CLI and a menu entry.
+# Elsewhere only the CLI is installed.
+#
 # Environment:
 #   ARTIFACTIZE_VERSION      install this release (0.5.2 or v0.5.2) instead of the latest
 #                            stable one; only this way installs a prerelease (0.6.0-alpha.1)
@@ -118,7 +124,8 @@ main() {
 
     tmp=$(mktemp -d 2>/dev/null || mktemp -d -t artifactize-install)
     staged=
-    trap 'rm -rf "$tmp"; [ -z "$staged" ] || rm -rf "$staged"' EXIT
+    mounted=
+    trap '[ -z "$mounted" ] || hdiutil detach -quiet "$mounted"; rm -rf "$tmp"; [ -z "$staged" ] || rm -rf "$staged"' EXIT
     trap 'exit 1' HUP INT TERM
 
     version=${ARTIFACTIZE_VERSION:-}
@@ -134,20 +141,7 @@ main() {
     say "downloading artifactize $version for $target"
     fetch "$url" "$tmp/$archive" || err "cannot download $url"
     fetch "$url.sha256" "$tmp/$archive.sha256" || err "cannot download $url.sha256"
-
-    # The .sha256 file reads "<hex digest>  <archive name>".
-    read -r expected _ <"$tmp/$archive.sha256" || true
-    expected=$(printf '%s' "${expected:-}" | tr '[:upper:]' '[:lower:]')
-    case $expected in
-        *[!0-9a-f]* | '') err "malformed checksum file $url.sha256" ;;
-    esac
-    [ ${#expected} -eq 64 ] || err "malformed checksum file $url.sha256"
-    # shellcheck disable=SC2086 # $sha256 is a command with its arguments
-    actual=$($sha256 "$tmp/$archive" | { read -r sum _ && printf '%s' "$sum"; } | tr '[:upper:]' '[:lower:]')
-    if [ "$actual" != "$expected" ]; then
-        err "checksum mismatch for $archive: expected $expected, got ${actual:-nothing}; nothing was installed"
-    fi
-    say "checked SHA-256 $actual"
+    check_sum "$archive" "$url.sha256" "nothing was installed"
 
     tar -xzf "$tmp/$archive" -C "$tmp"
     for bin in artifactize artifactize-tools; do
@@ -171,6 +165,8 @@ main() {
     rmdir "$staged"
     staged=
 
+    install_desktop
+
     case ":${PATH:-}:" in
         *":$install_dir:"* | *":$install_dir/:"*) ;;
         *)
@@ -183,6 +179,106 @@ main() {
     for bin in artifactize artifactize-tools; do
         warn_other_copies "$install_dir/$bin" "$bin"
     done
+}
+
+# check_sum FILE SHA256-URL CONSEQUENCE: $tmp/FILE must match its downloaded .sha256 file,
+# which reads "<hex digest>  <file name>".
+check_sum() {
+    read -r expected _ <"$tmp/$1.sha256" || true
+    expected=$(printf '%s' "${expected:-}" | tr '[:upper:]' '[:lower:]')
+    case $expected in
+        *[!0-9a-f]* | '') err "malformed checksum file $2; $3" ;;
+    esac
+    [ ${#expected} -eq 64 ] || err "malformed checksum file $2; $3"
+    # shellcheck disable=SC2086 # $sha256 is a command with its arguments
+    actual=$($sha256 "$tmp/$1" | { read -r sum _ && printf '%s' "$sum"; } | tr '[:upper:]' '[:lower:]')
+    if [ "$actual" != "$expected" ]; then
+        err "checksum mismatch for $1: expected $expected, got ${actual:-nothing}; $3"
+    fi
+    say "checked SHA-256 $actual"
+}
+
+# The desktop app starts Runs through the artifactize beside its own executable, so each
+# bundle carries both commands. A release or system without a bundle keeps the CLI only.
+install_desktop() {
+    case $target in
+        x86_64-unknown-linux-musl)
+            if ldd --version 2>&1 | grep -qi musl; then
+                say "the desktop app needs glibc; installed the CLI only"
+                return 0
+            fi
+            bundle="artifactize-desktop-v$version-x86_64-unknown-linux-gnu.AppImage"
+            ;;
+        *-apple-darwin) bundle="artifactize-desktop-v$version-$target.dmg" ;;
+        *)
+            say "no desktop app for $target; installed the CLI only"
+            return 0
+            ;;
+    esac
+    url="$base/v$version/$bundle"
+    if ! fetch "$url.sha256" "$tmp/$bundle.sha256" 2>/dev/null; then
+        say "release $version has no desktop app for this system; installed the CLI only"
+        return 0
+    fi
+    say "downloading the desktop app"
+    fetch "$url" "$tmp/$bundle" || err "cannot download $url; the CLI is installed, the desktop app is not"
+    check_sum "$bundle" "$url.sha256" "the CLI is installed, the desktop app is not"
+    case $bundle in
+        *.AppImage) install_appimage ;;
+        *.dmg) install_mac_app ;;
+    esac
+}
+
+# The bundle's own artifactize must run before it replaces an installed app.
+check_bundle() {
+    installed=$("$1/artifactize" --version) ||
+        err "the desktop app's artifactize does not run; the CLI is installed, the previous app was kept"
+    [ "$installed" = "artifactize $version" ] ||
+        err "the desktop app reports '$installed', not 'artifactize $version'; the previous app was kept"
+}
+
+install_appimage() {
+    share=${XDG_DATA_HOME:-$HOME/.local/share}
+    app="$share/artifactize/desktop"
+    mkdir -p "$share/artifactize" "$share/applications"
+    staged=$(mktemp -d "$share/artifactize/.desktop-install.XXXXXXXX")
+    chmod 755 "$tmp/$bundle"
+    (cd "$staged" && "$tmp/$bundle" --appimage-extract >/dev/null) ||
+        err "cannot unpack $bundle; the CLI is installed, the desktop app is not"
+    check_bundle "$staged/squashfs-root/usr/bin"
+    rm -rf "$app"
+    mv "$staged/squashfs-root" "$app"
+    rmdir "$staged"
+    staged=
+    # AppRun finds the app beside itself, so the launcher runs it by its real path.
+    # shellcheck disable=SC2016 # "$@" belongs to the launcher
+    printf '#!/bin/sh\nexec "%s/AppRun" "$@"\n' "$app" >"$install_dir/artifactize-desktop"
+    chmod 755 "$install_dir/artifactize-desktop"
+    {
+        printf '[Desktop Entry]\nType=Application\nName=Artifactize\n'
+        printf 'Comment=Declare and verify artifacts with reusable evidence\n'
+        printf 'Exec="%s/AppRun"\nIcon=%s/Artifactize.png\n' "$app" "$app"
+        printf 'Categories=Development;\nTerminal=false\nStartupWMClass=artifactize-desktop\n'
+    } >"$share/applications/artifactize.desktop"
+    say "installed the desktop app $version to $app (run artifactize-desktop, or Artifactize from your menu)"
+}
+
+install_mac_app() {
+    apps="$HOME/Applications"
+    mkdir -p "$apps" "$tmp/mount"
+    hdiutil attach -nobrowse -readonly -quiet -mountpoint "$tmp/mount" "$tmp/$bundle" ||
+        err "cannot open $bundle; the CLI is installed, the desktop app is not"
+    mounted="$tmp/mount"
+    staged=$(mktemp -d "$apps/.artifactize-install.XXXXXXXX")
+    cp -R "$mounted/Artifactize.app" "$staged/"
+    hdiutil detach -quiet "$mounted"
+    mounted=
+    check_bundle "$staged/Artifactize.app/Contents/MacOS"
+    rm -rf "$apps/Artifactize.app"
+    mv "$staged/Artifactize.app" "$apps/Artifactize.app"
+    rmdir "$staged"
+    staged=
+    say "installed the desktop app $version to $apps/Artifactize.app"
 }
 
 # Every other copy on PATH: one that comes first runs instead, and a shell that ran one

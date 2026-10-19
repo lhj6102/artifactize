@@ -33,6 +33,10 @@ def archive_name(version, target):
     return f"artifactize-v{version}-{target}.{suffix}"
 
 
+def desktop_name(version, target):
+    return f"artifactize-desktop-v{version}-{target}.dmg"
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with path.open("rb") as archive:
@@ -61,6 +65,23 @@ def generate(args):
                   '    assert_match "artifactize packaging test", shell_output("#{bin}/artifactize-tools read sample.txt")',
                   "  end", "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
+    elif args.kind == "cask":
+        # The desktop app beside its own artifactize; the formula keeps the CLI on PATH.
+        sums = {target: sha256(Path(args.dist) / desktop_name(args.version, target)).lower() for target in args.targets}
+        arch = {"aarch64-apple-darwin": "arm", "x86_64-apple-darwin": "intel"}
+        dmg = desktop_name("#{version}", "#{arch}-apple-darwin")
+        if len(args.targets) == 1:
+            lines = [f'  arch {arch[args.targets[0]]}: "{args.targets[0].split("-")[0]}"',
+                     f'  version "{args.version}"', f'  sha256 "{sums[args.targets[0]]}"']
+        else:
+            lines = ['  arch arm: "aarch64", intel: "x86_64"', f'  version "{args.version}"',
+                     f'  sha256 arm:   "{sums["aarch64-apple-darwin"]}",',
+                     f'         intel: "{sums["x86_64-apple-darwin"]}"']
+        lines = ['cask "artifactize" do', *lines, "", f'  url "{base}/{dmg}"', '  name "Artifactize"',
+                 '  desc "Declare and verify artifacts with reusable evidence"',
+                 '  homepage "https://artifactize.dev"', "", '  depends_on macos: ">= :big_sur"', "",
+                 '  app "Artifactize.app"', "end", ""]
+        (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
     else:
         common = {"PackageIdentifier": PACKAGE, "PackageVersion": args.version}
         archive = archive_name(args.version, WINDOWS_TARGET)
@@ -73,11 +94,12 @@ def generate(args):
                               "ShortDescription": "Declare and verify artifacts with reusable evidence",
                               "PackageUrl": "https://artifactize.dev", "ManifestType": "defaultLocale"},
             ".installer": {**common, "InstallerType": "zip", "NestedInstallerType": "portable",
+                           # The desktop app opens by its alias; it finds the artifactize beside it.
                            "NestedInstallerFiles": [
                                {"RelativeFilePath": f"artifactize-v{args.version}-{WINDOWS_TARGET}/{command}.exe",
                                 "PortableCommandAlias": command}
-                               for command in ("artifactize", "artifactize-tools")],
-                           "Commands": ["artifactize", "artifactize-tools"],
+                               for command in ("artifactize", "artifactize-tools", "artifactize-desktop")],
+                           "Commands": ["artifactize", "artifactize-tools", "artifactize-desktop"],
                            "Installers": [{"Architecture": "x64", "InstallerUrl": f"{base}/{archive}",
                                            "InstallerSha256": sha256(Path(args.dist) / archive)}],
                            "ManifestType": "installer"},
@@ -202,12 +224,15 @@ def publish(args):
             env = {**os.environ, "GH_TOKEN": os.environ["HOMEBREW_TAP_TOKEN"]}
             subprocess.run(["gh", "repo", "clone", "lhj6102/homebrew-tap", tmp], env=env, check=True)
             tap = Path(tmp)
-            formula = tap / "Formula" / "artifactize.rb"
-            formula.parent.mkdir(exist_ok=True)
-            formula.write_bytes(Path(args.formula).read_bytes())
+            published = {"Formula/artifactize.rb": args.formula}
+            if getattr(args, "cask", None):
+                published["Casks/artifactize.rb"] = args.cask
+            for path, source in published.items():
+                (tap / path).parent.mkdir(exist_ok=True)
+                (tap / path).write_bytes(Path(source).read_bytes())
             for command in (["config", "user.name", "artifactize release"],
                             ["config", "user.email", "67728205+lhj6102@users.noreply.github.com"],
-                            ["add", "Formula/artifactize.rb"]):
+                            ["add", *published]):
                 subprocess.run(["git", "-C", tmp, *command], check=True)
             if subprocess.run(["git", "-C", tmp, "diff", "--cached", "--quiet"]).returncode == 0:
                 channel_result("homebrew", "formula already current", skipped=True)
@@ -216,7 +241,8 @@ def publish(args):
             # gh supplies credentials without putting the PAT in git URLs/logs/config.
             subprocess.run(["gh", "auth", "setup-git"], env=env, check=True)
             subprocess.run(["git", "-C", tmp, "push"], env=env, check=True)
-            channel_result("homebrew", f"published formula {args.version} to lhj6102/homebrew-tap")
+            what = "formula and cask" if getattr(args, "cask", None) else "formula"
+            channel_result("homebrew", f"published {what} {args.version} to lhj6102/homebrew-tap")
     else:
         # Submit the generated set, not `update`: archive-root names change per version.
         result = subprocess.run(["wingetcreate", "submit", "--no-open", "--token", os.environ["WINGET_TOKEN"],
@@ -233,7 +259,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     gen = sub.add_parser("generate")
-    gen.add_argument("kind", choices=("homebrew", "winget"))
+    gen.add_argument("kind", choices=("homebrew", "cask", "winget"))
     gen.add_argument("--dist", required=True)
     gen.add_argument("--output", required=True)
     gen.add_argument("--base-url")
@@ -246,6 +272,7 @@ def main():
     pub.add_argument("--store-status", help="JSON fixture used only with --dry-run")
     pub.add_argument("--package")
     pub.add_argument("--formula")
+    pub.add_argument("--cask", help="the desktop app's cask, published beside the formula")
     pub.add_argument("--manifests")
     for cmd in (gen, gate, pub):
         cmd.add_argument("--version", required=True)

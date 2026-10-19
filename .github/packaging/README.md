@@ -6,11 +6,17 @@ channels are independent, best-effort jobs. Archives and non-Store installers co
 with tools exposed through `artifactize tools`. The desktop app ships beside those
 commands, because it starts Runs through the `artifactize` next to its own executable:
 in the Windows zip and the MSIX (its own Start entry beside the CLI's),
-and as the macOS dmg and the Linux AppImage and deb (`desktop-<target>` artifacts). Missing channel credentials produce an
+and as the macOS dmg and the Linux AppImage and deb (`desktop-<target>` artifacts).
+The other channels carry the app too: the Homebrew cask `artifactize` installs
+`Artifactize.app` from the dmg (the formula stays the CLI), the winget manifest adds
+an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
+menu shortcut, and `install.sh` installs `Artifactize.app` into `~/Applications` on
+macOS or unpacks the AppImage on glibc x86_64 Linux with an `artifactize-desktop`
+launcher and a menu entry. Missing channel credentials produce an
 explicit skip message; they never fail a release. Every expected skip also emits an
 Actions warning annotation and a job-summary line, so a green skipped job cannot
 be mistaken for a publication. Successful publications write their outcome to the
-summary too (Store submission ID, winget PR URL when available, or Homebrew formula). These scripts never sign or
+summary too (Store submission ID, winget PR URL when available, or Homebrew formula and cask). These scripts never sign or
 submit a Windows zip.
 
 winget and Microsoft Store distribution are in preparation, not available yet:
@@ -49,15 +55,18 @@ an Apple ID with an app-specific password and team ID for notarization.
 2. At GitHub **Settings → Developer settings → Personal access tokens →
    Fine-grained tokens**, create a token restricted to that repository, with
    **Contents: Read and write**. Save it as `HOMEBREW_TAP_TOKEN` above.
-3. The next stable release commits `Formula/artifactize.rb`. Install using
-   `brew install lhj6102/tap/artifactize`.
+3. The next stable release commits `Formula/artifactize.rb` and
+   `Casks/artifactize.rb`. Install the CLI using `brew install lhj6102/tap/artifactize`
+   and the desktop app using `brew install --cask lhj6102/tap/artifactize`.
 
-The generator computes hashes from the two actual macOS release archives, not
+The generator computes hashes from the two actual macOS release archives and dmgs, not
 from checksums supplied by an external endpoint:
 
 ```sh
 python3 -I .github/scripts/channels.py generate homebrew \
   --version 1.2.3 --dist dist --output formula
+python3 -I .github/scripts/channels.py generate cask \
+  --version 1.2.3 --dist dist --output cask
 ```
 
 ### winget first submission
@@ -170,9 +179,15 @@ skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
 
 The two informational macOS builds install from a native PR archive through a
-local tap, run `brew test`, and execute both commands. The informational Windows
-build parses all PowerShell scripts, validates/installs local winget manifests,
-executes both portable aliases, and uninstalls them. The MSIX seam runs first in a
+local tap, run `brew test`, and execute both commands. After the dmg smoke they
+install the app with `install.sh` and with a local-tap cask (`brew style`, then
+`brew install --cask`, quarantined only when the app is notarized) and open each
+installed copy. The Linux desktop job installs with `install.sh` from its AppImage
+and opens the app through the installed launcher. The informational Windows
+build parses all PowerShell scripts, installs with `install.ps1` and opens the app
+from its Start shortcut, validates/installs local winget manifests,
+executes both portable aliases, opens the app through its `artifactize-desktop`
+alias, and uninstalls them. The MSIX seam runs first in a
 separate step so a winget bootstrap limitation cannot hide its outcome. Hosted
 Windows Server images may omit winget: the test uses Microsoft's maintained
 `Microsoft.WinGet.Client` / `Repair-WinGetPackageManager` bootstrap rather than

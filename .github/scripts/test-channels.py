@@ -188,8 +188,23 @@ class ChannelsTest(unittest.TestCase):
             self.assertTrue(text.startswith('# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.'))
             manifest = json.loads(text.split('\n', 1)[1])
             nested = manifest["NestedInstallerFiles"]
-            self.assertEqual([item["PortableCommandAlias"] for item in nested], ["artifactize", "artifactize-tools"])
+            self.assertEqual([item["PortableCommandAlias"] for item in nested],
+                             ["artifactize", "artifactize-tools", "artifactize-desktop"])
             self.assertTrue(all(item["RelativeFilePath"].startswith("artifactize-v1.2.3-") for item in nested))
+
+    def test_cask_installs_the_desktop_app_for_each_mac(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for target in channels.MAC_TARGETS:
+                (root / channels.desktop_name("1.2.3", target)).write_bytes(target.encode())
+            subprocess.run([sys.executable, "-I", str(SCRIPT), "generate", "cask", "--version", "1.2.3",
+                            "--dist", tmp, "--output", str(root / "cask")], check=True)
+            cask = (root / "cask/artifactize.rb").read_text()
+            self.assertTrue(cask.startswith('cask "artifactize" do'))
+            self.assertIn('app "Artifactize.app"', cask)
+            self.assertIn("artifactize-desktop-v#{version}-#{arch}-apple-darwin.dmg", cask)
+            for target in channels.MAC_TARGETS:
+                self.assertIn(channels.sha256(root / channels.desktop_name("1.2.3", target)).lower(), cask)
 
     def test_store_preserves_listing_and_replaces_packages_before_commit(self):
         calls = []

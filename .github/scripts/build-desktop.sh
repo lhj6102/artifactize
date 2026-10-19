@@ -3,7 +3,7 @@
 #
 #   .github/scripts/build-desktop.sh TARGET VERSION [OUTPUT]
 #
-# Expects crates/artifactize-desktop/ui/dist built and both release commands in
+# Expects crates/artifactize-desktop/ui installed and built (dist) and both release commands in
 # CARGO_TARGET_DIR (default target)/TARGET/release/. tauri.bundle.json adds the
 # release-only bundle settings: the commands become sidecars next to the app's own
 # executable, where artifactize-core looks for the CLI. Writes to OUTPUT (default dist/),
@@ -44,7 +44,8 @@ esac
 
 bundles=
 for format in $formats; do bundles="$bundles${bundles:+,}${format%%:*}"; done
-(cd "$crate" && cargo tauri build --ci --target "$target" --bundles "$bundles" --config tauri.bundle.json)
+# The prebuilt Tauri CLI pinned in the desktop UI's package.json (pnpm install puts it there).
+(cd "$crate" && ui/node_modules/.bin/tauri build --ci --target "$target" --bundles "$bundles" --config tauri.bundle.json)
 rm -rf "$crate/binaries"
 
 for format in $formats; do

@@ -38,10 +38,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Bundles the desktop app; matches the tauri crate in Cargo.lock.
-  TAURI_CLI_VERSION: 2.12.3
-
 concurrency:
   group: binaries-${{ github.event_name }}-${{ github.ref }}-${{ inputs.platform || 'all' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -53,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -I .github/scripts/test-channels.py
-      - run: shellcheck .github/scripts/smoke-homebrew.sh .github/scripts/build-desktop.sh .github/scripts/smoke-desktop.sh
+      - run: shellcheck .github/scripts/smoke-homebrew.sh .github/scripts/smoke-cask.sh .github/scripts/build-desktop.sh .github/scripts/smoke-desktop.sh
 
   build:
     name: Build ${{ matrix.target }}
@@ -87,9 +83,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # A failed or cancelled packaging run still leaves its build for the next one.
       - uses: Swatinem/rust-cache@v2
         with:
           key: packaging-${{ matrix.target }}
+          cache-on-failure: true
       # C dependencies (bundled SQLite, aws-lc, ring) need musl and kernel headers.
       - name: Install the musl C toolchain
         if: contains(matrix.target, '-linux-musl')
@@ -239,9 +237,6 @@ jobs:
 
       # The macOS desktop bundle comes last: the CLI archive above is already retained,
       # so Homebrew never waits on the app.
-      - name: Install the Tauri CLI
-        if: contains(matrix.target, '-apple-darwin')
-        run: cargo install tauri-cli --version "$TAURI_CLI_VERSION" --locked
       - name: Bundle the macOS desktop app (signed and notarized when the secrets exist)
         if: contains(matrix.target, '-apple-darwin')
         env:
@@ -263,6 +258,18 @@ jobs:
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: sh .github/scripts/smoke-desktop.sh dmg "$VERSION" "desktop-dist/artifactize-desktop-v$VERSION-$TARGET.dmg"
+      - name: Install the app with install.sh and the Homebrew cask and open it
+        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        env:
+          DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          home=$(mktemp -d "$RUNNER_TEMP/artifactize-install.XXXXXXXX")
+          mkdir -p "$home/serve/v$VERSION"
+          cp dist/* desktop-dist/* "$home/serve/v$VERSION/"
+          HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
+            sh website/landing/install.sh
+          HOME="$home" sh .github/scripts/smoke-desktop.sh installed-mac "$VERSION" "$home/Applications/Artifactize.app"
+          sh .github/scripts/smoke-cask.sh "$VERSION" "$TARGET" desktop-dist
 
   # Linux bundles link the system WebKitGTK, so they build on the oldest supported
   # runner image: its glibc (2.35) is the baseline every bundle needs.
@@ -292,6 +299,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop-${{ matrix.target }}
+          cache-on-failure: true
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: crates/artifactize-desktop/ui/package.json
@@ -310,8 +318,6 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-      - name: Install the Tauri CLI
-        run: cargo install tauri-cli --version "$TAURI_CLI_VERSION" --locked
       - name: Build both commands
         run: cargo build --release --locked -p artifactize -p artifactize-tools --target "$TARGET"
       # linuxdeploy is itself an AppImage; runners have no FUSE to mount it.
@@ -332,3 +338,19 @@ jobs:
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends xvfb xdotool >/dev/null
             sh .github/scripts/smoke-desktop.sh deb "$1" "dist/artifactize-desktop-v$1-$2.deb"' sh "$VERSION" "$TARGET"
+      - name: Install the app with install.sh and open it from its launcher
+        if: github.event_name != 'push'
+        run: |
+          home=$(mktemp -d "$RUNNER_TEMP/artifactize-install.XXXXXXXX")
+          serve="$home/serve/v$VERSION"
+          mkdir -p "$serve"
+          # install.sh fetches the musl CLI archive; this job built the same commands for glibc.
+          name="artifactize-v$VERSION-x86_64-unknown-linux-musl"
+          mkdir "$home/$name"
+          cp "target/$TARGET/release/artifactize" "target/$TARGET/release/artifactize-tools" "$home/$name/"
+          tar -czf "$serve/$name.tar.gz" -C "$home" "$name"
+          (cd "$serve" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
+          cp dist/*.AppImage dist/*.AppImage.sha256 "$serve/"
+          HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
+            sh website/landing/install.sh
+          HOME="$home" sh .github/scripts/smoke-desktop.sh installed-linux "$VERSION" "$home/.local/share/artifactize/desktop"
