@@ -177,6 +177,11 @@ class ChannelsTest(unittest.TestCase):
                 subprocess.run([sys.executable, "-I", str(SCRIPT), "generate", kind, "--version", "1.2.3",
                                 "--dist", tmp, "--output", str(root / kind)], check=True)
             formula = (root / "homebrew/artifactize.rb").read_text()
+            self.assertIn('  license "FSL-1.1-ALv2"', formula)
+            locale_text = (root / f"winget/{channels.PACKAGE}.locale.en-US.yaml").read_text()
+            locale = json.loads(locale_text.split('\n', 1)[1])
+            self.assertEqual(locale["License"], "FSL-1.1-ALv2")
+            self.assertEqual(locale["LicenseUrl"], "https://github.com/lhj6102/artifactize/blob/v1.2.3/LICENSE")
             self.assertIn('bin.install "artifactize", "artifactize-tools"', formula)
             self.assertIn("test do", formula)
             for target in channels.MAC_TARGETS:

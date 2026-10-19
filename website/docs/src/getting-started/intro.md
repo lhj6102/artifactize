@@ -28,4 +28,8 @@ model or API key.
   connect your coding host through [MCP](/docs/agent-plugin/mcp.html).
 - **[CLI](/docs/cli/index.html):** command syntax, output and exit codes.
 - **[TUI](/docs/tui/index.html):** Monitor and Review in a terminal.
-- **[Source](https://github.com/lhj6102/artifactize):** open source under Apache 2.0.
+- **[Source](https://github.com/lhj6102/artifactize):** source available under the
+  [Functional Source License (FSL-1.1-ALv2)](https://github.com/lhj6102/artifactize/blob/main/LICENSE)
+  from 0.14.0. Use, modify and redistribute it except as a competing commercial
+  product or service. Each version becomes Apache-2.0 after two years;
+  versions up to 0.13.1 remain Apache-2.0.

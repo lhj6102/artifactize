@@ -9,7 +9,7 @@ import { promisify, stripVTControlCharacters } from "node:util";
 
 const exec = promisify(execFile);
 const helper = fileURLToPath(new URL("./publish.mjs", import.meta.url));
-const crates = ["artifactize-tools", "artifactize-core", "artifactize-tui", "artifactize"];
+const crates = ["artifactize-tools", "artifactize-core", "artifactize-tui", "artifactize-mcp", "artifactize"];
 
 // Each test acts as the CI caller, owning its scratch directory. Do not mistake
 // the test runner's enclosing Artifactize invocation for this fixture's caller.
@@ -26,7 +26,7 @@ test("each dry run verifies the current sources at the same package version", as
       const dir = join(root, "crates", name);
       await mkdir(join(dir, "src"), { recursive: true });
       const dependency = index === 0 ? "" : `\n[dependencies]\n${crates[index - 1]} = { path = "../${crates[index - 1]}", version = "0.0.0-dev" }\n`;
-      await writeFile(join(dir, "Cargo.toml"), `[package]\nname = "${name}"\nversion = "0.0.0-dev"\nedition = "2024"\nlicense = "Apache-2.0"\ndescription = "Disposable package verification fixture"\n${dependency}`);
+      await writeFile(join(dir, "Cargo.toml"), `[package]\nname = "${name}"\nversion = "0.0.0-dev"\nedition = "2024"\nlicense = "FSL-1.1-ALv2"\ndescription = "Disposable package verification fixture"\n${dependency}`);
     }
     const cwd = join(root, "crates", "artifactize");
     await copyFile(helper, join(cwd, "publish.mjs"));

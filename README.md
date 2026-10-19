@@ -1,6 +1,6 @@
 [![CI](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml/badge.svg)](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/artifactize.svg)](https://crates.io/crates/artifactize)
-[![License](https://img.shields.io/github/license/lhj6102/artifactize)](LICENSE)
+[![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue)](LICENSE)
 
 # Build together on an Artifact Graph.
 
@@ -84,7 +84,9 @@ the assistant the workflow instructions.
 
 - [Documentation](https://artifactize.dev/docs/): concepts, guides, examples and command reference.
 - [Community on Discord](https://discord.gg/VswgKkPkS9): questions, ideas and help.
-- [Source and license](LICENSE): open source under Apache License 2.0.
+- [Source and license](LICENSE): source available under the Functional Source License (FSL-1.1-ALv2) from 0.14.0.
+  Use, modify and redistribute it for any purpose except a competing commercial product or service.
+  Each version becomes Apache-2.0 two years after release; versions up to 0.13.1 remain Apache-2.0.
 
 ## The product running
 

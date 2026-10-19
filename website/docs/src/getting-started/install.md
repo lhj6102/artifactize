@@ -8,8 +8,13 @@ prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Appl
 silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum. Stable
 releases are also published on [crates.io](https://crates.io/crates/artifactize)
 and Homebrew. winget and Microsoft Store distribution are in preparation and are
-not available yet. It is open source under the
-[Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
+not available yet.
+
+From 0.14.0, Artifactize is source available under the
+[Functional Source License (FSL-1.1-ALv2)](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
+Use, modify and redistribute it for any purpose except a competing commercial
+product or service. Each version becomes Apache-2.0 two years after release;
+versions up to 0.13.1 remain Apache-2.0.
 
 Before v1, the Linux build gates a release; the macOS and Windows archives are attached
 as soon as they build.

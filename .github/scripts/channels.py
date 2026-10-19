@@ -48,7 +48,7 @@ def generate(args):
     if args.kind == "homebrew":
         lines = ["class Artifactize < Formula", '  desc "Declare and verify artifacts with reusable evidence"',
                  '  homepage "https://artifactize.dev"', f'  version "{args.version}"',
-                 '  license "Apache-2.0"', "", "  on_macos do"]
+                 '  license "FSL-1.1-ALv2"', "", "  on_macos do"]
         for target in args.targets:
             archive = archive_name(args.version, target)
             arch = "arm" if target.startswith("aarch64") else "intel"
@@ -68,8 +68,8 @@ def generate(args):
         manifests = {
             "": {**common, "DefaultLocale": "en-US", "ManifestType": "version"},
             ".locale.en-US": {**common, "PackageLocale": "en-US", "Publisher": "lhj6102",
-                              "PackageName": "Artifactize", "License": "Apache-2.0",
-                              "LicenseUrl": "https://github.com/lhj6102/artifactize/blob/main/LICENSE",
+                              "PackageName": "Artifactize", "License": "FSL-1.1-ALv2",
+                              "LicenseUrl": f"https://github.com/lhj6102/artifactize/blob/v{args.version}/LICENSE",
                               "ShortDescription": "Declare and verify artifacts with reusable evidence",
                               "PackageUrl": "https://artifactize.dev", "ManifestType": "defaultLocale"},
             ".installer": {**common, "InstallerType": "zip", "NestedInstallerType": "portable",

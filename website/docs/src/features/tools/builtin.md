@@ -186,8 +186,10 @@ below it; `.` names the directory itself and is the default for list/glob/grep.
 Absolute targets, `..` and symlinks are refused, even when a link points inside.
 This is **not** a restriction on help's literal executable or subcommand arguments:
 its ordinary lookup accepts absolute/parent paths and executable symlinks as
-explained above. Only `open` accepts a URL,
-and only `http://` or `https://`.
+explained above. Both `artifactize-tools help` and `artifactize tools help` pass the
+caller's environment except every `ARTIFACTIZE_*` variable (matched ignoring case).
+They keep the caller's temporary-directory settings and create no private directories.
+Only `open` accepts a URL, and only `http://` or `https://`.
 
 `read`, `section` and `help` print text with the limits above; `list`, `glob` and
 `grep` print the JSON result of the Agent tool. A tool error goes to stderr with exit

@@ -72,7 +72,7 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
         fs::write(
             directory.join("Cargo.toml"),
             format!(
-                "[package]\nname = \"{name}\"\nversion = \"0.0.0-dev\"\nedition = \"2024\"\nlicense = \"Apache-2.0\"\ndescription = \"Publication cancellation fixture\"\n{dependency}"
+                "[package]\nname = \"{name}\"\nversion = \"0.0.0-dev\"\nedition = \"2024\"\nlicense = \"FSL-1.1-ALv2\"\ndescription = \"Publication cancellation fixture\"\n{dependency}"
             ),
         )
         .unwrap();
