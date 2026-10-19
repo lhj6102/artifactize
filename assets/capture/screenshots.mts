@@ -212,6 +212,11 @@ async function capture(output: string, work: string): Promise<void> {
     // core → cli, core → release and cli → docs.
     await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
       { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges" });
+    // The first layout and window resize can both fit the graph. Choose the
+    // visible Fit View action after its nodes and edges exist, then wait for
+    // this small graph's final maximum zoom instead of capturing that race.
+    await app.$(".graph .svelte-flow__controls-fitview").click();
+    await app.$(".graph .svelte-flow__controls-zoomin").waitForEnabled({ reverse: true, timeout: WAIT });
     await shot("monitor.png");
 
     // B. cli's Detail on its Artifact tab: cli between the core it uses and the docs that use

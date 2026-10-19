@@ -34,7 +34,11 @@ class ChannelsTest(unittest.TestCase):
         desktop = applications[1]
         self.assertEqual((desktop.get("Id"), desktop.get("Executable")), ("Desktop", "artifactize-desktop.exe"))
         self.assertNotEqual(desktop.find("uap:VisualElements", ns).get("AppListEntry"), "none")
-        self.assertEqual(desktop.findall("f:Extensions/uap5:Extension", ns), [])
+        desktop_extension, = desktop.findall("f:Extensions/uap5:Extension", ns)
+        self.assertEqual(desktop_extension.get("Executable"), "artifactize-desktop.exe")
+        desktop_alias = desktop_extension.find("uap5:AppExecutionAlias", ns)
+        self.assertEqual(desktop_alias.get("{" + ns["desktop4"] + "}Subsystem"), "windows")
+        self.assertEqual([item.get("Alias") for item in desktop_alias], ["artifactize-desktop.exe"])
         app = applications[0]
         self.assertEqual((app.get("Id"), app.get("Executable")), ("Artifactize", "artifactize.exe"))
         self.assertNotEqual(app.find("uap:VisualElements", ns).get("AppListEntry"), "none")

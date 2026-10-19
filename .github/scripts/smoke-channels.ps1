@@ -84,11 +84,14 @@ try {
             throw 'MSIX must expose the existing CLI entry and the desktop Start menu entry'
         }
         $tools = Join-Path $installed.InstallLocation 'artifactize-tools.exe'
-        $out = & $tools --version
-        if ($LASTEXITCODE -ne 0 -or $out -ne "artifactize-tools $Version") { throw "MSIX bundled tools failed: $out" }
+        if (-not (Test-Path $tools)) { throw 'MSIX bundled tools executable missing' }
+        # Non-entrypoint package files are not executable from an unpackaged shell.
+        # The existing console alias exposes the tools facade without extra aliases.
+        $out = & $alias tools --version
+        if ($LASTEXITCODE -ne 0 -or $out -ne "artifactize-tools $Version") { throw "MSIX tools facade version failed: $out" }
         if ($DesktopE2E) {
             & python -I (Join-Path $PSScriptRoot 'desktop.py') installed --target x86_64-pc-windows-msvc `
-                --version $Version --app (Join-Path $installed.InstallLocation 'artifactize-desktop.exe')
+                --version $Version --app (Join-Path $aliases 'artifactize-desktop.exe')
             if ($LASTEXITCODE -ne 0) { throw 'Installed MSIX desktop journeys failed; retain the package until runner teardown' }
             $removePackage = $true
         } else {

@@ -272,9 +272,13 @@ def main():
         elif args.mode == "installed":
             if args.app is None:
                 parser.error("installed requires --app")
-            app = args.app.resolve()
-            versions(app.parent, args.version)
-            journeys(app, app.parent / "artifactize.exe", app.parent,
+            # Keep the registered AppExecLink spelling: resolving a package path
+            # bypasses activation and Windows refuses execution from that shell.
+            app = args.app.absolute()
+            cli = app.parent / "artifactize.exe"
+            if run(cli, "--version", capture=True).strip() != f"artifactize {args.version}":
+                raise RuntimeError("installed MSIX CLI version mismatch")
+            journeys(app, cli, app.parent,
                      target_directory(args.target) / "artifactize-e2e-observe.exe", scratch)
         elif args.mode == "build":
             build(args.target, args.version, output, scratch)
