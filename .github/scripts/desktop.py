@@ -63,7 +63,8 @@ def build(target, version, output, scratch, e2e=False):
         shutil.copy2(binaries / (name + suffix), sidecars / f"{name}-{target}{suffix}")
     config = {"bundle": {
         "externalBin": [str(sidecars / name) for name in ("artifactize", "artifactize-tools")],
-        "licenseFile": str(REPO / "LICENSE"),
+        # A license resource is not an installer EULA: licenseFile would make
+        # macOS disk-image mounting require accepting a new license agreement.
         "resources": {str(REPO / "LICENSE"): "LICENSE"},
     }}
     if e2e:
