@@ -5,7 +5,7 @@ channels are independent, best-effort jobs. Archives and non-Store installers co
 `artifactize` and `artifactize-tools`; the Store MSIX contains only `artifactize`,
 with tools exposed through `artifactize tools`. The desktop app ships beside those
 commands, because it starts Runs through the `artifactize` next to its own executable:
-in the Windows zip and the MSIX (its own Start entry; the CLI keeps only its alias),
+in the Windows zip and the MSIX (its own Start entry beside the CLI's),
 and as the macOS dmg and the Linux AppImage and deb (`desktop-<target>` artifacts). Missing channel credentials produce an
 explicit skip message; they never fail a release. Every expected skip also emits an
 Actions warning annotation and a job-summary line, so a green skipped job cannot
@@ -140,10 +140,12 @@ private state on uninstall. This is not a sandbox: on supported Windows versions
 Microsoft documents that reads can fall back to existing unvirtualized AppData files
 and writes to those existing files can affect the real files. Explicit state outside
 AppData and user project/exported files are not removed with the package.
-The MSIX has one visible Application (`Artifactize`) and one console
-execution alias (`artifactize.exe`); tools run as `artifactize tools <subcommand>`.
-It has no headless Application or `AppListEntry="none"`, so no HeadlessAppBypass
-waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
+The MSIX has two visible Applications: the desktop app (`ArtifactizeDesktop`,
+listed as Artifactize) and the CLI facade (`Artifactize`, listed as Artifactize CLI)
+with one console execution alias (`artifactize.exe`); tools run as
+`artifactize tools <subcommand>`. The desktop app starts Runs through the
+`artifactize.exe` beside it. Neither is headless or has `AppListEntry="none"`, so no
+HeadlessAppBypass waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
 Application; the standalone tools executable remains in all non-Store channels.
 Launching Artifactize from Start or Explorer with no arguments shows the normal
 help, a terminal hint and waits for Enter only when stdin/stdout are consoles and
@@ -176,15 +178,16 @@ Windows Server images may omit winget: the test uses Microsoft's maintained
 `Microsoft.WinGet.Client` / `Repair-WinGetPackageManager` bootstrap rather than
 silently substituting metadata checks for installation.
 
-The MSIX seam packs with SDK schema validation, signs a *copy* with a throwaway
+The MSIX seam takes the retained `.msix` (packed with SDK schema validation), checks that
+the retained `.msixupload` carries exactly that package, signs a *copy* with a throwaway
 certificate, installs via `Add-AppxPackage`, invokes the WindowsApps `artifactize` execution
 alias and its tools facade, then runs offline `artifactize server token list` and a
 Runtime-only verification that creates a unique new AppData file in a child PowerShell
 process (no provider calls). The unpackaged shell checks that both SQLite databases
 are package-private and that real `%LOCALAPPDATA%\artifactize` was not created. Logs
 record the actual database paths, runner OS and whether the child's new AppData file
-was redirected. This checks a fresh runner, not migration from existing unpackaged
-state. The test removes its package, certificate and probe files.
+was redirected. Last, it starts the desktop app from its Start entry and waits for its
+window. This checks a fresh runner, not migration from existing unpackaged state. The test removes its package, certificate and probe files.
 
 [Windows rehearsal 39138230810](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
 passed on Windows Server build 26100 (`windows-2025-vs2026`). Both `state.sqlite` and

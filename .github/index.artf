@@ -1,0 +1,46 @@
+name = "release-automation"
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.coherent]
+title = "The release packaging, its smoke checks and its notes agree"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+
+[evals.coherent.payload]
+instruction = """
+Read the workflows, scripts and packaging notes of {release-automation}. Check that:
+- every package Binaries builds (archives, MSIX, desktop bundles) is installed and checked by a
+  smoke step on its platform, and Release attaches every package Binaries retains;
+- every desktop bundle places the artifactize command beside the app's own executable;
+- packaging/README.md describes the packages, channels and secrets as the workflows and scripts
+  implement them.
+Submit GREEN only when nothing clearly contradicts these. Otherwise submit RED with up to 10
+findings, most important first, each with a path:line and one sentence on what to change.
+"""
+
+[evals.coherent.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.coherent.fail_schema]
+type = "object"
+required = ["findings"]
+additionalProperties = false
+
+[evals.coherent.fail_schema.properties.findings]
+type = "array"
+minItems = 1
+maxItems = 10
+
+[evals.coherent.fail_schema.properties.findings.items]
+type = "object"
+properties.where = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["where", "change"]
+additionalProperties = false

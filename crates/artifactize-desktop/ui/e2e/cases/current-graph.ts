@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { createGraph, type Fixture, savedRuns, verifyWaiting } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { command, script } from "../native-fixtures.ts";
-import { nativePath, primaryModifier, readText, writeText } from "../platform.ts";
+import { command, runtimeProfile, script } from "../native-fixtures.ts";
+import { makeDirectory, nativePath, primaryModifier, readText, removeTree, writeText } from "../platform.ts";
 import { graphAppearance, visibleColour } from "./graph-appearance.ts";
 
 function currentGraph(browser: WebdriverIO.Browser, fixture: Fixture) {
@@ -184,6 +184,41 @@ export const scenarios: Scenario[] = [
         await press(browser, ["Escape"], async () => !(await dock().isExisting()), "docs' evals closed");
         previousTitle = title;
       }
+      // A refresh also redraws the structure itself: a new Artifact that reads docs adds a
+      // node and a relation, and removing it takes both away, in the diagram and the text.
+      const digest = nativePath(fixture.repo, "digest");
+      makeDirectory(digest);
+      writeText(nativePath(digest, "index.artf"), `name = "digest"
+
+[evals.summary]
+title = "Summarize the docs"
+profile = ${runtimeProfile()}
+
+[evals.summary.payload]
+instruction = """
+Summarize {docs}."""
+`);
+      const drawnDigest = () => browser.execute(() => ({
+        node: !!document.querySelector('.current .svelte-flow__node[data-id="a:digest"]'),
+        edge: !!document.querySelector('.current .svelte-flow__edge[data-id="a:docs>a:digest"]'),
+      }));
+      await browser.$("button=Refresh").click();
+      await browser.waitUntil(async () => {
+        const drawn = await drawnDigest();
+        return drawn.node && drawn.edge;
+      }, { timeout: 15000, timeoutMsg: "the refreshed diagram draws the added digest Artifact and its relation from docs" });
+      assert.ok((await structure()).split("\n").some((line) => line.startsWith("docs → digest ")),
+        "the structure text lists the added relation");
+      await browser.$("button=Refresh").waitForEnabled({ timeout: 15000 });
+      removeTree(digest);
+      await browser.$("button=Refresh").click();
+      await browser.waitUntil(async () => {
+        const drawn = await drawnDigest();
+        return !drawn.node && !drawn.edge;
+      }, { timeout: 15000, timeoutMsg: "the refreshed diagram drops the removed digest Artifact and its relation" });
+      assert.ok(!(await structure()).includes("digest"), "the structure text drops the removed Artifact");
+      await browser.$("button=Refresh").waitForEnabled({ timeout: 15000 });
+      await assertDeclarationsOnly();
       // Only after every declarations-only/no-Run check, create a real Run in this
       // same state. Its independently submitted identity proves the absence probe
       // would have detected a Run had the graph launch or refresh created one.
