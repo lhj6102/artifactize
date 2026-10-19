@@ -79,7 +79,7 @@ let pid = Int32(CommandLine.arguments[1])!
 let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
 exit(windows.contains { ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 } ? 0 : 1)
 EOF
-        xcrun swiftc -O -o "$work/window" "$work/window.swift"
+        xcrun swiftc -O -o "$work/window" "$work/window.swift" || fail "dmg: cannot build the window probe"
         group=
         has_window() { "$work/window" "$app_pid"; }
         ;;
@@ -102,7 +102,8 @@ case $format in
         ;;
     dmg)
         mount="$work/mount"
-        hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "$file"
+        mkdir "$mount"
+        hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$file" >/dev/null || fail "dmg: hdiutil cannot mount $file"
         mkdir "$work/Applications"
         cp -R "$mount/Artifactize.app" "$work/Applications/"
         hdiutil detach -quiet "$mount"
