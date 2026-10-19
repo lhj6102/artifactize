@@ -61,7 +61,11 @@ def build(target, version, output, scratch, e2e=False):
     sidecars.mkdir()
     for name in ("artifactize", "artifactize-tools"):
         shutil.copy2(binaries / (name + suffix), sidecars / f"{name}-{target}{suffix}")
-    config = {"bundle": {"externalBin": [str(sidecars / name) for name in ("artifactize", "artifactize-tools")]}}
+    config = {"bundle": {
+        "externalBin": [str(sidecars / name) for name in ("artifactize", "artifactize-tools")],
+        "licenseFile": str(REPO / "LICENSE"),
+        "resources": {str(REPO / "LICENSE"): "LICENSE"},
+    }}
     if e2e:
         declared = json.loads((DESKTOP / "tauri.conf.json").read_text())
         config["app"] = {"withGlobalTauri": True, "windows": [
