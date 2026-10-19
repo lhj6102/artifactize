@@ -85,6 +85,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: packaging-${{ matrix.target }}
+          cache-on-failure: true
       # C dependencies (bundled SQLite, aws-lc, ring) need musl and kernel headers.
       - name: Install the musl C toolchain
         if: contains(matrix.target, '-linux-musl')
@@ -253,6 +254,18 @@ jobs:
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel winget
 
+      - name: Install Debian dependencies in a fresh runtime image
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && github.event_name != 'push'
+        run: |
+          docker run --rm \
+            -v "$PWD/desktop-dist:/packages:ro" \
+            -v "$PWD/.github/scripts/desktop.py:/src/.github/scripts/desktop.py:ro" \
+            -e VERSION -e WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 \
+            ubuntu:22.04 sh -euc '
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends python3 dbus-x11 xvfb xauth fonts-liberation /packages/*.deb
+              dbus-run-session -- xvfb-run -a python3 -I /src/.github/scripts/desktop.py probe \
+                --target x86_64-unknown-linux-gnu --version "$VERSION" --app /usr/bin/artifactize-desktop'
       - name: Open installed packages and run every desktop journey
         if: "!contains(matrix.target, '-linux-musl') && github.event_name != 'push'"
         run: |

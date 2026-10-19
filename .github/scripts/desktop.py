@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -127,7 +128,7 @@ def launch(app, root, macos=False):
     args = [str(app), "--state-dir", str(root / "launch-state")]
     if macos:
         args = ["open", "-W", "-n", "-a", str(app), "--args", *args[1:]]
-    process = subprocess.Popen(args, cwd=root)
+    process = subprocess.Popen(args, cwd=root, start_new_session=sys.platform == "linux")
     try:
         try:
             code = process.wait(timeout=5)
@@ -138,6 +139,13 @@ def launch(app, root, macos=False):
         if macos:
             # open -W is a waiter; terminating it does not terminate its app.
             run("osascript", "-e", 'tell application id "dev.artifactize.desktop" to quit')
+        elif sys.platform == "linux":
+            # AppImage extract-and-run has a runtime waiter in front of the app.
+            # This launch probe owns the whole process group, not only that waiter.
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
         elif process.poll() is None:
             process.terminate()
         process.wait(timeout=30)
@@ -202,7 +210,12 @@ def test_unix(target, packages, scratch, version, e2e=False):
         binaries = extracted / "squashfs-root/usr/bin"
         versions(binaries, version)
         if e2e:
-            journeys(image, binaries / "artifactize", scratch, observer, scratch)
+            # The AppImage runtime's extract-and-run waiter does not exec the app,
+            # so WDIO cannot own its native lifetime through that wrapper. Its own
+            # extracted AppRun execs the app with the bundled GTK/GStreamer setup,
+            # preserving the real package layout and the service's sole ownership.
+            appdir = extracted / "squashfs-root"
+            journeys(appdir / "AppRun", binaries / "artifactize", appdir, observer, scratch)
         else:
             launch(image, scratch)
         deb, = packages.glob("*.deb")
@@ -240,7 +253,7 @@ def resources():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["build", "test", "installed"])
+    parser.add_argument("mode", choices=["build", "test", "installed", "probe"])
     parser.add_argument("--target", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", type=Path, default=REPO / "desktop-dist")
@@ -250,7 +263,13 @@ def main():
     # share test fixture .artf files through the system temporary-directory root.
     with resources() as scratch:
         output = args.output.resolve()
-        if args.mode == "installed":
+        if args.mode == "probe":
+            if args.app is None:
+                parser.error("probe requires --app")
+            app = args.app.resolve()
+            versions(app.parent, args.version)
+            launch(app, scratch)
+        elif args.mode == "installed":
             if args.app is None:
                 parser.error("installed requires --app")
             app = args.app.resolve()

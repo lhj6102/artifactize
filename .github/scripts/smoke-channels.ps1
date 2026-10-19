@@ -94,8 +94,12 @@ try {
         } else {
             # Resolve and activate the installed Start menu entry, not a loose build.
             $aumid = "$($installed.PackageFamilyName)!Desktop"
-            $entry = @(Get-StartApps | Where-Object AppID -eq $aumid)
-            if ($entry.Count -ne 1) { throw "Desktop Start menu entry missing: $aumid" }
+            for ($i = 0; ; $i++) {
+                $entry = @(Get-StartApps | Where-Object AppID -eq $aumid)
+                if ($entry.Count -eq 1) { break }
+                if ($i -ge 50) { throw "Desktop Start menu entry missing: $aumid" }
+                Start-Sleep -Milliseconds 200
+            }
             Start-Process explorer.exe -ArgumentList "shell:AppsFolder\$aumid"
             $desktop = $null
             try {
