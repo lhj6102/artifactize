@@ -3,7 +3,10 @@
 The Linux tests and builds still gate the GitHub release. Other platforms and
 channels are independent, best-effort jobs. Archives and non-Store installers contain both
 `artifactize` and `artifactize-tools`; the Store MSIX contains only `artifactize`,
-with tools exposed through `artifactize tools`. Missing channel credentials produce an
+with tools exposed through `artifactize tools`. The desktop app ships beside those
+commands, because it starts Runs through the `artifactize` next to its own executable:
+in the Windows zip and the MSIX (its own Start entry; the CLI keeps only its alias),
+and as the macOS dmg and the Linux AppImage and deb (`desktop-<target>` artifacts). Missing channel credentials produce an
 explicit skip message; they never fail a release. Every expected skip also emits an
 Actions warning annotation and a job-summary line, so a green skipped job cannot
 be mistaken for a publication. Successful publications write their outcome to the
@@ -26,11 +29,18 @@ values in scripts, command history or issue comments.
 | Homebrew | Stable only; a normal tap formula tracks stable, not prereleases | `HOMEBREW_TAP_TOKEN` |
 | winget | Stable only | `WINGET_TOKEN` |
 | Microsoft Store | Stable only; any pending submission is left untouched and logged/skipped | `STORE_TENANT_ID`, `STORE_CLIENT_ID`, `STORE_CLIENT_SECRET` |
+| macOS desktop signing | Every build, PRs included; without them the app is signed ad hoc and only runs where it was built | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
 
 Homebrew deliberately does not promote prereleases into the ordinary formula.
 Prereleases still carry the winget metadata and unsigned MSIX/Store upload for
 manual rehearsal. Neither metadata generation nor installation smoke tests use
 channel credentials.
+
+The macOS signing secrets must be repository Actions secrets: PR and rehearsal
+builds read them too, not only the release environment. They are Tauri's
+[macOS signing](https://v2.tauri.app/distribute/sign/macos/) variables: the base64
+Developer ID Application certificate (.p12) and its password, the identity name, and
+an Apple ID with an app-specific password and team ID for notarization.
 
 ### Homebrew first setup
 

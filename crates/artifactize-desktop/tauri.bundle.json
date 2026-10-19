@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "mainBinaryName": "artifactize-desktop",
+  "bundle": {
+    "active": true,
+    "externalBin": ["binaries/artifactize", "binaries/artifactize-tools"],
+    "category": "DeveloperTool",
+    "shortDescription": "Declare and verify artifacts with reusable evidence",
+    "license": "Apache-2.0",
+    "licenseFile": "../../LICENSE",
+    "homepage": "https://artifactize.dev",
+    "macOS": { "minimumSystemVersion": "11.0" }
+  }
+}
