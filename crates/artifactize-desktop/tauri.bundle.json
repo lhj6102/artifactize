@@ -7,7 +7,7 @@
     "category": "DeveloperTool",
     "shortDescription": "Declare and verify artifacts with reusable evidence",
     "license": "Apache-2.0",
-    "licenseFile": "../../LICENSE",
+    "resources": { "../../LICENSE": "LICENSE" },
     "homepage": "https://artifactize.dev",
     "macOS": { "minimumSystemVersion": "11.0" }
   }
