@@ -40,6 +40,19 @@ try {
     & artifactize --state-dir (Join-Path $root 'doctor-state') doctor
     if ($LASTEXITCODE -ne 0) { throw 'artifactize doctor failed' }
 
+    # The desktop app beside the CLI it starts Runs through, opened from its Start shortcut.
+    $desktop = Join-Path $env:ARTIFACTIZE_INSTALL_DIR 'artifactize-desktop.exe'
+    if (-not (Test-Path -LiteralPath $desktop)) { throw 'install.ps1 did not install artifactize-desktop.exe' }
+    $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'Artifactize.lnk'
+    if ((New-Object -ComObject WScript.Shell).CreateShortcut($link).TargetPath -ne $desktop) { throw "$link does not open $desktop" }
+    Start-Process $link
+    for ($i = 0; -not (Get-Process artifactize-desktop -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -eq 'Artifactize'); $i++) {
+        if ($i -ge 120) { throw 'the installed desktop app showed no Artifactize window' }; Start-Sleep -Milliseconds 500
+    }
+    Get-Process artifactize-desktop | Stop-Process -Force
+    Remove-Item -LiteralPath $link
+    Write-Host 'install.ps1 desktop app opened its window from the Start menu'
+
     $shadow = Join-Path $root 'shadow'
     New-Item -ItemType Directory -Path $shadow | Out-Null
     Copy-Item (Join-Path $env:ARTIFACTIZE_INSTALL_DIR '*.exe') $shadow

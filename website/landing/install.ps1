@@ -8,7 +8,9 @@
 #
 # Downloads the release zip for Windows x64 over https, checks its SHA-256 against
 # the release's .sha256 file, installs artifactize.exe and artifactize-tools.exe to
-# %LOCALAPPDATA%\Programs\artifactize and adds that directory to the user Path.
+# %LOCALAPPDATA%\Programs\artifactize and adds that directory to the user Path. When the
+# release zip carries the desktop app, it installs artifactize-desktop.exe beside them (the
+# app starts Runs through that artifactize.exe) and adds an Artifactize Start menu shortcut.
 # Needs no administrator rights. Works in Windows PowerShell 5.1 and PowerShell 7.
 # Run it again to update.
 #
@@ -118,6 +120,12 @@
             }
         }
 
+        # The desktop app ships in the zip from 0.14.0 on; older releases install the CLI only.
+        $files = $commands
+        if (Test-Path -LiteralPath (Join-Path $tmp "$name\artifactize-desktop.exe") -PathType Leaf) {
+            $files = $commands + 'artifactize-desktop'
+        }
+
         # Check both new commands before moving either installed binary or changing
         # Path. Application control may refuse an unsigned release even when the
         # previous release ran. Do not bypass the policy or discard a working install.
@@ -142,10 +150,10 @@
         $replaced = @()
         $committed = $false
         try {
-            foreach ($command in $commands) {
+            foreach ($command in $files) {
                 Copy-Item -LiteralPath (Join-Path $tmp "$name\$command.exe") -Destination (Join-Path $stage "$command.exe")
             }
-            foreach ($command in $commands) {
+            foreach ($command in $files) {
                 $exe = Join-Path $dir "$command.exe"
                 if (Test-Path -LiteralPath $exe) {
                     Move-Item -LiteralPath $exe -Destination (Join-Path $stage "$command.exe.old")
@@ -176,8 +184,17 @@
         Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    foreach ($command in $commands) {
+    foreach ($command in $files) {
         Say "installed $command $version to $(Join-Path $dir "$command.exe")"
+    }
+    if ($files -contains 'artifactize-desktop') {
+        $programs = [Environment]::GetFolderPath('Programs')
+        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs 'Artifactize.lnk'))
+        $shortcut.TargetPath = Join-Path $dir 'artifactize-desktop.exe'
+        $shortcut.WorkingDirectory = $dir
+        $shortcut.Description = 'Declare and verify artifacts with reusable evidence'
+        $shortcut.Save()
+        Say "added Artifactize to the Start menu"
     }
 
     # Add the directory to the user Path in the registry. Reading and writing the raw

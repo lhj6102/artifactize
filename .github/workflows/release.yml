@@ -223,7 +223,7 @@ jobs:
 
   homebrew:
     name: Update Homebrew tap (optional)
-    needs: [plan, publish, attach-macos]
+    needs: [plan, publish, attach-macos, attach-desktop]
     runs-on: ubuntu-latest
     environment: release
     continue-on-error: true
@@ -241,11 +241,18 @@ jobs:
           pattern: binaries-*-apple-darwin
           path: dist
           merge-multiple: true
-      - name: Generate and update the stable formula
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          pattern: desktop-*-apple-darwin
+          path: dist
+          merge-multiple: true
+      - name: Generate and update the stable formula and the desktop app's cask
         if: steps.gate.outputs.enabled == 'true'
         run: |
           python3 -I .github/scripts/channels.py generate homebrew --version "$VERSION" --dist dist --output formula
-          python3 -I .github/scripts/channels.py publish homebrew --version "$VERSION" --formula formula/artifactize.rb
+          python3 -I .github/scripts/channels.py generate cask --version "$VERSION" --dist dist --output cask
+          python3 -I .github/scripts/channels.py publish homebrew --version "$VERSION" --formula formula/artifactize.rb --cask cask/artifactize.rb
 
   winget:
     name: Open winget-pkgs PR (optional)

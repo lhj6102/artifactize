@@ -3,9 +3,11 @@
 #
 #   .github/scripts/smoke-desktop.sh FORMAT VERSION FILE
 #
-# FORMAT is appimage, deb or dmg. Checks that both commands sit beside the app's own
-# executable (where artifactize-core looks for the CLI) and report VERSION, and that the
-# installed app opens a window titled Artifactize. With DESKTOP_SIGNED=true a dmg must
+# FORMAT is appimage, deb or dmg, or installed-linux or installed-mac with FILE the app
+# install.sh unpacked (~/.local/share/artifactize/desktop, ~/Applications/Artifactize.app).
+# Checks that both commands sit beside the app's own executable (where artifactize-core
+# looks for the CLI) and report VERSION, and that the installed app opens a window titled
+# Artifactize; installed-linux starts it through install.sh's launcher and menu entry. With DESKTOP_SIGNED=true a dmg must
 # also pass Gatekeeper and carry a stapled notarization ticket.
 #
 # Disposable runners only: deb installs into the system (run it in a container), and
@@ -61,7 +63,7 @@ launch() {
 }
 
 case $format in
-    appimage | deb)
+    appimage | deb | installed-linux)
         Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
         xvfb_pid=$!
         export DISPLAY=:99 GDK_BACKEND=x11
@@ -70,7 +72,7 @@ case $format in
         # AppRun runs the app as a child process; this display holds only that app.
         has_window() { xdotool search --onlyvisible --name '^Artifactize$' >/dev/null 2>&1; }
         ;;
-    dmg)
+    dmg | installed-mac)
         cat >"$work/window.swift" <<'EOF'
 import CoreGraphics
 import Foundation
@@ -126,5 +128,15 @@ case $format in
             echo "dmg: unsigned build; skipping Gatekeeper and notarization checks"
         fi
         launch "$app/Contents/MacOS/artifactize-desktop"
+        ;;
+    installed-linux)
+        check_commands "$file/usr/bin"
+        entry=${XDG_DATA_HOME:-$HOME/.local/share}/applications/artifactize.desktop
+        grep -qxF "Exec=\"$file/AppRun\"" "$entry" || fail "installed-linux: $entry does not start $file/AppRun"
+        launch "$HOME/.local/bin/artifactize-desktop"
+        ;;
+    installed-mac)
+        check_commands "$file/Contents/MacOS"
+        launch "$file/Contents/MacOS/artifactize-desktop"
         ;;
 esac
