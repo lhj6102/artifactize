@@ -51,8 +51,9 @@ try {
             $out = & $command --version
             if ($LASTEXITCODE -ne 0 -or $out -ne "$command $Version") { throw "winget alias $command failed: $out" }
         }
-        # The desktop alias opens the app; it finds artifactize beside it through either path.
-        Start-Process (Get-Command artifactize-desktop -CommandType Application).Path
+        # The desktop alias opens the app as a terminal does (no shell association prompt); it
+        # finds artifactize beside it through either path.
+        Start-Process -NoNewWindow (Get-Command artifactize-desktop -CommandType Application).Path
         for ($i = 0; -not (Get-Process artifactize-desktop -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -eq 'Artifactize'); $i++) {
             if ($i -ge 120) { throw 'the winget artifactize-desktop alias showed no Artifactize window' }; Start-Sleep -Milliseconds 500
         }

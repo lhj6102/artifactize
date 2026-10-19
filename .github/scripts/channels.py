@@ -71,15 +71,15 @@ def generate(args):
         arch = {"aarch64-apple-darwin": "arm", "x86_64-apple-darwin": "intel"}
         dmg = desktop_name("#{version}", "#{arch}-apple-darwin")
         if len(args.targets) == 1:
-            lines = [f'  arch {arch[args.targets[0]]}: "{args.targets[0].split("-")[0]}"',
+            lines = [f'  arch {arch[args.targets[0]]}: "{args.targets[0].split("-")[0]}"', "",
                      f'  version "{args.version}"', f'  sha256 "{sums[args.targets[0]]}"']
         else:
-            lines = ['  arch arm: "aarch64", intel: "x86_64"', f'  version "{args.version}"',
+            lines = ['  arch arm: "aarch64", intel: "x86_64"', "", f'  version "{args.version}"',
                      f'  sha256 arm:   "{sums["aarch64-apple-darwin"]}",',
                      f'         intel: "{sums["x86_64-apple-darwin"]}"']
         lines = ['cask "artifactize" do', *lines, "", f'  url "{base}/{dmg}"', '  name "Artifactize"',
                  '  desc "Declare and verify artifacts with reusable evidence"',
-                 '  homepage "https://artifactize.dev"', "", '  depends_on macos: ">= :big_sur"', "",
+                 '  homepage "https://artifactize.dev/"', "", '  depends_on macos: :big_sur', "",
                  '  app "Artifactize.app"', "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
     else:
