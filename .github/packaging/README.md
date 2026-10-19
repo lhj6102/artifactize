@@ -73,7 +73,8 @@ python3 -I .github/scripts/channels.py generate cask \
 
 Identifier: **lhj6102.Artifactize**. Each release attaches
 `winget-manifests.zip` with the version, defaultLocale and installer manifests.
-The installer is a zip with two nested portable files and command aliases.
+The installer is a zip with three nested portable files and command aliases:
+`artifactize`, `artifactize-tools` and `artifactize-desktop`.
 
 1. Owner downloads/unpacks the manifests from a **stable** GitHub release.
 2. Run `winget validate --manifest <directory>` and install locally with
