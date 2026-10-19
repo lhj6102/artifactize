@@ -78,7 +78,11 @@ try {
         if ($LASTEXITCODE -ne 0 -or $out -ne "artifactize $Version") { throw "MSIX alias failed: $out" }
         $manifest = Get-AppxPackageManifest -Package $installed
         $applications = @($manifest.Package.Applications.Application)
-        if ($applications.Count -ne 1 -or $applications[0].Id -ne 'Artifactize') { throw 'MSIX must have one visible application' }
+        if ((@($applications | ForEach-Object Id) -join ',') -ne 'Artifactize,ArtifactizeDesktop') { throw 'MSIX must have the CLI facade and the desktop app' }
+        # The desktop app starts Runs through the artifactize.exe beside its own executable.
+        foreach ($exe in @('artifactize.exe', 'artifactize-desktop.exe')) {
+            if (-not (Test-Path (Join-Path $installed.InstallLocation $exe))) { throw "MSIX is missing $exe" }
+        }
         if (Test-Path (Join-Path $installed.InstallLocation 'artifactize-tools.exe')) { throw 'MSIX must use the facade, not a standalone tools executable' }
         $sample = Join-Path $root 'sample.txt'
         [IO.File]::WriteAllText($sample, 'artifactize MSIX tools seam')
@@ -131,7 +135,15 @@ instruction = "Write a new AppData file to measure packaged child-process redire
         } elseif ($privateChildren.Count -eq 0 -and (Test-Path $realChild)) {
             Write-Host "MSIX child AppData redirected: no; file: $realChild"
         } else { throw 'MSIX child AppData probe has missing or ambiguous physical files' }
-        Write-Host 'MSIX alias, tools facade and package-private state passed'
+        # Start the desktop app from its Start entry as a user does, after the state checks
+        # above; a window titled Artifactize means its webview loaded.
+        Start-Process "shell:AppsFolder\$($installed.PackageFamilyName)!ArtifactizeDesktop"
+        for ($i = 0; -not (Get-Process artifactize-desktop -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -eq 'Artifactize'); $i++) {
+            if ($i -ge 120) { throw 'MSIX desktop app showed no Artifactize window' }; Start-Sleep -Milliseconds 500
+        }
+        Get-Process artifactize-desktop | Stop-Process -Force
+        Write-Host 'MSIX desktop app opened its window'
+        Write-Host 'MSIX alias, tools facade, package-private state and desktop app passed'
     }
 } finally {
     if ($Channel -eq 'msix') { Get-AppxPackage -Name $packageName | Remove-AppxPackage }

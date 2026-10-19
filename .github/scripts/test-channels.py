@@ -23,17 +23,20 @@ spec.loader.exec_module(channels)
 
 
 class ChannelsTest(unittest.TestCase):
-    def test_store_manifest_has_one_visible_facade_application(self):
+    def test_store_manifest_lists_the_desktop_app_and_keeps_the_cli_alias(self):
         manifest = ET.parse(SCRIPT.parent.parent / "packaging/AppxManifest.xml")
         ns = {"f": "http://schemas.microsoft.com/appx/manifest/foundation/windows10",
               "uap": "http://schemas.microsoft.com/appx/manifest/uap/windows10",
               "uap5": "http://schemas.microsoft.com/appx/manifest/uap/windows10/5",
               "desktop4": "http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"}
         applications = manifest.findall("f:Applications/f:Application", ns)
-        self.assertEqual(len(applications), 1)
-        app = applications[0]
-        self.assertEqual((app.get("Id"), app.get("Executable")), ("Artifactize", "artifactize.exe"))
-        self.assertNotEqual(app.find("uap:VisualElements", ns).get("AppListEntry"), "none")
+        self.assertEqual([(item.get("Id"), item.get("Executable")) for item in applications],
+                         [("Artifactize", "artifactize.exe"), ("ArtifactizeDesktop", "artifactize-desktop.exe")])
+        app, desktop = applications
+        # Start lists only the window app; the console facade stays reachable through its alias.
+        self.assertEqual(app.find("uap:VisualElements", ns).get("AppListEntry"), "none")
+        self.assertNotEqual(desktop.find("uap:VisualElements", ns).get("AppListEntry"), "none")
+        self.assertEqual(desktop.findall("f:Extensions/uap5:Extension", ns), [])
         extensions = app.findall("f:Extensions/uap5:Extension", ns)
         self.assertEqual(len(extensions), 1)
         self.assertEqual(extensions[0].get("Category"), "windows.appExecutionAlias")

@@ -5,8 +5,11 @@ name: Binaries
 # release.yml calls each platform separately: Linux gates the release; Windows and
 # macOS run alongside and never delay it before v1. Main PRs and manual rehearsals
 # build every target, retain archives and exercise the installers.
-# Each binaries-<target> artifact holds a tarball (Windows: zip) with BOTH commands
-# and its SHA-256. Distribution channels consume the same archive names.
+# Each binaries-<target> artifact holds a tarball (Windows: zip, with the desktop app
+# too) with BOTH commands and its SHA-256. Each desktop-<target> artifact holds the
+# macOS dmg or the Linux AppImage and deb, each with its SHA-256; the Linux bundles
+# build separately (platform linux-desktop) so they never delay the Linux release.
+# Distribution channels consume the same names.
 on:
   workflow_call:
     inputs:
@@ -15,7 +18,7 @@ on:
         type: string
         default: ""
       platform:
-        description: Which targets to build, linux, windows, macos or all.
+        description: Which targets to build, linux, linux-desktop, windows, macos or all.
         type: string
         default: all
   workflow_dispatch:
@@ -27,13 +30,17 @@ on:
       platform:
         description: Targets to build and smoke-test.
         type: choice
-        options: [all, linux, windows, macos]
+        options: [all, linux, linux-desktop, windows, macos]
         default: all
   pull_request:
     branches: [main]
 
 permissions:
   contents: read
+
+env:
+  # Bundles the desktop app; matches the tauri crate in Cargo.lock.
+  TAURI_CLI_VERSION: 2.12.3
 
 concurrency:
   group: binaries-${{ github.event_name }}-${{ github.ref }}-${{ inputs.platform || 'all' }}
@@ -46,12 +53,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -I .github/scripts/test-channels.py
-      - run: shellcheck .github/scripts/smoke-homebrew.sh
+      - run: shellcheck .github/scripts/smoke-homebrew.sh .github/scripts/build-desktop.sh .github/scripts/smoke-desktop.sh
 
   build:
     name: Build ${{ matrix.target }}
+    if: inputs.platform != 'linux-desktop'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    # macOS also bundles the desktop app after the CLI channels.
+    timeout-minutes: 60
     continue-on-error: ${{ matrix.best-effort || false }}
     strategy:
       fail-fast: false
@@ -136,6 +145,26 @@ jobs:
               exit 1
             fi
           done
+      - uses: pnpm/action-setup@v4
+        if: "!contains(matrix.target, '-linux-')"
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        if: "!contains(matrix.target, '-linux-')"
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - name: Build the desktop frontend
+        if: "!contains(matrix.target, '-linux-')"
+        working-directory: crates/artifactize-desktop/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      # The Windows zip and MSIX carry the desktop app beside artifactize.exe.
+      - name: Build the Windows desktop app
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: cargo build --release --locked -p artifactize-desktop --target "$TARGET"
       - name: Package
         run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
       # Retain release archives even if optional channel packaging fails later.
@@ -207,3 +236,99 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel winget
+
+      # The macOS desktop bundle comes last: the CLI archive above is already retained,
+      # so Homebrew never waits on the app.
+      - name: Install the Tauri CLI
+        if: contains(matrix.target, '-apple-darwin')
+        run: cargo install tauri-cli --version "$TAURI_CLI_VERSION" --locked
+      - name: Bundle the macOS desktop app (signed and notarized when the secrets exist)
+        if: contains(matrix.target, '-apple-darwin')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: sh .github/scripts/build-desktop.sh "$TARGET" "$VERSION" desktop-dist
+      - uses: actions/upload-artifact@v4
+        if: contains(matrix.target, '-apple-darwin')
+        with:
+          name: desktop-${{ matrix.target }}
+          path: desktop-dist/*
+          if-no-files-found: error
+      - name: Install the dmg and open the app
+        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        env:
+          DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: sh .github/scripts/smoke-desktop.sh dmg "$VERSION" "desktop-dist/artifactize-desktop-v$VERSION-$TARGET.dmg"
+
+  # Linux bundles link the system WebKitGTK, so they build on the oldest supported
+  # runner image: its glibc (2.35) is the baseline every bundle needs.
+  desktop-linux:
+    name: Build desktop ${{ matrix.target }}
+    if: inputs.platform != 'linux' && inputs.platform != 'windows' && inputs.platform != 'macos'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+    env:
+      TARGET: ${{ matrix.target }}
+      TAG_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install desktop build and smoke dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf xvfb xdotool
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - name: Set the version
+        run: |
+          if [ -n "$TAG_VERSION" ]; then sh .github/scripts/set-version.sh "$TAG_VERSION"; fi
+          echo "VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "artifactize") | .version')" >>"$GITHUB_ENV"
+      - name: Build the desktop frontend
+        working-directory: crates/artifactize-desktop/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Install the Tauri CLI
+        run: cargo install tauri-cli --version "$TAURI_CLI_VERSION" --locked
+      - name: Build both commands
+        run: cargo build --release --locked -p artifactize -p artifactize-tools --target "$TARGET"
+      # linuxdeploy is itself an AppImage; runners have no FUSE to mount it.
+      - name: Bundle the AppImage and deb
+        run: APPIMAGE_EXTRACT_AND_RUN=1 sh .github/scripts/build-desktop.sh "$TARGET" "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Run the AppImage and open the app
+        if: github.event_name != 'push'
+        run: sh .github/scripts/smoke-desktop.sh appimage "$VERSION" "dist/artifactize-desktop-v$VERSION-$TARGET.AppImage"
+      - name: Install the deb with its dependencies on Ubuntu 22.04 and open the app
+        if: github.event_name != 'push'
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src -e DEBIAN_FRONTEND=noninteractive ubuntu:22.04 sh -euc '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends xvfb xdotool >/dev/null
+            sh .github/scripts/smoke-desktop.sh deb "$1" "dist/artifactize-desktop-v$1-$2.deb"' sh "$VERSION" "$TARGET"
