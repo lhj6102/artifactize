@@ -66,10 +66,19 @@ jobs:
 
   macos:
     needs: plan
+    secrets: inherit
     uses: ./.github/workflows/binaries.yml
     with:
       version: ${{ needs.plan.outputs.version }}
       platform: macos
+
+  linux-desktop:
+    # Independent of the static Linux CLI release gate, like Windows and macOS.
+    needs: plan
+    uses: ./.github/workflows/binaries.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      platform: linux-desktop
 
   publish:
     needs: [plan, linux]
@@ -163,6 +172,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         working-directory: dist
+        run: |
+          sha256sum -c ./*.sha256
+          gh release upload "$GITHUB_REF_NAME" ./*
+
+  attach-desktop:
+    name: Attach native desktop packages (best effort)
+    needs: [publish, linux-desktop, macos]
+    if: ${{ always() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: desktop-dist
+          merge-multiple: true
+      - name: Attach apps, disk images and Debian packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: desktop-dist
         run: |
           sha256sum -c ./*.sha256
           gh release upload "$GITHUB_REF_NAME" ./*

@@ -21,7 +21,11 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": ["app", "dmg", "appimage", "deb"],
+    "category": "DeveloperTool",
+    "shortDescription": "Build together on an Artifact Graph.",
+    "linux": { "appimage": { "bundleMediaFramework": true } },
     "icon": ["../../assets/brand/favicon.png", "../../assets/brand/artifactize-icon.ico"]
   }
 }

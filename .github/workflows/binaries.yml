@@ -15,7 +15,7 @@ on:
         type: string
         default: ""
       platform:
-        description: Which targets to build, linux, windows, macos or all.
+        description: Which targets to build, linux (CLI), linux-desktop, windows, macos or all.
         type: string
         default: all
   workflow_dispatch:
@@ -27,7 +27,7 @@ on:
       platform:
         description: Targets to build and smoke-test.
         type: choice
-        options: [all, linux, windows, macos]
+        options: [all, linux, linux-desktop, windows, macos]
         default: all
   pull_request:
     branches: [main]
@@ -51,18 +51,20 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
-    continue-on-error: ${{ matrix.best-effort || false }}
+    timeout-minutes: 90
+    # Only tag-time builds are best effort; every PR/manual packaging seam gates.
+    continue-on-error: ${{ github.event_name == 'push' && matrix.best-effort || false }}
     strategy:
       fail-fast: false
       # Native runners let every target execute both binaries and its installer.
       matrix:
         include: >-
           ${{ fromJSON(
-            inputs.platform == 'linux' && '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"}]'
+            inputs.platform == 'linux-desktop' && '[{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-22.04","best-effort":true}]'
+            || inputs.platform == 'linux' && '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"}]'
             || inputs.platform == 'windows' && '[{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true}]'
             || inputs.platform == 'macos' && '[{"target":"aarch64-apple-darwin","os":"macos-15","best-effort":true},{"target":"x86_64-apple-darwin","os":"macos-15-intel","best-effort":true}]'
-            || '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"},{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true},{"target":"aarch64-apple-darwin","os":"macos-15","best-effort":true},{"target":"x86_64-apple-darwin","os":"macos-15-intel","best-effort":true}]'
+            || '[{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-22.04","best-effort":true},{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"},{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true},{"target":"aarch64-apple-darwin","os":"macos-15","best-effort":true},{"target":"x86_64-apple-darwin","os":"macos-15-intel","best-effort":true}]'
           ) }}
     env:
       TARGET: ${{ matrix.target }}
@@ -93,6 +95,26 @@ jobs:
           sudo ln -sfn /usr/include/asm-generic "$include/asm-generic"
           sudo ln -sfn "/usr/include/$arch-linux-gnu/asm" "$include/asm"
           echo "CC_${TARGET//-/_}=musl-gcc" >>"$GITHUB_ENV"
+      # Ubuntu 22.04 sets the desktop glibc floor to 2.35. The static musl CLI
+      # builds stay separate so desktop builds cannot delay their release path.
+      - name: Install Linux desktop and packaging dependencies
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf libfuse2 dbus-x11 xvfb xauth
+      - uses: pnpm/action-setup@v4
+        if: "!contains(matrix.target, '-linux-musl')"
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        if: "!contains(matrix.target, '-linux-musl')"
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - name: Install desktop frontend and pinned bundler
+        if: "!contains(matrix.target, '-linux-musl')"
+        run: pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile
       - name: Set the version
         run: |
           if [ -n "$TAG_VERSION" ]; then sh .github/scripts/set-version.sh "$TAG_VERSION"; fi
@@ -136,10 +158,31 @@ jobs:
               exit 1
             fi
           done
+      - name: Build the shipped desktop packages
+        if: "!contains(matrix.target, '-linux-musl')"
+        env:
+          # Tauri imports/signs/notarizes only when the complete credential set is
+          # available. Forks and ordinary unsigned rehearsals remain testable.
+          DESKTOP_APPLE_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python -I .github/scripts/desktop.py build --target "$TARGET" --version "$VERSION"
+      - uses: actions/upload-artifact@v4
+        if: matrix.target == 'x86_64-unknown-linux-gnu' || contains(matrix.target, '-apple-darwin')
+        with:
+          name: desktop-${{ matrix.target }}
+          path: desktop-dist/*
+          if-no-files-found: error
       - name: Package
+        if: matrix.target != 'x86_64-unknown-linux-gnu'
         run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
       # Retain release archives even if optional channel packaging fails later.
       - uses: actions/upload-artifact@v4
+        if: matrix.target != 'x86_64-unknown-linux-gnu'
         with:
           name: binaries-${{ matrix.target }}
           path: dist/*
@@ -207,3 +250,12 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel winget
+
+      - name: Open installed packages and run every desktop journey
+        if: "!contains(matrix.target, '-linux-musl') && github.event_name != 'push'"
+        run: |
+          if [[ $TARGET == *-linux-gnu ]]; then
+            dbus-run-session -- xvfb-run -a python -I .github/scripts/desktop.py test --target "$TARGET" --version "$VERSION"
+          else
+            python -I .github/scripts/desktop.py test --target "$TARGET" --version "$VERSION"
+          fi

@@ -1,9 +1,10 @@
 // Exercise the public Launcher and actual Tauri service, not a replacement service hook.
 import assert from "node:assert/strict";
 import { it } from "node:test";
+import { cleanup, readCandidate } from "./build.ts";
 import { environment } from "./environment.ts";
 import {
-  executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
+  executableName, exists, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
   processRunning, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
 } from "./platform.ts";
 
@@ -97,5 +98,28 @@ it("cancelling a wrapped runner joins its fixture descendants before releasing i
     removeTree(directory);
     const failures = released.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
     if (failures.length) throw new AggregateError(failures, "runner regression fixture release failed");
+  }
+});
+
+it("installed candidates retain their package layout and cleanup never removes the installation", async () => {
+  const directory = root();
+  const installation = root();
+  const manifest = nativePath(directory, "candidate.json");
+  const app = nativePath(installation, executableName("artifactize-desktop"));
+  const cli = nativePath(installation, executableName("artifactize"));
+  const observer = nativePath(directory, executableName("artifactize-e2e-observe"));
+  try {
+    for (const path of [app, cli, observer]) writeText(path, "declared executable input");
+    writeJson(manifest, { root: directory, manifest, app, cli, observer, installation });
+    const candidate = readCandidate(manifest);
+    assert.equal(candidate.app, app);
+    assert.equal(candidate.cli, cli);
+    await cleanup(candidate.root);
+    assert.equal(exists(directory), false);
+    assert.equal(exists(app), true);
+    assert.equal(exists(cli), true);
+  } finally {
+    removeTree(directory);
+    removeTree(installation);
   }
 });

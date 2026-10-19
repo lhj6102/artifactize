@@ -7,7 +7,7 @@ import {
 
 export const workspace = absolutePath(suitePath(), "../../../..");
 const ui = absolutePath(suitePath(), "..");
-export type Candidate = { root: NativePath; cli: NativePath; app: NativePath; observer: NativePath; manifest: NativePath };
+export type Candidate = { root: NativePath; cli: NativePath; app: NativePath; observer: NativePath; manifest: NativePath; installation?: NativePath };
 
 function resourceRoot(directory = scratchDirectory()): NativePath {
   const root = newDirectory(directory, "artifactize-desktop-build-");
@@ -93,10 +93,17 @@ export function readCandidate(manifest = variable("DESKTOP_TEST_CANDIDATE")): Ca
   const item = readJson(asNativePath(manifest)) as Partial<Record<keyof Candidate, unknown>> | null;
   if (!item || typeof item.root !== "string" || item.manifest !== asNativePath(manifest)) throw new Error("invalid desktop candidate manifest");
   const root = asNativePath(item.root);
-  for (const path of [item.cli, item.app, item.observer, manifest]) {
+  if (item.installation !== undefined && (typeof item.installation !== "string" || !exists(asNativePath(item.installation)))) {
+    throw new Error("invalid desktop candidate installation");
+  }
+  for (const [key, path] of Object.entries({ cli: item.cli, app: item.app, observer: item.observer, manifest })) {
     if (typeof path !== "string") throw new Error("invalid desktop candidate executable path");
     const executable = asNativePath(path);
-    if (!isInside(root, executable) || !exists(executable)) throw new Error(`candidate input is missing or outside its root: ${path}`);
+    // Installed app/CLI inputs remain in their package layout, outside fixture scratch.
+    // The observer, manifest, fixtures and cleanup root always stay invocation-local.
+    const installed = (key === "cli" || key === "app") && typeof item.installation === "string"
+      && isInside(asNativePath(item.installation), executable);
+    if ((!isInside(root, executable) && !installed) || !exists(executable)) throw new Error(`candidate input is missing or outside its root: ${path}`);
   }
   return item as Candidate;
 }

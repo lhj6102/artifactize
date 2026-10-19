@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true)][string] $Version,
     [Parameter(Mandatory = $true)][string] $Dist,
-    [ValidateSet('winget', 'msix')][string] $Channel = 'msix'
+    [ValidateSet('winget', 'msix')][string] $Channel = 'msix',
+    [switch] $DesktopE2E
 )
 $ErrorActionPreference = 'Stop'
 $Dist = (Resolve-Path $Dist).Path
@@ -78,8 +79,36 @@ try {
         if ($LASTEXITCODE -ne 0 -or $out -ne "artifactize $Version") { throw "MSIX alias failed: $out" }
         $manifest = Get-AppxPackageManifest -Package $installed
         $applications = @($manifest.Package.Applications.Application)
-        if ($applications.Count -ne 1 -or $applications[0].Id -ne 'Artifactize') { throw 'MSIX must have one visible application' }
-        if (Test-Path (Join-Path $installed.InstallLocation 'artifactize-tools.exe')) { throw 'MSIX must use the facade, not a standalone tools executable' }
+        if ($applications.Count -ne 2 -or @($applications.Id) -notcontains 'Artifactize' -or @($applications.Id) -notcontains 'Desktop') {
+            throw 'MSIX must expose the existing CLI entry and the desktop Start menu entry'
+        }
+        $tools = Join-Path $installed.InstallLocation 'artifactize-tools.exe'
+        $out = & $tools --version
+        if ($LASTEXITCODE -ne 0 -or $out -ne "artifactize-tools $Version") { throw "MSIX bundled tools failed: $out" }
+        if ($DesktopE2E) {
+            & python -I (Join-Path $PSScriptRoot 'desktop.py') installed --target x86_64-pc-windows-msvc `
+                --version $Version --app (Join-Path $installed.InstallLocation 'artifactize-desktop.exe')
+            if ($LASTEXITCODE -ne 0) { throw 'Installed MSIX desktop journeys failed' }
+        } else {
+            # Resolve and activate the installed Start menu entry, not a loose build.
+            $aumid = "$($installed.PackageFamilyName)!Desktop"
+            $entry = @(Get-StartApps | Where-Object AppID -eq $aumid)
+            if ($entry.Count -ne 1) { throw "Desktop Start menu entry missing: $aumid" }
+            Start-Process explorer.exe -ArgumentList "shell:AppsFolder\$aumid"
+            $desktop = $null
+            try {
+                for ($i = 0; $i -lt 100; $i++) {
+                    $desktop = Get-Process -Name artifactize-desktop -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Path -eq (Join-Path $installed.InstallLocation 'artifactize-desktop.exe') -and $_.MainWindowHandle -ne 0 } |
+                        Select-Object -First 1
+                    if ($desktop) { break }
+                    Start-Sleep -Milliseconds 200
+                }
+                if (-not $desktop) { throw 'Start menu desktop did not open a window' }
+            } finally {
+                Get-Process -Name artifactize-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
+            }
+        }
         $sample = Join-Path $root 'sample.txt'
         [IO.File]::WriteAllText($sample, 'artifactize MSIX tools seam')
         Push-Location $root

@@ -1,5 +1,6 @@
 [package]
 name = "artifactize-desktop"
+default-run = "artifactize-desktop"
 description = "Desktop app for artifactize monitor and Human reviews (experiment)."
 version.workspace = true
 edition.workspace = true

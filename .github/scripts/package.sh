@@ -27,6 +27,10 @@ mkdir "dist/$name"
 for bin in artifactize artifactize-tools; do
     cp "target/$target/release/$bin$ext" "dist/$name/"
 done
+# The portable Windows distribution includes the window app beside its worker CLI.
+case $target in
+    *-windows-*) cp "target/$target/release/artifactize-desktop.exe" "dist/$name/" ;;
+esac
 cp LICENSE README.md "dist/$name/"
 cd dist
 case $target in

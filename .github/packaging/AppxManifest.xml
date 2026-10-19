@@ -23,6 +23,10 @@
         </uap5:Extension>
       </Extensions>
     </Application>
+    <Application Id="Desktop" Executable="artifactize-desktop.exe" EntryPoint="Windows.FullTrustApplication" desktop4:SupportsMultipleInstances="true">
+      <uap:VisualElements DisplayName="Artifactize Desktop" Description="Build together on an Artifact Graph."
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
   </Applications>
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />

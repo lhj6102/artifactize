@@ -23,14 +23,18 @@ spec.loader.exec_module(channels)
 
 
 class ChannelsTest(unittest.TestCase):
-    def test_store_manifest_has_one_visible_facade_application(self):
+    def test_store_manifest_exposes_desktop_and_preserves_console_alias(self):
         manifest = ET.parse(SCRIPT.parent.parent / "packaging/AppxManifest.xml")
         ns = {"f": "http://schemas.microsoft.com/appx/manifest/foundation/windows10",
               "uap": "http://schemas.microsoft.com/appx/manifest/uap/windows10",
               "uap5": "http://schemas.microsoft.com/appx/manifest/uap/windows10/5",
               "desktop4": "http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"}
         applications = manifest.findall("f:Applications/f:Application", ns)
-        self.assertEqual(len(applications), 1)
+        self.assertEqual(len(applications), 2)
+        desktop = applications[1]
+        self.assertEqual((desktop.get("Id"), desktop.get("Executable")), ("Desktop", "artifactize-desktop.exe"))
+        self.assertNotEqual(desktop.find("uap:VisualElements", ns).get("AppListEntry"), "none")
+        self.assertEqual(desktop.findall("f:Extensions/uap5:Extension", ns), [])
         app = applications[0]
         self.assertEqual((app.get("Id"), app.get("Executable")), ("Artifactize", "artifactize.exe"))
         self.assertNotEqual(app.find("uap:VisualElements", ns).get("AppListEntry"), "none")

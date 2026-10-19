@@ -2,7 +2,7 @@
 import { inspect } from "node:util";
 import { assertAppsStopped } from "./observation.ts";
 import { checkIntegrity } from "../lint/e2e-integrity.ts";
-import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
+import { adopt, cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
   nativeCrashReports, nodeProgram, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
@@ -75,7 +75,7 @@ async function batch(): Promise<void> {
   }
 }
 
-async function suite(ids: string[]): Promise<void> {
+async function suite(ids: string[], packaged: boolean): Promise<void> {
   const { selectedScenarios } = await import("./catalog.ts");
   const selected = selectedScenarios(ids);
   // A relaunch is one complete scenario with two service-owned app lifetimes. Keep it
@@ -92,7 +92,11 @@ async function suite(ids: string[]): Promise<void> {
   // The full suite always builds its own evaluated inputs, even when an Agent-tool
   // session has a prepared candidate in the environment. Explicit targeted developer
   // runs may reuse immutable binaries, but still own a private snapshot and fixtures.
-  const candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratch) : await prepare();
+  // Packaging rehearsals explicitly opt into the installed inputs; copying an app
+  // into a flat snapshot would discard its resources, sidecars and package identity.
+  const candidate = packaged ? adopt(readCandidate())
+    : ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratch) : await prepare();
+  if (packaged && !candidate.installation) throw new Error("packaged E2E requires an explicit installation directory");
   console.error(`Desktop E2E diagnostics: ${output}`);
   const failures: unknown[] = [];
   let confirmed = true;
@@ -146,16 +150,16 @@ async function unit(): Promise<void> {
 
 const mode = process.argv[2] ?? "suite";
 try {
-  if (mode === "suite" || mode === "prepare") checkIntegrity();
-  if (mode === "suite" || mode === "batch") assertRunnerMachine();
+  if (mode === "suite" || mode === "packaged" || mode === "prepare") checkIntegrity();
+  if (mode === "suite" || mode === "packaged" || mode === "batch") assertRunnerMachine();
   if (mode === "prepare") console.log((await prepare()).manifest);
   else if (mode === "cleanup") await cleanup(readCandidate(process.argv[3]).root);
   else if (mode === "unit") await unit();
   else if (mode === "batch") await batch();
-  else if (mode === "suite") {
-    if (variable("DESKTOP_TEST_WRAPPED") === "1") await suite(process.argv.slice(3));
+  else if (mode === "suite" || mode === "packaged") {
+    if (variable("DESKTOP_TEST_WRAPPED") === "1") await suite(process.argv.slice(3), mode === "packaged");
     else {
-      const wrapped = runnerCommand([file, "suite", ...process.argv.slice(3)]);
+      const wrapped = runnerCommand([file, mode, ...process.argv.slice(3)]);
       process.exitCode = await execute(wrapped.program, wrapped.args, wrapped.env);
     }
   } else throw new Error(`unknown desktop test runner mode: ${mode}`);
