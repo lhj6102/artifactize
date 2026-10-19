@@ -21,7 +21,7 @@ python3 -I "$script_dir/channels.py" generate cask --version "$version" \
     --targets "$target" --dist "$dist" --output "$casks" --base-url "file://$dist"
 brew style "$tap/artifactize"
 # Homebrew quarantines what it installs; only a notarized app may keep that and still open.
-quarantine=--no-quarantine
-[ "${DESKTOP_SIGNED:-false}" = true ] && quarantine=--quarantine
-brew install --cask "$quarantine" --appdir="$apps" "$tap/artifactize"
+set -- --appdir="$apps"
+[ "${DESKTOP_SIGNED:-false}" = true ] || set -- "$@" --no-quarantine
+brew install --cask "$@" "$tap/artifactize"
 sh "$script_dir/smoke-desktop.sh" installed-mac "$version" "$apps/Artifactize.app"
