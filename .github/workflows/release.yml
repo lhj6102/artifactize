@@ -11,8 +11,9 @@ name: Release
 # 2. Once they pass, publish creates the GitHub release with the Linux archives and
 #    their .sha256 checksums, so install.sh serves the new version, then publishes the
 #    crate to crates.io. A failed Linux build publishes nothing.
-# 3. The Windows zip and both macOS tarballs build alongside and are attached when
-#    ready. Until v1 they are best effort: they never delay or fail the release.
+# 3. The Windows zip, both macOS CLI tarballs and native desktop packages build
+#    alongside and attach when ready. Until v1 they are best effort: they never
+#    delay or fail the static Linux CLI release.
 #
 # A prerelease tag (v0.6.0-alpha.1) creates a GitHub prerelease only: no crates.io.
 # Homebrew, winget and Store follow stable releases only. Each optional channel has

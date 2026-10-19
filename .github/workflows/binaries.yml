@@ -6,7 +6,9 @@ name: Binaries
 # macOS run alongside and never delay it before v1. Main PRs and manual rehearsals
 # build every target, retain archives and exercise the installers.
 # Each binaries-<target> artifact holds a tarball (Windows: zip) with BOTH commands
-# and its SHA-256. Distribution channels consume the same archive names.
+# and its SHA-256; the Windows zip also includes the desktop executable.
+# desktop-<target> holds the native Linux/macOS app packages and their SHA-256.
+# Distribution channels consume the same existing CLI archive names.
 on:
   workflow_call:
     inputs:

@@ -17,6 +17,7 @@ $root = Join-Path $env:TEMP ('artifactize-channels-' + [Guid]::NewGuid().ToStrin
 New-Item -ItemType Directory -Path $root | Out-Null
 $server = $null; $cert = $null; $childName = $null
 $packageName = 'lhj6102.Artifactize'
+$removePackage = -not $DesktopE2E
 try {
     if ($Channel -eq 'winget') {
         # Hosted server provides exactly the PR-built zip; no public release is read.
@@ -88,7 +89,8 @@ try {
         if ($DesktopE2E) {
             & python -I (Join-Path $PSScriptRoot 'desktop.py') installed --target x86_64-pc-windows-msvc `
                 --version $Version --app (Join-Path $installed.InstallLocation 'artifactize-desktop.exe')
-            if ($LASTEXITCODE -ne 0) { throw 'Installed MSIX desktop journeys failed' }
+            if ($LASTEXITCODE -ne 0) { throw 'Installed MSIX desktop journeys failed; retain the package until runner teardown' }
+            $removePackage = $true
         } else {
             # Resolve and activate the installed Start menu entry, not a loose build.
             $aumid = "$($installed.PackageFamilyName)!Desktop"
@@ -163,7 +165,7 @@ instruction = "Write a new AppData file to measure packaged child-process redire
         Write-Host 'MSIX alias, tools facade and package-private state passed'
     }
 } finally {
-    if ($Channel -eq 'msix') { Get-AppxPackage -Name $packageName | Remove-AppxPackage }
+    if ($Channel -eq 'msix' -and $removePackage) { Get-AppxPackage -Name $packageName | Remove-AppxPackage }
     if ($childName) { Remove-Item -LiteralPath (Join-Path $env:LOCALAPPDATA $childName) -Force -ErrorAction SilentlyContinue }
     if ($cert) {
         Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue

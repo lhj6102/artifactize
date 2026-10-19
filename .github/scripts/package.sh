@@ -1,12 +1,13 @@
 #!/bin/sh
-# Package both release binaries the way binaries.yml publishes them:
+# Package the release commands and Windows app as binaries.yml publishes them:
 #
 #   .github/scripts/package.sh TARGET VERSION
 #
 # Reads artifactize and artifactize-tools from target/TARGET/release/ (.exe on
-# Windows) and writes to dist/:
+# Windows), plus artifactize-desktop.exe on Windows, and writes to dist/:
 # - artifactize-vVERSION-TARGET.tar.gz (.zip for Windows targets), holding
-#   artifactize-vVERSION-TARGET/ with both binaries, LICENSE and README.md;
+#   artifactize-vVERSION-TARGET/ with both commands, the Windows app where applicable,
+#   LICENSE and README.md;
 # - <archive>.sha256, one line "<hex digest>  <archive>", as sha256sum writes it.
 #
 # install.sh, install.ps1, cargo-binstall and every later channel point at these

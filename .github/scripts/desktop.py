@@ -7,6 +7,7 @@ both commands in Contents/MacOS on macOS and usr/bin on Linux, beside the app,
 so core's existing sibling lookup works without PATH or a bundle-specific fallback.
 """
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -184,7 +185,10 @@ def test_unix(target, packages, scratch, version, e2e=False):
                     journeys(binaries / "artifactize-desktop", binaries / "artifactize", binaries, observer, owned)
                 else:
                     launch(app, owned, macos=True)
-            finally:
+            except BaseException:
+                print(f"Retained failed installation for native shutdown diagnostics: {app}", file=sys.stderr)
+                raise
+            else:
                 shutil.rmtree(app)
     else:
         image, = packages.glob("*.AppImage")
@@ -212,9 +216,26 @@ def test_unix(target, packages, scratch, version, e2e=False):
                 journeys(binaries / "artifactize-desktop", binaries / "artifactize", binaries, observer, other)
             else:
                 launch(binaries / "artifactize-desktop", scratch)
-        finally:
+        except BaseException:
+            print("Retained failed Debian installation for native shutdown diagnostics", file=sys.stderr)
+            raise
+        else:
             package = run("dpkg-deb", "-f", deb, "Package", capture=True).strip()
             run("sudo", "apt-get", "remove", "-y", package)
+
+
+@contextmanager
+def resources():
+    # On failure the harness may not have confirmed native shutdown. Keep every
+    # immutable package and fixture input until the disposable runner is retired.
+    scratch = Path(tempfile.mkdtemp(prefix="artifactize-packages-", dir=os.environ.get("RUNNER_TEMP"))).resolve()
+    try:
+        yield scratch
+    except BaseException:
+        print(f"Retained packaging diagnostics and inputs: {scratch}", file=sys.stderr)
+        raise
+    else:
+        shutil.rmtree(scratch)
 
 
 def main():
@@ -227,8 +248,7 @@ def main():
     args = parser.parse_args()
     # Each invocation owns one empty directory, including every extraction. Never
     # share test fixture .artf files through the system temporary-directory root.
-    with tempfile.TemporaryDirectory(prefix="artifactize-packages-", dir=os.environ.get("RUNNER_TEMP")) as temp:
-        scratch = Path(temp).resolve()
+    with resources() as scratch:
         output = args.output.resolve()
         if args.mode == "installed":
             if args.app is None:

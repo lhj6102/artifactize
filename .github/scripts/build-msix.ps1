@@ -28,7 +28,7 @@ try {
     Copy-Item (Join-Path $repo 'LICENSE') $stage
     $manifest = [IO.File]::ReadAllText((Join-Path $repo '.github/packaging/AppxManifest.xml'))
     [IO.File]::WriteAllText((Join-Path $stage 'AppxManifest.xml'), $manifest.Replace('@VERSION@', $msixVersion))
-    # Use the existing raster brand mark; S8 can replace these visual assets.
+    # Use the existing raster brand mark for both application entries.
     Add-Type -AssemblyName System.Drawing
     $assets = Join-Path $stage 'Assets'
     New-Item -ItemType Directory -Path $assets | Out-Null
