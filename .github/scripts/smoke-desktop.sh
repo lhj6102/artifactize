@@ -44,10 +44,11 @@ check_commands() {
     echo "$format: both commands report $version beside the app executable"
 }
 
-# Open the app on a fresh state directory and wait for its window.
+# Open the app on a fresh state directory and wait for its window. Containers have no
+# USER to name the default reviewer.
 launch() {
     mkdir -p "$work/home" "$work/state"
-    HOME="$work/home" $group "$@" --state-dir "$work/state" >"$work/app.log" 2>&1 &
+    HOME="$work/home" $group "$@" --state-dir "$work/state" --reviewer smoke >"$work/app.log" 2>&1 &
     app_pid=$!
     i=0
     until has_window; do
