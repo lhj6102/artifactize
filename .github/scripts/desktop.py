@@ -130,7 +130,7 @@ def launch(app, root, macos=False):
     The diagnostic twin below checks rendered state and all desktop journeys.
     macOS goes through LaunchServices, as opening an installed .app does.
     """
-    args = [str(app), "--state-dir", str(root / "launch-state")]
+    args = [str(app), "--state-dir", str(root / "launch-state"), "--reviewer", "packaging-smoke"]
     if macos:
         args = ["open", "-W", "-n", "-a", str(app), "--args", *args[1:]]
     process = subprocess.Popen(args, cwd=root, start_new_session=sys.platform == "linux")
