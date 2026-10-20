@@ -26,8 +26,10 @@ The stdio server uses the same binary and shared state as the CLI. It binds to o
 repository/state when started; it is not the HTTP review store (`artifactize
 server`), and requires no port, token argument or changed host timeout.
 
-These commands configure the host explicitly; artifactize does not install or
-change host configuration for you. Follow the host's normal trust/approval flow.
+In Claude Code and Codex, the [plugin](plugin.md) registers this server together
+with the Hey Arti skill; the commands below are the manual registration. They
+configure the host explicitly; artifactize does not install or change host
+configuration for you. Follow the host's normal trust/approval flow.
 
 ### Claude Code
 

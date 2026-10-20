@@ -1,0 +1,16 @@
+{
+  "name": "artifactize",
+  "description": "artifactize for coding agents: the Hey Arti skill and the artifactize MCP server.",
+  "owner": {
+    "name": "Hyukjin LIM",
+    "url": "https://github.com/lhj6102"
+  },
+  "plugins": [
+    {
+      "name": "artifactize",
+      "source": "./skills",
+      "description": "Hey Arti, artifactize's Forward Deployed Engineer, as a skill, and the artifactize MCP server for inspecting and verifying the project. Needs the artifactize program on PATH.",
+      "category": "development"
+    }
+  ]
+}
