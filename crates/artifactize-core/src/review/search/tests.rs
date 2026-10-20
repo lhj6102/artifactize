@@ -276,6 +276,28 @@ async fn search_pages_through_every_request_and_the_default_finds_waiting_human_
 }
 
 #[tokio::test]
+async fn count_finds_what_every_page_of_the_query_lists() {
+    // 210 GREEN requests and one waiting sign-off: the count spans the pages search returns.
+    let (_root, state) = state(210).await;
+    let reviewer: ReviewerId = "alice".parse().unwrap();
+    for (query, expected) in [
+        ("", 211),
+        (DEFAULT, 1),
+        ("eval:check20", 10),
+        ("kind:agent", 0),
+    ] {
+        let parsed = query.parse().unwrap();
+        assert_eq!(
+            count(&state, &parsed, &reviewer).await.unwrap(),
+            expected,
+            "{query}"
+        );
+        let listed = every_page(&state, query).await.len();
+        assert_eq!(u64::try_from(listed).unwrap(), expected, "{query}");
+    }
+}
+
+#[tokio::test]
 async fn suggestions_take_values_from_what_the_terms_before_the_last_find() {
     let (_root, state) = state(3).await;
     let reviewer: ReviewerId = "alice".parse().unwrap();

@@ -92,6 +92,7 @@
   /** The manual refresh of the list (`r`, the palette's "Refresh the list"). */
   function refresh() {
     const { answer, shown } = request(true);
+    void app.waiting.refresh();
     // E2E builds only: witness this refresh once its own reload succeeded and the list then
     // settled on screen, whichever read it shows; what it shows is for the reader to check.
     // Its own failure, or no answer yet, is never witnessed, whatever other reads answered.

@@ -212,6 +212,16 @@ async function capture(output: string, work: string): Promise<void> {
     // core → cli, core → release and cli → docs.
     await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
       { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges" });
+    // The first fit can happen while the graph area is still taking its size, and the Run view
+    // keeps its camera after that; Fit View frames the drawn graph the same way on every capture.
+    await app.$(".svelte-flow__controls-fitview").click();
+    let viewport = "";
+    await app.waitUntil(async () => {
+      const now = await app.execute(() => document.querySelector<HTMLElement>(".svelte-flow__viewport")?.style.transform ?? "");
+      const still = now !== "" && now === viewport;
+      viewport = now;
+      return still;
+    }, { timeout: WAIT, interval: 250, timeoutMsg: "the fitted camera holds still" });
     await shot("monitor.png");
 
     // B. cli's Detail on its Artifact tab: cli between the core it uses and the docs that use

@@ -27,7 +27,7 @@ use crate::{
     types::{RequestStatus, ReviewerId},
 };
 use clap::ValueEnum;
-use std::{collections::BTreeSet, path::Path};
+use std::{collections::BTreeSet, ops::ControlFlow, path::Path};
 
 /// The query the review list starts with: the waiting Human sign-offs.
 pub const DEFAULT: &str = "kind:human status:waiting_human";
@@ -511,8 +511,41 @@ pub async fn search(
     reviewer: &ReviewerId,
     start: u64,
 ) -> Result<Found, String> {
-    let statuses = query.statuses();
     let mut found = Found::default();
+    read_matching(state, query, reviewer, start, |view, entry, position| {
+        found.requests.push((view, entry));
+        if found.requests.len() < PAGE {
+            return ControlFlow::Continue(());
+        }
+        found.next = Some(position + 1);
+        ControlFlow::Break(())
+    })
+    .await?;
+    Ok(found)
+}
+
+/// How many requests `query` finds on all its pages together, each counted as [`search`]
+/// lists it.
+pub async fn count(state: &Path, query: &Query, reviewer: &ReviewerId) -> Result<u64, String> {
+    let mut count = 0;
+    read_matching(state, query, reviewer, 0, |_, _, _| {
+        count += 1;
+        ControlFlow::Continue(())
+    })
+    .await?;
+    Ok(count)
+}
+
+/// Pass each request matching `query` from position `start` on to `found` with its position,
+/// in the state's request order, until `found` breaks or the requests end.
+async fn read_matching(
+    state: &Path,
+    query: &Query,
+    reviewer: &ReviewerId,
+    start: u64,
+    mut found: impl FnMut(RequestView, Entry, u64) -> ControlFlow<()>,
+) -> Result<(), String> {
+    let statuses = query.statuses();
     let mut position = start;
     loop {
         let batch = store::read_request_batch(state, &statuses, position, BATCH).await?;
@@ -522,16 +555,12 @@ pub async fn search(
                 continue;
             }
             let entry = Entry::new(&view, &repo, reviewer);
-            if query.matches(&entry) {
-                found.requests.push((view, entry));
-                if found.requests.len() == PAGE {
-                    found.next = Some(position + offset as u64 + 1);
-                    return Ok(found);
-                }
+            if query.matches(&entry) && found(view, entry, position + offset as u64).is_break() {
+                return Ok(());
             }
         }
         if read < u64::from(BATCH) {
-            return Ok(found);
+            return Ok(());
         }
         position += read;
     }
