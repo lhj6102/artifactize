@@ -45,12 +45,13 @@
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
   const MAX_ZOOM = 2;
-  /** How the whole graph fits: the structure view keeps a wider margin and a smaller zoom. */
-  const fit = $derived<Fit>(
-    structural ? { minZoom: MIN_ZOOM, maxZoom: 1.6, padding: 0.6 } : { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, padding: 0.1 },
-  );
+  /** How the whole graph fits: the first fit, Fit View, and every later fit of the Run view. */
+  const FIT: Fit = { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, padding: 0.1 };
+  /** How the structure view fits again as its canvas or the panel over it changes: a wider
+   * margin and a smaller zoom, beside its expanded text. */
+  const refit = $derived<Fit>(structural ? { minZoom: MIN_ZOOM, maxZoom: 1.6, padding: 0.6 } : FIT);
   /** Fit View, the first fit included, fits into what the docked panel leaves. */
-  const fitViewOptions = $derived({ minZoom: fit.minZoom, maxZoom: fit.maxZoom, padding: padding(v.area, fit) });
+  const fitViewOptions = $derived({ minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: padding(v.area, FIT) });
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() =>
     graph.nodes
@@ -108,8 +109,9 @@
     v.area = next;
     if (!v.initialized) return;
     const bounds = flow.getNodesBounds(flow.getNodes());
-    if (!before || structural || same(flow.getViewport(), whole(bounds, before, fit))) {
-      void flow.setViewport(whole(bounds, next, fit), { duration: 0 });
+    if (before && structural) void flow.setViewport(whole(bounds, next, refit), { duration: 0 });
+    else if (!before || same(flow.getViewport(), whole(bounds, before, FIT))) {
+      void flow.setViewport(whole(bounds, next, FIT), { duration: 0 });
     }
     show(opened);
   }
@@ -159,7 +161,7 @@
         // The first draw shows whole beside an open panel; a canvas without a size yet (a
         // hidden screen) gets its fit once it has one.
         if (!v.area) return;
-        void flow.setViewport(whole(flow.getNodesBounds(flow.getNodes()), v.area, fit), { duration: 0 });
+        void flow.setViewport(whole(flow.getNodesBounds(flow.getNodes()), v.area, FIT), { duration: 0 });
         show(opened);
       }}
       proOptions={{ hideAttribution: true }}
