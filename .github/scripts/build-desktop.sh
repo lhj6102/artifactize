@@ -33,9 +33,13 @@ mkdir -p "$crate/binaries" "$output"
 for bin in artifactize artifactize-tools; do
     case $target in
         universal-apple-darwin)
+            # Tauri builds and checks each CPU's app on its own, then joins them.
+            for cpu in aarch64 x86_64; do
+                cp "${release%/universal-apple-darwin/release}/$cpu-apple-darwin/release/$bin" \
+                    "$crate/binaries/$bin-$cpu-apple-darwin"
+            done
             lipo -create -output "$crate/binaries/$bin-$target" \
-                "${release%/universal-apple-darwin/release}/aarch64-apple-darwin/release/$bin" \
-                "${release%/universal-apple-darwin/release}/x86_64-apple-darwin/release/$bin"
+                "$crate/binaries/$bin-aarch64-apple-darwin" "$crate/binaries/$bin-x86_64-apple-darwin"
             ;;
         *) cp "$release/$bin" "$crate/binaries/$bin-$target" ;;
     esac
