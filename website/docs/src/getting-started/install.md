@@ -281,6 +281,32 @@ normal app. Install the CLI from the same checkout too, as above: the app shows 
 Runs that `artifactize verify` starts. The app uses the same state home and credentials as the unpackaged
 CLI, not the Store app's private state.
 
+### Plugin for Claude Code and Codex
+
+The [plugin](../agent-plugin/plugin.md) adds the Hey Arti skill and the
+artifactize MCP server to Claude Code or Codex. It runs the `artifactize` program,
+so install that first with one of the channels above. This repository is the
+plugin's marketplace, a catalog the assistant reads to find the plugin.
+
+In a Claude Code session, add the marketplace, then install the plugin from it:
+
+```text
+/plugin marketplace add lhj6102/artifactize
+/plugin install artifactize@artifactize
+```
+
+From a shell, `claude plugin marketplace add lhj6102/artifactize` and
+`claude plugin install artifactize@artifactize` do the same.
+
+For Codex, in a shell:
+
+```sh
+codex plugin marketplace add lhj6102/artifactize
+codex plugin add artifactize@artifactize
+```
+
+Or run `/plugins` in Codex CLI and pick the `artifactize` marketplace.
+
 ## Update
 
 | Installed with | Update |
@@ -297,6 +323,12 @@ The install scripts and Cargo get a release as soon as it is published. Homebrew
 and the Microsoft Store follow stable releases only; a Store update can lag while
 Microsoft reviews it. The prepared winget channel targets stable releases only; its
 first publication is still pending. Updating keeps your state.
+
+The [plugin](#plugin-for-claude-code-and-codex) follows this repository's `main`
+branch, which holds released versions. Update it with
+`/plugin marketplace update artifactize` in Claude Code (or turn on auto-update
+for the marketplace in `/plugin`), or `codex plugin marketplace upgrade artifactize`
+in Codex.
 
 ### Upgrading from 0.11
 

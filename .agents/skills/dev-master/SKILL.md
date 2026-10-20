@@ -30,7 +30,14 @@ you to continue the dev-master cycle, start the next run from step 1.
 
 Run from the root of the work tree being verified, with a scratch directory
 outside every work tree (never `/tmp` itself) that you keep across runs so
-builds stay incremental:
+builds stay incremental. In a new work tree, first install the desktop UI's
+packages, which the desktop evals read without installing them:
+
+```sh
+pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile
+```
+
+Then verify:
 
 ```sh
 env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
@@ -38,9 +45,11 @@ env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
 ```
 
 `env -u DESKTOP_TEST_CANDIDATE` makes the desktop end-to-end evals build their
-candidate from this tree. The command prints the Run ID and ends with
-`Validation:` and the outcome; the exit code is the outcome: 0 GREEN
-(`Validation: SATISFIED`), 5 SIGNOFFS_PENDING, 1 RED, 2 ERROR, 4 INCOMPLETE.
+candidate from this tree. The command prints the Run ID, the Run's outcome on
+`Execution:`, and ends with `Validation: SATISFIED` or `Validation: NOT
+SATISFIED`, the latter followed by `Unmet obligation:` lines. The exit code is
+the outcome: 0 GREEN (`Validation: SATISFIED`), 5 SIGNOFFS_PENDING, 1 RED,
+2 ERROR, 4 INCOMPLETE.
 Read a Run and its failing evals with
 `"$scratch/target/debug/artifactize" run show RUN_ID --json`.
 
@@ -130,9 +139,12 @@ gh api "repos/{owner}/{repo}/commits/$sha/pulls" --jq '.[0].number'
 ```
 
 In the pull request that last command names (the one whose merge made this
-commit), add `green: <Run ID> <UTC time, ISO 8601>` as the last line inside
-its note (`gh pr edit N --body-file …`). The development board on
-artifactize.dev reads these lines as the history of GREEN `dev` commits.
+commit), add `green: <Run ID> <UTC time>` as the last line inside
+its note (`gh pr edit N --body-file …`), the time as
+`date -u +%Y-%m-%dT%H:%M:%SZ` prints it. A pull request without a note gets one
+at the end of its body holding only that line between `<!-- artifactize-board`
+and `-->`. The development board on artifactize.dev reads these lines as the
+history of GREEN `dev` commits.
 
 ### 5. Report and schedule
 
