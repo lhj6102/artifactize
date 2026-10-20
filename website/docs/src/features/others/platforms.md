@@ -88,7 +88,9 @@ their target with the desktop's default application:
 
 WSL behaves as Linux: there is no fallback to `wslview` or Windows programs. If
 `xdg-open` is missing or opens nothing, install your distribution's `xdg-utils` and
-set a default application. `login codex` also prints its sign-in URL for any browser.
+set a default application. `xdg-open` opens files on WSL through `explorer.exe`,
+which reports a failure even after opening the file, so on WSL artifactize also
+accepts `xdg-open`'s exit status 4. `login codex` also prints its sign-in URL for any browser.
 
 ## Desktop console launches
 
