@@ -52,7 +52,8 @@
 <main id="main" class="wrap board">
   <p class="kicker">Development board</p>
   <h1>How Artifactize is being built.</h1>
-  <p class="lede">People and AI agents build Artifactize with Artifactize. This page follows their work live from the project’s GitHub repository.</p>
+  <p class="lede">Artifactize splits a project into pieces that each carry their own checks, so people and AI agents can change it together and keep it consistent. Its own development runs on it, and this page follows that work live from the project’s GitHub repository.</p>
+  <p class="terms">A few words first: a <b>commit</b> is one saved version of the project, a <b>branch</b> is a separate line of work, and a <b>pull request</b> asks for a branch’s work to be added to another branch.</p>
 
   <ul class="flow-key">
     <li><span class="key-line lane-main" aria-hidden="true"></span><b><code>main</code></b> holds the released versions.</li>
@@ -106,7 +107,7 @@
 
   <p class="board-meta">
     <span id="board-updated"></span>
-    Your browser reads this from GitHub’s public API directly; GitHub allows 60 requests an hour from one network address, and one load uses five.
+    Your browser reads this from GitHub’s public API directly; GitHub allows 60 requests an hour from one network address, and one load uses five plus one for each open pull request.
     <button type="button" class="btn btn-ghost board-refresh" id="board-refresh">Refresh</button>
   </p>
   <noscript><p class="board-problem">The board needs JavaScript. The <a href="https://github.com/lhj6102/artifactize/pulls">pull requests on GitHub</a> show the same work.</p></noscript>

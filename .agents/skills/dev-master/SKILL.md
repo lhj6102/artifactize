@@ -114,8 +114,8 @@ Check out the new `origin/dev` in `.claude/worktrees/dev-master` and verify.
   says `role: dev-master` and `from:` that head, wait for CI
   (`gh pr checks N --watch`) and merge it under the rules of step 2.
 - **Newly waiting pull requests:** before verifying again, run step 2 again.
-- **SIGNOFFS_PENDING:** list the pending sign-offs for the owner and end the
-  run without moving `dev-green`. The next run verifies again and reuses the
+- **SIGNOFFS_PENDING:** list the pending sign-offs for the owner and go to
+  step 5 without moving `dev-green`. The next run verifies again and reuses the
   signed-off results.
 - **GREEN:** go to step 4 if the verified commit is still `origin/dev`'s head
   after a fresh fetch; otherwise step 2 again.

@@ -32,17 +32,32 @@
  * }} ApiPull
  * @typedef {{ tag_name: string, html_url: string, published_at: string | null, draft: boolean }} ApiRelease
  * @typedef {{ ref: string, object: { sha: string } }} ApiRef
- * @typedef {{ head_sha: string, event: string, status: string, conclusion: string | null }} ApiRun
+ * @typedef {{ name: string, status: string, conclusion: string | null }} ApiCheck
  * @typedef {{
- *   pulls: ApiPull[], releases: ApiRelease[], greenRefs: ApiRef[],
- *   devHead: string | null, runs: ApiRun[]
+ *   pulls: ApiPull[], releases: ApiRelease[], tagRefs: ApiRef[],
+ *   devHead: string | null, checks: Record<string, ApiCheck[]>
  * }} Raw
+ * `checks` holds the latest check runs (CI jobs) of each open pull request's head, by number.
  */
 
+/** The repository the board follows. */
+export const REPO = 'lhj6102/artifactize';
+
 /** The note dev-master and dev-worker end their pull request bodies with. */
-const NOTE = /<!--\s*artifactize-board\b([\s\S]*?)-->/;
+export const NOTE = /<!--\s*artifactize-board\b([\s\S]*?)-->/g;
 const SHA = /^[0-9a-f]{7,40}$/i;
 const RUN = /^run-[A-Za-z0-9_-]+$/;
+
+/**
+ * The last board note in a pull request body (the skills end the body with it), so a
+ * quoted example earlier in the text never hides it.
+ * @param {string | null} body
+ * @returns {string | null}
+ */
+export function lastNote(body) {
+  const notes = body ? [...body.matchAll(NOTE)] : [];
+  return notes.length ? notes[notes.length - 1][0] : null;
+}
 
 /**
  * Reads the board note of a pull request body; null without one. Unknown or malformed
@@ -51,7 +66,8 @@ const RUN = /^run-[A-Za-z0-9_-]+$/;
  * @returns {Note | null}
  */
 export function parseNote(body) {
-  const match = body ? NOTE.exec(body) : null;
+  const text = lastNote(body);
+  const match = text ? /^<!--\s*artifactize-board\b([\s\S]*?)-->$/.exec(text) : null;
   if (!match) return null;
   /** @type {Note} */
   const note = { role: null, from: null, verify: null, green: [] };
@@ -87,18 +103,21 @@ export function sameCommit(a, b) {
   return x.length <= y.length ? y.startsWith(x) : x.startsWith(y);
 }
 
+/** Job conclusions that fail CI. */
+const FAILED = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);
+
 /**
- * One CI state from the pull request workflow runs of a head commit.
- * @param {ApiRun[]} runs
- * @param {string} sha
+ * One CI state from the jobs of a pull request's head. Desktop E2E is informational on
+ * pull requests into dev, so it does not count there.
+ * @param {ApiCheck[] | undefined} checks
+ * @param {string} base
  * @returns {CiState}
  */
-export function ciState(runs, sha) {
-  const own = runs.filter((run) => run.event === 'pull_request' && run.head_sha === sha);
-  if (own.length === 0) return 'none';
-  const failed = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure']);
-  if (own.some((run) => run.status === 'completed' && failed.has(run.conclusion ?? ''))) return 'failed';
-  if (own.some((run) => run.status !== 'completed')) return 'running';
+export function ciState(checks, base) {
+  const counted = (checks ?? []).filter((check) => !(base === 'dev' && check.name.startsWith('Desktop E2E')));
+  if (counted.length === 0) return 'none';
+  if (counted.some((check) => check.status === 'completed' && FAILED.has(check.conclusion ?? ''))) return 'failed';
+  if (counted.some((check) => check.status !== 'completed')) return 'running';
   return 'passed';
 }
 
@@ -126,18 +145,27 @@ export function buildModel(raw) {
         mergeCommit: merged ? pull.merge_commit_sha : null,
         headSha: pull.head.sha,
         note: parseNote(pull.body),
-        ci: ciState(raw.runs, pull.head.sha),
+        ci: ciState(raw.checks[String(pull.number)], pull.base.ref),
         release: pull.head.ref === 'dev' && pull.base.ref === 'main',
       };
     })
     .sort((a, b) => a.created.getTime() - b.created.getTime() || a.number - b.number);
 
-  const releases = raw.releases
-    .filter((release) => !release.draft && release.published_at && /^v\d/.test(release.tag_name))
-    .map((release) => ({ tag: release.tag_name, url: release.html_url, at: new Date(release.published_at ?? '') }))
+  // A release is a v* tag. Its date is its published GitHub release, otherwise the merge
+  // of the pull request that made the tagged commit; a tag with neither is not placed.
+  const releases = raw.tagRefs
+    .filter((ref) => ref.ref.startsWith('refs/tags/v'))
+    .flatMap((ref) => {
+      const tag = ref.ref.slice('refs/tags/'.length);
+      const published = raw.releases.find((release) => release.tag_name === tag && !release.draft && release.published_at);
+      const merged = prs.find((pr) => sameCommit(pr.mergeCommit, ref.object.sha))?.ended;
+      const at = published?.published_at ? new Date(published.published_at) : merged ?? null;
+      const url = published?.html_url ?? `https://github.com/${REPO}/tree/${tag}`;
+      return at ? [{ tag, url, at }] : [];
+    })
     .sort((a, b) => a.at.getTime() - b.at.getTime());
 
-  const greenRef = raw.greenRefs.find((ref) => ref.ref === 'refs/tags/dev-green');
+  const greenRef = raw.tagRefs.find((ref) => ref.ref === 'refs/tags/dev-green');
   const devGreen = greenRef
     ? { sha: greenRef.object.sha, pr: prs.find((pr) => sameCommit(pr.mergeCommit, greenRef.object.sha)) ?? null }
     : null;

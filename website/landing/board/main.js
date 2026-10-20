@@ -3,18 +3,19 @@
 // the recent work. Without a token GitHub allows 60 requests an hour per network
 // address, so a fresh snapshot is kept in localStorage and reused for a few minutes.
 
-import { DEV, MAIN, buildModel, devState, events, layout, sameCommit } from './model.js';
+import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCommit } from './model.js';
 
 /** @typedef {import('./model.js').Raw} Raw */
 /** @typedef {import('./model.js').Model} Model */
 /** @typedef {import('./model.js').Pr} Pr */
 /** @typedef {import('./model.js').Event} Event */
 
-const REPO = 'lhj6102/artifactize';
 const API = `https://api.github.com/repos/${REPO}`;
-const CACHE_KEY = 'artifactize-board';
-/** One load costs five requests; reusing a snapshot this young keeps reloads within the hourly limit. */
+const CACHE_KEY = 'artifactize-board-2';
+/** One load costs five requests plus one per open pull request; reusing a snapshot this young keeps reloads within the hourly limit. */
 const FRESH_MS = 5 * 60 * 1000;
+/** Open pull requests whose CI jobs are fetched, newest first; the rest show no CI. */
+const CHECKED_PRS = 10;
 /** Closed and merged pull requests listed under the open ones. */
 const RECENT_ROWS = 30;
 /** Entries in the recent work list. */
@@ -49,22 +50,28 @@ async function get(path, optional = false) {
  * @returns {Promise<Raw>}
  */
 async function fetchRaw() {
-  const [pulls, releases, greenRefs, dev, runs] = await Promise.all([
+  const [recent, open, releases, tagRefs, dev] = await Promise.all([
     get('/pulls?state=all&per_page=100&sort=created&direction=desc'),
-    get('/releases?per_page=30'),
-    get('/git/matching-refs/tags/dev-green'),
+    // Open pull requests separately, so an old one still waiting is never cut off.
+    get('/pulls?state=open&per_page=100'),
+    get('/releases?per_page=100'),
+    get('/git/matching-refs/tags'),
     get('/branches/dev', true),
-    get('/actions/runs?event=pull_request&per_page=100'),
   ]);
+  /** @type {Map<number, import('./model.js').ApiPull>} */
+  const pulls = new Map();
+  for (const pull of [...recent, ...open]) pulls.set(pull.number, pull);
+  const waiting = [...open].sort((a, b) => b.number - a.number).slice(0, CHECKED_PRS);
+  const checks = await Promise.all(waiting.map((pull) => get(`/commits/${pull.head.sha}/check-runs?per_page=100`)));
   return {
-    pulls: pulls.map((/** @type {import('./model.js').ApiPull} */ pull) => ({
+    pulls: [...pulls.values()].map((pull) => ({
       number: pull.number,
       title: pull.title,
       html_url: pull.html_url,
       state: pull.state,
       draft: pull.draft,
       // Only the note is read; the rest of the body would only fill the cache.
-      body: /<!--\s*artifactize-board\b[\s\S]*?-->/.exec(pull.body ?? '')?.[0] ?? null,
+      body: lastNote(pull.body),
       created_at: pull.created_at,
       closed_at: pull.closed_at,
       merged_at: pull.merged_at,
@@ -75,11 +82,11 @@ async function fetchRaw() {
     releases: releases.map((/** @type {import('./model.js').ApiRelease} */ r) => ({
       tag_name: r.tag_name, html_url: r.html_url, published_at: r.published_at, draft: r.draft,
     })),
-    greenRefs: greenRefs.map((/** @type {import('./model.js').ApiRef} */ ref) => ({ ref: ref.ref, object: { sha: ref.object.sha } })),
+    tagRefs: tagRefs.map((/** @type {import('./model.js').ApiRef} */ ref) => ({ ref: ref.ref, object: { sha: ref.object.sha } })),
     devHead: dev ? dev.commit.sha : null,
-    runs: runs.workflow_runs.map((/** @type {import('./model.js').ApiRun} */ run) => ({
-      head_sha: run.head_sha, event: run.event, status: run.status, conclusion: run.conclusion,
-    })),
+    checks: Object.fromEntries(waiting.map((pull, index) => [String(pull.number), checks[index].check_runs.map(
+      (/** @type {import('./model.js').ApiCheck} */ check) => ({ name: check.name, status: check.status, conclusion: check.conclusion }),
+    )])),
   };
 }
 
@@ -386,7 +393,8 @@ function ciCell(pr) {
   if (pr.ci === 'passed') return h('td', {}, [badge('good', 'passed')]);
   if (pr.ci === 'failed') return h('td', {}, [badge('bad', 'failed')]);
   if (pr.ci === 'running') return h('td', {}, [badge('wait', 'running')]);
-  return h('td', {}, [badge('none', 'no recent run')]);
+  if (pr.state === 'open' || pr.state === 'draft') return h('td', {}, [badge('none', 'no jobs yet')]);
+  return h('td', {}, [h('span', { class: 'cell-note' }, ['–'])]);
 }
 
 /** @param {Pr} pr */
