@@ -132,7 +132,9 @@ unchanged. A reused remote result's request shows the reference, and `session sh
 on it names the machine and state where the conversation lives. Once the local settle
 records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
 its summary record, or the full record with share `full`, outside any database
-transaction. Records carry the key, the Eval definition hash, the fingerprint of
+transaction. A `--speculate` Run holds that automatic publication until its scheduling
+finishes, even while Human reviews are still pending; it then publishes only the
+results that survived, after blocked work has been withdrawn from reuse. Records carry the key, the Eval definition hash, the fingerprint of
 each Artifact the key covers, its `artifactKinds` map (`folder`/`file`/`graph`), and the
 execution `options` (backend, model,
 reasoning, limits and profile variant) and an Agent result's `executionPaths` pins. `request submit` publishes Human sign-offs.

@@ -261,11 +261,7 @@ fn view(
     HumanView {
         id: request.id.clone().into(),
         title: format!("{} · {}", request.eval_id, request.title),
-        artifact: request
-            .eval_id
-            .as_str()
-            .rsplit_once('/')
-            .map_or_else(String::new, |(artifact, _)| artifact.to_owned()),
+        artifact: request.target.to_string(),
         meta: review::meta(view, reviewer, now),
         shared: review::shared(view),
         instruction: request.payload.instruction().to_owned(),
