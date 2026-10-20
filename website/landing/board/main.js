@@ -11,8 +11,8 @@ import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCo
 /** @typedef {import('./model.js').Event} Event */
 
 const API = `https://api.github.com/repos/${REPO}`;
-const CACHE_KEY = 'artifactize-board-3';
-/** One load costs five requests plus one per open pull request; reusing a snapshot this young keeps reloads within the hourly limit. */
+const CACHE_KEY = 'artifactize-board-4';
+/** One load costs six requests plus one per open pull request; reusing a snapshot this young keeps reloads within the hourly limit. */
 const FRESH_MS = 5 * 60 * 1000;
 /** Open pull requests whose CI jobs are fetched, newest first; the rest link to GitHub for CI. */
 const CHECKED_PRS = 10;
@@ -83,8 +83,11 @@ async function get(path, optional = false) {
  * @returns {Promise<Raw>}
  */
 async function fetchRaw() {
-  const [recent, open, releases, tagRefs, dev] = await Promise.all([
+  const [recent, updated, open, releases, tagRefs, dev] = await Promise.all([
     get('/pulls?state=all&per_page=100&sort=created&direction=desc'),
+    // Recently merged or edited ones too: a long-lived branch merges late, and dev-master
+    // edits a merged pull request when it adds a green: line.
+    get('/pulls?state=closed&per_page=100&sort=updated&direction=desc'),
     // Open pull requests separately, so an old one still waiting is never cut off.
     getAll('/pulls?state=open&per_page=100', OPEN_PAGES),
     get('/releases?per_page=100'),
@@ -93,7 +96,13 @@ async function fetchRaw() {
   ]);
   /** @type {Map<number, import('./model.js').ApiPull>} */
   const pulls = new Map();
-  for (const pull of [...recent, ...open]) pulls.set(pull.number, pull);
+  for (const pull of [...recent, ...updated, ...open]) pulls.set(pull.number, pull);
+  // The pull request that made the dev-green commit, should both lists have missed it.
+  const green = tagRefs.find((/** @type {import('./model.js').ApiRef} */ ref) => ref.ref === 'refs/tags/dev-green');
+  if (green && ![...pulls.values()].some((pull) => sameCommit(pull.merge_commit_sha, green.object.sha))) {
+    const made = await get(`/commits/${green.object.sha}/pulls`);
+    for (const pull of made) pulls.set(pull.number, pull);
+  }
   const waiting = [...open].sort((a, b) => b.number - a.number).slice(0, CHECKED_PRS);
   const lookups = undatedTags(tagRefs, releases, [...pulls.values()])
     .sort((a, b) => b.ref.localeCompare(a.ref, 'en', { numeric: true }))
