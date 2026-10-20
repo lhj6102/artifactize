@@ -3,7 +3,7 @@
 // the recent work. Without a token GitHub allows 60 requests an hour per network
 // address, so a fresh snapshot is kept in localStorage and reused for a few minutes.
 
-import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCommit } from './model.js';
+import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCommit, undatedTags } from './model.js';
 
 /** @typedef {import('./model.js').Raw} Raw */
 /** @typedef {import('./model.js').Model} Model */
@@ -11,11 +11,15 @@ import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCo
 /** @typedef {import('./model.js').Event} Event */
 
 const API = `https://api.github.com/repos/${REPO}`;
-const CACHE_KEY = 'artifactize-board-2';
+const CACHE_KEY = 'artifactize-board-3';
 /** One load costs five requests plus one per open pull request; reusing a snapshot this young keeps reloads within the hourly limit. */
 const FRESH_MS = 5 * 60 * 1000;
-/** Open pull requests whose CI jobs are fetched, newest first; the rest show no CI. */
+/** Open pull requests whose CI jobs are fetched, newest first; the rest link to GitHub for CI. */
 const CHECKED_PRS = 10;
+/** Pages of open pull requests followed (100 each). */
+const OPEN_PAGES = 5;
+/** Undated v* tags whose commit is looked up, newest first. */
+const TAG_LOOKUPS = 10;
 /** Closed and merged pull requests listed under the open ones. */
 const RECENT_ROWS = 30;
 /** Entries in the recent work list. */
@@ -30,16 +34,45 @@ class LimitError extends Error {
 }
 
 /**
+ * @param {string} path a path under the repository, or a full API URL
+ * @returns {Promise<Response>}
+ */
+async function request(path) {
+  const response = await fetch(path.startsWith('https://') ? path : API + path, { headers: { Accept: 'application/vnd.github+json' } });
+  if ((response.status === 403 || response.status === 429) && response.headers.get('x-ratelimit-remaining') === '0') {
+    const reset = Number(response.headers.get('x-ratelimit-reset'));
+    throw new LimitError(reset ? new Date(reset * 1000) : null);
+  }
+  return response;
+}
+
+/**
+ * Every page of a list, following GitHub's Link header up to `pages` pages.
+ * @param {string} path
+ * @param {number} pages
+ * @returns {Promise<any[]>}
+ */
+async function getAll(path, pages) {
+  /** @type {any[]} */
+  const items = [];
+  /** @type {string | null} */
+  let next = path;
+  for (let page = 0; next && page < pages; page += 1) {
+    const response = await request(next);
+    if (!response.ok) throw new Error(`GitHub answered ${response.status} for ${path}`);
+    items.push(...await response.json());
+    next = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get('link') ?? '')?.[1] ?? null;
+  }
+  return items;
+}
+
+/**
  * @param {string} path
  * @param {boolean} [optional] a 404 returns null instead of failing
  * @returns {Promise<any>}
  */
 async function get(path, optional = false) {
-  const response = await fetch(API + path, { headers: { Accept: 'application/vnd.github+json' } });
-  if ((response.status === 403 || response.status === 429) && response.headers.get('x-ratelimit-remaining') === '0') {
-    const reset = Number(response.headers.get('x-ratelimit-reset'));
-    throw new LimitError(reset ? new Date(reset * 1000) : null);
-  }
+  const response = await request(path);
   if (optional && response.status === 404) return null;
   if (!response.ok) throw new Error(`GitHub answered ${response.status} for ${path}`);
   return response.json();
@@ -53,7 +86,7 @@ async function fetchRaw() {
   const [recent, open, releases, tagRefs, dev] = await Promise.all([
     get('/pulls?state=all&per_page=100&sort=created&direction=desc'),
     // Open pull requests separately, so an old one still waiting is never cut off.
-    get('/pulls?state=open&per_page=100'),
+    getAll('/pulls?state=open&per_page=100', OPEN_PAGES),
     get('/releases?per_page=100'),
     get('/git/matching-refs/tags'),
     get('/branches/dev', true),
@@ -62,7 +95,21 @@ async function fetchRaw() {
   const pulls = new Map();
   for (const pull of [...recent, ...open]) pulls.set(pull.number, pull);
   const waiting = [...open].sort((a, b) => b.number - a.number).slice(0, CHECKED_PRS);
-  const checks = await Promise.all(waiting.map((pull) => get(`/commits/${pull.head.sha}/check-runs?per_page=100`)));
+  const lookups = undatedTags(tagRefs, releases, [...pulls.values()])
+    .sort((a, b) => b.ref.localeCompare(a.ref, 'en', { numeric: true }))
+    .slice(0, TAG_LOOKUPS);
+  const [checks, tagged] = await Promise.all([
+    Promise.all(waiting.map((pull) => get(`/commits/${pull.head.sha}/check-runs?per_page=100`))),
+    Promise.all(lookups.map(async (ref) => {
+      // An annotated tag is its own object with a date; a lightweight one is the commit.
+      if (ref.object.type === 'tag') {
+        const tag = await get(`/git/tags/${ref.object.sha}`);
+        return { sha: tag.object.sha, at: tag.tagger.date };
+      }
+      const commit = await get(`/git/commits/${ref.object.sha}`);
+      return { sha: commit.sha, at: commit.committer.date };
+    })),
+  ]);
   return {
     pulls: [...pulls.values()].map((pull) => ({
       number: pull.number,
@@ -82,7 +129,8 @@ async function fetchRaw() {
     releases: releases.map((/** @type {import('./model.js').ApiRelease} */ r) => ({
       tag_name: r.tag_name, html_url: r.html_url, published_at: r.published_at, draft: r.draft,
     })),
-    tagRefs: tagRefs.map((/** @type {import('./model.js').ApiRef} */ ref) => ({ ref: ref.ref, object: { sha: ref.object.sha } })),
+    tagRefs: tagRefs.map((/** @type {import('./model.js').ApiRef} */ ref) => ({ ref: ref.ref, object: { sha: ref.object.sha, type: ref.object.type } })),
+    tagCommits: Object.fromEntries(lookups.map((ref, index) => [ref.ref.slice('refs/tags/'.length), tagged[index]])),
     devHead: dev ? dev.commit.sha : null,
     checks: Object.fromEntries(waiting.map((pull, index) => [String(pull.number), checks[index].check_runs.map(
       (/** @type {import('./model.js').ApiCheck} */ check) => ({ name: check.name, status: check.status, conclusion: check.conclusion }),
@@ -393,7 +441,10 @@ function ciCell(pr) {
   if (pr.ci === 'passed') return h('td', {}, [badge('good', 'passed')]);
   if (pr.ci === 'failed') return h('td', {}, [badge('bad', 'failed')]);
   if (pr.ci === 'running') return h('td', {}, [badge('wait', 'running')]);
-  if (pr.state === 'open' || pr.state === 'draft') return h('td', {}, [badge('none', 'no jobs yet')]);
+  if (pr.ci === 'unknown' && (pr.state === 'open' || pr.state === 'draft')) {
+    return h('td', {}, [h('a', { href: `${pr.url}/checks` }, ['see GitHub'])]);
+  }
+  if (pr.state === 'open' || pr.state === 'draft') return h('td', {}, [badge('none', 'no results yet')]);
   return h('td', {}, [h('span', { class: 'cell-note' }, ['–'])]);
 }
 

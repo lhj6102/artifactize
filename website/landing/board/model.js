@@ -9,7 +9,7 @@
  * @typedef {{ run: string, at: Date }} GreenMark
  * @typedef {{ role: Role | null, from: string | null, verify: Verify | null, green: GreenMark[] }} Note
  * @typedef {'open' | 'draft' | 'merged' | 'closed'} PrState
- * @typedef {'passed' | 'failed' | 'running' | 'none'} CiState
+ * @typedef {'passed' | 'failed' | 'running' | 'none' | 'unknown'} CiState
  * @typedef {{
  *   number: number, title: string, url: string, branch: string, base: string,
  *   state: PrState, created: Date, ended: Date | null, mergeCommit: string | null,
@@ -31,13 +31,15 @@
  *   merge_commit_sha: string | null, head: { ref: string, sha: string }, base: { ref: string }
  * }} ApiPull
  * @typedef {{ tag_name: string, html_url: string, published_at: string | null, draft: boolean }} ApiRelease
- * @typedef {{ ref: string, object: { sha: string } }} ApiRef
+ * @typedef {{ ref: string, object: { sha: string, type: string } }} ApiRef
  * @typedef {{ name: string, status: string, conclusion: string | null }} ApiCheck
  * @typedef {{
- *   pulls: ApiPull[], releases: ApiRelease[], tagRefs: ApiRef[],
+ *   pulls: ApiPull[], releases: ApiRelease[], tagRefs: ApiRef[], tagCommits: Record<string, { sha: string, at: string }>,
  *   devHead: string | null, checks: Record<string, ApiCheck[]>
  * }} Raw
- * `checks` holds the latest check runs (CI jobs) of each open pull request's head, by number.
+ * `checks` holds the latest check runs (CI jobs) of the open pull requests whose CI was
+ * fetched, by number. `tagCommits` holds the commit and date of each v* tag that neither
+ * a published release nor a merged pull request dates.
  */
 
 /** The repository the board follows. */
@@ -103,22 +105,36 @@ export function sameCommit(a, b) {
   return x.length <= y.length ? y.startsWith(x) : x.startsWith(y);
 }
 
-/** Job conclusions that fail CI. */
-const FAILED = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);
-
 /**
- * One CI state from the jobs of a pull request's head. Desktop E2E is informational on
- * pull requests into dev, so it does not count there.
+ * One CI state from the jobs of a pull request's head: passed only when every job that
+ * ran succeeded. Skipped jobs did not run; Desktop E2E is informational on pull requests
+ * into dev, so it does not count there. Without fetched jobs the state is unknown.
  * @param {ApiCheck[] | undefined} checks
  * @param {string} base
  * @returns {CiState}
  */
 export function ciState(checks, base) {
-  const counted = (checks ?? []).filter((check) => !(base === 'dev' && check.name.startsWith('Desktop E2E')));
+  if (!checks) return 'unknown';
+  const counted = checks.filter((check) => check.conclusion !== 'skipped'
+    && !(base === 'dev' && check.name.startsWith('Desktop E2E')));
   if (counted.length === 0) return 'none';
-  if (counted.some((check) => check.status === 'completed' && FAILED.has(check.conclusion ?? ''))) return 'failed';
+  if (counted.some((check) => check.status === 'completed' && check.conclusion !== 'success')) return 'failed';
   if (counted.some((check) => check.status !== 'completed')) return 'running';
   return 'passed';
+}
+
+/**
+ * The v* tags that need their commit looked up: no published release and no merged pull
+ * request whose merge commit is the tag's (an annotated tag names a tag object, not a commit).
+ * @param {ApiRef[]} tagRefs
+ * @param {ApiRelease[]} releases
+ * @param {ApiPull[]} pulls
+ * @returns {ApiRef[]}
+ */
+export function undatedTags(tagRefs, releases, pulls) {
+  return tagRefs.filter((ref) => ref.ref.startsWith('refs/tags/v')
+    && !releases.some((release) => `refs/tags/${release.tag_name}` === ref.ref && !release.draft && release.published_at)
+    && !(ref.object.type === 'commit' && pulls.some((pull) => pull.merged_at && sameCommit(pull.merge_commit_sha, ref.object.sha))));
 }
 
 /**
@@ -152,14 +168,17 @@ export function buildModel(raw) {
     .sort((a, b) => a.created.getTime() - b.created.getTime() || a.number - b.number);
 
   // A release is a v* tag. Its date is its published GitHub release, otherwise the merge
-  // of the pull request that made the tagged commit; a tag with neither is not placed.
+  // of the pull request that made the tagged commit, otherwise the tag's own date.
   const releases = raw.tagRefs
     .filter((ref) => ref.ref.startsWith('refs/tags/v'))
     .flatMap((ref) => {
       const tag = ref.ref.slice('refs/tags/'.length);
       const published = raw.releases.find((release) => release.tag_name === tag && !release.draft && release.published_at);
-      const merged = prs.find((pr) => sameCommit(pr.mergeCommit, ref.object.sha))?.ended;
-      const at = published?.published_at ? new Date(published.published_at) : merged ?? null;
+      const looked = raw.tagCommits[tag];
+      const commit = looked?.sha ?? ref.object.sha;
+      const merged = prs.find((pr) => sameCommit(pr.mergeCommit, commit))?.ended;
+      const at = published?.published_at ? new Date(published.published_at)
+        : merged ?? (looked ? new Date(looked.at) : null);
       const url = published?.html_url ?? `https://github.com/${REPO}/tree/${tag}`;
       return at ? [{ tag, url, at }] : [];
     })
