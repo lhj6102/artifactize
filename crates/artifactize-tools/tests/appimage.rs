@@ -6,15 +6,24 @@
 #[path = "support/os.rs"]
 mod os;
 
-use std::{collections::BTreeMap, ffi::OsStr, fs, path::Path};
+use std::{
+    collections::BTreeMap,
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// The person's environment before the AppImage started: their opener's directory first.
 fn person(root: &Path) -> BTreeMap<String, String> {
     BTreeMap::from([
-        ("PATH".into(), text(&root.join("bin"))),
+        ("PATH".into(), os::path_list([root.join("bin")])),
         (
             "XDG_DATA_DIRS".into(),
-            "/usr/local/share/:/usr/share/:/var/lib/flatpak/exports/share".into(),
+            os::path_list([
+                "/usr/local/share/",
+                "/usr/share/",
+                "/var/lib/flatpak/exports/share",
+            ]),
         ),
         ("AUTHOR_VARIABLE".into(), "from-the-terminal".into()),
         (os::RECORD.into(), text(&root.join("record"))),
@@ -22,7 +31,8 @@ fn person(root: &Path) -> BTreeMap<String, String> {
 }
 
 /// What the AppImage runtime, the linuxdeploy GTK hook and AppRun make of `person`, for the
-/// bundle `bundle`, in the forms they write it (with their doubled and trailing slashes).
+/// bundle `bundle`, in the forms they write it: with doubled slashes, and with an empty last
+/// entry where the person had no value.
 fn bundled(bundle: &Path, person: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     let b = text(bundle);
     let mut environment = person.clone();
@@ -43,23 +53,44 @@ fn bundled(bundle: &Path, person: &BTreeMap<String, String>) -> BTreeMap<String,
             ),
             (
                 "GSETTINGS_SCHEMA_DIR",
-                format!("{b}/usr/share/glib-2.0/schemas/:{b}//usr/share/glib-2.0/schemas"),
+                os::path_list([
+                    format!("{b}/usr/share/glib-2.0/schemas/"),
+                    format!("{b}//usr/share/glib-2.0/schemas"),
+                ]),
             ),
             (
                 "XDG_DATA_DIRS",
-                format!(
-                    "{b}/usr/share/:{b}/usr/share:/usr/share:{}",
-                    person["XDG_DATA_DIRS"]
+                prepended(
+                    [
+                        format!("{b}/usr/share/"),
+                        format!("{b}/usr/share"),
+                        "/usr/share".into(),
+                    ],
+                    &person["XDG_DATA_DIRS"],
                 ),
             ),
             (
                 "PATH",
-                format!("{b}/usr/bin/:{b}/usr/sbin/:{b}/bin/:{}", person["PATH"]),
+                prepended(
+                    [
+                        format!("{b}/usr/bin/"),
+                        format!("{b}/usr/sbin/"),
+                        format!("{b}/bin/"),
+                    ],
+                    &person["PATH"],
+                ),
             ),
-            ("LD_LIBRARY_PATH", format!("{b}/usr/lib/:{b}/lib/:")),
+            (
+                "LD_LIBRARY_PATH",
+                os::path_list([format!("{b}/usr/lib/"), format!("{b}/lib/"), String::new()]),
+            ),
             (
                 "PERLLIB",
-                format!("{b}/usr/share/perl5/:{b}/usr/lib/perl5/:"),
+                os::path_list([
+                    format!("{b}/usr/share/perl5/"),
+                    format!("{b}/usr/lib/perl5/"),
+                    String::new(),
+                ]),
             ),
             ("PYTHONHOME", format!("{b}/usr/")),
             ("PYTHONDONTWRITEBYTECODE", "1".into()),
@@ -69,60 +100,46 @@ fn bundled(bundle: &Path, person: &BTreeMap<String, String>) -> BTreeMap<String,
     environment
 }
 
-/// Run this test binary, as `executable`, with exactly `environment`, and return the
+/// Run `program`, a copy of this test binary, with exactly `environment`, and return the
 /// environment the opener it starts received.
 fn opened_with(
     root: &Path,
-    executable: &Path,
+    program: &Path,
     test: &str,
     environment: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let output = std::process::Command::new(executable)
-        .args(["--exact", test, "--nocapture"])
-        .env_clear()
-        .envs(environment)
-        .output()
-        .unwrap();
-    assert!(
-        os::succeeded(&output.status),
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let record = fs::read_to_string(root.join("record")).unwrap();
-    fs::remove_file(root.join("record")).unwrap();
-    record
-        .lines()
-        .map(|line| {
-            let (name, value) = line.split_once('=').unwrap();
-            (name.to_owned(), value.to_owned())
-        })
-        .collect()
+    os::rerun_as(program, test, environment);
+    os::recorded_environment(&root.join("record"))
 }
 
-/// A bundle holding a copy of this test binary where the app's executable would be, and a
-/// stand-in opener in the person's own program directory.
-fn fixture(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
-    let bundle = root.join("squashfs-root");
-    let bin = bundle.join("usr/bin");
-    fs::create_dir_all(&bin).unwrap();
-    let inside = bin.join("artifactize-desktop");
-    fs::copy(std::env::current_exe().unwrap(), &inside).unwrap();
-    fs::create_dir(root.join("bin")).unwrap();
-    os::compile(
-        &root.join("bin"),
-        os::OPENER,
-        r#"use std::io::Write;
-fn main() {
-    let record = std::env::var_os("ARTIFACTIZE_OPENER_RECORD").expect("record path");
-    let mut file = std::fs::File::create(record).unwrap();
-    for (name, value) in std::env::vars() {
-        writeln!(file, "{name}={value}").unwrap();
-    }
+/// A bundle holding a copy of this test binary where the app's executable would be, a copy
+/// outside it, and a stand-in opener in the person's own program directory.
+struct Fixture {
+    root: tempfile::TempDir,
+    bundle: PathBuf,
+    inside: PathBuf,
+    outside: PathBuf,
 }
-"#,
-    );
-    (bundle, inside)
+
+impl Fixture {
+    fn new() -> Self {
+        let root = os::tempdir();
+        let bundle = root.path().join("squashfs-root");
+        let bin = bundle.join("usr/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let inside = bin.join("artifactize-desktop");
+        os::copy_test_binary(&inside);
+        let outside = root.path().join("artifactize-desktop");
+        os::copy_test_binary(&outside);
+        fs::create_dir(root.path().join("bin")).unwrap();
+        os::environment_recording_program(&root.path().join("bin"), os::OPENER);
+        Self {
+            root,
+            bundle,
+            inside,
+            outside,
+        }
+    }
 }
 
 /// In the rerun, hand one target to the desktop opener.
@@ -144,14 +161,14 @@ fn a_program_started_from_inside_an_appimage_gets_the_persons_environment() {
     if open_when_rerun() {
         return;
     }
-    let root = os::tempdir();
-    let (bundle, inside) = fixture(root.path());
-    let person = person(root.path());
+    let fixture = Fixture::new();
+    let root = fixture.root.path();
+    let person = person(root);
     let received = opened_with(
-        root.path(),
-        &inside,
+        root,
+        &fixture.inside,
         "a_program_started_from_inside_an_appimage_gets_the_persons_environment",
-        &bundled(&bundle, &person),
+        &bundled(&fixture.bundle, &person),
     );
     assert_eq!(received, person);
 }
@@ -162,16 +179,25 @@ fn without_an_appimage_a_started_program_gets_the_environment_unchanged() {
         return;
     }
     let test = "without_an_appimage_a_started_program_gets_the_environment_unchanged";
-    let root = os::tempdir();
-    let (bundle, inside) = fixture(root.path());
-    let bundled = bundled(&bundle, &person(root.path()));
+    let fixture = Fixture::new();
+    let root = fixture.root.path();
+    let bundled = bundled(&fixture.bundle, &person(root));
     // The same environment without APPDIR, as when nothing exported it.
     let mut unnamed = bundled.clone();
     unnamed.remove("APPDIR");
-    assert_eq!(opened_with(root.path(), &inside, test, &unnamed), unnamed);
+    assert_eq!(opened_with(root, &fixture.inside, test, &unnamed), unnamed);
     // An APPDIR this program is not inside, as in a terminal started from another AppImage.
-    let outside = std::env::current_exe().unwrap();
-    assert_eq!(opened_with(root.path(), &outside, test, &bundled), bundled);
+    assert_eq!(opened_with(root, &fixture.outside, test, &bundled), bundled);
+}
+
+/// The path list `list` with `entries` before its own.
+fn prepended<const N: usize>(entries: [String; N], list: &str) -> String {
+    os::path_list(
+        entries
+            .into_iter()
+            .map(PathBuf::from)
+            .chain(std::env::split_paths(list)),
+    )
 }
 
 fn text(path: &Path) -> String {
