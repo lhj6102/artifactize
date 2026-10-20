@@ -26,7 +26,8 @@ Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K, F1 or the palet
 button opens a searchable command palette; Enter runs a command and Esc closes it.
 `?` shows this screen's keys. Ctrl+R or F5 refreshes Monitor, or reloads current
 Graph declarations when Graph is open; it does not reload Review or Settings.
-Drag the dividers to resize panes.
+Drag the dividers to resize panes. The app follows the system's light or dark
+appearance.
 
 ## Monitor
 
@@ -97,7 +98,7 @@ result, with findings as numbered items headed by their `item` and `where`; then
 Other facts fold under **Debug**, which `t` shows or hides on an Artifact's or a
 non-Human eval's Summary. An eval with a log switches
 below the chips between its Summary, shown first, and its log, a plain-text choice
-whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
+whose chosen view is bold and higher-contrast: an Agent eval's **Agent log** (its conversation,
 with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
 not a live log stream). Missing or remote conversations explain why they are
 unavailable on this machine. A Human eval's chip holds its review and sign-off, with
