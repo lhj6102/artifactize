@@ -2,3 +2,5 @@
 .assetsignore
 jsconfig.json
 story/README.md
+# Artifact declarations review the site; they are not part of it.
+*.artf

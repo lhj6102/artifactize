@@ -1,0 +1,5 @@
+interface:
+  display_name: "dev-master"
+  short_description: "Merge waiting pull requests into dev and drive dev to GREEN"
+policy:
+  allow_implicit_invocation: false

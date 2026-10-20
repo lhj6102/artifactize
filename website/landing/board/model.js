@@ -1,0 +1,265 @@
+// The development board's data model: what GitHub's public REST API returns, turned into
+// pull requests with states, a time-ordered event list and the lanes of the branch flow.
+// Pure functions only; main.js fetches and draws.
+
+/**
+ * @typedef {'dev-worker' | 'dev-master'} Role
+ * @typedef {'GREEN' | 'SIGNOFFS_PENDING'} VerifyOutcome
+ * @typedef {{ run: string, outcome: VerifyOutcome, commit: string }} Verify
+ * @typedef {{ run: string, at: Date }} GreenMark
+ * @typedef {{ role: Role | null, from: string | null, verify: Verify | null, green: GreenMark[] }} Note
+ * @typedef {'open' | 'draft' | 'merged' | 'closed'} PrState
+ * @typedef {'passed' | 'failed' | 'running' | 'none'} CiState
+ * @typedef {{
+ *   number: number, title: string, url: string, branch: string, base: string,
+ *   state: PrState, created: Date, ended: Date | null, mergeCommit: string | null,
+ *   headSha: string, note: Note | null, ci: CiState, release: boolean
+ * }} Pr
+ * @typedef {{ tag: string, url: string, at: Date }} Release
+ * @typedef {{ sha: string, pr: Pr | null }} DevGreen
+ * @typedef {{
+ *   prs: Pr[], releases: Release[], devGreen: DevGreen | null, devHead: string | null,
+ *   greens: { pr: Pr, mark: GreenMark }[]
+ * }} Model
+ */
+
+/**
+ * The parts of GitHub's REST responses the board reads.
+ * @typedef {{
+ *   number: number, title: string, html_url: string, state: string, draft?: boolean,
+ *   body: string | null, created_at: string, closed_at: string | null, merged_at: string | null,
+ *   merge_commit_sha: string | null, head: { ref: string, sha: string }, base: { ref: string }
+ * }} ApiPull
+ * @typedef {{ tag_name: string, html_url: string, published_at: string | null, draft: boolean }} ApiRelease
+ * @typedef {{ ref: string, object: { sha: string } }} ApiRef
+ * @typedef {{ head_sha: string, event: string, status: string, conclusion: string | null }} ApiRun
+ * @typedef {{
+ *   pulls: ApiPull[], releases: ApiRelease[], greenRefs: ApiRef[],
+ *   devHead: string | null, runs: ApiRun[]
+ * }} Raw
+ */
+
+/** The note dev-master and dev-worker end their pull request bodies with. */
+const NOTE = /<!--\s*artifactize-board\b([\s\S]*?)-->/;
+const SHA = /^[0-9a-f]{7,40}$/i;
+const RUN = /^run-[A-Za-z0-9_-]+$/;
+
+/**
+ * Reads the board note of a pull request body; null without one. Unknown or malformed
+ * lines are skipped, so a hand-edited note never breaks the board.
+ * @param {string | null} body
+ * @returns {Note | null}
+ */
+export function parseNote(body) {
+  const match = body ? NOTE.exec(body) : null;
+  if (!match) return null;
+  /** @type {Note} */
+  const note = { role: null, from: null, verify: null, green: [] };
+  for (const line of match[1].split(/\r?\n/)) {
+    const field = /^\s*([a-z]+)\s*:\s*(.*?)\s*$/.exec(line);
+    if (!field) continue;
+    const [, key, value] = field;
+    const words = value.split(/\s+/);
+    if (key === 'role' && (value === 'dev-worker' || value === 'dev-master')) {
+      note.role = value;
+    } else if (key === 'from' && SHA.test(value)) {
+      note.from = value.toLowerCase();
+    } else if (key === 'verify' && words.length === 3 && RUN.test(words[0])
+      && (words[1] === 'GREEN' || words[1] === 'SIGNOFFS_PENDING') && SHA.test(words[2])) {
+      note.verify = { run: words[0], outcome: words[1], commit: words[2].toLowerCase() };
+    } else if (key === 'green' && words.length === 2 && RUN.test(words[0])) {
+      const at = new Date(words[1]);
+      if (!Number.isNaN(at.getTime())) note.green.push({ run: words[0], at });
+    }
+  }
+  return note;
+}
+
+/**
+ * True when two commit ids name the same commit; either may be abbreviated.
+ * @param {string | null} a
+ * @param {string | null} b
+ */
+export function sameCommit(a, b) {
+  if (!a || !b) return false;
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  return x.length <= y.length ? y.startsWith(x) : x.startsWith(y);
+}
+
+/**
+ * One CI state from the pull request workflow runs of a head commit.
+ * @param {ApiRun[]} runs
+ * @param {string} sha
+ * @returns {CiState}
+ */
+export function ciState(runs, sha) {
+  const own = runs.filter((run) => run.event === 'pull_request' && run.head_sha === sha);
+  if (own.length === 0) return 'none';
+  const failed = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure']);
+  if (own.some((run) => run.status === 'completed' && failed.has(run.conclusion ?? ''))) return 'failed';
+  if (own.some((run) => run.status !== 'completed')) return 'running';
+  return 'passed';
+}
+
+/**
+ * @param {Raw} raw
+ * @returns {Model}
+ */
+export function buildModel(raw) {
+  const prs = raw.pulls
+    .filter((pull) => pull.base.ref === 'dev' || pull.base.ref === 'main')
+    .map((pull) => {
+      const merged = pull.merged_at !== null;
+      /** @type {PrState} */
+      const state = merged ? 'merged' : pull.state === 'closed' ? 'closed' : pull.draft ? 'draft' : 'open';
+      const ended = pull.merged_at ?? pull.closed_at;
+      return {
+        number: pull.number,
+        title: pull.title,
+        url: pull.html_url,
+        branch: pull.head.ref,
+        base: pull.base.ref,
+        state,
+        created: new Date(pull.created_at),
+        ended: ended ? new Date(ended) : null,
+        mergeCommit: merged ? pull.merge_commit_sha : null,
+        headSha: pull.head.sha,
+        note: parseNote(pull.body),
+        ci: ciState(raw.runs, pull.head.sha),
+        release: pull.head.ref === 'dev' && pull.base.ref === 'main',
+      };
+    })
+    .sort((a, b) => a.created.getTime() - b.created.getTime() || a.number - b.number);
+
+  const releases = raw.releases
+    .filter((release) => !release.draft && release.published_at && /^v\d/.test(release.tag_name))
+    .map((release) => ({ tag: release.tag_name, url: release.html_url, at: new Date(release.published_at ?? '') }))
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
+
+  const greenRef = raw.greenRefs.find((ref) => ref.ref === 'refs/tags/dev-green');
+  const devGreen = greenRef
+    ? { sha: greenRef.object.sha, pr: prs.find((pr) => sameCommit(pr.mergeCommit, greenRef.object.sha)) ?? null }
+    : null;
+
+  const greens = prs
+    .filter((pr) => pr.state === 'merged' && pr.base === 'dev')
+    .flatMap((pr) => (pr.note?.green ?? []).map((mark) => ({ pr, mark })))
+    .sort((a, b) => a.mark.at.getTime() - b.mark.at.getTime());
+
+  return { prs, releases, devGreen, devHead: raw.devHead, greens };
+}
+
+/**
+ * The state of dev: GREEN when dev-green marks its latest commit, otherwise the
+ * pull requests merged since dev-green.
+ * @param {Model} model
+ * @returns {{ kind: 'green' | 'converging' | 'unknown', since: Pr[] }}
+ */
+export function devState(model) {
+  if (!model.devGreen) return { kind: 'unknown', since: [] };
+  if (sameCommit(model.devGreen.sha, model.devHead)) return { kind: 'green', since: [] };
+  const from = model.devGreen.pr?.ended ?? null;
+  const since = model.prs.filter((pr) => pr.state === 'merged' && pr.base === 'dev' && pr.ended
+    && (!from || pr.ended > from));
+  return { kind: 'converging', since };
+}
+
+/**
+ * @typedef {{ at: Date, kind: 'opened' | 'merged' | 'closed' | 'release' | 'green', pr: Pr | null, release: Release | null, mark: GreenMark | null }} Event
+ */
+
+/**
+ * Every dated event, oldest first.
+ * @param {Model} model
+ * @returns {Event[]}
+ */
+export function events(model) {
+  /** @type {Event[]} */
+  const list = [];
+  for (const pr of model.prs) {
+    if (!pr.release) list.push({ at: pr.created, kind: 'opened', pr, release: null, mark: null });
+    // A release pull request matters only once merged: it is the release itself.
+    if (pr.ended && (pr.state === 'merged' || (pr.state === 'closed' && !pr.release))) {
+      list.push({ at: pr.ended, kind: pr.state === 'merged' ? 'merged' : 'closed', pr, release: null, mark: null });
+    }
+  }
+  for (const release of model.releases) list.push({ at: release.at, kind: 'release', pr: null, release, mark: null });
+  for (const { pr, mark } of model.greens) list.push({ at: mark.at, kind: 'green', pr, release: null, mark });
+  return list.sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+/**
+ * @typedef {{ pr: Pr, lane: number, base: number, start: number, opened: number, end: number }} Segment
+ * @typedef {{ columns: Date[], segments: Segment[], releases: { pr: Pr, column: number }[],
+ *   tags: { release: Release, column: number }[], merges: Map<number, number>, lanes: number, devFrom: number }} Flow
+ */
+
+/** Lanes 0 and 1 are main and dev; development branches take the lanes below. */
+export const MAIN = 0;
+export const DEV = 1;
+
+/**
+ * Lays the branch flow out on a grid, like GitHub's network graph: one column per
+ * event in time order (the last column is now) and one lane per branch at a time.
+ * A branch starts where its note's `from` commit was merged into dev, otherwise at
+ * its pull request.
+ * @param {Model} model
+ * @returns {Flow}
+ */
+export function layout(model) {
+  const dated = events(model).filter((event) => event.kind !== 'green');
+  /** @type {Map<string, number>} */
+  const column = new Map();
+  dated.forEach((event, index) => column.set(eventKey(event), index));
+  const now = dated.length;
+  const columns = [...dated.map((event) => event.at), new Date()];
+
+  /** @type {Map<number, number>} merge column of each merged pull request */
+  const merges = new Map();
+  for (const pr of model.prs) {
+    if (pr.state === 'merged') merges.set(pr.number, column.get(`merged:${pr.number}`) ?? now);
+  }
+
+  const branches = model.prs.filter((pr) => !pr.release);
+  const segments = branches.map((pr) => {
+    const opened = column.get(`opened:${pr.number}`) ?? now;
+    const fork = pr.note?.from ? model.prs.find((other) => sameCommit(other.mergeCommit, pr.note?.from ?? null)) : undefined;
+    const forked = fork ? merges.get(fork.number) : undefined;
+    const start = forked !== undefined && forked < opened ? forked : opened;
+    const end = pr.state === 'open' || pr.state === 'draft'
+      ? now
+      : column.get(`${pr.state}:${pr.number}`) ?? now;
+    return { pr, lane: 0, base: pr.base === 'dev' ? DEV : MAIN, start, opened, end: Math.max(end, start + 1) };
+  });
+
+  // Greedy lanes: each branch takes the first lane that is free before its start column.
+  /** @type {number[]} last occupied column per lane */
+  const busy = [];
+  for (const segment of [...segments].sort((a, b) => a.start - b.start || a.pr.number - b.pr.number)) {
+    let lane = busy.findIndex((last) => last < segment.start);
+    if (lane < 0) lane = busy.push(-1) - 1;
+    busy[lane] = segment.end;
+    segment.lane = DEV + 1 + lane;
+  }
+
+  const devPrs = model.prs.filter((pr) => pr.base === 'dev' || pr.release);
+  const devFrom = Math.min(now, ...segments.filter((s) => s.base === DEV).map((s) => s.start),
+    ...devPrs.filter((pr) => pr.release).map((pr) => merges.get(pr.number) ?? now));
+
+  return {
+    columns,
+    segments,
+    releases: model.prs.filter((pr) => pr.release && pr.state === 'merged').map((pr) => ({ pr, column: merges.get(pr.number) ?? now })),
+    tags: model.releases.map((release) => ({ release, column: column.get(`release:${release.tag}`) ?? now })),
+    merges,
+    lanes: DEV + 1 + busy.length,
+    devFrom,
+  };
+}
+
+/** @param {Event} event */
+function eventKey(event) {
+  if (event.kind === 'release') return `release:${event.release?.tag}`;
+  return `${event.kind}:${event.pr?.number}`;
+}

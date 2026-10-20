@@ -1,0 +1,42 @@
+name = "dev-skills"
+# The dev-master and dev-worker skills for Claude Code and Codex (.claude/skills links here).
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.correct]
+title = "The development skills state today's commands, outcomes and CI correctly"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.correct.payload]
+instruction = """
+Read dev-master/SKILL.md, dev-worker/SKILL.md and both agents/openai.yaml of {dev-skills}.
+Check that:
+- every artifactize command, flag, selector, exit code, outcome name and output line they
+  state matches {cli};
+- every CI job, informational job and workflow trigger they mention matches the workflows
+  of {release-automation};
+- the two skills agree with each other on the branch model, the dev-green tag, the verify
+  command and the pull request note format;
+- each SKILL.md has the frontmatter fields name, description and
+  disable-model-invocation: true, and each openai.yaml sets policy.allow_implicit_invocation
+  to false.
+Judge accuracy and agreement only; an omission is not a finding. Submit GREEN when
+nothing they state is wrong or contradictory; otherwise RED with up to 20 findings, each
+with a skill path:line and one sentence on what to change in the skill.
+"""
+
+[evals.correct.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.correct.fail_schema]
+type = "object"
+properties.findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 }
+required = ["findings"]
+additionalProperties = false
