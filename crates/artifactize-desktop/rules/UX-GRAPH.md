@@ -70,6 +70,7 @@ that makes the transition happen and checks where it leads.
 | E-SCREEN-MONITOR | any screen | Ctrl+1 | Monitor |
 | E-SCREEN-REVIEW | any screen | Ctrl+2 | Review |
 | E-SCREEN-SETTINGS | any screen | Ctrl+, | Settings |
+| E-SCREEN-REVIEW-COUNT | any screen | a Human review starts or stops waiting, in this window or another process | same screen, Review showing after its name how many wait as Review's starting search lists them, or its name alone with none |
 | E-PALETTE-OPEN | any screen | Ctrl+K or the palette button | Palette, all enabled commands listed |
 | E-PALETTE-FILTER | Palette | type text | Palette, the commands filtered by the text |
 | E-PALETTE-RUN | Palette | Enter on a command | the command's target, Palette closed |
@@ -186,7 +187,7 @@ other (each starts where the one before ended), `|` separates alternatives, and 
 several walks lists them one per line. Selecting a row first is the movement edge of its pane.
 
 - J-LAUNCH: E-LAUNCH-MONITOR | E-LAUNCH-REVIEW
-- J-SWITCH-SCREEN: E-SCREEN-MONITOR | E-SCREEN-REVIEW | E-SCREEN-SETTINGS
+- J-SWITCH-SCREEN: E-SCREEN-MONITOR | E-SCREEN-REVIEW | E-SCREEN-SETTINGS | E-SCREEN-REVIEW-COUNT
 - J-PALETTE: E-PALETTE-OPEN → E-PALETTE-FILTER → E-PALETTE-RUN | E-PALETTE-CLOSE
 - J-HELP: E-HELP-OPEN → E-HELP-CLOSE
 - J-REFRESH: E-REFRESH

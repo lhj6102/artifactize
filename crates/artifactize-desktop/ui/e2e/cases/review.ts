@@ -76,7 +76,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-REVIEW-OPEN-ID E-HUMAN-CLAIM
+  // UX edges: E-REVIEW-OPEN-ID E-HUMAN-CLAIM E-SCREEN-REVIEW-COUNT
   scenario<null>(
     "review-open-id",
     "opens the entered request ID rather than the selected request and claims it",
@@ -194,7 +194,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT
+  // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT E-SCREEN-REVIEW-COUNT
   scenario<null>(
     "review-green-completed",
     "keeps the completed result open until the reviewer leaves it",
