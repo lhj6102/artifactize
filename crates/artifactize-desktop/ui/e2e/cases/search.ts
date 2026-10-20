@@ -6,6 +6,7 @@ import { addRepository, artifactize, create, requests } from "../fixture.ts";
 import { press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 
+import { activeScreen, reviewTab } from "../screens.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
 
@@ -96,8 +97,9 @@ export const scenarios: Scenario[] = [
       const kept = await query();
       await press(browser, [primaryModifier, "1"], focused("Runs"), "Monitor focused");
       await press(browser, ["/"], async () => await focused("Runs")() && (await query()) === kept, "inactive Review leaves focus and its query alone");
+      // With nothing waiting, Review shows its name alone, not a count of 0.
       await press(browser, [primaryModifier, "2"], async () =>
-        (await browser.$('[role="tab"][aria-selected="true"]').getText()) === "Review", "the empty Review screen shown");
+        (await activeScreen(browser)) === "Review" && (await reviewTab(browser)) === "Review", "the empty Review screen shown");
       await press(browser, ["/"], focused("Search requests"), "search focused without a Requests list");
       assert.equal(await query(), kept, "the shortcut focuses search without typing a slash");
       await press(browser, ["Escape"], holds(""), "the waiting query cleared for typing");

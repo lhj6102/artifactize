@@ -292,6 +292,11 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     .unwrap();
     assert_eq!(waiting["rows"][0]["id"], id);
     assert_eq!(waiting["rows"][0]["claim"], "-");
+    // The screen switch counts what the review list's starting search finds.
+    assert_eq!(
+        invoke(&window, "review_waiting", json!({})).unwrap(),
+        json!(1)
+    );
 
     let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(open["stage"], "claim");
@@ -407,6 +412,10 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     )
     .unwrap();
     assert_eq!(waiting["rows"], json!([]));
+    assert_eq!(
+        invoke(&window, "review_waiting", json!({})).unwrap(),
+        json!(0)
+    );
 }
 
 #[test]

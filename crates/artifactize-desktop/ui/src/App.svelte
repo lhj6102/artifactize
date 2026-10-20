@@ -1,7 +1,6 @@
 <script lang="ts">
   // The window: Monitor and Review as tabs over one state, the command palette, help, and
   // what happens on quit.
-  import { Tabs } from "bits-ui";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
@@ -14,6 +13,7 @@
   import Palette from "./shell/Palette.svelte";
   import Help from "./shell/Help.svelte";
   import Badge from "./shell/Badge.svelte";
+  import Screens from "./shell/Screens.svelte";
   import { useCommands } from "./shell/commands.svelte";
   import { chord, composing, plain } from "./shell/keys";
   import { HELP } from "./shell/shortcuts";
@@ -100,13 +100,7 @@
 <div class="app">
   <header class="bar">
     <div class="brand"><img src={brandMark} alt="" width="24" height="24" />Artifactize</div>
-    <Tabs.Root bind:value={app.screen}>
-      <Tabs.List class="tabs" aria-label="Screens">
-        {#if app.launch?.mode === "graph"}<Tabs.Trigger class="tab" value="graph">Graph</Tabs.Trigger>{/if}
-        <Tabs.Trigger class="tab" value="monitor">Monitor</Tabs.Trigger>
-        <Tabs.Trigger class="tab" value="review">Review</Tabs.Trigger>
-      </Tabs.List>
-    </Tabs.Root>
+    <Screens />
     <div class="spacer"></div>
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
     <Badge counts={browse.view?.badge ?? []} />
@@ -175,27 +169,6 @@
   }
   .muted {
     color: var(--muted);
-  }
-  :global(.tabs) {
-    display: flex;
-    gap: 4px;
-    background: var(--surface-2);
-    padding: 3px;
-    border-radius: 8px;
-  }
-  :global(.tab) {
-    font: inherit;
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    padding: 3px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  :global(.tab[data-state="active"]) {
-    background: var(--surface);
-    color: var(--text);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
   }
   main {
     min-height: 0;

@@ -21,17 +21,23 @@ that makes the transition happen and checks where it leads.
   Run or an Artifact. Its left edge takes a drag that sets its width, between a readable column
   and a width that leaves some of the Graph visible on its left; it stays within the graph area,
   never over Scope or Runs. An Artifact's Detail has tabs, a chip choice that reads as a path,
-  `[Artifact icon] {name} / [eval] …`: the Artifact's own chip, then a `/` and one chip per eval
+  `[Artifact icon] {name} / [eval] …`: the Artifact's own chip (the Artifact icon before its name,
+  read aloud as "Artifact {name}"; only the name is cut short when long, the Detail's title
+  showing it whole), then a `/` and one chip per eval
   with its verdict's glyph and colour; an Artifact without evals has its own chip only, without
   the `/`. Eval chips that do not fit on one line wrap onto further lines within the Detail, the
-  `/` staying with the Artifact's chip. The Artifact's tab draws it between its neighbours (the
-  Artifacts its evals use, those whose evals use it), lists its evals with their verdicts, then
+  `/` staying with the Artifact's chip. The Artifact's tab draws it between its neighbours with the
+  Run graph's nodes and edges (the Artifacts its evals use on its left, those whose evals use it
+  on its right), a drawing that does not pan, zoom or drag, then lists its evals with their verdicts, then
   shows its path, every other fact (what it waits for included) under Debug (unfolded with `t`
-  or a click). An eval's tab shows its Summary (status with what it took and spent, instruction,
-  result, execution options, metadata and fingerprint, every other fact under Debug, unfolded
+  or a click). An eval's tab shows its Summary (its status, beside it in grey what running it took
+  and spent: time, tokens in `k` or `M` and model, or what reuse saved; its instruction; its
+  result, each owner field by name and a list as numbered items; execution options, metadata
+  and fingerprint, every other fact under Debug, unfolded
   with `t` or a click) or, switched below the tabs, its Agent log or Runtime log; for a Human
   eval the Human review. Everything in the Detail, transcript and log lines, long words and code
-  included, wraps or scrolls within its width. Hovering only highlights; nothing opens on hover.
+  included, wraps or scrolls within its width. Hovering only highlights, and over a divider or
+  the Detail's left edge shows only the resize cursor; nothing opens on hover.
   States: Scope, Runs or Graph focused; Detail open on a tab (the Artifact's, an eval's Summary,
   Debug unfolded, or a log), its chips on one line or wrapped; notice as one line or in full.
 - **Run graph**: the selected Run's Artifacts as nodes and their dependencies as edges,
@@ -46,14 +52,18 @@ that makes the transition happen and checks where it leads.
   Requests focused, Search focused (with or without suggestions), a request open (a Human
   review is actionable, any other request read-only).
 - **Human review** (on a Human eval's tab of the Monitor's Detail, or in Review): its
-  instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them), the
+  instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the reviewed one first), the
   Tool log of every run in this review, and the Result. States: Unclaimed, Taken (another
   reviewer holds the claim), Claimed (by this reviewer), Editing GREEN (the form built from the
   eval's pass schema), Editing RED (built from its fail schema), Submitted (the completed result
   shown); a tool or a submission may be running, and a launched application may still be
   logging. The form has text, number, true/false and choice fields, lists of text (one text per
-  item) and lists of groups of fields; a list always keeps one item to type in.
-  The **Tool log** is monospace, wraps within the review's width and scrolls in its own box,
+  item) and lists of groups of fields; a list always keeps one item to type in. Constants are
+  filled in and not shown; `*` marks a required field and an empty optional one says Optional in
+  grey. There is no JSON editor.
+  The **Tool log** shows each run as `▶ HH:MM:SS · operation · Artifact`, then each line the tool
+  prints (stderr in red), then its end line (`■ exit 0`, `■ launched`, `■ done`, `■ error: …`);
+  a launched application's lines keep arriving under its own run until it exits. It is monospace, wraps within the review's width and scrolls in its own box,
   apart from the rest of the review. Its states: Following (it shows its newest line as lines
   arrive) and Scrolled up (the reader scrolled away from the bottom: it stays where the reader
   left it while lines arrive below). Its text selects and copies like any page text.
@@ -70,6 +80,7 @@ that makes the transition happen and checks where it leads.
 | E-SCREEN-MONITOR | any screen | Ctrl+1 | Monitor |
 | E-SCREEN-REVIEW | any screen | Ctrl+2 | Review |
 | E-SCREEN-SETTINGS | any screen | Ctrl+, | Settings |
+| E-SCREEN-REVIEW-COUNT | any screen | a Human review starts or stops waiting, in this window or another process | same screen, Review showing after its name how many wait as Review's starting search lists them, or its name alone with none |
 | E-PALETTE-OPEN | any screen | Ctrl+K or the palette button | Palette, all enabled commands listed |
 | E-PALETTE-FILTER | Palette | type text | Palette, the commands filtered by the text |
 | E-PALETTE-RUN | Palette | Enter on a command | the command's target, Palette closed |
@@ -102,8 +113,8 @@ that makes the transition happen and checks where it leads.
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
 | E-MON-LIVE | Monitor | another process changes state | same state, updated |
-| E-MON-RESIZE | Monitor | drag a divider | same state, pane resized |
-| E-MON-DETAIL-WIDTH | Detail | drag its left edge | Detail resized, never narrower than a readable column nor so wide that no Graph shows on its left, within the graph area and never over Scope or Runs; the width kept for the next opening and launch |
+| E-MON-RESIZE | Monitor | drag a divider (hovering it shows only the resize cursor) | same state, pane resized, the split kept whether or not a graph is shown |
+| E-MON-DETAIL-WIDTH | Detail | drag its left edge (hovering it shows only the resize cursor) | Detail resized, never narrower than a readable column nor so wide that no Graph shows on its left, within the graph area and never over Scope or Runs; the width kept for the next opening and launch |
 | E-GRAPH-RECOLOUR | Graph | a result arrives | Graph, nodes and edges recoloured in place |
 | E-GRAPH-BEYOND | Graph of a large Run | pan or zoom the camera past the drawn nodes | Graph, the Artifacts brought into view drawn |
 
@@ -144,7 +155,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-LOG-COPY | Editing, the Tool log holding lines | select text in the Tool log, copy it and paste it into a Result field | Editing, the field holding the log's text as shown |
 | E-HUMAN-ESC-CANCEL | a tool or submission running | Esc in the review or on the Detail's tabs, the review's Close, or in the Monitor Esc on the Graph or a click on its background | same state, the running work cancelled, the Detail still open |
 | E-HUMAN-ESC-FORM | Editing, nothing running | Esc, Close or a click as for E-HUMAN-ESC-CANCEL | Claimed, the form left with its draft kept, the Detail still open |
-| E-HUMAN-ESC-DETAIL | Unclaimed, Claimed or Submitted, nothing running or being edited | Esc | the list or graph the Detail was opened from |
+| E-HUMAN-ESC-DETAIL | Unclaimed, Taken, Claimed or Submitted, nothing running or being edited | Esc | the list or graph the Detail was opened from |
 
 ## Review
 
@@ -186,7 +197,7 @@ other (each starts where the one before ended), `|` separates alternatives, and 
 several walks lists them one per line. Selecting a row first is the movement edge of its pane.
 
 - J-LAUNCH: E-LAUNCH-MONITOR | E-LAUNCH-REVIEW
-- J-SWITCH-SCREEN: E-SCREEN-MONITOR | E-SCREEN-REVIEW | E-SCREEN-SETTINGS
+- J-SWITCH-SCREEN: E-SCREEN-MONITOR | E-SCREEN-REVIEW | E-SCREEN-SETTINGS | E-SCREEN-REVIEW-COUNT
 - J-PALETTE: E-PALETTE-OPEN → E-PALETTE-FILTER → E-PALETTE-RUN | E-PALETTE-CLOSE
 - J-HELP: E-HELP-OPEN → E-HELP-CLOSE
 - J-REFRESH: E-REFRESH

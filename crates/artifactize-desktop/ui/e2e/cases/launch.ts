@@ -6,6 +6,7 @@ import { addRepository, addSearchExamples, addWorktrees, artifactize, create, re
 import { fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 
+import { activeScreen } from "../screens.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
 import { detail, evalAt, graphShown, nodeAt, openArtifact } from "../graph-view.ts";
@@ -53,7 +54,7 @@ function monitor(browser: WebdriverIO.Browser) {
   const text = () => browser.execute(() => document.body.innerText);
   const scopes = () =>
     browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"]')].map((row) => (row as HTMLElement).innerText.replace(/\s+/g, " ").trim()));
-  const active = () => browser.execute(() => document.querySelector('[role="tab"][data-state="active"]')?.textContent ?? "");
+  const active = () => activeScreen(browser);
   const settingsShown = () => browser.execute(() => !!document.querySelector(".settings h1") && (document.querySelector(".settings") as HTMLElement).offsetParent !== null);
   return { text, scopes, active, settingsShown };
 }

@@ -1,6 +1,7 @@
-//! The review screen's request search: [`artifactize_core::review::search`] runs the query, pages
-//! and completion; this keeps the last page for clock redraws, and opens the read-only Detail
-//! of a request that is not a Human review.
+//! The review screen's request search: [`artifactize_core::review::search`] runs the query, pages,
+//! counts and completion; this keeps the last page for clock redraws, counts the waiting Human
+//! reviews for the screen switch, and opens the read-only Detail of a request that is not a
+//! Human review.
 use crate::{
     App, Failure,
     detail::{self, DetailView, Profile},
@@ -145,6 +146,18 @@ pub async fn review_search(
         error: parsed.as_ref().err().cloned(),
         waiting: parsed.as_ref().is_ok_and(Query::waiting_human),
     })
+}
+
+/// How many requests the review list's starting search finds: the waiting Human reviews, of
+/// `--repo` when given. The screen switch shows it beside Review.
+#[tauri::command]
+#[specta::specta]
+pub async fn review_waiting(app: tauri::State<'_, App>) -> Result<u32, Failure> {
+    let query = app.launch.search.parse::<Query>().map_err(Failure::Read)?;
+    let count = search::count(&app.launch.state, &query, &app.launch.reviewer)
+        .await
+        .map_err(Failure::Read)?;
+    Ok(u32::try_from(count).unwrap_or(u32::MAX))
 }
 
 /// Completion candidates for the query's last term, from the requests the terms before it

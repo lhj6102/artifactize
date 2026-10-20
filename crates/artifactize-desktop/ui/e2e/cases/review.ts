@@ -1,13 +1,24 @@
-// The standalone review end to end: the waiting list, opening a request by ID, and quitting
-// with an unsubmitted claim (stay, then release and quit).
+// The standalone review end to end: the waiting list, opening a request by ID, quitting with
+// an unsubmitted claim (stay, then release and quit), and the waiting count beside Review.
 import assert from "node:assert/strict";
 import { addRepository, artifactize, create, type Fixture, requests, signoff } from "../fixture.ts";
 import { claimable, reviewing } from "../human-review.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
+import { reviewTab } from "../screens.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, requestWindowClose } from "../platform.ts";
+
+/** How many Human reviews this case's state holds waiting, read through the public CLI. */
+function waitingReviews(fixture: Fixture): number {
+  return requests(fixture).filter((request) => request.status === "WAITING_HUMAN").length;
+}
+
+/** Wait until the screen switch's Review tab reads `expected` (J-SWITCH-SCREEN). */
+async function reviewTabReads(browser: WebdriverIO.Browser, expected: string, why: string): Promise<void> {
+  await browser.waitUntil(async () => (await reviewTab(browser)) === expected, { timeout: 15000, timeoutMsg: why });
+}
 
 async function claimReview(browser: WebdriverIO.Browser, fixture: Fixture) {
   await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
@@ -65,7 +76,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-REVIEW-OPEN-ID E-HUMAN-CLAIM
+  // UX edges: E-REVIEW-OPEN-ID E-HUMAN-CLAIM E-SCREEN-REVIEW-COUNT
   scenario<null>(
     "review-open-id",
     "opens the entered request ID rather than the selected request and claims it",
@@ -73,6 +84,8 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       await browser.$('[aria-label="Requests"] [aria-selected="true"]').waitForExist({ timeout: 15000 });
       const original = signoff(fixture).id;
+      assert.equal(waitingReviews(fixture), 1, "this case starts with one waiting sign-off");
+      await reviewTabReads(browser, "Review 1", "Review counts the one waiting sign-off");
       const before = new Set(requests(fixture).map((request) => request.id));
       await addRepository(fixture, "open-by-id");
       const added = requests(fixture).find((request) => request.evalId === "release/signoff" && !before.has(request.id));
@@ -83,6 +96,8 @@ export const scenarios: Scenario[] = [
         const listed = [...document.querySelectorAll('[aria-label="Requests"] .mono')].map((cell) => cell.textContent);
         return ids.every((id) => listed.includes(id));
       }, [original, otherId]), { timeout: 15000, timeoutMsg: "both independent requests are in this case's list" });
+      assert.equal(waitingReviews(fixture), 2, "the other repository's sign-off waits too");
+      await reviewTabReads(browser, "Review 2", "Review counts the other repository's new sign-off without a reload");
       await commandsRendered(browser);
       // A live insertion may select either row. Read the actual selected identity rather
       // than assuming the older request stayed selected. Read the rendered grid cells.
@@ -179,13 +194,15 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT
+  // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT E-SCREEN-REVIEW-COUNT
   scenario<null>(
     "review-green-completed",
     "keeps the completed result open until the reviewer leaves it",
     async () => ({ fixture: await create(), args: ["review"], data: null }),
     async (browser, { fixture }) => {
       await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
+      assert.equal(waitingReviews(fixture), 1, "this case starts with one waiting sign-off");
+      await reviewTabReads(browser, "Review 1", "Review counts the one waiting sign-off");
       await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
       await fill(browser, '[aria-label="Request ID"]', signoff(fixture).id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
@@ -203,6 +220,9 @@ export const scenarios: Scenario[] = [
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "looks good" });
+      assert.equal(waitingReviews(fixture), 0, "the submission left nothing waiting");
+      // Nothing waits any more: Review shows its name alone, not a 0.
+      await reviewTabReads(browser, "Review", "Review without a count after the submission");
       const run = signoff(fixture).runId;
       // Monitor stays mounted while Review is shown. Its exact Run row acknowledges the
       // app's terminal subscription update without leaving this completed Review Detail.
