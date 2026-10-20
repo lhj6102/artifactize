@@ -97,7 +97,8 @@ artifactize --version
 ```
 
 The formula in the `lhj6102/tap` Homebrew tap installs both commands for your Mac's
-CPU and follows stable releases. The desktop app is a cask in the same tap:
+CPU and follows stable releases. The desktop app is a cask in the same tap; it
+installs the formula too, so this one command gives you the app and both commands:
 
 ```sh
 brew install --cask lhj6102/tap/artifactize
@@ -213,8 +214,11 @@ placeholder version `0.0.0-dev`.
 ### Desktop app
 
 The [desktop app](../desktop/index.md) runs Monitor, Review and Graph in a window. It
-shows the Runs that `artifactize verify` starts, so every desktop install carries the
-commands too. TUI and MCP already come with the ordinary
+shows the Runs that `artifactize verify` starts, so the commands come with it: the
+Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` put
+`artifactize` on `PATH`. The disk image and the AppImage carry the commands inside the
+app but do not put them on `PATH`; install them with Homebrew or the install script
+as well. TUI and MCP already come with the ordinary
 `artifactize` binary; they need no additional product install.
 
 The defaults above install it: the Microsoft Store and `install.ps1` on Windows,
@@ -223,7 +227,7 @@ also attaches the app on its own:
 
 | File | Install |
 |---|---|
-| `artifactize-desktop-vVERSION-universal-apple-darwin.dmg` | Open it and drag **Artifactize** to Applications. One image runs on Apple silicon and Intel, from macOS 11; Apple has notarized it. |
+| `artifactize-desktop-vVERSION-universal-apple-darwin.dmg` | Open it and drag **Artifactize** to Applications. One image runs on Apple silicon and Intel, from macOS 11; Apple has notarized it. Install the commands with `brew install lhj6102/tap/artifactize` or the install script. |
 | `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` | `sudo apt install ./artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` on Ubuntu 22.04, Debian 12 or later. It installs all three commands to `/usr/bin` and needs WebKitGTK 4.1 and GTK 3, which apt pulls in. |
 | `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage` | Make it executable and run it; it needs glibc 2.35 or later. |
 
@@ -404,7 +408,7 @@ And the desktop app:
 rm -rf ~/Applications/Artifactize.app                        # install.sh on macOS
 rm -rf ~/.local/share/artifactize/desktop ~/.local/bin/artifactize-desktop \
   ~/.local/share/applications/artifactize.desktop             # install.sh on Linux
-brew uninstall --cask artifactize                            # Homebrew cask
+brew uninstall --cask artifactize && brew uninstall artifactize   # Homebrew cask and the commands it installed
 sudo apt remove artifactize                                  # .deb
 ```
 

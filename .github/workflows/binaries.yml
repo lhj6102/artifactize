@@ -308,9 +308,9 @@ jobs:
           HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
             sh website/landing/install.sh
           HOME="$home" sh .github/scripts/smoke-desktop.sh installed-mac "$VERSION" "$home/Applications/Artifactize.app"
-          sh .github/scripts/smoke-cask.sh "$VERSION" desktop-dist
+          sh .github/scripts/smoke-cask.sh "$VERSION" aarch64-apple-darwin dist desktop-dist
 
-  # The same dmg and cask on an Intel Mac: the universal app's x86_64 half must open too.
+  # The same dmg on an Intel Mac: the universal app's x86_64 half must open too.
   desktop-macos-intel:
     name: Open desktop universal-apple-darwin on Intel
     needs: desktop-macos
@@ -324,7 +324,7 @@ jobs:
         with:
           name: desktop-universal-apple-darwin
           path: desktop-dist
-      - name: Install the dmg and the Homebrew cask and open the app
+      - name: Install the dmg and open the app
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
@@ -332,7 +332,6 @@ jobs:
           version=${1#desktop-dist/artifactize-desktop-v}
           version=${version%-universal-apple-darwin.dmg}
           sh .github/scripts/smoke-desktop.sh dmg "$version" "$1"
-          sh .github/scripts/smoke-cask.sh "$version" desktop-dist
 
   # Linux bundles link the system WebKitGTK, so they build on the oldest supported
   # runner image: its glibc (2.35) is the baseline every bundle needs.

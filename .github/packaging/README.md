@@ -12,7 +12,7 @@ and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
 the stable name the landing page's download button links to through
 `releases/latest/download`.
 The other channels carry the app too: the Homebrew cask `artifactize` installs
-`Artifactize.app` from the dmg (the formula stays the CLI), the winget manifest adds
+`Artifactize.app` from the dmg and depends on the formula, so it brings the commands too, the winget manifest adds
 an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
 menu shortcut, and `install.sh` installs `Artifactize.app` into `~/Applications` on
 macOS or unpacks the AppImage on glibc x86_64 Linux with an `artifactize-desktop`
@@ -60,7 +60,7 @@ an Apple ID with an app-specific password and team ID for notarization.
    **Contents: Read and write**. Save it as `HOMEBREW_TAP_TOKEN` above.
 3. The next stable release commits `Formula/artifactize.rb` and
    `Casks/artifactize.rb`. Install the CLI using `brew install lhj6102/tap/artifactize`
-   and the desktop app using `brew install --cask lhj6102/tap/artifactize`.
+   and the desktop app with the CLI using `brew install --cask lhj6102/tap/artifactize`.
 
 The generator computes hashes from the two actual macOS release archives and the dmg, not
 from checksums supplied by an external endpoint:
@@ -186,8 +186,9 @@ The two informational macOS builds install from a native PR archive through a
 local tap, run `brew test`, and execute both commands. The universal desktop job
 builds both commands for both CPUs, bundles the app on Apple Silicon, and after the dmg
 smoke installs the app with `install.sh` and with a local-tap cask (`brew style`, then
-`brew install --cask`, quarantined only when the app is notarized) and opens each
-installed copy; an Intel runner then opens the same dmg and cask. The Linux desktop job installs with `install.sh` from its AppImage
+`brew install --cask`, quarantined only when the app is notarized, which also installs the
+local formula's commands) and opens each installed copy; an Intel runner then opens the
+same dmg. The Linux desktop job installs with `install.sh` from its AppImage
 and opens the app through the installed launcher. The informational Windows
 build parses all PowerShell scripts, installs with `install.ps1` and opens the app
 from its Start shortcut, validates/installs local winget manifests,

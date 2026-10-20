@@ -68,13 +68,14 @@ def generate(args):
                   "  end", "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
     elif args.kind == "cask":
-        # The desktop app beside its own artifactize; the formula keeps the CLI on PATH.
+        # The app and, through the formula it depends on, the commands on PATH.
         digest = sha256(Path(args.dist) / desktop_name(args.version, MAC_DESKTOP_TARGET)).lower()
         dmg = desktop_name("#{version}", MAC_DESKTOP_TARGET)
         lines = ['cask "artifactize" do', f'  version "{args.version}"', f'  sha256 "{digest}"', "",
                  f'  url "{base}/{dmg}"', '  name "Artifactize"',
                  '  desc "Declare and verify artifacts with reusable evidence"',
-                 '  homepage "https://artifactize.dev/"', "", '  depends_on macos: :big_sur', "",
+                 '  homepage "https://artifactize.dev/"', "",
+                 f'  depends_on formula: "{args.tap}/artifactize"', '  depends_on macos: :big_sur', "",
                  '  app "Artifactize.app"', "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
     else:
@@ -259,6 +260,7 @@ def main():
     gen.add_argument("--output", required=True)
     gen.add_argument("--base-url")
     gen.add_argument("--targets", nargs="+", choices=MAC_TARGETS, default=MAC_TARGETS)
+    gen.add_argument("--tap", default="lhj6102/tap", help="the tap whose formula the cask depends on")
     gate = sub.add_parser("gate", help="Evaluate release policy and emit an Actions enabled output")
     gate.add_argument("channel", choices=SECRETS)
     pub = sub.add_parser("publish")
