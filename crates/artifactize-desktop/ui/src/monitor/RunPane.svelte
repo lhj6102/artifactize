@@ -12,6 +12,7 @@
     notice,
     noticeOpen = $bindable(false),
     opened = null,
+    cover = null,
     element = $bindable(),
     onfocus,
     onopen,
@@ -26,6 +27,8 @@
     noticeOpen?: boolean;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
+    /** The open Detail, docked over the graph. */
+    cover?: HTMLElement | null;
     element?: HTMLElement;
     onfocus: () => void;
     /** Open the Detail of an Artifact. */
@@ -72,7 +75,7 @@
         {#await import("./RunGraph.svelte")}
           <p class="empty">Loading the graph…</p>
         {:then { default: RunGraph }}
-          <RunGraph run={run.id} revision={browse.revision} {opened} {onopen} {onclose} />
+          <RunGraph run={run.id} revision={browse.revision} {opened} {cover} {onopen} {onclose} />
         {/await}
       </div>
     </div>

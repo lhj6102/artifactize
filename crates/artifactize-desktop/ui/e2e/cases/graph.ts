@@ -1,8 +1,8 @@
 // The monitor's Run graph in the real app on CLI-made state: release waits for its Human,
 // ship waits for release, docs is GREEN. The graph lights them and follows a submission made by
 // another process live without moving any node while release's Detail stays open; a click on an
-// Artifact opens its Detail with a tab per eval, and the camera brings a large Run's Artifacts
-// into view.
+// Artifact opens its Detail with a tab per eval, every Artifact stays clickable beside the Detail,
+// and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
 import { afterRender, press } from "../keys.ts";
@@ -86,29 +86,53 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
   scenario<Record<string, never>>(
     "graph-click-detail",
-    "opens an Artifact's Detail on a click or Enter, switches it on another click, closes it on the background, then steps back to Runs",
+    "opens an Artifact's Detail on a click or Enter, keeps every Artifact clickable beside it, switches it on another click, closes it on the background, then steps back to Runs",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
+      // A 1440×872 window: the Detail at its default width docks where the graph's right-most
+      // Artifact is drawn while no Detail is open.
+      await browser.setWindowSize(1440, 872);
+      await afterRender(browser);
       await graphShown(browser, "a:release");
       const runs = () => browser.$('[role="listbox"][aria-label="Runs"]');
       const pane = () => browser.$('section.panel[aria-label^="Run run-"]');
       await browser.waitUntil(() => runs().isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
       // Enter steps from Runs into the graph's pane.
       await press(browser, ["Enter"], () => pane().isFocused(), "the graph's pane focused");
+      /** Each Artifact's right edge in the window, and the open Detail's left edge (null without one). */
+      const placed = () => browser.execute(() => ({
+        nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
+          .map((node) => [node.dataset.id ?? "", node.getBoundingClientRect().right])),
+        detail: document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect().left ?? null,
+      }));
+      // Where the Artifacts are drawn once the resized window has settled.
+      let whole: Record<string, number> = {};
+      await browser.waitUntil(async () => {
+        const first = JSON.stringify((await placed()).nodes);
+        await afterRender(browser);
+        whole = (await placed()).nodes;
+        return first === JSON.stringify(whole);
+      }, { timeout: 15000, timeoutMsg: "the graph settled in the resized window" });
 
       // A click opens an Artifact's Detail and leaves the keyboard on that Artifact: Esc closes
       // the Detail, Enter on the focused Artifact opens it again, as the click did.
-      await openArtifact(browser, "a:ship", "Artifact ship");
-      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:ship", { timeout: 15000, timeoutMsg: "the keyboard on ship" });
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
-      await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact ship", "Enter on ship opened its Detail again");
-
-      // Another click switches the Detail to that Artifact, and a click on the graph's
-      // background closes it. Esc then steps back to Runs.
       await openArtifact(browser, "a:release", "Artifact release");
+      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:release", { timeout: 15000, timeoutMsg: "the keyboard on release" });
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact release", "Enter on release opened its Detail again");
+
+      // The Detail takes the place where another Artifact was drawn without it; every Artifact
+      // stays visible and takes the pointer beside the Detail.
+      const edge = (await placed()).detail!;
+      const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
+      assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
+      for (const id of Object.keys(whole)) await graphShown(browser, id);
+      // A click on it switches the Detail to that Artifact, and a click on the graph's
+      // background closes it. Esc then steps back to Runs.
+      await openArtifact(browser, under[0], `Artifact ${under[0].slice(2)}`);
       const canvas = await browser.execute(() => {
         const box = document.querySelector(".graph .canvas")!.getBoundingClientRect();
         const nodes = [...document.querySelectorAll(".svelte-flow__node")].map((node) => node.getBoundingClientRect());

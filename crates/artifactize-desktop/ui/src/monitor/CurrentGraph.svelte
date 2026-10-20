@@ -47,13 +47,14 @@
           graph={graph.shown.view.graph}
           positions={graph.shown.positions}
           opened={graph.opened}
+          cover={graph.dock}
           structural
           onopen={(id) => (graph.opened = id)}
           onclose={() => (graph.opened = null)}
         />
       </SvelteFlowProvider>
       {#if artifact}
-        <aside class="dock" aria-label="Detail">
+        <aside class="dock" aria-label="Detail" bind:this={graph.dock}>
           <Panel title="Artifact {artifact.name}" focused={false}>
             {#snippet actions()}
               <button class="button small" onclick={() => (graph.opened = null)}>Close <kbd>Esc</kbd></button>

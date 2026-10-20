@@ -20,7 +20,10 @@ that makes the transition happen and checks where it leads.
   The **Detail** floats over the Graph docked toward its right edge, with a gap, and shows the
   Run or an Artifact. Its left edge takes a drag that sets its width, between a readable column
   and a width that leaves some of the Graph visible on its left; it stays within the graph area,
-  never over Scope or Runs. An Artifact's Detail has tabs, a chip choice that reads as a path,
+  never over Scope or Runs. The Detail hides no Artifact: a Graph shown whole fits into the part
+  the Detail leaves, again whenever the Detail opens, closes or changes width; a camera the
+  person zoomed or panned keeps its zoom and moves only to bring the opened Artifact beside the
+  Detail. An Artifact's Detail has tabs, a chip choice that reads as a path,
   `[Artifact icon] {name} / [eval] …`: the Artifact's own chip, then a `/` and one chip per eval
   with its verdict's glyph and colour; an Artifact without evals has its own chip only, without
   the `/`. Eval chips that do not fit on one line wrap onto further lines within the Detail, the
