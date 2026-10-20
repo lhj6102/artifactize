@@ -4,9 +4,13 @@ The Linux tests and builds still gate the GitHub release. Other platforms and
 channels are independent, best-effort jobs. Archives and non-Store installers contain both
 `artifactize` and `artifactize-tools`; the Store MSIX contains only `artifactize`,
 with tools exposed through `artifactize tools`. The desktop app ships beside those
-commands, because it starts Runs through the `artifactize` next to its own executable:
+commands, because it shows Runs that the `artifactize` command starts, so every
+install of the app carries that command too:
 in the Windows zip and the MSIX (its own Start entry beside the CLI's),
-and as the macOS dmg and the Linux AppImage and deb (`desktop-<target>` artifacts).
+and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
+(`desktop-<target>` artifacts). The release also attaches the dmg as `Artifactize.dmg`,
+the stable name the landing page's download button links to through
+`releases/latest/download`.
 The other channels carry the app too: the Homebrew cask `artifactize` installs
 `Artifactize.app` from the dmg (the formula stays the CLI), the winget manifest adds
 an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
@@ -19,10 +23,9 @@ be mistaken for a publication. Successful publications write their outcome to th
 summary too (Store submission ID, winget PR URL when available, or Homebrew formula and cask). These scripts never sign or
 submit a Windows zip.
 
-winget and Microsoft Store distribution are in preparation, not available yet:
-the winget submissions are still open and the Store submission has not passed
-certification. Use the PowerShell install script for Windows today; the setup and
-publication instructions below describe the prepared channels.
+The Microsoft Store listing is published and is the default Windows install; each
+stable release submits an update. winget distribution is in preparation, not
+available yet: the winget submissions are still open.
 
 ## Policy and credentials
 
@@ -59,7 +62,7 @@ an Apple ID with an app-specific password and team ID for notarization.
    `Casks/artifactize.rb`. Install the CLI using `brew install lhj6102/tap/artifactize`
    and the desktop app using `brew install --cask lhj6102/tap/artifactize`.
 
-The generator computes hashes from the two actual macOS release archives and dmgs, not
+The generator computes hashes from the two actual macOS release archives and the dmg, not
 from checksums supplied by an external endpoint:
 
 ```sh
@@ -153,8 +156,8 @@ AppData and user project/exported files are not removed with the package.
 The MSIX has two visible Applications: the desktop app (`ArtifactizeDesktop`,
 listed as Artifactize) and the CLI facade (`Artifactize`, listed as Artifactize CLI)
 with one console execution alias (`artifactize.exe`); tools run as
-`artifactize tools <subcommand>`. The desktop app starts Runs through the
-`artifactize.exe` beside it. Neither is headless or has `AppListEntry="none"`, so no
+`artifactize tools <subcommand>`. The desktop app shows the Runs that
+`artifactize.exe` starts. Neither is headless or has `AppListEntry="none"`, so no
 HeadlessAppBypass waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
 Application; the standalone tools executable remains in all non-Store channels.
 Launching Artifactize from Start or Explorer with no arguments shows the normal
@@ -180,10 +183,11 @@ skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
 
 The two informational macOS builds install from a native PR archive through a
-local tap, run `brew test`, and execute both commands. After the dmg smoke they
-install the app with `install.sh` and with a local-tap cask (`brew style`, then
-`brew install --cask`, quarantined only when the app is notarized) and open each
-installed copy. The Linux desktop job installs with `install.sh` from its AppImage
+local tap, run `brew test`, and execute both commands. The universal desktop job
+builds both commands for both CPUs, bundles the app on Apple Silicon, and after the dmg
+smoke installs the app with `install.sh` and with a local-tap cask (`brew style`, then
+`brew install --cask`, quarantined only when the app is notarized) and opens each
+installed copy; an Intel runner then opens the same dmg and cask. The Linux desktop job installs with `install.sh` from its AppImage
 and opens the app through the installed launcher. The informational Windows
 build parses all PowerShell scripts, installs with `install.ps1` and opens the app
 from its Start shortcut, validates/installs local winget manifests,

@@ -3,9 +3,8 @@
 #
 #   curl -fsSL https://artifactize.dev/install.sh | sh
 #
-# Other available channels (Homebrew and Cargo), plus winget and the Microsoft
-# Store (in preparation, not available yet), are listed at
-# https://artifactize.dev/docs/getting-started/install.html
+# Other channels (Homebrew, the Mac disk image, the Linux .deb and AppImage, and Cargo)
+# are listed at https://artifactize.dev/docs/getting-started/install.html
 #
 # Downloads the release archive for this OS and CPU over https, checks its SHA-256
 # against the release's .sha256 file, and installs artifactize and artifactize-tools to
@@ -198,8 +197,8 @@ check_sum() {
     say "checked SHA-256 $actual"
 }
 
-# The desktop app starts Runs through the artifactize beside its own executable, so each
-# bundle carries both commands. A release or system without a bundle keeps the CLI only.
+# The desktop app shows the Runs that the artifactize command starts, so each bundle
+# carries both commands. A release or system without a bundle keeps the CLI only.
 install_desktop() {
     case $target in
         x86_64-unknown-linux-musl)
@@ -209,7 +208,8 @@ install_desktop() {
             fi
             bundle="artifactize-desktop-v$version-x86_64-unknown-linux-gnu.AppImage"
             ;;
-        *-apple-darwin) bundle="artifactize-desktop-v$version-$target.dmg" ;;
+        # One app for both Mac CPUs.
+        *-apple-darwin) bundle="artifactize-desktop-v$version-universal-apple-darwin.dmg" ;;
         *)
             say "no desktop app for $target; installed the CLI only"
             return 0

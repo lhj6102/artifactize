@@ -40,7 +40,7 @@ try {
     & artifactize --state-dir (Join-Path $root 'doctor-state') doctor
     if ($LASTEXITCODE -ne 0) { throw 'artifactize doctor failed' }
 
-    # The desktop app beside the CLI it starts Runs through, opened from its Start shortcut.
+    # The desktop app beside the CLI that starts its Runs, opened from its Start shortcut.
     $desktop = Join-Path $env:ARTIFACTIZE_INSTALL_DIR 'artifactize-desktop.exe'
     if (-not (Test-Path -LiteralPath $desktop)) { throw 'install.ps1 did not install artifactize-desktop.exe' }
     $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'Artifactize.lnk'
@@ -103,7 +103,7 @@ try {
         try { & $Installer } catch { $message = $_.Exception.Message }
         if (-not $message) { throw "installer accepted the non-runnable $blocked" }
         Write-Host $message
-        foreach ($expected in @("new ${blocked}", 'Existing binaries were kept', 'application control policy', 'Do not bypass', 'Microsoft Store', 'not available yet', 'https://artifactize.dev/docs/getting-started/install.html')) {
+        foreach ($expected in @("new ${blocked}", 'Existing binaries were kept', 'application control policy', 'Do not bypass', 'Microsoft Store', '9PB6W4LL165D', 'https://artifactize.dev/docs/getting-started/install.html')) {
             if (-not $message.Contains($expected)) { throw "missing blocked-binary explanation: $expected" }
         }
         foreach ($command in $commands) {

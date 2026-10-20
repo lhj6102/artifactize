@@ -199,6 +199,13 @@ jobs:
         working-directory: dist
         run: |
           sha256sum -c ./*.sha256
+          # A stable name too, so the landing page's download button can link to
+          # releases/latest/download/Artifactize.dmg.
+          for dmg in ./*-universal-apple-darwin.dmg; do
+            [ -f "$dmg" ] || continue
+            cp "$dmg" Artifactize.dmg
+            sha256sum Artifactize.dmg >Artifactize.dmg.sha256
+          done
           gh release upload "$GITHUB_REF_NAME" ./*
 
   attach-channels:

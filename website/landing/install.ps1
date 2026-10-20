@@ -2,15 +2,15 @@
 #
 #   irm https://artifactize.dev/install.ps1 | iex
 #
-# This script is the default Windows install method. winget (lhj6102.Artifactize)
-# and the Microsoft Store are in preparation and not available yet. See
-# https://artifactize.dev/docs/getting-started/install.html
+# The Microsoft Store (9PB6W4LL165D) is the default Windows install method; this script
+# is the alternative without the Store. winget (lhj6102.Artifactize) is in preparation
+# and not available yet. See https://artifactize.dev/docs/getting-started/install.html
 #
 # Downloads the release zip for Windows x64 over https, checks its SHA-256 against
 # the release's .sha256 file, installs artifactize.exe and artifactize-tools.exe to
 # %LOCALAPPDATA%\Programs\artifactize and adds that directory to the user Path. When the
 # release zip carries the desktop app, it installs artifactize-desktop.exe beside them (the
-# app starts Runs through that artifactize.exe) and adds an Artifactize Start menu shortcut.
+# app shows the Runs that artifactize.exe starts) and adds an Artifactize Start menu shortcut.
 # Needs no administrator rights. Works in Windows PowerShell 5.1 and PowerShell 7.
 # Run it again to update.
 #
@@ -136,7 +136,7 @@
                 if ($LASTEXITCODE -ne 0) { throw "--version exited with code $LASTEXITCODE" }
                 if ($output -ne "$command $version") { throw "--version printed '$output', not '$command $version'" }
             } catch {
-                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block this unsigned download. Do not bypass your application-control policy. The Microsoft Store channel is awaiting certification and is not available yet. See https://artifactize.dev/docs/getting-started/install.html"
+                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block this unsigned download. Do not bypass your application-control policy; install the Microsoft Store version, which Microsoft signs: winget install 9PB6W4LL165D --source msstore. See https://artifactize.dev/docs/getting-started/install.html"
             }
         }
 

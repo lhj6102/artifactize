@@ -267,7 +267,7 @@
         <div class="panel start-panel" role="tabpanel" id="install-linux" aria-labelledby="install-tab-linux" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
           <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
           <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Linux (x86_64, aarch64): installs to ~/.local/bin, no sudo</span>
+<pre class="code term"><code><span class="t-dim"># Linux (x86_64, aarch64): installs to ~/.local/bin, no sudo; on x86_64 also the desktop app</span>
 <span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span>
 <span class="t-prompt">$</span> artifactize --version</code></pre>
         </div>
@@ -282,17 +282,29 @@
           <div class="install-alt-block" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
             <button type="button" class="copy" aria-label="Copy the install script command" hidden>Copy</button>
             <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Without Homebrew: installs to ~/.local/bin, no sudo</span>
+<pre class="code term"><code><span class="t-dim"># Without Homebrew: installs to ~/.local/bin and the app to ~/Applications, no sudo</span>
 <span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span></code></pre>
           </div>
+          <p class="install-alt install-download">
+            <a class="btn btn-primary" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg">Download the Mac app</a>
+            <span>One disk image for Apple silicon and Intel, checked by Apple. With Homebrew: <code>brew install --cask lhj6102/tap/artifactize</code></span>
+          </p>
         </div>
-        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows" data-copy="irm https://artifactize.dev/install.ps1 | iex">
-          <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
-          <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Windows x64 in PowerShell, no administrator rights; then open a new terminal</span>
-<span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span>
+        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows">
+          <div data-copy="winget install 9PB6W4LL165D --source msstore">
+            <button type="button" class="copy" aria-label="Copy the Microsoft Store install command" hidden>Copy</button>
+            <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># Windows x64 from the Microsoft Store, with the desktop app; then open a new terminal</span>
+<span class="t-prompt">PS&gt;</span> <span data-command>winget install 9PB6W4LL165D --source msstore</span>
 <span class="t-prompt">PS&gt;</span> artifactize --version</code></pre>
-          <p class="install-alt">The download is not code-signed yet, so Smart App Control may block it. winget and Microsoft Store packages are in preparation.</p>
+          </div>
+          <div class="install-alt-block" data-copy="irm https://artifactize.dev/install.ps1 | iex">
+            <button type="button" class="copy" aria-label="Copy the PowerShell install command" hidden>Copy</button>
+            <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># Without the Store, in PowerShell with no administrator rights</span>
+<span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span></code></pre>
+          </div>
+          <p class="install-alt">Or open <a href="https://apps.microsoft.com/detail/9PB6W4LL165D">Artifactize in the Microsoft Store</a>. The PowerShell download is not code-signed, so Smart App Control may block it; the Store version is signed by Microsoft.</p>
         </div>
       </div>
       <div class="cta center">

@@ -4,11 +4,12 @@
 #   .github/scripts/build-desktop.sh TARGET VERSION [OUTPUT]
 #
 # Expects crates/artifactize-desktop/ui installed and built (dist) and both release commands in
-# CARGO_TARGET_DIR (default target)/TARGET/release/. tauri.bundle.json adds the
+# CARGO_TARGET_DIR (default target)/TARGET/release/; for universal-apple-darwin, in both the
+# aarch64-apple-darwin and x86_64-apple-darwin directories. tauri.bundle.json adds the
 # release-only bundle settings: the commands become sidecars next to the app's own
-# executable, where artifactize-core looks for the CLI. Writes to OUTPUT (default dist/),
+# executable, so every install of the app can also start the Runs it shows. Writes to OUTPUT (default dist/),
 # each with a .sha256 line as package.sh writes it:
-# - macOS: artifactize-desktop-vVERSION-TARGET.dmg;
+# - macOS: artifactize-desktop-vVERSION-universal-apple-darwin.dmg, one app for both CPUs;
 # - Linux: artifactize-desktop-vVERSION-TARGET.AppImage and .deb.
 #
 # macOS signs and notarizes when the APPLE_* secrets Tauri reads are present; without
@@ -22,7 +23,7 @@ name="artifactize-desktop-v$version-$target"
 crate=crates/artifactize-desktop
 release=${CARGO_TARGET_DIR:-$PWD/target}/$target/release
 case $target in
-    *-apple-darwin) formats="dmg:dmg" ;;
+    universal-apple-darwin) formats="dmg:dmg" ;;
     *-linux-*) formats="appimage:AppImage deb:deb" ;;
     *) echo "build-desktop.sh: no bundle for $target" >&2; exit 1 ;;
 esac
@@ -30,7 +31,18 @@ esac
 rm -rf "$crate/binaries"
 mkdir -p "$crate/binaries" "$output"
 for bin in artifactize artifactize-tools; do
-    cp "$release/$bin" "$crate/binaries/$bin-$target"
+    case $target in
+        universal-apple-darwin)
+            # Tauri builds and checks each CPU's app on its own, then joins them.
+            for cpu in aarch64 x86_64; do
+                cp "${release%/universal-apple-darwin/release}/$cpu-apple-darwin/release/$bin" \
+                    "$crate/binaries/$bin-$cpu-apple-darwin"
+            done
+            lipo -create -output "$crate/binaries/$bin-$target" \
+                "$crate/binaries/$bin-aarch64-apple-darwin" "$crate/binaries/$bin-x86_64-apple-darwin"
+            ;;
+        *) cp "$release/$bin" "$crate/binaries/$bin-$target" ;;
+    esac
 done
 
 # An empty secret is unset in Actions; Tauri would treat it as a certificate to import.

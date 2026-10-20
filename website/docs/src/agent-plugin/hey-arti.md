@@ -64,11 +64,6 @@ When shaping a new project, it:
    what would be reused. It then tells you what changed.
 4. **Hands verification over** and follows the Run (below).
 
-On an existing project it checks the current structure against the same practices
-and changes only what you agree to. On a RED result it explains the finding in your
-terms and fixes the Artifact the eval judges, such as inaccurate docs or criteria,
-rather than bending code or weakening a review.
-
 ## The practices it recommends
 
 - Cut Artifacts where work is edited and judged independently, each with a concrete
@@ -165,8 +160,9 @@ around a required person.
 How Arti treats each result:
 
 - **GREEN**: done for this content.
-- **RED**: explains the finding and fixes the Artifact the eval judges, then verifies
-  again.
+- **RED**: explains the finding in your terms and fixes the Artifact the eval judges,
+  such as inaccurate docs or criteria, rather than bending correct code to match them
+  or weakening a review, then verifies again.
 - **BLOCKED**: something the eval waits on failed, usually a RED or ERROR eval of an
   input it uses. Arti fixes that first, then verifies again.
 - **ERROR**: the check could not run. Arti reads `request_logs` or `session_show` and

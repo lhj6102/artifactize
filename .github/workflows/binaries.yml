@@ -55,7 +55,6 @@ jobs:
     name: Build ${{ matrix.target }}
     if: inputs.platform != 'linux-desktop'
     runs-on: ${{ matrix.os }}
-    # macOS also bundles the desktop app after the CLI channels.
     timeout-minutes: 60
     continue-on-error: ${{ matrix.best-effort || false }}
     strategy:
@@ -144,17 +143,17 @@ jobs:
             fi
           done
       - uses: pnpm/action-setup@v4
-        if: "!contains(matrix.target, '-linux-')"
+        if: matrix.target == 'x86_64-pc-windows-msvc'
         with:
           package_json_file: crates/artifactize-desktop/ui/package.json
       - uses: actions/setup-node@v4
-        if: "!contains(matrix.target, '-linux-')"
+        if: matrix.target == 'x86_64-pc-windows-msvc'
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
       - name: Build the desktop frontend
-        if: "!contains(matrix.target, '-linux-')"
+        if: matrix.target == 'x86_64-pc-windows-msvc'
         working-directory: crates/artifactize-desktop/ui
         run: |
           pnpm install --frozen-lockfile
@@ -235,10 +234,50 @@ jobs:
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel winget
 
-      # The macOS desktop bundle comes last: the CLI archive above is already retained,
-      # so Homebrew never waits on the app.
-      - name: Bundle the macOS desktop app (signed and notarized when the secrets exist)
-        if: contains(matrix.target, '-apple-darwin')
+  # One universal app for both Mac CPUs, built on Apple Silicon (signed and notarized when
+  # the secrets exist) and opened on both CPUs. The CLI archives above never wait on it.
+  desktop-macos:
+    name: Build desktop universal-apple-darwin
+    if: inputs.platform != 'linux' && inputs.platform != 'windows' && inputs.platform != 'linux-desktop'
+    runs-on: macos-15
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      TARGET: universal-apple-darwin
+      TAG_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-universal-apple-darwin
+          cache-on-failure: true
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - name: Set the version
+        run: |
+          if [ -n "$TAG_VERSION" ]; then sh .github/scripts/set-version.sh "$TAG_VERSION"; fi
+          echo "VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "artifactize") | .version')" >>"$GITHUB_ENV"
+      - name: Build the desktop frontend
+        working-directory: crates/artifactize-desktop/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Build both commands for both CPUs
+        run: |
+          for cpu in aarch64 x86_64; do
+            cargo build --release --locked -p artifactize -p artifactize-tools --target "$cpu-apple-darwin"
+          done
+      - name: Bundle the universal app (signed and notarized when the secrets exist)
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -248,28 +287,52 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: sh .github/scripts/build-desktop.sh "$TARGET" "$VERSION" desktop-dist
       - uses: actions/upload-artifact@v4
-        if: contains(matrix.target, '-apple-darwin')
         with:
-          name: desktop-${{ matrix.target }}
+          name: desktop-${{ env.TARGET }}
           path: desktop-dist/*
           if-no-files-found: error
       - name: Install the dmg and open the app
-        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        if: github.event_name != 'push'
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: sh .github/scripts/smoke-desktop.sh dmg "$VERSION" "desktop-dist/artifactize-desktop-v$VERSION-$TARGET.dmg"
       - name: Install the app with install.sh and the Homebrew cask and open it
-        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        if: github.event_name != 'push'
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
+          sh .github/scripts/package.sh aarch64-apple-darwin "$VERSION"
           home=$(mktemp -d "$RUNNER_TEMP/artifactize-install.XXXXXXXX")
           mkdir -p "$home/serve/v$VERSION"
           cp dist/* desktop-dist/* "$home/serve/v$VERSION/"
           HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
             sh website/landing/install.sh
           HOME="$home" sh .github/scripts/smoke-desktop.sh installed-mac "$VERSION" "$home/Applications/Artifactize.app"
-          sh .github/scripts/smoke-cask.sh "$VERSION" "$TARGET" desktop-dist
+          sh .github/scripts/smoke-cask.sh "$VERSION" desktop-dist
+
+  # The same dmg and cask on an Intel Mac: the universal app's x86_64 half must open too.
+  desktop-macos-intel:
+    name: Open desktop universal-apple-darwin on Intel
+    needs: desktop-macos
+    if: github.event_name != 'push'
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-universal-apple-darwin
+          path: desktop-dist
+      - name: Install the dmg and the Homebrew cask and open the app
+        env:
+          DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          set -- desktop-dist/artifactize-desktop-v*-universal-apple-darwin.dmg
+          version=${1#desktop-dist/artifactize-desktop-v}
+          version=${version%-universal-apple-darwin.dmg}
+          sh .github/scripts/smoke-desktop.sh dmg "$version" "$1"
+          sh .github/scripts/smoke-cask.sh "$version" desktop-dist
 
   # Linux bundles link the system WebKitGTK, so they build on the oldest supported
   # runner image: its glibc (2.35) is the baseline every bundle needs.

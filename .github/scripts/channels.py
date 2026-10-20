@@ -20,6 +20,8 @@ PACKAGE = "lhj6102.Artifactize"
 STORE_ID = "9PB6W4LL165D"
 SCHEMA = "1.9.0"
 MAC_TARGETS = ("aarch64-apple-darwin", "x86_64-apple-darwin")
+# The desktop app ships as one dmg that runs on both Mac CPUs.
+MAC_DESKTOP_TARGET = "universal-apple-darwin"
 WINDOWS_TARGET = "x86_64-pc-windows-msvc"
 SECRETS = {
     "homebrew": ("HOMEBREW_TAP_TOKEN",),
@@ -67,17 +69,10 @@ def generate(args):
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
     elif args.kind == "cask":
         # The desktop app beside its own artifactize; the formula keeps the CLI on PATH.
-        sums = {target: sha256(Path(args.dist) / desktop_name(args.version, target)).lower() for target in args.targets}
-        arch = {"aarch64-apple-darwin": "arm", "x86_64-apple-darwin": "intel"}
-        dmg = desktop_name("#{version}", "#{arch}-apple-darwin")
-        if len(args.targets) == 1:
-            lines = [f'  arch {arch[args.targets[0]]}: "{args.targets[0].split("-")[0]}"', "",
-                     f'  version "{args.version}"', f'  sha256 "{sums[args.targets[0]]}"']
-        else:
-            lines = ['  arch arm: "aarch64", intel: "x86_64"', "", f'  version "{args.version}"',
-                     f'  sha256 arm:   "{sums["aarch64-apple-darwin"]}",',
-                     f'         intel: "{sums["x86_64-apple-darwin"]}"']
-        lines = ['cask "artifactize" do', *lines, "", f'  url "{base}/{dmg}"', '  name "Artifactize"',
+        digest = sha256(Path(args.dist) / desktop_name(args.version, MAC_DESKTOP_TARGET)).lower()
+        dmg = desktop_name("#{version}", MAC_DESKTOP_TARGET)
+        lines = ['cask "artifactize" do', f'  version "{args.version}"', f'  sha256 "{digest}"', "",
+                 f'  url "{base}/{dmg}"', '  name "Artifactize"',
                  '  desc "Declare and verify artifacts with reusable evidence"',
                  '  homepage "https://artifactize.dev/"', "", '  depends_on macos: :big_sur', "",
                  '  app "Artifactize.app"', "end", ""]
@@ -94,7 +89,7 @@ def generate(args):
                               "ShortDescription": "Declare and verify artifacts with reusable evidence",
                               "PackageUrl": "https://artifactize.dev", "ManifestType": "defaultLocale"},
             ".installer": {**common, "InstallerType": "zip", "NestedInstallerType": "portable",
-                           # The desktop app opens by its alias; it finds the artifactize beside it.
+                           # The desktop app opens by its alias, beside the commands that start Runs.
                            "NestedInstallerFiles": [
                                {"RelativeFilePath": f"artifactize-v{args.version}-{WINDOWS_TARGET}/{command}.exe",
                                 "PortableCommandAlias": command}

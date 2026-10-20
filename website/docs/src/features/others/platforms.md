@@ -92,10 +92,10 @@ only attached process and both stdin and stdout are consoles. It never pauses
 with arguments, from an existing terminal, or with redirected input/output. Linux
 and macOS retain the ordinary no-argument help and immediate exit.
 
-The prepared Microsoft Store package (not available yet; certification is pending)
-has one visible **Artifactize** entry and one command
-alias, `artifactize`; its tools are available as `artifactize tools`. Non-Store
-channels also ship the standalone `artifactize-tools` command.
+The Microsoft Store package has two visible entries, **Artifactize** for the desktop
+app and **Artifactize CLI** for this help launch, and one command alias,
+`artifactize`; its tools are available as `artifactize tools`. Non-Store channels
+also ship the standalone `artifactize-tools` command.
 
 ## State
 

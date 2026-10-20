@@ -59,7 +59,7 @@
   <h2>Local data</h2>
   <p>Run history, review results, reuse caches, captured output and saved Agent conversations stay in your local state directory unless you choose to share them. Codex sign-in tokens and shared review server credentials are stored there too.</p>
   <ul>
-    <li>Windows unpackaged installs: <code>%LOCALAPPDATA%\artifactize</code> by default. The prepared Microsoft Store package (not available yet; certification is pending) uses Windows' default AppData virtualization and keeps new state in a package-private location, not shared Runs, sign-in or cache with other install methods. Windows may still read or modify existing unvirtualized AppData files; see the <a href="/docs/features/others/state.html#state">Windows overlay caveat</a>.</li>
+    <li>Windows unpackaged installs: <code>%LOCALAPPDATA%\artifactize</code> by default. The Microsoft Store package uses Windows' default AppData virtualization and keeps new state in a package-private location, not shared Runs, sign-in or cache with other install methods. Windows may still read or modify existing unvirtualized AppData files; see the <a href="/docs/features/others/state.html#state">Windows overlay caveat</a>.</li>
     <li>Linux and macOS: <code>$XDG_STATE_HOME/artifactize</code> when set, otherwise <code>~/.local/state/artifactize</code>.</li>
   </ul>
   <p><code>--state-dir</code> or <code>ARTIFACTIZE_STATE_HOME</code> overrides the location; <code>XDG_STATE_HOME</code> also takes precedence on Windows. OpenAI and Anthropic API keys are read from <code>OPENAI_API_KEY</code> and <code>ANTHROPIC_API_KEY</code>, not saved by Artifactize. An optional <code>ARTIFACTIZE_CODEX_AUTH_FILE</code> points to an existing sign-in file that Artifactize only reads.</p>
