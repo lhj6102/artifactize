@@ -10,8 +10,10 @@ kind replaces the eval's criteria or invents a verdict.
 Use the [built-ins](builtin.md) before writing a wrapper: read files, list folders,
 search text, show an image or Markdown section, inspect program help, or view the
 current Artifact Graph. Human tools can also open a file or URL in its normal
-application. Agent built-ins see only their admitted Artifact scope, not the whole
-machine. Declared command tools are trusted programs, **not an OS sandbox**.
+application. Agent built-ins other than `help` see only their admitted Artifact
+scope, not the whole machine. `help` runs a real program found by ordinary
+lookup, and declared command tools are trusted programs too: neither is **an OS
+sandbox**.
 
 ```toml
 [views.agent_tools]

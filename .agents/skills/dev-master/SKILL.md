@@ -30,7 +30,14 @@ you to continue the dev-master cycle, start the next run from step 1.
 
 Run from the root of the work tree being verified, with a scratch directory
 outside every work tree (never `/tmp` itself) that you keep across runs so
-builds stay incremental:
+builds stay incremental. In a new work tree, first install the desktop UI's
+packages, which the desktop evals read without installing them:
+
+```sh
+pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile
+```
+
+Then verify:
 
 ```sh
 env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
@@ -38,9 +45,11 @@ env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
 ```
 
 `env -u DESKTOP_TEST_CANDIDATE` makes the desktop end-to-end evals build their
-candidate from this tree. The command prints the Run ID and ends with
-`Validation:` and the outcome; the exit code is the outcome: 0 GREEN
-(`Validation: SATISFIED`), 5 SIGNOFFS_PENDING, 1 RED, 2 ERROR, 4 INCOMPLETE.
+candidate from this tree. The command prints the Run ID, the Run's outcome on
+`Execution:`, and ends with `Validation: SATISFIED` or `Validation: NOT
+SATISFIED`, the latter followed by `Unmet obligation:` lines. The exit code is
+the outcome: 0 GREEN (`Validation: SATISFIED`), 5 SIGNOFFS_PENDING, 1 RED,
+2 ERROR, 4 INCOMPLETE.
 Read a Run and its failing evals with
 `"$scratch/target/debug/artifactize" run show RUN_ID --json`.
 

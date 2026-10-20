@@ -74,8 +74,10 @@ env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
 ```
 
 `env -u DESKTOP_TEST_CANDIDATE` makes the desktop end-to-end evals build their
-candidate from this tree. The command prints the Run ID and ends with
-`Validation:` and the outcome. The exit code is the outcome:
+candidate from this tree. The command prints the Run ID, the Run's outcome on
+`Execution:`, and ends with `Validation: SATISFIED` or `Validation: NOT
+SATISFIED`, the latter followed by `Unmet obligation:` lines. The exit code is
+the outcome:
 
 | Exit | Outcome | Next |
 |---|---|---|
