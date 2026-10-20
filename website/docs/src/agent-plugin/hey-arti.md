@@ -126,24 +126,18 @@ and independent parts still reused. See [Fingerprints and reuse](../features/fin
 Arti uses `config_graph` to discover Artifacts, evals and dependencies (`impact:true`
 adds downstream consumers conservatively), `config_check` to validate declarations
 and `status` to predict which evals execute, reuse or wait. `tools_check` inspects
-tools and sessions statically. Inspection tools return bounded UTF-8 fragments of
-their CLI JSON in `entries[].text`; append continuation pages until `next_cursor` is
-null, then parse. See the [MCP reference](mcp.md).
-
-MCP does not expose login/logout, Human claim/submit/release, prune/cache removal,
-remote push, TUIs, the store server, tool execution or session follow-ups. If MCP is
-not registered, the CLI fallback is `artifactize config check`, `artifactize config
-graph`, `artifactize status --all` and `artifactize tools check`.
+tools and sessions statically. It reads every continuation page of an inspection
+result before parsing it. The [MCP reference](mcp.md) lists these tools and what MCP
+[deliberately leaves out](mcp.md#deliberately-absent). If MCP is not registered,
+the CLI fallback is `artifactize config check`, `artifactize config graph`,
+`artifactize status --all` and `artifactize tools check`.
 
 ## Tool sessions
 
 When a reviewer must inspect something running, the skill shows a session declared
 with `views.agent_sessions.<name>.start`/`stop` and a command tool bound with
 `session = "<name>"`, its program inside the Artifact so the fingerprint covers it.
-artifactize starts sessions on the first bound tool call, then stops and cleans
-them up at review end; there are no lifetime or port
-options, and `execution_paths` record provenance, not reuse inputs. Declared
-commands are trusted local programs, **not an OS sandbox**. See
+artifactize owns the session's lifetime; see
 [Tool sessions](../features/tools/agent.md#tool-sessions).
 
 ## Follow a durable Run
@@ -156,11 +150,9 @@ artifactize owns the Run: closing the terminal, disconnecting or ending the agen
 turn does not stop it; only `verify_cancel` requests cancellation. See
 [Run](../features/run.md) and [streaming](mcp.md#streaming-and-focused-diagnosis).
 
-Two per-request choices default off: `speculate` starts downstream work early, at
-the cost of work an upstream RED cancels; `defer_human` lets machine work finish
-while sign-offs wait, ending SIGNOFFS_PENDING, which is **not full approval**.
-`gate = "blocking"` keeps a sign-off a hard gate. Neither choice may be used to get
-around a required person.
+Arti may ask for [speculation or deferred sign-offs](../features/run.md#speculation-and-deferred-sign-offs)
+per request, never to get around a required person: SIGNOFFS_PENDING is **not full
+approval**.
 
 How Arti treats each result:
 

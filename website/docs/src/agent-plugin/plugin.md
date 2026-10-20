@@ -19,45 +19,25 @@ first; the same page shows how to get the [desktop app](../desktop/index.md). If
 program is missing, Hey Arti tells you so and offers your system's default install
 from that page.
 
-## Claude Code
+## Install
 
-In a Claude Code session:
+Install the plugin with the steps for your assistant on the
+[installation page](../getting-started/install.md#plugin-for-claude-code-and-codex).
 
-```text
-/plugin marketplace add lhj6102/artifactize
-/plugin install artifactize@artifactize
-```
+**Claude Code:** run `/reload-plugins` or start a new session, then check `/mcp`
+for the `artifactize` server. Ask in your own words, or invoke the skill as
+`/artifactize:hey-arti`. The server runs as `artifactize --repo <project> mcp`,
+where `<project>` is the directory the session started in.
 
-The first command adds the marketplace; the second installs the plugin from it. From a
-shell, `claude plugin marketplace add lhj6102/artifactize` and `claude plugin install
-artifactize@artifactize` do the same. Run `/reload-plugins` or start a new session,
-then check `/mcp` for the `artifactize` server. Ask in your own words, or invoke the
-skill as `/artifactize:hey-arti`.
-
-The server runs as `artifactize --repo <project> mcp`, where `<project>` is the
-directory the session started in.
-
-## Codex
-
-In a shell:
-
-```sh
-codex plugin marketplace add lhj6102/artifactize
-codex plugin add artifactize@artifactize
-```
-
-You can also install it from the plugin browser: run `/plugins` in Codex CLI and pick
-the `artifactize` marketplace. Start a new Codex session in your project directory;
-the server runs as `artifactize mcp` in that directory. Ask in your own words, or
-mention the skill as `$artifactize:hey-arti`.
+**Codex:** start a new Codex session in your project directory; the server runs as
+`artifactize mcp` in that directory. Ask in your own words, or mention the skill as
+`$artifactize:hey-arti`.
 
 ## Updates
 
 The plugin follows this repository's `main` branch, which holds released versions.
-Update the catalog and the plugin with `/plugin marketplace update artifactize` in
-Claude Code (or turn on auto-update for the marketplace in `/plugin`), or
-`codex plugin marketplace upgrade artifactize` in Codex. Update the `artifactize`
-program itself as the [installation page](../getting-started/install.md#update) shows.
+The [installation page](../getting-started/install.md#update) shows how to update
+it in each assistant, and the `artifactize` program itself.
 
 ## Without the plugin
 

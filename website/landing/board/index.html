@@ -57,9 +57,9 @@
 
   <ul class="flow-key">
     <li><span class="key-line lane-main" aria-hidden="true"></span><b><code>main</code></b> holds the released versions.</li>
-    <li><span class="key-line lane-dev" aria-hidden="true"></span><b><code>dev</code></b> is where finished work comes together. dev-master adds the waiting work, then runs every check on the result and fixes what fails until all pass; that commit is marked <code>dev-green</code>.</li>
+    <li><span class="key-line lane-dev" aria-hidden="true"></span><b><code>dev</code></b> is where finished work comes together. Its latest commit that passes every check is marked <code>dev-green</code>.</li>
     <li><span class="key-line role-worker" aria-hidden="true"></span><b>dev-worker</b> agents each take one task on their own branch, starting from <code>dev-green</code>, and ask to join <code>dev</code> once their checks pass.</li>
-    <li><span class="key-line role-master" aria-hidden="true"></span><b>dev-master</b> brings that work into <code>dev</code> and fixes what breaks. The project’s owner decides each release.</li>
+    <li><span class="key-line role-master" aria-hidden="true"></span><b>dev-master</b> brings the waiting work into <code>dev</code>, then runs every check on the result and fixes what fails until all pass. The project’s owner decides each release.</li>
   </ul>
 
   <p class="board-problem" id="board-problem" role="status" hidden></p>
