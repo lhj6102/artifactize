@@ -3,8 +3,7 @@
 # public release, and open the installed app.
 set -eu
 version=$1
-target=$2
-dist=$(cd "$3" && pwd)
+dist=$(cd "$2" && pwd)
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 apps=$(mktemp -d "${TMPDIR:-/tmp}/artifactize-cask.XXXXXXXX")
 tap="artifactize/packaging-cask-test"
@@ -18,7 +17,7 @@ brew tap-new "$tap"
 casks="$(brew --repository "$tap")/Casks"
 mkdir -p "$casks"
 python3 -I "$script_dir/channels.py" generate cask --version "$version" \
-    --targets "$target" --dist "$dist" --output "$casks" --base-url "file://$dist"
+    --dist "$dist" --output "$casks" --base-url "file://$dist"
 brew style "$tap/artifactize"
 # Homebrew quarantines what it installs; only a notarized app may keep that and still open.
 set -- --appdir="$apps"

@@ -209,7 +209,8 @@ install_desktop() {
             fi
             bundle="artifactize-desktop-v$version-x86_64-unknown-linux-gnu.AppImage"
             ;;
-        *-apple-darwin) bundle="artifactize-desktop-v$version-$target.dmg" ;;
+        # One app for both Mac CPUs.
+        *-apple-darwin) bundle="artifactize-desktop-v$version-universal-apple-darwin.dmg" ;;
         *)
             say "no desktop app for $target; installed the CLI only"
             return 0

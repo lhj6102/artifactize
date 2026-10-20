@@ -192,19 +192,18 @@ class ChannelsTest(unittest.TestCase):
                              ["artifactize", "artifactize-tools", "artifactize-desktop"])
             self.assertTrue(all(item["RelativeFilePath"].startswith("artifactize-v1.2.3-") for item in nested))
 
-    def test_cask_installs_the_desktop_app_for_each_mac(self):
+    def test_cask_installs_the_universal_desktop_app(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for target in channels.MAC_TARGETS:
-                (root / channels.desktop_name("1.2.3", target)).write_bytes(target.encode())
+            dmg = root / channels.desktop_name("1.2.3", channels.MAC_DESKTOP_TARGET)
+            dmg.write_bytes(b"fixture dmg")
             subprocess.run([sys.executable, "-I", str(SCRIPT), "generate", "cask", "--version", "1.2.3",
                             "--dist", tmp, "--output", str(root / "cask")], check=True)
             cask = (root / "cask/artifactize.rb").read_text()
             self.assertTrue(cask.startswith('cask "artifactize" do'))
             self.assertIn('app "Artifactize.app"', cask)
-            self.assertIn("artifactize-desktop-v#{version}-#{arch}-apple-darwin.dmg", cask)
-            for target in channels.MAC_TARGETS:
-                self.assertIn(channels.sha256(root / channels.desktop_name("1.2.3", target)).lower(), cask)
+            self.assertIn("artifactize-desktop-v#{version}-universal-apple-darwin.dmg", cask)
+            self.assertIn(channels.sha256(dmg).lower(), cask)
 
     def test_store_preserves_listing_and_replaces_packages_before_commit(self):
         calls = []

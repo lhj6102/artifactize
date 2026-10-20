@@ -6,7 +6,8 @@ channels are independent, best-effort jobs. Archives and non-Store installers co
 with tools exposed through `artifactize tools`. The desktop app ships beside those
 commands, because it starts Runs through the `artifactize` next to its own executable:
 in the Windows zip and the MSIX (its own Start entry beside the CLI's),
-and as the macOS dmg and the Linux AppImage and deb (`desktop-<target>` artifacts).
+and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
+(`desktop-<target>` artifacts).
 The other channels carry the app too: the Homebrew cask `artifactize` installs
 `Artifactize.app` from the dmg (the formula stays the CLI), the winget manifest adds
 an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
@@ -59,7 +60,7 @@ an Apple ID with an app-specific password and team ID for notarization.
    `Casks/artifactize.rb`. Install the CLI using `brew install lhj6102/tap/artifactize`
    and the desktop app using `brew install --cask lhj6102/tap/artifactize`.
 
-The generator computes hashes from the two actual macOS release archives and dmgs, not
+The generator computes hashes from the two actual macOS release archives and the dmg, not
 from checksums supplied by an external endpoint:
 
 ```sh
@@ -180,10 +181,11 @@ skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
 
 The two informational macOS builds install from a native PR archive through a
-local tap, run `brew test`, and execute both commands. After the dmg smoke they
-install the app with `install.sh` and with a local-tap cask (`brew style`, then
-`brew install --cask`, quarantined only when the app is notarized) and open each
-installed copy. The Linux desktop job installs with `install.sh` from its AppImage
+local tap, run `brew test`, and execute both commands. The universal desktop job
+builds both commands for both CPUs, bundles the app on Apple Silicon, and after the dmg
+smoke installs the app with `install.sh` and with a local-tap cask (`brew style`, then
+`brew install --cask`, quarantined only when the app is notarized) and opens each
+installed copy; an Intel runner then opens the same dmg and cask. The Linux desktop job installs with `install.sh` from its AppImage
 and opens the app through the installed launcher. The informational Windows
 build parses all PowerShell scripts, installs with `install.ps1` and opens the app
 from its Start shortcut, validates/installs local winget manifests,
