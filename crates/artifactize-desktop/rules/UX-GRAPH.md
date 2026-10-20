@@ -145,7 +145,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-LOG-COPY | Editing, the Tool log holding lines | select text in the Tool log, copy it and paste it into a Result field | Editing, the field holding the log's text as shown |
 | E-HUMAN-ESC-CANCEL | a tool or submission running | Esc in the review or on the Detail's tabs, the review's Close, or in the Monitor Esc on the Graph or a click on its background | same state, the running work cancelled, the Detail still open |
 | E-HUMAN-ESC-FORM | Editing, nothing running | Esc, Close or a click as for E-HUMAN-ESC-CANCEL | Claimed, the form left with its draft kept, the Detail still open |
-| E-HUMAN-ESC-DETAIL | Unclaimed, Claimed or Submitted, nothing running or being edited | Esc | the list or graph the Detail was opened from |
+| E-HUMAN-ESC-DETAIL | Unclaimed, Taken, Claimed or Submitted, nothing running or being edited | Esc | the list or graph the Detail was opened from |
 
 ## Review
 
