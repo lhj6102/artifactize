@@ -140,7 +140,9 @@ nothing.
 ## Review
 
 Review starts with waiting Human requests across all repositories in this state.
-A selected request previews read-only; Enter opens it. Other eval kinds and
+A selected request previews read-only. Arrow keys or `j`/`k` select request rows,
+and Enter or → opens the selected request; Esc or ← returns from a read-only Detail
+to the list. Other eval kinds and
 settled requests remain read-only. The context menu or palette can open a Human
 request with Tools focused; Ctrl+O opens a request by ID. PgDn/PgUp pages older
 and newer requests. Waiting followers open the original review, not another sign-off.

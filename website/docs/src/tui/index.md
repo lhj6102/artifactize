@@ -94,7 +94,8 @@ owner schemas. For a follower, the destination request and repository stay visib
 Before claim, the instruction fills the body and tools appear on one line. After
 claim, it folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds
 it while not editing; the expanded instruction takes 70% of the body and ↑/↓
-scrolls it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
+scrolls it. While Technical is shown the instruction stays expanded, so hide
+Technical with `t` before `i` can fold it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens the Tools and
 Tool log column to 60% of the available width;
 the selected tool shows its action and description. A command tool shows its resolved command line. A recorded per-tool resolution
