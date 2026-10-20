@@ -244,9 +244,12 @@ The verdict is already recorded; retry publication with Settings' **Push results
 is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
 such as after closing Commands, `q` starts quitting even while that review stays
 open. Closing the window also starts quitting. If
-this window still holds unsubmitted Human claims, choose **Stay** (Esc),
-**Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a claim leaves it
-held for this reviewer; it is not a verdict.
+this window took Human claims it has not submitted or released itself, choose
+**Stay** (Esc), **Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a
+claim leaves it held for this reviewer; it is not a verdict. The prompt lists the
+claims this window took, as this window last saw them: a claim released or settled
+from the CLI or another window can still be listed, and a claim taken before the
+window opened is not.
 
 ## Settings
 
