@@ -14,6 +14,8 @@ export class CurrentGraphState {
   error = $state<string | null>(null);
   /** The Artifact whose evals show docked over the graph's right side. */
   opened = $state<string | null>(null);
+  /** The docked evals' box while they show: the graph keeps its Artifacts out from under it. */
+  dock = $state<HTMLElement | null>(null);
   reading = $state(false);
   details = $state(false);
   #read = 0;

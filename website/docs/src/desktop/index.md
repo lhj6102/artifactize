@@ -75,8 +75,11 @@ Information opens on a click.
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it. Clicking another Artifact switches the
-Detail to it; clicking the graph's background, **Close** or Esc closes it. On a
+with the graph still visible behind it. The Detail hides no Artifact: while the
+graph is shown whole, it fits into the part the Detail leaves, again whenever the
+Detail opens, closes or changes width. After you zoom or pan, the camera keeps your
+zoom and moves only to bring the opened Artifact beside the Detail. Clicking
+another Artifact switches the Detail to it; clicking the graph's background, **Close** or Esc closes it. On a
 Human review's Detail all three step back the same way: they cancel active work
 first, then leave the form, and only then close the Detail. Click
 the Run's headline, or use the palette command **Open the Run's Detail**, for the
