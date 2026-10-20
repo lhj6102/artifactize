@@ -98,6 +98,9 @@ describe("Settings", () => {
     // The port was taken: only a pasted URL finishes it.
     expect(screen.getByText(/Port 1455 is in use/)).not.toBeNull();
     const field = screen.getByLabelText(/paste the URL it was sent to/);
+    expect(screen.getByText(/Finish signing in with the browser, then paste/)).not.toBeNull();
+    expect(field.getAttribute("aria-describedby")).toBe("codex-redirect-help");
+    expect(screen.getByText(/from DevTools → Network/).textContent).toContain("http://localhost:1455/auth/callback?code=");
     await fireEvent.input(field, { target: { value: " http://localhost:1455/auth/callback?code=c&state=s " } });
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
     expect(calls.find((call) => call.cmd === "codex_login_paste")?.args).toEqual({

@@ -221,15 +221,16 @@
     </dl>
     {#if s.prompt}
       <div class="pending" role="status">
-        <p>Waiting for the browser. If it did not open, open this URL:</p>
+        <p>{s.prompt.callback ? "Waiting for the browser." : "Finish signing in with the browser, then paste its redirect URL below."} If it did not open, open this URL:</p>
         <p class="url"><code>{s.prompt.url}</code></p>
         {#if !s.prompt.callback}
-          <p class="warn">Port 1455 is in use (another Codex sign-in?), so the browser cannot return here; paste the URL it was sent to.</p>
+          <p class="warn">Port 1455 is in use (another sign-in, such as the Codex CLI or app, may hold it), so the browser cannot return here. Paste the full URL it was sent to below.</p>
         {/if}
         <form onsubmit={paste}>
           <label for="codex-redirect">When the browser cannot return here, paste the URL it was sent to</label>
+          <p id="codex-redirect-help" class="muted">Copy the full URL starting <code>http://localhost:1455/auth/callback?code=</code> from the browser's address bar after the failed load, or from DevTools → Network if the page keeps loading.</p>
           <div class="row">
-            <input id="codex-redirect" class="input" bind:value={s.redirect} autocomplete="off" spellcheck="false" />
+            <input id="codex-redirect" class="input" bind:value={s.redirect} aria-describedby="codex-redirect-help" autocomplete="off" spellcheck="false" />
             <button class="button" type="submit" disabled={!s.redirect.trim()}>Finish sign-in</button>
           </div>
         </form>

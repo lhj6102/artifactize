@@ -130,9 +130,16 @@ fn pasted_redirects_codes_and_states_are_checked() {
 }
 
 async fn browser(port: u16, host: &str, target: &str) -> String {
-    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
-        .await
-        .unwrap();
+    browser_at(
+        std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        host,
+        target,
+    )
+    .await
+}
+
+pub(super) async fn browser_at(address: std::net::SocketAddr, host: &str, target: &str) -> String {
+    let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
     stream
         .write_all(format!("GET {target} HTTP/1.1\r\nHost: {host}\r\n\r\n").as_bytes())
         .await
@@ -148,8 +155,8 @@ async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
     let storage = storage(temp.path());
     let access = jwt("account-1", 10_000 + 3600);
     let server = Server::new(vec![tokens(&access, "refresh-1")]).await;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = Callback::bind(0).unwrap().unwrap();
+    let port = listener.ipv4.local_addr().unwrap().port();
     let redirect = format!("http://localhost:{port}{CALLBACK_PATH}");
     let (send, receive) = oneshot::channel();
     let browse = async {
