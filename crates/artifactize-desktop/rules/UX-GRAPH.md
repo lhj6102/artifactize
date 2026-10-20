@@ -21,14 +21,19 @@ that makes the transition happen and checks where it leads.
   Run or an Artifact. Its left edge takes a drag that sets its width, between a readable column
   and a width that leaves some of the Graph visible on its left; it stays within the graph area,
   never over Scope or Runs. An Artifact's Detail has tabs, a chip choice that reads as a path,
-  `[Artifact icon] {name} / [eval] …`: the Artifact's own chip, then a `/` and one chip per eval
+  `[Artifact icon] {name} / [eval] …`: the Artifact's own chip (the Artifact icon before its name,
+  read aloud as "Artifact {name}"; only the name is cut short when long, the Detail's title
+  showing it whole), then a `/` and one chip per eval
   with its verdict's glyph and colour; an Artifact without evals has its own chip only, without
   the `/`. Eval chips that do not fit on one line wrap onto further lines within the Detail, the
-  `/` staying with the Artifact's chip. The Artifact's tab draws it between its neighbours (the
-  Artifacts its evals use, those whose evals use it), lists its evals with their verdicts, then
+  `/` staying with the Artifact's chip. The Artifact's tab draws it between its neighbours with the
+  Run graph's nodes and edges (the Artifacts its evals use on its left, those whose evals use it
+  on its right), a drawing that does not pan, zoom or drag, then lists its evals with their verdicts, then
   shows its path, every other fact (what it waits for included) under Debug (unfolded with `t`
-  or a click). An eval's tab shows its Summary (status with what it took and spent, instruction,
-  result, execution options, metadata and fingerprint, every other fact under Debug, unfolded
+  or a click). An eval's tab shows its Summary (its status, beside it in grey what running it took
+  and spent: time, tokens in `k` or `M` and model, or what reuse saved; its instruction; its
+  result, each owner field by name and a list as numbered items; execution options, metadata
+  and fingerprint, every other fact under Debug, unfolded
   with `t` or a click) or, switched below the tabs, its Agent log or Runtime log; for a Human
   eval the Human review. Everything in the Detail, transcript and log lines, long words and code
   included, wraps or scrolls within its width. Hovering only highlights; nothing opens on hover.
@@ -46,14 +51,18 @@ that makes the transition happen and checks where it leads.
   Requests focused, Search focused (with or without suggestions), a request open (a Human
   review is actionable, any other request read-only).
 - **Human review** (on a Human eval's tab of the Monitor's Detail, or in Review): its
-  instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them), the
+  instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the reviewed one first), the
   Tool log of every run in this review, and the Result. States: Unclaimed, Taken (another
   reviewer holds the claim), Claimed (by this reviewer), Editing GREEN (the form built from the
   eval's pass schema), Editing RED (built from its fail schema), Submitted (the completed result
   shown); a tool or a submission may be running, and a launched application may still be
   logging. The form has text, number, true/false and choice fields, lists of text (one text per
-  item) and lists of groups of fields; a list always keeps one item to type in.
-  The **Tool log** is monospace, wraps within the review's width and scrolls in its own box,
+  item) and lists of groups of fields; a list always keeps one item to type in. Constants are
+  filled in and not shown; `*` marks a required field and an empty optional one says Optional in
+  grey. There is no JSON editor.
+  The **Tool log** shows each run as `▶ HH:MM:SS · operation · Artifact`, then each line the tool
+  prints (stderr in red), then its end line: `■ exit 0` (or another exit), `■ launched`, `■ done`
+  or `■ error: …`. It is monospace, wraps within the review's width and scrolls in its own box,
   apart from the rest of the review. Its states: Following (it shows its newest line as lines
   arrive) and Scrolled up (the reader scrolled away from the bottom: it stays where the reader
   left it while lines arrive below). Its text selects and copies like any page text.
@@ -126,10 +135,10 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-RELEASE | Claimed | `u` | Unclaimed |
 | E-HUMAN-CLAIMED-ELSEWHERE | Unclaimed | another process claims | Taken, shown with the claimant; claiming here is refused |
 | E-HUMAN-RELEASED-ELSEWHERE | Taken | the other process releases | Unclaimed |
-| E-HUMAN-TOOL | Claimed or Editing | click an output tool's `▶` button | same state, the tool running until it ends, its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0` |
-| E-HUMAN-TOOL-LAUNCH | Claimed or Editing | click a launch tool's `▶` button | same state at once, the application opened and said so; its run open in the Tool log |
+| E-HUMAN-TOOL | Claimed or Editing | click an output tool's `▶` button | same state, the tool running until it ends, its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line (stderr in red), then `■ exit 0`, or `■ done` for a builtin tool |
+| E-HUMAN-TOOL-LAUNCH | Claimed or Editing | click a launch tool's `▶` button | same state at once, the application opened and said so; its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, then `■ launched` |
 | E-HUMAN-LOG-LIVE | a launched application logging | it prints, then exits | same state, its lines (stderr in red) and then its end added under its own run |
-| E-HUMAN-TOOL-FAIL | Claimed or Editing | click a tool that fails | same state, the failure said and its run ended red in the Tool log |
+| E-HUMAN-TOOL-FAIL | Claimed or Editing | click a tool that fails | same state, the failure said and its run ended in red with `■ error: …` in the Tool log |
 | E-HUMAN-GREEN | Claimed | `g` | Editing GREEN, the form built from the pass schema |
 | E-HUMAN-RED | Claimed | `r` | Editing RED, the form built from the fail schema |
 | E-HUMAN-SWITCH | Editing | Ctrl+G or Ctrl+R | Editing GREEN for Ctrl+G, Editing RED for Ctrl+R (the current verdict stays selected when its own shortcut is used) |
