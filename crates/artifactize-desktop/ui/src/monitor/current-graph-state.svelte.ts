@@ -25,7 +25,7 @@ export class CurrentGraphState {
     this.reading = true;
     try {
       const view = await call(this.ipc.currentGraph());
-      const positions = await layout(view.graph);
+      const positions = layout(view.graph);
       if (read !== this.#read) return;
       this.shown = { view, positions };
       this.error = null;

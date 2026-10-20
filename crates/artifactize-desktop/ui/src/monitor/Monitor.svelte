@@ -9,7 +9,6 @@
   import type { BrowseView } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { MonitorState, setMonitorState, type Focus } from "./monitor-state.svelte";
-  import { find } from "./tree";
   import { GAP, clampWidth, saveWidth } from "./detail-width";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";
@@ -38,9 +37,9 @@
       app.forgetReviews();
       if (m.focus === "detail") m.focus = "graph";
     }
-    // Leaving the selected Run (or losing it, or the node) closes its Detail.
-    const opened = m.opened;
-    if (opened !== null && (opened.run !== at?.id || !find(at.tree, [opened.node]))) m.opened = null;
+    // Leaving the selected Run (or losing it) closes its Detail; so does losing the node, which
+    // the Detail finds as it reads its row.
+    if (m.opened !== null && m.opened.run !== at?.id) m.opened = null;
   }
 
   onMount(() => {
@@ -75,9 +74,7 @@
 
   /** A click on the Run's headline: the Run's Detail. */
   function openRun() {
-    const row = run?.tree.find((node) => node.kind === "run");
-    if (!run || !row) return;
-    m.opened = { run: run.id, node: row.id, tab: null };
+    if (run) m.opened = { run: run.id, node: run.node, tab: null };
   }
 
   /** Another tab of the open Detail; a Human review's tab notes its request when it arrives. */
@@ -202,7 +199,6 @@
               run={m.opened.run}
               node={m.opened.node}
               tab={m.opened.tab}
-              tree={run.tree}
               focused={m.focus === "detail"}
               {active}
               {review}
@@ -212,6 +208,7 @@
               ontab={showTab}
               onopen={openNode}
               onback={closeDetail}
+              ongone={() => (m.opened = null)}
             />
           </aside>
         {/if}

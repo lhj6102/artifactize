@@ -1,5 +1,5 @@
 //! Current declaration structure, not a historical Run or a state database snapshot.
-use super::{GraphEdge, GraphNode, Light};
+use super::{GraphEdge, GraphNode, Light, Shape};
 use crate::{
     App, Failure,
     browse::{NodeKind, TreeNode},
@@ -12,12 +12,6 @@ use artifactize_core::{
 use serde::Serialize;
 use specta::Type;
 use std::collections::BTreeSet;
-
-#[derive(Debug, Serialize, Type)]
-pub struct Shape {
-    pub nodes: Vec<GraphNode>,
-    pub edges: Vec<GraphEdge>,
-}
 
 #[derive(Debug, Serialize, Type)]
 pub struct CurrentGraph {

@@ -7,30 +7,40 @@ use crate::config::{self, Field, StoredPayload};
 pub use extensions::{Profile, SavedSelection};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 fn missing<T>(field: &Field<T>) -> bool {
     matches!(field, Field::Missing)
 }
 
+/// A Run's saved definitions. They are fixed for the Run's life and can be the largest part of
+/// its record, so copies of a Run share one decoded graph.
 #[derive(Debug, Clone, Default)]
-pub struct Definitions(pub Option<Graph>);
+pub struct Definitions(Option<Arc<Graph>>);
 impl Definitions {
     pub fn graph(&self) -> Option<&Graph> {
-        self.0.as_ref()
+        self.0.as_deref()
     }
     pub fn from_view(view: &crate::query::GraphView<'_>) -> Result<Self, serde_json::Error> {
         serde_json::from_value(serde_json::to_value(view)?)
     }
+    /// Whether both are the same decoded graph, not merely equal ones.
+    pub fn shared(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (Some(one), Some(other)) => Arc::ptr_eq(one, other),
+            (None, None) => true,
+            _ => false,
+        }
+    }
 }
 impl Serialize for Definitions {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(serializer)
+        self.graph().serialize(serializer)
     }
 }
 impl<'de> Deserialize<'de> for Definitions {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Option::<Graph>::deserialize(deserializer).map(Self)
+        Option::<Graph>::deserialize(deserializer).map(|graph| Self(graph.map(Arc::new)))
     }
 }
 

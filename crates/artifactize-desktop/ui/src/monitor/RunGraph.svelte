@@ -1,14 +1,17 @@
 <script lang="ts">
   // The Run graph: Artifacts and their dependency edges, lit by the backend's `run_graph` from
-  // the same snapshot as the Run's tree of Artifacts and evals. Every accepted snapshot recolours the graph in place; only a
-  // change of Artifacts or edges lays it out again, so nodes never jump on a state change.
+  // the same snapshot as the Run's tree of Artifacts and evals. Every accepted snapshot recolours
+  // the graph in place: while its Artifacts and edges keep their shape, only their lights come
+  // again, and only a new shape is laid out, so nodes never jump on a state change.
   import { SvelteFlowProvider } from "@xyflow/svelte";
+  import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
-  import { call, useIpc, message, type RunGraph } from "../ipc/client";
+  import { call, useIpc, message } from "../ipc/client";
   import { RunGraphState, setRunGraphState } from "./run-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
-  import { LIMIT, shape } from "./graph";
+  import { relight } from "./graph";
+  import { layout } from "./layout";
 
   let {
     run,
@@ -34,39 +37,24 @@
   const g = new RunGraphState();
   setRunGraphState(g);
 
-  /** Show `graph` as read `read`: its lights at once when its shape is laid out, else once
-   * its layout finishes, unless a newer read came meanwhile. */
-  async function place(graph: RunGraph, read: number) {
-    const key = shape(graph);
-    if (g.shown && g.shownShape === key && g.shown.graph.run === graph.run) {
-      g.shown = { ...g.shown, graph };
-      g.pending = null;
-      return;
-    }
-    if (graph.nodes.length > LIMIT && !g.forced) {
-      g.pending = graph;
-      return;
-    }
-    g.pending = null;
-    const laid = await g.positions(graph, key);
-    if (read !== g.reads) return;
-    g.shown = { graph, positions: laid };
-  }
-
-  /** Read the graph again for every accepted snapshot and for another Run. */
+  /** Read the graph again for every accepted snapshot and for another Run: the lights of the
+   * shape shown, or a new shape to lay out. Only the newest read shows what it read. */
   const reread: Attachment<HTMLElement> = () => {
     void revision;
     const at = run;
-    const read = ++g.reads;
-    if (at !== g.last) {
-      g.last = at;
-      g.forced = false;
-    }
-    call(commands.runGraph(at)).then(
-      (graph) => {
+    // What it holds and its count of reads are its own: showing a read must not read again.
+    const [read, held] = untrack(() => [++g.reads, g.shown?.run === at ? g.shown : null] as const);
+    call(commands.runGraph(at, held?.shape ?? null)).then(
+      (next) => {
         if (read !== g.reads) return;
         g.error = null;
-        void place(graph, read).catch((failure) => read === g.reads && (g.error = message(failure)));
+        if (next.update.kind === "lights") {
+          const graph = held?.shape === next.shape ? relight(held.graph, next.update) : null;
+          if (held && graph && graph !== held.graph) g.shown = { ...held, graph };
+          return;
+        }
+        const graph = { nodes: next.update.nodes, edges: next.update.edges };
+        g.shown = { run: next.run, shape: next.shape, graph, positions: layout(graph) };
       },
       (failure) => {
         if (read === g.reads) g.error = message(failure);
@@ -78,25 +66,12 @@
 <div class="host" {@attach reread}>
 {#if g.error}
   <p class="note error">{g.error}</p>
-{:else if g.pending}
-  <div class="note">
-    <p>
-      This Run has {g.pending.nodes.length} Artifacts; the graph lays out at most {LIMIT} at once, which can take a while.
-    </p>
-    <button
-      class="button"
-      onclick={() => {
-        g.forced = true;
-        if (g.pending) void place(g.pending, g.reads);
-      }}>Lay out all {g.pending.nodes.length}</button
-    >
-  </div>
-{:else if !g.shown}
+{:else if g.shown?.run !== run}
   <p class="note">Laying out…</p>
 {:else if g.shown.graph.nodes.length === 0}
   <p class="note">This Run has no Artifacts.</p>
 {:else}
-  {#key g.shown.graph.run}
+  {#key g.shown.run}
     <SvelteFlowProvider>
       <GraphView graph={g.shown.graph} positions={g.shown.positions} {opened} {cover} {onopen} {onclose} />
     </SvelteFlowProvider>

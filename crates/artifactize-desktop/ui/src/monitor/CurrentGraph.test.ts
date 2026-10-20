@@ -8,7 +8,7 @@ import App from "../App.svelte";
 
 vi.mock("./layout", () => ({
   NODE: { width: 168, height: 44 },
-  layout: async () => new Map([["a:app", { x: 0, y: 0 }], ["a:graph", { x: 240, y: 0 }]]),
+  layout: () => new Map([["a:app", { x: 0, y: 0 }], ["a:graph", { x: 240, y: 0 }]]),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({

@@ -234,7 +234,12 @@ impl Cache {
         self.catalog_seen
     }
     pub fn catalog(&mut self, db: &Connection, state: &Path) -> Result<Vec<CatalogRun>, Error> {
-        let catalog = super::catalog::in_snapshot_cached(db, state, &mut self.facts)?;
+        let catalog = super::catalog::in_snapshot_cached(
+            db,
+            state,
+            &mut self.facts,
+            &mut self.audit.definitions,
+        )?;
         self.catalog_seen = true;
         Ok(catalog)
     }
@@ -292,14 +297,15 @@ impl Cache {
             saved => {
                 let run: Run = match self.audit.take_run(id, &data) {
                     Some(run) => run,
-                    None => unreadable::decode("run", id, &data)
+                    None => self
+                        .audit
+                        .definitions
+                        .read(id, &data)
                         .map_err(|error| Error::Invalid(error.to_string()))?,
                 };
                 match saved.filter(|saved| &saved.run.id == id) {
-                    Some(mut saved)
-                        if serde_json::to_string(&saved.run.definitions)?
-                            == serde_json::to_string(&run.definitions)? =>
-                    {
+                    // The same decoded definitions keep their index.
+                    Some(mut saved) if saved.run.definitions.shared(&run.definitions) => {
                         saved.data = data;
                         saved.run = run;
                         saved

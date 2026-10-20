@@ -298,23 +298,47 @@ pub fn view(
     }
 }
 
-/// The Detail of `node` in the selected Run `run`, from the shown snapshot.
+/// The Detail of `node` in the selected Run `run`, from the shown snapshot. A large Run takes
+/// a moment to derive, so it is built off the window's thread.
 #[tauri::command]
 #[specta::specta]
-pub fn detail(
+pub async fn detail(
     app: tauri::State<'_, App>,
     run: RunKey,
     node: NodeKey,
 ) -> Result<DetailView, Failure> {
     let id: NodeId = node.into_inner();
     let run: RunId = run.into_inner();
-    app.browse.with_run(&run, |run, requests| {
-        view(
-            &app.launch.state,
-            run,
-            requests,
-            &id,
-            OffsetDateTime::now_utc(),
-        )
-    })
+    let selected = app.browse.selected(&run)?;
+    let state = app.launch.state.clone();
+    crate::failure::joined(
+        tokio::task::spawn_blocking(move || {
+            view(
+                &state,
+                &selected.run,
+                &selected.requests,
+                &id,
+                OffsetDateTime::now_utc(),
+            )
+        })
+        .await,
+    )
+}
+
+/// The row of `node` in the selected Run `run`'s tree, from the shown snapshot: an Artifact
+/// with its evals, or the Run's own row; `None` when the Run no longer has it.
+#[tauri::command]
+#[specta::specta]
+pub async fn detail_row(
+    app: tauri::State<'_, App>,
+    run: RunKey,
+    node: NodeKey,
+) -> Result<Option<crate::browse::TreeNode>, Failure> {
+    let selected = app.browse.selected(&run.into_inner())?;
+    Ok(crate::browse::row(
+        &selected.run,
+        &selected.tree,
+        &node.into_inner(),
+        OffsetDateTime::now_utc(),
+    ))
 }

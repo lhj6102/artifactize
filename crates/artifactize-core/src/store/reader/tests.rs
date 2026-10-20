@@ -627,3 +627,35 @@ async fn pinned_newer_run_preserves_visible_created_time_and_rowid_tie_order() {
         ["run-4", "run-2", "run-1"]
     );
 }
+#[tokio::test]
+async fn a_run_saved_again_keeps_sharing_its_definitions_until_they_change() {
+    // A long Run saves its record on every execution it starts; its definitions, the largest part
+    // of it, are read once and shared by every later snapshot while they stay the same.
+    let (_root, _repo, state, receipts) = fixture(2, 1).await;
+    let mut reader = Reader::default();
+    let id = "run-0".parse().unwrap();
+    let first = read(&mut reader, &state, &id, 2).unwrap().0;
+    let mut saved = first.run.clone();
+    saved.jobs = Some(7);
+    receipts.save_run(&saved).await.unwrap();
+    let second = read(&mut reader, &state, &id, 2).unwrap().0;
+    assert_eq!(second.run.jobs, Some(7));
+    assert!(second.run.definitions.shared(&first.run.definitions));
+    // New definitions are read anew.
+    saved.definitions =
+        serde_json::from_value(json!({"artifacts":{"web":{"path":"web"}},"evals":[]})).unwrap();
+    receipts.save_run(&saved).await.unwrap();
+    let third = read(&mut reader, &state, &id, 2).unwrap().0;
+    assert!(!third.run.definitions.shared(&second.run.definitions));
+    assert!(
+        third
+            .run
+            .definitions
+            .graph()
+            .unwrap()
+            .artifacts
+            .value()
+            .unwrap()
+            .contains_key("web")
+    );
+}

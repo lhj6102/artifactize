@@ -26,6 +26,22 @@ numbered!(
     /// An open transcript reader.
     TranscriptHandle
 );
+numbered!(
+    /// A shape of the selected Run's graph, its Artifacts and edges whatever their lights,
+    /// numbered by the backend as it reads one.
+    ShapeKey
+);
+
+impl ShapeKey {
+    /// Before the first shape.
+    pub(crate) const NONE: Self = Self(0);
+
+    /// The next shape after this one, which this one becomes.
+    pub(crate) fn next(&mut self) -> Self {
+        self.0 = self.0.checked_add(1).expect("graph shapes exhausted");
+        *self
+    }
+}
 
 /// The library's Tool log run identity, serialized as decimal text without losing its type.
 /// This is an outbound event key, never an IPC argument to parse.
