@@ -71,6 +71,11 @@ export const commands = {
 	 */
 	reviewSearch: (query: string, start: number, reload: boolean) => typedError<Results, Failure>(__TAURI_INVOKE("review_search", { query, start, reload })),
 	/**
+	 *  How many requests the review list's starting search finds: the waiting Human reviews, of
+	 *  `--repo` when given. The screen switch shows it beside Review.
+	 */
+	reviewWaiting: () => typedError<number, Failure>(__TAURI_INVOKE("review_waiting")),
+	/**
 	 *  Completion candidates for the query's last term, from the requests the terms before it
 	 *  find.
 	 */

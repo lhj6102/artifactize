@@ -7,6 +7,7 @@ import { press, typeText } from "../keys.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 
+import { activeScreen } from "../screens.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { portablePath, primaryModifier, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
@@ -194,10 +195,7 @@ export const scenarios: Scenario[] = [
         await run(label);
         await closed(label);
         const screen = label === "Show Review" ? "Review" : "Monitor";
-        await waitFor(browser,
-          () => browser.execute((name) => document.querySelector('[role="tab"][data-state="active"]')?.textContent === name, screen),
-          `${screen} shows`,
-        );
+        await waitFor(browser, async () => (await activeScreen(browser)) === screen, `${screen} shows`);
         await browser.$("button*=Commands").click();
         await opened(`after ${label}`);
         await escape("Esc");
@@ -229,7 +227,7 @@ export const scenarios: Scenario[] = [
       await press(
         browser,
         [primaryModifier, "2"],
-        () => browser.execute(() => document.querySelector('[role="tab"][data-state="active"]')?.textContent === "Review"),
+        async () => (await activeScreen(browser)) === "Review",
         "the Review screen",
       );
       await listShown(browser, expected, original.id);
@@ -256,8 +254,7 @@ export const scenarios: Scenario[] = [
         (window as unknown as { errors: string[] }).errors = errors;
         window.addEventListener("error", (event) => errors.push(event.message));
       });
-      await press(browser, [primaryModifier, "2"], () => browser.execute(() =>
-        document.querySelector('[role="tab"][data-state="active"]')?.textContent === "Review"), "this case's Review screen");
+      await press(browser, [primaryModifier, "2"], async () => (await activeScreen(browser)) === "Review", "this case's Review screen");
       const original = requests(fixture).find((request) => request.id === data.originalId);
       assert.ok(original);
       const all = [waitingRequest(data.otherId, data.otherRepo), waitingRequest(original.id, fixture.repo)];

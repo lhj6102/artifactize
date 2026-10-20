@@ -25,7 +25,10 @@ app uses the shared state home. `--reviewer NAME` sets the cooperative claim nam
 requires `--repo` and reads current declarations. Invalid arguments exit 2.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
-Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K, F1 or the palette
+Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. While Human reviews
+wait, the **Review** button shows how many beside its name: the requests Review's
+starting search `kind:human status:waiting_human` lists (of `--repo` when given),
+updated as reviews are requested and settled. Ctrl+K, F1 or the palette
 button opens a searchable command palette; Enter runs a command and Esc closes it.
 `?` shows this screen's keys. Ctrl+R or F5 refreshes Monitor, or reloads current
 Graph declarations when Graph is open; it does not reload Review or Settings.

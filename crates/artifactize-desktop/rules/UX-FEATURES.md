@@ -16,7 +16,7 @@ other light.
 ## Window
 
 - **J-LAUNCH**: the app opens on the Monitor, or on Review when started with `review`, The window is titled "Artifactize".
-- **J-SWITCH-SCREEN**: Ctrl+1 shows the Monitor, Ctrl+2 Review, Ctrl+, Settings.
+- **J-SWITCH-SCREEN**: Ctrl+1 shows the Monitor, Ctrl+2 Review, Ctrl+, Settings. While Human reviews wait, the Review button shows their number after its name, as many as Review's starting search lists, and follows each change of the state; with none waiting it shows its name alone.
 - **J-PALETTE**: Ctrl+K or the palette button opens the command palette; typing filters commands, Enter runs one, Esc closes it. It opens again after any use.
 - **J-HELP**: `?` lists the keys of the current screen.
 - **J-REFRESH**: Ctrl+R or F5 reloads the state from disk.
