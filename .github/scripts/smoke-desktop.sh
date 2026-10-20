@@ -5,8 +5,8 @@
 #
 # FORMAT is appimage, deb or dmg, or installed-linux or installed-mac with FILE the app
 # install.sh unpacked (~/.local/share/artifactize/desktop, ~/Applications/Artifactize.app).
-# Checks that both commands sit beside the app's own executable (where artifactize-core
-# looks for the CLI) and report VERSION, and that the installed app opens a window titled
+# Checks that both commands sit beside the app's own executable (every install of the app
+# can start the Runs it shows) and report VERSION, and that the installed app opens a window titled
 # Artifactize; installed-linux starts it through install.sh's launcher and menu entry. With DESKTOP_SIGNED=true a dmg must
 # also pass Gatekeeper and carry a stapled notarization ticket.
 #

@@ -51,8 +51,7 @@ try {
             $out = & $command --version
             if ($LASTEXITCODE -ne 0 -or $out -ne "$command $Version") { throw "winget alias $command failed: $out" }
         }
-        # The desktop alias opens the app as a terminal does (no shell association prompt); it
-        # finds artifactize beside it through either path.
+        # The desktop alias opens the app as a terminal does (no shell association prompt).
         Start-Process -NoNewWindow (Get-Command artifactize-desktop -CommandType Application).Path
         for ($i = 0; -not (Get-Process artifactize-desktop -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -eq 'Artifactize'); $i++) {
             if ($i -ge 120) { throw 'the winget artifactize-desktop alias showed no Artifactize window' }; Start-Sleep -Milliseconds 500
@@ -101,7 +100,7 @@ try {
         $manifest = Get-AppxPackageManifest -Package $installed
         $applications = @($manifest.Package.Applications.Application)
         if ((@($applications | ForEach-Object Id) -join ',') -ne 'Artifactize,ArtifactizeDesktop') { throw 'MSIX must have the CLI facade and the desktop app' }
-        # The desktop app starts Runs through the artifactize.exe beside its own executable.
+        # The desktop app shows the Runs that the artifactize.exe beside it starts.
         foreach ($exe in @('artifactize.exe', 'artifactize-desktop.exe')) {
             if (-not (Test-Path (Join-Path $installed.InstallLocation $exe))) { throw "MSIX is missing $exe" }
         }

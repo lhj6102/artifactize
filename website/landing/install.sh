@@ -197,8 +197,8 @@ check_sum() {
     say "checked SHA-256 $actual"
 }
 
-# The desktop app starts Runs through the artifactize beside its own executable, so each
-# bundle carries both commands. A release or system without a bundle keeps the CLI only.
+# The desktop app shows the Runs that the artifactize command starts, so each bundle
+# carries both commands. A release or system without a bundle keeps the CLI only.
 install_desktop() {
     case $target in
         x86_64-unknown-linux-musl)

@@ -40,7 +40,7 @@ try {
     & artifactize --state-dir (Join-Path $root 'doctor-state') doctor
     if ($LASTEXITCODE -ne 0) { throw 'artifactize doctor failed' }
 
-    # The desktop app beside the CLI it starts Runs through, opened from its Start shortcut.
+    # The desktop app beside the CLI that starts its Runs, opened from its Start shortcut.
     $desktop = Join-Path $env:ARTIFACTIZE_INSTALL_DIR 'artifactize-desktop.exe'
     if (-not (Test-Path -LiteralPath $desktop)) { throw 'install.ps1 did not install artifactize-desktop.exe' }
     $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'Artifactize.lnk'

@@ -22,7 +22,7 @@ app uses the shared state home. `--reviewer NAME` sets the cooperative claim nam
 requires `--repo` and reads current declarations. Invalid arguments exit 2.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
-Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K or the palette
+Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K, F1 or the palette
 button opens a searchable command palette; Enter runs a command and Esc closes it.
 `?` shows this screen's keys. Ctrl+R or F5 refreshes Monitor, or reloads current
 Graph declarations when Graph is open; it does not reload Review or Settings.
@@ -30,8 +30,10 @@ Drag the dividers to resize panes.
 
 ## Monitor
 
-Navigate **Scope → Runs → Run graph** with Enter to move deeper and Esc to
-return. Arrow keys or `j`/`k` select Scope and Runs rows. Scope remains navigable
+Navigate **Scope → Runs → Run graph** with Enter or → to move deeper and Esc to
+return; ← also returns from Runs. Arrow keys or `j`/`k` select Scope and Runs rows,
+and `r` refreshes Monitor from Scope, Runs or the Run graph (a Human review's `r`
+opens its RED form instead). Scope remains navigable
 back to ALL even after an initial `--repo` selection. Worktrees without Runs can
 be folded into a group: Space or a click reveals or hides them. Runs appear
 newest first. Move past the list's first or last row to load newer or older
@@ -92,7 +94,8 @@ An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
 result, with findings as numbered items headed by their `item` and `where`; then
 **Execution options**, **Execution metadata** and **Fingerprint** when it has them.
-Other facts fold under **Debug**. An eval with a log switches
+Other facts fold under **Debug**, which `t` shows or hides on an Artifact's or a
+non-Human eval's Summary. An eval with a log switches
 below the chips between its Summary, shown first, and its log, a plain-text choice
 whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
 with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
@@ -149,7 +152,7 @@ and newer requests. Waiting followers open the original review, not another sign
 One click selects a request; clicking an already-selected request opens it, as
 does a double-click. Clicking its preview also opens Detail. A read-only request
 with a log switches between its Summary and its Agent or Runtime log, as an
-eval's chip does in Monitor.
+eval's chip does in Monitor, and `t` shows or hides its **Debug** facts.
 
 `/` edits search from the Review request list. Ctrl+F focuses search from an
 open request Detail too, including while a Human form is open or review work is

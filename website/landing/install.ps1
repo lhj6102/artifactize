@@ -10,7 +10,7 @@
 # the release's .sha256 file, installs artifactize.exe and artifactize-tools.exe to
 # %LOCALAPPDATA%\Programs\artifactize and adds that directory to the user Path. When the
 # release zip carries the desktop app, it installs artifactize-desktop.exe beside them (the
-# app starts Runs through that artifactize.exe) and adds an Artifactize Start menu shortcut.
+# app shows the Runs that artifactize.exe starts) and adds an Artifactize Start menu shortcut.
 # Needs no administrator rights. Works in Windows PowerShell 5.1 and PowerShell 7.
 # Run it again to update.
 #

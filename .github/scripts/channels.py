@@ -89,7 +89,7 @@ def generate(args):
                               "ShortDescription": "Declare and verify artifacts with reusable evidence",
                               "PackageUrl": "https://artifactize.dev", "ManifestType": "defaultLocale"},
             ".installer": {**common, "InstallerType": "zip", "NestedInstallerType": "portable",
-                           # The desktop app opens by its alias; it finds the artifactize beside it.
+                           # The desktop app opens by its alias, beside the commands that start Runs.
                            "NestedInstallerFiles": [
                                {"RelativeFilePath": f"artifactize-v{args.version}-{WINDOWS_TARGET}/{command}.exe",
                                 "PortableCommandAlias": command}

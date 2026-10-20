@@ -64,10 +64,6 @@ When shaping a new project, it:
    what would be reused. It then tells you what changed.
 4. **Hands verification over** and follows the Run (below).
 
-On an existing project it checks the current structure against the same practices
-and changes only what you agree to. On a RED result it explains the finding in your
-terms and fixes the Artifact the eval judges, such as inaccurate docs or criteria,
-rather than bending code or weakening a review.
 
 ## The practices it recommends
 

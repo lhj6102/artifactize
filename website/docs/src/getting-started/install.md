@@ -213,8 +213,8 @@ placeholder version `0.0.0-dev`.
 ### Desktop app
 
 The [desktop app](../desktop/index.md) runs Monitor, Review and Graph in a window. It
-starts Runs through the `artifactize` beside its own executable, so every desktop
-install carries the commands too. TUI and MCP already come with the ordinary
+shows the Runs that `artifactize verify` starts, so every desktop install carries the
+commands too. TUI and MCP already come with the ordinary
 `artifactize` binary; they need no additional product install.
 
 The defaults above install it: the Microsoft Store and `install.ps1` on Windows,
@@ -248,9 +248,8 @@ artifactize-desktop
 
 The frontend must be built before Cargo: the normal app embeds `ui/dist`. Keep
 the default Cargo features and do not enable the test-only `e2e` feature for a
-normal app. Install the CLI from the same checkout first: the app starts Runs through
-the `artifactize` beside its own executable, which `cargo install` puts in
-`~/.cargo/bin`. The app uses the same state home and credentials as the unpackaged
+normal app. Install the CLI from the same checkout too, as above: the app shows the
+Runs that `artifactize verify` starts. The app uses the same state home and credentials as the unpackaged
 CLI, not the Store app's private state.
 
 ## Update

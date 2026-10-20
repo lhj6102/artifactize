@@ -7,7 +7,7 @@
 # CARGO_TARGET_DIR (default target)/TARGET/release/; for universal-apple-darwin, in both the
 # aarch64-apple-darwin and x86_64-apple-darwin directories. tauri.bundle.json adds the
 # release-only bundle settings: the commands become sidecars next to the app's own
-# executable, where artifactize-core looks for the CLI. Writes to OUTPUT (default dist/),
+# executable, so every install of the app can also start the Runs it shows. Writes to OUTPUT (default dist/),
 # each with a .sha256 line as package.sh writes it:
 # - macOS: artifactize-desktop-vVERSION-universal-apple-darwin.dmg, one app for both CPUs;
 # - Linux: artifactize-desktop-vVERSION-TARGET.AppImage and .deb.

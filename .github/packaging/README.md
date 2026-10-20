@@ -4,7 +4,8 @@ The Linux tests and builds still gate the GitHub release. Other platforms and
 channels are independent, best-effort jobs. Archives and non-Store installers contain both
 `artifactize` and `artifactize-tools`; the Store MSIX contains only `artifactize`,
 with tools exposed through `artifactize tools`. The desktop app ships beside those
-commands, because it starts Runs through the `artifactize` next to its own executable:
+commands, because it shows Runs that the `artifactize` command starts, so every
+install of the app carries that command too:
 in the Windows zip and the MSIX (its own Start entry beside the CLI's),
 and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
 (`desktop-<target>` artifacts). The release also attaches the dmg as `Artifactize.dmg`,
@@ -155,8 +156,8 @@ AppData and user project/exported files are not removed with the package.
 The MSIX has two visible Applications: the desktop app (`ArtifactizeDesktop`,
 listed as Artifactize) and the CLI facade (`Artifactize`, listed as Artifactize CLI)
 with one console execution alias (`artifactize.exe`); tools run as
-`artifactize tools <subcommand>`. The desktop app starts Runs through the
-`artifactize.exe` beside it. Neither is headless or has `AppListEntry="none"`, so no
+`artifactize tools <subcommand>`. The desktop app shows the Runs that
+`artifactize.exe` starts. Neither is headless or has `AppListEntry="none"`, so no
 HeadlessAppBypass waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
 Application; the standalone tools executable remains in all non-Store channels.
 Launching Artifactize from Start or Explorer with no arguments shows the normal
