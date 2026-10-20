@@ -62,8 +62,9 @@ async function batch(): Promise<void> {
       await configuration.releasePrepared();
       writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
     } else {
-      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
-      await configuration.releasePrepared();
+      // Domain workers are released even when the native exit cannot be confirmed.
+      try { assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`))); }
+      finally { await configuration.releasePrepared(); }
     }
   } catch (error) { failures.push(error); }
   if (failures.length) {

@@ -5,7 +5,6 @@ import { renderHosted as render } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { tick } from "svelte";
 import type { RunGraph as Graph, Shape } from "../ipc/client";
 import RunGraph from "./RunGraph.svelte";
 
@@ -125,15 +124,13 @@ describe("RunGraph", () => {
     expect(layout).toHaveBeenCalledOnce();
     const shown = asked[0];
     expect(shown.known).toBeNull();
-    // Showing what it read does not read again: only a new snapshot does.
-    await tick();
-    await tick();
-    expect(asked).toHaveLength(1);
 
     served = graph("green");
     await rerender({ revision: 2 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
-    // The second read named the shape the first one gave, and only relit it.
+    // Only the new snapshot read again: showing a read does not read once more. The second read
+    // named the shape the first one gave, and only relit it.
+    expect(asked).toHaveLength(2);
     expect(asked[1].known).not.toBeNull();
     expect(layout).toHaveBeenCalledOnce();
 
@@ -169,13 +166,13 @@ describe("RunGraph", () => {
     await rerender({ run: "run-a", revision: 3 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
     release();
-    // Let the held answer arrive, then flush any view update before asserting that it did not
-    // replace Run A.
+    // Run B's held answer arrives before the answer to a newer read of Run A, which asks only
+    // after the release: once that newer read shows, B's answer has been handled.
     await held;
-    await tick();
-    await tick();
+    lightA = graph("red");
+    await rerender({ run: "run-a", revision: 4 });
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("red"));
     expect(node("a:other")).toBeNull();
-    expect(node("a:release")?.dataset.light).toBe("green");
   });
 
   it("explains a Run without Artifacts", async () => {

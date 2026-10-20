@@ -114,7 +114,8 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the clicked Artifact's Detail opened" });
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
-      // Zooming in draws named Artifacts in view; one of them takes the pointer like any other.
+      // Zooming in draws named Artifacts it brings into view, ones not drawn before it; one of
+      // them takes the pointer like any other.
       const visible = () => browser.execute(() => {
         const canvas = document.querySelector(".monitor .graph .canvas")!.getBoundingClientRect();
         return [...document.querySelectorAll<HTMLElement>(".monitor .graph .svelte-flow__node")].filter((node) => {
@@ -122,13 +123,17 @@ export const scenarios: Scenario[] = [
           return box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
         }).map((node) => node.dataset.id ?? "");
       });
+      const drawnBefore = new Set(await visible());
+      const brought = async () => (await visible()).filter((id) => !drawnBefore.has(id));
       const zoomIn = await browser.$(".monitor .svelte-flow__controls-zoomin");
-      for (let step = 0; step < 20 && (await visible()).length === 0; step += 1) {
+      let zooms = 0;
+      for (; zooms < 20 && (await brought()).length === 0; zooms += 1) {
         await zoomIn.click();
         await afterRender(browser);
       }
-      await browser.waitUntil(async () => (await visible()).length > 0, { timeout: 15000, timeoutMsg: "zooming in drew the Artifacts it brought into view" });
-      const [id] = await visible();
+      await browser.waitUntil(async () => (await brought()).length > 0, { timeout: 15000, timeoutMsg: "zooming in drew Artifacts it brought into view" });
+      assert.ok(zooms > 0, "the Artifacts were brought into view by zooming in");
+      const [id] = await brought();
       assert.match(id, /^a:n\d{4}$/);
       await graphShown(browser, id);
       assert.equal(await browser.$(nodeAt(id)).getAttribute("aria-label"), `${id.slice(2)}: GREEN`, "the drawn Artifact is named with its verdict");
