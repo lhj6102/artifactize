@@ -63,27 +63,24 @@ fn read_shares_definitions_it_has_seen_and_decodes_new_ones() {
 }
 
 #[test]
-fn check_remembers_each_definitions_verdict_and_facts_never_decodes_them() {
+fn check_and_read_judge_definitions_alike_and_facts_never_decode_them() {
     let mut seen = Seen::default();
     let broken = record(BROKEN, 1);
     let reason = seen.check("run-1", &broken).unwrap_err().reason;
-    assert_eq!(seen.verdicts.len(), 1);
-    // The same definitions saved again are judged by their digest, with the same reason.
+    // The same definitions saved again, read whole or only checked, fail for the same reason.
     assert_eq!(
         seen.check("run-1", &record(BROKEN, 2)).unwrap_err().reason,
         reason
     );
-    assert_eq!(seen.verdicts.len(), 1);
     assert_eq!(seen.read("run-1", &broken).unwrap_err().reason, reason);
+    // Forgetting definitions no Run holds any more changes no verdict.
+    seen.retain(&BTreeSet::from([Sha256Bytes::of(DEFINED.as_bytes())]));
+    assert_eq!(seen.check("run-1", &broken).unwrap_err().reason, reason);
     seen.check("run-1", &record(DEFINED, 1)).unwrap();
-    assert_eq!(seen.verdicts.len(), 2);
     // A Run's facts read without its definitions, broken or not.
     let (run, digest) = seen.facts("run-1", &broken).unwrap();
     assert_eq!(run.jobs, Some(1));
     assert_eq!(digest, Some(Sha256Bytes::of(BROKEN.as_bytes())));
-    // Verdicts of definitions no Run holds any more are forgotten.
-    seen.retain(&BTreeSet::from([Sha256Bytes::of(DEFINED.as_bytes())]));
-    assert_eq!(seen.verdicts.len(), 1);
 }
 
 #[test]

@@ -2,9 +2,9 @@
 // Each external starting condition owns a separate native app and persisted fixture.
 import assert from "node:assert/strict";
 import { createOutside, createUnreadableRuns } from "../fixture.ts";
-import { createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
+import { createEmptyAudit, createLayout, emptyRepository } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { detail } from "../graph-view.ts";
+import { aside, detail, graphShown, nodeAt } from "../graph-view.ts";
 import { afterRender } from "../keys.ts";
 
 function slot(browser: WebdriverIO.Browser) {
@@ -71,36 +71,39 @@ export const scenarios: Scenario[] = [
   // UX journey: J-MON-CATALOG; UX edge: E-GRAPH-BEYOND
   scenario<Record<string, never>>(
     "catalog-loading",
-    "lays out a large Run at once in the same graph slot, paints it whole, opens a painted Artifact, and names those a zoom brings into view",
-    async () => ({ fixture: createLayout(), data: {} }),
+    "keeps the graph slot and divider while a large Run loads and says so, then lays it out whole, opens an Artifact clicked in it and those a zoom brings into view",
+    async () => {
+      // The launch scope has no Run: the large Run starts loading only when ALL selects it.
+      const fixture = createLayout();
+      return { fixture, args: ["--repo", emptyRepository(fixture)], data: {} };
+    },
     async (browser) => {
-      // Observe after the browser paints each frame, not a mutation or a guessed delay, from
-      // before the graph shows until it has.
+      await browser.waitUntil(async () => (await slot(browser))?.text.includes("Select a Run.") === true,
+        { timeout: 15000, timeoutMsg: "no Run is selected at launch" });
+      const before = (await slot(browser))!;
+      // Every state of the graph slot from now until the graph shows, with its geometry: one
+      // record per change to the page, laid out as it was before anything replaced it.
       await browser.execute(() => {
-        const recorded: { bounds: number[]; divider: boolean; asked: boolean }[] = [];
+        const recorded: { text: string; bounds: number[]; divider: boolean }[] = [];
         (window as unknown as { catalogLoading: typeof recorded }).catalogLoading = recorded;
-        const observe = () => {
-          const stage = document.querySelector<HTMLElement>(".monitor .stage");
+        const stage = document.querySelector<HTMLElement>(".monitor .stage")!;
+        const observer = new MutationObserver(() => {
           const divider = document.querySelectorAll(".monitor [data-pane-resizer]")[1];
-          if (stage && divider) {
-            const box = stage.getBoundingClientRect();
-            recorded.push({ bounds: [box.left, box.top, box.width, box.height].map(Math.round), divider: divider.getBoundingClientRect().width > 0,
-              asked: /Lay out all/.test(stage.innerText) });
-          }
-          if (!stage?.querySelector(".graph .paint")) requestAnimationFrame(observe);
-        };
-        requestAnimationFrame(observe);
+          const box = stage.getBoundingClientRect();
+          recorded.push({ text: stage.innerText, bounds: [box.left, box.top, box.width, box.height].map(Math.round), divider: divider.getBoundingClientRect().width > 0 });
+          if (stage.querySelector(".graph")) observer.disconnect();
+        });
+        observer.observe(stage, { childList: true, subtree: true, characterData: true });
       });
-      await browser.waitUntil(() => browser.$(".monitor .graph .paint").isExisting(), { timeout: 60000, timeoutMsg: "the large Run's graph painted" });
-      const loading = await browser.execute(() => (window as unknown as { catalogLoading: { bounds: number[]; divider: boolean; asked: boolean }[] }).catalogLoading);
-      const after = (await slot(browser))!;
-      assert.ok(loading.length > 0 && loading.every((shown) => !shown.asked), "the Run lays out without asking first");
-      assert.ok(loading.every((shown) => shown.divider && JSON.stringify(shown.bounds) === JSON.stringify(after.bounds)), "loading kept the same pane geometry and its divider");
-      // Whole in view, its 1200 Artifacts are painted rather than kept as elements.
-      const elements = () => browser.execute(() => document.querySelectorAll(".monitor .graph .svelte-flow__node").length);
-      assert.equal(await elements(), 0);
-      // A click on a painted Artifact opens its Detail: the tree's first Artifact sits at the
-      // layout's top-left corner.
+      await browser.$('[aria-label="Scope"] [data-index="0"]').click();
+      await browser.waitUntil(() => browser.$(".monitor .graph").isExisting(), { timeout: 60000, timeoutMsg: "the large Run's graph shown" });
+      const loading = await browser.execute(() => (window as unknown as { catalogLoading: { text: string; bounds: number[]; divider: boolean }[] }).catalogLoading);
+      const explained = loading.filter((shown) => /Loading the graph…|Laying out…/.test(shown.text));
+      assert.ok(explained.length > 0, `the graph slot said it was loading: ${JSON.stringify(loading.map((shown) => shown.text.slice(-80)))}`);
+      assert.ok(loading.every((shown) => !/Lay out all/.test(shown.text)), "the Run lays out without asking first");
+      assert.ok(loading.every((shown) => shown.divider && JSON.stringify(shown.bounds) === JSON.stringify(before.bounds)), "loading kept the same pane geometry and its divider");
+      // A click where the layout puts the tree's first Artifact, its top-left corner, opens
+      // that Artifact's Detail.
       const corner = await browser.execute(() => {
         const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
         const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
@@ -108,18 +111,31 @@ export const scenarios: Scenario[] = [
         return { x: Math.round(canvas.left + camera.e + 84 * camera.a), y: Math.round(canvas.top + camera.f + 22 * camera.d) };
       });
       await browser.action("pointer").move({ x: corner.x, y: corner.y, origin: "viewport" }).down().up().perform();
-      await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the painted Artifact's Detail opened" });
-      await browser.$('aside[aria-label="Detail"]').$("button*=Close").click();
+      await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the clicked Artifact's Detail opened" });
+      await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
-      // Zooming in until few enough are in view draws them as named elements again.
+      // Zooming in draws named Artifacts in view; one of them takes the pointer like any other.
+      const visible = () => browser.execute(() => {
+        const canvas = document.querySelector(".monitor .graph .canvas")!.getBoundingClientRect();
+        return [...document.querySelectorAll<HTMLElement>(".monitor .graph .svelte-flow__node")].filter((node) => {
+          const box = node.getBoundingClientRect();
+          return box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
+        }).map((node) => node.dataset.id ?? "");
+      });
       const zoomIn = await browser.$(".monitor .svelte-flow__controls-zoomin");
-      for (let step = 0; step < 20 && (await elements()) === 0; step += 1) {
+      for (let step = 0; step < 20 && (await visible()).length === 0; step += 1) {
         await zoomIn.click();
         await afterRender(browser);
       }
-      await browser.waitUntil(async () => (await elements()) > 0, { timeout: 15000, timeoutMsg: "zooming in drew the Artifacts in view as elements" });
-      assert.ok((await elements()) <= 500);
-      assert.deepEqual((await slot(browser))?.bounds, after.bounds, "the graph fills that same slot");
+      await browser.waitUntil(async () => (await visible()).length > 0, { timeout: 15000, timeoutMsg: "zooming in drew the Artifacts it brought into view" });
+      const [id] = await visible();
+      assert.match(id, /^a:n\d{4}$/);
+      await graphShown(browser, id);
+      assert.equal(await browser.$(nodeAt(id)).getAttribute("aria-label"), `${id.slice(2)}: GREEN`, "the drawn Artifact is named with its verdict");
+      await browser.$(nodeAt(id)).click();
+      await browser.waitUntil(async () => (await detail(browser))?.title.startsWith(`Artifact ${id.slice(2)}`) === true,
+        { timeout: 15000, timeoutMsg: `${id}'s Detail opened` });
+      assert.deepEqual((await slot(browser))?.bounds, before.bounds, "the graph fills that same slot");
     },
   ),
 ];

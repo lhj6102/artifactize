@@ -13,6 +13,10 @@ use crate::types::Sha256Bytes;
 
 /// The member of a Run record that holds its definitions.
 const DEFINITIONS: &str = "definitions";
+/// The most room reserved at once for a record's text without its definitions: 1 MiB holds
+/// any Run's own facts, which are a few kilobytes, while the whole record can run to hundreds
+/// of megabytes.
+const REST_CAPACITY: usize = 1 << 20;
 
 /// What a reader learned about the definitions of the Runs it read.
 #[derive(Default)]
@@ -55,7 +59,7 @@ type Saved<'a> = Option<(&'a str, Sha256Bytes)>;
 fn split(data: &str) -> Result<(String, Saved<'_>), serde_json::Error> {
     let Members(members) = serde_json::from_str(data)?;
     let single = members.iter().filter(|(key, _)| key == DEFINITIONS).count() == 1;
-    let mut rest = String::with_capacity(data.len().min(1 << 20));
+    let mut rest = String::with_capacity(data.len().min(REST_CAPACITY));
     let mut definitions = None;
     rest.push('{');
     for (key, value) in members {

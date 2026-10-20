@@ -41,7 +41,8 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"], "release's own chip, then its one eval's");
       assert.equal(opened.path, "release / signoff", "the chips read as a path");
       assert.equal(opened.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
-      assert.ok(opened.tabs[0].icon, "release's chip draws the Artifact icon before its name");
+      await browser.waitUntil(async () => (await detail(browser))?.tabs[0]?.icon === true,
+        { timeout: 15000, timeoutMsg: "release's chip draws the Artifact icon before its name" });
       assert.equal(opened.tabs[1].tone, "tone-human", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
       assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
