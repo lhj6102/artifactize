@@ -69,6 +69,8 @@ pub(crate) async fn open_desktop(target: &OsStr) -> io::Result<()> {
     let mut command = tokio::process::Command::new(program);
     command
         .arg(target)
+        .env_clear()
+        .envs(crate::environment::user())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

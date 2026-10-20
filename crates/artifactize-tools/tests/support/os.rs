@@ -230,3 +230,69 @@ pub fn help_program(root: &Path) {
     }"#,
     );
 }
+
+/// A path list of `entries` in this system's form, in order; an empty entry stays empty.
+pub fn path_list<I: AsRef<std::ffi::OsStr>>(entries: impl IntoIterator<Item = I>) -> String {
+    std::env::join_paths(entries)
+        .unwrap()
+        .into_string()
+        .unwrap()
+}
+
+/// A copy of this test binary at `path`, runnable as that program.
+pub fn copy_test_binary(path: &Path) {
+    fs::copy(std::env::current_exe().unwrap(), path).unwrap();
+    make_executable(path);
+}
+
+/// `program`, a copy of this test binary, set to run only the test `name` with exactly
+/// `environment`; its output once it has succeeded.
+pub fn rerun_as(
+    program: &Path,
+    name: &str,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> std::process::Output {
+    let output = Command::new(program)
+        .args(["--exact", name, "--nocapture"])
+        .env_clear()
+        .envs(environment)
+        .output()
+        .unwrap();
+    assert!(
+        succeeded(&output.status),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+/// Build a program named `name` in `directory` that writes its whole environment, one
+/// `NAME=value` line each, to the file named by `RECORD`.
+pub fn environment_recording_program(directory: &Path, name: &str) -> PathBuf {
+    compile(
+        directory,
+        name,
+        r#"use std::io::Write;
+fn main() {
+    let record = std::env::var_os("ARTIFACTIZE_OPENER_RECORD").expect("record path");
+    let mut file = std::fs::File::create(record).unwrap();
+    for (name, value) in std::env::vars() {
+        writeln!(file, "{name}={value}").unwrap();
+    }
+}
+"#,
+    )
+}
+
+/// The environment an environment-recording program wrote to `record`, which is removed.
+pub fn recorded_environment(record: &Path) -> std::collections::BTreeMap<String, String> {
+    let text = fs::read_to_string(record).unwrap();
+    fs::remove_file(record).unwrap();
+    text.lines()
+        .map(|line| {
+            let (name, value) = line.split_once('=').unwrap();
+            (name.to_owned(), value.to_owned())
+        })
+        .collect()
+}

@@ -8,7 +8,9 @@
 # Checks that both commands sit beside the app's own executable (every install of the app
 # can start the Runs it shows) and report VERSION, and that the installed app opens a window titled
 # Artifactize; installed-linux starts it through install.sh's launcher and menu entry. With DESKTOP_SIGNED=true a dmg must
-# also pass Gatekeeper and carry a stapled notarization ticket.
+# also pass Gatekeeper and carry a stapled notarization ticket. An app started through an
+# AppImage's AppRun (appimage, installed-linux) must start its programs with the variables
+# the smoke gave it, not the bundle's library and program paths.
 #
 # Disposable runners only: deb installs into the system (run it in a container), and
 # Linux starts its own X server. The desktop E2E journeys run against the source build in
@@ -56,6 +58,7 @@ launch() {
     # the app's own HOME and state are isolated from the runner's personal data.
     terminal_path=$PATH
     if [ "$format" = installed-mac ]; then terminal_path="$HOME/.local/bin:$PATH"; fi
+    if [ -d "$work/probe" ]; then terminal_path="$work/probe:$terminal_path"; fi
     HOME="$work/home" XDG_DATA_HOME="$work/home/.local/share" PATH="$terminal_path" ZDOTDIR="$work/home" \
         $group "$@" --state-dir "$work/state" --reviewer smoke >"$work/app.log" 2>&1 &
     app_pid=$!
@@ -78,6 +81,56 @@ launch() {
         cat "$work/app.log"
         fail "$format: command setup failed"
     fi
+}
+
+# The variables an AppImage's runtime, AppRun and GTK hook set or extend.
+SMOKE_VARIABLES='PATH LD_LIBRARY_PATH APPDIR APPIMAGE ARGV0 OWD PYTHONHOME PYTHONPATH
+PYTHONDONTWRITEBYTECODE PERLLIB QT_PLUGIN_PATH GST_PLUGIN_SYSTEM_PATH GST_PLUGIN_SYSTEM_PATH_1_0
+XDG_DATA_DIRS GSETTINGS_SCHEMA_DIR GI_TYPELIB_PATH GIO_MODULE_DIR GTK_THEME GTK_DATA_PREFIX
+GTK_EXE_PREFIX GTK_PATH GTK_IM_MODULE_FILE GDK_PIXBUF_MODULE_FILE'
+export SMOKE_VARIABLES
+
+# A git stand-in first on the PATH the app is given: the app runs git for the repository
+# it opens on, and the stand-in records those variables as a program the app starts sees
+# them, with shell builtins only, before it runs the real git.
+probe_children() {
+    SMOKE_GIT=$(command -v git) || fail "$format: the runner has no git"
+    export SMOKE_GIT
+    mkdir "$work/probe" "$work/repo"
+    "$SMOKE_GIT" init -q "$work/repo"
+    cat >"$work/probe/git" <<'EOF'
+#!/bin/sh
+for name in $SMOKE_VARIABLES; do
+    eval "value=\${$name-(unset)}"
+    printf '%s=%s\n' "$name" "$value"
+done >"$SMOKE_RECORD.$$"
+: >"$SMOKE_RECORD.$$.done"
+exec "$SMOKE_GIT" "$@"
+EOF
+    chmod +x "$work/probe/git"
+}
+
+# Compare what the app's git saw with what the same stand-in sees when the smoke runs it
+# with the PATH the app was given.
+check_children() {
+    i=0
+    until set -- "$work"/child.*.done && [ -e "$1" ]; do
+        kill -0 "$app_pid" 2>/dev/null || { cat "$work/app.log"; fail "$format: the app exited before running git"; }
+        i=$((i + 1))
+        [ "$i" -lt 120 ] || { cat "$work/app.log"; fail "$format: the app did not run git for --repo within 60 seconds"; }
+        sleep 0.5
+    done
+    PATH="$work/probe:$PATH" SMOKE_RECORD="$work/expected" git --version >/dev/null
+    set -- "$work"/expected.*.done
+    expected=${1%.done}
+    for done_marker in "$work"/child.*.done; do
+        record=${done_marker%.done}
+        if ! cmp -s "$expected" "$record"; then
+            diff "$expected" "$record" || true
+            fail "$format: a program the app started got the bundle's environment"
+        fi
+    done
+    echo "$format: programs the app starts get the environment the app was given"
 }
 
 case $format in
@@ -112,8 +165,10 @@ case $format in
         chmod +x "$work/Artifactize.AppImage"
         (cd "$work" && ./Artifactize.AppImage --appimage-extract >/dev/null)
         check_commands "$work/squashfs-root/usr/bin"
+        probe_children
         # Runners lack FUSE; extract-and-run executes the same AppRun entry point.
-        APPIMAGE_EXTRACT_AND_RUN=1 launch "$work/Artifactize.AppImage"
+        APPIMAGE_EXTRACT_AND_RUN=1 SMOKE_RECORD="$work/child" launch "$work/Artifactize.AppImage" --repo "$work/repo"
+        check_children
         for command in artifactize artifactize-tools; do
             out=$("$work/home/.local/bin/$command" --version)
             [ "$out" = "$command $version" ] || fail "appimage: copied $command reports '$out'"
@@ -165,7 +220,9 @@ case $format in
         check_commands "$file/usr/bin"
         entry=${XDG_DATA_HOME:-$HOME/.local/share}/applications/artifactize.desktop
         grep -qxF "Exec=\"$file/AppRun\"" "$entry" || fail "installed-linux: $entry does not start $file/AppRun"
-        launch "$HOME/.local/bin/artifactize-desktop"
+        probe_children
+        SMOKE_RECORD="$work/child" launch "$HOME/.local/bin/artifactize-desktop" --repo "$work/repo"
+        check_children
         ;;
     installed-mac)
         check_commands "$file/Contents/MacOS"
