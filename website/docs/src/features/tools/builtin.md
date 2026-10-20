@@ -87,6 +87,8 @@ block; fixed `read`, `section` and `help` return text blocks:
   started; the application belongs to the reviewer and keeps running.
   On Linux, WSL and macOS, the opener itself must exit successfully within three
   seconds: an unavailable opener, timeout or nonzero opener exit is a tool error.
+  On WSL, `xdg-open`'s exit status 4 also counts as success, because it opens files
+  through `explorer.exe`, which reports a failure even after opening them.
   This acknowledgement deadline is not a lifetime limit on the opened application.
 
 ### view_image
