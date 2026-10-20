@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn copies_survive_mount_removal_follow_updates_and_preserve_foreign_commands() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         let mount = root.path().join("mount/usr/bin");
         let stable = root.path().join("data/artifactize/bin");
         let local = root.path().join("home/.local/bin");

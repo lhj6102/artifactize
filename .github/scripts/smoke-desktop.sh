@@ -52,16 +52,11 @@ check_commands() {
 # USER to name the default reviewer.
 launch() {
     mkdir -p "$work/home" "$work/state"
-    # Installed channels already put the CLI on the terminal's PATH. Reproduce that
-    # terminal in the isolated login home, rather than the runner's personal dotfiles.
-    if [ "$format" = installed-mac ]; then
-        terminal_path="$HOME/.local/bin:$PATH"
-        escaped_path=$(printf '%s' "$terminal_path" | sed "s/'/'\\\\''/g")
-        printf "export PATH='%s'\n" "$escaped_path" >"$work/home/.zprofile"
-        cp "$work/home/.zprofile" "$work/home/.bash_profile"
-        cp "$work/home/.zprofile" "$work/home/.profile"
-    fi
-    HOME="$work/home" XDG_DATA_HOME="$work/home/.local/share" ZDOTDIR="$work/home" \
+    # Installed channels already provide the CLI. Keep that command reachable while
+    # the app's own HOME and state are isolated from the runner's personal data.
+    terminal_path=$PATH
+    if [ "$format" = installed-mac ]; then terminal_path="$HOME/.local/bin:$PATH"; fi
+    HOME="$work/home" XDG_DATA_HOME="$work/home/.local/share" PATH="$terminal_path" ZDOTDIR="$work/home" \
         $group "$@" --state-dir "$work/state" --reviewer smoke >"$work/app.log" 2>&1 &
     app_pid=$!
     i=0

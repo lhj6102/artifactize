@@ -1,5 +1,34 @@
 use std::{fs, io, path::Path};
 
+/// The directories path_helper adds to new macOS login terminals, in its file order.
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn terminal_paths(system: &Path) -> io::Result<Vec<std::path::PathBuf>> {
+    fn read(path: &Path) -> io::Result<Vec<std::path::PathBuf>> {
+        match fs::read_to_string(path) {
+            Ok(text) => Ok(text
+                .lines()
+                .map(std::path::PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .collect()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(error) => Err(error),
+        }
+    }
+    let mut directories = read(&system.join("paths"))?;
+    let mut files = match fs::read_dir(system.join("paths.d")) {
+        Ok(entries) => entries
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<io::Result<Vec<_>>>()?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
+    files.sort();
+    for file in files.into_iter().filter(|path| path.is_file()) {
+        directories.extend(read(&file)?);
+    }
+    Ok(directories)
+}
+
 pub(super) enum Consent {
     Installed,
     Declined,
@@ -63,6 +92,11 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
         process::{Command, Stdio},
         time::Duration,
     };
+    // A noninteractive sudo probe should finish immediately; bound a stalled plugin.
+    const SUDO_TIMEOUT: Duration = Duration::from_secs(5);
+    // Give the person time to read the system prompt and authenticate, without leaving
+    // an unresponsive authorization service running indefinitely.
+    const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(120);
     let mut source = tempfile::NamedTempFile::new()?;
     source.write_all(content.as_bytes())?;
     source.flush()?;
@@ -73,7 +107,7 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    if super::bounded_status(&mut sudo, Duration::from_secs(5))?.success() {
+    if super::bounded_status(&mut sudo, SUDO_TIMEOUT)?.success() {
         return Ok(Consent::Installed);
     }
     // AppleScript's elevation API accepts only a shell command, not an argv. Quote
@@ -99,7 +133,7 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
         .stderr(errors.reopen()?);
     // The person needs time to read the system prompt and authenticate. This runs off
     // the UI thread and is still bounded if the authorization service stops answering.
-    let status = super::bounded_status(&mut prompt, Duration::from_secs(120))?;
+    let status = super::bounded_status(&mut prompt, AUTHORIZATION_TIMEOUT)?;
     if status.success() {
         Ok(Consent::Installed)
     } else {
@@ -119,8 +153,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn terminal_paths_include_the_system_file_and_sorted_path_files() {
+        let root = crate::test_os::tempdir();
+        let system = root.path().join("etc");
+        let base = root.path().join("system-bin");
+        let first = root.path().join("first-bin");
+        let last = root.path().join("last-bin");
+        fs::create_dir_all(system.join("paths.d")).unwrap();
+        fs::write(system.join("paths"), format!("{}\n\n", base.display())).unwrap();
+        fs::write(
+            system.join("paths.d/z-last"),
+            format!("{}\n", last.display()),
+        )
+        .unwrap();
+        fs::write(
+            system.join("paths.d/a-first"),
+            format!("{}\n", first.display()),
+        )
+        .unwrap();
+        assert_eq!(terminal_paths(&system).unwrap(), [base, first, last]);
+    }
+
+    #[test]
     fn registration_respects_existing_install_repairs_moves_and_remembers_declines() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         let first = root.path().join("First.app/Contents/MacOS");
         let moved = root.path().join("Moved.app/Contents/MacOS");
         let state = root.path().join("state");

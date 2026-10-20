@@ -26,7 +26,7 @@ pub fn setup(state: &Path) -> io::Result<()> {
             bin,
             Path::new("/etc/paths.d/artifactize"),
             state,
-            terminal_has_command()?,
+            terminal_has_command(bin)?,
             macos::write_privileged,
         )
     }
@@ -43,14 +43,15 @@ pub fn setup(state: &Path) -> io::Result<()> {
             .filter(|path| path.is_absolute())
             .unwrap_or_else(|| home.join(".local/share"));
         let executable = std::env::current_exe()?;
+        let bin = executable
+            .parent()
+            .ok_or_else(|| io::Error::other("no executable directory"))?;
         appimage::register(
-            executable
-                .parent()
-                .ok_or_else(|| io::Error::other("no executable directory"))?,
+            bin,
             &data.join("artifactize/bin"),
             &home.join(".local/bin"),
             env!("CARGO_PKG_VERSION"),
-            terminal_has_command()?,
+            terminal_has_command(bin)?,
         )
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -60,31 +61,53 @@ pub fn setup(state: &Path) -> io::Result<()> {
     }
 }
 
-// Interactive login startup files reconstruct a terminal's PATH (including .zshrc
-// and .bashrc), unlike Finder's or AppRun's environment. Start from the system path,
-// not the GUI's inherited PATH, which can include the temporary AppImage mount.
+// Finder's PATH can omit the terminal's commands; AppRun's can include the mounted
+// sidecars. Combine the inherited PATH with our channels' terminal locations, and
+// on macOS the path_helper inputs, without executing shell startup files.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn terminal_has_command() -> io::Result<bool> {
-    use std::{
-        process::{Command, Stdio},
-        time::Duration,
-    };
-    let shell = super::environment::var("SHELL")
-        .filter(|shell| !shell.is_empty())
-        .ok_or_else(|| io::Error::other("no login shell in SHELL"))?;
-    let mut command = Command::new(shell);
-    command
-        .args(["-l", "-i", "-c", "command -v artifactize >/dev/null 2>&1"])
-        .env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    // Shell startup may run arbitrary user programs. Never let it hold up registration;
-    // an unknown result is an error, not permission to overwrite an existing install.
-    bounded_status(&mut command, Duration::from_secs(5)).map(|status| status.success())
+fn terminal_has_command(bundled: &Path) -> io::Result<bool> {
+    let home = super::home_directory().ok_or_else(|| io::Error::other("no home directory"))?;
+    let mut directories: Vec<_> = super::environment::var("PATH")
+        .iter()
+        .flat_map(std::env::split_paths)
+        .collect();
+    directories.extend([home.join(".local/bin"), home.join(".cargo/bin")]);
+    directories.extend(["/usr/local/bin", "/usr/bin"].map(std::path::PathBuf::from));
+    #[cfg(target_os = "macos")]
+    {
+        directories.push("/opt/homebrew/bin".into());
+        directories.extend(macos::terminal_paths(Path::new("/etc"))?);
+    }
+    let mount = super::environment::var("APPDIR").map(std::path::PathBuf::from);
+    let excluded = std::iter::once(bundled)
+        .chain(mount.as_deref())
+        .collect::<Vec<_>>();
+    let path = std::env::join_paths(directories.into_iter().filter(|directory| {
+        let canonical = std::fs::canonicalize(directory).unwrap_or_else(|_| directory.clone());
+        !excluded.iter().any(|root| {
+            canonical
+                .starts_with(std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()))
+        })
+    }))
+    .map_err(io::Error::other)?;
+    match super::program::resolve_with(
+        std::ffi::OsStr::new("artifactize"),
+        &std::env::current_dir()?,
+        |name| {
+            if name == "PATH" {
+                Some(path.clone())
+            } else {
+                super::environment::var(name)
+            }
+        },
+    ) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn bounded_status(
     command: &mut std::process::Command,
     timeout: std::time::Duration,

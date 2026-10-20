@@ -235,7 +235,9 @@ also attaches the app on its own:
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.
 
-The app checks your login shell for `artifactize` in the background. An existing
+The app checks standard terminal command locations and its inherited `PATH` in the
+background, without running shell startup files. On macOS this includes the system's
+`/etc/paths` and `/etc/paths.d` entries, which new login terminals use. An existing
 command from Homebrew, an install script, `.deb`, winget or the Store is left alone;
 there is no setting to choose. Otherwise:
 
