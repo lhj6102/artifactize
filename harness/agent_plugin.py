@@ -52,8 +52,8 @@ def run(argv, env, cwd):
 def listed_plugin(host, catalog, root, plugin):
     """The marketplace entry whose source is the plugin folder under check."""
     for entry in catalog["plugins"]:
-        source = entry["source"] if host == "claude" else entry["source"]["path"]
-        if (root / source).resolve() == plugin:
+        source = entry["source"] if host == "claude" else entry["source"].get("path")
+        if isinstance(source, str) and (root / source).resolve() == plugin:
             return f"{entry['name']}@{catalog['name']}"
     sys.exit(f"{CATALOGS[host].as_posix()} lists no plugin with source {plugin.relative_to(root).as_posix()}")
 
@@ -67,7 +67,9 @@ def claude(market, project, env, plugin_id):
     line = next((line for line in details.splitlines() if line.strip().startswith("Skills (")), "")
     skills = set(line.split(")", 1)[1].replace(",", " ").split()) if ")" in line else set()
     installed = json.loads(run(["claude", "plugin", "list", "--json"], env, project))
-    record = next(item for item in installed if item["id"] == plugin_id)
+    record = next((item for item in installed if item["id"] == plugin_id), None)
+    if record is None:
+        sys.exit(f"claude plugin list does not report {plugin_id} after installing it")
     return skills, record["enabled"], record.get("mcpServers", {}).get(SERVER)
 
 

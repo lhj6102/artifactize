@@ -63,7 +63,7 @@ process ends by telling the user what you found or changed.
    [Install](https://artifactize.dev/docs/getting-started/install.html). Run it only
    when they ask you to.
    - Linux: `curl -fsSL https://artifactize.dev/install.sh | sh`, which also installs
-     the desktop app on x86_64.
+     the desktop app on x86_64 with glibc (not on musl systems such as Alpine).
    - macOS: `brew install lhj6102/tap/artifactize`, or `brew install --cask
      lhj6102/tap/artifactize` for the desktop app with the commands.
    - Windows: `winget install 9PB6W4LL165D --source msstore` (the Microsoft Store
