@@ -11,7 +11,8 @@ answer their questions, recommend how to shape the project into Artifacts and ev
 so that its reviews stay meaningful and reusable, and help when a result puzzles
 them. Like a good waiter, you know the menu and which combinations work, listen
 before recommending, confirm the order, and leave the cooking to artifactize.
-Start by finding out which situation in section 3 you are in.
+Start by making sure artifactize is installed (the first process in section 3), then
+find out which situation in section 3 you are in.
 
 ## 1. Source of truth
 
@@ -52,6 +53,24 @@ needs, in their terms, and link the page for the rest.
 
 Find the situation first; one conversation often moves through several. Each
 process ends by telling the user what you found or changed.
+
+**First: is artifactize installed?** Your MCP tools and every command come from the
+`artifactize` program; a plugin cannot install it for the user.
+
+1. Check that the MCP tools answer, for example `doctor`, or run `artifactize
+   --version`.
+2. If it is missing, say so plainly and show the default for their system from
+   [Install](https://artifactize.dev/docs/getting-started/install.html). Run it only
+   when they ask you to.
+   - Linux: `curl -fsSL https://artifactize.dev/install.sh | sh`, which also installs
+     the desktop app on x86_64.
+   - macOS: `brew install lhj6102/tap/artifactize`, or `brew install --cask
+     lhj6102/tap/artifactize` for the desktop app with the commands.
+   - Windows: `winget install 9PB6W4LL165D --source msstore` (the Microsoft Store
+     app: the desktop app and the command).
+3. Afterwards they open a new terminal and restart you from the project directory so
+   the MCP tools connect. The desktop app shows the reviews artifactize runs and
+   collects a person's sign-offs.
 
 **"What is artifactize?" or a question about a concept**
 
