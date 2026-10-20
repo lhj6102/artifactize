@@ -22,7 +22,8 @@ the best practices and examples it draws from.
 In Claude Code and Codex, install the [plugin](plugin.md): it brings this skill and
 the MCP server together, and the plugin's skill is this same file. Arti first checks
 that artifactize is installed; if it is not, it points you to the
-[installation page](../getting-started/install.md) and offers your system's default.
+[installation page](../getting-started/install.md) and offers your system's default,
+which it runs only when you ask it to.
 
 In other hosts, follow [MCP setup](mcp.md#register-the-mcp-server) to connect your
 coding host. Registration supplies tools; it does not install the skill. Open the
@@ -63,7 +64,8 @@ When shaping a new project, it:
    against which inputs, by which criteria) with reasons, and waits for your
    agreement before changing structure. It keeps your project instructions and
    existing Human responsibilities, explains before adding a new sign-off, and
-   never marks unfinished work as `basis`.
+   marks an input `basis = true` only when your team agrees nobody reviews it,
+   never to get around unfinished reviews.
 3. **Writes small declarations** in today's [format](../features/declarations.md),
    validates them with `config_check`, and shows with `status` what would run and
    what would be reused. It then tells you what changed.
