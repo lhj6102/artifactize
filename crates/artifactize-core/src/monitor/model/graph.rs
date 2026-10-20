@@ -104,6 +104,25 @@ pub struct Graph {
     pub edges: Vec<GraphEdge>,
 }
 
+impl Graph {
+    /// Whether `other` has the same Artifacts and edges in the same order, whatever their
+    /// lights: a view can keep where it placed them and only relight them.
+    pub fn same_shape(&self, other: &Self) -> bool {
+        self.nodes.len() == other.nodes.len()
+            && self.edges.len() == other.edges.len()
+            && self
+                .nodes
+                .iter()
+                .zip(&other.nodes)
+                .all(|(one, other)| one.id == other.id)
+            && self
+                .edges
+                .iter()
+                .zip(&other.edges)
+                .all(|(one, other)| one.from == other.from && one.to == other.to)
+    }
+}
+
 /// The graph of the Artifact rows of a Run's [`tree`](super::tree), lit upstream first in the
 /// tree's order.
 pub fn graph(tree: &[Node]) -> Graph {

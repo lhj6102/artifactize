@@ -2,6 +2,7 @@
 use super::{
     DATABASE,
     receipts::{Error, check_files, schema_initialized},
+    run_record::Seen,
 };
 use crate::{
     repository::Identity,
@@ -63,18 +64,23 @@ pub(super) fn in_snapshot(
     db: &rusqlite::Connection,
     state: &Path,
 ) -> Result<Vec<CatalogRun>, Error> {
-    in_snapshot_cached(db, state, &mut Facts::default())
+    in_snapshot_cached(db, state, &mut Facts::default(), &mut Seen::default())
 }
 
+/// Each Run's fact by the digest of its record, with the digest of its definitions.
 #[derive(Default)]
 pub(super) struct Facts {
-    runs: std::collections::BTreeMap<crate::types::RunId, (Sha256Bytes, Option<CatalogRun>)>,
+    runs: std::collections::BTreeMap<
+        crate::types::RunId,
+        (Sha256Bytes, Option<Sha256Bytes>, Option<CatalogRun>),
+    >,
 }
 
 pub(super) fn in_snapshot_cached(
     db: &rusqlite::Connection,
     state: &Path,
     facts: &mut Facts,
+    seen: &mut Seen,
 ) -> Result<Vec<CatalogRun>, Error> {
     let mut statement = db.prepare_cached("SELECT id,data FROM runs ORDER BY rowid")?;
     let runs = statement
@@ -90,21 +96,29 @@ pub(super) fn in_snapshot_cached(
     let mut retained = std::collections::BTreeMap::new();
     for (id, data) in runs {
         let digest = Sha256Bytes::of(data.as_bytes());
-        let fact = match facts.runs.remove(&id) {
-            Some((saved, fact)) if saved == digest => fact,
-            _ => super::unreadable::evidence::<super::Run>("run", &data).map(|run| {
-                let status = run.status();
-                CatalogRun {
-                    repo_path: run.repo_path,
-                    repository: run.repository,
-                    status,
-                    red: 0,
-                    error: 0,
-                    waiting: Vec::new(),
+        let (definitions, fact) = match facts.runs.remove(&id) {
+            Some((saved, definitions, fact)) if saved == digest => (definitions, fact),
+            // Only the Run's own facts: its definitions are not decoded.
+            _ => match seen.facts(&id, &data) {
+                Ok((run, definitions)) => {
+                    let status = run.status();
+                    let fact = CatalogRun {
+                        repo_path: run.repo_path,
+                        repository: run.repository,
+                        status,
+                        red: 0,
+                        error: 0,
+                        waiting: Vec::new(),
+                    };
+                    (definitions, Some(fact))
                 }
-            }),
+                Err(unreadable) => {
+                    super::unreadable::skipped(&unreadable);
+                    (None, None)
+                }
+            },
         };
-        retained.insert(id.clone(), (digest, fact.clone()));
+        retained.insert(id.clone(), (digest, definitions, fact.clone()));
         if let Some(fact) = fact {
             order.push(id.clone());
             catalog.insert(id, fact);
@@ -112,6 +126,12 @@ pub(super) fn in_snapshot_cached(
     }
     outside_workspaces(catalog.values().map(|run| run.repo_path.as_path()), state)
         .map_err(|error| Error::Invalid(error.to_string()))?;
+    seen.retain(
+        &retained
+            .values()
+            .filter_map(|(_, definitions, _)| *definitions)
+            .collect(),
+    );
     facts.runs = retained;
     let mut statement = db.prepare_cached(
         "SELECT q.run_id,q.status,q.execution_id,coalesce(json_extract(e.data,'$.provenance.requestId'),json_extract(q.data,'$.provenance.requestId'),q.id)

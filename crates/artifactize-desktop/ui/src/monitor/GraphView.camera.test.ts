@@ -8,7 +8,7 @@ import { cleanup, screen } from "@testing-library/svelte";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { tick } from "svelte";
 import type { Viewport } from "@xyflow/svelte";
-import type { RunGraph as Graph } from "../ipc/client";
+import type { RunGraph as Graph, Shape } from "../ipc/client";
 import RunGraph from "./RunGraph.svelte";
 
 /** A layered Run: `publish` is the right-most column, where the Detail docks. */
@@ -28,7 +28,7 @@ vi.mock("@xyflow/svelte", async (original) => {
 });
 vi.mock("./layout", () => ({
   NODE: { width: 168, height: 44 },
-  layout: async () => new Map(Object.entries(PLACED).map(([name, at]) => [`a:${name}`, at])),
+  layout: () => new Map(Object.entries(PLACED).map(([name, at]) => [`a:${name}`, at])),
 }));
 
 /** A box as getBoundingClientRect gives it. */
@@ -114,12 +114,14 @@ const within = (name: string, right: number) => {
   return at.left >= CANVAS.left && at.right <= right && at.top >= CANVAS.top && at.bottom <= CANVAS.bottom;
 };
 
+/** Run A's graph as the backend first serves it: its whole shape. */
+const served = (shape: Shape): Graph => ({ run: "run-a", shape: 1, update: { kind: "shape", ...shape } });
+
 async function drawn() {
-  const graph: Graph = {
-    run: "run-a",
+  const graph = served({
     nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: "green" as const })),
     edges: [{ source: "a:release", target: "a:ship", light: "green" }],
-  };
+  });
   mockIPC((command) => command === "run_graph" ? graph : null);
   const shown = renderHosted(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("publish: GREEN");
@@ -180,7 +182,7 @@ it("keeps a camera the person moved, bringing only the opened Artifact out from 
 });
 
 it("fits a graph drawn in a hidden screen once its canvas first has a size", async () => {
-  const graph: Graph = { run: "run-a", nodes: [{ id: "a:docs", name: "docs", light: "green" }], edges: [] };
+  const graph = served({ nodes: [{ id: "a:docs", name: "docs", light: "green" }], edges: [] });
   mockIPC((command) => command === "run_graph" ? graph : null);
   renderHosted(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("docs: GREEN");

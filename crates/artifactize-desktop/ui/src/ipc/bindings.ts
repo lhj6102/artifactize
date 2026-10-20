@@ -14,8 +14,40 @@ export const commands = {
 	redraw: () => __TAURI_INVOKE<BrowseView>("redraw"),
 	/**  Show or hide a repository's worktrees without Runs; no state read. */
 	toggleWorktrees: (repository: RepositoryKey) => __TAURI_INVOKE<BrowseView>("toggle_worktrees", { repository }),
-	/**  The Detail of `node` in the selected Run `run`, from the shown snapshot. */
+	/**
+	 *  The Detail of `node` in the selected Run `run`, from the shown snapshot. A large Run takes
+	 *  a moment to derive, so it is built off the window's thread.
+	 */
 	detail: (run: string, node: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("detail", { run, node })),
+	/**
+	 *  The row of `node` in the selected Run `run`'s tree, from the shown snapshot: an Artifact
+	 *  with its evals, or the Run's own row; `None` when the Run no longer has it.
+	 */
+	detailRow: (run: string, node: string) => typedError<{
+	/**  Stable tree id: `run:<id>`, `a:<artifact>` or `e:<eval>`. */
+	id: string,
+	kind: NodeKind,
+	glyph: string,
+	tone: Tone,
+	weight: Weight,
+	name: string,
+	/**  Dim markers after the name: `↻ peer`, `[file]`. */
+	marks: string,
+	text: Segment[],
+	/**  Elapsed time of an eval, `passed/total` of an Artifact. */
+	right: string,
+	/**  The derived state changed after the Run ended. */
+	changed: boolean,
+	/**  An Artifact whose evals are all done: folded unless the user unfolded it. */
+	done: boolean,
+	/**  An in-progress or failed eval: where a new Run's cursor starts. */
+	attention: boolean,
+	/**  An ERROR, RED or waiting Human eval: what "next attention" visits. */
+	urgent: boolean,
+	/**  The Artifacts this row depends on, unmet first; `b` cycles through them. */
+	upstream: UpstreamMark[],
+	children: TreeNode[],
+} | null, Failure>(__TAURI_INVOKE("detail_row", { run, node })),
 	/**
 	 *  Open request `id` in the shared Human Detail. `reload: false` redraws the last read view
 	 *  (its waiting time) without reading the state.
@@ -62,8 +94,16 @@ export const commands = {
 	humanSubmit: (id: string, draft: Draft, job: JobId) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
 	/**  Release this reviewer's claims on `ids` without a verdict. */
 	humanRelease: (ids: string[], job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
-	/**  The selected Run `run` as a graph of its Artifacts, from the shown snapshot. */
-	runGraph: (run: string) => typedError<RunGraph, Failure>(__TAURI_INVOKE("run_graph", { run })),
+	/**
+	 *  The selected Run `run` as a graph of its Artifacts, from the shown snapshot: only its
+	 *  lights while it keeps the shape `known` the caller holds.
+	 */
+	runGraph: (run: string, known: number | null) => typedError<RunGraph, Failure>(__TAURI_INVOKE("run_graph", { run, known })),
+	/**
+	 *  The Artifact `node` of the selected Run `run` between its neighbours: the Artifacts its
+	 *  evals use, itself, then those whose evals use it, with the edges between it and them.
+	 */
+	runNeighbours: (run: string, node: string) => typedError<Neighbours, Failure>(__TAURI_INVOKE("run_neighbours", { run, node })),
 	currentGraph: () => typedError<CurrentGraph, Failure>(__TAURI_INVOKE("current_graph")),
 	/**
 	 *  Requests matching `query` from position `start` (0 for the newest). `reload: false`
@@ -498,6 +538,19 @@ export type Navigate = {
 	resync: boolean,
 };
 
+/**
+ *  An Artifact between its neighbours, at most [`NEAR`] on each side: those shown first are the
+ *  ones lit first in [`Light`]'s precedence (failing before passing), then in the tree's order.
+ */
+export type Neighbours = {
+	/**  The Artifact, the neighbours shown, and the edges between it and them. */
+	shape: Shape,
+	/**  Artifacts its evals use beyond those shown. */
+	moreUses: number,
+	/**  Artifacts whose evals use it beyond those shown. */
+	moreUsedBy: number,
+};
+
 export type NodeKind = "run" | "artifact" | "eval";
 
 export type Notice = {
@@ -583,9 +636,9 @@ export type Row = {
 
 export type RunGraph = {
 	run: string,
-	/**  Upstream first, in the tree's order. */
-	nodes: GraphNode[],
-	edges: GraphEdge[],
+	/**  Names the graph's Artifacts and edges, whatever their lights. */
+	shape: ShapeKey,
+	update: Update,
 };
 
 export type RunItem = {
@@ -602,9 +655,14 @@ export type RunItem = {
 	readable: boolean,
 };
 
-/**  The selected Run: its headline, what needs attention, and the tree under the Run row. */
+/**
+ *  The selected Run: its headline and what needs attention. Its rows come one at a time, as
+ *  a Detail asks for them ([`row`]): a Run can hold tens of thousands.
+ */
 export type RunPanel = {
 	id: string,
+	/**  The Run's own row, whose Detail its headline opens. */
+	node: string,
 	mark: Mark,
 	/**  Validation at Run end, counts, time and tokens. */
 	headline: string,
@@ -613,7 +671,6 @@ export type RunPanel = {
 	attention: Attention[],
 	/**  Attention lines beyond the shown ones. */
 	more: number,
-	tree: TreeNode[],
 };
 
 /**
@@ -666,10 +723,17 @@ export type Settled =
  */
 "savedLocally";
 
+/**  The Artifacts and the edges between them, each with its light. */
 export type Shape = {
 	nodes: GraphNode[],
 	edges: GraphEdge[],
 };
+
+/**
+ *  A shape of the selected Run's graph, its Artifacts and edges whatever their lights,
+ *  numbered by the backend as it reads one.
+ */
+export type ShapeKey = number;
 
 export type Share = 
 /**  Reduced records without argv, captured output, tool calls or paths. */
@@ -782,6 +846,18 @@ export type TreeNode = {
  *  the library's range is rounded on the way to the frontend.
  */
 export type UnixSeconds = string;
+
+/**  What changed in a Run graph since the shape the caller holds. */
+export type Update = 
+/**
+ *  A shape the caller does not hold: its Artifacts, upstream first in the tree's order, and
+ *  its edges, all lit.
+ */
+{
+	kind: "shape",
+} & Shape | 
+/**  The caller's shape, relit: one light per node and per edge, in its order. */
+{ kind: "lights"; nodes: Light[]; edges: Light[] };
 
 /**  The Artifacts a row depends on, with whether each is complete (dim) or unmet (bright). */
 export type UpstreamMark = {

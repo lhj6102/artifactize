@@ -132,12 +132,18 @@ keys of its own.
 Drag the graph background to pan; wheel, pinch or a background double-click
 zooms the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its
 viewport. These gestures move the camera, not the pane dividers or the Detail.
-Above 40
-nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
-than 300 Artifacts** ask before layout: choose **Lay out all** to display the
-whole graph. Above **80 Artifacts**, only elements in view are rendered: panning or
-zooming draws those it brings into view. Smaller graphs render every element.
-Layout is not an incrementally loaded neighborhood, and there is no tree fallback.
+Every Run's whole graph is laid out at once, upstream on the left; an Artifact
+that a great many others use (such as one criteria file every review reads)
+stands in its own column on the left, its edges still drawn to each Artifact
+that uses it. Above 40 nodes, a pannable, zoomable minimap helps navigate the
+graph, and above **80 Artifacts** only elements in view are rendered: panning or
+zooming draws those it brings into view. A Run of **more than 500 Artifacts**
+draws its edges on a canvas below the Artifacts and has no minimap. While more
+than 500 Artifacts are in view, they are painted as boxes in their lights, and a
+click on one opens its Detail; zoom in until fewer are in view to see them as
+named nodes again. A live Run relights its graph in place, and lays it out again
+only when its Artifacts or edges change. An Artifact's Detail draws at most 16
+neighbours on each side, failing ones first, and counts the rest.
 
 `artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
 without needing a Run or showing saved verdicts. A click on an Artifact shows its

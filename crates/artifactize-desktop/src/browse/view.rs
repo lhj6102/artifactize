@@ -182,11 +182,14 @@ pub struct Attention {
     pub text: String,
 }
 
-/// The selected Run: its headline, what needs attention, and the tree under the Run row.
+/// The selected Run: its headline and what needs attention. Its rows come one at a time, as
+/// a Detail asks for them ([`row`]): a Run can hold tens of thousands.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
     pub id: crate::ids::RunKey,
+    /// The Run's own row, whose Detail its headline opens.
+    pub node: crate::ids::NodeKey,
     pub mark: Mark,
     /// Validation at Run end, counts, time and tokens.
     pub headline: String,
@@ -195,7 +198,6 @@ pub struct RunPanel {
     pub attention: Vec<Attention>,
     /// Attention lines beyond the shown ones.
     pub more: u32,
-    pub tree: Vec<TreeNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -269,41 +271,44 @@ fn marks(nodes: &[Node], path: &[NodeId]) -> Vec<UpstreamMark> {
         .collect()
 }
 
-/// The Run row, then each Artifact with its eval rows.
-fn tree(
+/// The row `id` of the Run's tree: the Run's own row, or an Artifact with its eval rows.
+pub(crate) fn row(
     run: &artifactize_core::store::RunView,
     nodes: &[Node],
+    id: &NodeId,
     now: OffsetDateTime,
-) -> Vec<TreeNode> {
-    let run_row = node(&monitor::run_node(run), NodeKind::Run, now, Vec::new());
-    std::iter::once(run_row)
-        .chain(nodes.iter().map(|artifact| {
-            let path = [artifact.id.clone()];
-            let mut row = node(artifact, NodeKind::Artifact, now, marks(nodes, &path));
-            row.children = artifact
-                .children
-                .iter()
-                .map(|eval| {
-                    let path = [artifact.id.clone(), eval.id.clone()];
-                    let kind = match eval.kind {
-                        Kind::Eval(_) => NodeKind::Eval,
-                        Kind::Artifact { .. } => NodeKind::Artifact,
-                    };
-                    node(eval, kind, now, marks(nodes, &path))
-                })
-                .collect();
-            row
-        }))
-        .collect()
+) -> Option<TreeNode> {
+    let own = monitor::run_node(run);
+    if &own.id == id {
+        return Some(node(&own, NodeKind::Run, now, Vec::new()));
+    }
+    let artifact = nodes.iter().find(|artifact| &artifact.id == id)?;
+    let path = [artifact.id.clone()];
+    let mut row = node(artifact, NodeKind::Artifact, now, marks(nodes, &path));
+    row.children = artifact
+        .children
+        .iter()
+        .map(|eval| {
+            let path = [artifact.id.clone(), eval.id.clone()];
+            let kind = match eval.kind {
+                Kind::Eval(_) => NodeKind::Eval,
+                Kind::Artifact { .. } => NodeKind::Artifact,
+            };
+            node(eval, kind, now, marks(nodes, &path))
+        })
+        .collect();
+    Some(row)
 }
 
 pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
     let scope = &shown.page.scope;
-    let run = shown.run.as_ref().map(|(run, requests, nodes)| {
+    let run = shown.run.as_ref().map(|selected| {
+        let (run, requests) = (&selected.run, &selected.requests);
         let progress = monitor::progress(run, requests, now);
         let strip = monitor::strip(&progress);
         RunPanel {
             id: run.run.id.clone().into(),
+            node: NodeId::run(&run.run.id).into(),
             mark: strip.status.into(),
             headline: strip.headline.clone(),
             counts: monitor::counts(progress.counts.iter().copied()),
@@ -316,7 +321,6 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
                 })
                 .collect(),
             more: u32::try_from(strip.more).unwrap_or(u32::MAX),
-            tree: tree(run, nodes, now),
         }
     });
     let runs = monitor::run_rows(&shown.runs, now)

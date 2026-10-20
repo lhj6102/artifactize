@@ -3,7 +3,7 @@
 mod view;
 
 pub use view::{BrowseView, RepositoryKey, ScopeKey};
-pub(crate) use view::{NodeKind, TreeNode};
+pub(crate) use view::{NodeKind, TreeNode, row};
 
 use crate::{App, Failure};
 use artifactize_core::{
@@ -19,8 +19,16 @@ use std::{
 };
 use time::OffsetDateTime;
 
-/// The selected Run with its requests and projected tree.
-pub type Selected = (RunView, Vec<RequestView>, Arc<Vec<Node>>);
+/// The selected Run with its requests, projected tree and graph, shared by every view drawn
+/// from it so that none holds the shown snapshot's lock while it builds.
+pub struct Selected {
+    pub run: RunView,
+    pub requests: Vec<RequestView>,
+    pub tree: Arc<Vec<Node>>,
+    pub graph: monitor::Graph,
+    /// Names the graph's shape: it stays while only lights change.
+    pub shape: crate::ids::ShapeKey,
+}
 
 /// What the last accepted snapshot shows and where navigation points next.
 struct Shown {
@@ -29,7 +37,7 @@ struct Shown {
     origin: Origin,
     page: Page,
     runs: Vec<RunSummary>,
-    run: Option<Selected>,
+    run: Option<Arc<Selected>>,
     error: Option<String>,
     refreshed: bool,
     /// The state was replaced since the frontend last drew; it drops Details and drafts.
@@ -37,6 +45,8 @@ struct Shown {
     /// Counts every change of what is shown (navigation, accepted reads, folds), so the
     /// frontend can order responses and know when views derived from it are stale.
     revision: u32,
+    /// The last graph shape handed out.
+    shapes: crate::ids::ShapeKey,
 }
 
 /// The snapshot worker and the shown snapshot. Loads are serialized by the loader lock;
@@ -92,6 +102,7 @@ impl Browse {
                 refreshed: false,
                 replaced: false,
                 revision: 0,
+                shapes: crate::ids::ShapeKey::NONE,
             }),
         }
     }
@@ -174,7 +185,7 @@ impl Browse {
         if resync {
             loader.reset();
         }
-        let (page, input) = {
+        let (page, input, before) = {
             let shown = self.shown();
             let input = Input {
                 state: state.to_path_buf(),
@@ -183,15 +194,33 @@ impl Browse {
                 initialized: shown.initialized,
                 page: shown.page.clone(),
                 full,
-                displayed: shown.run.as_ref().map(|(run, _, _)| run.run.id.clone()),
+                displayed: shown
+                    .run
+                    .as_ref()
+                    .map(|selected| selected.run.run.id.clone()),
                 runs: (!full && !shown.runs.is_empty()).then(|| shown.runs.clone()),
             };
-            (shown.page.clone(), input)
+            (shown.page.clone(), input, shown.run.clone())
         };
         let worker = std::mem::take(&mut *loader);
         let joined = tokio::task::spawn_blocking(move || {
             let mut worker = worker;
-            let result = worker.load(input);
+            // The graph is drawn from every accepted snapshot: it is built here, off the
+            // window's thread, along with the tree.
+            let result = worker.load(input).map(|mut snapshot| {
+                let selected = snapshot.selected.take().map(|(run, requests, tree)| {
+                    let graph = monitor::graph(&tree);
+                    // The same Run with the same Artifacts and edges keeps its shape.
+                    let kept = before
+                        .as_ref()
+                        .filter(|before| {
+                            before.run.run.id == run.run.id && before.graph.same_shape(&graph)
+                        })
+                        .map(|before| before.shape);
+                    (run, requests, tree, graph, kept)
+                });
+                (snapshot, selected)
+            });
             (worker, result)
         })
         .await;
@@ -202,8 +231,8 @@ impl Browse {
             loader.reset();
             return Ok(None);
         }
-        let snapshot = match result {
-            Ok(snapshot) => snapshot,
+        let (snapshot, selected) = match result {
+            Ok(read) => read,
             Err(error) => {
                 shown.error = Some(format!("read failed: {error}"));
                 return Err(Failure::Read(error));
@@ -223,8 +252,17 @@ impl Browse {
         shown.page.open = snapshot
             .selected_id
             .filter(|id| shown.runs.iter().any(|run| &run.id == id && run.readable()));
-        match (snapshot.selected, &shown.page.open) {
-            (Some(selected), _) => shown.run = Some(selected),
+        match (selected, &shown.page.open) {
+            (Some((run, requests, tree, graph, kept)), _) => {
+                let shape = kept.unwrap_or_else(|| shown.shapes.next());
+                shown.run = Some(Arc::new(Selected {
+                    run,
+                    requests,
+                    tree,
+                    graph,
+                    shape,
+                }));
+            }
             (None, None) => shown.run = None,
             (None, Some(_)) => {}
         }
@@ -248,30 +286,11 @@ impl Browse {
         view
     }
 
-    /// The selected Run's tree, as the shown snapshot projected it.
-    pub fn with_tree<T>(
-        &self,
-        run: &artifactize_core::types::RunId,
-        read: impl FnOnce(&[Node]) -> T,
-    ) -> Result<T, Failure> {
-        let shown = self.shown();
-        match &shown.run {
-            Some((view, _, nodes)) if &view.run.id == run => Ok(read(nodes)),
-            _ => Err(Failure::Missing(format!(
-                "Run {run} is no longer selected; select it again."
-            ))),
-        }
-    }
-
-    /// The selected Run's requests and target, for a Detail of it.
-    pub fn with_run<T>(
-        &self,
-        run: &artifactize_core::types::RunId,
-        read: impl FnOnce(&RunView, &[RequestView]) -> T,
-    ) -> Result<T, Failure> {
-        let shown = self.shown();
-        match &shown.run {
-            Some((view, requests, _)) if &view.run.id == run => Ok(read(view, requests)),
+    /// The selected Run `run` as the shown snapshot holds it; views build from it without
+    /// holding the snapshot's lock.
+    pub fn selected(&self, run: &RunId) -> Result<Arc<Selected>, Failure> {
+        match &self.shown().run {
+            Some(selected) if &selected.run.run.id == run => Ok(selected.clone()),
             _ => Err(Failure::Missing(format!(
                 "Run {run} is no longer selected; select it again."
             ))),

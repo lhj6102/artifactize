@@ -101,3 +101,53 @@ fn artifact_detail_groups_waits_without_dropping_equal_eval_names() {
     assert!(waits.contains("check  not in this Run"), "{waits}");
     assert_eq!(Section::of("Waits for"), Section::Waits);
 }
+
+#[test]
+fn graph_keeps_its_shape_across_lights_but_not_across_artifacts_or_edges() {
+    use super::{Graph, GraphEdge, GraphNode, Light, NodeId};
+    use crate::types::ArtifactName;
+    let name = |text: &str| text.parse::<ArtifactName>().unwrap();
+    let graph = |lights: [Light; 2], names: [&str; 2], edges: &[(&str, &str)]| Graph {
+        nodes: names
+            .iter()
+            .zip(lights)
+            .map(|(item, light)| GraphNode {
+                id: NodeId::artifact(name(item)),
+                name: name(item),
+                light,
+            })
+            .collect(),
+        edges: edges
+            .iter()
+            .map(|(from, to)| GraphEdge {
+                from: name(from),
+                to: name(to),
+                light: lights[0],
+            })
+            .collect(),
+    };
+    let base = graph([Light::Waiting; 2], ["lib", "app"], &[("lib", "app")]);
+    // Other lights keep the shape.
+    assert!(base.same_shape(&graph(
+        [Light::Red, Light::Green],
+        ["lib", "app"],
+        &[("lib", "app")]
+    )));
+    // Another Artifact, another order, or another edge does not.
+    assert!(!base.same_shape(&graph(
+        [Light::Waiting; 2],
+        ["lib", "web"],
+        &[("lib", "web")]
+    )));
+    assert!(!base.same_shape(&graph(
+        [Light::Waiting; 2],
+        ["app", "lib"],
+        &[("lib", "app")]
+    )));
+    assert!(!base.same_shape(&graph([Light::Waiting; 2], ["lib", "app"], &[])));
+    assert!(!base.same_shape(&graph(
+        [Light::Waiting; 2],
+        ["lib", "app"],
+        &[("app", "lib")]
+    )));
+}

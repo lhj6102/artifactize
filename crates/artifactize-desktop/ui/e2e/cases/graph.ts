@@ -41,7 +41,8 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"], "release's own chip, then its one eval's");
       assert.equal(opened.path, "release / signoff", "the chips read as a path");
       assert.equal(opened.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
-      assert.ok(opened.tabs[0].icon, "release's chip draws the Artifact icon before its name");
+      await browser.waitUntil(async () => (await detail(browser))?.tabs[0]?.icon === true,
+        { timeout: 15000, timeoutMsg: "release's chip draws the Artifact icon before its name" });
       assert.equal(opened.tabs[1].tone, "tone-human", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
       assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
@@ -86,14 +87,13 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
   scenario<Record<string, never>>(
     "graph-click-detail",
-    "opens an Artifact's Detail on a click or Enter, keeps every Artifact clickable beside it, switches it on another click, closes it on the background, then steps back to Runs",
+    "opens an Artifact's Detail on a click or Enter over the graph's right side, switches it on another click, closes it on the background, then steps back to Runs",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      // A 1440×872 window: the Detail at its default width docks where the graph's right-most
-      // Artifact is drawn while no Detail is open.
+      // A 1440×872 window, which the Detail at its default width leaves room beside.
       await browser.setWindowSize(1440, 872);
       await afterRender(browser);
       await graphShown(browser, "a:release");
@@ -124,15 +124,16 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact release", "Enter on release opened its Detail again");
 
-      // The Detail takes the place where another Artifact was drawn without it; every Artifact
-      // stays visible and takes the pointer beside the Detail.
+      // The Detail floats over the graph's right side, the graph visible behind and beside it.
+      assert.ok((await detail(browser))?.docked, "the Detail docks over the graph's right side with a gap");
       const edge = (await placed()).detail!;
-      const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
-      assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
-      for (const id of Object.keys(whole)) await graphShown(browser, id);
-      // A click on it switches the Detail to that Artifact, and a click on the graph's
-      // background closes it. Esc then steps back to Runs.
-      await openArtifact(browser, under[0], `Artifact ${under[0].slice(2)}`);
+      const beside = Object.entries((await placed()).nodes).filter(([, right]) => right < edge).map(([id]) => id);
+      assert.ok(beside.length > 0, "the graph stays visible beside the Detail");
+      // A click on another Artifact the graph shows switches the Detail to it, and a click on
+      // the graph's background closes it. Esc then steps back to Runs.
+      const other = Object.keys(whole).find((id) => id !== "a:release")!;
+      await graphShown(browser, other);
+      await openArtifact(browser, other, `Artifact ${other.slice(2)}`);
       const canvas = await browser.execute(() => {
         const box = document.querySelector(".graph .canvas")!.getBoundingClientRect();
         const nodes = [...document.querySelectorAll(".svelte-flow__node")].map((node) => node.getBoundingClientRect());

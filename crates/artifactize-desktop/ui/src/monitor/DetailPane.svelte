@@ -5,7 +5,7 @@
   // saved output), or the shared Human Detail. Its width is the Detail's: everything in it wraps
   // or scrolls in its own box.
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, message, type TreeNode } from "../ipc/client";
+  import { call, useIpc, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import type { Review } from "../review/review.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
@@ -21,7 +21,6 @@
     run,
     node,
     tab,
-    tree,
     focused,
     active,
     review,
@@ -31,14 +30,13 @@
     ontab,
     onopen,
     onback,
+    ongone,
   }: {
     run: string;
     /** The Artifact (or the Run) the Detail is of. */
     node: string;
     /** The eval whose tab is shown, or `null` for the Artifact's own. */
     tab: string | null;
-    /** The Run's tree: an Artifact's evals and their verdicts come from there. */
-    tree: TreeNode[];
     focused: boolean;
     /** The Monitor is the shown screen; only then its review offers palette commands. */
     active: boolean;
@@ -52,13 +50,16 @@
     /** Open another Artifact's Detail: a neighbour in the Artifact tab. */
     onopen: (node: string) => void;
     onback: () => void;
+    /** The Run no longer has the node: the Detail has nothing left to show. */
+    ongone: () => void;
   } = $props();
   const commands = useIpc();
   const d = new DetailPaneState();
   setDetailPaneState(d);
   const { browse } = getAppState();
 
-  const row = $derived(tree.find((top) => top.id === node) ?? null);
+  /** The node's row of the Run's tree: an Artifact's evals and their verdicts come from there. */
+  const row = $derived(d.row?.run === run && d.row.view.id === node ? d.row.view : null);
   const evals = $derived(row?.kind === "artifact" ? row.children : []);
   const tabbed = $derived(row?.kind === "artifact");
   /** The node whose Detail is read: the shown eval, else the Artifact or the Run. */
@@ -76,11 +77,22 @@
     d.folds = { node: target, technical, pending, log, debug, ...change };
   }
 
-  /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
+  /** Read again for every accepted snapshot; the Detail and the node's row come from the
+   * backend's copy. */
   const read: Attachment<HTMLElement> = () => {
     void browse.revision;
-    const [at, wanted] = [run, target];
+    const [at, wanted, of] = [run, target, node];
     let current = true;
+    call(commands.detailRow(at, of)).then(
+      (view) => {
+        if (!current) return;
+        if (view) d.row = { run: at, view };
+        else ongone();
+      },
+      (failure) => {
+        if (current) d.error = message(failure);
+      },
+    );
     call(commands.detail(at, wanted)).then(
       (view) => {
         if (current) {
