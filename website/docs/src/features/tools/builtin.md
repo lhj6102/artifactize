@@ -189,7 +189,9 @@ explained above. Only `open` accepts a URL,
 and only `http://` or `https://`.
 
 `read`, `section` and `help` print text with the limits above; `list`, `glob` and
-`grep` print the JSON result of the Agent tool. A tool error goes to stderr with exit
+`grep` print the JSON result of the Agent tool. From the command line, `help` runs the
+program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
+with no private temporary or output directory. A tool error goes to stderr with exit
 1; invalid usage exits 2. `artifactize-tools --help` and `artifactize-tools
 SUBCOMMAND --help` describe each subcommand. The facade uses `artifactize tools
 --help` and `artifactize tools SUBCOMMAND --help`. `artifactize tools help PROGRAM

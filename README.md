@@ -52,8 +52,8 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 brew install lhj6102/tap/artifactize
 ```
 
-> This uses [Homebrew](https://brew.sh/). Add the desktop app with
-> `brew install --cask lhj6102/tap/artifactize`. Without Homebrew, use the install
+> This uses [Homebrew](https://brew.sh/). For the desktop app with the commands, use
+> `brew install --cask lhj6102/tap/artifactize` instead. Without Homebrew, use the install
 > script, which installs both: `curl -fsSL https://artifactize.dev/install.sh | sh`
 
 ### Windows

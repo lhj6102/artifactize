@@ -68,14 +68,17 @@ def generate(args):
                   "  end", "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
     elif args.kind == "cask":
-        # The desktop app beside its own artifactize; the formula keeps the CLI on PATH.
+        # The app, and its bundled commands linked onto PATH; the formula is the CLI alone.
         digest = sha256(Path(args.dist) / desktop_name(args.version, MAC_DESKTOP_TARGET)).lower()
         dmg = desktop_name("#{version}", MAC_DESKTOP_TARGET)
         lines = ['cask "artifactize" do', f'  version "{args.version}"', f'  sha256 "{digest}"', "",
                  f'  url "{base}/{dmg}"', '  name "Artifactize"',
                  '  desc "Declare and verify artifacts with reusable evidence"',
-                 '  homepage "https://artifactize.dev/"', "", '  depends_on macos: :big_sur', "",
-                 '  app "Artifactize.app"', "end", ""]
+                 '  homepage "https://artifactize.dev/"', "",
+                 '  depends_on macos: :big_sur', "",
+                 '  app "Artifactize.app"',
+                 '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize"',
+                 '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize-tools"', "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
     else:
         common = {"PackageIdentifier": PACKAGE, "PackageVersion": args.version}
