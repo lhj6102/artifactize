@@ -29,7 +29,7 @@ brew style "$tap/artifactize"
 # Homebrew quarantines what it installs; only a notarized app may keep that and still open.
 set -- --appdir="$apps"
 [ "${DESKTOP_SIGNED:-false}" = true ] || set -- "$@" --no-quarantine
-brew install --cask "$@" "$tap/artifactize"
+brew install --verbose --cask "$@" "$tap/artifactize"
 for command in artifactize artifactize-tools; do
     actual=$("$(brew --prefix)/bin/$command" --version)
     [ "$actual" = "$command $version" ] || { echo "the cask's $command reports '$actual'" >&2; exit 1; }
