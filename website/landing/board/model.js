@@ -86,11 +86,23 @@ export function parseNote(body) {
       && (words[1] === 'GREEN' || words[1] === 'SIGNOFFS_PENDING') && SHA.test(words[2])) {
       note.verify = { run: words[0], outcome: words[1], commit: words[2].toLowerCase() };
     } else if (key === 'green' && words.length === 2 && RUN.test(words[0])) {
-      const at = new Date(words[1]);
+      const at = new Date(isoExtended(words[1]));
       if (!Number.isNaN(at.getTime())) note.green.push({ run: words[0], at });
     }
   }
   return note;
+}
+
+/**
+ * An ISO 8601 time in the extended form Date reads: a basic-form UTC time such as
+ * `20260529T120000Z` gets its separators; any other text is returned unchanged.
+ * @param {string} time
+ */
+function isoExtended(time) {
+  const basic = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2}(?:[.,]\d+)?)Z$/.exec(time);
+  if (!basic) return time;
+  const [, year, month, day, hour, minute, second] = basic;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second.replace(',', '.')}Z`;
 }
 
 /**

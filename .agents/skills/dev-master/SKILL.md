@@ -139,9 +139,12 @@ gh api "repos/{owner}/{repo}/commits/$sha/pulls" --jq '.[0].number'
 ```
 
 In the pull request that last command names (the one whose merge made this
-commit), add `green: <Run ID> <UTC time, ISO 8601>` as the last line inside
-its note (`gh pr edit N --body-file …`). The development board on
-artifactize.dev reads these lines as the history of GREEN `dev` commits.
+commit), add `green: <Run ID> <UTC time>` as the last line inside
+its note (`gh pr edit N --body-file …`), the time as
+`date -u +%Y-%m-%dT%H:%M:%SZ` prints it. A pull request without a note gets one
+at the end of its body holding only that line between `<!-- artifactize-board`
+and `-->`. The development board on artifactize.dev reads these lines as the
+history of GREEN `dev` commits.
 
 ### 5. Report and schedule
 
