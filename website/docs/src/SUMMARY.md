@@ -37,6 +37,7 @@
 
 # Agent plugin
 
+- [Plugin for Claude Code and Codex](agent-plugin/plugin.md)
 - [Hey Arti](agent-plugin/hey-arti.md)
 - [MCP](agent-plugin/mcp.md)
 

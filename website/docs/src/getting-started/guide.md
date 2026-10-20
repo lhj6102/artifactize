@@ -1,7 +1,10 @@
 # Guide (no model needed)
 
 The tour uses the example projects in the repository. Unless you built from a
-checkout, clone it first:
+checkout, a local copy of the repository, make one first with **Git**, the version
+control program ([get Git](https://git-scm.com/downloads) if `git --version` does
+not answer). `git clone` downloads the repository into a new `artifactize` folder,
+and `cd` enters it:
 
 ```sh
 git clone https://github.com/lhj6102/artifactize

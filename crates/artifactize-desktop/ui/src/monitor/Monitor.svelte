@@ -183,6 +183,7 @@
           notice={browse.error ?? view?.error ?? null}
           bind:noticeOpen={m.noticeOpen}
           opened={m.opened && m.opened.run === run?.id ? m.opened.node : null}
+          cover={m.dock}
           focused={m.focus === "graph"}
           bind:element={panes.graph}
           onfocus={() => (m.focus = "graph")}
@@ -192,7 +193,7 @@
           onback={back}
         />
         {#if m.opened && run && m.opened.run === run.id}
-          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
+          <aside class="dock" aria-label="Detail" bind:this={m.dock} style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
             <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
                  the resize cursor. -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

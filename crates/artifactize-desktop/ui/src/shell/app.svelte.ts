@@ -7,6 +7,7 @@ import { Browse } from "../monitor/browse.svelte";
 import { Registry } from "./commands.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
+import { Waiting } from "../review/waiting.svelte";
 import { Leaving } from "./leaving.svelte";
 
 export type Screen = "monitor" | "review" | "settings" | "graph";
@@ -20,6 +21,8 @@ export class AppState {
   screen = $state<Screen>("monitor");
   /** The monitor's snapshot. */
   readonly browse = new Browse(this.ipc);
+  /** How many Human reviews wait, beside the screen switch's Review. */
+  readonly waiting = new Waiting(this.ipc);
   readonly leaving = new Leaving(this.ipc);
   /** The numbers of this window's cancellable Human jobs. */
   readonly jobs = new Jobs();

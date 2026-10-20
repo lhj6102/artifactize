@@ -25,7 +25,10 @@ app uses the shared state home. `--reviewer NAME` sets the cooperative claim nam
 requires `--repo` and reads current declarations. Invalid arguments exit 2.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
-Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K, F1 or the palette
+Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. While Human reviews
+wait, the **Review** button shows how many beside its name: the requests Review's
+starting search `kind:human status:waiting_human` lists (of `--repo` when given),
+updated as reviews are requested and settled. Ctrl+K, F1 or the palette
 button opens a searchable command palette; Enter runs a command and Esc closes it.
 `?` shows this screen's keys. Ctrl+R or F5 refreshes Monitor, or reloads current
 Graph declarations when Graph is open; it does not reload Review or Settings.
@@ -55,28 +58,28 @@ Scope row shows its own totals, and each Run row its own request counts.
 Followers of one Human execution count as one waiting sign-off.
 
 Selecting a Run updates its graph while Runs keeps the keyboard; Enter moves the
-keyboard into the graph. The divider between the left side and the graph area is
-always there: with no Run selected, while loading, on an error or with an empty
-graph, the area stays and says so. What went wrong, such as Runs on the page that
-cannot be read, shows as one line in the Run pane's header; click it to read it
-in full and again to fold it. It never moves or hides the graph. New Runs, claims
-and submissions made elsewhere appear without a manual reload. A read that fails
-leaves what was last read on screen: graphs, request states and claims can be
-stale while ages keep counting, so refresh the Monitor (Ctrl+R) or the Review
-list after fixing what the notice names. Run-end validation
+keyboard into the graph. The graph area stays in place and says when no Run is
+selected, it is loading, it failed or it is empty. A problem, such as Runs on the
+page that cannot be read, shows as one line in the Run pane's header that a click
+unfolds. New Runs, claims and submissions made elsewhere appear without a manual
+reload. After a failed read, what was last read stays on screen and can be stale,
+so refresh the Monitor (Ctrl+R) or the Review list once its cause is fixed.
+Run-end validation
 stays historical: a later Human submission can change the current request display
 without rewriting the old verdict. Damaged records are
 [marked unreadable](../features/others/state.md#unreadable-records), not treated
 as successful evidence.
 
-Hovering only highlights what is under the pointer; nothing opens on hover.
-Information opens on a click.
+Hovering only highlights; information opens on a click.
 
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it. Clicking another Artifact switches the
-Detail to it; clicking the graph's background, **Close** or Esc closes it. On a
+with the graph still visible behind it. It hides no Artifact: a whole graph refits
+beside it whenever it opens, closes or changes width, and after you zoom or pan
+the camera keeps your zoom and only brings the opened Artifact beside it. Clicking
+another Artifact switches the Detail to it; clicking the graph's background,
+**Close** or Esc closes it. On a
 Human review's Detail all three step back the same way: they cancel active work
 first, then leave the form, and only then close the Detail. Click
 the Run's headline, or use the palette command **Open the Run's Detail**, for the
@@ -241,9 +244,12 @@ The verdict is already recorded; retry publication with Settings' **Push results
 is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
 such as after closing Commands, `q` starts quitting even while that review stays
 open. Closing the window also starts quitting. If
-this window still holds unsubmitted Human claims, choose **Stay** (Esc),
-**Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a claim leaves it
-held for this reviewer; it is not a verdict.
+this window took Human claims it has not submitted or released itself, choose
+**Stay** (Esc), **Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a
+claim leaves it held for this reviewer; it is not a verdict. The prompt lists the
+claims this window took, as this window last saw them: a claim released or settled
+from the CLI or another window can still be listed, and a claim taken before the
+window opened is not.
 
 ## Settings
 

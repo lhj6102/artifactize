@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development board · Artifactize</title>
+<meta name="description" content="How Artifactize is being built, live: the release and development branches, the work of its AI agents and the state of every pull request.">
+<link rel="canonical" href="https://artifactize.dev/board/">
+<meta name="theme-color" content="#090B0F">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.png" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script>
+  (function () {
+    var theme = null;
+    try { theme = localStorage.getItem('mdbook-theme'); } catch (e) {}
+    if (theme && theme.charAt(0) === '"') theme = theme.slice(1, -1);
+    // No choice yet: follow the system.
+    var light = theme === 'light' || (theme !== 'navy' && !!window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+    document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/board/board.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap top-row">
+    <a class="brand" href="/" aria-label="Artifactize home">
+      <img class="mark" src="/media/artifactize-icon-mark.svg" width="29" height="26" alt="" aria-hidden="true">
+      <span>Artifactize</span>
+    </a>
+    <nav class="top-nav" aria-label="Main">
+      <a class="hide-sm" href="/#story">The story</a>
+      <a class="hide-sm" href="/#start">Install</a>
+      <a class="nav-docs" href="/docs/">Docs</a>
+      <a class="nav-icon" href="https://github.com/lhj6102/artifactize" aria-label="Artifactize on GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+      </a>
+      <button type="button" class="nav-icon theme-toggle" hidden aria-label="Use the light theme">
+        <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+        <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M5.3 18.7l1.5-1.5M17.2 6.8l1.5-1.5"/></g></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap board">
+  <p class="kicker">Development board</p>
+  <h1>How Artifactize is being built.</h1>
+  <p class="lede">Artifactize splits a project into pieces that each carry their own checks, so people and AI agents can change it together and keep it consistent. Its own development runs on it, and this page follows that work live from the project’s GitHub repository.</p>
+  <p class="terms">A few words first: a <b>commit</b> is one saved version of the project, a <b>branch</b> is a separate line of work, and a <b>pull request</b> asks for a branch’s work to be added to another branch.</p>
+
+  <ul class="flow-key">
+    <li><span class="key-line lane-main" aria-hidden="true"></span><b><code>main</code></b> holds the released versions.</li>
+    <li><span class="key-line lane-dev" aria-hidden="true"></span><b><code>dev</code></b> is where finished work comes together. Its latest commit that passes every check is marked <code>dev-green</code>.</li>
+    <li><span class="key-line role-worker" aria-hidden="true"></span><b>dev-worker</b> agents each take one task on their own branch, starting from <code>dev-green</code>, and ask to join <code>dev</code> once their checks pass.</li>
+    <li><span class="key-line role-master" aria-hidden="true"></span><b>dev-master</b> brings the waiting work into <code>dev</code>, then runs every check on the result and fixes what fails until all pass. The project’s owner decides each release.</li>
+  </ul>
+
+  <p class="board-problem" id="board-problem" role="status" hidden></p>
+
+  <section class="board-section" aria-labelledby="now-title">
+    <h2 id="now-title">Now</h2>
+    <div class="cards" id="board-status" aria-live="polite">
+      <div class="card"><h3><code>dev</code></h3><p>Loading…</p></div>
+      <div class="card"><h3>Waiting to join dev</h3><p>Loading…</p></div>
+      <div class="card"><h3>Latest release</h3><p>Loading…</p></div>
+    </div>
+  </section>
+
+  <section class="board-section" aria-labelledby="flow-title">
+    <h2 id="flow-title">Branch flow</h2>
+    <p class="section-lede">One column per event, oldest on the left. Each line below <code>dev</code> is a branch: it leaves where it started and returns when it joins.</p>
+    <ul class="legend" aria-label="Legend">
+      <li><svg viewBox="0 0 26 12" aria-hidden="true"><path class="role-worker" d="M1 6h24"/></svg>dev-worker</li>
+      <li><svg viewBox="0 0 26 12" aria-hidden="true"><path class="role-master" d="M1 6h24"/></svg>dev-master</li>
+      <li><svg viewBox="0 0 26 12" aria-hidden="true"><path class="role-other" d="M1 6h24"/></svg>other work</li>
+      <li><svg viewBox="-9 -9 18 18" aria-hidden="true"><circle class="flow-green" r="7"/></svg>GREEN <code>dev</code> commit</li>
+      <li><svg viewBox="-9 -9 18 18" aria-hidden="true"><circle class="flow-tip ci-passed" r="5.5"/></svg>open, CI passed</li>
+      <li><svg viewBox="-9 -9 18 18" aria-hidden="true"><circle class="flow-tip ci-failed" r="5.5"/></svg>open, CI failed</li>
+      <li><svg viewBox="-9 -9 18 18" aria-hidden="true"><circle class="flow-tip ci-running" r="5.5"/></svg>open, CI running</li>
+      <li><svg viewBox="-9 -9 18 18" aria-hidden="true"><path class="flow-closed" d="M-4-4l8 8m0-8l-8 8"/></svg>closed</li>
+    </ul>
+    <div class="flow" id="board-flow"><p class="flow-empty">Loading…</p></div>
+  </section>
+
+  <section class="board-section" aria-labelledby="prs-title">
+    <h2 id="prs-title">Pull requests</h2>
+    <p class="section-lede">Open requests first, then the latest that joined or closed. Verify is the project’s own full check; CI builds it on Linux, macOS and Windows.</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-labelledby="prs-title">
+      <table class="prs">
+        <thead><tr><th scope="col">Pull request</th><th scope="col">By</th><th scope="col">Verify</th><th scope="col">CI</th><th scope="col">State</th></tr></thead>
+        <tbody id="board-prs"><tr><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="board-section" aria-labelledby="activity-title">
+    <h2 id="activity-title">Recent work</h2>
+    <ol class="activity" id="board-activity"><li>Loading…</li></ol>
+  </section>
+
+  <p class="board-meta">
+    <span id="board-updated"></span>
+    This page gets its data straight from GitHub in your browser. GitHub answers 60 requests an hour from one network address; one visit uses about six, plus one for each open pull request.
+    <button type="button" class="btn btn-ghost board-refresh" id="board-refresh">Refresh</button>
+  </p>
+  <noscript><p class="board-problem">The board needs JavaScript. The <a href="https://github.com/lhj6102/artifactize/pulls">pull requests on GitHub</a> show the same work.</p></noscript>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-row">
+    <a class="brand" href="/" aria-label="Artifactize home">
+      <img class="mark" src="/media/artifactize-icon-mark.svg" width="24" height="22" alt="" aria-hidden="true">
+      <span>Artifactize</span>
+    </a>
+    <p class="foot-tag">Declare. <em>Verify.</em> Reuse.</p>
+    <nav class="foot-nav" aria-label="Footer">
+      <a href="/docs/">Docs</a>
+      <a href="/board/">Development</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="https://github.com/lhj6102/artifactize">GitHub</a>
+      <a href="https://discord.gg/VswgKkPkS9">Discord</a>
+    </nav>
+    <p class="foot-meta"><a href="https://github.com/lhj6102/artifactize/blob/main/LICENSE">Open source · Apache-2.0</a></p>
+  </div>
+</footer>
+
+<script src="/site.js" defer></script>
+<script type="module" src="/board/main.js"></script>
+</body>
+</html>
