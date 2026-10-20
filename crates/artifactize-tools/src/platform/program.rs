@@ -13,10 +13,11 @@ const SEARCH_PATH: &str = "PATH";
 /// The Windows variable listing the extensions an extensionless name is tried with.
 const EXTENSIONS: &str = "PATHEXT";
 
-/// Resolve against the inherited PATH and, on Windows, PATHEXT. A bare name never
-/// implicitly searches the working directory; relative PATH entries are based on `cwd`.
+/// Resolve against the PATH and, on Windows, PATHEXT that a started program receives (see
+/// [`super::environment::user`]). A bare name never implicitly searches the working directory;
+/// relative PATH entries are based on `cwd`.
 pub fn resolve(program: &OsStr, cwd: &Path) -> io::Result<PathBuf> {
-    resolve_with(program, cwd, |name| env::var_os(name))
+    resolve_with(program, cwd, super::environment::var)
 }
 
 /// Resolve using the environment that the child will receive, not the caller's PATH:

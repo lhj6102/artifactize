@@ -47,9 +47,10 @@ pub(crate) fn resolve_with(
     artifactize_tools::program::resolve_with(program, cwd, variable)
 }
 
-/// Find `program` as a child with this process's environment would.
+/// Find `program` as a child with the person's environment ([`super::environment::snapshot`])
+/// would.
 pub(crate) fn resolve(program: &std::ffi::OsStr, cwd: &Path) -> std::io::Result<PathBuf> {
-    resolve_with(program, cwd, super::environment::var)
+    artifactize_tools::program::resolve(program, cwd)
 }
 
 /// Hand `target`, a file or URL, to the desktop's opener.
@@ -66,6 +67,8 @@ pub(crate) fn tool_output<'a>(
     let program = resolve(std::ffi::OsStr::new(program), &cwd).ok()?;
     let output = std::process::Command::new(program)
         .args(args)
+        .env_clear()
+        .envs(super::environment::snapshot())
         .stdin(std::process::Stdio::null())
         .output()
         .ok()?;

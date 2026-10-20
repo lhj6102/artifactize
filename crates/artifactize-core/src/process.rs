@@ -495,6 +495,8 @@ pub(crate) fn launch_detached(
     command
         .args(args)
         .current_dir(cwd)
+        .env_clear()
+        .envs(platform::environment::snapshot())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -533,6 +535,8 @@ pub(crate) fn launch_watched(
     command
         .args(args)
         .current_dir(cwd)
+        .env_clear()
+        .envs(platform::environment::snapshot())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -623,6 +627,8 @@ pub(crate) fn spawn_run(
         // Internal workers must not pin the repository after publishing a terminal Run.
         // Authored commands still use their declared repository cwd in `spawn_owned`.
         .current_dir(directory)
+        .env_clear()
+        .envs(platform::environment::snapshot())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr))

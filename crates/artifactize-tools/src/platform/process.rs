@@ -66,11 +66,12 @@ async fn capture(reader: impl AsyncRead + Unpin, limit: usize) -> std::io::Resul
     Ok(bytes)
 }
 
-/// The variables a standalone program receives: this process's whole environment, as in the
+/// The variables a standalone program receives: the person's whole environment, as in the
 /// author's terminal, without artifactize's own `ARTIFACTIZE_*` variables (its credentials and
 /// settings).
 pub(crate) fn passed_environment() -> BTreeMap<OsString, OsString> {
-    std::env::vars_os()
+    super::environment::user()
+        .into_iter()
         .filter(|(name, _)| {
             !name
                 .to_str()
