@@ -89,8 +89,14 @@ staple_dmg() {
         -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
     rm -f "$work/certificate.p12"
     security set-key-partition-list -S apple-tool:,apple: -s -k "" "$work/signing.keychain-db" >/dev/null
+    # codesign finds an identity only in a keychain on the user's search list.
+    keychains=$(security list-keychains -d user | tr -d '"')
+    # shellcheck disable=SC2086 # one keychain path per word
+    security list-keychains -d user -s "$work/signing.keychain-db" $keychains
     codesign --force --timestamp --keychain "$work/signing.keychain-db" \
         --sign "$APPLE_SIGNING_IDENTITY" "$1"
+    # shellcheck disable=SC2086
+    security list-keychains -d user -s $keychains
     security delete-keychain "$work/signing.keychain-db"
     rm -rf "$work"
     echo "build-desktop.sh: stapled the app after $attempt attempts and re-signed the dmg"
