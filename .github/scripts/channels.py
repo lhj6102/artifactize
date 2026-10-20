@@ -75,7 +75,7 @@ def generate(args):
                  f'  url "{base}/{dmg}"', '  name "Artifactize"',
                  '  desc "Declare and verify artifacts with reusable evidence"',
                  '  homepage "https://artifactize.dev/"', "",
-                 f'  conflicts_with formula: "{args.tap}/artifactize"', '  depends_on macos: :big_sur', "",
+                 '  depends_on macos: :big_sur', "",
                  '  app "Artifactize.app"',
                  '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize"',
                  '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize-tools"', "end", ""]
@@ -262,7 +262,6 @@ def main():
     gen.add_argument("--output", required=True)
     gen.add_argument("--base-url")
     gen.add_argument("--targets", nargs="+", choices=MAC_TARGETS, default=MAC_TARGETS)
-    gen.add_argument("--tap", default="lhj6102/tap", help="the tap whose CLI formula the cask conflicts with")
     gate = sub.add_parser("gate", help="Evaluate release policy and emit an Actions enabled output")
     gate.add_argument("channel", choices=SECRETS)
     pub = sub.add_parser("publish")

@@ -16,7 +16,7 @@ trap cleanup EXIT HUP INT TERM
 brew tap-new "$tap"
 casks="$(brew --repository "$tap")/Casks"
 mkdir -p "$casks"
-python3 -I "$script_dir/channels.py" generate cask --version "$version" --tap "$tap" \
+python3 -I "$script_dir/channels.py" generate cask --version "$version" \
     --dist "$dist" --output "$casks" --base-url "file://$dist"
 brew style "$tap/artifactize"
 # Homebrew quarantines what it installs; only a notarized app may keep that and still open.
