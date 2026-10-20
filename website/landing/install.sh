@@ -3,9 +3,8 @@
 #
 #   curl -fsSL https://artifactize.dev/install.sh | sh
 #
-# Other available channels (Homebrew and Cargo), plus winget and the Microsoft
-# Store (in preparation, not available yet), are listed at
-# https://artifactize.dev/docs/getting-started/install.html
+# Other channels (Homebrew, the Mac disk image, the Linux .deb and AppImage, and Cargo)
+# are listed at https://artifactize.dev/docs/getting-started/install.html
 #
 # Downloads the release archive for this OS and CPU over https, checks its SHA-256
 # against the release's .sha256 file, and installs artifactize and artifactize-tools to

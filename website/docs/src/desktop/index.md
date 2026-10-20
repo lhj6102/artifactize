@@ -1,9 +1,9 @@
 # Desktop
 
 The desktop app is a window onto the same machine-wide state as the CLI and TUI.
-It is a source-built preview, not a bundled CLI release component. Browse Runs,
-inspect evidence and handle Human sign-offs without a second review engine or a
-separate evidence store. See [Installation](../getting-started/install.md) for setup.
+Browse Runs, inspect evidence and handle Human sign-offs without a second review
+engine or a separate evidence store. Every release ships it beside the commands; see
+[Desktop app](../getting-started/install.md#desktop-app) to install it.
 
 ## Open the app
 

@@ -103,7 +103,7 @@ try {
         try { & $Installer } catch { $message = $_.Exception.Message }
         if (-not $message) { throw "installer accepted the non-runnable $blocked" }
         Write-Host $message
-        foreach ($expected in @("new ${blocked}", 'Existing binaries were kept', 'application control policy', 'Do not bypass', 'Microsoft Store', 'not available yet', 'https://artifactize.dev/docs/getting-started/install.html')) {
+        foreach ($expected in @("new ${blocked}", 'Existing binaries were kept', 'application control policy', 'Do not bypass', 'Microsoft Store', '9PB6W4LL165D', 'https://artifactize.dev/docs/getting-started/install.html')) {
             if (-not $message.Contains($expected)) { throw "missing blocked-binary explanation: $expected" }
         }
         foreach ($command in $commands) {
