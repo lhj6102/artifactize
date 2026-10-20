@@ -12,7 +12,7 @@ and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
 the stable name the landing page's download button links to through
 `releases/latest/download`.
 The other channels carry the app too: the Homebrew cask `artifactize` installs
-`Artifactize.app` from the dmg and depends on the formula, so it brings the commands too, the winget manifest adds
+`Artifactize.app` from the dmg and links its bundled commands onto Homebrew's PATH (it conflicts with the CLI-only formula), the winget manifest adds
 an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
 menu shortcut, and `install.sh` installs `Artifactize.app` into `~/Applications` on
 macOS or unpacks the AppImage on glibc x86_64 Linux with an `artifactize-desktop`
@@ -186,8 +186,8 @@ The two informational macOS builds install from a native PR archive through a
 local tap, run `brew test`, and execute both commands. The universal desktop job
 builds both commands for both CPUs, bundles the app on Apple Silicon, and after the dmg
 smoke installs the app with `install.sh` and with a local-tap cask (`brew style`, then
-`brew install --cask`, quarantined only when the app is notarized, which also installs the
-local formula's commands) and opens each installed copy; an Intel runner then opens the
+`brew install --cask`, quarantined only when the app is notarized; both commands must then
+run from Homebrew's PATH) and opens each installed copy; an Intel runner then opens the
 same dmg. The Linux desktop job installs with `install.sh` from its AppImage
 and opens the app through the installed launcher. The informational Windows
 build parses all PowerShell scripts, installs with `install.ps1` and opens the app

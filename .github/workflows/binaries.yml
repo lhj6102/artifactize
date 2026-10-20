@@ -308,7 +308,7 @@ jobs:
           HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
             sh website/landing/install.sh
           HOME="$home" sh .github/scripts/smoke-desktop.sh installed-mac "$VERSION" "$home/Applications/Artifactize.app"
-          sh .github/scripts/smoke-cask.sh "$VERSION" aarch64-apple-darwin dist desktop-dist
+          sh .github/scripts/smoke-cask.sh "$VERSION" desktop-dist
 
   # The same dmg on an Intel Mac: the universal app's x86_64 half must open too.
   desktop-macos-intel:

@@ -97,8 +97,10 @@ artifactize --version
 ```
 
 The formula in the `lhj6102/tap` Homebrew tap installs both commands for your Mac's
-CPU and follows stable releases. The desktop app is a cask in the same tap; it
-installs the formula too, so this one command gives you the app and both commands:
+CPU and follows stable releases. The desktop app is a cask in the same tap. It links
+the app's own `artifactize` and `artifactize-tools` onto Homebrew's PATH, so this one
+command gives you the app and both commands (uninstall the formula first if you have
+it; the cask replaces it):
 
 ```sh
 brew install --cask lhj6102/tap/artifactize
@@ -408,7 +410,7 @@ And the desktop app:
 rm -rf ~/Applications/Artifactize.app                        # install.sh on macOS
 rm -rf ~/.local/share/artifactize/desktop ~/.local/bin/artifactize-desktop \
   ~/.local/share/applications/artifactize.desktop             # install.sh on Linux
-brew uninstall --cask artifactize && brew uninstall artifactize   # Homebrew cask and the commands it installed
+brew uninstall --cask artifactize                            # Homebrew cask, with its commands
 sudo apt remove artifactize                                  # .deb
 ```
 

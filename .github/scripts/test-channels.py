@@ -202,7 +202,8 @@ class ChannelsTest(unittest.TestCase):
             cask = (root / "cask/artifactize.rb").read_text()
             self.assertTrue(cask.startswith('cask "artifactize" do'))
             self.assertIn('app "Artifactize.app"', cask)
-            self.assertIn('depends_on formula: "lhj6102/tap/artifactize"', cask)
+            self.assertIn('conflicts_with formula: "lhj6102/tap/artifactize"', cask)
+            self.assertIn('binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize"', cask)
             self.assertIn("artifactize-desktop-v#{version}-universal-apple-darwin.dmg", cask)
             self.assertIn(channels.sha256(dmg).lower(), cask)
 
