@@ -36,8 +36,8 @@ that makes the transition happen and checks where it leads.
   and fingerprint, every other fact under Debug, unfolded
   with `t` or a click) or, switched below the tabs, its Agent log or Runtime log; for a Human
   eval the Human review. Everything in the Detail, transcript and log lines, long words and code
-  included, wraps or scrolls within its width. Hovering only highlights, and over a divider or the Detail's left edge shows only the
-  resize cursor; nothing opens on hover.
+  included, wraps or scrolls within its width. Hovering only highlights, and over a divider or
+  the Detail's left edge shows only the resize cursor; nothing opens on hover.
   States: Scope, Runs or Graph focused; Detail open on a tab (the Artifact's, an eval's Summary,
   Debug unfolded, or a log), its chips on one line or wrapped; notice as one line or in full.
 - **Run graph**: the selected Run's Artifacts as nodes and their dependencies as edges,
@@ -62,8 +62,8 @@ that makes the transition happen and checks where it leads.
   filled in and not shown; `*` marks a required field and an empty optional one says Optional in
   grey. There is no JSON editor.
   The **Tool log** shows each run as `▶ HH:MM:SS · operation · Artifact`, then each line the tool
-  prints (stderr in red), then its end line: `■ exit 0` (or another exit), `■ launched`, `■ done`
-  or `■ error: …`. It is monospace, wraps within the review's width and scrolls in its own box,
+  prints (stderr in red), then its end line (`■ exit 0`, `■ launched`, `■ done`, `■ error: …`);
+  a launched application's lines keep arriving under its own run until it exits. It is monospace, wraps within the review's width and scrolls in its own box,
   apart from the rest of the review. Its states: Following (it shows its newest line as lines
   arrive) and Scrolled up (the reader scrolled away from the bottom: it stays where the reader
   left it while lines arrive below). Its text selects and copies like any page text.
@@ -136,10 +136,10 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-RELEASE | Claimed | `u` | Unclaimed |
 | E-HUMAN-CLAIMED-ELSEWHERE | Unclaimed | another process claims | Taken, shown with the claimant; claiming here is refused |
 | E-HUMAN-RELEASED-ELSEWHERE | Taken | the other process releases | Unclaimed |
-| E-HUMAN-TOOL | Claimed or Editing | click an output tool's `▶` button | same state, the tool running until it ends, its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line (stderr in red), then `■ exit 0`, or `■ done` for a builtin tool |
-| E-HUMAN-TOOL-LAUNCH | Claimed or Editing | click a launch tool's `▶` button | same state at once, the application opened and said so; its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, then `■ launched` |
+| E-HUMAN-TOOL | Claimed or Editing | click an output tool's `▶` button | same state, the tool running until it ends, its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0` |
+| E-HUMAN-TOOL-LAUNCH | Claimed or Editing | click a launch tool's `▶` button | same state at once, the application opened and said so; its run open in the Tool log |
 | E-HUMAN-LOG-LIVE | a launched application logging | it prints, then exits | same state, its lines (stderr in red) and then its end added under its own run |
-| E-HUMAN-TOOL-FAIL | Claimed or Editing | click a tool that fails | same state, the failure said and its run ended in red with `■ error: …` in the Tool log |
+| E-HUMAN-TOOL-FAIL | Claimed or Editing | click a tool that fails | same state, the failure said and its run ended red in the Tool log |
 | E-HUMAN-GREEN | Claimed | `g` | Editing GREEN, the form built from the pass schema |
 | E-HUMAN-RED | Claimed | `r` | Editing RED, the form built from the fail schema |
 | E-HUMAN-SWITCH | Editing | Ctrl+G or Ctrl+R | Editing GREEN for Ctrl+G, Editing RED for Ctrl+R (the current verdict stays selected when its own shortcut is used) |
