@@ -60,6 +60,46 @@ for format in $formats; do bundles="$bundles${bundles:+,}${format%%:*}"; done
 (cd "$crate" && ui/node_modules/.bin/tauri build --ci --target "$target" --bundles "$bundles" --config tauri.bundle.json)
 rm -rf "$crate/binaries"
 
+# Tauri staples the notarized app once and carries on when Apple has not published the ticket
+# yet, so the dmg can hold an unstapled app. Staple it inside the dmg until Apple answers,
+# then rebuild and re-sign the image.
+staple_dmg() {
+    work=$(mktemp -d "${TMPDIR:-/tmp}/artifactize-staple.XXXXXXXX")
+    hdiutil attach -nobrowse -readonly -mountpoint "$work/mount" "$1" >/dev/null
+    stapled=true
+    xcrun stapler validate -q "$work/mount/Artifactize.app" >/dev/null 2>&1 || stapled=false
+    hdiutil detach -quiet "$work/mount"
+    if [ "$stapled" = true ]; then rm -rf "$work"; return; fi
+    hdiutil convert -quiet "$1" -format UDRW -o "$work/rw.dmg"
+    hdiutil attach -nobrowse -mountpoint "$work/mount" "$work/rw.dmg" >/dev/null
+    attempt=1
+    until xcrun stapler staple -q "$work/mount/Artifactize.app"; do
+        [ "$attempt" -lt 20 ] || { hdiutil detach -quiet "$work/mount"; echo "build-desktop.sh: Apple has no ticket to staple" >&2; exit 1; }
+        attempt=$((attempt + 1))
+        sleep 30
+    done
+    hdiutil detach -quiet "$work/mount"
+    rm -f "$1"
+    hdiutil convert -quiet "$work/rw.dmg" -format UDZO -o "$1"
+    # Tauri's signing keychain is gone by now; import the certificate once more for the image.
+    printf '%s' "$APPLE_CERTIFICATE" | base64 --decode >"$work/certificate.p12"
+    security create-keychain -p "" "$work/signing.keychain-db"
+    security unlock-keychain -p "" "$work/signing.keychain-db"
+    security import "$work/certificate.p12" -k "$work/signing.keychain-db" \
+        -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
+    rm -f "$work/certificate.p12"
+    security set-key-partition-list -S apple-tool:,apple: -s -k "" "$work/signing.keychain-db" >/dev/null
+    codesign --force --timestamp --keychain "$work/signing.keychain-db" \
+        --sign "$APPLE_SIGNING_IDENTITY" "$1"
+    security delete-keychain "$work/signing.keychain-db"
+    rm -rf "$work"
+    echo "build-desktop.sh: stapled the app after $attempt attempts and re-signed the dmg"
+}
+if [ "$target" = universal-apple-darwin ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_CERTIFICATE:-}" ]; then
+    set -- "$release/bundle/dmg"/*.dmg
+    staple_dmg "$1"
+fi
+
 for format in $formats; do
     bundle=${format%%:*}
     ext=${format#*:}
