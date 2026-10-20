@@ -78,8 +78,16 @@ Once installed, take the
 [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
 It uses an example project and needs no AI account or provider access key (API key).
 With [Hey Arti](https://artifactize.dev/docs/agent-plugin/hey-arti.html), ask your coding
-assistant in your own words to set up and run these checks; its SKILL.md file gives
-the assistant the workflow instructions.
+assistant in your own words to set up and run these checks. Its
+[plugin](https://artifactize.dev/docs/agent-plugin/plugin.html) gives Claude Code and
+Codex these instructions and Artifactize's tools in one install:
+
+```text
+/plugin marketplace add lhj6102/artifactize          # Claude Code, in a session
+/plugin install artifactize@artifactize
+codex plugin marketplace add lhj6102/artifactize     # Codex, in a terminal
+codex plugin add artifactize@artifactize
+```
 
 ## Learn more
 

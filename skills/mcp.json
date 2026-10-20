@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "artifactize": {
+      "type": "stdio",
+      "command": "artifactize",
+      "args": ["mcp"]
+    }
+  }
+}

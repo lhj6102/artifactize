@@ -1,0 +1,21 @@
+{
+  "name": "artifactize",
+  "displayName": "artifactize",
+  "description": "Hey Arti, artifactize's Forward Deployed Engineer, as a skill, and the artifactize MCP server for inspecting and verifying the project. Needs the artifactize program on PATH.",
+  "author": {
+    "name": "Hyukjin LIM",
+    "url": "https://github.com/lhj6102"
+  },
+  "homepage": "https://artifactize.dev/docs/agent-plugin/plugin.html",
+  "repository": "https://github.com/lhj6102/artifactize",
+  "license": "Apache-2.0",
+  "keywords": ["artifactize", "review", "verification", "evals", "mcp"],
+  "skills": ["./hey-arti"],
+  "mcpServers": {
+    "artifactize": {
+      "type": "stdio",
+      "command": "artifactize",
+      "args": ["--repo", "${CLAUDE_PROJECT_DIR}", "mcp"]
+    }
+  }
+}

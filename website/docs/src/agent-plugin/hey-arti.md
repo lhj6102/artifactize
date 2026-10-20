@@ -15,16 +15,21 @@ host. It is short on purpose: these docs are its **source of truth**. It maps ea
 concept to the page that owns it and has Arti read a page before explaining or
 writing what it is unsure of; when a page and the skill disagree, the page wins.
 Then come how Arti treats you as its client, its work processes by situation, and
-the best practices and examples it draws from. Plugin-marketplace installation is separate; no plugin exporter or release
-bundle is required for the MCP registration below.
+the best practices and examples it draws from.
 
-## Register the MCP server
+## Get the skill
 
-Follow [MCP setup](mcp.md#register-the-mcp-server) to connect your coding host.
-Registration supplies tools; it does not install the skill. Open the linked
-`SKILL.md`, attach the unchanged file to your assistant's conversation and ask, for
-example: "Follow this guide. Learn this repository and propose Artifacts and evals
-before editing." Use that canonical guide rather than maintaining an edited copy.
+In Claude Code and Codex, install the [plugin](plugin.md): it brings this skill and
+the MCP server together, and the plugin's skill is this same file. Arti first checks
+that artifactize is installed; if it is not, it points you to the
+[installation page](../getting-started/install.md) and offers your system's default.
+
+In other hosts, follow [MCP setup](mcp.md#register-the-mcp-server) to connect your
+coding host. Registration supplies tools; it does not install the skill. Open the
+linked `SKILL.md`, attach the unchanged file to your assistant's conversation and
+ask, for example: "Follow this guide. Learn this repository and propose Artifacts
+and evals before editing." Use that canonical guide rather than maintaining an
+edited copy.
 
 ## What Arti does with you
 

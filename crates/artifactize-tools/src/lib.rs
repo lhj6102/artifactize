@@ -10,7 +10,7 @@ pub mod result;
 pub mod schema;
 pub mod scope;
 
-pub use platform::{files, program};
+pub use platform::{environment, files, program};
 
 /// Temporary roots, links and executable files, shared with the integration tests.
 #[cfg(test)]

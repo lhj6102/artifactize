@@ -1,5 +1,6 @@
 //! The process environment, read in one place: variable lookup, which ignores the case of
-//! names on Windows, snapshots handed to children, and lookups in such snapshots.
+//! names on Windows, snapshots handed to children, and lookups in such snapshots. Every child
+//! gets a snapshot, never this process's environment by inheritance.
 
 use std::{
     collections::BTreeMap,
@@ -16,9 +17,10 @@ pub fn var_text(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
-/// This process's whole environment, for a child that runs as the person using artifactize.
+/// The whole environment of a child that runs as the person using artifactize: this
+/// process's, without what an AppImage added to it ([`artifactize_tools::environment::user`]).
 pub(crate) fn snapshot() -> BTreeMap<OsString, OsString> {
-    std::env::vars_os().collect()
+    artifactize_tools::environment::user()
 }
 
 /// The prefix of artifactize's own variables: its credentials, settings and the variables it
