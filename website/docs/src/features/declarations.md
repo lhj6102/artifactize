@@ -354,20 +354,10 @@ See [verify modes](../cli/index.md#verify-modes) and
 
 ## Eval dependencies
 
-`payload.instruction` references and runtime `profile.args` operands such as
-`{input}` or `{input}/path` create dependencies for that Eval only; the input's
-Evals supply its review obligations. A child folder is part of its parent's
-content, so it is a dependency of every Eval of the parent, as if each referenced
-it. Self-references identify the target and do not make an Eval wait for its own
-siblings; only a Human Eval waits for its Artifact's
-[machine Evals](artifact.md#human-sign-offs).
-
-Plain `verify` waits for input evidence; `--speculate` changes this scheduling
-policy without waiving final approval. An Eval's own Artifact and the Artifacts
-in a dependency cycle with it never gate it, so a RED sibling machine Eval or cycle
-peer does not block it; a child that references its parent is such a peer; peers retain individual verdicts and must all pass before downstream
-consumers can proceed. See [Eval dependencies](artifact.md#eval-dependencies)
-for the E2E ownership example and full model.
+Write Artifact references as `{input}` or `{input}/path` in
+`payload.instruction` and runtime `profile.args`. See
+[Eval dependencies](artifact.md#eval-dependencies) for their obligations, child
+Artifacts, cycles, scheduling and the Human prerequisites.
 
 ## Artifactsum
 

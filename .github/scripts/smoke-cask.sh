@@ -1,6 +1,6 @@
 #!/bin/sh
 # Install the desktop app's cask from this build's dmg through a real local tap, never a
-# public release, and open the installed app.
+# public release: the app opens and its bundled commands are on Homebrew's PATH.
 set -eu
 version=$1
 dist=$(cd "$2" && pwd)
@@ -23,4 +23,8 @@ brew style "$tap/artifactize"
 set -- --appdir="$apps"
 [ "${DESKTOP_SIGNED:-false}" = true ] || set -- "$@" --no-quarantine
 brew install --cask "$@" "$tap/artifactize"
+for command in artifactize artifactize-tools; do
+    actual=$("$(brew --prefix)/bin/$command" --version)
+    [ "$actual" = "$command $version" ] || { echo "the cask's $command reports '$actual'" >&2; exit 1; }
+done
 sh "$script_dir/smoke-desktop.sh" installed-mac "$version" "$apps/Artifactize.app"

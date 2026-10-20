@@ -843,6 +843,16 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
         let content = if turn == 0 {
             openai::function_call("probe", "probe_app", &json!({}))
         } else if turn == 1 {
+            let probe = request.body["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["type"] == "function_call_output" && item["call_id"] == "probe")
+                .unwrap();
+            assert!(probe["output"].to_string().contains("ready"), "{probe}");
+            // The leader's start record precedes readiness and the first call's
+            // admission. Deny creates only once that probe has fully completed.
+            fs::write(log.join("probe-done"), "ready").unwrap();
             support::os::wait_until(Duration::from_secs(10), || {
                 fs::read_to_string(log.join("admit")).unwrap_or_default() == "ready"
             });
@@ -864,7 +874,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
         .unwrap();
     let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
-        !fixture.records("start").is_empty()
+        fs::read_to_string(fixture.log().join("probe-done")).unwrap_or_default() == "ready"
     });
     let start = fixture.records("start").pop().unwrap();
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
@@ -879,7 +889,8 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
     let output = owner.wait_with_output().unwrap();
     assert!(
         output.status.success(),
-        "{}",
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(

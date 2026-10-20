@@ -36,11 +36,6 @@ Upgrade the server and its clients together. The 0.9 reuse-key v2 matches no old
 Human sign-offs included, needs one new review. See [Review store server](reference.md#review-store-server) for
 the full reference.
 
-Share reusable results through the team review store, then let [CI](ci.md) reuse
-Agent and Human verdicts with a read-only token. The [walkthrough](walkthrough.md)
-shows two machines and CI; the [reference](reference.md) covers server and client
-commands, record formats and security.
-
 ## Connect teammates securely
 
 A **TLS reverse proxy** is a server in front of the store that accepts encrypted

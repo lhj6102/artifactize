@@ -194,7 +194,8 @@ requests cancellation of any active Human lifecycle job: claim, tool, submission
 once no job is busy, Ctrl-C invokes quitting, including from a form.
 Standalone `review` lists claims
 this session took without submitting: `k` keeps them and quits, `u` releases them
-and quits, and Esc stays. Ctrl-C again at this standalone quit prompt exits while
+and quits, and Esc stays. If a release fails, Review stays open, shows the error and
+keeps the claims that failed; press `u` to try again or `k` to quit keeping them. Ctrl-C again at this standalone quit prompt exits while
 keeping outstanding claims. The quit prompt sets a form aside without dropping its
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
 one back. Esc never quits either UI.
@@ -411,6 +412,10 @@ notice until you return to the list, and a failed Record reload can clear that
 previous Detail instead of retaining it. In Review, return to the request list
 and press `r`; in Monitor, request refresh from Scope, Runs or the tree.
 A successful read clears the failure notice.
+
+A single saved Run that cannot be read, or contradicts itself, is different: Monitor
+lists it with its own error, without a **read failed** notice, and does not open its
+tree. The other Runs stay available.
 
 Draft retention applies only within the same state identity. If Monitor detects
 that a replacement state database has a different identity, it cancels active

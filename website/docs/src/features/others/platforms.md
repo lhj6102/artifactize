@@ -99,10 +99,8 @@ also ship the standalone `artifactize-tools` command.
 
 ## State
 
-The state directory is `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`,
-else `%LOCALAPPDATA%\artifactize` on Windows, else `~/.local/state/artifactize` (also
-on macOS). Unpackaged Windows installs for one user share that default. The Store
-version uses Windows' default AppData virtualization and keeps its own package-private
-Runs, sign-in and cache; it does not use the unpackaged installs' shared state as its
-storage contract. Windows removes the private state on uninstall. WSL keeps its own
-Linux state. See [State](state.md#state), including the Windows overlay caveat.
+The default state directory differs by OS: `%LOCALAPPDATA%\artifactize` on Windows,
+`~/.local/state/artifactize` on Linux and macOS. The Store version keeps its own
+package-private state, which Windows removes on uninstall, and WSL keeps its own Linux
+state. See [State](state.md#state) for the full precedence and the Windows overlay
+caveat.

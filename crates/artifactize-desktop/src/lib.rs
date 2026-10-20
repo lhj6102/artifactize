@@ -145,6 +145,15 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
         })
         .setup(move |app| {
             specta.mount_events(app);
+            let command_state = state.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(error) =
+                    artifactize_core::platform::desktop_commands::setup(&command_state)
+                {
+                    eprintln!("cannot make the artifactize command available: {error}");
+                }
+                eprintln!("desktop command setup complete");
+            });
             watch::spawn(app.handle().clone(), state);
             if let Some(events) = app.state::<App>().human.take_events() {
                 human::log::forward(app.handle().clone(), events);

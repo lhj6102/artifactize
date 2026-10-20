@@ -97,7 +97,10 @@ artifactize --version
 ```
 
 The formula in the `lhj6102/tap` Homebrew tap installs both commands for your Mac's
-CPU and follows stable releases. The desktop app is a cask in the same tap:
+CPU and follows stable releases. The desktop app is a cask in the same tap. It links
+the app's own `artifactize` and `artifactize-tools` onto Homebrew's PATH, so this one
+command gives you the app and both commands (uninstall the formula first if you have
+it; the cask replaces it):
 
 ```sh
 brew install --cask lhj6102/tap/artifactize
@@ -213,8 +216,10 @@ placeholder version `0.0.0-dev`.
 ### Desktop app
 
 The [desktop app](../desktop/index.md) runs Monitor, Review and Graph in a window. It
-shows the Runs that `artifactize verify` starts, so every desktop install carries the
-commands too. TUI and MCP already come with the ordinary
+shows the Runs that `artifactize verify` starts, so the commands come with it: the
+Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` put
+`artifactize` on `PATH`. From the disk image or an AppImage run on its own, the app
+sets up the commands on first launch (below). TUI and MCP already come with the ordinary
 `artifactize` binary; they need no additional product install.
 
 The defaults above install it: the Microsoft Store and `install.ps1` on Windows,
@@ -223,12 +228,36 @@ also attaches the app on its own:
 
 | File | Install |
 |---|---|
-| `artifactize-desktop-vVERSION-universal-apple-darwin.dmg` | Open it and drag **Artifactize** to Applications. One image runs on Apple silicon and Intel, from macOS 11; Apple has notarized it. |
+| `artifactize-desktop-vVERSION-universal-apple-darwin.dmg` | Open it and drag **Artifactize** to Applications, then open the app once. If the command is missing, approve its administrator prompt to make `artifactize` available in new terminals. One image runs on Apple silicon and Intel, from macOS 11; Apple has notarized it. |
 | `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` | `sudo apt install ./artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` on Ubuntu 22.04, Debian 12 or later. It installs all three commands to `/usr/bin` and needs WebKitGTK 4.1 and GTK 3, which apt pulls in. |
-| `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage` | Make it executable and run it; it needs glibc 2.35 or later. |
+| `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage` | Make it executable and run it; it needs glibc 2.35 or later. First launch copies the commands to a stable per-user directory and links them in `~/.local/bin`, without administrator rights. |
 
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.
+
+The app checks standard terminal command locations and its inherited `PATH` in the
+background, without running shell startup files. On macOS this includes the system's
+`/etc/paths` and `/etc/paths.d` entries, which new login terminals use. An existing
+command from Homebrew, an install script, `.deb`, winget or the Store is left alone;
+there is no setting to choose. Otherwise:
+
+- **macOS:** the app writes its absolute `Contents/MacOS` directory to
+  `/etc/paths.d/artifactize` through the system administrator prompt. Open a new
+  terminal afterwards and run `artifactize --version`. Both commands run from the
+  installed app, so updating the app updates them too. If you move the app, launch it
+  again to repair an entry pointing to the old, missing location. Cancelling the
+  prompt is remembered in the app's state for that bundle location; it will not ask
+  on every launch.
+- **Linux AppImage:** the commands are copied to
+  `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin` and linked from `~/.local/bin`.
+  They keep working after the temporary AppImage mount goes away, and launching a
+  newer AppImage refreshes the app's copies. Files or links in `~/.local/bin` that
+  the app did not create are never replaced. If your shell does not already search
+  `~/.local/bin`, add `export PATH="$HOME/.local/bin:$PATH"` to its startup file and
+  open a new terminal. The app does not edit shell startup files.
+
+Setup errors are logged without stopping the app. Windows installers, `.deb` and
+`install.sh`'s extracted Linux app already provide the commands and need no setup.
 
 #### Build the desktop app from source
 
@@ -320,14 +349,10 @@ from the state directory.
 
 ## State
 
-All state lives in one directory: `state.sqlite` (Runs, requests and executions,
-with the reuse records, Human claims and backend slots), Run output under `runs/`,
-saved Agent conversations under `agent-sessions/`, and the Codex sign-in and the
-review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
-`$XDG_STATE_HOME/artifactize`, else (on Windows) `%LOCALAPPDATA%\artifactize`, else
-`~/.local/state/artifactize`. For the Store version, Windows redirects new AppData
-files into the package's private location instead of the real Windows state directory;
-see [State](../features/others/state.md#state).
+All state, including Runs, saved Agent conversations and sign-ins, lives in one
+directory, by default `~/.local/state/artifactize` (`%LOCALAPPDATA%\artifactize` on
+Windows). [State](../features/others/state.md#state) lists its contents, the
+environment variables that move it and the Store version's private copy.
 
 `--state-dir PATH` moves the whole state for one command. Use the same value for
 `login`, `verify`, `request`, `run` and `monitor`. State must be outside the repository
@@ -360,8 +385,14 @@ In PowerShell, set a key with `$env:OPENAI_API_KEY = "..."`.
 a sign-in URL and opens it in the default browser (`xdg-open` on Linux and WSL, `open`
 on macOS, the default browser on Windows). Finish in a browser on the same machine:
 the browser returns to `localhost:1455`. On WSL 2, a Windows browser works too; copy
-the printed URL into it if nothing opens. On another machine, or while port 1455 is busy, paste the URL the
-browser ends on into the terminal instead. `logout codex` revokes and deletes
+the printed URL into it if nothing opens. Artifactize reserves both IPv4 and IPv6
+loopback addresses (IPv4 only if the host has no IPv6). If another process, such as
+a Codex CLI or app sign-in, holds port 1455, artifactize skips its callback listener
+and asks for a pasted redirect instead. On another machine, use the same fallback.
+Paste the full URL starting `http://localhost:1455/auth/callback?code=` into the
+terminal, or the desktop sign-in's paste field. Find it in the browser's address bar
+after the failed load, or in DevTools → Network if the page keeps loading.
+`logout codex` revokes and deletes
 artifactize's tokens. To use the tokens of an existing Codex sign-in instead, set
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`; artifactize only reads that file.
 See [Codex](../features/agent.md#codex).
@@ -398,11 +429,30 @@ And the desktop app:
 rm -rf ~/Applications/Artifactize.app                        # install.sh on macOS
 rm -rf ~/.local/share/artifactize/desktop ~/.local/bin/artifactize-desktop \
   ~/.local/share/applications/artifactize.desktop             # install.sh on Linux
-brew uninstall --cask artifactize                            # Homebrew cask
+brew uninstall --cask artifactize                            # Homebrew cask, with its commands
 sudo apt remove artifactize                                  # .deb
 ```
 
-From a disk image, drag **Artifactize** from Applications to the Trash.
+From a disk image, drag **Artifactize** from Applications to the Trash. If you
+approved first-launch command setup, also remove its terminal path entry:
+
+```sh
+sudo rm -f /etc/paths.d/artifactize
+```
+
+For an AppImage run on its own, delete the AppImage. Remove only the command links
+that point to the app's stable copies, then remove those copies:
+
+```sh
+bin="${XDG_DATA_HOME:-$HOME/.local/share}/artifactize/bin"
+for command in artifactize artifactize-tools; do
+  link="$HOME/.local/bin/$command"
+  [ "$(readlink "$link")" != "$bin/$command" ] || rm "$link"
+done
+rm -rf "$bin"
+```
+
+Open a new terminal after removing a command's path entry.
 
 On Windows:
 
