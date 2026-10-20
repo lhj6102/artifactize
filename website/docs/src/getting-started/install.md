@@ -218,9 +218,8 @@ placeholder version `0.0.0-dev`.
 The [desktop app](../desktop/index.md) runs Monitor, Review and Graph in a window. It
 shows the Runs that `artifactize verify` starts, so the commands come with it: the
 Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` put
-`artifactize` on `PATH`. The disk image and the AppImage carry the commands inside the
-app but do not put them on `PATH`; install them with Homebrew or the install script
-as well. TUI and MCP already come with the ordinary
+`artifactize` on `PATH`. From the disk image or an AppImage run on its own, the app
+sets up the commands on first launch (below). TUI and MCP already come with the ordinary
 `artifactize` binary; they need no additional product install.
 
 The defaults above install it: the Microsoft Store and `install.ps1` on Windows,
@@ -229,12 +228,34 @@ also attaches the app on its own:
 
 | File | Install |
 |---|---|
-| `artifactize-desktop-vVERSION-universal-apple-darwin.dmg` | Open it and drag **Artifactize** to Applications. One image runs on Apple silicon and Intel, from macOS 11; Apple has notarized it. Install the commands with `brew install lhj6102/tap/artifactize` or the install script. |
+| `artifactize-desktop-vVERSION-universal-apple-darwin.dmg` | Open it and drag **Artifactize** to Applications, then open the app once. If the command is missing, approve its administrator prompt to make `artifactize` available in new terminals. One image runs on Apple silicon and Intel, from macOS 11; Apple has notarized it. |
 | `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` | `sudo apt install ./artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` on Ubuntu 22.04, Debian 12 or later. It installs all three commands to `/usr/bin` and needs WebKitGTK 4.1 and GTK 3, which apt pulls in. |
-| `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage` | Make it executable and run it; it needs glibc 2.35 or later. |
+| `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage` | Make it executable and run it; it needs glibc 2.35 or later. First launch copies the commands to a stable per-user directory and links them in `~/.local/bin`, without administrator rights. |
 
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.
+
+The app checks your login shell for `artifactize` in the background. An existing
+command from Homebrew, an install script, `.deb`, winget or the Store is left alone;
+there is no setting to choose. Otherwise:
+
+- **macOS:** the app writes its absolute `Contents/MacOS` directory to
+  `/etc/paths.d/artifactize` through the system administrator prompt. Open a new
+  terminal afterwards and run `artifactize --version`. Both commands run from the
+  installed app, so updating the app updates them too. If you move the app, launch it
+  again to repair an entry pointing to the old, missing location. Cancelling the
+  prompt is remembered in the app's state for that bundle location; it will not ask
+  on every launch.
+- **Linux AppImage:** the commands are copied to
+  `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin` and linked from `~/.local/bin`.
+  They keep working after the temporary AppImage mount goes away, and launching a
+  newer AppImage refreshes the app's copies. Files or links in `~/.local/bin` that
+  the app did not create are never replaced. If your shell does not already search
+  `~/.local/bin`, add `export PATH="$HOME/.local/bin:$PATH"` to its startup file and
+  open a new terminal. The app does not edit shell startup files.
+
+Setup errors are logged without stopping the app. Windows installers, `.deb` and
+`install.sh`'s extracted Linux app already provide the commands and need no setup.
 
 #### Build the desktop app from source
 
@@ -410,7 +431,26 @@ brew uninstall --cask artifactize                            # Homebrew cask, wi
 sudo apt remove artifactize                                  # .deb
 ```
 
-From a disk image, drag **Artifactize** from Applications to the Trash.
+From a disk image, drag **Artifactize** from Applications to the Trash. If you
+approved first-launch command setup, also remove its terminal path entry:
+
+```sh
+sudo rm -f /etc/paths.d/artifactize
+```
+
+For an AppImage run on its own, delete the AppImage. Remove only the command links
+that point to the app's stable copies, then remove those copies:
+
+```sh
+bin="${XDG_DATA_HOME:-$HOME/.local/share}/artifactize/bin"
+for command in artifactize artifactize-tools; do
+  link="$HOME/.local/bin/$command"
+  [ "$(readlink "$link")" != "$bin/$command" ] || rm "$link"
+done
+rm -rf "$bin"
+```
+
+Open a new terminal after removing a command's path entry.
 
 On Windows:
 

@@ -20,11 +20,13 @@ version=$2
 file=$(cd "$(dirname "$3")" && pwd)/$(basename "$3")
 work=$(mktemp -d "${TMPDIR:-/tmp}/artifactize-desktop-smoke.XXXXXXXX")
 app_pid=
+registered_mac=false
 cleanup() {
     # Linux starts the app in its own process group: AppRun keeps it as a descendant.
     if [ -n "$app_pid" ]; then kill -- "-$app_pid" 2>/dev/null || kill "$app_pid" 2>/dev/null || true; fi
     if [ -n "${xvfb_pid:-}" ]; then kill "$xvfb_pid" 2>/dev/null || true; fi
     if [ -n "${mount:-}" ]; then hdiutil detach -quiet "$mount" || true; fi
+    if [ "$registered_mac" = true ]; then sudo -n rm -f /etc/paths.d/artifactize; fi
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -50,7 +52,17 @@ check_commands() {
 # USER to name the default reviewer.
 launch() {
     mkdir -p "$work/home" "$work/state"
-    HOME="$work/home" $group "$@" --state-dir "$work/state" --reviewer smoke >"$work/app.log" 2>&1 &
+    # Installed channels already put the CLI on the terminal's PATH. Reproduce that
+    # terminal in the isolated login home, rather than the runner's personal dotfiles.
+    if [ "$format" = installed-mac ]; then
+        terminal_path="$HOME/.local/bin:$PATH"
+        escaped_path=$(printf '%s' "$terminal_path" | sed "s/'/'\\\\''/g")
+        printf "export PATH='%s'\n" "$escaped_path" >"$work/home/.zprofile"
+        cp "$work/home/.zprofile" "$work/home/.bash_profile"
+        cp "$work/home/.zprofile" "$work/home/.profile"
+    fi
+    HOME="$work/home" XDG_DATA_HOME="$work/home/.local/share" ZDOTDIR="$work/home" \
+        $group "$@" --state-dir "$work/state" --reviewer smoke >"$work/app.log" 2>&1 &
     app_pid=$!
     i=0
     until has_window; do
@@ -60,6 +72,17 @@ launch() {
         sleep 0.5
     done
     echo "$format: the installed app opened its Artifactize window"
+    i=0
+    until grep -qF 'desktop command setup complete' "$work/app.log"; do
+        kill -0 "$app_pid" 2>/dev/null || { cat "$work/app.log"; fail "$format: the app exited during command setup"; }
+        i=$((i + 1))
+        [ "$i" -lt 120 ] || { cat "$work/app.log"; fail "$format: command setup did not finish within 60 seconds"; }
+        sleep 0.5
+    done
+    if grep -qF 'cannot make the artifactize command available:' "$work/app.log"; then
+        cat "$work/app.log"
+        fail "$format: command setup failed"
+    fi
 }
 
 case $format in
@@ -96,6 +119,13 @@ case $format in
         check_commands "$work/squashfs-root/usr/bin"
         # Runners lack FUSE; extract-and-run executes the same AppRun entry point.
         APPIMAGE_EXTRACT_AND_RUN=1 launch "$work/Artifactize.AppImage"
+        for command in artifactize artifactize-tools; do
+            out=$("$work/home/.local/bin/$command" --version)
+            [ "$out" = "$command $version" ] || fail "appimage: copied $command reports '$out'"
+            target=$(readlink "$work/home/.local/bin/$command")
+            [ "$target" = "$work/home/.local/share/artifactize/bin/$command" ] || fail "appimage: link still depends on a temporary mount"
+        done
+        echo "appimage: first launch installed stable per-user commands"
         ;;
     deb)
         apt-get install -y -qq "$file" >/dev/null
@@ -127,7 +157,14 @@ case $format in
         else
             echo "dmg: unsigned build; skipping Gatekeeper and notarization checks"
         fi
+        [ ! -e /etc/paths.d/artifactize ] || fail "dmg: runner already has /etc/paths.d/artifactize"
+        registered_mac=true
         launch "$app/Contents/MacOS/artifactize-desktop"
+        [ "$(cat /etc/paths.d/artifactize)" = "$app/Contents/MacOS" ] || fail "dmg: paths.d does not name the installed bundle"
+        out=$(HOME="$work/home" ZDOTDIR="$work/home" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+            /bin/zsh -l -c 'artifactize --version')
+        [ "$out" = "artifactize $version" ] || fail "dmg: a fresh login terminal reports '$out'"
+        echo "dmg: a fresh login terminal finds the bundled artifactize command"
         ;;
     installed-linux)
         check_commands "$file/usr/bin"
@@ -137,6 +174,12 @@ case $format in
         ;;
     installed-mac)
         check_commands "$file/Contents/MacOS"
+        if [ -e /etc/paths.d/artifactize ]; then cp /etc/paths.d/artifactize "$work/paths.before"; fi
         launch "$file/Contents/MacOS/artifactize-desktop"
+        if [ -f "$work/paths.before" ]; then
+            cmp "$work/paths.before" /etc/paths.d/artifactize || fail "installed-mac: changed paths.d despite an existing CLI"
+        else
+            [ ! -e /etc/paths.d/artifactize ] || fail "installed-mac: created paths.d despite an existing CLI"
+        fi
         ;;
 esac

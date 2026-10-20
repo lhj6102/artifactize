@@ -5,6 +5,13 @@ Browse Runs, inspect evidence and handle Human sign-offs without a second review
 engine or a separate evidence store. Every release ships it beside the commands; see
 [Desktop app](../getting-started/install.md#desktop-app) to install it.
 
+On first launch, the app makes `artifactize` available if your login shell cannot
+find it. The Mac disk image's app asks for administrator approval to register the
+commands inside the app for new terminals; an AppImage copies them to stable
+per-user storage and links them in `~/.local/bin`. Existing command installations
+are left alone, and setup never blocks the window. See the installation guide for
+PATH details, updates and cleanup.
+
 ## Open the app
 
 ```sh
