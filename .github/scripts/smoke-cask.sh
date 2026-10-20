@@ -29,7 +29,12 @@ brew style "$tap/artifactize"
 # Homebrew quarantines what it installs; only a notarized app may keep that and still open.
 set -- --appdir="$apps"
 [ "${DESKTOP_SIGNED:-false}" = true ] || set -- "$@" --no-quarantine
-brew install --verbose --cask "$@" "$tap/artifactize"
+brew install --verbose --cask "$@" "$tap/artifactize" || {
+    # Homebrew keeps a failed formula build's output only in its logs.
+    find "$(brew --cache)/../../Logs/Homebrew" "$HOME/Library/Logs/Homebrew" -type f 2>/dev/null \
+        | while read -r log; do echo "== $log"; cat "$log"; done
+    exit 1
+}
 for command in artifactize artifactize-tools; do
     actual=$("$(brew --prefix)/bin/$command" --version)
     [ "$actual" = "$command $version" ] || { echo "the cask's $command reports '$actual'" >&2; exit 1; }
