@@ -55,8 +55,8 @@ on the root command and on `artifactize tools`.
 | `tools section PATH HEADING` | — | Markdown text | 0 success, 1 tool error, 2 usage |
 | `tools help PROGRAM [SUBCOMMAND...]` | trailing arguments passed to PROGRAM before `--help` | text | 0 success, 1 tool error, 2 usage |
 | `tools open TARGET` | — | opens default application | 0 success, 1 tool error, 2 usage |
-| `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | text or JSON | 0 |
-| `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | text or JSON | 0 after local sign-out |
+| `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | `Signed in with Codex.`; JSON `{"provider":"codex","signed_in":true}` | 0 |
+| `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
 | `remote logout` | | text or JSON | 0 |
 | `remote status` | | text or JSON | 0 signed in, 1 not |
@@ -66,8 +66,8 @@ on the root command and on `artifactize tools`.
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor [PATH]` | starts on ALL; PATH or `--repo PATH` selects only the initial repository; `--all` conflicts with a path | terminal UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH` (a `repo:` search term), `--all` (the default; not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
-| `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
-| `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
+| `server run` | `--listen ADDR` (`127.0.0.1:8417`) | `Listening on http://ADDR/`; JSON `{"listen":ADDR}` | 0 |
+| `server token add NAME` | `--scopes read,publish,human` | the token, once, and a reminder to store it; JSON `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
 | `server token list` | | text or JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON (also without `--json`) | 0 |
 | `server rm KEY` | | JSON | 0 |
