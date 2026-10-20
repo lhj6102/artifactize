@@ -110,24 +110,15 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
     if super::bounded_status(&mut sudo, SUDO_TIMEOUT)?.success() {
         return Ok(Consent::Installed);
     }
-    // AppleScript's elevation API accepts only a shell command, not an argv. Quote
-    // absolute paths for that API only; no user value is interpolated into AppleScript.
-    fn quote(path: &Path) -> io::Result<String> {
-        let text = path
-            .to_str()
-            .ok_or_else(|| io::Error::other("non-Unicode elevation path"))?;
-        Ok(format!("'{}'", text.replace('\'', "'\\''")))
-    }
-    let script = "on run argv\n do shell script (item 1 of argv) with prompt \"Artifactize wants to make the artifactize command available in Terminal.\" with administrator privileges\nend run";
-    let shell_command = format!(
-        "/usr/bin/install -m 644 {} {}",
-        quote(source.path())?,
-        quote(destination)?
-    );
+    // AppleScript's elevation API accepts only a shell command (the P-COMMANDS exception):
+    // the script is constant and AppleScript quotes both paths, which arrive as arguments.
+    const SCRIPT: &str = "on run argv\n do shell script \"/usr/bin/install -m 644 \" & quoted form of item 1 of argv & \" \" & quoted form of item 2 of argv with prompt \"Artifactize wants to make the artifactize command available in Terminal.\" with administrator privileges\nend run";
     let errors = tempfile::NamedTempFile::new()?;
     let mut prompt = Command::new("/usr/bin/osascript");
     prompt
-        .args(["-e", script, &shell_command])
+        .args(["-e", SCRIPT])
+        .arg(source.path())
+        .arg(destination)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(errors.reopen()?);

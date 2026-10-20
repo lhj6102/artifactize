@@ -23,7 +23,9 @@ These go through the platform layer:
 - **P-PROGRAMS**: finding a program (`PATH`, and `PATHEXT` on Windows) and opening a file or
   URL in a desktop application.
 - **P-COMMANDS**: commands run as an argument vector, never as a shell string, because the
-  shells differ. Launching the user's editor is the one exception.
+  shells differ. Two exceptions: launching the user's editor, and macOS administrator
+  elevation through `osascript`, whose script is a constant and receives every variable
+  value as an argument.
 - **P-PROCESSES**: starting, stopping and checking processes and their children, and exit
   status (Unix adds signals; Windows has exit codes only).
 - **P-ENVIRONMENT**: environment variables (Windows names ignore case), the home, temporary
