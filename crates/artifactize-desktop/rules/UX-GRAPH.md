@@ -36,7 +36,8 @@ that makes the transition happen and checks where it leads.
   and fingerprint, every other fact under Debug, unfolded
   with `t` or a click) or, switched below the tabs, its Agent log or Runtime log; for a Human
   eval the Human review. Everything in the Detail, transcript and log lines, long words and code
-  included, wraps or scrolls within its width. Hovering only highlights; nothing opens on hover.
+  included, wraps or scrolls within its width. Hovering only highlights, and over a divider or the Detail's left edge shows only the
+  resize cursor; nothing opens on hover.
   States: Scope, Runs or Graph focused; Detail open on a tab (the Artifact's, an eval's Summary,
   Debug unfolded, or a log), its chips on one line or wrapped; notice as one line or in full.
 - **Run graph**: the selected Run's Artifacts as nodes and their dependencies as edges,
@@ -112,8 +113,8 @@ that makes the transition happen and checks where it leads.
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
 | E-MON-LIVE | Monitor | another process changes state | same state, updated |
-| E-MON-RESIZE | Monitor | drag a divider | same state, pane resized |
-| E-MON-DETAIL-WIDTH | Detail | drag its left edge | Detail resized, never narrower than a readable column nor so wide that no Graph shows on its left, within the graph area and never over Scope or Runs; the width kept for the next opening and launch |
+| E-MON-RESIZE | Monitor | drag a divider (hovering it shows only the resize cursor) | same state, pane resized, the split kept whether or not a graph is shown |
+| E-MON-DETAIL-WIDTH | Detail | drag its left edge (hovering it shows only the resize cursor) | Detail resized, never narrower than a readable column nor so wide that no Graph shows on its left, within the graph area and never over Scope or Runs; the width kept for the next opening and launch |
 | E-GRAPH-RECOLOUR | Graph | a result arrives | Graph, nodes and edges recoloured in place |
 | E-GRAPH-BEYOND | Graph of a large Run | pan or zoom the camera past the drawn nodes | Graph, the Artifacts brought into view drawn |
 
