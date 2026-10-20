@@ -12,7 +12,6 @@
 use std::{
     collections::BTreeMap,
     io::{IsTerminal, Read, Write},
-    net::Ipv4Addr,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -31,7 +30,9 @@ use tokio::{
     sync::oneshot,
 };
 
+mod callback;
 mod timestamp;
+use callback::Callback;
 pub use timestamp::Timestamp;
 
 use super::storage::{Location, MAX_CREDENTIAL_BYTES, Storage, Tokens};
@@ -294,13 +295,17 @@ impl Pending {
     }
 
     /// Serve the loopback callback until one completes the sign-in. Requests must be
-    /// `GET` with a `Host` of `localhost:PORT` or `127.0.0.1:PORT`.
+    /// `GET` with a loopback `Host` matching the reserved port.
     async fn serve(&self, listener: TcpListener) -> Result<String, String> {
         // Allow browser callback headers and the authorization URL while bounding
         // memory consumed by an untrusted loopback client before HTTP validation.
         const MAX_CALLBACK_HEADER_BYTES: usize = 16 * 1024;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-        let hosts = [format!("localhost:{port}"), format!("127.0.0.1:{port}")];
+        let hosts = [
+            format!("localhost:{port}"),
+            format!("127.0.0.1:{port}"),
+            format!("[::1]:{port}"),
+        ];
         loop {
             let (mut stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
             let head = tokio::time::timeout(CALLBACK_READ_TIMEOUT, async {
@@ -361,12 +366,12 @@ impl Pending {
     /// The authorization code from the callback or a pasted redirect, whichever is first.
     async fn wait(
         &self,
-        listener: Option<TcpListener>,
+        listener: Option<Callback>,
         pasted: Option<oneshot::Receiver<String>>,
     ) -> Result<String, String> {
         let callback = async {
             match listener {
-                Some(listener) => self.serve(listener).await,
+                Some(listener) => listener.wait(self).await,
                 None => std::future::pending().await,
             }
         };
@@ -434,13 +439,13 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
         if !prompt.callback {
             let _ = writeln!(
                 err,
-                "Port {CALLBACK_PORT} is in use (another Codex sign-in?), so the browser cannot return here."
+                "Port {CALLBACK_PORT} is in use (another sign-in, such as the Codex CLI or app, may hold it), so the browser cannot return here."
             );
         }
         if terminal {
             let _ = writeln!(
                 err,
-                "When the browser cannot return here, paste the URL it was sent to and press Enter."
+                "When the browser cannot return here, paste the full URL it was sent to (starting http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}?code=) and press Enter. Find it in the browser's address bar after the failed load, or in DevTools → Network if the page keeps loading."
             );
         }
     })
@@ -461,9 +466,8 @@ pub async fn login_with(
     // Check where the tokens will go before anyone signs in.
     let storage = Storage::new(state, repo, Tokens::Codex)?;
     let root = auth_root()?;
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, CALLBACK_PORT))
-        .await
-        .ok();
+    let listener = Callback::bind(CALLBACK_PORT)
+        .map_err(|error| format!("Cannot bind Codex sign-in callback: {error}"))?;
     let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
     sign_in(
         &storage,
@@ -485,7 +489,7 @@ pub async fn login_with(
 async fn sign_in(
     storage: &Storage,
     root: &str,
-    listener: Option<TcpListener>,
+    listener: Option<Callback>,
     redirect_uri: &str,
     pasted: Option<oneshot::Receiver<String>>,
     browser: bool,
@@ -961,6 +965,8 @@ async fn revoke(root: &str, refresh_token: &str) -> bool {
         .is_ok_and(|response| response.status().is_success())
 }
 
+#[cfg(test)]
+mod callback_tests;
 #[cfg(test)]
 mod redirect_tests;
 #[cfg(test)]

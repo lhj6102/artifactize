@@ -256,6 +256,10 @@ refresh, not a settings reload.
   External-file and refused-storage modes disable sign-in here; sign-out is
   available only for artifactize's own stored account. Browser sign-in can be
   cancelled, and a redirect URL can be pasted when the browser cannot return.
+  If another process holds port 1455, the app explains that a paste is required:
+  copy the full `http://localhost:1455/auth/callback?code=…` URL from the browser's
+  address bar after a failed load, or DevTools → Network if it keeps loading,
+  paste it in Settings, then choose **Finish sign-in**.
   Sign-out removes local tokens and warns when server revocation cannot be confirmed.
 - **Models:** lists model IDs offered by the chosen backend.
 - **Review store:** signs in with URL, token and sharing level, displays status,

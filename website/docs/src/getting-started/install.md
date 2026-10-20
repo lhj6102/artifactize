@@ -360,8 +360,14 @@ In PowerShell, set a key with `$env:OPENAI_API_KEY = "..."`.
 a sign-in URL and opens it in the default browser (`xdg-open` on Linux and WSL, `open`
 on macOS, the default browser on Windows). Finish in a browser on the same machine:
 the browser returns to `localhost:1455`. On WSL 2, a Windows browser works too; copy
-the printed URL into it if nothing opens. On another machine, or while port 1455 is busy, paste the URL the
-browser ends on into the terminal instead. `logout codex` revokes and deletes
+the printed URL into it if nothing opens. Artifactize reserves both IPv4 and IPv6
+loopback addresses (IPv4 only if the host has no IPv6). If another process, such as
+a Codex CLI or app sign-in, holds port 1455, artifactize skips its callback listener
+and asks for a pasted redirect instead. On another machine, use the same fallback.
+Paste the full URL starting `http://localhost:1455/auth/callback?code=` into the
+terminal, or the desktop sign-in's paste field. Find it in the browser's address bar
+after the failed load, or in DevTools → Network if the page keeps loading.
+`logout codex` revokes and deletes
 artifactize's tokens. To use the tokens of an existing Codex sign-in instead, set
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`; artifactize only reads that file.
 See [Codex](../features/agent.md#codex).

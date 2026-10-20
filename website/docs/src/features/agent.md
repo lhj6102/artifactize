@@ -352,7 +352,13 @@ artifactize logout codex    # revoke and delete artifactize's tokens
 ```
 
 - **Sign-in.** `login codex` uses the Codex OAuth client with PKCE, as the Codex
-  CLI does. It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`
+  CLI does. If another process holds callback port 1455, sign-in asks for the full
+  redirect URL instead of waiting for a callback. Copy the URL starting
+  `http://localhost:1455/auth/callback?code=` from the address bar after a failed
+  load, or DevTools → Network if the page keeps loading, and paste it into the
+  terminal or desktop sign-in. See [sign-in setup](../getting-started/install.md#backends)
+  for the browser flow.
+  It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`
   (0700 directory, 0600 single-link file, never followed through a symlink, replaced
   atomically). Use the same `--state-dir` for `login`, `models` and `verify`.
   Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git

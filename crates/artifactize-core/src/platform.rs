@@ -18,6 +18,7 @@
 
 pub mod environment;
 mod hidden_input;
+pub(crate) mod net;
 pub(crate) mod path_serde;
 pub(crate) mod paths;
 pub(crate) mod program;
