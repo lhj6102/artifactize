@@ -7,11 +7,11 @@ project directory; see [registration below](#register-the-mcp-server).
 The server resolves these once at startup. Run/request/session reads stay bound
 to that repository; cache records are reusable across repositories in the state.
 
-The pinned rmcp transport supports the 2026-07-28 discovery/per-request-metadata
-lifecycle and legacy `initialize`/`notifications/initialized` clients. Stdout is
-JSON-RPC only; diagnostics go to stderr. There is no HTTP port, new token,
-Tasks extension or durable transport-owned subscription. Bounded `verify_watch` calls
-can deliver standard MCP progress notifications.
+It works with current MCP hosts and with older ones. The host talks to it only
+through the program's input and output: stdout carries protocol messages, and
+diagnostics go to stderr. There is no network port or extra token. A bounded
+`verify_watch` call can also send standard MCP progress notifications. See
+[Protocol versions](#protocol-versions) for the details.
 
 ## Register the MCP server
 
@@ -180,8 +180,7 @@ pretend that an incomplete page is the whole result.
 No credential login/logout, Human claim/submit/release, prune, cache removal,
 remote push, interactive monitor/review, store server, project-tool execution or
 Agent-session follow-ups. The CLI and normal Human review interfaces remain the
-entry points for these actions. A client cannot cancel a Run by cancelling the
-MCP request that watches it.
+entry points for these actions.
 
 
 ## Streaming and focused diagnosis
@@ -204,8 +203,8 @@ notification; use `verify_result` for authoritative final validation. Without a
 progress token, the same call waits but sends no notifications; prefer
 `verify_wait` in clients that do not consume progress. No rapid polling is needed.
 Subscriptions end with the call (30-second bound), client cancellation or
-connection closure; none cancels execution. A later call reattaches to the saved
-Run. Lost/coalesced invalidations reconcile from saved state rather than inventing
+connection closure, and a later call reattaches to the saved Run (see
+[Verification tools](#verification-tools) for who owns the Run). Lost/coalesced invalidations reconcile from saved state rather than inventing
 a complete event history.
 
 The **client/agent host** must display progress or route it into its own task
@@ -243,3 +242,10 @@ relations without invoking hooks. Select an Artifact/eval for its required closu
 add `impact:true` to include reachable downstream consumers and their required
 inputs. This is conservative structural reachability, not proof that every
 included eval's reuse key changed. Use `status` to inspect actual reuse decisions.
+
+## Protocol versions
+
+The server uses the pinned rmcp transport. It supports the 2026-07-28 MCP
+lifecycle, with discovery and per-request metadata, and older clients that start
+with `initialize` and `notifications/initialized`. It offers no Tasks extension and
+no durable subscription owned by the transport.

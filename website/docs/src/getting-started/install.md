@@ -326,14 +326,10 @@ from the state directory.
 
 ## State
 
-All state lives in one directory: `state.sqlite` (Runs, requests and executions,
-with the reuse records, Human claims and backend slots), Run output under `runs/`,
-saved Agent conversations under `agent-sessions/`, and the Codex sign-in and the
-review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
-`$XDG_STATE_HOME/artifactize`, else (on Windows) `%LOCALAPPDATA%\artifactize`, else
-`~/.local/state/artifactize`. For the Store version, Windows redirects new AppData
-files into the package's private location instead of the real Windows state directory;
-see [State](../features/others/state.md#state).
+All state, including Runs, saved Agent conversations and sign-ins, lives in one
+directory, by default `~/.local/state/artifactize` (`%LOCALAPPDATA%\artifactize` on
+Windows). [State](../features/others/state.md#state) lists its contents, the
+environment variables that move it and the Store version's private copy.
 
 `--state-dir PATH` moves the whole state for one command. Use the same value for
 `login`, `verify`, `request`, `run` and `monitor`. State must be outside the repository
