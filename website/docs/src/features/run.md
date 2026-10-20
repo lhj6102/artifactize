@@ -105,7 +105,9 @@ has priority; speculative work uses spare capacity and yields first. Redispatch
 consumes another executor start. An upstream RED or ERROR immediately cancels
 only the work it makes invalid, the evals that depend on it outside their own
 Artifact and cycle, and marks it BLOCKED without a reusable cancelled result.
-GREEN keeps results already produced for the same files.
+GREEN keeps results already produced for the same files. Results are shared with the
+[team review store](team/reference.md) only after scheduling finishes, and only those
+that survived it.
 
 Deferral allows execution past pending Human gates. A deferrable sign-off's
 request is issued as late as possible: once its Artifact's other machine evals are

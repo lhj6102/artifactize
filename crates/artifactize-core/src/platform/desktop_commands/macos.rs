@@ -1,0 +1,226 @@
+use std::{fs, io, path::Path};
+
+/// The directories path_helper adds to new macOS login terminals, in its file order.
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn terminal_paths(system: &Path) -> io::Result<Vec<std::path::PathBuf>> {
+    fn read(path: &Path) -> io::Result<Vec<std::path::PathBuf>> {
+        match fs::read_to_string(path) {
+            Ok(text) => Ok(text
+                .lines()
+                .map(std::path::PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .collect()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(error) => Err(error),
+        }
+    }
+    let mut directories = read(&system.join("paths"))?;
+    let mut files = match fs::read_dir(system.join("paths.d")) {
+        Ok(entries) => entries
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<io::Result<Vec<_>>>()?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
+    files.sort();
+    for file in files.into_iter().filter(|path| path.is_file()) {
+        directories.extend(read(&file)?);
+    }
+    Ok(directories)
+}
+
+pub(super) enum Consent {
+    Installed,
+    Declined,
+}
+
+pub(super) fn register(
+    bin: &Path,
+    paths_file: &Path,
+    state: &Path,
+    reachable: bool,
+    write: impl FnOnce(&Path, &str) -> io::Result<Consent>,
+) -> io::Result<()> {
+    if reachable {
+        return Ok(());
+    }
+    let bin_text = bin
+        .to_str()
+        .filter(|text| !text.contains(['\n', '\r']))
+        .ok_or_else(|| io::Error::other("bundle path cannot be represented in paths.d"))?;
+    if !bin.join("artifactize").is_file() || !bin.join("artifactize-tools").is_file() {
+        return Err(io::Error::other("bundle is missing its commands"));
+    }
+    let content = format!("{bin_text}\n");
+    match fs::read_to_string(paths_file) {
+        Ok(existing) if existing == content => return Ok(()),
+        // A moved/deleted bundle's old entry can be repaired. Another working bundle is
+        // not ours to replace, even if this shell does not use path_helper.
+        Ok(existing) if Path::new(existing.trim_end()).join("artifactize").is_file() => {
+            return Ok(());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let declined_file = state.join("desktop-cli-declined.json");
+    let mut declined: Vec<std::path::PathBuf> = match fs::read(&declined_file) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(io::Error::other)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
+    if declined.iter().any(|path| path == bin) {
+        return Ok(());
+    }
+    match write(paths_file, &content)? {
+        Consent::Installed => Ok(()),
+        Consent::Declined => {
+            declined.push(bin.to_owned());
+            fs::create_dir_all(state)?;
+            fs::write(
+                declined_file,
+                serde_json::to_vec(&declined).map_err(io::Error::other)?,
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<Consent> {
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+        time::Duration,
+    };
+    // A noninteractive sudo probe should finish immediately; bound a stalled plugin.
+    const SUDO_TIMEOUT: Duration = Duration::from_secs(5);
+    // Give the person time to read the system prompt and authenticate, without leaving
+    // an unresponsive authorization service running indefinitely.
+    const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(120);
+    let mut source = tempfile::NamedTempFile::new()?;
+    source.write_all(content.as_bytes())?;
+    source.flush()?;
+    let mut sudo = Command::new("/usr/bin/sudo");
+    sudo.args(["-n", "/usr/bin/install", "-m", "644"])
+        .arg(source.path())
+        .arg(destination)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if super::bounded_status(&mut sudo, SUDO_TIMEOUT)?.success() {
+        return Ok(Consent::Installed);
+    }
+    // AppleScript's elevation API accepts only a shell command (the P-COMMANDS exception):
+    // the script is constant and AppleScript quotes both paths, which arrive as arguments.
+    const SCRIPT: &str = "on run argv\n do shell script \"/usr/bin/install -m 644 \" & quoted form of item 1 of argv & \" \" & quoted form of item 2 of argv with prompt \"Artifactize wants to make the artifactize command available in Terminal.\" with administrator privileges\nend run";
+    let errors = tempfile::NamedTempFile::new()?;
+    let mut prompt = Command::new("/usr/bin/osascript");
+    prompt
+        .args(["-e", SCRIPT])
+        .arg(source.path())
+        .arg(destination)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(errors.reopen()?);
+    // The person needs time to read the system prompt and authenticate. This runs off
+    // the UI thread and is still bounded if the authorization service stops answering.
+    let status = super::bounded_status(&mut prompt, AUTHORIZATION_TIMEOUT)?;
+    if status.success() {
+        Ok(Consent::Installed)
+    } else {
+        let message = fs::read_to_string(errors.path())?;
+        if message.contains("(-128)") {
+            Ok(Consent::Declined)
+        } else {
+            Err(io::Error::other(format!(
+                "command registration authorization failed: {message}"
+            )))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_paths_include_the_system_file_and_sorted_path_files() {
+        let root = crate::test_os::tempdir();
+        let system = root.path().join("etc");
+        let base = root.path().join("system-bin");
+        let first = root.path().join("first-bin");
+        let last = root.path().join("last-bin");
+        fs::create_dir_all(system.join("paths.d")).unwrap();
+        fs::write(system.join("paths"), format!("{}\n\n", base.display())).unwrap();
+        fs::write(
+            system.join("paths.d/z-last"),
+            format!("{}\n", last.display()),
+        )
+        .unwrap();
+        fs::write(
+            system.join("paths.d/a-first"),
+            format!("{}\n", first.display()),
+        )
+        .unwrap();
+        assert_eq!(terminal_paths(&system).unwrap(), [base, first, last]);
+    }
+
+    #[test]
+    fn registration_respects_existing_install_repairs_moves_and_remembers_declines() {
+        let root = crate::test_os::tempdir();
+        let first = root.path().join("First.app/Contents/MacOS");
+        let moved = root.path().join("Moved.app/Contents/MacOS");
+        let state = root.path().join("state");
+        let paths = root.path().join("paths.d/artifactize");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(paths.parent().unwrap()).unwrap();
+        for command in ["artifactize", "artifactize-tools"] {
+            fs::write(first.join(command), "bundled command").unwrap();
+        }
+        register(&first, &paths, &state, true, |_, _| {
+            panic!("already reachable")
+        })
+        .unwrap();
+        assert!(!paths.exists());
+        register(&first, &paths, &state, false, |path, content| {
+            fs::write(path, content)?;
+            Ok(Consent::Installed)
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&paths).unwrap(),
+            format!("{}\n", first.display())
+        );
+        fs::create_dir_all(moved.parent().unwrap()).unwrap();
+        fs::rename(&first, &moved).unwrap();
+        register(&moved, &paths, &state, false, |path, content| {
+            fs::write(path, content)?;
+            Ok(Consent::Installed)
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&paths).unwrap(),
+            format!("{}\n", moved.display())
+        );
+        fs::remove_file(&paths).unwrap();
+        register(&moved, &paths, &state, false, |_, _| Ok(Consent::Declined)).unwrap();
+        register(&moved, &paths, &state, false, |_, _| {
+            panic!("declined for this bundle")
+        })
+        .unwrap();
+        assert!(!paths.exists());
+        fs::create_dir_all(&first).unwrap();
+        for command in ["artifactize", "artifactize-tools"] {
+            fs::write(first.join(command), "bundled command").unwrap();
+        }
+        register(&first, &paths, &state, false, |path, content| {
+            fs::write(path, content)?;
+            Ok(Consent::Installed)
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&paths).unwrap(),
+            format!("{}\n", first.display())
+        );
+    }
+}

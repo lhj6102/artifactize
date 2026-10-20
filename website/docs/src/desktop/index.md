@@ -5,6 +5,9 @@ Browse Runs, inspect evidence and handle Human sign-offs without a second review
 engine or a separate evidence store. Every release ships it beside the commands; see
 [Desktop app](../getting-started/install.md#desktop-app) to install it.
 
+For first-launch command setup, PATH details, updates and cleanup, see the
+[installation guide](../getting-started/install.md#desktop-app).
+
 ## Open the app
 
 ```sh
