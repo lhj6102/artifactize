@@ -5,8 +5,11 @@ name: Binaries
 # release.yml calls each platform separately: Linux gates the release; Windows and
 # macOS run alongside and never delay it before v1. Main PRs and manual rehearsals
 # build every target, retain archives and exercise the installers.
-# Each binaries-<target> artifact holds a tarball (Windows: zip) with BOTH commands
-# and its SHA-256. Distribution channels consume the same archive names.
+# Each binaries-<target> artifact holds a tarball (Windows: zip, with the desktop app
+# too) with BOTH commands and its SHA-256. Each desktop-<target> artifact holds the
+# macOS dmg or the Linux AppImage and deb, each with its SHA-256; the Linux bundles
+# build separately (platform linux-desktop) so they never delay the Linux release.
+# Distribution channels consume the same names.
 on:
   workflow_call:
     inputs:
@@ -15,7 +18,7 @@ on:
         type: string
         default: ""
       platform:
-        description: Which targets to build, linux, windows, macos or all.
+        description: Which targets to build, linux, linux-desktop, windows, macos or all.
         type: string
         default: all
   workflow_dispatch:
@@ -27,7 +30,7 @@ on:
       platform:
         description: Targets to build and smoke-test.
         type: choice
-        options: [all, linux, windows, macos]
+        options: [all, linux, linux-desktop, windows, macos]
         default: all
   pull_request:
     branches: [main]
@@ -46,12 +49,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -I .github/scripts/test-channels.py
-      - run: shellcheck .github/scripts/smoke-homebrew.sh
+      - run: shellcheck .github/scripts/smoke-homebrew.sh .github/scripts/smoke-cask.sh .github/scripts/build-desktop.sh .github/scripts/smoke-desktop.sh
 
   build:
     name: Build ${{ matrix.target }}
+    if: inputs.platform != 'linux-desktop'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     continue-on-error: ${{ matrix.best-effort || false }}
     strategy:
       fail-fast: false
@@ -78,9 +82,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # A failed or cancelled packaging run still leaves its build for the next one.
       - uses: Swatinem/rust-cache@v2
         with:
           key: packaging-${{ matrix.target }}
+          cache-on-failure: true
       # C dependencies (bundled SQLite, aws-lc, ring) need musl and kernel headers.
       - name: Install the musl C toolchain
         if: contains(matrix.target, '-linux-musl')
@@ -136,6 +142,26 @@ jobs:
               exit 1
             fi
           done
+      - uses: pnpm/action-setup@v4
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - name: Build the desktop frontend
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        working-directory: crates/artifactize-desktop/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      # The Windows zip and MSIX carry the desktop app beside artifactize.exe.
+      - name: Build the Windows desktop app
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: cargo build --release --locked -p artifactize-desktop --target "$TARGET"
       - name: Package
         run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
       # Retain release archives even if optional channel packaging fails later.
@@ -207,3 +233,187 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel winget
+
+  # One universal app for both Mac CPUs, built on Apple Silicon (signed and notarized when
+  # the secrets exist) and opened on both CPUs. The CLI archives above never wait on it.
+  desktop-macos:
+    name: Build desktop universal-apple-darwin
+    if: inputs.platform != 'linux' && inputs.platform != 'windows' && inputs.platform != 'linux-desktop'
+    runs-on: macos-15
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      TARGET: universal-apple-darwin
+      TAG_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-universal-apple-darwin
+          cache-on-failure: true
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - name: Set the version
+        run: |
+          if [ -n "$TAG_VERSION" ]; then sh .github/scripts/set-version.sh "$TAG_VERSION"; fi
+          echo "VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "artifactize") | .version')" >>"$GITHUB_ENV"
+      - name: Build the desktop frontend
+        working-directory: crates/artifactize-desktop/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Build both commands for both CPUs
+        run: |
+          for cpu in aarch64 x86_64; do
+            cargo build --release --locked -p artifactize -p artifactize-tools --target "$cpu-apple-darwin"
+          done
+      - name: Bundle the universal app (signed and notarized when the secrets exist)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: sh .github/scripts/build-desktop.sh "$TARGET" "$VERSION" desktop-dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ env.TARGET }}
+          path: desktop-dist/*
+          if-no-files-found: error
+      - name: Install the dmg and open the app
+        if: github.event_name != 'push'
+        env:
+          DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: sh .github/scripts/smoke-desktop.sh dmg "$VERSION" "desktop-dist/artifactize-desktop-v$VERSION-$TARGET.dmg"
+      - name: Install the app with install.sh and the Homebrew cask and open it
+        if: github.event_name != 'push'
+        env:
+          DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          sh .github/scripts/package.sh aarch64-apple-darwin "$VERSION"
+          home=$(mktemp -d "$RUNNER_TEMP/artifactize-install.XXXXXXXX")
+          mkdir -p "$home/serve/v$VERSION"
+          cp dist/* desktop-dist/* "$home/serve/v$VERSION/"
+          HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
+            sh website/landing/install.sh
+          HOME="$home" sh .github/scripts/smoke-desktop.sh installed-mac "$VERSION" "$home/Applications/Artifactize.app"
+          sh .github/scripts/smoke-cask.sh "$VERSION" desktop-dist
+
+  # The same dmg and cask on an Intel Mac: the universal app's x86_64 half must open too.
+  desktop-macos-intel:
+    name: Open desktop universal-apple-darwin on Intel
+    needs: desktop-macos
+    if: github.event_name != 'push'
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-universal-apple-darwin
+          path: desktop-dist
+      - name: Install the dmg and the Homebrew cask and open the app
+        env:
+          DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          set -- desktop-dist/artifactize-desktop-v*-universal-apple-darwin.dmg
+          version=${1#desktop-dist/artifactize-desktop-v}
+          version=${version%-universal-apple-darwin.dmg}
+          sh .github/scripts/smoke-desktop.sh dmg "$version" "$1"
+          sh .github/scripts/smoke-cask.sh "$version" desktop-dist
+
+  # Linux bundles link the system WebKitGTK, so they build on the oldest supported
+  # runner image: its glibc (2.35) is the baseline every bundle needs.
+  desktop-linux:
+    name: Build desktop ${{ matrix.target }}
+    if: inputs.platform != 'linux' && inputs.platform != 'windows' && inputs.platform != 'macos'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+    env:
+      TARGET: ${{ matrix.target }}
+      TAG_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install desktop build and smoke dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf xvfb xdotool
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+          cache-on-failure: true
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: crates/artifactize-desktop/ui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
+      - name: Set the version
+        run: |
+          if [ -n "$TAG_VERSION" ]; then sh .github/scripts/set-version.sh "$TAG_VERSION"; fi
+          echo "VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "artifactize") | .version')" >>"$GITHUB_ENV"
+      - name: Build the desktop frontend
+        working-directory: crates/artifactize-desktop/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Build both commands
+        run: cargo build --release --locked -p artifactize -p artifactize-tools --target "$TARGET"
+      # linuxdeploy is itself an AppImage; runners have no FUSE to mount it.
+      - name: Bundle the AppImage and deb
+        run: APPIMAGE_EXTRACT_AND_RUN=1 sh .github/scripts/build-desktop.sh "$TARGET" "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Run the AppImage and open the app
+        if: github.event_name != 'push'
+        run: sh .github/scripts/smoke-desktop.sh appimage "$VERSION" "dist/artifactize-desktop-v$VERSION-$TARGET.AppImage"
+      - name: Install the deb with its dependencies on Ubuntu 22.04 and open the app
+        if: github.event_name != 'push'
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src -e DEBIAN_FRONTEND=noninteractive ubuntu:22.04 sh -euc '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends xvfb xdotool >/dev/null
+            sh .github/scripts/smoke-desktop.sh deb "$1" "dist/artifactize-desktop-v$1-$2.deb"' sh "$VERSION" "$TARGET"
+      - name: Install the app with install.sh and open it from its launcher
+        if: github.event_name != 'push'
+        run: |
+          home=$(mktemp -d "$RUNNER_TEMP/artifactize-install.XXXXXXXX")
+          serve="$home/serve/v$VERSION"
+          mkdir -p "$serve"
+          # install.sh fetches the musl CLI archive; this job built the same commands for glibc.
+          name="artifactize-v$VERSION-x86_64-unknown-linux-musl"
+          mkdir "$home/$name"
+          cp "target/$TARGET/release/artifactize" "target/$TARGET/release/artifactize-tools" "$home/$name/"
+          tar -czf "$serve/$name.tar.gz" -C "$home" "$name"
+          (cd "$serve" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
+          cp dist/*.AppImage dist/*.AppImage.sha256 "$serve/"
+          HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
+            sh website/landing/install.sh
+          HOME="$home" sh .github/scripts/smoke-desktop.sh installed-linux "$VERSION" "$home/.local/share/artifactize/desktop"

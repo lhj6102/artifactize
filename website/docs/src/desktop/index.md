@@ -1,9 +1,9 @@
 # Desktop
 
 The desktop app is a window onto the same machine-wide state as the CLI and TUI.
-It is a source-built preview, not a bundled CLI release component. Browse Runs,
-inspect evidence and handle Human sign-offs without a second review engine or a
-separate evidence store. See [Installation](../getting-started/install.md) for setup.
+Browse Runs, inspect evidence and handle Human sign-offs without a second review
+engine or a separate evidence store. Every release ships it beside the commands; see
+[Desktop app](../getting-started/install.md#desktop-app) to install it.
 
 ## Open the app
 
@@ -22,16 +22,19 @@ app uses the shared state home. `--reviewer NAME` sets the cooperative claim nam
 requires `--repo` and reads current declarations. Invalid arguments exit 2.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
-Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K or the palette
+Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. Ctrl+K, F1 or the palette
 button opens a searchable command palette; Enter runs a command and Esc closes it.
 `?` shows this screen's keys. Ctrl+R or F5 refreshes Monitor, or reloads current
 Graph declarations when Graph is open; it does not reload Review or Settings.
-Drag the dividers to resize panes.
+Drag the dividers to resize panes. The app follows the system's light or dark
+appearance.
 
 ## Monitor
 
-Navigate **Scope → Runs → Run graph** with Enter to move deeper and Esc to
-return. Arrow keys or `j`/`k` select Scope and Runs rows. Scope remains navigable
+Navigate **Scope → Runs → Run graph** with Enter or → to move deeper and Esc to
+return; ← also returns from Runs. Arrow keys or `j`/`k` select Scope and Runs rows,
+and `r` refreshes Monitor from Scope, Runs or the Run graph (a Human review's `r`
+opens its RED form instead). Scope remains navigable
 back to ALL even after an initial `--repo` selection. Worktrees without Runs can
 be folded into a group: Space or a click reveals or hides them. Runs appear
 newest first. Move past the list's first or last row to load newer or older
@@ -92,9 +95,10 @@ An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
 result, with findings as numbered items headed by their `item` and `where`; then
 **Execution options**, **Execution metadata** and **Fingerprint** when it has them.
-Other facts fold under **Debug**. An eval with a log switches
+Other facts fold under **Debug**, which `t` shows or hides on an Artifact's or a
+non-Human eval's Summary. An eval with a log switches
 below the chips between its Summary, shown first, and its log, a plain-text choice
-whose chosen view is dark and bold: an Agent eval's **Agent log** (its conversation,
+whose chosen view is bold and higher-contrast: an Agent eval's **Agent log** (its conversation,
 with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
 not a live log stream). Missing or remote conversations explain why they are
 unavailable on this machine. A Human eval's chip holds its review and sign-off, with
@@ -140,14 +144,16 @@ nothing.
 ## Review
 
 Review starts with waiting Human requests across all repositories in this state.
-A selected request previews read-only; Enter opens it. Other eval kinds and
+A selected request previews read-only. Arrow keys or `j`/`k` select request rows,
+and Enter or → opens the selected request; Esc or ← returns from a read-only Detail
+to the list. Other eval kinds and
 settled requests remain read-only. The context menu or palette can open a Human
 request with Tools focused; Ctrl+O opens a request by ID. PgDn/PgUp pages older
 and newer requests. Waiting followers open the original review, not another sign-off.
 One click selects a request; clicking an already-selected request opens it, as
 does a double-click. Clicking its preview also opens Detail. A read-only request
 with a log switches between its Summary and its Agent or Runtime log, as an
-eval's chip does in Monitor.
+eval's chip does in Monitor, and `t` shows or hides its **Debug** facts.
 
 `/` edits search from the Review request list. Ctrl+F focuses search from an
 open request Detail too, including while a Human form is open or review work is

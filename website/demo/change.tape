@@ -1,7 +1,6 @@
 # Change one file: status predicts one execution and says why, verify re-reviews only that.
 # Starts from a reviewed project. Record with website/demo/record.sh (from the repository root).
 Output website/demo/media/change.gif
-Output website/demo/media/change.mp4
 Source website/demo/settings.tape
 Set Height 830
 Set LoopOffset 92%

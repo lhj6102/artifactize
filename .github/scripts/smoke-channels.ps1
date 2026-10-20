@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory = $true)][string] $Version,
     [Parameter(Mandatory = $true)][string] $Dist,
-    [ValidateSet('winget', 'msix')][string] $Channel = 'msix'
+    [ValidateSet('winget', 'msix')][string] $Channel = 'msix',
+    # The release's own unsigned .msix and .msixupload, as build-msix.ps1 retained them.
+    [string] $Store = 'channel-dist/store'
 )
 $ErrorActionPreference = 'Stop'
 $Dist = (Resolve-Path $Dist).Path
@@ -49,11 +51,30 @@ try {
             $out = & $command --version
             if ($LASTEXITCODE -ne 0 -or $out -ne "$command $Version") { throw "winget alias $command failed: $out" }
         }
+        # The desktop alias opens the app as a terminal does (no shell association prompt).
+        Start-Process -NoNewWindow (Get-Command artifactize-desktop -CommandType Application).Path
+        for ($i = 0; -not (Get-Process artifactize-desktop -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -eq 'Artifactize'); $i++) {
+            if ($i -ge 120) { throw 'the winget artifactize-desktop alias showed no Artifactize window' }; Start-Sleep -Milliseconds 500
+        }
+        Get-Process artifactize-desktop | Stop-Process -Force
         & winget uninstall --manifest $manifests --scope user --accept-source-agreements --disable-interactivity
         if ($LASTEXITCODE -ne 0) { throw 'winget uninstall failed' }
     } else {
-        & (Join-Path $PSScriptRoot 'build-msix.ps1') -Version $Version -Dist $Dist -Output $root
+        # Test the retained package itself: the upload must carry exactly this .msix, and a
+        # copy of it is signed for installation (the Store signs the original after ingestion).
+        $retained = Join-Path (Resolve-Path $Store).Path "artifactize-v$Version-x64.msix"
+        $upload = Join-Path (Resolve-Path $Store).Path "artifactize-v$Version-x64.msixupload"
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($upload)
+        try {
+            $entries = @($zip.Entries)
+            if ($entries.Count -ne 1 -or $entries[0].Name -ne [IO.Path]::GetFileName($retained)) { throw 'The .msixupload must hold only the retained .msix' }
+            $inner = Join-Path $root 'upload.msix'
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0], $inner)
+        } finally { $zip.Dispose() }
+        if ((Get-FileHash $inner).Hash -ne (Get-FileHash $retained).Hash) { throw 'The .msixupload carries a different .msix than the retained one' }
         $package = Join-Path $root "artifactize-v$Version-x64.msix"
+        Copy-Item $retained $package
         $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=F922229C-8605-4186-87BA-B5FF18595D66' `
             -KeyUsage DigitalSignature -FriendlyName 'Artifactize disposable CI' -CertStoreLocation 'Cert:\CurrentUser\My' `
             -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
@@ -78,7 +99,11 @@ try {
         if ($LASTEXITCODE -ne 0 -or $out -ne "artifactize $Version") { throw "MSIX alias failed: $out" }
         $manifest = Get-AppxPackageManifest -Package $installed
         $applications = @($manifest.Package.Applications.Application)
-        if ($applications.Count -ne 1 -or $applications[0].Id -ne 'Artifactize') { throw 'MSIX must have one visible application' }
+        if ((@($applications | ForEach-Object Id) -join ',') -ne 'Artifactize,ArtifactizeDesktop') { throw 'MSIX must have the CLI facade and the desktop app' }
+        # The desktop app shows the Runs that the artifactize.exe beside it starts.
+        foreach ($exe in @('artifactize.exe', 'artifactize-desktop.exe')) {
+            if (-not (Test-Path (Join-Path $installed.InstallLocation $exe))) { throw "MSIX is missing $exe" }
+        }
         if (Test-Path (Join-Path $installed.InstallLocation 'artifactize-tools.exe')) { throw 'MSIX must use the facade, not a standalone tools executable' }
         $sample = Join-Path $root 'sample.txt'
         [IO.File]::WriteAllText($sample, 'artifactize MSIX tools seam')
@@ -131,7 +156,15 @@ instruction = "Write a new AppData file to measure packaged child-process redire
         } elseif ($privateChildren.Count -eq 0 -and (Test-Path $realChild)) {
             Write-Host "MSIX child AppData redirected: no; file: $realChild"
         } else { throw 'MSIX child AppData probe has missing or ambiguous physical files' }
-        Write-Host 'MSIX alias, tools facade and package-private state passed'
+        # Start the desktop app from its Start entry as a user does, after the state checks
+        # above; a window titled Artifactize means its webview loaded.
+        Start-Process "shell:AppsFolder\$($installed.PackageFamilyName)!ArtifactizeDesktop"
+        for ($i = 0; -not (Get-Process artifactize-desktop -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -eq 'Artifactize'); $i++) {
+            if ($i -ge 120) { throw 'MSIX desktop app showed no Artifactize window' }; Start-Sleep -Milliseconds 500
+        }
+        Get-Process artifactize-desktop | Stop-Process -Force
+        Write-Host 'MSIX desktop app opened its window'
+        Write-Host 'MSIX alias, tools facade, package-private state and desktop app passed'
     }
 } finally {
     if ($Channel -eq 'msix') { Get-AppxPackage -Name $packageName | Remove-AppxPackage }

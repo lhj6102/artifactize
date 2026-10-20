@@ -499,6 +499,12 @@ export const scenarios: Scenario[] = [
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "RED", { timeout: 15000, timeoutMsg: "RED saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "RED", reason: "two problems found", findings: [{ problem: "date" }], steps: ["check the title"] });
+      // Submitted: the form gives way to the completed RED result, which shows what was sent.
+      const completed = () => browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? "");
+      await browser.waitUntil(async () => /completed result/i.test(await completed()), { timeout: 15000, timeoutMsg: "the completed RED result is open" });
+      assert.equal(await browser.$("#field-reason").isExisting(), false, "the completed result replaced the form");
+      const shown = await completed();
+      for (const value of ["RED", "two problems found", "check the title", "date"]) assert.ok(shown.includes(value), `the completed result shows ${value}`);
     },
   ),
 

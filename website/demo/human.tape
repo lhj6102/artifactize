@@ -5,7 +5,6 @@
 # (from the repository root). 14 px keeps the monitor above 100 columns, so the tree stays
 # beside the focused pane.
 Output website/demo/media/human.gif
-Output website/demo/media/human.mp4
 Source website/demo/settings.tape
 Set FontSize 14
 Set Height 860

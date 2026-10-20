@@ -22,8 +22,8 @@ brand="$PWD/../assets/brand"
 cp "$brand"/favicon.{svg,png} "$brand/apple-touch-icon.png" dist/
 cp "$brand"/artifactize-icon{,-mark}.svg "$brand/artifactize-icon-h56.png" \
     "$brand/og.jpg" dist/media/
-# The landing page shows the desktop demo the capture script records into assets/demos/.
-cp "$PWD/../assets/demos/review-loop.gif" dist/media/
+# The landing page shows the desktop demos the capture script records into assets/demos/.
+cp "$PWD/../assets/demos/review-loop.gif" "$PWD/../assets/demos/graph-growth.gif" dist/media/
 
 # Inject the same favicons into an isolated mdBook source, never docs/theme/.
 # mdBook fingerprints the copies and rewrites links in every generated page.

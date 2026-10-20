@@ -11,8 +11,9 @@ name: Release
 # 2. Once they pass, publish creates the GitHub release with the Linux archives and
 #    their .sha256 checksums, so install.sh serves the new version, then publishes the
 #    crate to crates.io. A failed Linux build publishes nothing.
-# 3. The Windows zip and both macOS tarballs build alongside and are attached when
-#    ready. Until v1 they are best effort: they never delay or fail the release.
+# 3. The Windows zip (with the desktop app), both macOS tarballs and the desktop
+#    bundles (macOS dmg, Linux AppImage and deb) build alongside and are attached
+#    when ready. Until v1 they are best effort: they never delay or fail the release.
 #
 # A prerelease tag (v0.6.0-alpha.1) creates a GitHub prerelease only: no crates.io.
 # Homebrew, winget and Store follow stable releases only. Each optional channel has
@@ -70,6 +71,15 @@ jobs:
     with:
       version: ${{ needs.plan.outputs.version }}
       platform: macos
+    # Developer ID signing and notarization of the desktop app.
+    secrets: inherit
+
+  linux-desktop:
+    needs: plan
+    uses: ./.github/workflows/binaries.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      platform: linux-desktop
 
   publish:
     needs: [plan, linux]
@@ -167,6 +177,37 @@ jobs:
           sha256sum -c ./*.sha256
           gh release upload "$GITHUB_REF_NAME" ./*
 
+  attach-desktop:
+    name: Attach the desktop bundles (best effort)
+    needs: [publish, macos, linux-desktop]
+    # Each bundle that built is attached, whichever other platform failed.
+    if: always() && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write # the GitHub release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+      - name: Attach the desktop bundles and their checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: dist
+        run: |
+          sha256sum -c ./*.sha256
+          # A stable name too, so the landing page's download button can link to
+          # releases/latest/download/Artifactize.dmg.
+          for dmg in ./*-universal-apple-darwin.dmg; do
+            [ -f "$dmg" ] || continue
+            cp "$dmg" Artifactize.dmg
+            sha256sum Artifactize.dmg >Artifactize.dmg.sha256
+          done
+          gh release upload "$GITHUB_REF_NAME" ./*
+
   attach-channels:
     name: Attach winget manifests and unsigned Store upload (best effort)
     needs: [publish, windows]
@@ -189,7 +230,7 @@ jobs:
 
   homebrew:
     name: Update Homebrew tap (optional)
-    needs: [plan, publish, attach-macos]
+    needs: [plan, publish, attach-macos, attach-desktop]
     runs-on: ubuntu-latest
     environment: release
     continue-on-error: true
@@ -207,11 +248,18 @@ jobs:
           pattern: binaries-*-apple-darwin
           path: dist
           merge-multiple: true
-      - name: Generate and update the stable formula
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          pattern: desktop-*-apple-darwin
+          path: dist
+          merge-multiple: true
+      - name: Generate and update the stable formula and the desktop app's cask
         if: steps.gate.outputs.enabled == 'true'
         run: |
           python3 -I .github/scripts/channels.py generate homebrew --version "$VERSION" --dist dist --output formula
-          python3 -I .github/scripts/channels.py publish homebrew --version "$VERSION" --formula formula/artifactize.rb
+          python3 -I .github/scripts/channels.py generate cask --version "$VERSION" --dist dist --output cask
+          python3 -I .github/scripts/channels.py publish homebrew --version "$VERSION" --formula formula/artifactize.rb --cask cask/artifactize.rb
 
   winget:
     name: Open winget-pkgs PR (optional)

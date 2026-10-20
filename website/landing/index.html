@@ -53,7 +53,7 @@
     </a>
     <nav class="top-nav" aria-label="Main">
       <a class="hide-sm" href="#story">The story</a>
-      <a class="hide-sm" href="/docs/getting-started/install.html">Install</a>
+      <a class="hide-sm" href="#start">Install</a>
       <a class="nav-docs" href="/docs/">Docs</a>
       <a class="nav-icon" href="https://github.com/lhj6102/artifactize" aria-label="Artifactize on GitHub">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
@@ -84,21 +84,23 @@
         </ul>
       </div>
       <div class="cta">
-        <a class="btn btn-primary" href="/docs/">Read the docs <span aria-hidden="true">→</span></a>
-        <a class="btn btn-ghost" href="/docs/getting-started/guide.html">5-minute quick start</a>
+        <a class="btn btn-primary" href="#story">See how it works <span aria-hidden="true">↓</span></a>
+        <a class="btn btn-ghost" href="#start">Install</a>
       </div>
       <figure class="hero-demo">
         <img src="/media/review-loop.gif" width="1280" height="720" loading="eager" decoding="async"
              alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes.">
         <figcaption>Each box is an Artifact, a piece of the project with its own checks; the lines between them make up the Artifact Graph. Real recording of the desktop app preview: four Runs of an example, eight times faster.</figcaption>
       </figure>
-      <a class="scroll-cue" href="#story">Watch a project grow
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v10M3.5 8.5 8 13l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </a>
     </div>
   </section>
 
   <section class="story" id="story" aria-labelledby="story-title" data-story>
+    <div class="story-scroll" aria-hidden="true" data-story-scroll>
+      <span class="story-scroll-label">Scroll</span>
+      <span class="story-scroll-track"><span class="story-scroll-fill"></span></span>
+      <span class="story-scroll-arrow">↓</span>
+    </div>
     <div class="wrap story-head">
       <p class="kicker">The story</p>
       <h2 id="story-title">Watch a project grow.</h2>
@@ -228,31 +230,25 @@
     </div>
   </section>
 
-  <section class="band" id="terminal" aria-labelledby="terminal-title">
+  <section class="band" id="app" aria-labelledby="app-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="kicker">See it in a terminal</p>
-        <h2 id="terminal-title">The same reuse, in real sessions.</h2>
-        <p>In these recordings, <code>status</code> lists the checks that would run; <code>verify</code> performs them.</p>
+        <p class="kicker">See it in the desktop app</p>
+        <h2 id="app-title">Real projects, recorded in the app.</h2>
+        <p>Both recordings come from the desktop app preview, played back faster.</p>
       </div>
-      <figure class="demo">
+      <figure class="app-demo" data-app-demo>
         <div class="demo-tabs" role="group" aria-label="Choose a recording">
-          <button type="button" class="demo-tab" aria-pressed="true" data-name="change" data-height="830" data-label="After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.">Change one file</button>
-          <button type="button" class="demo-tab" aria-pressed="false" data-name="reuse" data-height="830" data-label="artifactize status predicts five evals; the first verify executes all five and the second reuses all five.">Run it twice</button>
-          <button type="button" class="demo-tab" aria-pressed="false" data-name="team" data-height="900" data-label="On Alice's laptop verify executes five evals and publishes them to the review store; on Bob's laptop, with his own copy of the same project, status predicts five reuses and verify reuses all five from remote: alice@laptop.">Two copies, one store</button>
+          <button type="button" class="demo-tab" aria-pressed="true" data-src="/media/graph-growth.gif"
+                  data-alt="Real recording of the Artifactize desktop app showing Artifactize's own project graph growing release by release, from 0.7.0 to the current release."
+                  data-label="Artifactize’s own project graph, one step per release from 0.7.0 to today.">The graph grows</button>
+          <button type="button" class="demo-tab" aria-pressed="false" data-src="/media/review-loop.gif"
+                  data-alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes."
+                  data-label="Four Runs of an example project: failing parts are fixed between Runs, unchanged work is reused, and the last Run passes.">The review loop</button>
         </div>
-        <div class="demo-frame" style="aspect-ratio: 1000 / 830">
-          <video class="demo-video" muted loop playsinline preload="none" width="1000" height="830" aria-label="Terminal recording"
-                 data-poster="/media/demo/change.webp" aria-describedby="demo-caption">
-            <source src="/media/demo/change.mp4" type="video/mp4">
-          </video>
-          <button type="button" class="vc demo-play" aria-pressed="false" hidden>
-            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
-            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>
-            <span class="vc-label">Pause</span>
-          </button>
-        </div>
-        <figcaption><span id="demo-caption" class="demo-caption">After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.</span> Recorded in an isolated example project, not a live team’s work.</figcaption>
+        <img src="/media/graph-growth.gif" width="1280" height="720" loading="lazy" decoding="async"
+             alt="Real recording of the Artifactize desktop app showing Artifactize's own project graph growing release by release, from 0.7.0 to the current release.">
+        <figcaption><span class="app-demo-caption">Artifactize’s own project graph, one step per release from 0.7.0 to today.</span></figcaption>
       </figure>
     </div>
   </section>
@@ -262,10 +258,58 @@
       <p class="kicker">Get started</p>
       <h2 id="start-title">Try it in five minutes.</h2>
       <p>Artifactize is open source under the Apache License 2.0. It runs on Linux, macOS and Windows; the quick start reviews an example project without an AI account or provider access key.</p>
-      <p><a href="/docs/getting-started/install.html">The installation guide</a> covers the supported platforms, channels, updates and uninstalling. The <a href="/docs/getting-started/guide.html">quick start</a> takes you to your first reused review.</p>
+      <div class="install" data-install>
+        <div class="demo-tabs install-tabs" role="tablist" aria-label="Operating system" hidden>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-linux" aria-controls="install-linux" aria-selected="true" data-os="linux">Linux</button>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-macos" aria-controls="install-macos" aria-selected="false" tabindex="-1" data-os="macos">macOS</button>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-windows" aria-controls="install-windows" aria-selected="false" tabindex="-1" data-os="windows">Windows</button>
+        </div>
+        <div class="panel start-panel" role="tabpanel" id="install-linux" aria-labelledby="install-tab-linux" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
+          <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
+          <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># Linux (x86_64, aarch64): installs to ~/.local/bin, no sudo; on x86_64 also the desktop app</span>
+<span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span>
+<span class="t-prompt">$</span> artifactize --version</code></pre>
+        </div>
+        <div class="panel start-panel" role="tabpanel" id="install-macos" aria-labelledby="install-tab-macos">
+          <div data-copy="brew install lhj6102/tap/artifactize">
+            <button type="button" class="copy" aria-label="Copy the Homebrew install command" hidden>Copy</button>
+            <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># macOS (Apple silicon, Intel) with Homebrew</span>
+<span class="t-prompt">$</span> <span data-command>brew install lhj6102/tap/artifactize</span>
+<span class="t-prompt">$</span> artifactize --version</code></pre>
+          </div>
+          <div class="install-alt-block" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
+            <button type="button" class="copy" aria-label="Copy the install script command" hidden>Copy</button>
+            <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># Without Homebrew: installs to ~/.local/bin and the app to ~/Applications, no sudo</span>
+<span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span></code></pre>
+          </div>
+          <p class="install-alt install-download">
+            <a class="btn btn-primary" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg">Download the Mac app</a>
+            <span>One disk image for Apple silicon and Intel, checked by Apple. With Homebrew: <code>brew install --cask lhj6102/tap/artifactize</code></span>
+          </p>
+        </div>
+        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows">
+          <div data-copy="winget install 9PB6W4LL165D --source msstore">
+            <button type="button" class="copy" aria-label="Copy the Microsoft Store install command" hidden>Copy</button>
+            <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># Windows x64 from the Microsoft Store, with the desktop app; then open a new terminal</span>
+<span class="t-prompt">PS&gt;</span> <span data-command>winget install 9PB6W4LL165D --source msstore</span>
+<span class="t-prompt">PS&gt;</span> artifactize --version</code></pre>
+          </div>
+          <div class="install-alt-block" data-copy="irm https://artifactize.dev/install.ps1 | iex">
+            <button type="button" class="copy" aria-label="Copy the PowerShell install command" hidden>Copy</button>
+            <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># Without the Store, in PowerShell with no administrator rights</span>
+<span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span></code></pre>
+          </div>
+          <p class="install-alt">Or open <a href="https://apps.microsoft.com/detail/9PB6W4LL165D">Artifactize in the Microsoft Store</a>. The PowerShell download is not code-signed, so Smart App Control may block it; the Store version is signed by Microsoft.</p>
+        </div>
+      </div>
       <div class="cta center">
-        <a class="btn btn-primary" href="/docs/getting-started/install.html">Install <span aria-hidden="true">→</span></a>
-        <a class="btn btn-ghost" href="/docs/getting-started/guide.html">Quick start</a>
+        <a class="btn btn-primary" href="/docs/getting-started/guide.html">5-minute quick start <span aria-hidden="true">→</span></a>
+        <a class="btn btn-ghost" href="/docs/getting-started/install.html">Installation guide</a>
         <a class="btn btn-ghost" href="https://github.com/lhj6102/artifactize">GitHub</a>
       </div>
     </div>

@@ -11,8 +11,7 @@ with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
 
-The **Microsoft Store package** (not available yet; certification is pending) uses
-Windows' default AppData virtualization, with
+The **Microsoft Store package** uses Windows' default AppData virtualization, with
 no Flexible Virtualization exclusions. New state under AppData is package-private:
 the Store version keeps its own Runs, sign-in and cache instead of sharing them
 with winget, zip or Cargo installs. Windows removes that private state on uninstall.

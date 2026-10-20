@@ -3,17 +3,29 @@
 The Linux tests and builds still gate the GitHub release. Other platforms and
 channels are independent, best-effort jobs. Archives and non-Store installers contain both
 `artifactize` and `artifactize-tools`; the Store MSIX contains only `artifactize`,
-with tools exposed through `artifactize tools`. Missing channel credentials produce an
+with tools exposed through `artifactize tools`. The desktop app ships beside those
+commands, because it shows Runs that the `artifactize` command starts, so every
+install of the app carries that command too:
+in the Windows zip and the MSIX (its own Start entry beside the CLI's),
+and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
+(`desktop-<target>` artifacts). The release also attaches the dmg as `Artifactize.dmg`,
+the stable name the landing page's download button links to through
+`releases/latest/download`.
+The other channels carry the app too: the Homebrew cask `artifactize` installs
+`Artifactize.app` from the dmg (the formula stays the CLI), the winget manifest adds
+an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
+menu shortcut, and `install.sh` installs `Artifactize.app` into `~/Applications` on
+macOS or unpacks the AppImage on glibc x86_64 Linux with an `artifactize-desktop`
+launcher and a menu entry. Missing channel credentials produce an
 explicit skip message; they never fail a release. Every expected skip also emits an
 Actions warning annotation and a job-summary line, so a green skipped job cannot
 be mistaken for a publication. Successful publications write their outcome to the
-summary too (Store submission ID, winget PR URL when available, or Homebrew formula). These scripts never sign or
+summary too (Store submission ID, winget PR URL when available, or Homebrew formula and cask). These scripts never sign or
 submit a Windows zip.
 
-winget and Microsoft Store distribution are in preparation, not available yet:
-the winget submissions are still open and the Store submission has not passed
-certification. Use the PowerShell install script for Windows today; the setup and
-publication instructions below describe the prepared channels.
+The Microsoft Store listing is published and is the default Windows install; each
+stable release submits an update. winget distribution is in preparation, not
+available yet: the winget submissions are still open.
 
 ## Policy and credentials
 
@@ -26,11 +38,18 @@ values in scripts, command history or issue comments.
 | Homebrew | Stable only; a normal tap formula tracks stable, not prereleases | `HOMEBREW_TAP_TOKEN` |
 | winget | Stable only | `WINGET_TOKEN` |
 | Microsoft Store | Stable only; any pending submission is left untouched and logged/skipped | `STORE_TENANT_ID`, `STORE_CLIENT_ID`, `STORE_CLIENT_SECRET` |
+| macOS desktop signing | Every build, PRs included; without them the app is signed ad hoc and only runs where it was built | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
 
 Homebrew deliberately does not promote prereleases into the ordinary formula.
 Prereleases still carry the winget metadata and unsigned MSIX/Store upload for
 manual rehearsal. Neither metadata generation nor installation smoke tests use
 channel credentials.
+
+The macOS signing secrets must be repository Actions secrets: PR and rehearsal
+builds read them too, not only the release environment. They are Tauri's
+[macOS signing](https://v2.tauri.app/distribute/sign/macos/) variables: the base64
+Developer ID Application certificate (.p12) and its password, the identity name, and
+an Apple ID with an app-specific password and team ID for notarization.
 
 ### Homebrew first setup
 
@@ -39,22 +58,26 @@ channel credentials.
 2. At GitHub **Settings → Developer settings → Personal access tokens →
    Fine-grained tokens**, create a token restricted to that repository, with
    **Contents: Read and write**. Save it as `HOMEBREW_TAP_TOKEN` above.
-3. The next stable release commits `Formula/artifactize.rb`. Install using
-   `brew install lhj6102/tap/artifactize`.
+3. The next stable release commits `Formula/artifactize.rb` and
+   `Casks/artifactize.rb`. Install the CLI using `brew install lhj6102/tap/artifactize`
+   and the desktop app using `brew install --cask lhj6102/tap/artifactize`.
 
-The generator computes hashes from the two actual macOS release archives, not
+The generator computes hashes from the two actual macOS release archives and the dmg, not
 from checksums supplied by an external endpoint:
 
 ```sh
 python3 -I .github/scripts/channels.py generate homebrew \
   --version 1.2.3 --dist dist --output formula
+python3 -I .github/scripts/channels.py generate cask \
+  --version 1.2.3 --dist dist --output cask
 ```
 
 ### winget first submission
 
 Identifier: **lhj6102.Artifactize**. Each release attaches
 `winget-manifests.zip` with the version, defaultLocale and installer manifests.
-The installer is a zip with two nested portable files and command aliases.
+The installer is a zip with three nested portable files and command aliases:
+`artifactize`, `artifactize-tools` and `artifactize-desktop`.
 
 1. Owner downloads/unpacks the manifests from a **stable** GitHub release.
 2. Run `winget validate --manifest <directory>` and install locally with
@@ -130,10 +153,12 @@ private state on uninstall. This is not a sandbox: on supported Windows versions
 Microsoft documents that reads can fall back to existing unvirtualized AppData files
 and writes to those existing files can affect the real files. Explicit state outside
 AppData and user project/exported files are not removed with the package.
-The MSIX has one visible Application (`Artifactize`) and one console
-execution alias (`artifactize.exe`); tools run as `artifactize tools <subcommand>`.
-It has no headless Application or `AppListEntry="none"`, so no HeadlessAppBypass
-waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
+The MSIX has two visible Applications: the desktop app (`ArtifactizeDesktop`,
+listed as Artifactize) and the CLI facade (`Artifactize`, listed as Artifactize CLI)
+with one console execution alias (`artifactize.exe`); tools run as
+`artifactize tools <subcommand>`. The desktop app shows the Runs that
+`artifactize.exe` starts. Neither is headless or has `AppListEntry="none"`, so no
+HeadlessAppBypass waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
 Application; the standalone tools executable remains in all non-Store channels.
 Launching Artifactize from Start or Explorer with no arguments shows the normal
 help, a terminal hint and waits for Enter only when stdin/stdout are consoles and
@@ -158,23 +183,31 @@ skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
 
 The two informational macOS builds install from a native PR archive through a
-local tap, run `brew test`, and execute both commands. The informational Windows
-build parses all PowerShell scripts, validates/installs local winget manifests,
-executes both portable aliases, and uninstalls them. The MSIX seam runs first in a
+local tap, run `brew test`, and execute both commands. The universal desktop job
+builds both commands for both CPUs, bundles the app on Apple Silicon, and after the dmg
+smoke installs the app with `install.sh` and with a local-tap cask (`brew style`, then
+`brew install --cask`, quarantined only when the app is notarized) and opens each
+installed copy; an Intel runner then opens the same dmg and cask. The Linux desktop job installs with `install.sh` from its AppImage
+and opens the app through the installed launcher. The informational Windows
+build parses all PowerShell scripts, installs with `install.ps1` and opens the app
+from its Start shortcut, validates/installs local winget manifests,
+executes both portable aliases, opens the app through its `artifactize-desktop`
+alias, and uninstalls them. The MSIX seam runs first in a
 separate step so a winget bootstrap limitation cannot hide its outcome. Hosted
 Windows Server images may omit winget: the test uses Microsoft's maintained
 `Microsoft.WinGet.Client` / `Repair-WinGetPackageManager` bootstrap rather than
 silently substituting metadata checks for installation.
 
-The MSIX seam packs with SDK schema validation, signs a *copy* with a throwaway
+The MSIX seam takes the retained `.msix` (packed with SDK schema validation), checks that
+the retained `.msixupload` carries exactly that package, signs a *copy* with a throwaway
 certificate, installs via `Add-AppxPackage`, invokes the WindowsApps `artifactize` execution
 alias and its tools facade, then runs offline `artifactize server token list` and a
 Runtime-only verification that creates a unique new AppData file in a child PowerShell
 process (no provider calls). The unpackaged shell checks that both SQLite databases
 are package-private and that real `%LOCALAPPDATA%\artifactize` was not created. Logs
 record the actual database paths, runner OS and whether the child's new AppData file
-was redirected. This checks a fresh runner, not migration from existing unpackaged
-state. The test removes its package, certificate and probe files.
+was redirected. Last, it starts the desktop app from its Start entry and waits for its
+window. This checks a fresh runner, not migration from existing unpackaged state. The test removes its package, certificate and probe files.
 
 [Windows rehearsal 39138230810](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
 passed on Windows Server build 26100 (`windows-2025-vs2026`). Both `state.sqlite` and
