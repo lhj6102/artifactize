@@ -4,7 +4,7 @@
 // branch without being closed.
 import assert from "node:assert/strict";
 import {
-  addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, requests, signOff, signoff, verifyWaiting,
+  addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, orderRuns, requests, signOff, signoff, verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
@@ -123,6 +123,8 @@ export const scenarios: Scenario[] = [
       // Another process starts a Run that waits for a person.
       changeNotes(fixture, "# Release notes\n- A second release.\n");
       const run = await verifyWaiting(fixture);
+      // Explicitly the newer, whatever times the two verifies were saved at.
+      orderRuns(fixture, [first, run]);
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([first, run]),
         "the row ends with the Run in progress, the Current chip gone");
       const running = (await branch(browser, "repo  master"))!.chips[1];

@@ -3,7 +3,7 @@
 // into the Main area and back, a Detail stepped back out of, unreadable Runs beside a readable
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { addWaiting, create, createNavigationFixture, createUnreadableRuns, requests, verifyWaiting } from "../fixture.ts";
+import { addWaiting, create, createNavigationFixture, createUnreadableRuns, orderRuns, requests, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { checkpoint, refreshed } from "../commands.ts";
@@ -86,6 +86,8 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:release");
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id), [run]);
       const id = await verifyWaiting(fixture);
+      // Explicitly the newer, whatever times the two verifies were saved at.
+      orderRuns(fixture, [run, id]);
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([run, id]),
         "the new Run's chip arrives without F5");
       assert.equal(await mainTitle(browser), `Run ${run}`, "the shown Run stays shown");

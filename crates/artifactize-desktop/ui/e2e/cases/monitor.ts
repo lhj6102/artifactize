@@ -418,10 +418,10 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-RED E-HUMAN-INVALID E-HUMAN-SWITCH
+  // UX journey: J-HUMAN-RED; UX edges: E-HUMAN-RED E-HUMAN-INVALID E-HUMAN-SWITCH
   scenario<null>(
     "monitor-invalid-red",
-    "keeps a RED result that fails its schema correctable and shows the failing path",
+    "keeps a RED or GREEN result that fails its schema correctable and shows the failing path",
     () => atRepo(),
     async (browser, { fixture }) => {
       const { human, openReview } = await monitorUI(browser, fixture);
@@ -456,6 +456,18 @@ export const scenarios: Scenario[] = [
       assert.equal(saved.status, "WAITING_HUMAN");
       assert.equal(saved.result, null, "switching did not submit the rejected draft");
       assert.equal(saved.claim?.reviewer, "alice", "the same review remains claimed and editable");
+      // A GREEN result failing its schema the same way: the required comment left empty.
+      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
+      await fill(browser, "#field-comment", "");
+      const before = await alert.getText().catch(() => "");
+      await browser.keys([primaryModifier, "s"]);
+      await browser.waitUntil(async () => {
+        const shown = await browser.$('[role="alert"]');
+        return await shown.isExisting() && /comment/.test(await shown.getText()) && (await shown.getText()) !== before;
+      }, { timeout: 15000, timeoutMsg: "the GREEN result's failing path shown" });
+      assert.equal(signoff(fixture).status, "WAITING_HUMAN", "the invalid GREEN result was not submitted");
+      await fill(browser, "#field-comment", "checked again");
+      assert.equal(await browser.$("#field-comment").getValue(), "checked again", "the GREEN form stays correctable");
     },
   ),
 

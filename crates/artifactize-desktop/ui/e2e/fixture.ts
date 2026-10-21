@@ -62,7 +62,7 @@ instruction = ${JSON.stringify(signoff.instruction)}
 [evals.signoff.pass_schema]
 type = "object"
 properties.approved = { const = true }
-properties.comment = { type = "string", description = "What you checked." }
+properties.comment = { type = "string", minLength = 1, description = "What you checked." }
 ${signoff.scalars ? `properties.score = { type = "number" }
 properties.note = { type = "string" }
 properties.confirmed = { type = "boolean" }

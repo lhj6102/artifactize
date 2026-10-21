@@ -2,7 +2,7 @@
 // one by its ID, leaving its form and then the review back to the Pane, quitting with an
 // unsubmitted claim (stay, then release and quit), and the completed result kept open.
 import assert from "node:assert/strict";
-import { addRepository, artifactize, create, type Fixture, requests, signoff } from "../fixture.ts";
+import { addRepository, artifactize, create, type Fixture, orderRuns, requests, signoff } from "../fixture.ts";
 import { claimable, reviewing } from "../human-review.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
@@ -71,6 +71,8 @@ export const scenarios: Scenario[] = [
       await addRepository(fixture, "open-by-id");
       const added = requests(fixture).find((request) => request.evalId === "release/signoff" && !before.has(request.id));
       assert.ok(added, "the other repository created its own sign-off");
+      // Explicitly the newer, whatever times the two verifies were saved at.
+      orderRuns(fixture, [requests(fixture).find((request) => request.id === original)!.runId, added.runId]);
       await waitFor(browser, async () => (await waiting(browser)).bar === "Waiting (2)", "the other repository's sign-off counted without a reload");
       assert.equal(waitingReviews(fixture), 2);
       await commandsRendered(browser);

@@ -11,8 +11,10 @@ that makes the transition happen and checks where it leads.
   **Pane** beside the **Main area**, the divider between them always shown. Started with
   `--repo PATH` it selects the branch of PATH; with `review ID` it opens that review, with
   `review` alone the newest waiting one; with `graph --repo PATH` (also the declared Human
-  `graph` tool) it shows the Current of the branch of PATH. A branch the app was started for
-  is listed even before its project has a Run. There is no screen switch.
+  `graph` tool) it shows the Current of the branch of PATH. As J-LAUNCH selects that branch, or
+  shows its Current, even before its project has a Run (the Human `graph` tool works before
+  any Run), the branch the app was started for is listed then too, the one exception to the
+  Branches listing only projects with Runs. There is no screen switch.
 - **Pane**: one column: the **Search** field at the top, the **Branches** below it and the
   **Waiting** stack at the bottom. There is no Scope heading and no Runs list.
   - **Search**: its starting query is `sort:recent`. Free text and `key:value` terms (`repo:`,
@@ -214,7 +216,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-LIST-REMOVE | Editing a form with a list of text | `✕` on an item | Editing, that item removed; one empty item stays when it was the last |
 | E-HUMAN-GROUP-ADD | Editing a form with a list of groups | `+ Add` | Editing, another empty group of the list's fields |
 | E-HUMAN-GROUP-REMOVE | Editing a form with a list of groups | `✕` on a group | Editing, that group removed; one empty group stays when it was the last |
-| E-HUMAN-INVALID | Editing RED | Ctrl+S with a result failing its schema | Editing RED, failing path shown |
+| E-HUMAN-INVALID | Editing RED or Editing GREEN | Ctrl+S with a result failing its schema | the same form, its entries kept and correctable, failing path shown |
 | E-HUMAN-TEXT | Editing | type text, including composed Korean | Editing, no shortcut fires |
 | E-HUMAN-LOG-UP | Tool log Following, longer than its box | scroll it up | Tool log Scrolled up; new lines arrive below without moving it, and the rest of the review does not scroll |
 | E-HUMAN-LOG-FOLLOW | Tool log Scrolled up | scroll it back to its bottom | Tool log Following, showing each newest line again |

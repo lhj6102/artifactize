@@ -127,7 +127,7 @@ export const scenarios: Scenario[] = [
           target: "release", title: "A person approves the release", gate: null,
           criteria: { kind: "human" }, payload: { instruction: "Read the release notes and approve them." },
           passSchema: { type: "object", properties: { approved: { const: true },
-            comment: { type: "string", description: "What you checked." } },
+            comment: { type: "string", minLength: 1, description: "What you checked." } },
             required: ["approved", "comment"], additionalProperties: false },
           failSchema: { type: "object", properties: { reason: { type: "string", minLength: 3 },
             findings: { type: "array", items: { type: "object", properties: { problem: { type: "string", minLength: 1 }, severity: { enum: ["low", "high"] } },
