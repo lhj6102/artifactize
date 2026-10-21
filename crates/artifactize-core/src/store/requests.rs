@@ -331,7 +331,6 @@ pub(super) struct Row {
     pub id: crate::types::RequestId,
     pub run: crate::types::RunId,
     pub eval: crate::types::EvalId,
-    pub ordinal: i64,
     pub data: String,
     pub execution: Option<String>,
     pub execution_id: Option<crate::types::ExecutionId>,
@@ -395,7 +394,7 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
         "r.rowid DESC,q.ordinal"
     };
     let mut statement = db.prepare_cached(&format!(
-        "SELECT q.id,q.run_id,q.data,e.data,h.id,h.claimed_by,h.claimed_at,q.eval_id,q.ordinal,e.id
+        "SELECT q.id,q.run_id,q.data,e.data,h.id,h.claimed_by,h.claimed_at,q.eval_id,e.id
         FROM requests q JOIN runs r ON r.id=q.run_id
         LEFT JOIN executions e ON e.id=q.execution_id
         LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
@@ -410,10 +409,9 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
                 id: row.get(0)?,
                 run: row.get(1)?,
                 eval: row.get(7)?,
-                ordinal: row.get(8)?,
                 data: row.get(2)?,
                 execution: row.get(3)?,
-                execution_id: row.get(9)?,
+                execution_id: row.get(8)?,
                 claim: id
                     .zip(reviewer)
                     .zip(at)
