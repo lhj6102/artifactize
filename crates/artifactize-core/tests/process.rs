@@ -60,8 +60,8 @@ async fn registration_observes_inert_group_leader_before_exec() {
     let scratch = Scratch::new();
     let marker = scratch.0.join("started");
     let mut command = command(
-        &support::os::shell(),
-        &["-c", "printf started > started; pwd"],
+        &support::os::steps(),
+        &["write", "started", "started", "cwd"],
     );
     command.cwd = scratch.0.clone();
     let expected_cwd = scratch.0.clone();
@@ -102,7 +102,7 @@ async fn registration_observes_inert_group_leader_before_exec() {
 #[tokio::test]
 async fn failed_registration_never_executes_and_reaps_the_child() {
     let scratch = Scratch::new();
-    let mut command = command(&support::os::shell(), &["-c", "touch started"]);
+    let mut command = command(&support::os::steps(), &["touch", "started"]);
     command.cwd = scratch.0.clone();
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
@@ -119,7 +119,7 @@ async fn failed_registration_never_executes_and_reaps_the_child() {
 #[tokio::test]
 async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     let scratch = Scratch::new();
-    let mut command = command(&support::os::shell(), &["-c", "touch started"]);
+    let mut command = command(&support::os::steps(), &["touch", "started"]);
     command.cwd = scratch.0.clone();
     let (registered, child) = oneshot::channel::<ChildIdentity>();
     let cancellation = CancellationToken::new();
@@ -142,7 +142,7 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
 #[tokio::test(start_paused = true)]
 async fn registration_is_covered_by_the_deadline() {
     let scratch = Scratch::new();
-    let mut command = command(&support::os::shell(), &["-c", "touch started"]);
+    let mut command = command(&support::os::steps(), &["touch", "started"]);
     command.cwd = scratch.0.clone();
     command.timeout = Duration::from_secs(60);
     let (registered, pid) = oneshot::channel();
@@ -191,8 +191,8 @@ async fn invalid_cwd_is_a_spawn_error_before_registration() {
 #[tokio::test]
 async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
     let result = execute(command(
-        &support::os::shell(),
-        &["-c", &support::os::zero_output(262144, 262144)],
+        &support::os::steps(),
+        &["fill", "262144", "0", "262144", "0"],
     ))
     .await;
     assert!(result.status.success());

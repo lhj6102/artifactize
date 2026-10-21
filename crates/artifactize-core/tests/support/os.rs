@@ -482,9 +482,15 @@ pub fn waiting_program(directory: &Path) -> String {
 /// `wait FILE` waits until a file exists, `needs FILE TEXT` prints TEXT and exits 0 unless the
 /// file exists, `print TEXT` prints, `eprint TEXT` prints to stderr, `cat FILE` prints a file's bytes,
 /// `hold FILE` starts a child that blocks until it is killed, appends the child's process id
-/// and waits for it, `equals A B` exits 1 unless A is B, `exit CODE` exits, and `from FILE`
-/// runs the steps FILE holds, one argument per line, followed by the rest. Test fixtures run
-/// it with literal argument vectors, the same on every system, instead of a shell script.
+/// and waits for it, `start` starts such a child, prints its process id and goes on without
+/// waiting, `child` runs the remaining steps in a child process and waits for it, `block`
+/// blocks until it is killed, `fill COUNT BYTE ECOUNT EBYTE` writes COUNT copies of the byte
+/// BYTE to stdout and ECOUNT of EBYTE to stderr at the same time, `cwd` prints the working
+/// directory as portable path text, `ignore-term` ignores SIGTERM and `terminate` ends the
+/// program with SIGTERM (both Unix only), `equals A B` exits 1 unless A is B, `exit CODE`
+/// exits, and `from FILE` runs the steps FILE holds, one argument per line, followed by the
+/// rest. Test fixtures run it with literal argument vectors, the same on every system, instead
+/// of a shell script.
 pub fn steps_program(directory: &Path) -> String {
     path_text(&compiled_program(
         directory,
@@ -497,6 +503,20 @@ fn line(path: &str, text: &str) {
 fn next(steps: &mut std::vec::IntoIter<String>) -> String {
     steps.next().expect("the step's argument")
 }
+fn blocking_child() -> std::process::Child {
+    std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("block")
+        .spawn()
+        .unwrap()
+}
+#[cfg(unix)]
+unsafe extern "C" {
+    fn signal(signal: i32, handler: usize) -> usize;
+    fn raise(signal: i32) -> i32;
+}
+/// SIGTERM is 15 on Linux and macOS alike.
+#[cfg(unix)]
+const SIGTERM: i32 = 15;
 fn run(steps: Vec<String>) {
     let mut steps = steps.into_iter();
     while let Some(step) = steps.next() {
@@ -554,13 +574,52 @@ fn run(steps: Vec<String>) {
             }
             "hold" => {
                 let path = next(&mut steps);
-                let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-                    .arg("block")
-                    .spawn()
-                    .unwrap();
+                let mut child = blocking_child();
                 line(&path, &child.id().to_string());
                 child.wait().unwrap();
             }
+            "start" => {
+                println!("{}", blocking_child().id());
+                std::io::stdout().flush().unwrap();
+            }
+            "child" => {
+                let status = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(steps.by_ref())
+                    .status()
+                    .unwrap();
+                assert!(status.success(), "the child steps failed: {status}");
+            }
+            "fill" => {
+                let mut stream = || -> (usize, u8) {
+                    (next(&mut steps).parse().unwrap(), next(&mut steps).parse().unwrap())
+                };
+                let ((count, byte), (ecount, ebyte)) = (stream(), stream());
+                std::thread::scope(|scope| {
+                    scope.spawn(|| {
+                        let mut out = std::io::stdout().lock();
+                        out.write_all(&vec![byte; count]).unwrap();
+                        out.flush().unwrap();
+                    });
+                    std::io::stderr().write_all(&vec![ebyte; ecount]).unwrap();
+                });
+            }
+            "cwd" => {
+                let directory = std::env::current_dir().unwrap();
+                let text = directory.to_str().unwrap();
+                #[cfg(windows)]
+                let text = text.replace('\\', "/");
+                print!("{text}");
+                std::io::stdout().flush().unwrap();
+            }
+            // SAFETY: SIG_IGN (1) is a valid disposition; raise only sends a signal.
+            #[cfg(unix)]
+            "ignore-term" => unsafe {
+                signal(SIGTERM, 1);
+            },
+            #[cfg(unix)]
+            "terminate" => unsafe {
+                raise(SIGTERM);
+            },
             "block" => loop {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
             },
@@ -1039,10 +1098,6 @@ pub fn not_a_directory() -> std::io::Error {
 /// The signal number of SIGTERM.
 #[cfg(unix)]
 pub const SIGTERM: i32 = libc::SIGTERM;
-
-/// A shell command whose own shell sends itself SIGTERM: meaningful only where a signal
-/// can end a process, so only Unix code reads this value.
-pub const SELF_TERMINATE: &str = "kill -TERM $$";
 
 /// End a process and everything in its tree at once: SIGKILL to its process group on Unix;
 /// on Windows the process, as its Job Object holds the rest.
@@ -2541,14 +2596,6 @@ finally:
 "#
 }
 
-/// The same unbounded child for shell fixtures; no sleep duration has to outlast the test.
-pub const LINGERING: &str = "python3 -X utf8 -c 'import threading; threading.Event().wait()'";
-
-/// A shell command whose leader ignores SIGTERM and waits for a child that, in the
-/// background, writes its PID and a newline to `$ARTIFACTIZE_OUTPUT_DIR/grandchild` and
-/// then blocks without a timeout until its owner kills it.
-pub const LINGERING_GRANDCHILD: &str = "trap '' TERM; sh -c 'python3 -X utf8 -c \"import threading; threading.Event().wait()\" & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait";
-
 /// Give the file at `original` a second name, `link`: a hard link on every system.
 pub fn hard_link(original: &Path, link: &Path) {
     std::fs::hard_link(original, link).unwrap();
@@ -2661,16 +2708,6 @@ pub fn home_expression() -> &'static str {
     "$HOME"
 }
 
-/// A cancellation fixture keeps the registration PID stable on Unix and cannot finish
-/// naturally while its caller observes the started acknowledgment.
-pub fn cancellation_script() -> &'static str {
-    if cfg!(windows) {
-        "touch started; python3 -X utf8 -c 'import threading; threading.Event().wait()'"
-    } else {
-        "touch started; exec python3 -X utf8 -c 'import threading; threading.Event().wait()'"
-    }
-}
-
 /// Platform-independent assertion of the group containment established at registration.
 pub fn assert_group(pid: u32) {
     #[cfg(unix)]
@@ -2772,19 +2809,6 @@ pub fn system_path() -> std::ffi::OsString {
     } else {
         "/usr/bin:/bin".into()
     }
-}
-
-/// Zero streams used to test concurrent pipe drainage and truncation.
-pub fn zero_output(stdout: usize, stderr: usize) -> String {
-    format!("head -c {stdout} /dev/zero & head -c {stderr} /dev/zero >&2 & wait")
-}
-pub fn letter_output(stdout: usize, stderr: usize) -> String {
-    format!(
-        "head -c {stdout} /dev/zero | tr '\\000' x & head -c {stderr} /dev/zero | tr '\\000' y >&2 & wait"
-    )
-}
-pub fn capped_output(bytes: usize) -> String {
-    format!("head -c {bytes} /dev/zero; printf discarded")
 }
 
 /// HOME and desktop variables inherited by a human-facing child.
@@ -2972,7 +2996,7 @@ pub fn runtime_failures() -> Vec<(String, Vec<&'static str>, &'static str)> {
 
 fn signal_failure() -> Option<(String, Vec<&'static str>, &'static str)> {
     if cfg!(unix) {
-        Some((shell(), vec!["-c", SELF_TERMINATE], "ABNORMAL_EXIT"))
+        Some((steps(), vec!["terminate"], "ABNORMAL_EXIT"))
     } else {
         None
     }

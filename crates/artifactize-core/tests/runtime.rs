@@ -69,8 +69,8 @@ async fn ordinary_zero_exit_is_green_with_actual_output() {
     let scratch = Scratch::new();
     let result = completed(
         execute(scratch.command(
-            &support::os::shell(),
-            &["-c", "printf out; printf err >&2"],
+            &support::os::steps(),
+            &["print", "out", "eprint", "err"],
             None,
         ))
         .await,
@@ -86,7 +86,7 @@ async fn ordinary_zero_exit_is_green_with_actual_output() {
 async fn ordinary_nonzero_exit_is_red() {
     let scratch = Scratch::new();
     let result =
-        completed(execute(scratch.command(&support::os::shell(), &["-c", "exit 127"], None)).await);
+        completed(execute(scratch.command(&support::os::steps(), &["exit", "127"], None)).await);
     assert_eq!(result.verdict, Verdict::Red);
     assert_eq!(result.exit_code, 127);
 }
@@ -107,12 +107,7 @@ async fn missing_binary_is_an_operational_error_not_red() {
 async fn signal_is_an_operational_error() {
     let scratch = Scratch::new();
     assert!(matches!(
-        execute(scratch.command(
-            &support::os::shell(),
-            &["-c", support::os::SELF_TERMINATE],
-            None
-        ))
-        .await,
+        execute(scratch.command(&support::os::steps(), &["terminate"], None)).await,
         Outcome::OperationalError(Error::AbnormalExit {
             signal: Some(support::os::SIGTERM),
             ..
@@ -138,11 +133,7 @@ async fn windows_exit_statuses_are_verdicts_not_signals() {
 #[tokio::test(start_paused = true)]
 async fn timeout_is_an_operational_error_and_reaps_the_leader() {
     let scratch = Scratch::new();
-    let command = scratch.command(
-        &support::os::shell(),
-        &["-c", support::os::LINGERING],
-        Some(1000),
-    );
+    let command = scratch.command(&support::os::steps(), &["block"], Some(1000));
     let (registered, child) = oneshot::channel();
     let cancellation = CancellationToken::new();
     let work = runtime::execute(command, cancellation.clone(), |child| async move {
@@ -170,9 +161,8 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let scratch = Scratch::new();
     let cancellation = CancellationToken::new();
     let (registered, child) = oneshot::channel();
-    // exec keeps the observed PID stable while the final long-lived command runs.
-    let script = support::os::cancellation_script();
-    let command = scratch.command(&support::os::shell(), &["-c", script], None);
+    // The registered process itself blocks, so the observed PID stays the one that runs.
+    let command = scratch.command(&support::os::steps(), &["touch", "started", "block"], None);
     let work = runtime::execute(command, cancellation.clone(), |child| async move {
         registered.send(child).unwrap();
         Ok(())
@@ -465,8 +455,8 @@ async fn runtime_cleans_ansi_and_controls_without_changing_whitespace_or_del() {
     assert!(!result.output.truncated);
     let stderr = completed(
         execute(scratch.command(
-            &support::os::shell(),
-            &["-c", "printf '\\033[31merror\\033[0m\\001' >&2"],
+            &support::os::steps(),
+            &["eprint", "\x1b[31merror\x1b[0m\x01"],
             None,
         ))
         .await,
@@ -479,8 +469,8 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     let scratch = Scratch::new();
     let result = completed(
         execute(scratch.command(
-            &support::os::shell(),
-            &["-c", &support::os::letter_output(262144, 262144)],
+            &support::os::steps(),
+            &["fill", "262144", "120", "262144", "121"],
             None,
         ))
         .await,
@@ -491,8 +481,8 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     assert!(result.output.truncated);
     let result = completed(
         execute(scratch.command(
-            &support::os::shell(),
-            &["-c", &support::os::capped_output(131072)],
+            &support::os::steps(),
+            &["fill", "131072", "0", "0", "0", "print", "discarded"],
             None,
         ))
         .await,
@@ -501,17 +491,17 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     assert!(result.output.truncated);
 }
 
+/// A leader that ignores SIGTERM and waits for a child, which writes the PID of its own
+/// blocking child, a grandchild of the leader, and a newline to `grandchild` in the workspace.
+const GRANDCHILD: &[&str] = &["ignore-term", "child", "hold", "grandchild"];
+
 // The paused clock reaches the deadline only when the test advances it, once the
 // grandchild has started.
 #[tokio::test(start_paused = true)]
 async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let scratch = Scratch::new();
-    let command = scratch.command(
-        &support::os::shell(),
-        &["-c", support::os::LINGERING_GRANDCHILD],
-        Some(1000),
-    );
-    let marker = command.directory().join("output/grandchild");
+    let command = scratch.command(&support::os::steps(), GRANDCHILD, Some(1000));
+    let marker = scratch.workspace().join("grandchild");
     let cancellation = CancellationToken::new();
     let work = runtime::execute(command, cancellation.clone(), |_| async { Ok(()) });
     support::scoped(cancellation, work, async |running| {
@@ -558,14 +548,7 @@ async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -
 #[tokio::test]
 async fn normal_exit_also_kills_a_background_descendant() {
     let scratch = Scratch::new();
-    let result = completed(
-        execute(scratch.command(
-            &support::os::shell(),
-            &["-c", &format!("{} & echo $!", support::os::LINGERING)],
-            None,
-        ))
-        .await,
-    );
+    let result = completed(execute(scratch.command(&support::os::steps(), &["start"], None)).await);
     assert_eq!(result.verdict, Verdict::Green);
     let pid = String::from_utf8(result.output.stdout)
         .unwrap()
@@ -578,12 +561,8 @@ async fn normal_exit_also_kills_a_background_descendant() {
 #[tokio::test]
 async fn dropping_an_active_caller_cleans_its_grandchild() {
     let scratch = Scratch::new();
-    let command = scratch.command(
-        &support::os::shell(),
-        &["-c", support::os::LINGERING_GRANDCHILD],
-        None,
-    );
-    let marker = command.directory().join("output/grandchild");
+    let command = scratch.command(&support::os::steps(), GRANDCHILD, None);
+    let marker = scratch.workspace().join("grandchild");
     let (registered, child) = oneshot::channel();
     let cancellation = CancellationToken::new();
     let work = runtime::execute(command, cancellation.clone(), |child| async move {
@@ -613,11 +592,8 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
 async fn deadline_is_not_reset_after_registration() {
     let scratch = Scratch::new();
     let command = scratch.command(
-        &support::os::shell(),
-        &[
-            "-c",
-            "touch started; while [ ! -e release ]; do sleep 0.01; done",
-        ],
+        &support::os::steps(),
+        &["touch", "started", "wait", "release"],
         Some(1000),
     );
     let (registered, child) = oneshot::channel();
