@@ -1,6 +1,6 @@
 //! The shown snapshot as the frontend draws it: plain data, every word and glyph from the
 //! library's model.
-use super::{CHIPS, Shown};
+use super::{CHIPS, Opened, Shown};
 use crate::status::{Mark, Tone, Weight};
 use artifactize_core::{
     monitor::{
@@ -371,7 +371,7 @@ fn waiting(waiting: &Waiting, now: OffsetDateTime) -> WaitingRow {
 }
 
 pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
-    let run = shown.run.as_ref().map(|(run, requests, nodes)| {
+    let run = shown.opened.loaded().map(|(run, requests, nodes)| {
         let progress = monitor::progress(run, requests, now);
         let strip = monitor::strip(&progress);
         RunPanel {
@@ -430,7 +430,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         waiting: waiting_rows,
         launch: shown.launch.as_ref().map(BranchKey::new),
         run,
-        missing: shown.missing,
+        missing: matches!(shown.opened, Opened::Missing(_)),
         notice: (!notice.is_empty()).then(|| notice.join("; ")),
         refreshed: shown.refreshed,
         replaced: shown.replaced,

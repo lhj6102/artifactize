@@ -46,6 +46,10 @@ export class MonitorState {
   detailWidth = $state<number | null>(loadWidth());
   /** The notice shows in full rather than cut to one line. */
   noticeOpen = $state(false);
+  /** The read-only request's folds. */
+  folds = $state({ technical: false, pending: false, log: false, debug: false });
+  /** The ID typed into the Open by ID dialog. */
+  wanted = $state("");
   /** What the launch asked for was opened: only the first snapshot opens it. */
   started = $state(false);
   /** The parts focus moves into. */

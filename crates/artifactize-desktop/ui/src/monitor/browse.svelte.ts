@@ -13,6 +13,9 @@ export class Browse {
   error = $state<string | null>(null);
   /** The backend snapshot's revision: views derived from it (Detail) read again when it grows. */
   readonly revision = $derived(this.view?.revision ?? 0);
+  /** The Pane's search as the library applied it; a snapshot with the same text leaves views of
+   * it as they are. */
+  readonly query = $derived(this.view?.query.text ?? "sort:recent");
   #listeners: ((view: BrowseView) => void)[] = [];
   #draining = false;
   #dirty = false;

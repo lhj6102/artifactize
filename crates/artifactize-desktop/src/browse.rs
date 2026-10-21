@@ -31,6 +31,32 @@ pub type Selected = (RunView, Vec<RequestView>, Arc<Vec<Node>>);
 /// a row of years of Runs stays a small view.
 const CHIPS: usize = 20;
 
+/// The Run the Main area shows: none, chosen and not read yet, read, or gone.
+enum Opened {
+    None,
+    Loading(RunId),
+    Loaded(Box<Selected>),
+    /// The Run no longer exists or cannot be read.
+    Missing(RunId),
+}
+
+impl Opened {
+    fn id(&self) -> Option<&RunId> {
+        match self {
+            Self::None => None,
+            Self::Loading(id) | Self::Missing(id) => Some(id),
+            Self::Loaded(selected) => Some(&selected.0.run.id),
+        }
+    }
+
+    fn loaded(&self) -> Option<&Selected> {
+        match self {
+            Self::Loaded(selected) => Some(selected),
+            _ => None,
+        }
+    }
+}
+
 /// What the last accepted snapshot shows.
 struct Shown {
     initialized: bool,
@@ -42,11 +68,8 @@ struct Shown {
     unreadable: Vec<Unreadable>,
     /// The pane's search, as typed.
     query: String,
-    /// The Run the Main area shows, and its records once read.
-    open: Option<RunId>,
-    run: Option<Selected>,
-    /// The shown Run no longer exists or cannot be read.
-    missing: bool,
+    /// The Run the Main area shows.
+    opened: Opened,
     /// Chips shown of each branch whose row reached further back than [`CHIPS`].
     chips: BTreeMap<Place, usize>,
     error: Option<String>,
@@ -98,9 +121,7 @@ impl Browse {
                 waiting: Vec::new(),
                 unreadable: Vec::new(),
                 query: live::DEFAULT.into(),
-                open: None,
-                run: None,
-                missing: false,
+                opened: Opened::None,
                 chips: BTreeMap::new(),
                 error: None,
                 refreshed: false,
@@ -119,15 +140,11 @@ impl Browse {
         let mut shown = self.shown();
         if let Some(id) = step.run.clone() {
             let id: RunId = id.into_inner();
-            if shown.open.as_ref() != Some(&id) {
-                shown.open = Some(id);
-                shown.run = None;
-                shown.missing = false;
+            if shown.opened.id() != Some(&id) {
+                shown.opened = Opened::Loading(id);
             }
         } else if step.close {
-            shown.open = None;
-            shown.run = None;
-            shown.missing = false;
+            shown.opened = Opened::None;
         }
         if let Some(query) = &step.query {
             shown.query.clone_from(query);
@@ -159,11 +176,11 @@ impl Browse {
             let input = live::Input {
                 state: state.to_path_buf(),
                 launch: self.launch.clone(),
-                open: shown.open.clone(),
-                force: shown.run.is_none(),
+                open: shown.opened.id().cloned(),
+                force: shown.opened.loaded().is_none(),
                 rescan: read.rescan || !shown.initialized,
             };
-            (shown.open.clone(), input)
+            (shown.opened.id().cloned(), input)
         };
         let worker = std::mem::take(&mut *loader);
         let joined = tokio::task::spawn_blocking(move || {
@@ -191,7 +208,7 @@ impl Browse {
             None
         };
         let mut shown = self.shown();
-        if shown.open != open {
+        if shown.opened.id() != open.as_ref() {
             loader.reset();
             return Ok(None);
         }
@@ -200,7 +217,9 @@ impl Browse {
             || snapshot.opened.is_some()
             || shown.branches != snapshot.branches;
         if snapshot.origin.replaces(&shown.origin) {
-            shown.run = None;
+            if let Some(id) = &open {
+                shown.opened = Opened::Loading(id.clone());
+            }
             shown.replaced = true;
         }
         let origin = snapshot.origin.clone();
@@ -212,12 +231,12 @@ impl Browse {
         if let Some(waiting) = waiting {
             shown.waiting = waiting;
         }
-        match (snapshot.opened, snapshot.open) {
-            (Some(opened), _) => shown.run = Some(opened),
-            (None, false) => shown.run = None,
-            (None, true) => {}
+        match (snapshot.opened, snapshot.open, open) {
+            (Some(opened), _, _) => shown.opened = Opened::Loaded(Box::new(opened)),
+            (None, false, Some(id)) => shown.opened = Opened::Missing(id),
+            (None, false, None) => shown.opened = Opened::None,
+            (None, true, _) => {}
         }
-        shown.missing = shown.open.is_some() && !snapshot.open;
         shown.initialized = true;
         shown.error = None;
         shown.refreshed = true;
@@ -238,7 +257,7 @@ impl Browse {
     /// The shown Run's tree, as the shown snapshot projected it.
     pub fn with_tree<T>(&self, run: &RunId, read: impl FnOnce(&[Node]) -> T) -> Result<T, Failure> {
         let shown = self.shown();
-        match &shown.run {
+        match shown.opened.loaded() {
             Some((view, _, nodes)) if &view.run.id == run => Ok(read(nodes)),
             _ => Err(Failure::Missing(format!(
                 "Run {run} is no longer shown; choose it again."
@@ -253,7 +272,7 @@ impl Browse {
         read: impl FnOnce(&RunView, &[RequestView]) -> T,
     ) -> Result<T, Failure> {
         let shown = self.shown();
-        match &shown.run {
+        match shown.opened.loaded() {
             Some((view, requests, _)) if &view.run.id == run => Ok(read(view, requests)),
             _ => Err(Failure::Missing(format!(
                 "Run {run} is no longer shown; choose it again."

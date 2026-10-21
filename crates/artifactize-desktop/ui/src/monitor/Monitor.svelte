@@ -43,12 +43,9 @@
   const tree = $derived(shown.kind === "run" ? (run?.tree ?? []) : shown.kind === "current" && current.of(shown.branch) ? (current.view?.tree ?? []) : []);
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
   const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
-  /** The read-only request's folds. */
-  let folds = $state({ technical: false, pending: false, log: false, debug: false });
-  /** The ID typed into the Open by ID dialog. */
-  let wanted = $state("");
-  /** The pane's search as typed; a pause in typing searches. */
-  let query = $state("sort:recent");
+  /** The pane's search: the library's, overridden while typed until a pause searches it; a
+   * failed search puts the library's back. */
+  let query = $derived(browse.query);
   let typing: ReturnType<typeof setTimeout> | undefined;
   /** The Runs each branch had in progress, to notice one ending: bookkeeping, never drawn. */
   const running: Record<string, string[]> = {};
@@ -120,7 +117,7 @@
       const detail = await call(app.ipc.requestDetail(id));
       if (detail.profile === "human") return openReview(id);
       m.settings = false;
-      folds = { technical: false, pending: false, log: false, debug: false };
+      m.folds = { technical: false, pending: false, log: false, debug: false };
       m.shown = { kind: "request", detail };
       m.opened = null;
       current.clear();
@@ -213,7 +210,13 @@
   function setQuery(text: string) {
     query = text;
     clearTimeout(typing);
-    typing = setTimeout(() => void browse.search(text), 120);
+    typing = setTimeout(
+      () =>
+        void browse.search(text).then((searched) => {
+          if (!searched) query = browse.query;
+        }),
+      120,
+    );
   }
 
   /** The Review of a request, if one was opened: rendering only looks. */
@@ -263,10 +266,10 @@
     // A review and Settings take their own keys; a read-only request has its folds.
     if (m.settings || shown.kind === "review") return;
     if (shown.kind === "request" && !plain(event, "Escape") && !plain(event, "ArrowLeft")) {
-      if (folds.log) return;
-      if (plain(event, "t") && shown.detail.card) folds.debug = !folds.debug;
-      else if (plain(event, "t")) folds.technical = !folds.technical;
-      else if (plain(event, "w")) folds.pending = !folds.pending;
+      if (m.folds.log) return;
+      if (plain(event, "t") && shown.detail.card) m.folds.debug = !m.folds.debug;
+      else if (plain(event, "t")) m.folds.technical = !m.folds.technical;
+      else if (plain(event, "w")) m.folds.pending = !m.folds.pending;
       else return;
     } else if (plain(event, "Escape") || (shown.kind === "request" && plain(event, "ArrowLeft"))) back();
     else return;
@@ -375,7 +378,7 @@
             {/if}
           {:else if shown.kind === "request"}
             {#key shown.detail.request}
-              <RecordDetail detail={shown.detail} bind:technical={folds.technical} bind:pending={folds.pending} bind:log={folds.log} bind:debug={folds.debug} />
+              <RecordDetail detail={shown.detail} bind:technical={m.folds.technical} bind:pending={m.folds.pending} bind:log={m.folds.log} bind:debug={m.folds.debug} />
             {/key}
           {:else}
             <p class="empty">Choose a branch or a waiting review in the Pane.</p>
@@ -427,14 +430,14 @@
       <form
         onsubmit={(event) => {
           event.preventDefault();
-          if (wanted.trim()) {
-            void openId(wanted.trim());
+          if (m.wanted.trim()) {
+            void openId(m.wanted.trim());
             app.asking = false;
-            wanted = "";
+            m.wanted = "";
           }
         }}
       >
-        <input class="input" placeholder="req-…" bind:value={wanted} aria-label="Request ID" />
+        <input class="input" placeholder="req-…" bind:value={m.wanted} aria-label="Request ID" />
         <div class="dialog-actions">
           <Dialog.Close class="button">Cancel</Dialog.Close>
           <button class="button primary" type="submit">Open</button>

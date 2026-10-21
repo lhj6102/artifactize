@@ -7,6 +7,7 @@
   import type { Attachment } from "svelte/attachments";
   import type { BranchView, Chip } from "../ipc/client";
   import { tone } from "../shell/tone";
+  import { ChipRowState, setChipRowState } from "./chip-row-state.svelte";
 
   let {
     branch,
@@ -29,9 +30,8 @@
 
   const label = (chip: Chip) => (chip.kind === "run" ? chip.text : "Current");
 
-  /** The row stays at its newest end until the person moves it: by a drag, or by choosing a
-   * chip the row scrolls to. */
-  let pinned = true;
+  const c = new ChipRowState();
+  setChipRowState(c);
 
   /** The fades follow the scroll position; older Runs are asked for at the oldest end. Only
    * the DOM is touched: the row's own scroll offset and two data attributes. */
@@ -41,7 +41,7 @@
     const fade = () => {
       // Not laid out yet: nothing is in view, so nothing fades and nothing is asked for.
       if (row.clientWidth === 0) return;
-      if (pinned) row.scrollLeft = row.scrollWidth;
+      if (c.pinned) row.scrollLeft = row.scrollWidth;
       const right = row.scrollWidth - row.clientWidth - row.scrollLeft;
       row.dataset.fadeLeft = String(row.scrollLeft > 1);
       row.dataset.fadeRight = String(right > 1);
@@ -76,7 +76,7 @@
     if (filled === null) return;
     const before = row.scrollLeft;
     row.querySelector<HTMLElement>(`[data-index="${filled}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    if (row.scrollLeft !== before) pinned = false;
+    if (row.scrollLeft !== before) c.pinned = false;
   };
 
   /** Holding the mouse on the row drags it with the pointer until the button is released. */
@@ -89,7 +89,7 @@
       const by = moved.clientX - start;
       if (!dragged && Math.abs(by) < DRAG) return;
       dragged = true;
-      pinned = false;
+      c.pinned = false;
       row.scrollLeft = offset - by;
     };
     const drop = () => {
