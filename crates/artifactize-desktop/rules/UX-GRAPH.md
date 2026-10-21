@@ -177,7 +177,7 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan ends | the graph, nodes and edges recoloured in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
-| E-GRAPH-FIRST | Pane | choose a chip whose graph is not shown yet | its Run graph or Current graph drawn whole, in the room an open Detail leaves |
+| E-GRAPH-FIRST | Pane | choose a chip whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 

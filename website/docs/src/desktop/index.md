@@ -62,16 +62,11 @@ from whichever folder they ran in.
 
 Under a branch's name its Runs sit in one row of chips, oldest to newest left to
 right, each with its status and age, a running one with its time so far:
-`… [RED 1h 20m] [RED 25m] [Running 2m 22s]`. A Run's chip is tinted with its
-status colour (green for GREEN, red for RED, blue while running, and so on), its
-glyph in that colour and its words in the text colour; the Current chip is tinted with
-the accent. The chips carry the entry: the branch's name above them is a smaller,
-quieter label. While a Run is in progress on the
-branch the row ends with it; otherwise it ends with a **Current** chip. The row has
-no scrollbar: hold the mouse and drag sideways to scroll it, older Runs arriving as
-its oldest end comes into view; chips fade out at whichever end has more. Selecting
-a branch shows its last chip; a click on a chip shows that one in the Main area, the
-shown chip filled: a Run's with its status colour, the Current chip with the accent.
+`… [RED 1h 20m] [RED 25m] [Running 2m 22s]`, coloured by status. While a Run is
+in progress on the branch the row ends with it; otherwise it ends with a **Current**
+chip. Drag the row sideways to scroll it, older Runs arriving at its oldest end.
+Selecting a branch shows its last chip; a click on a chip shows that one in the Main
+area, the shown chip filled.
 
 ↑/↓ or `j`/`k` move through the branches and then the waiting reviews; ←/→ choose
 the previous or next chip of the selected branch, its row scrolling to show it.
@@ -151,7 +146,7 @@ and Enter on one does what a click does; they have no other keys of their own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms
 the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
 These gestures move the camera, not the divider or the Detail. A graph shows whole
-when it first appears, in the room an open Detail leaves; from then on only you move
+when it first appears; from then on only you move
 its camera. Opening, switching, resizing or closing the Detail, a new result or scan
 and a new layout never zoom or pan it; **Fit View** shows the whole graph again,
 beside the Detail when one is open.
@@ -259,11 +254,8 @@ moves between them. A launch tool opens its application and returns at once; a
 failing tool says so without a verdict. The saved definition must still match before
 an action runs.
 
-The Tool log shows every run of this review as it happens: `▶ HH:MM:SS · operation ·
-Artifact` in local time, then each line the tool prints to stdout, or in red to
-stderr, then its end line, such as `■ exit 0`, `■ launched`, `■ done`,
-`■ cancelled` or `■ error: …`. A launched application's output keeps arriving
-under its own run until it exits, even while you write the result. The log wraps,
+The [Tool log](../features/tools/human.md#tool-log) shows every run of this review
+as it happens, its start times in local time. The log wraps,
 scrolls on its own and follows the newest line; scroll up to read and it stays,
 scroll back to the bottom and it follows again. Its text is ordinary selectable
 text, so copy what a tool printed into the result. It lasts while the app runs and

@@ -14,7 +14,7 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { exists, nativePath, removeTree, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
-import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, type Chip } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, leans, type Chip } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -72,13 +72,19 @@ export const scenarios: Scenario[] = [
       await selectBranch(browser, "repo  master");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the branch's Current shown");
       let shown = (await branch(browser, "repo  master"))!;
-      // The newest twenty Runs, oldest to newest, then the Current chip, filled.
-      assert.deepEqual(shown.chips.map((chip) => chip.id), [...runs.slice(-20), "current"]);
-      assert.deepEqual(shown.chips.map((chip) => chip.filled), [...Array(20).fill(false), true]);
+      // The newest Runs, oldest to newest, then the Current chip, filled; older Runs arrive later.
+      const first = shown.chips.length - 1;
+      assert.ok(first > 0 && first < runs.length, `some of the newest Runs first: ${first} of ${runs.length}`);
+      assert.deepEqual(shown.chips.map((chip) => chip.id), [...runs.slice(-first), "current"]);
+      assert.deepEqual(shown.chips.map((chip) => chip.filled), [...Array(first).fill(false), true]);
       for (const chip of shown.chips.slice(0, -1)) {
         assert.equal(chip.glyph, "✓", `${chip.id} shows its status`);
         assert.match(chip.text, /^GREEN \d+[smhd]/, `${chip.id} reads its status and age`);
+        // Tinted with its status colour, its glyph in that colour.
+        assert.ok(leans(chip.paint, 1) && leans(chip.ink, 1), `${chip.id} is tinted green, its glyph green: ${JSON.stringify(chip)}`);
       }
+      // The shown Current chip is filled with the accent.
+      assert.ok(leans(shown.chips.at(-1)!.paint, 2), `the shown Current chip is filled with the accent: ${JSON.stringify(shown.chips.at(-1))}`);
       // The row starts at its newest end with no scrollbar; the chips fade out at the end with more.
       let drawn = await row(browser);
       assert.ok(drawn.overflows && !drawn.scrollbar, `the row is wider than its place and has no scrollbar: ${JSON.stringify(drawn)}`);
@@ -103,6 +109,12 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:n000");
       shown = (await branch(browser, "repo  master"))!;
       assert.deepEqual(shown.chips.filter((chip) => chip.filled).map((chip) => chip.id), [runs[0]], "only the clicked chip is filled");
+      // Filled with its status colour, stronger than the tint of a chip not shown; the Current
+      // chip, not shown, keeps an accent tint.
+      const [filled, tinted] = [shown.chips[0], shown.chips[1]];
+      const strength = (chip: Chip) => chip.paint[1] - Math.max(chip.paint[0], chip.paint[2]);
+      assert.ok(leans(filled.paint, 1) && strength(filled) > strength(tinted), `the shown Run's chip is filled green: ${JSON.stringify({ filled, tinted })}`);
+      assert.ok(leans(shown.chips.at(-1)!.paint, 2), `the Current chip keeps an accent tint: ${JSON.stringify(shown.chips.at(-1))}`);
       // The Current chip shows the Current again.
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown again");
@@ -132,9 +144,7 @@ export const scenarios: Scenario[] = [
         "the row ends with the Run in progress, the Current chip gone");
       const running = (await branch(browser, "repo  master"))!.chips[1];
       assert.match(running.text, /^Running \d+[smh]/, `the running chip reads its time so far: ${running.text}`);
-      /** The chip's background leans to the channel at `index` (0 red, 1 green, 2 blue). */
-      const leans = (chip: Chip, index: number) => chip.paint.length === 3 && chip.paint.every((value, at) => at === index || chip.paint[index] > value);
-      assert.ok(leans(running, 2), `the running chip is tinted blue: ${JSON.stringify(running)}`);
+      assert.ok(leans(running.paint, 2), `the running chip is tinted blue: ${JSON.stringify(running)}`);
       // Its sign-off is given elsewhere: the Run ends, its chip shows its final status and age.
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request, "the new Run asks for the sign-off");
@@ -144,7 +154,7 @@ export const scenarios: Scenario[] = [
       const ended = (await branch(browser, "repo  master"))!.chips[1];
       assert.equal(ended.glyph, "✓");
       assert.match(ended.text, /^GREEN \d+[smhd]/, `the ended chip reads its final status and age: ${ended.text}`);
-      assert.ok(leans(ended, 1), `the GREEN chip is tinted green: ${JSON.stringify(ended)}`);
+      assert.ok(leans(ended.paint, 1), `the GREEN chip is tinted green: ${JSON.stringify(ended)}`);
       // The chips carry the entry: its name is a smaller, lighter label above them.
       const type = await browser.execute(() => {
         const row = document.querySelector('[aria-label="Branches"] [role="option"]')!;

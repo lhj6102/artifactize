@@ -4,8 +4,12 @@
 
 /** A chip as read: the Run it shows (`current` for the Current chip), its text without the
  * glyph, its glyph, whether it is the one shown in the Main area, and its painted background
- * as red, green and blue channels on any one scale. */
-export type Chip = { id: string; text: string; glyph: string; filled: boolean; paint: number[] };
+ * and glyph colour as red, green and blue channels on any one scale. */
+export type Chip = { id: string; text: string; glyph: string; filled: boolean; paint: number[]; ink: number[] };
+
+/** Red, green or blue (0, 1, 2) is the strongest channel of `colour`. */
+export const leans = (colour: number[], channel: number) =>
+  colour.length === 3 && colour.every((value, at) => at === channel || colour[channel] > value);
 /** A branch's entry as read: `project  branch`, whether it is selected, and its chip row. */
 export type Branch = { name: string; selected: boolean; chips: Chip[] };
 /** A waiting review's row as read. */
@@ -29,6 +33,7 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
         filled: chip.getAttribute("aria-pressed") === "true",
         // `rgb(r, g, b)` or `color(srgb r g b)`: the first three numbers after the space name.
         paint: (getComputedStyle(chip).backgroundColor.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number),
+        ink: glyph ? (getComputedStyle(glyph).color.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number) : [],
       };
     }),
   })));

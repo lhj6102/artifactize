@@ -5,7 +5,7 @@ use crate::status::{Mark, Tone, Weight};
 use artifactize_core::{
     monitor::{
         self, Completion as Done, Kind, Node, NodeId,
-        live::{self, Branch, Head, Place, Query, Waiting},
+        live::{self, Branch, Head, Place, Waiting},
     },
     types::RunStatus,
 };
@@ -395,8 +395,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
             more: u32::try_from(strip.more).unwrap_or(u32::MAX),
         }
     });
-    let query = shown.query.parse::<Query>();
-    let (branches, waiting_rows) = match &query {
+    let (branches, waiting_rows) = match &shown.query.parsed {
         Ok(query) => {
             let (branches, waiting_rows) = live::show(query, &shown.branches, &shown.waiting);
             (
@@ -427,8 +426,8 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         .collect();
     BrowseView {
         query: QueryView {
-            text: shown.query.clone(),
-            error: query.err(),
+            text: shown.query.text.clone(),
+            error: shown.query.parsed.as_ref().err().cloned(),
         },
         branches,
         waiting: waiting_rows,

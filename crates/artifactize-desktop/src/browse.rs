@@ -10,7 +10,7 @@ use crate::{App, Failure};
 use artifactize_core::{
     monitor::{
         self, Node, Origin,
-        live::{self, Branch, Labels, Loader, Place, Waiting},
+        live::{self, Branch, Labels, Loader, Place, Query, Waiting},
     },
     store::{RequestView, RunView, Unreadable},
     types::RunId,
@@ -74,8 +74,8 @@ struct Shown {
     launch: Option<Place>,
     waiting: Vec<Waiting>,
     unreadable: Vec<Unreadable>,
-    /// The pane's search, as typed.
-    query: String,
+    /// The pane's search.
+    query: Search,
     /// The Run the Main area shows.
     opened: Opened,
     /// Chips shown of each branch whose row reached further back than [`CHIPS`].
@@ -89,6 +89,20 @@ struct Shown {
     revision: u32,
     /// The last graph shape handed out.
     shapes: crate::ids::ShapeKey,
+}
+
+/// The pane's search: its text as typed, and the query it parses to or why it does not, parsed
+/// once when navigation accepts it.
+struct Search {
+    text: String,
+    parsed: Result<Query, String>,
+}
+
+impl Search {
+    fn new(text: String) -> Self {
+        let parsed = text.parse();
+        Self { text, parsed }
+    }
 }
 
 /// The snapshot worker and the shown snapshot. Loads are serialized by the loader lock; the
@@ -130,7 +144,7 @@ impl Browse {
                 launch: None,
                 waiting: Vec::new(),
                 unreadable: Vec::new(),
-                query: live::DEFAULT.into(),
+                query: Search::new(live::DEFAULT.into()),
                 opened: Opened::None,
                 chips: BTreeMap::new(),
                 error: None,
@@ -157,8 +171,10 @@ impl Browse {
         } else if step.close {
             shown.opened = Opened::None;
         }
-        if let Some(query) = &step.query {
-            shown.query.clone_from(query);
+        if let Some(query) = &step.query
+            && *query != shown.query.text
+        {
+            shown.query = Search::new(query.clone());
         }
         if let Some(branch) = &step.older {
             let place = branch.to_place();
