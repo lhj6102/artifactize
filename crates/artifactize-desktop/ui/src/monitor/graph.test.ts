@@ -1,13 +1,13 @@
-// The Run graph's frontend rule: a layout depends only on Artifacts and edges.
+// The graphs' frontend rule: a layout depends only on Artifacts and edges.
 import { describe, expect, it } from "vitest";
-import type { RunGraph } from "../ipc/client";
+import type { Graph } from "../ipc/client";
 import { shape } from "./graph";
 
 //   base ─┬─> app ──> site
 //   lib  ─┘      └──> docs
-const graph: RunGraph = {
-  run: "run-a",
-  nodes: ["base", "lib", "app", "site", "docs"].map((name) => ({ id: `a:${name}`, name, light: "waiting" })),
+const graph: Graph = {
+  source: { kind: "run", run: "run-a" },
+  nodes: ["base", "lib", "app", "site", "docs"].map((name) => ({ id: `a:${name}`, name, light: "waiting", note: null })),
   edges: [
     { source: "a:base", target: "a:app", light: "green" },
     { source: "a:lib", target: "a:app", light: "active" },
@@ -18,7 +18,7 @@ const graph: RunGraph = {
 
 describe("shape", () => {
   it("ignores lights and order, never Artifacts or edges", () => {
-    const relit: RunGraph = {
+    const relit: Graph = {
       ...graph,
       nodes: [...graph.nodes].reverse().map((node) => ({ ...node, light: "green" })),
       edges: graph.edges.map((edge) => ({ ...edge, light: "red" })),

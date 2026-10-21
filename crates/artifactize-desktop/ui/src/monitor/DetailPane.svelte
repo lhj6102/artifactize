@@ -1,24 +1,29 @@
 <script lang="ts">
-  // The Detail of an Artifact or of the Run, floating over the graph. An Artifact's Detail has
-  // tabs, a chip choice that reads as a path: `[Artifact icon] {name} / [eval] [eval] …`. The Artifact's
-  // own lists its evals with their verdicts; then comes one per eval. An eval's tab shows its Summary or its log (an Agent's transcript, a runtime's
-  // saved output), or the shared Human Detail. Its width is the Detail's: everything in it wraps
-  // or scrolls in its own box.
+  // The Detail of an Artifact or of the Run, floating over the graph of a Run or a Current. An
+  // Artifact's Detail has tabs, a chip choice that reads as a path: `[Artifact icon] {name} /
+  // [eval] [eval] …`. The Artifact's own draws it between its neighbours, lists its evals with
+  // their verdicts (on a Current whether each would run or be reused), then its own Human tools
+  // and their Tool log; then comes one tab per eval. An eval's tab shows its Summary or its log
+  // (an Agent's transcript, a runtime's saved output), or in a Run the shared Human Detail. Its
+  // width is the Detail's: everything in it wraps or scrolls in its own box.
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, message, type TreeNode } from "../ipc/client";
-  import { getAppState } from "../shell/app.svelte";
+  import { call, useIpc, message, type BranchView, type Source, type TreeNode } from "../ipc/client";
   import type { Review } from "../review/review.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
+  import { keyOf } from "./monitor-state.svelte";
   import Panel from "../shell/Panel.svelte";
   import RecordDetail from "./RecordDetail.svelte";
   import Neighbours from "./Neighbours.svelte";
+  import ArtifactTools from "./ArtifactTools.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
   import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let {
-    run,
+    source,
+    revision,
+    branch,
     node,
     tab,
     tree,
@@ -32,15 +37,20 @@
     onopen,
     onback,
   }: {
-    run: string;
+    /** The Run or Current the Detail is of. */
+    source: Source;
+    /** The snapshot's or scan's revision: the Detail reads again when it grows. */
+    revision: number;
+    /** The branch shown: an Artifact's tools run in its worktree. */
+    branch: BranchView | null;
     /** The Artifact (or the Run) the Detail is of. */
     node: string;
     /** The eval whose tab is shown, or `null` for the Artifact's own. */
     tab: string | null;
-    /** The Run's tree: an Artifact's evals and their verdicts come from there. */
+    /** The Run's or Current's tree: an Artifact's evals and their verdicts come from there. */
     tree: TreeNode[];
     focused: boolean;
-    /** The Monitor is the shown screen; only then its review offers palette commands. */
+    /** The Main area shows this Detail; only then its review offers palette commands. */
     active: boolean;
     review: (id: string) => Review | undefined;
     /** Open the Review of a request: called as its Detail arrives. */
@@ -56,7 +66,7 @@
   const commands = useIpc();
   const d = new DetailPaneState();
   setDetailPaneState(d);
-  const { browse } = getAppState();
+  const key = $derived(keyOf(source));
 
   const row = $derived(tree.find((top) => top.id === node) ?? null);
   const evals = $derived(row?.kind === "artifact" ? row.children : []);
@@ -76,10 +86,10 @@
     d.folds = { node: target, technical, pending, log, debug, ...change };
   }
 
-  /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
+  /** Read again for every new snapshot or scan; the Detail comes from the backend's copy. */
   const read: Attachment<HTMLElement> = () => {
-    void browse.revision;
-    const [at, wanted] = [run, target];
+    void revision;
+    const [at, wanted] = [source, target];
     let current = true;
     call(commands.detail(at, wanted)).then(
       (view) => {
@@ -100,7 +110,7 @@
   };
 
   /** Only this node's Detail: another node's, still held while this one is read, is not. */
-  const detail = $derived(d.detail?.run === run && d.detail.node === target ? d.detail : null);
+  const detail = $derived(d.detail && keyOf(d.detail.source) === key && d.detail.node === target ? d.detail : null);
   const human = $derived(detail?.profile === "human" && detail.request !== null);
   /** An Artifact's or an eval's Summary keeps its technical facts under Debug; a Run's
    * sections keep theirs under Technical. */
@@ -150,7 +160,7 @@
     {/if}
     <div class="content" class:listing={tabbed && tab === null} role={tabbed ? "tabpanel" : undefined}>
       {#if tabbed && row && tab === null}
-        <Neighbours {run} {node} {onopen} />
+        <Neighbours {source} {revision} {node} {onopen} />
         <ul class="evals" aria-label="Evals of {row.name}">
           {#each evals as item (item.id)}
             <li>
@@ -167,6 +177,9 @@
             <li class="muted none">No evals.</li>
           {/each}
         </ul>
+        {#if branch}
+          {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
+        {/if}
       {/if}
       {#if d.error}
         <p class="error">{d.error}</p>

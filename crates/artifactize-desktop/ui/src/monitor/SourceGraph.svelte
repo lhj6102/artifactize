@@ -1,25 +1,27 @@
 <script lang="ts">
-  // The Run graph: Artifacts and their dependency edges, lit by the backend's `run_graph` from
-  // the same snapshot as the Run's tree of Artifacts and evals. Every accepted snapshot recolours the graph in place; only a
-  // change of Artifacts or edges lays it out again, so nodes never jump on a state change.
+  // The graph of a Run or a Current: Artifacts and their dependency edges, lit by the backend's
+  // `graph` from the same snapshot as the Run's tree (or the Current's scan). Every new snapshot
+  // or scan recolours the graph in place; only a change of Artifacts or edges lays it out again,
+  // so nodes never jump on a state change.
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
-  import { call, useIpc, message, type RunGraph } from "../ipc/client";
-  import { RunGraphState, setRunGraphState } from "./run-graph-state.svelte";
+  import { call, useIpc, message, type Graph, type Source } from "../ipc/client";
+  import { SourceGraphState, setSourceGraphState } from "./source-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
   import { LIMIT, shape } from "./graph";
+  import { keyOf } from "./monitor-state.svelte";
 
   let {
-    run,
+    source,
     revision,
     opened = null,
     cover = null,
     onopen,
     onclose,
   }: {
-    run: string;
-    /** The browse revision: a new one means a new snapshot to read the graph from. */
+    source: Source;
+    /** The snapshot's or scan's revision: a new one means a new graph to read. */
     revision: number;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
@@ -31,14 +33,16 @@
     onclose: () => void;
   } = $props();
   const commands = useIpc();
-  const g = new RunGraphState();
-  setRunGraphState(g);
+  const g = new SourceGraphState();
+  setSourceGraphState(g);
+  const current = $derived(source.kind === "current");
+  const key = $derived(keyOf(source));
 
   /** Show `graph` as read `read`: its lights at once when its shape is laid out, else once
    * its layout finishes, unless a newer read came meanwhile. */
-  async function place(graph: RunGraph, read: number) {
-    const key = shape(graph);
-    if (g.shown && g.shownShape === key && g.shown.graph.run === graph.run) {
+  async function place(graph: Graph, read: number) {
+    const laid = shape(graph);
+    if (g.shown && g.shownShape === laid && keyOf(g.shown.graph.source) === keyOf(graph.source)) {
       g.shown = { ...g.shown, graph };
       g.pending = null;
       return;
@@ -48,21 +52,21 @@
       return;
     }
     g.pending = null;
-    const laid = await g.positions(graph, key);
+    const positions = await g.positions(graph, laid);
     if (read !== g.reads) return;
-    g.shown = { graph, positions: laid };
+    g.shown = { graph, positions };
   }
 
-  /** Read the graph again for every accepted snapshot and for another Run. */
+  /** Read the graph again for every new snapshot or scan, and for another source. */
   const reread: Attachment<HTMLElement> = () => {
     void revision;
-    const at = run;
+    const [at, wanted] = [key, source];
     const read = ++g.reads;
     if (at !== g.last) {
       g.last = at;
       g.forced = false;
     }
-    call(commands.runGraph(at)).then(
+    call(commands.graph(wanted)).then(
       (graph) => {
         if (read !== g.reads) return;
         g.error = null;
@@ -81,7 +85,7 @@
 {:else if g.pending}
   <div class="note">
     <p>
-      This Run has {g.pending.nodes.length} Artifacts; the graph lays out at most {LIMIT} at once, which can take a while.
+      This graph has {g.pending.nodes.length} Artifacts; it lays out at most {LIMIT} at once, which can take a while.
     </p>
     <button
       class="button"
@@ -91,14 +95,14 @@
       }}>Lay out all {g.pending.nodes.length}</button
     >
   </div>
-{:else if !g.shown}
+{:else if !g.shown || keyOf(g.shown.graph.source) !== key}
   <p class="note">Laying out…</p>
 {:else if g.shown.graph.nodes.length === 0}
-  <p class="note">This Run has no Artifacts.</p>
+  <p class="note">{current ? "This worktree declares no Artifacts." : "This Run has no Artifacts."}</p>
 {:else}
-  {#key g.shown.graph.run}
+  {#key keyOf(g.shown.graph.source)}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {opened} {cover} {onopen} {onclose} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {current} {opened} {cover} {onopen} {onclose} />
     </SvelteFlowProvider>
   {/key}
 {/if}

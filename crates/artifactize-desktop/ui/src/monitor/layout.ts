@@ -1,7 +1,7 @@
-// Node positions for the Run graph: ELK's layered algorithm, left to right, upstream first.
+// Node positions for a graph of Artifacts: ELK's layered algorithm, left to right, upstream first.
 // ELK runs in a Web Worker started on first use, so a large layout never blocks the window and
 // the tree view never loads it.
-import type { RunGraph } from "../ipc/client";
+import type { Graph } from "../ipc/client";
 import type { Point } from "./graph";
 
 /** Every Artifact node's box; names longer than fit are cut with an ellipsis. */
@@ -11,7 +11,7 @@ type Elk = { layout: (graph: object) => Promise<{ children?: { id: string; x?: n
 let elk: Promise<Elk> | null = null;
 
 /** Top-left positions of `graph`'s nodes. */
-export async function layout(graph: Pick<RunGraph, "nodes" | "edges">): Promise<Map<string, Point>> {
+export async function layout(graph: Pick<Graph, "nodes" | "edges">): Promise<Map<string, Point>> {
   elk ??= Promise.all([import("elkjs/lib/elk-api.js"), import("elkjs/lib/elk-worker.min.js?url")]).then(
     ([{ default: ELK }, { default: workerUrl }]) => new ELK({ workerUrl }) as Elk,
   );

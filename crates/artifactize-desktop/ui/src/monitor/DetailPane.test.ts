@@ -5,7 +5,7 @@ import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import type { DetailView, TreeNode } from "../ipc/client";
+import type { DetailView, Source, TreeNode } from "../ipc/client";
 import DetailPane from "./DetailPane.svelte";
 
 beforeAll(() => {
@@ -51,22 +51,24 @@ const tree: TreeNode[] = [
   { ...row("a:docs", "artifact", "docs", "✓", "green"), upstream: [{ node: "a:app", complete: false }] },
 ];
 
+const RUN: Source = { kind: "run", run: "run-a" };
+
 const view = (node: string, title: string): DetailView => ({
-  run: "run-a", node, target: node.startsWith("e:") ? "eval" : "artifact", title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
+  source: RUN, plan: null, node, target: node.startsWith("e:") ? "eval" : "artifact", title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
   mark: null, sections: [], evidence: null, running: false, card: null,
 });
 
 function setup(tab: string | null = null) {
   const read: string[] = [];
   mockIPC((command, args) => {
-    if (command === "run_graph") {
+    if (command === "graph") {
       return {
-        run: "run-a",
+        source: RUN,
         nodes: [
-          { id: "a:core", name: "core", light: "green" },
-          { id: "a:app", name: "app", light: "red" },
-          { id: "a:docs", name: "docs", light: "green" },
-          { id: "a:far", name: "far", light: "green" },
+          { id: "a:core", name: "core", light: "green", note: null },
+          { id: "a:app", name: "app", light: "red", note: null },
+          { id: "a:docs", name: "docs", light: "green", note: null },
+          { id: "a:far", name: "far", light: "green", note: null },
         ],
         edges: [
           { source: "a:core", target: "a:app", light: "green" },
@@ -84,7 +86,7 @@ function setup(tab: string | null = null) {
   const onopen = vi.fn();
   const onback = vi.fn();
   const shown = renderHosted(DetailPane, {
-    run: "run-a", node: "a:app", tab, tree, focused: false, active: true,
+    source: RUN, revision: 1, branch: null, node: "a:app", tab, tree, focused: false, active: true,
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab, onopen, onback,
   });
   return { ...shown, read, ontab, onopen, onback };
@@ -152,7 +154,7 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
     return null;
   }, { shouldMockEvents: true });
   renderHosted(DetailPane, {
-    run: "run-a", node: "a:app", tab: "e:app/test", tree, focused: false, active: true,
+    source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/test", tree, focused: false, active: true,
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
   });
   const views = within(await screen.findByRole("tablist", { name: "Views" })).getAllByRole("tab");
@@ -171,7 +173,7 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
 it("shows only the Artifact's chip, without a `/`, for an Artifact without evals", async () => {
   mockIPC((command) => (command === "detail" ? view("a:lone", "Artifact lone") : null));
   renderHosted(DetailPane, {
-    run: "run-a", node: "a:lone", tab: null, tree: [row("a:lone", "artifact", "lone", "✓", "green")], focused: false, active: true,
+    source: RUN, revision: 1, branch: null, node: "a:lone", tab: null, tree: [row("a:lone", "artifact", "lone", "✓", "green")], focused: false, active: true,
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
   });
   await screen.findByRole("heading", { name: "Artifact lone" });
@@ -206,7 +208,7 @@ it("folds an eval Summary's technical facts under Debug, which t shows and hides
       : null,
   );
   renderHosted(DetailPane, {
-    run: "run-a", node: "a:app", tab: "e:app/lint", tree, focused: false, active: true,
+    source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/lint", tree, focused: false, active: true,
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
   });
   const heading = await screen.findByRole("heading", { name: "app/lint · Check" });

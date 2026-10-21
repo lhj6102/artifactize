@@ -1,6 +1,6 @@
 // The frontend's only door to the backend: typed commands that throw a typed failure, and
 // event subscriptions that always clean up.
-import type { Failure, RequestLog } from "./bindings";
+import type { Failure, KeyedLog } from "./bindings";
 import { commands as bindings, events } from "./bindings";
 import { getActivity, observeCommands } from "./activity.svelte";
 
@@ -66,8 +66,8 @@ export function subscribe<T>(listen: Listen<T>, callback: (payload: T) => void):
 export const onStateChanged = (callback: (resync: boolean) => void) =>
   subscribe(events.stateChanged.listen, (payload) => callback(payload.resync));
 
-/** The Tool logs that Human tool runs changed, each whole. */
-export const onHumanToolLog = (callback: (logs: RequestLog[]) => void) =>
+/** The Tool logs that Human tool runs changed, each whole: a review's or an Artifact's. */
+export const onHumanToolLog = (callback: (logs: KeyedLog[]) => void) =>
   subscribe(events.humanToolLog.listen, (payload) => callback(payload.logs));
 
 export const onSessionChanged = (callback: (session: string) => void) =>

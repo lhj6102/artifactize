@@ -8,8 +8,8 @@ import { cleanup, screen } from "@testing-library/svelte";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { tick } from "svelte";
 import type { Viewport } from "@xyflow/svelte";
-import type { RunGraph as Graph } from "../ipc/client";
-import RunGraph from "./RunGraph.svelte";
+import type { Graph } from "../ipc/client";
+import SourceGraph from "./SourceGraph.svelte";
 
 /** A layered Run: `publish` is the right-most column, where the Detail docks. */
 const PLACED: Record<string, { x: number; y: number }> = {
@@ -34,7 +34,7 @@ vi.mock("./layout", () => ({
 /** A box as getBoundingClientRect gives it. */
 const box = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
-/** At 1440×872: the graph's canvas right of Scope and Runs, under the Run's headline. */
+/** At 1440×872: the graph's canvas right of the Pane, under the Run's headline. */
 const CANVAS = box(346, 110, 1094, 762);
 /** The Detail at its default width, docked 12px from the graph area's edges. */
 const DETAIL = box(925, 52, 503, 808);
@@ -116,12 +116,12 @@ const within = (name: string, right: number) => {
 
 async function drawn() {
   const graph: Graph = {
-    run: "run-a",
-    nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: "green" as const })),
+    source: { kind: "run", run: "run-a" },
+    nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: "green" as const, note: null })),
     edges: [{ source: "a:release", target: "a:ship", light: "green" }],
   };
-  mockIPC((command) => command === "run_graph" ? graph : null);
-  const shown = renderHosted(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+  mockIPC((command) => command === "graph" ? graph : null);
+  const shown = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("publish: GREEN");
   const canvas = document.querySelector<HTMLElement>(".canvas")!;
   layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
@@ -180,9 +180,9 @@ it("keeps a camera the person moved, bringing only the opened Artifact out from 
 });
 
 it("fits a graph drawn in a hidden screen once its canvas first has a size", async () => {
-  const graph: Graph = { run: "run-a", nodes: [{ id: "a:docs", name: "docs", light: "green" }], edges: [] };
-  mockIPC((command) => command === "run_graph" ? graph : null);
-  renderHosted(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+  const graph: Graph = { source: { kind: "run", run: "run-a" }, nodes: [{ id: "a:docs", name: "docs", light: "green", note: null }], edges: [] };
+  mockIPC((command) => command === "graph" ? graph : null);
+  renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("docs: GREEN");
   const canvas = document.querySelector<HTMLElement>(".canvas")!;
   // Drawn hidden: the canvas had no size, so nothing was fitted yet.

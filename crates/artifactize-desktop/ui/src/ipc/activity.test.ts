@@ -1,7 +1,7 @@
 // The shared IPC boundary reports dispatched and completed commands without exposing
 // credentials, mutating generated bindings or confusing superseded search generations.
 import { describe, expect, it } from "vitest";
-import { Activity, observeCommands, reviewRefreshed } from "./activity.svelte";
+import { Activity, observeCommands, refreshed } from "./activity.svelte";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -36,15 +36,16 @@ describe("command activity", () => {
   });
 
   it("retains only the latest search generation through A → B → A and reversed completion", async () => {
+    // A browse without a query (a navigation, a refresh) is no search.
     const activity = new Activity();
     const first = deferred<string>();
     const middle = deferred<string>();
     const last = deferred<string>();
     const answers = [first, middle, last];
-    const commands = observeCommands({ reviewSearch: (_query: string) => answers.shift()!.promise }, activity);
-    const a = commands.reviewSearch("A");
-    const b = commands.reviewSearch("B");
-    const again = commands.reviewSearch("A");
+    const commands = observeCommands({ browse: (_navigate: { query: string | null }) => answers.shift()!.promise }, activity);
+    const a = commands.browse({ query: "A" });
+    const b = commands.browse({ query: "B" });
+    const again = commands.browse({ query: "A" });
     first.resolve("old A");
     await a;
     expect(activity.snapshot().search).toEqual({ query: "A", sequence: 3, completed: false });
@@ -54,7 +55,7 @@ describe("command activity", () => {
     await b;
     expect(activity.snapshot().search).toEqual({ query: "A", sequence: 3, completed: true });
     expect(activity.snapshot().pending).toBe(0);
-    const failed = activity.run("reviewSearch", () => Promise.reject(new Error("search failed")), "invalid:");
+    const failed = activity.run("browse", () => Promise.reject(new Error("search failed")), "invalid:");
     await expect(failed).rejects.toThrow("search failed");
     expect(activity.snapshot().search).toEqual({ query: "invalid:", sequence: 4, completed: true });
   });
@@ -123,7 +124,7 @@ describe("command activity", () => {
   it("has no manual-refresh witness outside E2E builds", () => {
     expect(import.meta.env.MODE).not.toBe("e2e");
     const activity = new Activity();
-    reviewRefreshed(activity, "kind:human", 0);
+    refreshed(activity);
     expect(Object.keys(activity.snapshot())).toEqual(["revision", "pending", "commands", "search"]);
   });
 });

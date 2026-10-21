@@ -1,31 +1,40 @@
 <script lang="ts">
-  // An Artifact between its neighbours, drawn as the Run graph draws them: the Artifacts its
-  // evals use on the left, the ones whose evals use it on the right, with the graph's nodes and
-  // edges. It holds still: no pan, zoom or drag; a click on a neighbour opens its Detail.
+  // An Artifact between its neighbours, drawn as its graph draws them: the Artifacts its evals
+  // use on the left, the ones whose evals use it on the right, with the graph's nodes and edges.
+  // It holds still: no pan, zoom or drag; a click on a neighbour opens its Detail.
   import { SvelteFlow, SvelteFlowProvider, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, type RunGraph } from "../ipc/client";
-  import { getAppState } from "../shell/app.svelte";
+  import { call, useIpc, type Graph, type Source } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
   import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
 
-  let { run, node, onopen }: { run: string; node: string; onopen: (node: string) => void } = $props();
+  let {
+    source,
+    revision,
+    node,
+    onopen,
+  }: {
+    source: Source;
+    /** The snapshot's or scan's revision: a new one may relight the neighbours. */
+    revision: number;
+    node: string;
+    onopen: (node: string) => void;
+  } = $props();
   const commands = useIpc();
-  const { browse } = getAppState();
   const nodeTypes = { artifact: ArtifactNode };
   /** Room between columns and between stacked neighbours. */
   const GAP = { x: 72, y: 16 };
 
   const n = new NeighboursState();
   setNeighboursState(n);
-  /** Read the graph again for every accepted snapshot: it may relight the neighbours. */
+  /** Read the graph again for every new snapshot or scan: it may relight the neighbours. */
   const reread: Attachment<HTMLElement> = () => {
-    void browse.revision;
-    const at = run;
+    void revision;
+    const at = source;
     let current = true;
-    call(commands.runGraph(at)).then(
-      (next: RunGraph) => current && (n.graph = next),
+    call(commands.graph(at)).then(
+      (next: Graph) => current && (n.graph = next),
       () => current && (n.graph = null),
     );
     return () => {
@@ -58,7 +67,7 @@
       position: { x, y },
       width: NODE.width,
       height: NODE.height,
-      data: { name: item.name, light: item.light, open: item.id === node },
+      data: { name: item.name, light: item.light, note: item.note, open: item.id === node },
       draggable: false,
       connectable: false,
       ariaLabel: `Artifact ${item.name}`,

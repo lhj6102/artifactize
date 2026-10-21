@@ -3,8 +3,9 @@
   // switches between its Summary and its log: an Agent's live transcript, or a runtime's saved
   // output. An eval's Summary is its status (with what running it cost, or what reuse saved),
   // its instruction and its result, then its execution options, metadata and fingerprint; every
-  // other fact folds under Debug. The monitor's opened Detail and the review screen's Detail of
-  // any other request both show it.
+  // other fact folds under Debug; on a Current, whether it would run or be reused and why, and
+  // the result it would reuse. A Run's or a Current's Detail and a request opened by ID all
+  // show it.
   import type { DetailView, Field } from "../ipc/client";
   import Sections from "./Sections.svelte";
   import Transcript from "./Transcript.svelte";
@@ -75,7 +76,13 @@
       <button class="view" role="tab" aria-selected={showLog} onclick={() => (log = true)}>{logName}</button>
     </div>
   {/if}
-  {#if card}
+  {#if detail.plan}
+    <!-- A Current: what verify would do, and why, in place of a status. -->
+    <p class="summary">
+      <span class="status {tone(detail.plan.tone)}">{detail.plan.glyph} {detail.plan.text}</span>
+      <span class="cost">{detail.plan.reason}</span>
+    </p>
+  {:else if card}
     <p class="summary">
       <span class="status {tone(detail.mark?.status)}">{status}</span>
       {#if cost}<span class="cost">{cost}</span>{/if}

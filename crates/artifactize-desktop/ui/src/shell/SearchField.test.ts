@@ -1,5 +1,6 @@
 // The search field's completion dropdown: candidates follow typing, ↑/↓ choose, Tab and Enter
-// take one, Esc closes it, then clears the query, then leaves; compositions are left alone.
+// take one, Esc closes it, then puts the starting query back, then leaves; compositions are
+// left alone.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
@@ -19,11 +20,11 @@ function complete(query: string): Promise<Completion> {
   return Promise.resolve({ keep, candidates: all.filter((candidate) => candidate.startsWith(term)) });
 }
 
-function setup(value = "") {
+function setup(value = "", reset = "") {
   const onleave = vi.fn();
   const completion = vi.fn(complete);
-  render(SearchField, { value, complete: completion, onleave });
-  const field = screen.getByLabelText<HTMLInputElement>("Search requests");
+  render(SearchField, { value, reset, label: "Search", placeholder: "Search", complete: completion, onleave });
+  const field = screen.getByLabelText<HTMLInputElement>("Search");
   field.focus();
   return { field, onleave, completion };
 }
@@ -51,15 +52,15 @@ describe("SearchField", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
-  it("Esc closes the dropdown, then clears the query, then leaves for the list", async () => {
-    const { field, onleave } = setup();
+  it("Esc closes the dropdown, then puts the starting query back, then leaves for the list", async () => {
+    const { field, onleave } = setup("sort:recent", "sort:recent");
     await type(field, "kind:h");
     await screen.findByRole("listbox");
     await fireEvent.keyDown(field, { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(field.value).toBe("kind:h");
     await fireEvent.keyDown(field, { key: "Escape" });
-    expect(field.value).toBe("");
+    expect(field.value).toBe("sort:recent");
     expect(onleave).not.toHaveBeenCalled();
     await fireEvent.keyDown(field, { key: "Escape" });
     expect(onleave).toHaveBeenCalledOnce();
