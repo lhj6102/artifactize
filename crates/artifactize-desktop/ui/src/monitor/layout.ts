@@ -20,8 +20,8 @@ import type { Point } from "./graph";
 
 /** Every Artifact node's box; names longer than fit are cut with an ellipsis. */
 export const NODE = { width: 168, height: 44 };
-/** The most Artifacts ELK lays out: about 0.4 s for a graph this size. A larger graph gets
- * `layered`, which takes milliseconds at any size. */
+/** The most Artifacts ELK lays out, in about half a second for a real graph this size. A larger
+ * graph gets `layered`, which takes milliseconds at any size. */
 export const ELK_LIMIT = 1000;
 
 /** Room between layers, and between the Artifacts of one layer. */
@@ -98,7 +98,7 @@ async function elk(graph: Shape): Promise<Map<string, Point>> {
       "elk.spacing.nodeNode": String(GAP.y),
       "elk.spacing.componentComponent": String(APART),
       // Keep the tree's order (upstream first) within a layer where crossings allow. With the
-      // shared inputs left out it costs little: 0.41 s instead of 0.40 s for 984 Artifacts.
+      // shared inputs left out it costs little: 3-15% more than without it at 1,000 Artifacts.
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
     },
     children: graph.nodes.filter((node) => !inputs.has(node.id)).map((node) => ({ id: node.id, ...NODE })),
