@@ -120,12 +120,13 @@ exactly the extraction that produces the graph fingerprint:
   the graph fingerprint, and labeled arrows from input to consumer.
 - **Human:** `kind = "launch"`. Starts `artifactize-desktop graph --repo PATH`
   using the normal detached application handoff. `artifactize-desktop` must be
-  installed and discoverable through the program search path. The viewer reuses
-  the monitor's existing graph renderer and keyboard/zoom interactions, but shows
-  current declarations rather than Run verdicts. Expand **Structure and evaluation
-  criteria** for the same complete text tree as the Agent sees; **Refresh** or
-  Ctrl+R/F5 reloads declarations. This works before any Run exists. The tool returns
-  a launch acknowledgement, not an approval; the viewer keeps running when the
+  installed and discoverable through the program search path. The app opens on that
+  branch's [Current](../../desktop/index.md#current): the same graph renderer and
+  keyboard/zoom interactions as a Run's, but current declarations, each Artifact
+  marked as reused or would run, rather than Run verdicts. Expand **Structure and
+  evaluation criteria** for the same complete text tree as the Agent sees;
+  **Refresh** or Ctrl+R/F5 scans again. This works before any Run exists. The tool
+  returns a launch acknowledgement, not an approval; the app keeps running when the
   calling tool finishes.
 
 ### Paths in `args`

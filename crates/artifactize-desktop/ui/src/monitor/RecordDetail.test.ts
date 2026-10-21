@@ -22,7 +22,8 @@ const card = (change: Partial<CardView> = {}): CardView => ({
 });
 
 const detail = (change: Partial<DetailView> = {}): DetailView => ({
-  run: "run-a",
+  source: { kind: "run", run: "run-a" },
+  plan: null,
   node: "e:app/rules",
   target: "eval",
   title: "app/rules · Rules",
@@ -167,4 +168,21 @@ it("shows an Artifact's path, and its other facts only under Debug", async () =>
   expect(screen.queryByText("a1b2")).toBeNull();
   await fireEvent.click(screen.getByRole("button", { name: "▸ Debug" }));
   expect(screen.getByText("a1b2")).toBeTruthy();
+});
+
+it("says on a Current whether an eval would run or be reused and why, with the result it would reuse", () => {
+  render(RecordDetail, {
+    detail: detail({
+      source: { kind: "current", branch: { kind: "branch", common: "/work/app/.git", branch: "main" } },
+      mark: null,
+      plan: { glyph: "↻", text: "reused", tone: "green", reason: "same definition and inputs as run-a" },
+      card: card({ reused: true, result: [{ kind: "text", key: "summary", text: "All rules hold." }] }),
+    }),
+  });
+  const line = screen.getByText("↻ reused");
+  expect(line.classList.contains("tone-green")).toBe(true);
+  expect(screen.getByText("same definition and inputs as run-a")).toBeTruthy();
+  expect(screen.getByText("All rules hold.")).toBeTruthy();
+  // The plan takes the status line's place: no Run status is shown.
+  expect(screen.queryByText(/✗ RED/)).toBeNull();
 });

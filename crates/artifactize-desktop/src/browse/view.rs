@@ -1,8 +1,14 @@
 //! The shown snapshot as the frontend draws it: plain data, every word and glyph from the
-//! monitor's model.
-use super::Shown;
-use crate::status::{Count, Mark, Tone, Weight};
-use artifactize_core::monitor::{self, Completion, Kind, Node, NodeId, Repository, Scope};
+//! library's model.
+use super::{CHIPS, Opened, Shown};
+use crate::status::{Mark, Tone, Weight};
+use artifactize_core::{
+    monitor::{
+        self, Completion as Done, Kind, Node, NodeId,
+        live::{self, Branch, Head, Place, Query, Waiting},
+    },
+    types::RunStatus,
+};
 use artifactize_tools::files::path_text;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -16,110 +22,128 @@ use time::OffsetDateTime;
 pub struct PathKey(String);
 
 impl PathKey {
-    fn new(path: &std::path::Path) -> Self {
+    pub fn new(path: &std::path::Path) -> Self {
         Self(path_text(path))
     }
-    fn to_path(&self) -> PathBuf {
+    pub fn to_path(&self) -> PathBuf {
         PathBuf::from(&self.0)
     }
 }
 
-/// A repository as the catalog groups Runs: Git clones by their common directory.
+/// A branch by value, so a selection survives refreshes that reorder the pane. Paths are
+/// round-trip; names for people come with the branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum RepositoryKey {
-    /// The common Git directory.
-    Git { path: PathKey },
-    /// A non-Git workspace.
-    Workspace { path: PathKey },
+pub enum BranchKey {
+    /// A Git repository's branch, by the repository's common directory.
+    Branch { common: PathKey, branch: String },
+    /// A detached Git worktree, by its folder.
+    Detached { common: PathKey, path: PathKey },
+    /// A folder outside Git.
+    Folder { path: PathKey },
 }
 
-/// A scope by value, so a selection survives refreshes that reorder the catalog. Paths are
-/// round-trip; labels for people come with the rows.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+impl BranchKey {
+    pub fn new(place: &Place) -> Self {
+        match place {
+            Place::Git {
+                common,
+                head: Head::Branch(branch),
+            } => Self::Branch {
+                common: PathKey::new(common),
+                branch: branch.clone(),
+            },
+            Place::Git {
+                common,
+                head: Head::Detached(path),
+            } => Self::Detached {
+                common: PathKey::new(common),
+                path: PathKey::new(path),
+            },
+            Place::Folder(path) => Self::Folder {
+                path: PathKey::new(path),
+            },
+        }
+    }
+
+    pub fn to_place(&self) -> Place {
+        match self {
+            Self::Branch { common, branch } => Place::Git {
+                common: common.to_path(),
+                head: Head::Branch(branch.clone()),
+            },
+            Self::Detached { common, path } => Place::Git {
+                common: common.to_path(),
+                head: Head::Detached(path.to_path()),
+            },
+            Self::Folder { path } => Place::Folder(path.to_path()),
+        }
+    }
+}
+
+/// One chip of a branch's row: a Run, or the branch's Current.
+#[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ScopeKey {
-    All,
-    Repository {
-        repository: RepositoryKey,
+pub enum Chip {
+    Run {
+        id: crate::ids::RunKey,
+        mark: Mark,
+        /// Its status and age, a running one's its time so far: `RED 25m`, `Running 2m 22s`.
+        text: String,
+        running: bool,
     },
-    Worktree {
-        repository: RepositoryKey,
-        path: PathKey,
-    },
+    /// The worktree as it is now.
+    Current,
 }
 
-impl RepositoryKey {
-    fn new(repository: &Repository) -> Self {
-        match repository {
-            Repository::Git(path) => Self::Git {
-                path: PathKey::new(path),
-            },
-            Repository::Workspace(path) => Self::Workspace {
-                path: PathKey::new(path),
-            },
-        }
-    }
-    pub fn to_repository(&self) -> Repository {
-        match self {
-            Self::Git { path } => Repository::Git(path.to_path()),
-            Self::Workspace { path } => Repository::Workspace(path.to_path()),
-        }
-    }
-}
-
-impl ScopeKey {
-    fn new(scope: &Scope) -> Self {
-        match scope {
-            Scope::All => Self::All,
-            Scope::Repository(repository) => Self::Repository {
-                repository: RepositoryKey::new(repository),
-            },
-            Scope::Worktree(repository, path) => Self::Worktree {
-                repository: RepositoryKey::new(repository),
-                path: PathKey::new(path),
-            },
-        }
-    }
-    pub fn to_scope(&self) -> Scope {
-        match self {
-            Self::All => Scope::All,
-            Self::Repository { repository } => Scope::Repository(repository.to_repository()),
-            Self::Worktree { repository, path } => {
-                Scope::Worktree(repository.to_repository(), path.to_path())
-            }
-        }
-    }
-}
-
-/// One catalog row: ALL, a repository, one of its worktrees, or its fold of worktrees
-/// without Runs.
+/// One live branch of the pane: `project  branch`, then its row of chips, oldest first.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct ScopeRow {
-    pub scope: ScopeKey,
-    pub label: String,
-    pub depth: u32,
-    pub badge: Vec<Count>,
-    /// Set on the fold row; toggling it shows or hides those worktrees.
-    pub fold: Option<RepositoryKey>,
-    pub selected: bool,
+pub struct BranchView {
+    pub key: BranchKey,
+    pub project: String,
+    /// The branch, a detached worktree's folder, or empty for a folder outside Git.
+    pub name: String,
+    /// Where its Current is scanned and its tools run.
+    pub workspace: PathKey,
+    /// Its newest Runs, oldest first, ending with the one in progress or else the Current chip.
+    pub chips: Vec<Chip>,
+    /// Older Runs than the row holds exist: reaching its oldest end shows them.
+    pub older: bool,
 }
 
+/// One Human review waiting for a person.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct RunItem {
-    pub id: crate::ids::RunKey,
-    pub repository: String,
+pub struct WaitingRow {
+    pub id: crate::ids::RequestKey,
+    pub eval: String,
+    pub title: String,
     pub mark: Mark,
-    /// Request glyph counts, most urgent first: `✗1 ✓2`.
-    pub counts: String,
+    pub project: String,
+    pub branch: String,
+    /// How long it waits.
     pub age: String,
-    /// Wall time of a finished Run.
-    pub took: String,
-    /// Records of the Run that could not be read; an unreadable Run cannot open.
-    pub unreadable: Vec<String>,
-    pub readable: bool,
+    /// `-`, the claimant, or `name (you)`.
+    pub claim: String,
+    pub mine: bool,
+}
+
+/// The pane's search as typed, and why it lists nothing when it cannot be read.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryView {
+    pub text: String,
+    pub error: Option<String>,
+}
+
+/// The completion of a search's last term.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Completion {
+    /// The search before the completed term; a candidate replaces the rest.
+    pub keep: String,
+    pub candidates: Vec<String>,
 }
 
 /// The Artifacts a row depends on, with whether each is complete (dim) or unmet (bright).
@@ -164,13 +188,13 @@ pub struct TreeNode {
     pub right: String,
     /// The derived state changed after the Run ended.
     pub changed: bool,
-    /// An Artifact whose evals are all done: folded unless the user unfolded it.
+    /// An Artifact whose evals are all done.
     pub done: bool,
-    /// An in-progress or failed eval: where a new Run's cursor starts.
+    /// An in-progress or failed eval.
     pub attention: bool,
-    /// An ERROR, RED or waiting Human eval: what "next attention" visits.
+    /// An ERROR, RED or waiting Human eval.
     pub urgent: bool,
-    /// The Artifacts this row depends on, unmet first; `b` cycles through them.
+    /// The Artifacts this row depends on, unmet first.
     pub upstream: Vec<UpstreamMark>,
     pub children: Vec<TreeNode>,
 }
@@ -182,8 +206,8 @@ pub struct Attention {
     pub text: String,
 }
 
-/// The selected Run: its headline and what needs attention. Its rows come one at a time, as
-/// a Detail asks for them ([`row`]): a Run can hold tens of thousands.
+/// The shown Run: its headline and what needs attention. Its rows come one at a time, as a
+/// Detail asks for them ([`row`]): a Run can hold tens of thousands.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
@@ -203,19 +227,19 @@ pub struct RunPanel {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowseView {
-    pub scope: ScopeKey,
-    /// The breadcrumb's name for the scope.
-    pub scope_label: String,
-    pub scopes: Vec<ScopeRow>,
-    /// The catalog's attention counters for the header: `!N ✗N ◐N ?N`.
-    pub badge: Vec<Count>,
-    pub runs: Vec<RunItem>,
-    pub selected_run: Option<crate::ids::RunKey>,
-    /// More Runs on an older page, or on a newer one.
-    pub older: bool,
-    pub newer: bool,
+    pub query: QueryView,
+    /// The branches the search keeps, in its order.
+    pub branches: Vec<BranchView>,
+    /// The waiting Human reviews the search keeps, newest first.
+    pub waiting: Vec<WaitingRow>,
+    /// The branch of the folder the app was started for.
+    pub launch: Option<BranchKey>,
+    /// The shown Run, once read.
     pub run: Option<RunPanel>,
-    pub error: Option<String>,
+    /// The shown Run no longer exists or cannot be read.
+    pub missing: bool,
+    /// What went wrong: a failed read, Run records that cannot be read.
+    pub notice: Option<String>,
     /// False until the first snapshot was read.
     pub refreshed: bool,
     /// The state was replaced since the last view: Details and drafts no longer apply.
@@ -224,14 +248,6 @@ pub struct BrowseView {
     /// older than one already shown, and views derived from the snapshot (Detail) read again
     /// when it grows.
     pub revision: u32,
-}
-
-fn badge(row: &monitor::CatalogRow) -> Vec<Count> {
-    row.badge
-        .parts()
-        .into_iter()
-        .map(|(status, count)| Count::new(status, count))
-        .collect()
 }
 
 fn node(node: &Node, kind: NodeKind, now: OffsetDateTime, upstream: Vec<UpstreamMark>) -> TreeNode {
@@ -266,7 +282,7 @@ fn marks(nodes: &[Node], path: &[NodeId]) -> Vec<UpstreamMark> {
         .into_iter()
         .map(|up| UpstreamMark {
             node: NodeId::artifact(up.artifact).into(),
-            complete: up.completion == Completion::Complete,
+            complete: up.completion == Done::Complete,
         })
         .collect()
 }
@@ -300,9 +316,65 @@ pub(crate) fn row(
     Some(row)
 }
 
+/// A Run's status as its chip names it.
+fn status_word(status: RunStatus) -> String {
+    match status {
+        RunStatus::Running => "Running".into(),
+        other => other.as_str().replace('_', " "),
+    }
+}
+
+fn branch(branch: &Branch, limit: usize, now: OffsetDateTime) -> BranchView {
+    let skipped = branch.runs.len().saturating_sub(limit);
+    let mut chips: Vec<Chip> = branch.runs[skipped..]
+        .iter()
+        .map(|chip| Chip::Run {
+            id: chip.id.clone().into(),
+            mark: monitor::Status::from(chip.status).into(),
+            text: format!(
+                "{} {}",
+                status_word(chip.status),
+                monitor::duration(now - chip.created_at.time())
+            ),
+            running: false,
+        })
+        .collect();
+    match (branch.running(), chips.last_mut()) {
+        (Some(_), Some(Chip::Run { running, .. })) => *running = true,
+        _ => chips.push(Chip::Current),
+    }
+    BranchView {
+        key: BranchKey::new(&branch.place),
+        project: branch.project.clone(),
+        name: branch.name.clone(),
+        workspace: PathKey::new(&branch.workspace),
+        chips,
+        older: skipped > 0,
+    }
+}
+
+fn waiting(waiting: &Waiting, now: OffsetDateTime) -> WaitingRow {
+    let request = &waiting.view.request;
+    let entry = &waiting.entry;
+    WaitingRow {
+        id: request.id.clone().into(),
+        eval: entry.eval.clone(),
+        title: request.title.clone(),
+        mark: monitor::Status::from(entry.status).into(),
+        project: waiting.label.project.clone(),
+        branch: waiting.label.branch.clone(),
+        age: monitor::duration(now - request.created_at.time()),
+        claim: match (&entry.reviewer, entry.mine) {
+            (None, _) => "-".into(),
+            (Some(reviewer), true) => format!("{reviewer} (you)"),
+            (Some(reviewer), false) => reviewer.clone(),
+        },
+        mine: entry.mine,
+    }
+}
+
 pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
-    let scope = &shown.page.scope;
-    let run = shown.run.as_ref().map(|selected| {
+    let run = shown.opened.loaded().map(|selected| {
         let (run, requests) = (&selected.run, &selected.requests);
         let progress = monitor::progress(run, requests, now);
         let strip = monitor::strip(&progress);
@@ -323,50 +395,47 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
             more: u32::try_from(strip.more).unwrap_or(u32::MAX),
         }
     });
-    let runs = monitor::run_rows(&shown.runs, now)
-        .into_iter()
-        .zip(&shown.runs)
-        .map(|(row, summary)| RunItem {
-            id: row.id.clone().into(),
-            repository: path_text(&row.repo),
-            mark: monitor::Status::from(row.status).into(),
-            counts: row.counts,
-            age: row.age,
-            took: row.took,
-            readable: summary.readable(),
-            unreadable: summary.unreadable.iter().map(ToString::to_string).collect(),
-        })
+    let query = shown.query.parse::<Query>();
+    let (branches, waiting_rows) = match &query {
+        Ok(query) => {
+            let (branches, waiting_rows) = live::show(query, &shown.branches, &shown.waiting);
+            (
+                branches
+                    .into_iter()
+                    .map(|shown_branch| {
+                        let limit = shown
+                            .chips
+                            .get(&shown_branch.place)
+                            .copied()
+                            .unwrap_or(CHIPS);
+                        branch(shown_branch, limit, now)
+                    })
+                    .collect(),
+                waiting_rows
+                    .into_iter()
+                    .map(|row| waiting(row, now))
+                    .collect(),
+            )
+        }
+        Err(_) => (Vec::new(), Vec::new()),
+    };
+    let notice: Vec<String> = shown
+        .error
+        .iter()
+        .cloned()
+        .chain(shown.unreadable.iter().map(ToString::to_string))
         .collect();
     BrowseView {
-        scope: ScopeKey::new(scope),
-        scope_label: shown.catalog.label(scope),
-        scopes: shown
-            .catalog
-            .rows
-            .iter()
-            .map(|row| ScopeRow {
-                scope: ScopeKey::new(&row.scope),
-                label: row.label.clone(),
-                depth: u32::try_from(row.depth).unwrap_or(u32::MAX),
-                badge: badge(row),
-                fold: row.fold.as_ref().map(RepositoryKey::new),
-                selected: row.fold.is_none() && row.scope == *scope,
-            })
-            .collect(),
-        badge: shown
-            .catalog
-            .rows
-            .first()
-            .filter(|row| row.scope == Scope::All)
-            .map(badge)
-            .unwrap_or_default(),
-        runs,
-        selected_run: shown.page.open.clone().map(Into::into),
-        older: monitor::older_offset(shown.page.offset, shown.page.limit, shown.runs.len() as u32)
-            .is_some(),
-        newer: monitor::newer_offset(shown.page.offset, shown.page.limit).is_some(),
+        query: QueryView {
+            text: shown.query.clone(),
+            error: query.err(),
+        },
+        branches,
+        waiting: waiting_rows,
+        launch: shown.launch.as_ref().map(BranchKey::new),
         run,
-        error: shown.error.clone(),
+        missing: matches!(shown.opened, Opened::Missing(_)),
+        notice: (!notice.is_empty()).then(|| notice.join("; ")),
         refreshed: shown.refreshed,
         replaced: shown.replaced,
         revision: shown.revision,

@@ -43,6 +43,12 @@ impl ShapeKey {
     }
 }
 
+impl Default for ShapeKey {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
 /// The library's Tool log run identity, serialized as decimal text without losing its type.
 /// This is an outbound event key, never an IPC argument to parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -116,6 +122,11 @@ macro_rules! key {
         }
 
         impl $name {
+            /// The library's identifier it names.
+            pub fn inner(&self) -> &$inner {
+                &self.0
+            }
+
             pub fn into_inner(self) -> $inner {
                 self.0
             }

@@ -455,6 +455,16 @@ mod tests {
         assert!(directory.path().join("marker").exists());
     }
 
+    /// The marker fixture ([`crate::test_os::windows_marker`]): creates `marker` in its working
+    /// directory once it runs.
+    #[test]
+    fn marker_probe() {
+        if std::env::var_os("ARTIFACTIZE_MARKER_PROBE").is_none() {
+            return;
+        }
+        std::fs::File::create("marker").unwrap();
+    }
+
     /// A job that forbids breakaway refuses CREATE_BREAKAWAY_FROM_JOB; the handoff then starts
     /// inside it. A process cannot leave a job, so the probe runs in a test process of its own.
     #[test]
@@ -511,6 +521,15 @@ mod tests {
 #[cfg(test)]
 mod exit_tests {
     use super::*;
+
+    /// The exit fixture ([`crate::test_os::windows_exit`]): exits with the code it is given.
+    #[test]
+    fn exit_probe() {
+        if let Some(code) = std::env::var_os("ARTIFACTIZE_EXIT_PROBE") {
+            std::process::exit(code.to_str().unwrap().parse().unwrap());
+        }
+    }
+
     #[tokio::test]
     async fn exit_code_259_does_not_mean_the_process_is_alive() {
         let mut child = crate::test_os::windows_exit(259).spawn().unwrap();

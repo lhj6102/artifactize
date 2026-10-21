@@ -1,4 +1,4 @@
-use super::{Light, NEAR, neighbours};
+use super::{Light, NEAR, neighbours_in, shape};
 use artifactize_core::{monitor, types::ArtifactName};
 
 fn name(text: &str) -> ArtifactName {
@@ -46,7 +46,7 @@ fn a_shared_input_shows_its_failing_users_first_and_counts_the_rest() {
             .chain(reviews.iter().map(|item| edge("criteria", item)))
             .collect(),
     };
-    let near = neighbours(&graph, &monitor::NodeId::artifact(name("criteria")));
+    let near = neighbours_in(&shape(&graph), &monitor::NodeId::artifact(name("criteria")));
     assert_eq!((near.more_uses, near.more_used_by), (0, 10));
     let used_by: Vec<_> = near
         .shape
@@ -83,7 +83,7 @@ fn an_artifact_the_run_lacks_has_no_neighbours() {
         nodes: vec![node("app", monitor::Light::Green)],
         edges: Vec::new(),
     };
-    let near = neighbours(&graph, &monitor::NodeId::artifact(name("gone")));
+    let near = neighbours_in(&shape(&graph), &monitor::NodeId::artifact(name("gone")));
     assert!(near.shape.nodes.is_empty() && near.shape.edges.is_empty());
     assert_eq!((near.more_uses, near.more_used_by), (0, 0));
 }

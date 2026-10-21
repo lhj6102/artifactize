@@ -62,6 +62,7 @@ async function batch(): Promise<void> {
       await configuration.releasePrepared();
       writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
     } else {
+      // Only an app confirmed stopped no longer uses its inputs: unconfirmed, nothing is released.
       assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
       await configuration.releasePrepared();
     }

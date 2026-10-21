@@ -1,19 +1,27 @@
 <script lang="ts">
-  // The review list's request search: the query as text, with completion of its last term in a
-  // dropdown. ↑/↓ choose a suggestion, Tab or Enter take it, Esc closes the dropdown, then
-  // clears the query, then leaves for the list. Keys mid-composition belong to the input method.
+  // A search: the query as text, with completion of its last term in a dropdown. ↑/↓ choose a
+  // suggestion, Tab or Enter take it, Esc closes the dropdown, then puts the starting query
+  // back, then leaves for the list. Keys mid-composition belong to the input method.
   import type { Completion } from "../ipc/client";
   import { SearchFieldState, setSearchFieldState } from "./search-field-state.svelte";
-  import { composing } from "../shell/keys";
+  import { composing } from "./keys";
 
   let {
     value = $bindable(),
     input = $bindable(),
+    label,
+    placeholder,
+    reset = "",
     complete,
     onleave,
   }: {
     value: string;
     input?: HTMLInputElement;
+    /** The field's accessible name. */
+    label: string;
+    placeholder: string;
+    /** The starting query Esc puts back. */
+    reset?: string;
     /** Candidates for the last term of a query. */
     complete: (query: string) => Promise<Completion>;
     /** Leave the field for the list. */
@@ -67,7 +75,7 @@
       onleave();
     } else if (event.key === "Escape") {
       if (open) close();
-      else if (value !== "") value = "";
+      else if (value !== reset) value = reset;
       else onleave();
     } else return;
     event.preventDefault();
@@ -81,8 +89,8 @@
     type="search"
     spellcheck="false"
     autocomplete="off"
-    placeholder="Search requests: text, repo:, eval:, kind:, status:, is:mine …"
-    aria-label="Search requests"
+    {placeholder}
+    aria-label={label}
     role="combobox"
     aria-autocomplete="list"
     aria-expanded={open}

@@ -14,7 +14,7 @@
   import type { Attachment } from "svelte/attachments";
   import type { Shape } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
-  import { LEGEND, WORDS, type Point } from "./graph";
+  import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
   import { NODE } from "./layout";
   import { area, padding, reveal, same, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
@@ -25,13 +25,13 @@
     positions,
     opened = null,
     cover = null,
-    structural = false,
+    current = false,
     onopen,
     onclose,
   }: {
     graph: Shape;
-    /** Static structure has no Run verdicts. */
-    structural?: boolean;
+    /** A Current: lit by what verify would do, with its structure text below. */
+    current?: boolean;
     positions: Map<string, Point>;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
@@ -57,9 +57,9 @@
   const DRAWN = 500;
   /** How the whole graph fits: the first fit, Fit View, and every later fit of the Run view. */
   const FIT: Fit = { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, padding: 0.1 };
-  /** How the structure view fits again as its canvas or the panel over it changes: a wider
-   * margin and a smaller zoom, beside its expanded text. */
-  const refit = $derived<Fit>(structural ? { minZoom: MIN_ZOOM, maxZoom: 1.6, padding: 0.6 } : FIT);
+  /** How a Current fits again as its canvas or the panel over it changes: a wider margin and a
+   * smaller zoom, beside its expanded structure text. */
+  const refit = $derived<Fit>(current ? { minZoom: MIN_ZOOM, maxZoom: 1.6, padding: 0.6 } : FIT);
   /** Fit View, the first fit included, fits into what the docked panel leaves. */
   const fitViewOptions = $derived({ minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: padding(v.area, FIT) });
 
@@ -93,10 +93,10 @@
         width: NODE.width,
         height: NODE.height,
         measured: v.initialized ? { width: NODE.width, height: NODE.height } : undefined,
-        data: { name: node.name, light: node.light, open: node.id === opened },
+        data: { name: node.name, light: node.light, note: node.note, open: node.id === opened },
         draggable: false,
         connectable: false,
-        ariaLabel: structural ? `${node.name}: current structure` : `${node.name}: ${WORDS[node.light]}`,
+        ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}`,
         domAttributes: { "data-light": node.light },
       }));
   });
@@ -130,14 +130,14 @@
 
   /** What the panel leaves changed. A camera showing the whole graph fits it into the new
    * part, as does one never fitted into a canvas with a size (a graph first drawn in a hidden
-   * screen); the structure view always refits, so expanding its text never clips the graph.
+   * screen); a Current always refits, so expanding its structure text never clips the graph.
    * A camera the person moved stays, apart from bringing the opened Artifact into view. */
   function follow(next: Area) {
     const before = v.area;
     if (before && before.width === next.width && before.height === next.height && before.covered === next.covered) return;
     v.area = next;
     if (!v.initialized) return;
-    if (before && structural) void flow.setViewport(whole(laid.bounds, next, refit), { duration: 0 });
+    if (before && current) void flow.setViewport(whole(laid.bounds, next, refit), { duration: 0 });
     else if (!before || same(flow.getViewport(), whole(laid.bounds, before, FIT))) {
       void flow.setViewport(whole(laid.bounds, next, FIT), { duration: 0 });
     }
@@ -254,13 +254,9 @@
       {#if graph.nodes.length > 40 && !large}<MiniMap pannable zoomable />{/if}
     </SvelteFlow>
     <ul class="legend" aria-label="Legend">
-      {#if structural}
-        <li>Current structure · arrows: input → consumer</li>
-      {:else}
-        {#each LEGEND as light (light)}
-          <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>
-        {/each}
-      {/if}
+      {#each current ? CURRENT_LEGEND : LEGEND as light (light)}
+        <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>
+      {/each}
     </ul>
   </div>
 </div>

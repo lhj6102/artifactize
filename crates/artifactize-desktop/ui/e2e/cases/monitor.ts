@@ -1,20 +1,29 @@
-// The monitor end to end, in the real app on fixture state made by the real CLI: catalog →
-// Run graph → an Artifact's Detail → its Human eval's tab, the shared Human Detail's claim,
-// release, tools and their live Tool log, RED validation, groups of fields, Korean text and
-// GREEN submission, and a live update from another process.
+// A Run in the Main area end to end, in the real app on fixture state made by the real CLI:
+// the branch's Run → its graph → an Artifact's Detail → its own tools, or its Human eval's tab
+// with the shared Human Detail's claim, release, tools and their live Tool log, RED validation,
+// groups of fields, Korean text and GREEN submission, a live update from another process, and
+// the dragged split and Detail width.
 import assert from "node:assert/strict";
-import { artifactize, create, createNavigationFixture, finishTalk, type Fixture, launched, signoff, slowTool } from "../fixture.ts";
+import { artifactize, create, finishTalk, type Fixture, launched, requests, signoff, slowTool, type SignoffDefinition } from "../fixture.ts";
 import { claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativeInput, primaryModifier } from "../platform.ts";
+import { nativeInput, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { clickOption, dispatchInput, tab } from "../input.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
 import { textContrast } from "../rendering.ts";
 import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
+import { branch, ENTRIES, listed, MAIN, mainTitle, selectBranch } from "../pane.ts";
+import { runOf as runIn, toolLog as logIn } from "../tool-log.ts";
+
+/** A fresh release waiting for its sign-off, the app started on its branch: its Run shown. */
+async function atRepo(definition?: SignoffDefinition) {
+  const fixture = await create(definition);
+  return { fixture, args: ["--repo", fixture.repo], data: null };
+}
 
 /** A Tool log row as read: a run's start (its time as HH:MM:SS), a printed line or a run's end,
  * and whether it is red. */
@@ -87,14 +96,12 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
   return { text, human, toolLog, runOf, tool, openReview };
 }
 
-type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture">;
-
 export const scenarios: Scenario[] = [
-  // UX edges: E-LAUNCH-MONITOR E-MON-RUNS-GRAPH
+  // UX journeys: J-LAUNCH J-MAIN-RUN; UX edges: E-LAUNCH-REPO E-MON-RUNS-GRAPH
   scenario<null>(
-    "monitor-catalog",
-    "catalogs the repository and its Run, and shows the Run's graph with release's waiting sign-off a click away",
-    async () => ({ fixture: await create(), data: null }),
+    "monitor-run",
+    "shows the branch's Run under its headline as its graph, with release's waiting sign-off a click away",
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { text } = await monitorUI(browser, fixture);
       const shown = await text();
@@ -107,16 +114,18 @@ export const scenarios: Scenario[] = [
         const mark = image as HTMLImageElement;
         return mark.complete && mark.naturalWidth > 0;
       }), true, "the approved brand mark actually loaded");
-      assert.match(shown, /ALL/);
-      assert.match(shown, /master · repo/);
-      assert.match(shown, /Runs \(1\)/i);
-      assert.match(shown, /RUNNING/);
-      assert.match(shown, /validation pending/);
+      const run = signoff(fixture).runId;
+      assert.equal(await mainTitle(browser), `Run ${run}`);
+      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[run, true]]);
+      const headline = await browser.$(`${MAIN} button.headline`).getText();
+      assert.match(headline, /RUNNING/);
+      assert.match(headline, /validation pending/);
+      assert.match(shown, /release\/signoff/, "what needs attention reads above the graph");
       // The Run fills the right side as its graph, with every Artifact as a node.
       for (const id of ["a:release", "a:ship", "a:docs"]) await graphShown(browser, id);
-      // Enter steps from the Runs into the graph; a click on release shows its waiting sign-off.
-      await browser.waitUntil(() => browser.$('[role="listbox"][aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "the Runs pane focused" });
-      await press(browser, ["Enter"], () => browser.$('section.panel[aria-label^="Run run-"]').isFocused(), "the graph's pane focused");
+      // Enter steps from the Pane into the Main area; a click on release shows its waiting sign-off.
+      await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane's entries focused" });
+      await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area focused");
       const opened = await openArtifact(browser, "a:release", "Artifact release");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"]);
       assert.match(opened.evals[0].status, /waiting for a Human|Human/, "the sign-off waits for a Human");
@@ -127,7 +136,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-external-claim",
     "follows a claim another process makes, then claims and releases explicitly",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { text, human, openReview } = await monitorUI(browser, fixture);
       await openReview(false);
@@ -159,7 +168,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-output",
     "runs an output tool with a click and logs its run: its start, each line it printed and its exit",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -186,7 +195,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-launch",
     "runs a launch tool, says the application was opened, and logs it until it exits",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -205,7 +214,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-log-live",
     "keeps logging a launched application under its own run after its button returned, its stderr in red, while the reviewer writes the result",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -254,7 +263,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-log-scroll",
     "scrolls the Tool log in its own box, holds it while scrolled up, follows again from its bottom, gives its text to the result and clears on submission",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { human, toolLog, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -346,7 +355,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-failure",
     "says a tool failed and ends its run red in the Tool log",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -372,7 +381,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-cancel",
     "steps back one thing per Esc from the Detail's tabs: cancels a running tool, then leaves the form, then closes the Detail",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { text, human, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -409,11 +418,11 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-RED E-HUMAN-INVALID E-HUMAN-SWITCH
+  // UX journey: J-HUMAN-RED; UX edges: E-HUMAN-RED E-HUMAN-INVALID E-HUMAN-SWITCH
   scenario<null>(
     "monitor-invalid-red",
-    "keeps a RED result that fails its schema correctable and shows the failing path",
-    async () => ({ fixture: await create(), data: null }),
+    "keeps a RED or GREEN result that fails its schema correctable and shows the failing path",
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { human, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -447,6 +456,18 @@ export const scenarios: Scenario[] = [
       assert.equal(saved.status, "WAITING_HUMAN");
       assert.equal(saved.result, null, "switching did not submit the rejected draft");
       assert.equal(saved.claim?.reviewer, "alice", "the same review remains claimed and editable");
+      // A GREEN result failing its schema the same way: the required comment left empty.
+      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
+      await fill(browser, "#field-comment", "");
+      const before = await alert.getText().catch(() => "");
+      await browser.keys([primaryModifier, "s"]);
+      await browser.waitUntil(async () => {
+        const shown = await browser.$('[role="alert"]');
+        return await shown.isExisting() && /comment/.test(await shown.getText()) && (await shown.getText()) !== before;
+      }, { timeout: 15000, timeoutMsg: "the GREEN result's failing path shown" });
+      assert.equal(signoff(fixture).status, "WAITING_HUMAN", "the invalid GREEN result was not submitted");
+      await fill(browser, "#field-comment", "checked again");
+      assert.equal(await browser.$("#field-comment").getValue(), "checked again", "the GREEN form stays correctable");
     },
   ),
 
@@ -454,7 +475,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-red-groups",
     "enters a list of steps one text at a time and a list of findings as groups of fields, each added and removed, and submits them",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { human, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -512,7 +533,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-form-scalars",
     "edits a number, a boolean and a choice, marks required fields and shows Optional hints before submitting typed values",
-    async () => ({ fixture: await create({ title: "Scalar form", instruction: "Read the release notes and approve them.", scalars: true }), data: null }),
+    () => atRepo({ title: "Scalar form", instruction: "Read the release notes and approve them.", scalars: true }),
     async (browser, { fixture }) => {
       const { human, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -546,7 +567,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-groups",
     "groups tools by their declaring Artifact, own first, and runs the tool of each group",
-    async () => ({ fixture: await create({ title: "Grouped tools", instruction: "Read {docs} and approve." }), data: null }),
+    () => atRepo({ title: "Grouped tools", instruction: "Read {docs} and approve." }),
     async (browser, { fixture }) => {
       const { human, openReview, runOf } = await monitorUI(browser, fixture, "Read {docs} and approve.");
       await openReview();
@@ -567,7 +588,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-tool-log-long-lines",
     "wraps long stdout and stderr in a monospace Tool log and paints stderr and a failing end red",
-    async () => ({ fixture: await create({ title: "Long Tool log", instruction: "Read the release notes and approve them.", report: true }), data: null }),
+    () => atRepo({ title: "Long Tool log", instruction: "Read the release notes and approve them.", report: true }),
     async (browser, { fixture }) => {
       const { human, openReview, tool, runOf } = await monitorUI(browser, fixture);
       await openReview();
@@ -598,7 +619,7 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "monitor-green-korean",
     "submits GREEN with Korean text typed into its form and keeps the completed result open",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       const { human, openReview } = await monitorUI(browser, fixture);
       await openReview();
@@ -615,11 +636,8 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: korean });
       const run = signoff(fixture).runId;
-      await browser.waitUntil(() => browser.execute((id) => {
-        const row = [...document.querySelectorAll('.monitor [aria-label="Runs"] [role="option"]')]
-          .find((entry) => entry.querySelector(".id")?.textContent?.split(/\s/)[0] === id);
-        return row?.querySelector(".status")?.textContent?.trim() === "GREEN";
-      }, run), { timeout: 15000, timeoutMsg: "the app has rendered this Run's terminal GREEN update" });
+      await browser.waitUntil(async () => /^GREEN /.test((await branch(browser, "repo  master"))?.chips.find((chip) => chip.id === run)?.text ?? ""),
+        { timeout: 15000, timeoutMsg: "the app has rendered this Run's terminal GREEN update on its chip" });
       await commandsRendered(browser);
       assert.ok(await human().isExisting(), "the completed Detail stays open after the terminal subscription update");
       const completed = await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? "");
@@ -628,25 +646,21 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-RESIZE E-MON-DETAIL-ARTIFACT E-MON-DETAIL-WIDTH E-MON-DETAIL-BACK
+  // UX journeys: J-PANE J-RESIZE; UX edges: E-MON-RESIZE E-MON-DETAIL-ARTIFACT E-MON-DETAIL-WIDTH E-MON-DETAIL-BACK
   scenario<{ width: number }>(
     "monitor-resize",
-    "resizes the graph against the left side, Scope against Runs, and the Detail, by dragging their dividers and its edge",
+    "resizes the Main area against the Pane by dragging their divider, kept whatever the Main area shows, and the Detail by dragging its edge, kept for the next launch",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", emptyRepository(fixture)], data: { width: 400 } };
     },
     async (browser, { fixture, data: { width } }) => {
-      await browser.$('[aria-label="Scope"] [data-index="0"]').waitForExist({ timeout: 15000 });
-      await browser.$('[aria-label="Scope"] [data-index="0"]').click();
+      // Started on the branch without Runs; the release's branch shows its Run.
+      await listed(browser, "repo  master");
+      await selectBranch(browser, "repo  master");
       await monitorUI(browser, fixture);
-      const size = (selector: string, axis: "width" | "height") =>
-        browser.execute((within, dimension) =>
-          (document.querySelector(within)?.closest("[data-pane]") as HTMLElement).getBoundingClientRect()[dimension as "width" | "height"],
-        selector, axis);
-      // Paneforge installs its move listener in a post-press render effect. Keep the real
-      // pointer held across that render boundary, rather than guessing how long it takes.
-      const dividers = () => browser.$$(".monitor [data-pane-resizer]");
+      const main = () => browser.execute(() => Math.round(document.querySelector<HTMLElement>(".monitor .stage")!.getBoundingClientRect().width));
+      const divider = () => browser.$(".monitor [data-pane-resizer]");
       // What the page received, read only when a drag did not resize: the mouse events that
       // reached it, where they landed, and the divider's and panes' geometry.
       const watchMouse = () => browser.execute(() => {
@@ -660,8 +674,8 @@ export const scenarios: Scenario[] = [
           }, { capture: true });
         }
       });
-      const layout = (at: number) => browser.execute((index) => {
-        const resizer = document.querySelectorAll(".monitor [data-pane-resizer]")[index] as HTMLElement | undefined;
+      const layout = () => browser.execute(() => {
+        const resizer = document.querySelector<HTMLElement>(".monitor [data-pane-resizer]");
         const box = resizer?.getBoundingClientRect();
         return {
           window: [innerWidth, innerHeight, devicePixelRatio],
@@ -670,45 +684,38 @@ export const scenarios: Scenario[] = [
           panes: [...document.querySelectorAll<HTMLElement>(".monitor [data-pane]")].map((pane) => Math.round(pane.getBoundingClientRect().width)),
           events: (window as unknown as { resizeLog?: string[] }).resizeLog?.slice(0, 20),
         };
-      }, at);
-      const drag = async (at: number, x: number, y: number, grown: () => Promise<boolean>, what: string) => {
-        await watchMouse();
-        // Press 2px past the line, over the pane after it: the grab zone reaches over both
-        // neighbours, and that pane paints its own layers (the graph's canvas) there.
-        await browser.action("pointer", { id: "resize" })
-          .move({ origin: (await dividers())[at], x: x === 0 ? 0 : 2, y: y === 0 ? 0 : 2 }).down().perform(true);
+      });
+      assert.equal((await browser.$$(".monitor [data-pane-resizer]")).length, 1, "one divider, between the Pane and the Main area");
+      const before = await main();
+      await watchMouse();
+      // Paneforge installs its move listener in a post-press render effect. Keep the real
+      // pointer held across that render boundary, rather than guessing how long it takes.
+      // Press 2px past the line, over the Main area: the grab zone reaches over both sides.
+      await browser.action("pointer", { id: "resize" }).move({ origin: await divider(), x: 2, y: 0 }).down().perform(true);
+      try {
+        await afterRender(browser);
+        const pointer = browser.action("pointer", { id: "resize" });
+        for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x: -20, y: 0 });
+        await pointer.perform(true);
         try {
-          await afterRender(browser);
-          const pointer = browser.action("pointer", { id: "resize" });
-          for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x, y });
-          await pointer.perform(true);
-          try {
-            await browser.waitUntil(grown, { timeout: 15000, timeoutMsg: `the dragged ${what}` });
-          } catch (error) {
-            throw new Error(`the dragged ${what}: ${JSON.stringify(await layout(at))}`, { cause: error });
-          }
-          await browser.action("pointer", { id: "resize" }).up().perform();
-        } finally { await browser.releaseActions(); }
-        await browser.waitUntil(grown, { timeout: 15000, timeoutMsg: `a larger ${what}` });
-      };
-      const graph = () => size(".monitor .stage", "width");
-      const scope = () => size('[role="listbox"][aria-label="Scope"]', "height");
-      const graphBefore = await graph();
-      const scopeBefore = await scope();
-      assert.equal((await dividers()).length, 2, "one divider between Scope and Runs, one between the left side and the graph");
-      // In document order: Scope | Runs inside the left side, then the left side | the graph.
-      await drag(1, -20, 0, async () => (await graph()) > graphBefore + 60, "Run graph");
-      await drag(0, 0, 20, async () => (await scope()) > scopeBefore + 60, "Scope pane");
+          await browser.waitUntil(async () => (await main()) > before + 60, { timeout: 15000, timeoutMsg: "the dragged Main area" });
+        } catch (error) {
+          throw new Error(`the dragged Main area: ${JSON.stringify(await layout())}`, { cause: error });
+        }
+        await browser.action("pointer", { id: "resize" }).up().perform();
+      } finally { await browser.releaseActions(); }
+      const split = await main();
+      assert.ok(split > before + 60, "the Main area grew by the drag");
 
-      // The Detail's left edge: a drag widens it within the graph's area, and it opens again
-      // at that width.
+      // The Detail's left edge: a drag widens it within the Main area, and it opens again at
+      // that width.
       await openArtifact(browser, "a:docs", "Artifact docs");
       const placed = () => browser.execute(() => {
         const dock = document.querySelector('.stage aside[aria-label="Detail"]')?.getBoundingClientRect();
         const stage = document.querySelector(".stage")!.getBoundingClientRect();
         return dock ? { width: Math.round(dock.width), left: Math.round(dock.left - stage.left), right: Math.round(stage.right - dock.right) } : null;
       });
-      const before = (await placed())!;
+      const shown = (await placed())!;
       const edge = await browser.$('aside[aria-label="Detail"] [role="separator"][aria-label="Detail width"]');
       await browser.action("pointer", { id: "edge" }).move({ origin: edge, x: 0, y: 0 }).down().perform(true);
       try {
@@ -719,10 +726,10 @@ export const scenarios: Scenario[] = [
       let widened: Awaited<ReturnType<typeof placed>> = null;
       await browser.waitUntil(async () => {
         widened = await placed();
-        return !!widened && widened.width > before.width + 60;
+        return !!widened && widened.width > shown.width + 60;
       }, { timeout: 15000, timeoutMsg: "the dragged Detail widened" })
-        .catch((error: unknown) => { throw new Error(`${String(error)}: ${JSON.stringify({ before, widened })}`); });
-      assert.ok(widened!.left > 0 && widened!.right > 0, `the Detail stays within the graph's area: ${JSON.stringify(widened)}`);
+        .catch((error: unknown) => { throw new Error(`${String(error)}: ${JSON.stringify({ shown, widened })}`); });
+      assert.ok(widened!.left > 0 && widened!.right > 0, `the Detail stays within the Main area: ${JSON.stringify(widened)}`);
       await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closed");
       await openArtifact(browser, "a:docs", "Artifact docs");
       assert.equal((await placed())?.width, widened!.width, "the Detail opens again at its dragged width");
@@ -745,12 +752,13 @@ export const scenarios: Scenario[] = [
         const tab = dock.querySelector<HTMLElement>('[role="tab"] .label')!;
         return dock.scrollWidth <= dock.clientWidth && heading.scrollWidth <= heading.clientWidth && tab.scrollWidth <= tab.clientWidth;
       });
-      assert.ok(readable && minimum.width <= before.width && minimum.left > 0 && minimum.right > 0, "the minimum is a readable, contained column, not collapsed text");
+      assert.ok(readable && minimum.width <= shown.width && minimum.left > 0 && minimum.right > 0, "the minimum is a readable, contained column, not collapsed text");
       await dragEdge(Math.round(room.right - 1));
       assert.equal((await placed())?.width, minimum.width, "dragging past the minimum cannot shrink the column further");
-      await dragEdge(Math.round(room.left + 1));
+      // Dragged as far left as the pointer goes, over the Pane: it stops short of the Pane.
+      await dragEdge(Math.round(room.left - 40));
       const maximum = (await placed())!;
-      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right > 0, "the widest Detail stays in its graph area");
+      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right > 0, "the widest Detail stays in the Main area, never over the Pane");
       const graphVisible = await browser.execute(() => {
         const stage = document.querySelector(".stage")!.getBoundingClientRect();
         const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
@@ -761,33 +769,32 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => Math.abs((await placed())!.width - width) <= 1, { timeout: 15000, timeoutMsg: "the independently chosen persisted width" });
       const cursor = await browser.execute(() => ({
         edge: getComputedStyle(document.querySelector('aside[aria-label="Detail"] [aria-label="Detail width"]')!).cursor,
-        divider: getComputedStyle(document.querySelectorAll(".monitor [data-pane-resizer]")[1]).cursor,
+        divider: getComputedStyle(document.querySelector(".monitor [data-pane-resizer]")!).cursor,
       }));
       assert.match(cursor.edge, /(?:ew|col)-resize/);
       assert.match(cursor.divider, /(?:ew|col)-resize/);
       const edgePoint = await visibleCenter(browser, await browser.$('aside[aria-label="Detail"] [aria-label="Detail width"]').getElement());
       await browser.action("pointer").move(edgePoint).perform();
       assert.equal(await browser.$('[role="tooltip"], [role="menu"]').isExisting(), false, "hovering the edge opens nothing");
-      await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closes before removing the graph");
-      const split = await graph();
-      // No graph in another repository: the same dragged split remains, then restores its Run.
-      const scopes = await browser.$$('[aria-label="Scope"] [role="option"]').getElements();
-      const empty = [];
-      for (const row of scopes) if ((await row.getText()).includes("empty-repo")) empty.push(row);
-      assert.equal(empty.length, 1, "the launch repository has its own empty scope");
-      await empty[0].click();
-      await browser.waitUntil(async () => (await browser.$(".stage").getText()).includes("Select a Run."), { timeout: 15000, timeoutMsg: "the empty scope removes the graph, not the pane" });
-      assert.equal(await graph(), split, "the split stays as dragged without a graph");
-      const divider = await visibleCenter(browser, await browser.$$('.monitor [data-pane-resizer]')[1].getElement());
-      await browser.action("pointer").move(divider).perform();
+      await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closes");
+      // The split stays as dragged whatever the Main area shows: another branch's Current,
+      // then Settings, then the Run again.
+      await selectBranch(browser, "empty-repo  master");
+      await browser.waitUntil(async () => (await mainTitle(browser)) === "Current · empty-repo  master", { timeout: 15000, timeoutMsg: "the other branch's Current shown" });
+      assert.equal(await main(), split, "the split stays as dragged on a Current");
+      await browser.$("button*=Settings").click();
+      await browser.waitUntil(async () => (await mainTitle(browser)) === "Settings", { timeout: 15000, timeoutMsg: "Settings shown" });
+      assert.equal(await main(), split, "the split stays as dragged on Settings");
+      const line = await visibleCenter(browser, await divider().getElement());
+      await browser.action("pointer").move(line).perform();
       assert.equal(await browser.$('[role="tooltip"], [role="menu"]').isExisting(), false, "hovering the divider opens nothing");
-      await browser.$('[aria-label="Scope"] [data-index="0"]').click();
+      await selectBranch(browser, "repo  master");
       await graphShown(browser, "a:docs");
-      assert.equal(await graph(), split, "the restored graph keeps the dragged split");
+      assert.equal(await main(), split, "the Run shown again keeps the dragged split");
     },
     async (browser, { data: { width } }) => {
-      await browser.$('[aria-label="Scope"] [data-index="0"]').waitForExist({ timeout: 15000 });
-      await browser.$('[aria-label="Scope"] [data-index="0"]').click();
+      await listed(browser, "repo  master");
+      await selectBranch(browser, "repo  master");
       await graphShown(browser, "a:docs");
       await openArtifact(browser, "a:docs", "Artifact docs");
       const actual = await browser.execute(() => Math.round(document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect().width));
@@ -795,61 +802,122 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-SCOPE-MOVE E-MON-SCOPE-RUNS E-MON-RUNS-MOVE E-MON-RUNS-GRAPH
-  // E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-HUMAN-ESC-DETAIL E-MON-GRAPH-TO-RUNS E-MON-RUNS-TO-SCOPE
-  scenario<NavigationData>(
-    "monitor-navigate-journey",
-    "walks Scope → another Run → its graph by keys, opens an Artifact's Detail and eval tab by clicks, and steps back to Scope by keys",
-    async () => {
-      const { fixture, ...data } = await createNavigationFixture();
-      return { fixture, data };
-    },
-    async (browser, { data: example }) => {
-      const pane = (name: string) => browser.$(`[role="listbox"][aria-label="${name}"]`);
-      const selectedRun = () => browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
-      const scopeIndex = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"]')]
-          .findIndex((row) => row.getAttribute("aria-selected") === "true"));
-      await browser.waitUntil(() => pane("Runs").isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
-      const [older, newer] = example.runs;
-      await press(browser, ["ArrowLeft"], () => pane("Scope").isFocused(), "Scope focused");
-      const labels = await browser.execute(() => [...document.querySelectorAll('[aria-label="Scope"] [role="option"] .label')]
-        .map((row) => row.textContent?.trim() ?? ""));
-      const repo = labels.indexOf("repo");
-      assert.ok(repo > 0, "this case's repository follows ALL");
-      while ((await scopeIndex()) < repo) {
-        const before = await scopeIndex();
-        await press(browser, ["ArrowDown"], async () => (await scopeIndex()) === before + 1, "the next scope selected");
-      }
-      assert.equal(await scopeIndex(), repo);
-      const runs = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Runs"] .id')]
-        .map((row) => row.textContent?.split(/\s/)[0] ?? "").sort());
-      await browser.waitUntil(async () => JSON.stringify(await runs()) === JSON.stringify([...example.scopes.repo].sort()), { timeout: 15000, timeoutMsg: "the selected repository's exact Runs" });
-      await press(browser, ["Enter"], () => pane("Runs").isFocused(), "the repository's Runs focused");
-      assert.equal(await selectedRun(), newer.id);
-      await press(browser, ["ArrowDown"], async () => (await selectedRun()) === older.id, "another identified Run selected");
-      const graph = () => browser.$('section.panel[aria-label^="Run run-"]');
-      await press(browser, ["Enter"], () => graph().isFocused(), "that Run's graph focused");
-      const opened = await openArtifact(browser, "a:subject", "Artifact subject");
-      assert.deepEqual(opened.evals.map((row) => row.name), [older.eval], "the older Run's own criterion");
-      await openTab(browser, `e:subject/${older.eval}`);
-      const human = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"][tabindex="0"]');
-      await browser.waitUntil(() => browser.execute((name) => document.querySelector('[aria-label="Human review"] h3')?.textContent?.includes(`subject/${name}`) ?? false,
-        older.eval), { timeout: 15000, timeoutMsg: "the eval's tab holds this journey's Human review" });
-      await human().click();
-      // Esc leaves the review's Detail, back on the graph; Esc again steps back to Runs.
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null && await graph().isFocused(), "the Detail closed, the graph focused");
-      await press(browser, ["Escape"], () => pane("Runs").isFocused(), "back to Runs");
-      assert.equal(await selectedRun(), older.id, "the same Run remains selected");
-      await press(browser, ["ArrowLeft"], () => pane("Scope").isFocused(), "back to Scope");
-      assert.equal(await scopeIndex(), repo, "the same repository scope remains selected");
+  // UX journey: J-DETAIL-TOOLS; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-TOOL E-DETAIL-TOOL-LAUNCH E-DETAIL-TOOL-FAIL
+  scenario<null>(
+    "monitor-detail-tools",
+    "runs an Artifact's own tools from its Detail at once, unclaimed and recorded as no review's evidence: output, a launch and a failure in its Tool log",
+    () => atRepo(),
+    async (browser, { fixture }) => {
+      const DETAIL = 'aside[aria-label="Detail"]';
+      await monitorUI(browser, fixture);
+      await openArtifact(browser, "a:release", "Artifact release");
+      const tools = () => browser.$(DETAIL).$('section[aria-label="Tools of release"]');
+      await tools().$("button=▶ notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own tools listed" });
+      // Below its evals and above its path: the Tools, then their Tool log.
+      const order = await browser.execute((root) => {
+        const dock = document.querySelector(root)!;
+        const parts = [dock.querySelector('[aria-label^="Evals of "]'), dock.querySelector('section[aria-label="Tools of release"]'),
+          dock.querySelector('[role="log"][aria-label="Tool log"]'), dock.querySelector('[role="document"] .card > p.line')];
+        return parts.every(Boolean) && parts.every((part, at) => at === 0 || (parts[at - 1]!.compareDocumentPosition(part!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+      }, DETAIL);
+      assert.ok(order, "its evals, then its Tools and their Tool log, then its path");
+      assert.equal(await browser.$(".graph .svelte-flow__node button").isExisting(), false, "the graph's nodes carry no tool buttons");
+      const toolRunsBefore = (await checkpoint(browser)).activity.commands.artifactToolRun?.completed ?? 0;
+      // An output tool runs at once, unclaimed: its start, each line it printed and its exit.
+      await tools().$("button=▶ notes").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the notes run ended" });
+      assert.deepEqual(await runIn(browser, DETAIL, "notes"), [
+        { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
+        { text: "# Release notes", kind: "line", error: false },
+        { text: "- Ready to ship.", kind: "line", error: false },
+        { text: "■ exit 0", kind: "end", error: false },
+      ]);
+      assert.equal((await logIn(browser, DETAIL)).noticeError, false);
+      assert.ok(((await checkpoint(browser)).activity.commands.artifactToolRun?.completed ?? 0) > toolRunsBefore, "the same probe observes this tool's run");
+      assert.equal(signoff(fixture).claim, null, "running a tool claimed nothing");
+      // A launch tool answers at once and says so; its application runs and its exit ends the run.
+      assert.equal(launched(fixture), false);
+      await tools().$("button=▶ open").click();
+      await browser.waitUntil(async () => (await logIn(browser, DETAIL)).notice === "open_release launched.", { timeout: 15000, timeoutMsg: "the launch said" });
+      await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application ran" });
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "its exit logged" });
+      // A launch tool whose application keeps running still returns at once: the launch is said,
+      // the Detail's tools are usable again and its run stays open in the Tool log.
+      await tools().$("button=▶ talk").click();
+      await browser.waitUntil(async () => (await logIn(browser, DETAIL)).notice === "talk_release launched." &&
+        (await runIn(browser, DETAIL, "talk"))?.some((row) => row.text === "opened the stand-in") === true &&
+        await tools().$("button=▶ notes").isEnabled(), { timeout: 15000, timeoutMsg: "the launch returned while its application runs" });
+      assert.ok(!(await runIn(browser, DETAIL, "talk"))!.some((row) => row.kind === "end"), "the launched application has not ended");
+      // Let it go on: what it prints next joins its run, and its exit ends it.
+      finishTalk(fixture);
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "talk"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "the stand-in's exit logged" });
+      assert.ok((await runIn(browser, DETAIL, "talk"))!.some((row) => row.text === "chose: B"), "its later lines joined its own run");
+      // A failing tool says so, its run ended red.
+      await tools().$("button=▶ fail").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "fail"))?.at(-1)?.kind === "end" && (await logIn(browser, DETAIL)).noticeError,
+        { timeout: 15000, timeoutMsg: "the failing tool's end and error" });
+      assert.deepEqual(await runIn(browser, DETAIL, "fail"), [
+        { text: "▶ HH:MM:SS · fail · release", kind: "start", error: false },
+        { text: "■ exit 1", kind: "end", error: true },
+      ]);
+      // None of it is a review's evidence: the sign-off still waits, unclaimed, its own Tool log empty.
+      const saved = signoff(fixture);
+      assert.deepEqual([saved.status, saved.claim, saved.result], ["WAITING_HUMAN", null, null]);
+      assert.ok(requests(fixture).every((request) => request.claim === null), "no request was claimed");
+      await openTab(browser, "e:release/signoff");
+      await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
+      await browser.waitUntil(async () => (await logIn(browser, '[aria-label="Human review"]')).rows.length === 0 &&
+        await browser.$('[aria-label="Human review"] [role="log"][aria-label="Tool log"]').isExisting(), { timeout: 15000, timeoutMsg: "the review's own Tool log is empty" });
     },
   ),
 
-  // UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
+  // UX journey: J-DETAIL-TOOLS; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-TOOL
+  scenario<{ run: string }>(
+    "monitor-detail-tools-now",
+    "runs a shown Run's Artifact tools as the branch declares them now, in its worktree as it is now, not as the Run saw it",
+    async () => {
+      const fixture = await create();
+      const run = signoff(fixture).runId;
+      // After the Run was saved: release declares one more tool, and its notes change.
+      const declaration = nativePath(fixture.repo, "release", "index.artf");
+      writeText(declaration, readText(declaration).replace("[views.human_tools]\n",
+        '[views.human_tools]\nlatest = { description = "Print the notes as they are now.", builtin = "read", args = ["{artifactPath}/notes.md"] }\n'));
+      writeText(nativePath(fixture.repo, "release", "notes.md"), "# Release notes\n- Changed after the Run.\n");
+      return { fixture, args: ["--repo", fixture.repo], data: { run } };
+    },
+    async (browser, { data: { run } }) => {
+      const DETAIL = 'aside[aria-label="Detail"]';
+      await browser.waitUntil(async () => (await mainTitle(browser)) === `Run ${run}`, { timeout: 15000, timeoutMsg: "the Run saved before the change shown" });
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:release", "Artifact release");
+      const tools = () => browser.$(DETAIL).$('section[aria-label="Tools of release"]');
+      // The tool declared only after the Run was saved is listed and runs.
+      await tools().$("button=▶ latest").waitForEnabled({ timeout: 15000, timeoutMsg: "the tool declared now listed" });
+      await tools().$("button=▶ latest").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "latest"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the latest run ended" });
+      const latest = (await runIn(browser, DETAIL, "latest"))!;
+      assert.deepEqual([latest[0], latest.at(-1)], [
+        { text: "▶ HH:MM:SS · latest · release", kind: "start", error: false },
+        { text: "■ done", kind: "end", error: false },
+      ]);
+      assert.ok(latest.some((row) => row.kind === "line" && row.text.includes("- Changed after the Run.")), `it read today's notes: ${JSON.stringify(latest)}`);
+      // A command tool runs in the worktree as it is now: it prints the changed notes.
+      await tools().$("button=▶ notes").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the notes run ended" });
+      assert.deepEqual(await runIn(browser, DETAIL, "notes"), [
+        { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
+        { text: "# Release notes", kind: "line", error: false },
+        { text: "- Changed after the Run.", kind: "line", error: false },
+        { text: "■ exit 0", kind: "end", error: false },
+      ]);
+    },
+  ),
+
+  // UX journey: J-QUIT; UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
   scenario<null>(
     "monitor-quit-claim",
     "asks before quitting with a claim taken here: Esc stays, u releases and quits",
-    async () => ({ fixture: await create(), data: null }),
+    () => atRepo(),
     async (browser, { fixture }) => {
       await graphShown(browser, "a:release");
       // A click on release, then on its sign-off's tab, opens the Human Detail.

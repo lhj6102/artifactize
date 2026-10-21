@@ -1,15 +1,19 @@
 <script lang="ts">
-  // One Artifact of the Run graph: its name and how it is lit, nothing about its evals.
+  // One Artifact of a graph: its name and how it is lit, on a Current also what verify would do
+  // with it; nothing about its evals.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
   import type { Light } from "../ipc/client";
 
-  let { data, selected }: NodeProps & { data: { name: string; light: Light; open: boolean } } = $props();
+  let { data, selected }: NodeProps & { data: { name: string; light: Light; note: string | null; open: boolean } } = $props();
 </script>
 
 <div class="artifact light-{data.light}" class:selected class:open={data.open}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="dot" aria-hidden="true"></span>
-  <span class="name">{data.name}</span>
+  <span class="text">
+    <span class="name">{data.name}</span>
+    {#if data.note}<span class="note">{data.note}</span>{/if}
+  </span>
   <Handle type="source" position={Position.Right} isConnectable={false} />
 </div>
 
@@ -45,10 +49,21 @@
     border-radius: 50%;
     background: var(--light);
   }
-  .name {
+  .text {
+    display: grid;
+    min-width: 0;
+    line-height: 1.25;
+  }
+  .name,
+  .note {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .note {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
   }
   .artifact :global(.svelte-flow__handle) {
     opacity: 0;

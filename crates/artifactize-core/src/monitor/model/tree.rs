@@ -384,7 +384,7 @@ fn compact(view: &EvalView, right: &str) -> String {
     }
 }
 
-fn local(eval: &EvalId) -> &str {
+pub(crate) fn local(eval: &EvalId) -> &str {
     eval.rsplit_once('/')
         .map_or(eval.as_str(), |(_, local)| local)
 }

@@ -185,6 +185,7 @@ it("every Agent action crosses the authenticated loopback protocol with its orig
     { mode: "act", args: { action: "type", element: 4, text: "한글 input" }, request: { op: "type", element: 4, text: "한글 input" } },
     { mode: "act", args: { action: "key", key: "Control+k" }, request: { op: "key", key: "Control+k" } },
     { mode: "launch", args: { screen: "monitor" }, request: { op: "launch", screen: "monitor" } },
+    { mode: "launch", args: { screen: "repo" }, request: { op: "launch", screen: "repo" } },
     { mode: "launch", args: { screen: "review" }, request: { op: "launch", screen: "review" } },
     { mode: "launch", args: { screen: "graph" }, request: { op: "launch", screen: "graph" } },
     { mode: "change-declaration", args: {}, request: { op: "change-declaration" } },

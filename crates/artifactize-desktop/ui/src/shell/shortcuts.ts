@@ -1,21 +1,22 @@
-// The keys each screen answers to, for the help dialog.
+// The keys of what has focus, for the help dialog.
 type Section = { title: string; keys: [string, string][] };
 
 const COMMON: Section = {
   title: "Window",
   keys: [
     ["Ctrl+K", "Command palette"],
-    ["Ctrl+1 / Ctrl+2", "Monitor / Review"],
-    ["Ctrl+,", "Settings"],
-    ["Ctrl+R / F5", "Refresh"],
+    ["Ctrl+,", "Settings, and back"],
+    ["Ctrl+O", "Open a request by ID"],
+    ["/ · Ctrl+F", "Search branches and reviews"],
+    ["Ctrl+R / F5", "Refresh, and scan the branches again"],
     ["?", "These shortcuts"],
     ["q", "Quit (outside fields)"],
-    ["Tab / Shift+Tab", "Next / previous pane or control"],
+    ["Tab / Shift+Tab", "Next / previous part or control"],
   ],
 };
 
 const HUMAN: Section = {
-  title: "Human Detail",
+  title: "Human review",
   keys: [
     ["c", "Claim"],
     ["g / r", "GREEN / RED form, after claim"],
@@ -30,79 +31,49 @@ const HUMAN: Section = {
   ],
 };
 
-export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]> = {
-  graph: [
-    {
-      title: "Current Artifact graph",
-      keys: [
-        ["Click an Artifact", "Show its evals over the graph's right side"],
-        ["Click an eval", "Expand structure and evaluation criteria"],
-        ["Esc · click the background", "Close the evals"],
-        ["Ctrl+R / F5", "Reload current declarations"],
-      ],
-    },
-    COMMON,
+const GRAPH: Section = {
+  title: "Graph and Detail",
+  keys: [
+    ["Click an Artifact", "Open its Detail; another Artifact switches it"],
+    ["Click the headline", "Open the Run's Detail"],
+    ["Click the background", "Close the Detail"],
+    ["Tab · Enter", "Focus an Artifact · open its Detail"],
+    ["Click a tab or an eval", "Show the Artifact or that eval"],
+    ["Click ▶ under Tools", "Run one of the Artifact's tools in its worktree"],
+    ["t / w", "Debug / pending evals"],
+    ["Drag the left edge", "Resize the Detail"],
+    ["Esc", "Close the Detail, then back to the Pane"],
+    [
+      "Colours",
+      "Run: green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked. Current: teal reused · blue would run · grey waiting · dark red blocked",
+    ],
   ],
-  monitor: [
+};
+
+export const HELP: Record<"pane" | "main" | "settings", Section[]> = {
+  pane: [
     {
-      title: "Navigate",
+      title: "Pane",
       keys: [
-        ["↑ / ↓ · j / k", "Select a scope or a Run"],
-        ["Enter / →", "Next level: Scope, Runs, the Run's graph"],
-        ["← / Esc", "Step back"],
-        ["Space", "Worktrees without Runs"],
-      ],
-    },
-    {
-      title: "Run graph",
-      keys: [
-        ["Click an Artifact", "Open its Detail; another Artifact switches it"],
-        ["Click the headline", "Open the Run's Detail"],
-        ["Click the background", "Close the Detail"],
-        ["Tab · Enter", "Focus an Artifact · open its Detail"],
-        ["Esc", "Close the Detail, then step back"],
-        [
-          "Colours",
-          "green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked by an upstream RED, ERROR or block",
-        ],
-      ],
-    },
-    {
-      title: "Detail",
-      keys: [
-        ["Click a tab or an eval", "Show the Artifact or that eval"],
-        ["Click Summary · a log", "Show the eval's Summary, or its Agent or Runtime log"],
-        ["t / w", "Technical / pending evals"],
-        ["Drag the left edge", "Resize the Detail"],
-        ["Esc / ← · Close", "Close the Detail"],
-      ],
-    },
-    HUMAN,
-    COMMON,
-  ],
-  review: [
-    {
-      title: "Requests",
-      keys: [
-        ["↑ / ↓ · j / k", "Select a request"],
-        ["Enter / →", "Open it: a Human review, or any other request read-only"],
-        ["Right-click · Ctrl+K", "Open a Human review with Tools focused (palette: Open the selected request with Tools focused)"],
-        ["PgDn / PgUp", "Older / newer page"],
-        ["Ctrl+O", "Open a request by ID"],
+        ["↑ / ↓ · j / k", "Select a branch, then a waiting review"],
+        ["← / →", "The selected branch's previous / next chip"],
+        ["Enter", "Go to the Main area, or open the selected review"],
+        ["Click a branch · a chip", "Show its last chip · that chip"],
+        ["Drag a chip row", "Scroll it; older Runs arrive at its start"],
       ],
     },
     {
       title: "Search",
       keys: [
-        ["/ · Ctrl+F", "Search requests"],
-        ["text · key:value", "Every term must match; keys repo eval request reviewer tag kind status is"],
+        ["text · key:value", "Every term must match; keys repo branch sort"],
+        ["sort:recent · sort:name", "Most recent Run first · by project and branch"],
         ["↑ / ↓ · Tab / Enter", "Choose / take a suggestion"],
-        ["Esc", "Close suggestions, then clear, then back to the list"],
+        ["Esc", "Close suggestions, then put sort:recent back, then back to the entries"],
       ],
     },
-    HUMAN,
     COMMON,
   ],
+  main: [GRAPH, HUMAN, COMMON],
   settings: [
     {
       title: "Settings",
@@ -111,6 +82,7 @@ export const HELP: Record<"monitor" | "review" | "settings" | "graph", Section[]
         ["Keys", "OPENAI_API_KEY and ANTHROPIC_API_KEY come from the environment only; shown as set or not"],
         ["Models", "List what a backend offers, as `artifactize models`"],
         ["Remote", "Sign in with a store URL and token, check status, sign out or push, as `artifactize remote`"],
+        ["Esc", "Back to what the Main area showed"],
         ["Tab / Shift+Tab", "Next / previous control"],
       ],
     },

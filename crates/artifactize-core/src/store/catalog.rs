@@ -19,6 +19,9 @@ pub enum Signoff {
 
 #[derive(Debug, Clone)]
 pub struct CatalogRun {
+    pub id: crate::types::RunId,
+    pub created_at: crate::types::Timestamp,
+    pub completed_at: Option<crate::types::Timestamp>,
     pub repo_path: PathBuf,
     pub repository: Identity,
     pub status: RunStatus,
@@ -67,13 +70,29 @@ pub(super) fn in_snapshot(
     in_snapshot_cached(db, state, &mut Facts::default(), &mut Seen::default())
 }
 
-/// Each Run's fact by the digest of its record, with the digest of its definitions.
+/// Each saved Run's catalog fact, or why its record cannot be read, by the digest of the
+/// record it was decoded from, with the digest of its definitions: an unchanged record is
+/// never decoded again.
 #[derive(Default)]
 pub(super) struct Facts {
-    runs: std::collections::BTreeMap<
-        crate::types::RunId,
-        (Sha256Bytes, Option<Sha256Bytes>, Option<CatalogRun>),
-    >,
+    runs: std::collections::BTreeMap<crate::types::RunId, Fact>,
+}
+
+/// A Run record's digest, its definitions' digest, and its catalog fact or why it is unreadable.
+type Fact = (
+    Sha256Bytes,
+    Option<Sha256Bytes>,
+    Result<CatalogRun, super::Unreadable>,
+);
+
+impl Facts {
+    /// The Run records the last catalog read could not decode, in the state's order.
+    pub(super) fn unreadable(&self) -> Vec<super::Unreadable> {
+        self.runs
+            .values()
+            .filter_map(|(_, _, fact)| fact.as_ref().err().cloned())
+            .collect()
+    }
 }
 
 pub(super) fn in_snapshot_cached(
@@ -98,11 +117,18 @@ pub(super) fn in_snapshot_cached(
         let digest = Sha256Bytes::of(data.as_bytes());
         let (definitions, fact) = match facts.runs.remove(&id) {
             Some((saved, definitions, fact)) if saved == digest => (definitions, fact),
-            // Only the Run's own facts: its definitions are not decoded.
-            _ => match seen.facts(&id, &data) {
+            // The Run's own facts, and whether its definitions read: each set of definitions
+            // is checked once by its digest, never kept here.
+            _ => match seen
+                .facts(&id, &data)
+                .and_then(|facts| seen.check(&id, &data).map(|()| facts))
+            {
                 Ok((run, definitions)) => {
                     let status = run.status();
                     let fact = CatalogRun {
+                        id: run.id.clone(),
+                        created_at: run.created_at,
+                        completed_at: run.completed_at(),
                         repo_path: run.repo_path,
                         repository: run.repository,
                         status,
@@ -110,16 +136,13 @@ pub(super) fn in_snapshot_cached(
                         error: 0,
                         waiting: Vec::new(),
                     };
-                    (definitions, Some(fact))
+                    (definitions, Ok(fact))
                 }
-                Err(unreadable) => {
-                    super::unreadable::skipped(&unreadable);
-                    (None, None)
-                }
+                Err(unreadable) => (None, Err(unreadable)),
             },
         };
         retained.insert(id.clone(), (digest, definitions, fact.clone()));
-        if let Some(fact) = fact {
+        if let Ok(fact) = fact {
             order.push(id.clone());
             catalog.insert(id, fact);
         }

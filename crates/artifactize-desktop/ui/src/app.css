@@ -18,13 +18,15 @@
   --human: #a3570b;
   --queued: #6b7280;
   --blocked: #a21caf;
-  /* The Run graph's lights. */
+  /* The graphs' lights: a Run's, then a Current's. */
   --light-green: #16833a;
   --light-active: #c99a06;
   --light-waiting: #9aa1ab;
   --light-red: #dc2626;
   --light-error: #7c3aed;
   --light-blocked: #7f1d1d;
+  --light-run: #1e6fd9;
+  --light-reused: #0f766e;
   --radius: 8px;
   --gap: 12px;
   --pad: 16px;
@@ -59,10 +61,12 @@
     --light-red: #f2675d;
     --light-error: #b48cf5;
     --light-blocked: #9b2c2c;
+    --light-run: #6cb6ff;
+    --light-reused: #2dd4bf;
   }
 }
 
-/* A Run graph node or edge takes its light's colour as --light. */
+/* A graph node or edge takes its light's colour as --light. */
 .light-green {
   --light: var(--light-green);
 }
@@ -80,6 +84,12 @@
 }
 .light-blocked {
   --light: var(--light-blocked);
+}
+.light-run {
+  --light: var(--light-run);
+}
+.light-reused {
+  --light: var(--light-reused);
 }
 
 * {

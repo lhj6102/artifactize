@@ -243,6 +243,10 @@ impl Cache {
         self.catalog_seen = true;
         Ok(catalog)
     }
+    /// The Run records the last [`Cache::catalog`] read could not decode.
+    pub fn unreadable_runs(&self) -> Vec<super::Unreadable> {
+        self.facts.unreadable()
+    }
     pub fn page(
         &mut self,
         db: &Connection,

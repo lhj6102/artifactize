@@ -10,20 +10,21 @@ export const commands = {
 	launch: () => typedError<LaunchView, Failure>(__TAURI_INVOKE("launch")),
 	/**  Navigate, read the state and return what to show. */
 	browse: (navigate: Navigate) => typedError<BrowseView, Failure>(__TAURI_INVOKE("browse", { navigate })),
-	/**  Redraw ages and elapsed times from the shown snapshot, without reading the state. */
+	/**  Redraw ages and running times from the shown snapshot, without reading the state. */
 	redraw: () => __TAURI_INVOKE<BrowseView>("redraw"),
-	/**  Show or hide a repository's worktrees without Runs; no state read. */
-	toggleWorktrees: (repository: RepositoryKey) => __TAURI_INVOKE<BrowseView>("toggle_worktrees", { repository }),
+	/**  Completion candidates for the pane search's last term. */
+	paneComplete: (query: string) => __TAURI_INVOKE<Completion>("pane_complete", { query }),
 	/**
-	 *  The Detail of `node` in the selected Run `run`, from the shown snapshot. A large Run takes
-	 *  a moment to derive, so it is built off the window's thread.
+	 *  The Detail of `node` of `source`: in the shown Run, from the shown snapshot, or in a
+	 *  branch's Current, from its last scan. A large Run takes a moment to derive, so it is built
+	 *  off the window's thread.
 	 */
-	detail: (run: string, node: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("detail", { run, node })),
+	detail: (source: Source, node: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("detail", { source, node })),
 	/**
-	 *  The row of `node` in the selected Run `run`'s tree, from the shown snapshot: an Artifact
-	 *  with its evals, or the Run's own row; `None` when the Run no longer has it.
+	 *  The row of `node` in `source`'s tree: in the shown Run an Artifact with its evals, or the
+	 *  Run's own row; in a Current an Artifact with its evals; `None` when it no longer has it.
 	 */
-	detailRow: (run: string, node: string) => typedError<{
+	detailRow: (source: Source, node: string) => typedError<{
 	/**  Stable tree id: `run:<id>`, `a:<artifact>` or `e:<eval>`. */
 	id: string,
 	kind: NodeKind,
@@ -38,16 +39,16 @@ export const commands = {
 	right: string,
 	/**  The derived state changed after the Run ended. */
 	changed: boolean,
-	/**  An Artifact whose evals are all done: folded unless the user unfolded it. */
+	/**  An Artifact whose evals are all done. */
 	done: boolean,
-	/**  An in-progress or failed eval: where a new Run's cursor starts. */
+	/**  An in-progress or failed eval. */
 	attention: boolean,
-	/**  An ERROR, RED or waiting Human eval: what "next attention" visits. */
+	/**  An ERROR, RED or waiting Human eval. */
 	urgent: boolean,
-	/**  The Artifacts this row depends on, unmet first; `b` cycles through them. */
+	/**  The Artifacts this row depends on, unmet first. */
 	upstream: UpstreamMark[],
 	children: TreeNode[],
-} | null, Failure>(__TAURI_INVOKE("detail_row", { run, node })),
+} | null, Failure>(__TAURI_INVOKE("detail_row", { source, node })),
 	/**
 	 *  Open request `id` in the shared Human Detail. `reload: false` redraws the last read view
 	 *  (its waiting time) without reading the state.
@@ -95,33 +96,34 @@ export const commands = {
 	/**  Release this reviewer's claims on `ids` without a verdict. */
 	humanRelease: (ids: string[], job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**
-	 *  The selected Run `run` as a graph of its Artifacts, from the shown snapshot: only its
-	 *  lights while it keeps the shape `known` the caller holds.
+	 *  The graph of `source`: the shown Run's, from the shown snapshot, only its lights while it
+	 *  keeps the shape `known` the caller holds; or a branch's Current as its last scan found it.
 	 */
-	runGraph: (run: string, known: number | null) => typedError<RunGraph, Failure>(__TAURI_INVOKE("run_graph", { run, known })),
+	graph: (source: Source, known: number | null) => typedError<Graph, Failure>(__TAURI_INVOKE("graph", { source, known })),
 	/**
-	 *  The Artifact `node` of the selected Run `run` between its neighbours: the Artifacts its
-	 *  evals use, itself, then those whose evals use it, with the edges between it and them.
+	 *  The Artifact `node` of `source` between its neighbours: the Artifacts its evals use,
+	 *  itself, then those whose evals use it, with the edges between it and them.
 	 */
-	runNeighbours: (run: string, node: string) => typedError<Neighbours, Failure>(__TAURI_INVOKE("run_neighbours", { run, node })),
-	currentGraph: () => typedError<CurrentGraph, Failure>(__TAURI_INVOKE("current_graph")),
+	neighbours: (source: Source, node: string) => typedError<Neighbours, Failure>(__TAURI_INVOKE("neighbours", { source, node })),
 	/**
-	 *  Requests matching `query` from position `start` (0 for the newest). `reload: false`
-	 *  redraws the last page of the same query and start without reading the state.
+	 *  Scan `branch`'s worktree as it is now. Scanning it again cancels this scan, which then
+	 *  answers with the newer one's view once that one ends.
 	 */
-	reviewSearch: (query: string, start: number, reload: boolean) => typedError<Results, Failure>(__TAURI_INVOKE("review_search", { query, start, reload })),
+	currentScan: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch })),
 	/**
-	 *  How many requests the review list's starting search finds: the waiting Human reviews, of
-	 *  `--repo` when given. The screen switch shows it beside Review.
+	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
+	 *  what running each does.
 	 */
-	reviewWaiting: () => typedError<number, Failure>(__TAURI_INVOKE("review_waiting")),
+	artifactTools: (branch: BranchKey, artifact: string) => typedError<ToolView[], Failure>(__TAURI_INVOKE("artifact_tools", { branch, artifact })),
 	/**
-	 *  Completion candidates for the query's last term, from the requests the terms before it
-	 *  find.
+	 *  Run tool `tool` of Artifact `artifact` at once in `branch`'s worktree; job number `job`
+	 *  cancels it. What it prints arrives as [`crate::human::log::HumanToolLog`] events keyed by
+	 *  the Artifact; a launch tool answers at once and its program's output keeps arriving until
+	 *  it exits.
 	 */
-	reviewComplete: (query: string) => typedError<Completion, Failure>(__TAURI_INVOKE("review_complete", { query })),
-	/**  The read-only Detail of request `id` in its Run, as the monitor shows it. */
-	reviewDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("review_detail", { id })),
+	artifactToolRun: (branch: BranchKey, artifact: string, tool: string, job: JobId) => typedError<Notice, Failure>(__TAURI_INVOKE("artifact_tool_run", { branch, artifact, tool, job })),
+	/**  The read-only Detail of request `id` in its Run. */
+	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
 	/**  Claims this window took and has neither submitted nor released, for the quit prompt. */
 	humanTaken: () => __TAURI_INVOKE<string[]>("human_taken"),
 	/**
@@ -197,20 +199,46 @@ export type Attention = {
 	text: string,
 };
 
-export type BrowseView = {
-	scope: ScopeKey,
-	/**  The breadcrumb's name for the scope. */
-	scopeLabel: string,
-	scopes: ScopeRow[],
-	/**  The catalog's attention counters for the header: `!N ✗N ◐N ?N`. */
-	badge: Count[],
-	runs: RunItem[],
-	selectedRun: string | null,
-	/**  More Runs on an older page, or on a newer one. */
+/**
+ *  A branch by value, so a selection survives refreshes that reorder the pane. Paths are
+ *  round-trip; names for people come with the branch.
+ */
+export type BranchKey = 
+/**  A Git repository's branch, by the repository's common directory. */
+{ kind: "branch"; common: PathKey; branch: string } | 
+/**  A detached Git worktree, by its folder. */
+{ kind: "detached"; common: PathKey; path: PathKey } | 
+/**  A folder outside Git. */
+{ kind: "folder"; path: PathKey };
+
+/**  One live branch of the pane: `project  branch`, then its row of chips, oldest first. */
+export type BranchView = {
+	key: BranchKey,
+	project: string,
+	/**  The branch, a detached worktree's folder, or empty for a folder outside Git. */
+	name: string,
+	/**  Where its Current is scanned and its tools run. */
+	workspace: PathKey,
+	/**  Its newest Runs, oldest first, ending with the one in progress or else the Current chip. */
+	chips: Chip[],
+	/**  Older Runs than the row holds exist: reaching its oldest end shows them. */
 	older: boolean,
-	newer: boolean,
+};
+
+export type BrowseView = {
+	query: QueryView,
+	/**  The branches the search keeps, in its order. */
+	branches: BranchView[],
+	/**  The waiting Human reviews the search keeps, newest first. */
+	waiting: WaitingRow[],
+	/**  The branch of the folder the app was started for. */
+	launch: BranchKey | null,
+	/**  The shown Run, once read. */
 	run: RunPanel | null,
-	error: string | null,
+	/**  The shown Run no longer exists or cannot be read. */
+	missing: boolean,
+	/**  What went wrong: a failed read, Run records that cannot be read. */
+	notice: string | null,
 	/**  False until the first snapshot was read. */
 	refreshed: boolean,
 	/**  The state was replaced since the last view: Details and drafts no longer apply. */
@@ -235,6 +263,13 @@ export type CardView = {
 	tokens: number | null,
 	model: string | null,
 };
+
+/**  One chip of a branch's row: a Run, or the branch's Current. */
+export type Chip = { kind: "run"; id: string; mark: Mark; 
+/**  Its status and age, a running one's its time so far: `RED 25m`, `Running 2m 22s`. */
+text: string; running: boolean } | 
+/**  The worktree as it is now. */
+{ kind: "current" };
 
 export type Claimant = {
 	reviewer: string,
@@ -263,9 +298,9 @@ export type CodexStatus =
 /**  Tokens cannot be stored where this state lives, and why. */
 { state: "refused"; reason: string };
 
-/**  The completion of a query's last term. */
+/**  The completion of a search's last term. */
 export type Completion = {
-	/**  The query before the completed term; a candidate replaces the rest. */
+	/**  The search before the completed term; a candidate replaces the rest. */
 	keep: string,
 	candidates: string[],
 };
@@ -279,28 +314,25 @@ export type Connection =
 /**  The store sent no HTTP response. */
 { state: "unreachable"; error: string };
 
-/**  A badge part such as `!2`: a status and how many. */
-export type Count = {
-	mark: Mark,
-	count: number,
-};
-
-export type CurrentGraph = {
+/**  A branch's Current as the Main area shows it. */
+export type CurrentView = {
+	branch: BranchKey,
+	/**  When it was scanned, at milliseconds since the Unix epoch. */
+	scannedAt: number | null,
 	fingerprint: string,
-	graph: Shape,
-	tree: TreeNode[],
-	/**
-	 *  Complete, canonical structural data rendered as text: criteria and relation labels
-	 *  remain inspectable even when several relations share one graph edge.
-	 */
+	/**  Every Artifact, eval criterion and labeled relation as text. */
 	structure: string,
+	/**  Each Artifact with its evals, as the Detail's chips and lists show them. */
+	tree: TreeNode[],
+	/**  Grows with each scan: the graph and an open Detail read again when it does. */
+	revision: number,
 };
 
 /**  What a Detail describes, from the library's [`Target`]. */
 export type DetailTarget = "run" | "artifact" | "eval";
 
 export type DetailView = {
-	run: string,
+	source: Source,
 	node: string,
 	target: DetailTarget,
 	title: string,
@@ -310,6 +342,8 @@ export type DetailView = {
 	request: string | null,
 	profile: Profile | null,
 	mark: Mark | null,
+	/**  On a Current, in place of a status: what verify would do. */
+	plan: PlanLine | null,
 	/**  Outcome → Waits for → What → Provenance → Technical; empty sections are left out. */
 	sections: SectionView[],
 	/**  Saved runtime stdout/stderr, or why there are none. */
@@ -391,6 +425,13 @@ export type FormView = {
 	draft: Draft,
 };
 
+export type Graph = {
+	source: Source,
+	/**  Names the graph's Artifacts and edges, whatever their lights. */
+	shape: ShapeKey,
+	update: Update,
+};
+
 /**  `target`'s evals depend on `source`; both are tree ids. */
 export type GraphEdge = {
 	source: string,
@@ -403,11 +444,13 @@ export type GraphNode = {
 	id: string,
 	name: string,
 	light: Light,
+	/**  Under the name: on a Current what verify would do, `would run (2 evals)`. */
+	note: string | null,
 };
 
 /**  The Tool logs that changed, each whole. */
 export type HumanToolLog = {
-	logs: RequestLog[],
+	logs: KeyedLog[],
 };
 
 /**  One request in the shared Human Detail. */
@@ -448,13 +491,17 @@ export type KeyStatus = {
 	present: boolean,
 };
 
+/**  One Tool log: one entry per run, in the order they started. */
+export type KeyedLog = {
+	key: LogKey,
+	entries: LogEntry[],
+};
+
 /**  What the frontend needs to know about this launch. */
 export type LaunchView = {
 	mode: Mode,
 	state: string,
 	reviewer: string,
-	/**  The review list's first search. */
-	search: string,
 	request: string | null,
 };
 
@@ -471,21 +518,11 @@ export type Light =
 /**  Runnable but still waiting: queued, or for upstream Artifacts not done yet. */
 "waiting" | 
 /**  Every eval is GREEN. */
-"green";
-
-/**  One request the search found. */
-export type Listed = {
-	id: string,
-	eval: string,
-	title: string,
-	kind: Profile,
-	mark: Mark,
-	/**  `-`, the claimant, or `name (you)`. */
-	claim: string,
-	mine: boolean,
-	age: string,
-	repository: string,
-};
+"green" | 
+/**  On a Current: at least one eval would run. */
+"run" | 
+/**  On a Current: every eval's result would be reused. */
+"reused";
 
 /**
  *  One tool run: its start line's facts, what it printed as it ran, and its end line once it
@@ -503,6 +540,9 @@ export type LogEntry = {
 	end: LogText | null,
 };
 
+/**  Whose Tool log it is: a review's, or an Artifact's in a worktree. */
+export type LogKey = { kind: "review"; request: string } | { kind: "artifact"; workspace: PathKey; artifact: string };
+
 /**  One line of a run: what it printed, red when it went to stderr or the run failed. */
 export type LogText = {
 	text: string,
@@ -515,8 +555,14 @@ export type Mark = {
 	glyph: string,
 };
 
-/**  The screen the app opens on; both stay reachable. */
-export type Mode = "monitor" | "review" | "graph";
+/**  What the Main area opens on; everything else stays reachable from the Pane. */
+export type Mode = 
+/**  The branch of `--repo` with its last chip, or nothing chosen. */
+"monitor" | 
+/**  A waiting Human review: the one named, else the newest. */
+"review" | 
+/**  The Current of the branch of `--repo`. */
+"graph";
 
 export type Model = {
 	slug: string,
@@ -525,16 +571,19 @@ export type Model = {
 
 export type Movement = { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" };
 
-/**  A navigation step and how to read the state for it. */
+/**  A step of the pane and how to read the state for it. */
 export type Navigate = {
-	/**  Select this scope; its Runs start again from the newest page. */
-	scope: ScopeKey | null,
-	/**  Select this Run of the shown page. */
+	/**  Show this Run in the Main area. */
 	run: string | null,
-	paging: Paging | null,
-	/**  Read the catalog afresh: refreshes and change hints; navigation reuses it. */
+	/**  Show no Run: the Main area shows a Current, a review or Settings. */
+	close: boolean,
+	/**  The pane's search, when it changed. */
+	query: string | null,
+	/**  Reach further back in this branch's Runs. */
+	older: BranchKey | null,
+	/**  Read the waiting reviews again: refreshes and change hints; navigation reuses them. */
 	full: boolean,
-	/**  Drop every cache first, after a resync hint. */
+	/**  Drop every cache first, after a resync hint or a manual refresh. */
 	resync: boolean,
 };
 
@@ -565,14 +614,20 @@ session: string } |
 /**  Why the conversation cannot be shown. */
 { kind: "unavailable"; text: string };
 
-/**  Which way to page through the selected scope's Runs. */
-export type Paging = "older" | "newer";
-
 /**
  *  A path as the frontend holds it: text with `/` on every system, which `PathBuf` reads back
  *  on all of them. Only this type makes or reads one.
  */
 export type PathKey = string;
+
+/**  On a Current: what verify would do with the Artifact or eval, and why. */
+export type PlanLine = {
+	glyph: string,
+	/**  `would run (2 evals)`, `reused`, `waiting` or `blocked`. */
+	text: string,
+	tone: Tone,
+	reason: string,
+};
 
 export type Profile = "runtime" | "agent" | "human";
 
@@ -586,23 +641,16 @@ export type Pushed = {
 	skipped: number,
 };
 
+/**  The pane's search as typed, and why it lists nothing when it cannot be read. */
+export type QueryView = {
+	text: string,
+	error: string | null,
+};
+
 /**  `remote status`: never the token. */
 export type RemoteStatus = 
 /**  No remote review store is configured. */
 { state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection };
-
-/**  A repository as the catalog groups Runs: Git clones by their common directory. */
-export type RepositoryKey = 
-/**  The common Git directory. */
-{ kind: "git"; path: PathKey } | 
-/**  A non-Git workspace. */
-{ kind: "workspace"; path: PathKey };
-
-/**  The Tool log of one review: one entry per run, in the order they started. */
-export type RequestLog = {
-	request: string,
-	entries: LogEntry[],
-};
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
@@ -613,19 +661,6 @@ export type ResultItem = {
 	fields: Field[],
 };
 
-/**  A page of what the query found. */
-export type Results = {
-	/**  The state generation it was read from; a newer one drops open reviews and drafts. */
-	generation: number,
-	rows: Listed[],
-	/**  Where the next (older) page starts, when there is one. */
-	next: number | null,
-	/**  Why the query is invalid; it then lists nothing. */
-	error: string | null,
-	/**  Only waiting Human reviews can match, as with the default query. */
-	waiting: boolean,
-};
-
 export type Row = {
 	text: string,
 	/**  A collapsed tool activity line; toggling it shows names, targets and states. */
@@ -634,30 +669,9 @@ export type Row = {
 	thinking: boolean,
 };
 
-export type RunGraph = {
-	run: string,
-	/**  Names the graph's Artifacts and edges, whatever their lights. */
-	shape: ShapeKey,
-	update: Update,
-};
-
-export type RunItem = {
-	id: string,
-	repository: string,
-	mark: Mark,
-	/**  Request glyph counts, most urgent first: `✗1 ✓2`. */
-	counts: string,
-	age: string,
-	/**  Wall time of a finished Run. */
-	took: string,
-	/**  Records of the Run that could not be read; an unreadable Run cannot open. */
-	unreadable: string[],
-	readable: boolean,
-};
-
 /**
- *  The selected Run: its headline and what needs attention. Its rows come one at a time, as
- *  a Detail asks for them ([`row`]): a Run can hold tens of thousands.
+ *  The shown Run: its headline and what needs attention. Its rows come one at a time, as a
+ *  Detail asks for them ([`row`]): a Run can hold tens of thousands.
  */
 export type RunPanel = {
 	id: string,
@@ -671,26 +685,6 @@ export type RunPanel = {
 	attention: Attention[],
 	/**  Attention lines beyond the shown ones. */
 	more: number,
-};
-
-/**
- *  A scope by value, so a selection survives refreshes that reorder the catalog. Paths are
- *  round-trip; labels for people come with the rows.
- */
-export type ScopeKey = { kind: "all" } | { kind: "repository"; repository: RepositoryKey } | { kind: "worktree"; repository: RepositoryKey; path: PathKey };
-
-/**
- *  One catalog row: ALL, a repository, one of its worktrees, or its fold of worktrees
- *  without Runs.
- */
-export type ScopeRow = {
-	scope: ScopeKey,
-	label: string,
-	depth: number,
-	badge: Count[],
-	/**  Set on the fold row; toggling it shows or hides those worktrees. */
-	fold: RepositoryKey | null,
-	selected: boolean,
 };
 
 export type SectionName = "outcome" | "waits" | "what" | "provenance" | "technical";
@@ -725,6 +719,7 @@ export type Settled =
 
 /**  The Artifacts and the edges between them, each with its light. */
 export type Shape = {
+	/**  Upstream first, in the tree's order. */
 	nodes: GraphNode[],
 	edges: GraphEdge[],
 };
@@ -749,6 +744,9 @@ export type SignedOut = {
 	revoked: boolean,
 	status: CodexStatus,
 };
+
+/**  What a graph or Detail shows: a saved Run, or a branch's worktree as it is now. */
+export type Source = { kind: "run"; run: string } | { kind: "current"; branch: BranchKey };
 
 export type Stage = 
 /**  Waiting and not claimed by this reviewer: read-only until claimed. */
@@ -830,13 +828,13 @@ export type TreeNode = {
 	right: string,
 	/**  The derived state changed after the Run ended. */
 	changed: boolean,
-	/**  An Artifact whose evals are all done: folded unless the user unfolded it. */
+	/**  An Artifact whose evals are all done. */
 	done: boolean,
-	/**  An in-progress or failed eval: where a new Run's cursor starts. */
+	/**  An in-progress or failed eval. */
 	attention: boolean,
-	/**  An ERROR, RED or waiting Human eval: what "next attention" visits. */
+	/**  An ERROR, RED or waiting Human eval. */
 	urgent: boolean,
-	/**  The Artifacts this row depends on, unmet first; `b` cycles through them. */
+	/**  The Artifacts this row depends on, unmet first. */
 	upstream: UpstreamMark[],
 	children: TreeNode[],
 };
@@ -847,12 +845,9 @@ export type TreeNode = {
  */
 export type UnixSeconds = string;
 
-/**  What changed in a Run graph since the shape the caller holds. */
+/**  What changed in a graph since the shape the caller holds. */
 export type Update = 
-/**
- *  A shape the caller does not hold: its Artifacts, upstream first in the tree's order, and
- *  its edges, all lit.
- */
+/**  A shape the caller does not hold, all lit. */
 {
 	kind: "shape",
 } & Shape | 
@@ -872,6 +867,21 @@ export type Verdict = "GREEN" | "RED";
 export type WaitLine = {
 	text: string,
 	pending: boolean,
+};
+
+/**  One Human review waiting for a person. */
+export type WaitingRow = {
+	id: string,
+	eval: string,
+	title: string,
+	mark: Mark,
+	project: string,
+	branch: string,
+	/**  How long it waits. */
+	age: string,
+	/**  `-`, the claimant, or `name (you)`. */
+	claim: string,
+	mine: boolean,
 };
 
 export type Weight = "bold" | "normal" | "dim";

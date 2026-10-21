@@ -64,6 +64,15 @@ output until it exits. One run shows at most 1 MiB of output, then says the rest
 is not shown, and a line longer than 4096 bytes shows in pieces. The log lives in
 memory while the review is open; nothing is saved.
 
+The desktop app also lists an Artifact's own Human tools in its
+[Detail](../../desktop/index.md#detail), outside any review. There a click runs one
+at once in the branch's worktree as it is now, whichever Run is shown: no request,
+no claim and no fingerprint check are involved, and nothing is recorded as a
+review's evidence. Its lines reach that Artifact's Tool log, which lasts while the
+app runs. The library calls are `review::artifact_tools(repo, artifact)`, which lists
+the tools the Artifact declares with the command lines they would run, and
+`review::run_artifact_tool(repo, artifact, tool, cancellation, run)`.
+
 Internal callers use `tools::human::Registry::new(&config, "artifact/eval")` for a
 Human eval scope or `for_artifact(&config, "artifact")` for its child scope,
 then `list()`, `command(name)` (the resolved program, argv and directory, without

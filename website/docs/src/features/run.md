@@ -311,7 +311,8 @@ command is hidden from help; it prints `graph moved to "artifactize config graph
 `config graph` remains the configuration inspector. For review, declare the
 [built-in `graph` tools](tools/builtin.md#current-project-graph) on
 any Artifact: the Agent sees the extracted current graph as a tree; the Human
-opens it in the existing desktop graph viewer, without requiring a saved Run.
+opens the desktop app on the branch's [Current](../desktop/index.md#current),
+without requiring a saved Run.
 The optional root [`.artf` graph Artifact](declarations.md#graph-artifact)
 has ordinary evals and appears in Runs and status like any other Artifact. Only
 its fingerprint algorithm is different; there is no graph-specific verification

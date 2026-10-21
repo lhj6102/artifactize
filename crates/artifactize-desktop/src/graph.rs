@@ -1,11 +1,19 @@
 pub(crate) mod current;
 
-// The selected Run as a graph of Artifacts for the monitor's Graph view: nodes, dependency
-// edges and their lights come from the library's [`monitor::graph`] over the shown tree.
-use crate::{App, Failure, ids::ShapeKey};
+// A graph of Artifacts for the Main area: the shown Run's, lit by the library's
+// [`monitor::graph`] over the shown tree, or a branch's Current, lit by what verify would do.
+use crate::{App, Failure, browse::BranchKey, ids::ShapeKey};
 use artifactize_core::monitor;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
+
+/// What a graph or Detail shows: a saved Run, or a branch's worktree as it is now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Source {
+    Run { run: crate::ids::RunKey },
+    Current { branch: BranchKey },
+}
 
 /// How a node or edge is lit, in precedence order; the frontend maps each to one colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Type)]
@@ -23,6 +31,10 @@ pub enum Light {
     Waiting,
     /// Every eval is GREEN.
     Green,
+    /// On a Current: at least one eval would run.
+    Run,
+    /// On a Current: every eval's result would be reused.
+    Reused,
 }
 
 impl From<monitor::Light> for Light {
@@ -38,6 +50,18 @@ impl From<monitor::Light> for Light {
     }
 }
 
+impl From<monitor::live::Plan> for Light {
+    fn from(plan: monitor::live::Plan) -> Self {
+        use monitor::live::Plan;
+        match plan {
+            Plan::Run => Self::Run,
+            Plan::Blocked => Self::Blocked,
+            Plan::Wait => Self::Waiting,
+            Plan::Reuse => Self::Reused,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphNode {
@@ -45,6 +69,8 @@ pub struct GraphNode {
     pub id: crate::ids::NodeKey,
     pub name: String,
     pub light: Light,
+    /// Under the name: on a Current what verify would do, `would run (2 evals)`.
+    pub note: Option<String>,
 }
 
 /// `target`'s evals depend on `source`; both are tree ids.
@@ -60,16 +86,16 @@ pub struct GraphEdge {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Shape {
+    /// Upstream first, in the tree's order.
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
 }
 
-/// What changed in a Run graph since the shape the caller holds.
+/// What changed in a graph since the shape the caller holds.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Update {
-    /// A shape the caller does not hold: its Artifacts, upstream first in the tree's order, and
-    /// its edges, all lit.
+    /// A shape the caller does not hold, all lit.
     Shape(Shape),
     /// The caller's shape, relit: one light per node and per edge, in its order.
     Lights {
@@ -80,60 +106,79 @@ pub enum Update {
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct RunGraph {
-    pub run: crate::ids::RunKey,
+pub struct Graph {
+    pub source: Source,
     /// Names the graph's Artifacts and edges, whatever their lights.
     pub shape: ShapeKey,
     pub update: Update,
 }
 
-fn id(name: &artifactize_core::types::ArtifactName) -> crate::ids::NodeKey {
+pub(crate) fn node_id(name: &artifactize_core::types::ArtifactName) -> crate::ids::NodeKey {
     monitor::NodeId::artifact(name.clone()).into()
 }
 
-fn node(node: &monitor::GraphNode) -> GraphNode {
-    GraphNode {
-        id: node.id.clone().into(),
-        name: node.name.to_string(),
-        light: node.light.into(),
+/// The shown Run's graph with the API's ids and lights.
+fn shape(graph: &monitor::Graph) -> Shape {
+    Shape {
+        nodes: graph
+            .nodes
+            .iter()
+            .map(|node| GraphNode {
+                id: node.id.clone().into(),
+                name: node.name.to_string(),
+                light: node.light.into(),
+                note: None,
+            })
+            .collect(),
+        edges: graph
+            .edges
+            .iter()
+            .map(|edge| GraphEdge {
+                source: node_id(&edge.from),
+                target: node_id(&edge.to),
+                light: edge.light.into(),
+            })
+            .collect(),
     }
 }
 
-fn edge(edge: &monitor::GraphEdge) -> GraphEdge {
-    GraphEdge {
-        source: id(&edge.from),
-        target: id(&edge.to),
-        light: edge.light.into(),
-    }
-}
-
-/// The selected Run `run` as a graph of its Artifacts, from the shown snapshot: only its
-/// lights while it keeps the shape `known` the caller holds.
+/// The graph of `source`: the shown Run's, from the shown snapshot, only its lights while it
+/// keeps the shape `known` the caller holds; or a branch's Current as its last scan found it.
 #[tauri::command]
 #[specta::specta]
-pub async fn run_graph(
+pub async fn graph(
     app: tauri::State<'_, App>,
-    run: crate::ids::RunKey,
+    source: Source,
     known: Option<ShapeKey>,
-) -> Result<RunGraph, Failure> {
-    let selected = app.browse.selected(&run.into_inner())?;
-    let graph = &selected.graph;
-    let update = if known == Some(selected.shape) {
-        Update::Lights {
-            nodes: graph.nodes.iter().map(|node| node.light.into()).collect(),
-            edges: graph.edges.iter().map(|edge| edge.light.into()).collect(),
+) -> Result<Graph, Failure> {
+    match &source {
+        Source::Run { run } => {
+            let selected = app.browse.selected(&run.clone().into_inner())?;
+            let graph = &selected.graph;
+            let update = if known == Some(selected.shape) {
+                Update::Lights {
+                    nodes: graph.nodes.iter().map(|node| node.light.into()).collect(),
+                    edges: graph.edges.iter().map(|edge| edge.light.into()).collect(),
+                }
+            } else {
+                Update::Shape(shape(graph))
+            };
+            Ok(Graph {
+                source,
+                shape: selected.shape,
+                update,
+            })
         }
-    } else {
-        Update::Shape(Shape {
-            nodes: graph.nodes.iter().map(node).collect(),
-            edges: graph.edges.iter().map(edge).collect(),
-        })
-    };
-    Ok(RunGraph {
-        run: selected.run.run.id.clone().into(),
-        shape: selected.shape,
-        update,
-    })
+        // A Current is read once a scan, and its notes change with its lights: it comes whole.
+        Source::Current { branch } => {
+            let shown = app.currents.shown(&branch.to_place())?;
+            Ok(Graph {
+                source,
+                shape: shown.shape,
+                update: Update::Shape(current::shape(&shown.current)),
+            })
+        }
+    }
 }
 
 /// An Artifact between its neighbours, at most [`NEAR`] on each side: those shown first are the
@@ -153,21 +198,26 @@ pub struct Neighbours {
 /// otherwise draw thousands of rows in the Detail, too small to read.
 pub const NEAR: usize = 16;
 
-/// The Artifact `node` of the selected Run `run` between its neighbours: the Artifacts its
-/// evals use, itself, then those whose evals use it, with the edges between it and them.
+/// The Artifact `node` of `source` between its neighbours: the Artifacts its evals use,
+/// itself, then those whose evals use it, with the edges between it and them.
 #[tauri::command]
 #[specta::specta]
-pub async fn run_neighbours(
+pub async fn neighbours(
     app: tauri::State<'_, App>,
-    run: crate::ids::RunKey,
+    source: Source,
     node: crate::ids::NodeKey,
 ) -> Result<Neighbours, Failure> {
-    let selected = app.browse.selected(&run.into_inner())?;
-    Ok(neighbours(&selected.graph, &node.into_inner()))
+    let graph = match source {
+        Source::Run { run } => shape(&app.browse.selected(&run.into_inner())?.graph),
+        Source::Current { branch } => {
+            current::shape(&app.currents.shown(&branch.to_place())?.current)
+        }
+    };
+    Ok(self::neighbours_in(&graph, &node.into_inner()))
 }
 
-fn neighbours(graph: &monitor::Graph, node: &monitor::NodeId) -> Neighbours {
-    let Some(own) = graph.nodes.iter().find(|item| &item.id == node) else {
+fn neighbours_in(graph: &Shape, node: &monitor::NodeId) -> Neighbours {
+    let Some(own) = graph.nodes.iter().find(|item| item.id.inner() == node) else {
         return Neighbours {
             shape: Shape {
                 nodes: Vec::new(),
@@ -180,38 +230,37 @@ fn neighbours(graph: &monitor::Graph, node: &monitor::NodeId) -> Neighbours {
     let lights: std::collections::BTreeMap<_, Light> = graph
         .nodes
         .iter()
-        .map(|item| (&item.name, item.light.into()))
+        .map(|item| (item.id.inner(), item.light))
         .collect();
     // One side's edges, those shown first, cut to `NEAR`; and how many were cut.
-    let side =
-        |far: fn(&monitor::GraphEdge) -> &artifactize_core::types::ArtifactName,
-         near: fn(&monitor::GraphEdge) -> &artifactize_core::types::ArtifactName| {
-            let mut edges: Vec<_> = graph
-                .edges
-                .iter()
-                .filter(|edge| near(edge) == &own.name)
-                .collect();
-            edges.sort_by_key(|edge| lights.get(far(edge)));
-            let more = edges.len().saturating_sub(NEAR);
-            edges.truncate(NEAR);
-            (edges, u32::try_from(more).unwrap_or(u32::MAX))
-        };
-    let (uses, more_uses) = side(|edge| &edge.from, |edge| &edge.to);
-    let (used_by, more_used_by) = side(|edge| &edge.to, |edge| &edge.from);
+    let side = |far: fn(&GraphEdge) -> &crate::ids::NodeKey,
+                near: fn(&GraphEdge) -> &crate::ids::NodeKey| {
+        let mut edges: Vec<_> = graph
+            .edges
+            .iter()
+            .filter(|edge| near(edge) == &own.id)
+            .collect();
+        edges.sort_by_key(|edge| lights.get(far(edge).inner()));
+        let more = edges.len().saturating_sub(NEAR);
+        edges.truncate(NEAR);
+        (edges, u32::try_from(more).unwrap_or(u32::MAX))
+    };
+    let (uses, more_uses) = side(|edge| &edge.source, |edge| &edge.target);
+    let (used_by, more_used_by) = side(|edge| &edge.target, |edge| &edge.source);
     let edges: Vec<_> = uses.into_iter().chain(used_by).collect();
     let near: std::collections::BTreeSet<_> = edges
         .iter()
-        .flat_map(|edge| [&edge.from, &edge.to])
+        .flat_map(|edge| [edge.source.inner(), edge.target.inner()])
         .collect();
     Neighbours {
         shape: Shape {
             nodes: graph
                 .nodes
                 .iter()
-                .filter(|item| near.contains(&item.name) || item.id == own.id)
-                .map(self::node)
+                .filter(|item| near.contains(item.id.inner()) || item.id == own.id)
+                .cloned()
                 .collect(),
-            edges: edges.into_iter().map(edge).collect(),
+            edges: edges.into_iter().cloned().collect(),
         },
         more_uses,
         more_used_by,

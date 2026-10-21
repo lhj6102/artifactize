@@ -8,39 +8,37 @@ export type Checkpoint = { activity: CommandActivity; query: string | null; quer
 
 export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
   return browser.execute(() => {
-    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search requests"]');
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search branches and reviews"]');
+    const shown = !!input && input.getBoundingClientRect().height > 0;
     return {
       activity: window.artifactizeCommands,
-      query: input && input.getBoundingClientRect().height > 0 ? input.value : null,
-      queryFailure: input && input.getBoundingClientRect().height > 0
-        ? document.querySelector(".review > nav .notice.error, .review .empty.error")?.textContent ?? null : null,
+      query: shown ? input.value : null,
+      queryFailure: shown ? document.querySelector('[aria-label="Branches"] .empty.error')?.textContent ?? null : null,
     };
   });
 }
 
-/** Correlate the selected manual action with a successful reload committed to the UI.
- * This is only a completion barrier; callers must also assert the actual rows and selection. */
-export async function reviewRefreshed(browser: WebdriverIO.Browser, before: Checkpoint, start = 0): Promise<void> {
-  assert.notEqual(before.activity.reviewRefresh, undefined, "manual Refresh observation requires an E2E test build");
-  const generation = before.activity.reviewRefresh?.generation ?? 0;
-  const query = before.query;
-  assert.ok(query !== null, "the Review query is visible before selecting Refresh");
+/** Correlate a manual refresh (F5, Ctrl+R or the palette's Refresh) with its successful read
+ * shown in the window. This is only a completion barrier; callers must also assert what shows. */
+export async function refreshed(browser: WebdriverIO.Browser, before: Checkpoint): Promise<void> {
+  assert.notEqual(before.activity.refresh, undefined, "manual Refresh observation requires an E2E test build");
+  const generation = before.activity.refresh?.generation ?? 0;
   await browser.waitUntil(async () => {
-    const after = await checkpoint(browser);
-    const completed = after.activity.reviewRefresh;
+    const completed = (await checkpoint(browser)).activity.refresh;
     assert.notEqual(completed, undefined, "the E2E manual Refresh observation remains available");
-    return completed !== null && completed !== undefined && completed.generation === generation + 1
-      && completed.query === query && completed.start === start && after.query === query;
+    return completed !== null && completed !== undefined && completed.generation === generation + 1;
   }, { timeout: 15000, timeoutMsg: "manual Refresh did not complete (failed or pending)" });
 }
 
 /** Query-changing actions need a *new* matching search, not an older A after A → B → A.
- * A background reload of the new query also qualifies: it rendered that exact query. */
+ * A background read of the new query also qualifies: it rendered that exact query. */
 export function completed(current: Checkpoint, before?: Checkpoint): boolean {
   if (current.activity.pending !== 0 || current.queryFailure) return false;
   if (current.query === null) return true;
   const search = current.activity.search;
-  if (!search?.completed || search.query !== current.query) return false;
+  // Nothing typed yet: the field shows the starting query the first read already used.
+  if (search === null) return !before || before.query === current.query;
+  if (!search.completed || search.query !== current.query) return false;
   return !before || before.query === current.query || search.sequence > (before.activity.search?.sequence ?? 0);
 }
 

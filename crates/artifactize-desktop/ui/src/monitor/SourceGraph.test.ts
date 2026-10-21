@@ -1,12 +1,12 @@
 import { renderHosted as render } from "../test-host";
-// The Run graph against a mocked command boundary and layout: nodes take their lights, a click
+// A Run's or a Current's graph against a mocked command boundary and layout: nodes take their lights, a click
 // (or Enter on a focused node) on an Artifact asks for its Detail and one on the background
 // closes it, a new snapshot recolours in place, and a new shape replaces the graph once laid out.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { RunGraph as Graph, Shape } from "../ipc/client";
-import RunGraph from "./RunGraph.svelte";
+import type { Graph, Shape, Source } from "../ipc/client";
+import SourceGraph from "./SourceGraph.svelte";
 
 const layout = vi.hoisted(() => vi.fn());
 vi.mock("./layout", () => ({ NODE: { width: 168, height: 44 }, layout }));
@@ -41,11 +41,19 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const source = (run: string): Source => ({ kind: "run", run });
+
+/** The Run a `graph` call asks for and the shape it holds. */
+function runOf(args: unknown): { run: string; known: number | null } {
+  const { source, known } = args as { source: Source; known: number | null };
+  return { run: source.kind === "run" ? source.run : "", known };
+}
+
 function graph(release: Shape["nodes"][number]["light"], ship = "waiting" as const): Shape {
   return {
     nodes: [
-      { id: "a:release", name: "release", light: release },
-      { id: "a:ship", name: "ship", light: ship },
+      { id: "a:release", name: "release", light: release, note: null },
+      { id: "a:ship", name: "ship", light: ship, note: null },
     ],
     edges: [{ source: "a:release", target: "a:ship", light: release }],
   };
@@ -54,10 +62,11 @@ function graph(release: Shape["nodes"][number]["light"], ship = "waiting" as con
 /** The backend's answer for Run `run` now serving `shape`: its lights alone when the caller
  * holds that shape, else the shape. A shape is named by its Artifacts and edges. */
 function answer(run: string, shape: Shape, known: number | null): Graph {
+  const source: Source = { kind: "run", run };
   const named = [shape.nodes.map((node) => node.id), shape.edges.map((edge) => `${edge.source}>${edge.target}`)].join("|");
   const key = names.get(named) ?? names.set(named, names.size + 1).get(named)!;
   return {
-    run,
+    source,
     shape: key,
     update: known === key
       ? { kind: "lights", nodes: shape.nodes.map((node) => node.light), edges: shape.edges.map((edge) => edge.light) }
@@ -66,14 +75,14 @@ function answer(run: string, shape: Shape, known: number | null): Graph {
 }
 const names = new Map<string, number>();
 
-/** Every `run_graph` call's arguments, in order. */
+/** Every `graph` call's Run and the shape it held, in order. */
 let asked: { run: string; known: number | null }[] = [];
 
 function serve(served: (run: string) => Shape) {
   asked = [];
   mockIPC((cmd, args) => {
-    if (cmd !== "run_graph") return null;
-    const { run, known } = args as { run: string; known: number | null };
+    if (cmd !== "graph") return null;
+    const { run, known } = runOf(args);
     asked.push({ run, known });
     return answer(run, served(run), known);
   });
@@ -84,13 +93,13 @@ function setup(served: () => Shape) {
   layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
   const onopen = vi.fn();
   const onclose = vi.fn();
-  const view = render(RunGraph, { run: "run-a", revision: 1, onopen, onclose });
+  const view = render(SourceGraph, { source: source("run-a"), revision: 1, onopen, onclose });
   return { ...view, onopen, onclose };
 }
 
 const node = (id: string) => document.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
 
-describe("RunGraph", () => {
+describe("SourceGraph", () => {
   it("lights nodes and edges, and asks for an Artifact's Detail on a click or Enter and closes it on the background", async () => {
     const { onopen, onclose, rerender } = setup(() => graph("active"));
     await waitFor(() => expect(node("a:release")).not.toBeNull());
@@ -134,14 +143,14 @@ describe("RunGraph", () => {
     expect(asked[1].known).not.toBeNull();
     expect(layout).toHaveBeenCalledOnce();
 
-    served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting" }] };
+    served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting", note: null }] };
     await rerender({ revision: 3 });
     await waitFor(() => expect(node("a:docs")).not.toBeNull());
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the graph shown while a new shape lays out, and lays out each shape once whatever snapshots arrive", async () => {
-    const docs = { id: "a:docs", name: "docs", light: "waiting" as const };
+    const docs = { id: "a:docs", name: "docs", light: "waiting" as const, note: null };
     const grown = (release: Shape["nodes"][number]["light"]): Shape => ({ ...graph(release), nodes: [...graph(release).nodes, docs] });
     let served = graph("active");
     const { rerender } = setup(() => served);
@@ -185,29 +194,29 @@ describe("RunGraph", () => {
     const askedB = new Promise<void>((done) => (asking = done));
     let lightA = graph("active");
     mockIPC(async (cmd, args) => {
-      if (cmd !== "run_graph") return null;
-      const { run, known } = args as { run: string; known: number | null };
+      if (cmd !== "graph") return null;
+      const { run, known } = runOf(args);
       if (run === "run-b") {
         asking();
         await held;
-        return answer("run-b", { nodes: [{ id: "a:other", name: "other", light: "red" }], edges: [] }, known);
+        return answer("run-b", { nodes: [{ id: "a:other", name: "other", light: "red", note: null }], edges: [] }, known);
       }
       return answer(run, lightA, known);
     });
     layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
-    const { rerender } = render(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+    const { rerender } = render(SourceGraph, { source: source("run-a"), revision: 1, onopen: vi.fn(), onclose: vi.fn() });
     await waitFor(() => expect(node("a:release")).not.toBeNull());
-    await rerender({ run: "run-b", revision: 2 });
+    await rerender({ source: source("run-b"), revision: 2 });
     await askedB;
     lightA = graph("green");
-    await rerender({ run: "run-a", revision: 3 });
+    await rerender({ source: source("run-a"), revision: 3 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
     release();
     // Run B's held answer arrives before the answer to a newer read of Run A, which asks only
     // after the release: once that newer read shows, B's answer has been handled.
     await held;
     lightA = graph("red");
-    await rerender({ run: "run-a", revision: 4 });
+    await rerender({ source: source("run-a"), revision: 4 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("red"));
     expect(node("a:other")).toBeNull();
   });
@@ -220,9 +229,9 @@ describe("RunGraph", () => {
   it("shows ERROR apart from RED, and a legend of all six lights", async () => {
     setup(() => ({
       nodes: [
-        { id: "a:release", name: "release", light: "red" },
-        { id: "a:ship", name: "ship", light: "error" },
-        { id: "a:docs", name: "docs", light: "blocked" },
+        { id: "a:release", name: "release", light: "red", note: null },
+        { id: "a:ship", name: "ship", light: "error", note: null },
+        { id: "a:docs", name: "docs", light: "blocked", note: null },
       ],
       edges: [{ source: "a:ship", target: "a:docs", light: "error" }],
     }));
@@ -240,5 +249,32 @@ describe("RunGraph", () => {
       "light-error",
       "light-blocked",
     ]);
+  });
+  it("marks a Current's Artifacts by what verify would do, with a legend of its own", async () => {
+    const current: Source = { kind: "current", branch: { kind: "branch", common: "/work/app/.git", branch: "main" } };
+    mockIPC((cmd, args) =>
+      cmd === "graph"
+        ? {
+            source: (args as { source: Source }).source,
+            shape: 1,
+            update: {
+              kind: "shape",
+              nodes: [
+                { id: "a:app", name: "app", light: "reused", note: "reused" },
+                { id: "a:graph", name: "graph", light: "run", note: "would run (2 evals)" },
+              ],
+              edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
+            },
+          }
+        : null,
+    );
+    layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((item, index) => [item.id, { x: index * 240, y: 0 }])));
+    render(SourceGraph, { source: current, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+    await waitFor(() => expect(node("a:graph")).not.toBeNull());
+    expect(node("a:graph")?.getAttribute("aria-label")).toBe("graph: would run (2 evals)");
+    expect(node("a:graph")?.textContent).toContain("would run (2 evals)");
+    expect(node("a:app")?.dataset.light).toBe("reused");
+    const legend = [...screen.getByRole("list", { name: "Legend" }).querySelectorAll("li")].map((item) => item.textContent?.trim());
+    expect(legend).toEqual(["reused", "would run", "waiting", "blocked by upstream"]);
   });
 });

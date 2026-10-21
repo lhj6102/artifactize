@@ -1,6 +1,6 @@
-// The Run graph's frontend side: which lights mean what to a reader, and how a known shape
-// takes new lights. The lights themselves come from the backend (`run_graph`), derived from the
-// same states as the Run's tree of Artifacts and evals.
+// The graphs' frontend side: which lights mean what to a reader, and how a known shape takes
+// new lights. The lights themselves come from the backend (`graph`), derived from the same
+// states as the Run's tree of Artifacts and evals, or from what verify would do on a Current.
 import type { Light, Shape, Update } from "../ipc/client";
 
 /** Words for each light, for labels and the legend; colours are `light-<name>` classes. */
@@ -11,10 +11,15 @@ export const WORDS: Record<Light, string> = {
   red: "RED",
   error: "ERROR",
   blocked: "blocked by upstream",
+  run: "would run",
+  reused: "reused",
 };
 
 /** Legend order: as a Run goes, then what went wrong. */
 export const LEGEND: Light[] = ["green", "active", "waiting", "red", "error", "blocked"];
+
+/** A Current's legend: what verify would do with each Artifact now. */
+export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked"];
 
 export type Point = { x: number; y: number };
 
