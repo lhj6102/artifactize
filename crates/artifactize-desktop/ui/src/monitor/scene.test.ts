@@ -1,12 +1,12 @@
 // A laid-out catalog as the canvas finds things in it: what a camera shows, the Artifacts in a
 // part of it, which it stops counting past a limit, and the Artifact under the pointer.
 import { describe, expect, it } from "vitest";
-import { NODE, layout } from "./layout";
+import { NODE, layered } from "./layout";
 import { SHARED, catalog } from "./catalog.fixture";
 import { hit, scene, view, within } from "./scene";
 
 const graph = catalog();
-const laid = scene(layout(graph));
+const laid = scene(layered(graph));
 
 describe("scene", () => {
   it("bounds every Artifact", () => {

@@ -1,18 +1,28 @@
-// Node positions for a graph of Artifacts: layered left to right, upstream first, in time
-// about linear in the graph's size, so that a Run of tens of thousands of Artifacts lays out at
-// once.
+// Node positions for a graph of Artifacts, layered left to right, upstream first.
 //
-// Each connected part of the graph gets its own layers: an Artifact sits one layer right of
-// the furthest Artifact it uses, and a few sweeps order every layer by where its neighbours
-// sit. The parts are then packed in rows into a box about as wide as a screen. An Artifact that
-// a great many others use (a shared input, such as one criteria file every review reads) would
-// tie every part into one tall, narrow column; it stands apart in its own column before the
-// parts instead, its edges still drawn to every Artifact that uses it.
+// A graph of at most `ELK_LIMIT` Artifacts is laid out by ELK's layered algorithm, which
+// widens the gap between two layers with the edges crossing it and gives long edges their own
+// lanes. ELK runs in a Web Worker started on first use, so its layout never blocks the window,
+// and neither a larger graph nor the tree view ever loads it.
+//
+// A larger graph (a catalog Run of tens of thousands of Artifacts) gets `layered`, in time
+// about linear in the graph's size, so that it lays out at once: each connected part of the
+// graph gets its own layers, an Artifact one layer right of the furthest Artifact it uses, and
+// a few sweeps order every layer by where its neighbours sit. The parts are then packed in rows
+// into a box about as wide as a screen.
+//
+// In both, an Artifact that a great many others use (a shared input, such as one criteria file
+// every review reads) would tie every part into one tall, narrow column, and makes ELK slow; it
+// stands apart in its own column before the rest instead, its edges still drawn to every
+// Artifact that uses it.
 import type { Shape } from "../ipc/client";
 import type { Point } from "./graph";
 
 /** Every Artifact node's box; names longer than fit are cut with an ellipsis. */
 export const NODE = { width: 168, height: 44 };
+/** The most Artifacts ELK lays out: about 0.4 s for a graph this size. A larger graph gets
+ * `layered`, which takes milliseconds at any size. */
+export const ELK_LIMIT = 1000;
 
 /** Room between layers, and between the Artifacts of one layer. */
 const GAP = { x: 72, y: 20 };
@@ -36,11 +46,17 @@ function largest(values: ArrayLike<number>): number {
   return top;
 }
 
-/** Top-left positions of `graph`'s nodes. */
-export function layout(graph: Shape): Map<string, Point> {
+/** Top-left positions of `graph`'s nodes: by ELK for at most `ELK_LIMIT` Artifacts, else by
+ * `layered`. */
+export function layout(graph: Shape): Promise<Map<string, Point>> {
+  return graph.nodes.length > ELK_LIMIT ? Promise.resolve(layered(graph)) : elk(graph);
+}
+
+/** Each edge once, between two different Artifacts the graph has, by their numbers in
+ * `graph.nodes`, and which Artifacts are shared inputs. */
+function links(graph: Shape) {
   const count = graph.nodes.length;
   const index = new Map(graph.nodes.map((node, at) => [node.id, at]));
-  // Each edge once, between two different Artifacts the graph has.
   const pairs = new Set<number>();
   const from: number[] = [];
   const to: number[] = [];
@@ -57,6 +73,49 @@ export function layout(graph: Shape): Map<string, Point> {
   const uses = new Int32Array(count);
   for (const source of from) uses[source] += 1;
   const shared = Array.from(uses, (used) => used > SHARED);
+  return { count, from, to, shared };
+}
+
+type Elk = { layout: (graph: object) => Promise<{ children?: { id: string; x?: number; y?: number }[] }> };
+let worker: Promise<Elk> | null = null;
+
+/** ELK's layout of `graph`, with the options the Graph has always given it; the shared inputs
+ * and their edges are left out of it and stand in a column on its left. */
+async function elk(graph: Shape): Promise<Map<string, Point>> {
+  worker ??= Promise.all([import("elkjs/lib/elk-api.js"), import("elkjs/lib/elk-worker.min.js?url")]).then(
+    ([{ default: ELK }, { default: workerUrl }]) => new ELK({ workerUrl }) as Elk,
+  );
+  const { shared } = links(graph);
+  const inputs = new Set(graph.nodes.filter((_, at) => shared[at]).map((node) => node.id));
+  const laid = await (
+    await worker
+  ).layout({
+    id: "run",
+    layoutOptions: {
+      "elk.algorithm": "layered",
+      "elk.direction": "RIGHT",
+      "elk.layered.spacing.nodeNodeBetweenLayers": String(GAP.x),
+      "elk.spacing.nodeNode": String(GAP.y),
+      "elk.spacing.componentComponent": String(APART),
+      // Keep the tree's order (upstream first) within a layer where crossings allow. With the
+      // shared inputs left out it costs little: 0.41 s instead of 0.40 s for 984 Artifacts.
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+    },
+    children: graph.nodes.filter((node) => !inputs.has(node.id)).map((node) => ({ id: node.id, ...NODE })),
+    edges: graph.edges
+      .filter((edge) => !inputs.has(edge.source) && !inputs.has(edge.target))
+      .map((edge, index) => ({ id: `e${index}`, sources: [edge.source], targets: [edge.target] })),
+  });
+  const left = inputs.size > 0 ? NODE.width + GAP.x + APART : 0;
+  return new Map([
+    ...[...inputs].map((id, row): [string, Point] => [id, { x: 0, y: row * (NODE.height + GAP.y) }]),
+    ...(laid.children ?? []).map((child): [string, Point] => [child.id, { x: left + (child.x ?? 0), y: child.y ?? 0 }]),
+  ]);
+}
+
+/** Top-left positions of `graph`'s nodes, layered and packed in time about linear in its size. */
+export function layered(graph: Shape): Map<string, Point> {
+  const { count, from, to, shared } = links(graph);
 
   // The connected parts, apart from shared inputs and their edges.
   const parent = Int32Array.from({ length: count }, (_, at) => at);

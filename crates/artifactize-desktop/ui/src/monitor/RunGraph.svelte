@@ -2,7 +2,8 @@
   // The Run graph: Artifacts and their dependency edges, lit by the backend's `run_graph` from
   // the same snapshot as the Run's tree of Artifacts and evals. Every accepted snapshot recolours
   // the graph in place: while its Artifacts and edges keep their shape, only their lights come
-  // again, and only a new shape is laid out, so nodes never jump on a state change.
+  // again, and only a new shape is laid out, so nodes never jump on a state change. While a new
+  // shape lays out, the graph shown before stays until its layout is ready.
   import { SvelteFlowProvider } from "@xyflow/svelte";
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -11,7 +12,6 @@
   import { RunGraphState, setRunGraphState } from "./run-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
   import { relight } from "./graph";
-  import { layout } from "./layout";
 
   let {
     run,
@@ -54,7 +54,14 @@
           return;
         }
         const graph = { nodes: next.update.nodes, edges: next.update.edges };
-        g.shown = { run: next.run, shape: next.shape, graph, positions: layout(graph) };
+        g.positions(next.run, next.shape, graph).then(
+          (positions) => {
+            if (read === g.reads) g.shown = { run: next.run, shape: next.shape, graph, positions };
+          },
+          (failure) => {
+            if (read === g.reads) g.error = message(failure);
+          },
+        );
       },
       (failure) => {
         if (read === g.reads) g.error = message(failure);
@@ -66,7 +73,7 @@
 <div class="host" {@attach reread}>
 {#if g.error}
   <p class="note error">{g.error}</p>
-{:else if g.shown?.run !== run}
+{:else if !g.shown}
   <p class="note">Laying out…</p>
 {:else if g.shown.graph.nodes.length === 0}
   <p class="note">This Run has no Artifacts.</p>

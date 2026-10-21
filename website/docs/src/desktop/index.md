@@ -132,18 +132,27 @@ keys of its own.
 Drag the graph background to pan; wheel, pinch or a background double-click
 zooms the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its
 viewport. These gestures move the camera, not the pane dividers or the Detail.
-Every Run's whole graph is laid out at once, upstream on the left; an Artifact
-that a great many others use (such as one criteria file every review reads)
-stands in its own column on the left, its edges still drawn to each Artifact
-that uses it. Above 40 nodes, a pannable, zoomable minimap helps navigate the
-graph, and above **80 Artifacts** only elements in view are rendered: panning or
-zooming draws those it brings into view. A Run of **more than 500 Artifacts**
+Every Run's whole graph is laid out at once, upstream on the left. A graph of
+at most **1,000 Artifacts** is laid out by ELK's layered algorithm, in the
+background: the gap between two layers widens with the edges that cross it,
+and long edges keep lanes of their own. A larger graph gets a quicker layered
+layout that opens even a catalog Run of tens of thousands of Artifacts at once:
+each connected part gets its own layers, a fixed gap apart, and the parts are
+packed into a box about as wide as the screen. In both, an Artifact that a
+great many others use (such as one criteria file every review reads) stands in
+its own column on the left, its edges still drawn to each Artifact that uses
+it. The current graph is laid out the same way. Above 40 nodes, a pannable,
+zoomable minimap helps navigate the graph, and above **80 Artifacts** only
+elements in view are rendered: panning or zooming draws those it brings into
+view. A Run of **more than 500 Artifacts**
 draws its edges on a canvas below the Artifacts and has no minimap. While more
 than 500 Artifacts are in view, they are painted as boxes in their lights, and a
 click on one opens its Detail; zoom in until fewer are in view to see them as
 named nodes again. A live Run relights its graph in place, and lays it out again
-only when its Artifacts or edges change. An Artifact's Detail draws at most 16
-neighbours on each side, failing ones first, and counts the rest.
+only when its Artifacts or edges change; the graph shown stays until the new
+layout is ready, and a Run that grows past 1,000 Artifacts changes layout once,
+when it does. An Artifact's Detail draws at most 16 neighbours on each side,
+failing ones first, and counts the rest.
 
 `artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
 without needing a Run or showing saved verdicts. A click on an Artifact shows its
