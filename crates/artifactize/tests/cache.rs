@@ -2,7 +2,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    sync::OnceLock,
     thread,
     time::{Duration, Instant},
 };
@@ -246,7 +245,7 @@ impl Fixture {
                         "title":"Review",
                         "profile":{
                             "kind":"runtime",
-                            "command":self::steps(),
+                            "command":support::os::steps(),
                             "args":["from", "review.txt"],
                         },
                         "payload":{"instruction":"Review."},
@@ -434,17 +433,6 @@ impl ClaimProvider {
 /// Record the review's process, wait for the release and print a result.
 const WAIT: &[&str] = &["pid", "STARTS", "wait", "RELEASE", "print", "original"];
 
-/// The steps program, built once for this test binary: fixture reviews run it with their steps
-/// as arguments, the same on every system.
-fn steps() -> &'static str {
-    static PROGRAM: OnceLock<String> = OnceLock::new();
-    PROGRAM.get_or_init(|| {
-        let directory = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cache-steps");
-        fs::create_dir_all(&directory).unwrap();
-        support::os::steps_program(&directory)
-    })
-}
-
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + support::os::patience(OBSERVATION_BOUND);
     while !condition() {
@@ -517,7 +505,7 @@ fn eval(id: &str, steps: &[&str]) -> Value {
     json!({
         "id":id,
         "title":"Review",
-        "profile":{"kind":"runtime","command":self::steps(),"args":steps},
+        "profile":{"kind":"runtime","command":support::os::steps(),"args":steps},
         "payload":{"instruction":"Review."},
     })
 }
@@ -2087,7 +2075,7 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
         "fail":{"kind":"runtime","command":false_program(),"args":[]},
         "patient":{
             "kind":"runtime",
-            "command":steps(),
+            "command":support::os::steps(),
             "args":[],
             "timeout_ms":60000,
         },

@@ -475,10 +475,16 @@ pub fn waiting_program(directory: &Path) -> String {
 }
 
 /// A program in `directory` that runs the steps its arguments spell, in order, in its working
-/// directory, and then exits 0: `pid FILE` appends its process id as a line, `append FILE TEXT`
-/// appends a line, `touch FILE` creates a file, `wait FILE` waits until a file exists,
-/// `print TEXT` prints, `equals A B` exits 1 unless A is B, `exit CODE` exits, and `from FILE`
-/// runs the steps FILE holds, one argument per line, followed by the rest.
+/// directory, and then exits 0: `pid FILE` appends its process id as a line, `env FILE NAME`
+/// appends the variable NAME's value as a line, `append FILE TEXT` appends a line, `write FILE
+/// TEXT` replaces a file's contents, `touch FILE` creates a file, `remove FILE` removes one,
+/// `count DIRECTORY PREFIX FILE` appends how many entries of DIRECTORY start with PREFIX,
+/// `wait FILE` waits until a file exists, `needs FILE TEXT` prints TEXT and exits 0 unless the
+/// file exists, `print TEXT` prints, `eprint TEXT` prints to stderr, `cat FILE` prints a file's bytes,
+/// `hold FILE` starts a child that blocks until it is killed, appends the child's process id
+/// and waits for it, `equals A B` exits 1 unless A is B, `exit CODE` exits, and `from FILE`
+/// runs the steps FILE holds, one argument per line, followed by the rest. Test fixtures run
+/// it with literal argument vectors, the same on every system, instead of a shell script.
 pub fn steps_program(directory: &Path) -> String {
     path_text(&compiled_program(
         directory,
@@ -496,12 +502,30 @@ fn run(steps: Vec<String>) {
     while let Some(step) = steps.next() {
         match step.as_str() {
             "pid" => line(&next(&mut steps), &std::process::id().to_string()),
+            "env" => {
+                let path = next(&mut steps);
+                line(&path, &std::env::var(next(&mut steps)).unwrap());
+            }
             "append" => {
                 let path = next(&mut steps);
                 line(&path, &next(&mut steps));
             }
+            "write" => {
+                let path = next(&mut steps);
+                std::fs::write(path, next(&mut steps)).unwrap();
+            }
             "touch" => {
                 std::fs::OpenOptions::new().create(true).append(true).open(next(&mut steps)).unwrap();
+            }
+            "remove" => std::fs::remove_file(next(&mut steps)).unwrap(),
+            "count" => {
+                let directory = next(&mut steps);
+                let prefix = next(&mut steps);
+                let count = std::fs::read_dir(directory)
+                    .unwrap()
+                    .filter(|entry| entry.as_ref().unwrap().file_name().to_string_lossy().starts_with(&prefix))
+                    .count();
+                line(&next(&mut steps), &count.to_string());
             }
             "wait" => {
                 let path = next(&mut steps);
@@ -509,10 +533,37 @@ fn run(steps: Vec<String>) {
                     std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
+            "needs" => {
+                let path = next(&mut steps);
+                let text = next(&mut steps);
+                if !std::path::Path::new(&path).exists() {
+                    print!("{text}");
+                    std::io::stdout().flush().unwrap();
+                    std::process::exit(0);
+                }
+            }
             "print" => {
                 print!("{}", next(&mut steps));
                 std::io::stdout().flush().unwrap();
             }
+            "eprint" => eprint!("{}", next(&mut steps)),
+            "cat" => {
+                let mut out = std::io::stdout();
+                out.write_all(&std::fs::read(next(&mut steps)).unwrap()).unwrap();
+                out.flush().unwrap();
+            }
+            "hold" => {
+                let path = next(&mut steps);
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                    .arg("block")
+                    .spawn()
+                    .unwrap();
+                line(&path, &child.id().to_string());
+                child.wait().unwrap();
+            }
+            "block" => loop {
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            },
             "equals" => {
                 if next(&mut steps) != next(&mut steps) {
                     std::process::exit(1);
@@ -534,6 +585,14 @@ fn main() {
 }
 "#,
     ))
+}
+
+/// The [`steps_program`], built once for this test process.
+pub fn steps() -> String {
+    static PROGRAM: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PROGRAM
+        .get_or_init(|| steps_program(fixture::directory()))
+        .clone()
 }
 
 /// A program in `directory` that exits 1 while the file named by its first argument exists, and
