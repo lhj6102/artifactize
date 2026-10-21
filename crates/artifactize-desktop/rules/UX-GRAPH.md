@@ -25,14 +25,15 @@ that makes the transition happen and checks where it leads.
     its declarations. A removed worktree or folder, or one Git no longer lists, has no entry.
     Who ran a Run makes no entry: a branch's Runs are its project's Runs on that branch, from
     whichever folder they ran in. Under the name sits the branch's **chip row**: one chip per
-    Run, oldest to newest left to right, each its status and age (a running one its time so
-    far), tinted with its status colour, ending with the Run in progress on the branch, or else
-    with a **Current** chip, tinted with the accent. The chips carry the entry; the name above
-    them is a smaller, quieter label. The shown chip is filled with its colour. The
-    row has no scrollbar; chips fade out at whichever end has more. `sort:recent` puts the
-    branch with the most recent Run first and branches without Runs last; `sort:name` orders
-    by project and branch. States: a branch selected, one of its chips shown (filled), the row
-    scrolled to any position.
+    Run, newest to oldest left to right, each its status and age (a running one its time so
+    far), tinted with its status colour, starting with the Run in progress on the branch, or
+    else with a **Current** chip, tinted with the accent. The chips carry the entry; the name
+    above them is a smaller, quieter label, with the branch's **star** at its line's end. The
+    shown chip is filled with its colour. The row has no scrollbar; chips fade out at whichever
+    end has more. Starred branches come first; within each group `sort:recent` puts the
+    branch with the most recent Run first and branches without Runs last, and `sort:name`
+    orders by project and branch. States: a branch selected, starred or not, one of its chips
+    shown (filled), the row scrolled to any position.
   - **Waiting**: the waiting Human reviews of every repository on this machine, those of
     removed branches included, newest at the top, each with its eval, its project and branch,
     how long it waits and who claimed it. With none it is a thin bar at the bottom of the pane
@@ -113,7 +114,7 @@ that makes the transition happen and checks where it leads.
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-LAUNCH-MONITOR | Launch | start without arguments | Pane and Main area, the Main area with Nothing chosen |
-| E-LAUNCH-REPO | Launch | start with `--repo PATH` | the branch of PATH selected in the Branches, its last chip shown in the Main area |
+| E-LAUNCH-REPO | Launch | start with `--repo PATH` | the branch of PATH selected in the Branches, its first chip shown in the Main area |
 | E-LAUNCH-REVIEW | Launch | start with `review` | the newest waiting Human review open in the Main area as Review |
 | E-LAUNCH-REVIEW-ID | Launch | start with `review ID` | the review ID open in the Main area as Review |
 | E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | the branch of PATH selected, its Current shown |
@@ -137,17 +138,18 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-PANE-SELECT | Pane | click a branch's name | that branch selected, its last chip (the running Run, else Current) shown in the Main area and filled |
+| E-PANE-SELECT | Pane | click a branch's name | that branch selected, its first chip (the running Run, else Current) shown in the Main area and filled |
+| E-PANE-STAR | Pane | click a branch's star | the branch starred, or its star taken away; starred branches listed first, each group in the search's order, kept for the next monitor |
 | E-PANE-CHIP | Pane | click a chip of a branch | that branch selected, the chip shown in the Main area (a Run's chip as Run, the Current chip as Current) and filled |
-| E-PANE-DRAG | a branch's chip row | hold the mouse on it and drag sideways | the row scrolled with the pointer, older Runs arriving as its oldest end comes into view, chips fading out at whichever end has more; no chip chosen |
-| E-MON-SCOPE-MOVE | Pane entries focused | `j`, `k`, ↑ or ↓ | the next or previous entry selected, through the Branches and then the Waiting stack; a branch shows its last chip in the Main area, a waiting review is only selected |
+| E-PANE-DRAG | a branch's chip row | hold the mouse on it and drag sideways | the row scrolled with the pointer, older Runs arriving as its oldest end, on the right, comes into view, chips fading out at whichever end has more; no chip chosen |
+| E-MON-SCOPE-MOVE | Pane entries focused | `j`, `k`, ↑ or ↓ | the next or previous entry selected, through the Branches and then the Waiting stack; a branch shows its first chip in the Main area, a waiting review is only selected |
 | E-MON-RUNS-MOVE | Pane entries focused, a branch selected | ← or → | the branch's previous or next chip shown in the Main area and filled, its row scrolling to show it |
 | E-MON-RUNS-GRAPH | Pane entries focused, a branch selected | Enter | Main area focused, on the shown view |
 | E-MON-GRAPH-TO-RUNS | Main area focused, no Detail open | Esc | Pane entries focused, the same entry selected |
 | E-REVIEW-OPEN | Pane, a waiting review in the Waiting stack | click it, or Enter on it selected | Review of that request in the Main area |
 | E-PANE-WORKTREES | Pane | a worktree of a listed project is added or removed (or its folder deleted), in another process | within seconds and without a reload, its branch appears in the Branches or goes from them |
-| E-BRANCH-RUNNING | Pane | a Run starts on a listed branch, in another process | its row ends with that Run's chip, `Running` and its time so far; the Current chip goes |
-| E-BRANCH-RUN-END | Pane, a branch's row ending with a running Run | that Run ends | its chip shows its final status and age; the row ends with a Current chip |
+| E-BRANCH-RUNNING | Pane | a Run starts on a listed branch, in another process | its row starts with that Run's chip, `Running` and its time so far; the Current chip goes |
+| E-BRANCH-RUN-END | Pane, a branch's row starting with a running Run | that Run ends | its chip shows its final status and age; the row starts with a Current chip |
 | E-WAITING-CHANGE | Pane | a Human review starts or stops waiting, in this window or another process | the Waiting stack adds or drops its row, the bar's count following: `(0)` with none |
 | E-MAIN-REVIEW-LEAVE | Review in the Main area | choose a branch or one of its chips | that view shown, the review left without being closed; opening it again shows it as it was left |
 | E-MON-NOTICE | Main area with a notice, focus anywhere | click the notice in the Main area's header | the notice shown in full, wrapped within the header, what is below neither moved nor hidden; another click shows it as one line again |
@@ -265,6 +267,7 @@ E-PANE-SELECT.
 - J-BRANCHES: E-LAUNCH-MONITOR → E-PANE-SELECT
   E-PANE-WORKTREES
 - J-BRANCH-RUNS: E-PANE-SELECT → E-PANE-DRAG → E-PANE-CHIP
+- J-BRANCH-STAR: E-PANE-STAR → E-PANE-STAR
   E-BRANCH-RUNNING → E-BRANCH-RUN-END
 - J-PANE-SEARCH: E-REVIEW-SEARCH-FOCUS → E-REVIEW-SEARCH-TERMS → E-REVIEW-SUGGEST → E-REVIEW-SUGGEST-CLOSE → E-REVIEW-SEARCH-CLEAR → E-REVIEW-SEARCH-LEAVE
   E-REVIEW-SEARCH-FOCUS → E-PANE-SORT

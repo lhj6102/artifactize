@@ -84,10 +84,10 @@
     void current.scan(item.key);
   }
 
-  /** Select a branch: its last chip, the Run in progress or else its Current, shows. */
+  /** Select a branch: its first chip, the Run in progress or else its Current, shows. */
   function select(item: BranchView) {
-    const last = item.chips[item.chips.length - 1];
-    if (last) choose(item, last);
+    const first = item.chips[0];
+    if (first) choose(item, first);
   }
 
   /** Open a waiting review (or a Human request opened by ID) in the Main area. */
@@ -123,7 +123,7 @@
     }
   }
 
-  /** Move the selection by `by` entries: a branch shows its last chip, a review is only selected. */
+  /** Move the selection by `by` entries: a branch shows its first chip, a review is only selected. */
   function move(by: number) {
     if (entries.length === 0) return;
     const at = entries.findIndex((entry) => entryKey(entry) === entryKey(m.selected));
@@ -142,9 +142,10 @@
     if (selected?.kind !== "branch") return;
     const item = branches.find((candidate) => keyOf(candidate.key) === keyOf(selected.branch));
     if (!item) return;
-    const at = filled(item) ?? item.chips.length - 1;
+    const at = filled(item) ?? 0;
     const next = at + by;
-    if (next < 0 && item.older) void browse.older(item.key);
+    // Past the oldest chip, on the right, older Runs are asked for.
+    if (next >= item.chips.length && item.older) void browse.older(item.key);
     const chip = item.chips[Math.max(0, Math.min(item.chips.length - 1, next))];
     if (chip && Math.max(0, Math.min(item.chips.length - 1, next)) !== filled(item)) choose(item, chip);
   }

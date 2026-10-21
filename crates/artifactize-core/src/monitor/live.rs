@@ -6,6 +6,7 @@
 mod current;
 mod loader;
 mod query;
+mod starred;
 mod waiting;
 
 #[cfg(test)]
@@ -14,6 +15,7 @@ mod tests;
 pub use current::{Current, CurrentArtifact, CurrentEdge, CurrentEval, Plan, scan};
 pub use loader::{Input, Loader, Snapshot};
 pub use query::{DEFAULT, Query, Sort, complete, show};
+pub use starred::{star, starred};
 pub use waiting::{Waiting, waiting};
 
 use crate::{
@@ -21,13 +23,15 @@ use crate::{
     store::CatalogRun,
     types::{RunId, RunStatus, Timestamp},
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
 /// How a Git worktree has its project checked out.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Head {
     Branch(String),
     /// A detached worktree, known by its folder.
@@ -36,7 +40,8 @@ pub enum Head {
 
 /// Where a branch lives: a Git repository's checked-out branch, by the repository's common
 /// directory, or a folder outside Git.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Place {
     Git { common: PathBuf, head: Head },
     Folder(PathBuf),

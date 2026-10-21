@@ -349,8 +349,8 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       mkdirSync(frames);
       const started = run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], { env: { ...env } });
       const id = (JSON.parse(started) as { run: string }).run;
-      // Show the new Run as soon as its chip ends the branch's row, then record it until it ends.
-      await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's row ends with ${id}` });
+      // Show the new Run as soon as its chip starts the branch's row, then record it until it ends.
+      await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's row starts with ${id}` });
       await browser.execute((main) => {
         const shown = document.querySelector(main);
         const canvas = shown?.querySelector(".run .svelte-flow") ?? null;

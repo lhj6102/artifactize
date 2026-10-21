@@ -27,7 +27,7 @@
     query: string;
     /** The chip of each branch shown in the Main area, by branch key. */
     filled: (branch: BranchView) => number | null;
-    /** Select a branch: its last chip shows. */
+    /** Select a branch: its first chip shows. */
     onselect: (branch: BranchView) => void;
     /** Show a chip of a branch. */
     onchoose: (branch: BranchView, chip: Chip) => void;
@@ -96,7 +96,17 @@
       {#each branches as branch (keyOf(branch.key))}
         {@const key = keyOf(branch.key)}
         <li role="option" aria-selected={isSelected(key)} class:selected={isSelected(key)} data-key={key}>
-          <button class="name" tabindex="-1" onclick={() => onselect(branch)}>{name(branch)}</button>
+          <div class="head">
+            <button class="name" tabindex="-1" onclick={() => onselect(branch)}>{name(branch)}</button>
+            <button
+              class="star"
+              class:on={branch.starred}
+              tabindex="-1"
+              aria-label="Star {name(branch)}"
+              aria-pressed={branch.starred}
+              onclick={() => void browse.star(branch.key, !branch.starred)}>{branch.starred ? "★" : "☆"}</button
+            >
+          </div>
           <ChipRow {branch} filled={filled(branch)} onchoose={(chip) => onchoose(branch, chip)} onolder={() => void browse.older(branch.key)} />
         </li>
       {:else}
@@ -166,10 +176,37 @@
     padding: 8px var(--pad);
     min-width: 0;
   }
+  /* The name and its star share a line above the chips; the star stays at the line's end. */
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  /* A star is quiet until it is on; on, it carries the amber of attention. */
+  .star {
+    flex: none;
+    margin: 0 0 0 auto;
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.55;
+  }
+  .star:hover,
+  .star.on {
+    opacity: 1;
+  }
+  .star.on {
+    color: var(--light-active);
+  }
   /* The branch's name labels its chips, which carry what matters: a smaller, regular, secondary
      label above them. */
   .name {
-    justify-self: start;
+    min-width: 0;
     max-width: 100%;
     margin: 0;
     padding: 0;

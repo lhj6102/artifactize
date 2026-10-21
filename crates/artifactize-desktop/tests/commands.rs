@@ -179,6 +179,11 @@ fn open_run(run: &str) -> Value {
     json!({"run": run, "close": false, "query": null, "older": null, "full": false, "resync": false})
 }
 
+/// Star `branch`, or take its star away.
+fn star(branch: &Value, on: bool) -> Value {
+    json!({"run": null, "close": false, "query": null, "older": null, "star": {"branch": branch, "on": on}, "full": false, "resync": false})
+}
+
 /// Read the state afresh with the pane's search `query`.
 fn search(query: &str) -> Value {
     json!({"run": null, "close": false, "query": query, "older": null, "full": true, "resync": false})
@@ -859,6 +864,36 @@ fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
 }
 
 #[test]
+fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Monitor);
+    let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
+    assert_eq!(view["branches"][0]["starred"], json!(false));
+    let branch = view["branches"][0]["key"].clone();
+    let starred = invoke(&monitor, "browse", json!({"navigate": star(&branch, true)})).unwrap();
+    assert_eq!(starred["branches"][0]["starred"], json!(true), "{starred}");
+    // Kept in the state directory, where another monitor of this user reads it.
+    assert_eq!(
+        artifactize_core::monitor::live::starred(Some(&fixture.state))
+            .unwrap()
+            .len(),
+        1
+    );
+    let unstarred = invoke(
+        &monitor,
+        "browse",
+        json!({"navigate": star(&branch, false)}),
+    )
+    .unwrap();
+    assert_eq!(unstarred["branches"][0]["starred"], json!(false));
+    assert!(
+        artifactize_core::monitor::live::starred(Some(&fixture.state))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);
@@ -954,16 +989,16 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
         );
     });
     let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
-    // The Run ended: its chip shows its final status, and the row ends with a Current chip.
-    assert_eq!(view["branches"][0]["chips"][0]["running"], json!(false));
+    // The Run ended: the row starts with a Current chip, then its chip with its final status.
+    assert_eq!(view["branches"][0]["chips"][0], json!({"kind": "current"}));
+    assert_eq!(view["branches"][0]["chips"][1]["running"], json!(false));
     assert!(
-        view["branches"][0]["chips"][0]["text"]
+        view["branches"][0]["chips"][1]["text"]
             .as_str()
             .unwrap()
             .starts_with("GREEN "),
         "{view}"
     );
-    assert_eq!(view["branches"][0]["chips"][1], json!({"kind": "current"}));
     // The shape the caller holds comes back as its lights alone, in its order.
     let after = graph(&monitor, read["shape"].clone());
     assert_eq!(after["shape"], read["shape"]);

@@ -18,7 +18,7 @@ use artifactize_core::{
 use serde::Deserialize;
 use specta::Type;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -80,6 +80,10 @@ struct Shown {
     opened: Opened,
     /// Chips shown of each branch whose row reached further back than [`CHIPS`].
     chips: BTreeMap<Place, usize>,
+    /// The starred branches, once read from the state directory.
+    starred: Option<BTreeSet<Place>>,
+    /// Why the starred branches could not be read or kept.
+    unstarred: Option<String>,
     error: Option<String>,
     refreshed: bool,
     /// The state was replaced since the frontend last drew; it drops Details and drafts.
@@ -125,10 +129,20 @@ pub struct Navigate {
     pub query: Option<String>,
     /// Reach further back in this branch's Runs.
     pub older: Option<BranchKey>,
+    /// Star a branch, or take its star away: starred branches are listed first.
+    pub star: Option<Star>,
     /// Read the waiting reviews again: refreshes and change hints; navigation reuses them.
     pub full: bool,
     /// Drop every cache first, after a resync hint or a manual refresh.
     pub resync: bool,
+}
+
+/// A branch starred, or its star taken away.
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Star {
+    pub branch: BranchKey,
+    pub on: bool,
 }
 
 impl Browse {
@@ -147,6 +161,8 @@ impl Browse {
                 query: Search::new(live::DEFAULT.into()),
                 opened: Opened::None,
                 chips: BTreeMap::new(),
+                starred: None,
+                unstarred: None,
                 error: None,
                 refreshed: false,
                 replaced: false,
@@ -160,9 +176,23 @@ impl Browse {
         self.shown.lock().expect("browse state lock")
     }
 
-    /// Apply `step` to the shown selection.
-    fn navigate(&self, step: &Navigate) {
+    /// Apply `step` to the shown selection; a star is kept in `state` at once.
+    fn navigate(&self, state: &Path, step: &Navigate) {
         let mut shown = self.shown();
+        if shown.starred.is_none() {
+            let read = live::starred(Some(state));
+            shown.unstarred = read.as_ref().err().cloned();
+            shown.starred = Some(read.unwrap_or_default());
+        }
+        if let Some(star) = &step.star {
+            match live::star(Some(state), &star.branch.to_place(), star.on) {
+                Ok(kept) => {
+                    shown.starred = Some(kept);
+                    shown.unstarred = None;
+                }
+                Err(error) => shown.unstarred = Some(error),
+            }
+        }
         if let Some(id) = step.run.clone() {
             let id: RunId = id.into_inner();
             if shown.opened.id() != Some(&id) {
@@ -359,7 +389,7 @@ struct Read {
 #[tauri::command]
 #[specta::specta]
 pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<BrowseView, Failure> {
-    app.browse.navigate(&navigate);
+    app.browse.navigate(&app.launch.state, &navigate);
     let read = Read {
         full: navigate.full,
         resync: navigate.resync,

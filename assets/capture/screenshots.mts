@@ -208,7 +208,7 @@ async function capture(output: string, work: string): Promise<void> {
     };
 
     // A. The branch's Run shown by its chip, its graph drawn, and the sign-off in the Waiting
-    // stack. The branch's last chip is its Current, since the Run ended; its one Run chip is
+    // stack. The branch's first chip is its Current, since the Run ended; its one Run chip is
     // the one before it.
     const MAIN = 'section.panel[aria-label="Main area"]';
     const runChip = '[aria-label="Branches"] [role="option"] button[data-chip]:not([data-chip="current"])';

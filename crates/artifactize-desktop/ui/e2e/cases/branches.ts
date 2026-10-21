@@ -11,7 +11,7 @@ import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { exists, nativePath, removeTree, type NativePath } from "../platform.ts";
+import { exists, nativePath, readText, removeTree, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, leans, type Chip } from "../pane.ts";
@@ -36,21 +36,22 @@ function row(browser: WebdriverIO.Browser) {
       fadeLeft: element.dataset.fadeLeft === "true",
       fadeRight: element.dataset.fadeRight === "true",
       masked: getComputedStyle(element).maskImage !== "none",
-      at: { x: Math.round(box.left + 12), y: Math.round(box.top + box.height / 2) },
+      end: { x: Math.round(box.right - 12), y: Math.round(box.top + box.height / 2) },
     };
   }, ROW);
 }
 
-/** Hold the mouse on the row at its left end, drag it right to the window's edge and release
- * it; again, until `until` holds. A person's hand does the same strokes. */
+/** Hold the mouse on the row at its right end, drag it left to the window's edge, bringing older
+ * Runs in from the right, and release it; again, until `until` holds. A person's hand does the
+ * same strokes. */
 async function drag(browser: WebdriverIO.Browser, until: () => Promise<boolean>) {
-  const STROKES = 6;
+  // A stroke spans about the Pane's width, so a long row takes many.
+  const STROKES = 16;
   for (let stroke = 0; stroke < STROKES && !(await until()); stroke += 1) {
-    const { at } = await row(browser);
-    const width = await browser.execute(() => innerWidth);
+    const { end: at } = await row(browser);
     await browser.action("pointer", { id: "chips" }).move({ x: at.x, y: at.y }).down().perform(true);
     try {
-      for (let x = at.x + 60; x < width - 4; x += 60) await browser.action("pointer", { id: "chips" }).move({ x, y: at.y }).perform(true);
+      for (let x = at.x - 60; x > 4; x -= 60) await browser.action("pointer", { id: "chips" }).move({ x, y: at.y }).perform(true);
       await browser.action("pointer", { id: "chips" }).up().perform();
     } finally { await browser.releaseActions(); }
   }
@@ -61,48 +62,49 @@ export const scenarios: Scenario[] = [
   // UX journey: J-BRANCH-RUNS; UX edges: E-PANE-SELECT E-PANE-DRAG E-PANE-CHIP E-CURRENT-CHIP
   scenario<{ runs: string[] }>(
     "branches-chip-row",
-    "lays a branch's Runs out oldest to newest ending with its Current, drags the row for older Runs without choosing one, and shows a clicked chip",
+    "lays a branch's Runs out newest to oldest after its Current, drags the row for older Runs without choosing one, and shows a clicked chip",
     async () => {
       const { fixture, runs } = createHistory(24);
       return { fixture, data: { runs } };
     },
     async (browser, { data: { runs } }) => {
+      const newest = [...runs].reverse();
       await listed(browser, "repo  master");
-      // Selecting the branch shows its last chip: with no Run in progress, its Current.
+      // Selecting the branch shows its first chip: with no Run in progress, its Current.
       await selectBranch(browser, "repo  master");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the branch's Current shown");
       let shown = (await branch(browser, "repo  master"))!;
-      // The newest Runs, oldest to newest, then the Current chip, filled; older Runs arrive later.
+      // The Current chip, filled, then the newest Runs, newest first; older Runs arrive later.
       const first = shown.chips.length - 1;
       assert.ok(first > 0 && first < runs.length, `some of the newest Runs first: ${first} of ${runs.length}`);
-      assert.deepEqual(shown.chips.map((chip) => chip.id), [...runs.slice(-first), "current"]);
-      assert.deepEqual(shown.chips.map((chip) => chip.filled), [...Array(first).fill(false), true]);
-      for (const chip of shown.chips.slice(0, -1)) {
+      assert.deepEqual(shown.chips.map((chip) => chip.id), ["current", ...newest.slice(0, first)]);
+      assert.deepEqual(shown.chips.map((chip) => chip.filled), [true, ...Array(first).fill(false)]);
+      for (const chip of shown.chips.slice(1)) {
         assert.equal(chip.glyph, "✓", `${chip.id} shows its status`);
         assert.match(chip.text, /^GREEN \d+[smhd]/, `${chip.id} reads its status and age`);
         // Tinted with its status colour, its glyph in that colour.
         assert.ok(leans(chip.paint, 1) && leans(chip.ink, 1), `${chip.id} is tinted green, its glyph green: ${JSON.stringify(chip)}`);
       }
       // The shown Current chip is filled with the accent.
-      assert.ok(leans(shown.chips.at(-1)!.paint, 2), `the shown Current chip is filled with the accent: ${JSON.stringify(shown.chips.at(-1))}`);
+      assert.ok(leans(shown.chips[0].paint, 2), `the shown Current chip is filled with the accent: ${JSON.stringify(shown.chips[0])}`);
       // The row starts at its newest end with no scrollbar; the chips fade out at the end with more.
       let drawn = await row(browser);
       assert.ok(drawn.overflows && !drawn.scrollbar, `the row is wider than its place and has no scrollbar: ${JSON.stringify(drawn)}`);
-      assert.ok(drawn.right <= 1 && drawn.fadeLeft && !drawn.fadeRight && drawn.masked, `the newest end shown, older chips fading: ${JSON.stringify(drawn)}`);
+      assert.ok(drawn.left <= 1 && !drawn.fadeLeft && drawn.fadeRight && drawn.masked, `the newest end shown, older chips fading: ${JSON.stringify(drawn)}`);
 
-      // Dragging it right brings older chips into view, and at its oldest end older Runs arrive
+      // Dragging it left brings older chips into view, and at its oldest end older Runs arrive
       // without moving what is shown.
       await drag(browser, async () => (await branch(browser, "repo  master"))?.chips.length === 25);
       shown = (await branch(browser, "repo  master"))!;
-      assert.deepEqual(shown.chips.map((chip) => chip.id), [...runs, "current"], "every Run of the branch, oldest first");
+      assert.deepEqual(shown.chips.map((chip) => chip.id), ["current", ...newest], "every Run of the branch, newest first");
       drawn = await row(browser);
-      assert.ok(drawn.right > 1 && drawn.fadeRight, `the row scrolled away from its newest end, newer chips fading: ${JSON.stringify(drawn)}`);
-      await drag(browser, async () => (await row(browser)).left <= 1);
+      assert.ok(drawn.left > 1 && drawn.fadeLeft, `the row scrolled away from its newest end, newer chips fading: ${JSON.stringify(drawn)}`);
+      await drag(browser, async () => (await row(browser)).right <= 1);
       drawn = await row(browser);
-      assert.ok(!drawn.fadeLeft && drawn.fadeRight, `the oldest end shown, newer chips fading: ${JSON.stringify(drawn)}`);
+      assert.ok(drawn.fadeLeft && !drawn.fadeRight, `the oldest end shown, newer chips fading: ${JSON.stringify(drawn)}`);
       // No drag chose a chip: the Current is still the one shown.
       assert.equal(await mainTitle(browser), "Current · repo  master", "a drag chooses nothing");
-      assert.equal((await branch(browser, "repo  master"))?.chips.at(-1)?.filled, true);
+      assert.equal((await branch(browser, "repo  master"))?.chips[0]?.filled, true);
 
       // A click on a chip shows that Run, filled.
       await showRun(browser, "repo  master", runs[0]);
@@ -111,10 +113,10 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(shown.chips.filter((chip) => chip.filled).map((chip) => chip.id), [runs[0]], "only the clicked chip is filled");
       // Filled with its status colour, stronger than the tint of a chip not shown; the Current
       // chip, not shown, keeps an accent tint.
-      const [filled, tinted] = [shown.chips[0], shown.chips[1]];
+      const [filled, tinted] = [shown.chips.at(-1)!, shown.chips.at(-2)!];
       const strength = (chip: Chip) => chip.paint[1] - Math.max(chip.paint[0], chip.paint[2]);
       assert.ok(leans(filled.paint, 1) && strength(filled) > strength(tinted), `the shown Run's chip is filled green: ${JSON.stringify({ filled, tinted })}`);
-      assert.ok(leans(shown.chips.at(-1)!.paint, 2), `the Current chip keeps an accent tint: ${JSON.stringify(shown.chips.at(-1))}`);
+      assert.ok(leans(shown.chips[0].paint, 2), `the Current chip keeps an accent tint: ${JSON.stringify(shown.chips[0])}`);
       // The Current chip shows the Current again.
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown again");
@@ -124,7 +126,7 @@ export const scenarios: Scenario[] = [
   // UX journeys: J-BRANCH-RUNS J-LIVE; UX edges: E-BRANCH-RUNNING E-BRANCH-RUN-END
   scenario<{ first: string }>(
     "branches-run-in-progress",
-    "ends a branch's row with a Run another process starts, running its time so far, and with the Current again once it ends",
+    "starts a branch's row with a Run another process starts, running its time so far, and with the Current again once it ends",
     async () => {
       const fixture = await create();
       const first = signoff(fixture);
@@ -133,25 +135,26 @@ export const scenarios: Scenario[] = [
       return { fixture, data: { first: first.runId } };
     },
     async (browser, { fixture, data: { first } }) => {
-      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([first, "current"]),
-        "the ended Run, then the Current");
+      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify(["current", first]),
+        "the Current, then the ended Run");
       // Another process starts a Run that waits for a person.
       changeNotes(fixture, "# Release notes\n- A second release.\n");
       const run = await verifyWaiting(fixture);
       // Explicitly the newer, whatever times the two verifies were saved at.
       orderRuns(fixture, [first, run]);
-      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([first, run]),
-        "the row ends with the Run in progress, the Current chip gone");
-      const running = (await branch(browser, "repo  master"))!.chips[1];
+      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([run, first]),
+        "the row starts with the Run in progress, the Current chip gone");
+      const running = (await branch(browser, "repo  master"))!.chips[0];
       assert.match(running.text, /^Running \d+[smh]/, `the running chip reads its time so far: ${running.text}`);
       assert.ok(leans(running.paint, 2), `the running chip is tinted blue: ${JSON.stringify(running)}`);
       // Its sign-off is given elsewhere: the Run ends, its chip shows its final status and age.
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request, "the new Run asks for the sign-off");
       signOff(fixture, request.id);
-      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([first, run, "current"]),
-        "the row ends with the Current again");
+      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify(["current", run, first]),
+        "the row starts with the Current again");
       const ended = (await branch(browser, "repo  master"))!.chips[1];
+      assert.equal(ended.id, run, "the ended Run follows the Current chip");
       assert.equal(ended.glyph, "✓");
       assert.match(ended.text, /^GREEN \d+[smhd]/, `the ended chip reads its final status and age: ${ended.text}`);
       assert.ok(leans(ended.paint, 1), `the GREEN chip is tinted green: ${JSON.stringify(ended)}`);
@@ -162,6 +165,37 @@ export const scenarios: Scenario[] = [
         return { name: read(row.querySelector(".name")!), chip: read(row.querySelector("button[data-chip]")!) };
       });
       assert.ok(type.name.size < type.chip.size && type.name.weight < type.chip.weight, `the name is quieter than its chips: ${JSON.stringify(type)}`);
+    },
+  ),
+
+  // UX journey: J-BRANCH-STAR; UX edge: E-PANE-STAR
+  scenario<Record<string, never>>(
+    "branches-star",
+    "lists a starred branch first, keeps its star for the next monitor, and lists it with the others again once the star is taken away",
+    async () => {
+      const fixture = await create();
+      await addWorktrees(fixture);
+      return { fixture, data: {} };
+    },
+    async (browser, { fixture }) => {
+      const names = async () => (await branches(browser)).map((entry) => entry.name);
+      await waitFor(browser, async () => (await names()).length === 3, "the three worktrees listed");
+      const before = await names();
+      const last = before.at(-1)!;
+      assert.deepEqual((await branches(browser)).map((entry) => [entry.star, entry.starred]), [["☆", false], ["☆", false], ["☆", false]], "no star yet");
+      // Starred, the last branch is listed first, the others in their order after it.
+      await browser.$(`button[aria-label=${JSON.stringify(`Star ${last}`)}]`).click();
+      await waitFor(browser, async () => (await names())[0] === last, `${last} listed first: ${JSON.stringify(await names())}`);
+      assert.deepEqual(await names(), [last, ...before.slice(0, -1)]);
+      const starred = (await branch(browser, last))!;
+      assert.ok(starred.starred && starred.star === "★", `its star is on: ${JSON.stringify(starred)}`);
+      // Kept in the state directory, for the next monitor of this user.
+      assert.equal((JSON.parse(readText(nativePath(fixture.state, "starred-branches.json"))) as unknown[]).length, 1);
+      // Taken away, it is listed with the others again.
+      await browser.$(`button[aria-label=${JSON.stringify(`Star ${last}`)}]`).click();
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(before), `listed as before: ${JSON.stringify(await names())}`);
+      assert.equal((await branch(browser, last))?.starred, false);
+      assert.deepEqual(JSON.parse(readText(nativePath(fixture.state, "starred-branches.json"))), []);
     },
   ),
 
@@ -180,7 +214,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await names()).length === 4, "the four live entries");
       assert.deepEqual(await names(), ["loosefiles", "repo  master", "repo  scope-one", "repo  scope-two"]);
       // A folder outside Git with a Run is listed by its name, and selecting it shows its Current.
-      assert.deepEqual((await branch(browser, "loosefiles"))?.chips.map((chip) => chip.id), [plain.run, "current"]);
+      assert.deepEqual((await branch(browser, "loosefiles"))?.chips.map((chip) => chip.id), ["current", plain.run]);
       await selectBranch(browser, "loosefiles");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · loosefiles", "the folder's Current shown");
       await graphShown(browser, "a:plain");
@@ -347,9 +381,9 @@ export const scenarios: Scenario[] = [
       // One entry per project and branch: none for the removed folder, the live one or the session.
       assert.deepEqual((await branches(browser)).map((entry) => entry.name).sort(), ["repo  master", "repo  shared"]);
       // Its row holds the person's Run from the removed folder and the agent session's from the
-      // live one, oldest first, then its Current.
-      assert.deepEqual((await branch(browser, "repo  shared"))?.chips.map((chip) => chip.id), [...shared, "current"]);
-      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id), [master, "current"]);
+      // live one after its Current, newest first.
+      assert.deepEqual((await branch(browser, "repo  shared"))?.chips.map((chip) => chip.id), ["current", ...[...shared].reverse()]);
+      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id), ["current", master]);
       // A click on a chip of a branch not selected selects that branch and shows the chip's Run:
       // here the one from the removed folder, still the branch's.
       assert.deepEqual((await branches(browser)).filter((entry) => entry.selected), [], "no branch selected yet");

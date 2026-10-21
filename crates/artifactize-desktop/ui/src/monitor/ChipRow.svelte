@@ -1,13 +1,12 @@
 <script lang="ts">
-  // A branch's chip row: one chip per Run, oldest to newest left to right, ending with the Run
-  // in progress or the Current chip. It has no scrollbar: the mouse held on it drags it
-  // sideways, and chips fade out at whichever end has more. Reaching its oldest end asks for
-  // older Runs, which arrive without moving what is shown. A drag chooses nothing.
+  // A branch's chip row: the Run in progress or the Current chip first, then one chip per Run,
+  // newest to oldest left to right. It has no scrollbar: the mouse held on it drags it sideways,
+  // and chips fade out at whichever end has more. Reaching its oldest end, on the right, asks
+  // for older Runs, which arrive without moving what is shown. A drag chooses nothing.
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { BranchView, Chip } from "../ipc/client";
   import { tone, toneColour } from "../shell/tone";
-  import { ChipRowState, setChipRowState } from "./chip-row-state.svelte";
 
   let {
     branch,
@@ -30,36 +29,37 @@
 
   const label = (chip: Chip) => (chip.kind === "run" ? chip.text : "Current");
 
-  const c = new ChipRowState();
-  setChipRowState(c);
-
   /** The fades follow the scroll position; older Runs are asked for at the oldest end. Only
    * the DOM is touched: the row's own scroll offset and two data attributes. */
   const scroll: Attachment<HTMLElement> = (row) => {
     let width = row.scrollWidth;
-    let anchored = false;
+    let lead = row.firstElementChild?.getAttribute("data-chip");
+    let count = row.childElementCount;
+    let asked = false;
     const fade = () => {
       // Not laid out yet: nothing is in view, so nothing fades and nothing is asked for.
       if (row.clientWidth === 0) return;
-      if (c.pinned) row.scrollLeft = row.scrollWidth;
       const right = row.scrollWidth - row.clientWidth - row.scrollLeft;
       row.dataset.fadeLeft = String(row.scrollLeft > 1);
       row.dataset.fadeRight = String(right > 1);
-      if (row.scrollLeft < NEAR && branch.older && !anchored) {
-        anchored = true;
+      if (right < NEAR && branch.older && !asked) {
+        asked = true;
         onolder();
       }
     };
-    // Older chips arrive at the left: keep what is shown where it was.
+    // Older Runs arrive at the right and move nothing. A new lead (a Run started, or one ended
+    // and the Current chip came back) arrives at the left: a row scrolled to older Runs keeps
+    // them where they were, and a row at its newest end shows it.
     const grown = new MutationObserver(() => {
       const added = row.scrollWidth - width;
-      width = row.scrollWidth;
-      if (anchored && added > 0) row.scrollLeft += added;
-      anchored = false;
+      const first = row.firstElementChild?.getAttribute("data-chip");
+      if (first !== lead && added > 0 && row.scrollLeft > 1) row.scrollLeft += added;
+      if (row.childElementCount !== count) asked = false;
+      [width, lead, count] = [row.scrollWidth, first, row.childElementCount];
       fade();
     });
     grown.observe(row, { childList: true, subtree: true, characterData: true });
-    // A row starts at its newest end; later snapshots never move it.
+    // A row starts at its newest end, its scroll's start.
     untrack(fade);
     row.addEventListener("scroll", fade);
     const resized = new ResizeObserver(fade);
@@ -74,9 +74,7 @@
   /** The filled chip scrolls into view when it changes. */
   const reveal: Attachment<HTMLElement> = (row) => {
     if (filled === null) return;
-    const before = row.scrollLeft;
     row.querySelector<HTMLElement>(`[data-index="${filled}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    if (row.scrollLeft !== before) c.pinned = false;
   };
 
   /** Holding the mouse on the row drags it with the pointer until the button is released. */
@@ -89,7 +87,6 @@
       const by = moved.clientX - start;
       if (!dragged && Math.abs(by) < DRAG) return;
       dragged = true;
-      c.pinned = false;
       row.scrollLeft = offset - by;
     };
     const drop = () => {

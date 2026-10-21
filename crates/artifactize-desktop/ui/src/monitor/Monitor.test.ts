@@ -117,21 +117,21 @@ it("opens on the Current of the branch it was started for, and scans it again on
   expect(navigations().filter((step) => step.resync)).toHaveLength(2);
 });
 
-it("selects a branch's last chip, steps through its chips and the Waiting stack with the keys, and opens a review", async () => {
-  const feature = branch("feat/x", [runChip("run-1", "GREEN"), runChip("run-2", "RUNNING", true)]);
-  const main = branch("main", [runChip("run-0", "RED"), { kind: "current" }]);
+it("selects a branch's first chip, steps through its chips and the Waiting stack with the keys, and opens a review", async () => {
+  const feature = branch("feat/x", [runChip("run-2", "RUNNING", true), runChip("run-1", "GREEN")]);
+  const main = branch("main", [{ kind: "current" }, runChip("run-0", "RED")]);
   const { navigations, scanned } = backend(monitor(), () => browseView(1, { branches: [feature, main], waiting: [waitingRow("run-0-1")] }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await waitFor(() => expect(within(entries).getByText(/^app\s+feat\/x$/)).toBeTruthy());
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Nothing chosen");
-  // A click on a branch's name shows its last chip: the Run in progress.
+  // A click on a branch's name shows its first chip: the Run in progress.
   await fireEvent.click(within(entries).getByText(/^app\s+feat\/x$/));
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-2" }));
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Run run-2");
-  // ← steps to the older chip; ↓ to the next branch, whose last chip is its Current.
+  // → steps to the older chip on its right; ↓ to the next branch, whose first chip is its Current.
   entries.focus();
-  await fireEvent.keyDown(entries, { key: "ArrowLeft" });
+  await fireEvent.keyDown(entries, { key: "ArrowRight" });
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-1" }));
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(scanned()).toBe(1));
@@ -146,16 +146,31 @@ it("selects a branch's last chip, steps through its chips and the Waiting stack 
   expect(screen.getByRole("heading", { name: "Waiting (1)" })).toBeTruthy();
 });
 
+it("stars a branch from its entry, and takes a star away", async () => {
+  const starred = branch("feat/x", [{ kind: "current" }], false, true);
+  const main = branch("main", [{ kind: "current" }]);
+  const { navigations } = backend(monitor(), () => browseView(1, { branches: [starred, main] }));
+  render(App);
+  const star = await screen.findByRole("button", { name: /^Star app\s+main$/ });
+  expect(star.getAttribute("aria-pressed")).toBe("false");
+  await fireEvent.click(star);
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ star: { branch: main.key, on: true } }));
+  const on = screen.getByRole("button", { name: /^Star app\s+feat\/x$/ });
+  expect(on.getAttribute("aria-pressed")).toBe("true");
+  await fireEvent.click(on);
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ star: { branch: starred.key, on: false } }));
+});
+
 it("scans the shown Current again when a Run of its branch ends", async () => {
   let ended = false;
   let revision = 0;
   const snapshot = () =>
     browseView(++revision, {
-      branches: [branch("main", ended ? [runChip("run-1", "GREEN"), { kind: "current" }] : [runChip("run-1", "RUNNING", true)])],
+      branches: [branch("main", ended ? [{ kind: "current" }, runChip("run-1", "GREEN")] : [runChip("run-1", "RUNNING", true)])],
     });
   const { scanned } = backend(monitor(), snapshot);
   render(App);
-  // The Run in progress ends its row; once it ended, the row ends with the Current chip.
+  // The Run in progress leads its row; once it ended, the Current chip leads it.
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await waitFor(() => expect(within(entries).getByText(/^app\s+main$/)).toBeTruthy());
   ended = true;

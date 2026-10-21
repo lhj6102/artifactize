@@ -211,7 +211,7 @@ export type BranchKey =
 /**  A folder outside Git. */
 { kind: "folder"; path: PathKey };
 
-/**  One live branch of the pane: `project  branch`, then its row of chips, oldest first. */
+/**  One live branch of the pane: `project  branch`, then its row of chips, newest first. */
 export type BranchView = {
 	key: BranchKey,
 	project: string,
@@ -219,10 +219,12 @@ export type BranchView = {
 	name: string,
 	/**  Where its Current is scanned and its tools run. */
 	workspace: PathKey,
-	/**  Its newest Runs, oldest first, ending with the one in progress or else the Current chip. */
+	/**  Its newest Runs, newest first, led by the one in progress or else the Current chip. */
 	chips: Chip[],
-	/**  Older Runs than the row holds exist: reaching its oldest end shows them. */
+	/**  Older Runs than the row holds exist: reaching its oldest end, on the right, shows them. */
 	older: boolean,
+	/**  Starred: listed before the branches that are not. */
+	starred: boolean,
 };
 
 export type BrowseView = {
@@ -581,6 +583,8 @@ export type Navigate = {
 	query: string | null,
 	/**  Reach further back in this branch's Runs. */
 	older: BranchKey | null,
+	/**  Star a branch, or take its star away: starred branches are listed first. */
+	star: Star | null,
 	/**  Read the waiting reviews again: refreshes and change hints; navigation reuses them. */
 	full: boolean,
 	/**  Drop every cache first, after a resync hint or a manual refresh. */
@@ -753,6 +757,12 @@ export type Stage =
 "claim" | 
 /**  Claimed by this reviewer. */
 "review" | "completed";
+
+/**  A branch starred, or its star taken away. */
+export type Star = {
+	branch: BranchKey,
+	on: boolean,
+};
 
 /**  The state changed, or (`resync`) hints may have been missed: read it afresh. */
 export type StateChanged = {

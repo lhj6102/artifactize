@@ -85,7 +85,8 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify({
         "a:docs": "docs: would run (1 eval)", "a:release": "release: would run (1 eval)", "a:ship": "ship: waiting",
       }), `each Artifact marked by what verify would do: ${JSON.stringify(await drawn())}`);
-      assert.deepEqual((await drawn()).edges, { "a:release>a:ship": "run" }, "the relation carries what its source would do");
+      await waitFor(browser, async () => JSON.stringify((await drawn()).edges) === JSON.stringify({ "a:release>a:ship": "run" }),
+        `the relation carries what its source would do: ${JSON.stringify(await drawn())}`);
       const appearance = await graphAppearance(browser);
       assert.notEqual(appearance.nodes["a:release"].dot, appearance.nodes["a:ship"].dot, "would run and waiting are painted apart");
       assert.deepEqual(await browser.execute((root) => [...document.querySelectorAll(`${root} [aria-label="Legend"] li`)].map((item) => item.textContent?.trim()), CURRENT),
@@ -155,9 +156,13 @@ export const scenarios: Scenario[] = [
       ], "the concrete input-to-consumer relation carries its instruction label");
 
       // Esc closes the Detail; Close does too, and a click on the background. The expanded text
-      // left the graph less room without moving its camera: Fit View shows it whole again.
+      // left the graph less room without moving its camera: folded again, with Fit View, the
+      // graph shows whole.
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closed release's Detail");
+      await browser.$(`${CURRENT} details summary`).click();
+      await waitFor(browser, async () => !(await expanded()), "structure text folded");
       await browser.$(`${CURRENT} .svelte-flow__controls-fitview`).click();
+      await camera(browser);
       await clickArtifact("release");
       await waitFor(browser, async () => (await detail(browser)) !== null, "release's Detail open again");
       await browser.$(DETAIL).$("button*=Close").click();
@@ -175,6 +180,8 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await detail(browser)) === null, "a click on the background closed docs' Detail");
 
       // Each Refresh, Ctrl+R and F5 scans the changed declarations again, the text staying open.
+      await browser.$(`${CURRENT} details summary`).click();
+      await waitFor(browser, expanded, "structure text expanded again");
       // The person zooms out; no scan or new layout below moves that camera.
       await browser.$(`${CURRENT} .svelte-flow__controls-zoomout`).click();
       const moved = await camera(browser);
@@ -234,9 +241,9 @@ Summarize {docs}."""
       return { fixture, args: ["--repo", fixture.repo], data: { run: savedRuns(fixture)[0].id } };
     },
     async (browser, { data: { run } }) => {
-      // The Run ended, so the branch's last chip is its Current.
+      // The Run ended, so the branch's first chip is its Current.
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
-      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[run, false], ["current", true]]);
+      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [["current", true], [run, false]]);
       await graphShown(browser, "a:app");
       await waitFor(browser, async () => (await browser.$(nodeAt("a:app")).getAttribute("aria-label")) === "app: reused", "app marked reused");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
@@ -295,10 +302,10 @@ Summarize {docs}."""
       const before = { scans: await scans(), scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
       assert.match(before.scanned, /^Scanned at \d/);
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
-      // Another process verifies: while its Run waits the row ends with it; signed off, the
+      // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);
-      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips.at(-1)?.id === run, "the Run in progress ends the row");
+      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === run, "the Run in progress starts the row");
       assert.equal(await mainTitle(browser), "Current · repo  master", "the Current stays shown");
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request);

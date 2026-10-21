@@ -10,8 +10,9 @@ export type Chip = { id: string; text: string; glyph: string; filled: boolean; p
 /** Red, green or blue (0, 1, 2) is the strongest channel of `colour`. */
 export const leans = (colour: number[], channel: number) =>
   colour.length === 3 && colour.every((value, at) => at === channel || colour[channel] > value);
-/** A branch's entry as read: `project  branch`, whether it is selected, and its chip row. */
-export type Branch = { name: string; selected: boolean; chips: Chip[] };
+/** A branch's entry as read: `project  branch`, whether it is selected, its star as drawn
+ * (`★` on, `☆` off) and whether it is pressed, and its chip row. */
+export type Branch = { name: string; selected: boolean; star: string; starred: boolean; chips: Chip[] };
 /** A waiting review's row as read. */
 export type WaitingRow = { id: string; eval: string; where: string; meta: string; selected: boolean };
 
@@ -24,6 +25,8 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
   return browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Branches"] [role="option"]')].map((row) => ({
     name: row.querySelector(".name")?.textContent ?? "",
     selected: row.getAttribute("aria-selected") === "true",
+    star: row.querySelector(".star")?.textContent?.trim() ?? "",
+    starred: row.querySelector(".star")?.getAttribute("aria-pressed") === "true",
     chips: [...row.querySelectorAll<HTMLElement>("button[data-chip]")].map((chip) => {
       const glyph = chip.querySelector(".glyph");
       return {

@@ -96,7 +96,7 @@ pub enum Chip {
     Current,
 }
 
-/// One live branch of the pane: `project  branch`, then its row of chips, oldest first.
+/// One live branch of the pane: `project  branch`, then its row of chips, newest first.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BranchView {
@@ -106,10 +106,12 @@ pub struct BranchView {
     pub name: String,
     /// Where its Current is scanned and its tools run.
     pub workspace: PathKey,
-    /// Its newest Runs, oldest first, ending with the one in progress or else the Current chip.
+    /// Its newest Runs, newest first, led by the one in progress or else the Current chip.
     pub chips: Vec<Chip>,
-    /// Older Runs than the row holds exist: reaching its oldest end shows them.
+    /// Older Runs than the row holds exist: reaching its oldest end, on the right, shows them.
     pub older: bool,
+    /// Starred: listed before the branches that are not.
+    pub starred: bool,
 }
 
 /// One Human review waiting for a person.
@@ -324,7 +326,7 @@ fn status_word(status: RunStatus) -> String {
     }
 }
 
-fn branch(branch: &Branch, limit: usize, now: OffsetDateTime) -> BranchView {
+fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> BranchView {
     let skipped = branch.runs.len().saturating_sub(limit);
     let mut chips: Vec<Chip> = branch.runs[skipped..]
         .iter()
@@ -343,6 +345,8 @@ fn branch(branch: &Branch, limit: usize, now: OffsetDateTime) -> BranchView {
         (Some(_), Some(Chip::Run { running, .. })) => *running = true,
         _ => chips.push(Chip::Current),
     }
+    // What is happening now comes first, right under the branch's name.
+    chips.reverse();
     BranchView {
         key: BranchKey::new(&branch.place),
         project: branch.project.clone(),
@@ -350,6 +354,7 @@ fn branch(branch: &Branch, limit: usize, now: OffsetDateTime) -> BranchView {
         workspace: PathKey::new(&branch.workspace),
         chips,
         older: skipped > 0,
+        starred,
     }
 }
 
@@ -397,7 +402,10 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
     });
     let (branches, waiting_rows) = match &shown.query.parsed {
         Ok(query) => {
-            let (branches, waiting_rows) = live::show(query, &shown.branches, &shown.waiting);
+            let none = std::collections::BTreeSet::new();
+            let starred = shown.starred.as_ref().unwrap_or(&none);
+            let (branches, waiting_rows) =
+                live::show(query, &shown.branches, &shown.waiting, starred);
             (
                 branches
                     .into_iter()
@@ -407,7 +415,12 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
                             .get(&shown_branch.place)
                             .copied()
                             .unwrap_or(CHIPS);
-                        branch(shown_branch, limit, now)
+                        branch(
+                            shown_branch,
+                            limit,
+                            starred.contains(&shown_branch.place),
+                            now,
+                        )
                     })
                     .collect(),
                 waiting_rows
@@ -423,6 +436,12 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         .iter()
         .cloned()
         .chain(shown.unreadable.iter().map(ToString::to_string))
+        .chain(
+            shown
+                .unstarred
+                .iter()
+                .map(|error| format!("Starred branches: {error}")),
+        )
         .collect();
     BrowseView {
         query: QueryView {

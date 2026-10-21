@@ -21,7 +21,7 @@ artifactize-desktop graph --repo PATH
 ```
 
 Without arguments the app opens with nothing chosen, whatever the current directory.
-`--repo PATH` selects the branch of that folder and shows its last chip; `--all`, the
+`--repo PATH` selects the branch of that folder and shows its first chip; `--all`, the
 default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
@@ -60,13 +60,17 @@ or go within seconds, without a reload. Who ran a Run, an agent session or a per
 makes no entry of its own: a branch's Runs are that project's Runs on that branch,
 from whichever folder they ran in.
 
-Under a branch's name its Runs sit in one row of chips, oldest to newest left to
+Under a branch's name its Runs sit in one row of chips, newest to oldest left to
 right, each with its status and age, a running one with its time so far:
-`… [RED 1h 20m] [RED 25m] [Running 2m 22s]`, coloured by status. While a Run is
-in progress on the branch the row ends with it; otherwise it ends with a **Current**
-chip. Drag the row sideways to scroll it, older Runs arriving at its oldest end.
-Selecting a branch shows its last chip; a click on a chip shows that one in the Main
-area, the shown chip filled.
+`[Running 2m 22s] [RED 25m] [RED 1h 20m] …`, coloured by status. While a Run is
+in progress on the branch the row starts with it; otherwise it starts with a
+**Current** chip. Drag the row sideways to scroll it, older Runs arriving at its
+right end. Selecting a branch shows its first chip; a click on a chip shows that one
+in the Main area, the shown chip filled.
+
+The ☆ at the end of a branch's name stars it: starred branches are listed first,
+each group in the search's order, and stay starred the next time you open the app.
+Click the ★ again to take the star away.
 
 ↑/↓ or `j`/`k` move through the branches and then the waiting reviews; ←/→ choose
 the previous or next chip of the selected branch, its row scrolling to show it.

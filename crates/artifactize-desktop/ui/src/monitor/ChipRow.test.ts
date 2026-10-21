@@ -1,5 +1,6 @@
-// A branch's chip row: chips oldest to newest with the shown one filled, a click chooses a chip,
-// a drag of the row chooses nothing, and the oldest end in view asks for older Runs once.
+// A branch's chip row: the Current chip, then Runs newest to oldest, the shown one filled; a
+// click chooses a chip, a drag of the row chooses nothing, and the oldest end in view asks for
+// older Runs once.
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, expect, it, onTestFinished, vi } from "vitest";
 import ChipRow from "./ChipRow.svelte";
@@ -18,14 +19,14 @@ afterEach(cleanup);
 
 const row = () => screen.getByRole("group", { name: "Runs of app main" });
 
-it("shows the chips oldest first with the shown one filled, and a click chooses one", async () => {
+it("shows the Current chip first, then the Runs newest first, the shown one filled, and a click chooses one", async () => {
   const onchoose = vi.fn();
-  const chips = [runChip("run-1", "RED"), runChip("run-2", "GREEN"), { kind: "current" as const }];
+  const chips = [{ kind: "current" as const }, runChip("run-2", "GREEN"), runChip("run-1", "RED")];
   render(ChipRow, { branch: branch("main", chips), filled: 1, onchoose, onolder: vi.fn() });
   const buttons = within(row()).getAllByRole("button");
-  expect(buttons.map((button) => button.textContent?.trim())).toEqual(["✗RED 5m", "✓GREEN 5m", "Current"]);
+  expect(buttons.map((button) => button.textContent?.trim())).toEqual(["Current", "✓GREEN 5m", "✗RED 5m"]);
   expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
-  await fireEvent.click(buttons[2]);
+  await fireEvent.click(buttons[0]);
   expect(onchoose).toHaveBeenCalledWith({ kind: "current" });
 });
 

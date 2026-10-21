@@ -26,9 +26,9 @@ export function runChip(id: string, status: "GREEN" | "RED" | "RUNNING", running
   return { kind: "run", id, mark: { status, glyph }, text: `${running ? "Running" : status} 5m`, running };
 }
 
-/** Branch `name` of the project `app` with `chips`, oldest first. */
-export function branch(name: string, chips: Chip[], older = false): BranchView {
-  return { key: branchKey(name), project: "app", name, workspace: `/work/${name}`, chips, older };
+/** Branch `name` of the project `app` with `chips`, newest first. */
+export function branch(name: string, chips: Chip[], older = false, starred = false): BranchView {
+  return { key: branchKey(name), project: "app", name, workspace: `/work/${name}`, chips, older, starred };
 }
 
 /** A waiting Human review `id` of eval `release/signoff` on `name`. */
