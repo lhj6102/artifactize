@@ -312,23 +312,25 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       assert.equal((await settled()).transform, first.transform, "closing the Detail moved nothing");
 
-      // A new result relights the graph in place.
+      // The person zooms out (a small graph first fits at the largest zoom); a new result then
+      // relights the graph in place, under their camera, not a fit of its own.
+      await browser.$(".graph .svelte-flow__controls-zoomout").click();
+      const zoomed = await settled();
+      assert.notEqual(zoomed.transform, first.transform, "Zoom Out moved the camera");
       signOff(fixture, request);
       await browser.waitUntil(() => browser.$('.graph .svelte-flow__node[data-id="a:release"]').getAttribute("data-light").then((light) => light === "green"),
         { timeout: 30000, timeoutMsg: "release relit GREEN" });
       assert.equal(await mainTitle(browser), title, "the same Run's graph stays shown");
-      assert.equal((await settled()).transform, first.transform, "a new result moved nothing");
-      // The Run ends with nothing left needing attention, so the lines above the graph, and with
-      // them the canvas, keep their size while the person moves the camera below.
+      assert.equal((await settled()).transform, zoomed.transform, "a new result kept the person's camera");
+      // The Run ends with nothing left needing attention: the lines above the graph go and the
+      // canvas grows, and the camera still stays. The canvas keeps that size from here on.
       await browser.waitUntil(() => browser.execute(() => document.querySelector(".run .attention") === null),
         { timeout: 30000, timeoutMsg: "the Run ended with nothing needing attention" });
+      assert.equal((await settled()).transform, zoomed.transform, "the Run's end kept the person's camera");
 
-      // The person zooms out with the Detail open (a small graph first fits at the largest zoom);
-      // switching it keeps their camera.
+      // Opening the Detail and switching it keep their camera.
       await openArtifact(browser, "a:release", "Artifact release");
-      await browser.$(".graph .svelte-flow__controls-zoomout").click();
-      const zoomed = await settled();
-      assert.notEqual(zoomed.transform, first.transform, "Zoom Out moved the camera");
+      assert.equal((await settled()).transform, zoomed.transform, "opening the Detail kept the person's camera");
       await aside(browser).$('.svelte-flow__node[data-id="a:ship"]').click();
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "the Detail switched to ship" });
       assert.equal((await settled()).transform, zoomed.transform, "the person's camera stays");

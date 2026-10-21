@@ -153,6 +153,15 @@ export const scenarios: Scenario[] = [
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the runtime log's Detail closed back to the graph");
+      // An eval-free Artifact's Detail holds only its own Artifact chip: no eval chip, no "/",
+      // and no Summary or log left from the Artifact shown before.
+      await graphShown(browser, "a:basis");
+      const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
+      assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);
+      assert.equal(basis.path, "basis", "an eval-free Artifact has no trailing slash");
+      assert.ok(basis.tabs[0].selected && basis.evals.length === 0);
+      assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log is gone");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the basis Detail closed back to the graph");
       // The other saved Run actually executed the Agent, rather than reusing its result.
       await selectRun(runs[0]);
       await graphShown(browser, `a:${LONG_NAME}`);
