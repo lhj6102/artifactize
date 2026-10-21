@@ -283,8 +283,8 @@ Summarize {docs}."""
       assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
       /** Scans the app has completed, from its read-only command activity. */
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
-      const before = { scans: await scans(), drawn: await drawn(), look: await graphAppearance(browser) };
-      assert.match(await scanned(browser), /^Scanned at \d/);
+      const before = { scans: await scans(), scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
+      assert.match(before.scanned, /^Scanned at \d/);
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row ends with it; signed off, the
       // Run ends and the Current is scanned again by itself.
@@ -293,19 +293,33 @@ Summarize {docs}."""
       assert.equal(await mainTitle(browser), "Current · repo  master", "the Current stays shown");
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request);
+      // The scan the Run's end starts happens after this moment, read from the clock, not waited on.
+      const signed = Math.floor(Date.now() / 1000);
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
+      const observed = Math.ceil(Date.now() / 1000);
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // A scan of its own after the one before the Run, its time in the header, drawn in the
-      // reused colours again.
+      // A scan of its own after the one before the Run, drawn in the reused colours again, its
+      // header naming that scan's time: a second between the sign-off and seeing the scan.
       assert.ok((await scans()) > before.scans, "the Run's end completed a new scan");
-      await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the new scan's time in the header");
+      const header = await scanned(browser);
+      const fresh = await browser.execute((from: number, to: number, text: string) => {
+        for (let second = from; second <= to; second += 1) if (text === `Scanned at ${new Date(second * 1000).toLocaleTimeString()}`) return true;
+        return false;
+      }, signed, observed, header);
+      assert.ok(fresh, `the header shows the new scan's time, not only the previous ${before.scanned}: ${header}`);
       const after = await graphAppearance(browser);
       for (const id of ["a:release", "a:ship"]) {
         assert.notEqual(after.nodes[id].dot, before.look.nodes[id].dot, `${id} recoloured`);
         assert.equal(after.nodes[id].dot, reusedLook.nodes[id].dot, `${id} painted as reused`);
       }
       assert.notEqual((await drawn()).edges["a:release>a:ship"], before.drawn.edges["a:release>a:ship"], "the relation relit by its source's new plan");
+      // Its drawn line changes colour with it: from would run back to reused.
+      const edge = "a:release>a:ship";
+      assert.ok(after.edges[edge].painted, "the relation is drawn");
+      assert.notEqual(before.look.edges[edge].stroke, reusedLook.edges[edge].stroke, "would run's relation is stroked unlike reused");
+      assert.notEqual(after.edges[edge].stroke, before.look.edges[edge].stroke, "the relation's stroke changed");
+      assert.equal(after.edges[edge].stroke, reusedLook.edges[edge].stroke, "the relation stroked as reused");
     },
   ),
 

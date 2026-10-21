@@ -11,7 +11,7 @@ import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativePath, removeTree, type NativePath } from "../platform.ts";
+import { exists, nativePath, removeTree, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting } from "../pane.ts";
@@ -184,6 +184,12 @@ export const scenarios: Scenario[] = [
       const stack = await waiting(browser);
       for (const id of reviews) assert.ok(stack.rows.some((entry) => entry.id === id), `${id} still waits`);
       assert.ok(stack.rows.some((entry) => entry.where === "repo  scope-one"), "with its removed branch named");
+      // A worktree Git no longer lists goes too, though its folder and files stay.
+      removeTree(nativePath(fixture.root, "scope-two", ".git"));
+      git(fixture.repo, "-C", fixture.repo, "worktree", "prune");
+      await waitFor(browser, async () => (await names()).length === 2, "the unlisted worktree gone");
+      assert.deepEqual(await names(), ["repo  loose", "repo  master"]);
+      assert.equal(exists(nativePath(fixture.root, "scope-two", "release", "notes.md")), true, "its folder and files stay");
     },
   ),
 
