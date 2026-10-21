@@ -24,14 +24,14 @@
   const { current } = getAppState();
 
   const view = $derived(current.of(branch) ? current.view : null);
-  /** When it was scanned, local time. */
-  const scanned = $derived(view?.scannedAt ? new Date(view.scannedAt).toLocaleTimeString() : null);
+  /** When it was scanned: the instant, and its local time. */
+  const scanned = $derived(view?.scannedAt ? { at: new Date(view.scannedAt).toISOString(), local: new Date(view.scannedAt).toLocaleTimeString() } : null);
 </script>
 
 <section class="current" aria-label="Current">
   <header>
     <span class="when" role="status">
-      {#if current.scanning}Scanning…{:else if scanned}Scanned at {scanned}{/if}
+      {#if current.scanning}Scanning…{:else if scanned}Scanned at <time datetime={scanned.at}>{scanned.local}</time>{/if}
     </span>
     <button class="button small" disabled={current.scanning} onclick={() => void current.scan(branch)}>Refresh</button>
   </header>

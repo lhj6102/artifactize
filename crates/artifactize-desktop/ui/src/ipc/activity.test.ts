@@ -16,23 +16,23 @@ describe("command activity", () => {
     const native = deferred<string>();
     const source = { claim: (_id: string) => native.promise };
     const commands = observeCommands(source, activity);
-    expect(activity.snapshot().commands.claim).toEqual({ started: 0, completed: 0, pending: 0 });
+    expect(activity.snapshot().commands.claim).toEqual({ started: 0, completed: 0, failed: 0, pending: 0 });
     expect(activity.snapshot().commands.unregistered).toBeUndefined();
     const pending = commands.claim("private request");
     const dispatched = activity.snapshot();
-    expect(dispatched.commands.claim).toEqual({ started: 1, completed: 0, pending: 1 });
+    expect(dispatched.commands.claim).toEqual({ started: 1, completed: 0, failed: 0, pending: 1 });
     expect(dispatched.pending).toBe(1);
     expect(source.claim("other")).toBe(native.promise);
     native.resolve("claimed");
     expect(await pending).toBe("claimed");
-    expect(activity.snapshot().commands.claim).toEqual({ started: 1, completed: 1, pending: 0 });
+    expect(activity.snapshot().commands.claim).toEqual({ started: 1, completed: 1, failed: 0, pending: 0 });
     // A reader gets detached immutable values, not access to the activity owner.
     expect(dispatched.commands.claim.pending).toBe(1);
     expect(Object.isFrozen(dispatched.commands.claim)).toBe(true);
     const failure = new Error("native failure");
     const failed = observeCommands({ fail: () => Promise.reject(failure) }, activity).fail();
     await expect(failed).rejects.toBe(failure);
-    expect(activity.snapshot().commands.fail).toEqual({ started: 1, completed: 1, pending: 0 });
+    expect(activity.snapshot().commands.fail).toEqual({ started: 1, completed: 1, failed: 1, pending: 0 });
   });
 
   it("retains only the latest search generation through A → B → A and reversed completion", async () => {
@@ -70,11 +70,11 @@ describe("command activity", () => {
     }, activity);
     const waiting = commands.waiting();
     await expect(commands.thrown()).rejects.toBe(failure);
-    expect(activity.snapshot().commands.thrown).toEqual({ started: 1, completed: 1, pending: 0 });
+    expect(activity.snapshot().commands.thrown).toEqual({ started: 1, completed: 1, failed: 1, pending: 0 });
     expect(activity.snapshot().pending).toBe(1);
     native.resolve("finished");
     await expect(waiting).resolves.toBe("finished");
-    expect(activity.snapshot().commands.waiting).toEqual({ started: 1, completed: 1, pending: 0 });
+    expect(activity.snapshot().commands.waiting).toEqual({ started: 1, completed: 1, failed: 0, pending: 0 });
     expect(activity.snapshot().pending).toBe(0);
     expect(activity.snapshot().revision).toBe(4);
   });
@@ -94,21 +94,21 @@ describe("command activity", () => {
     const c = commands.browse();
     const dispatched = activity.snapshot();
     expect(dispatched.pending).toBe(3);
-    expect(dispatched.commands.search).toEqual({ started: 2, completed: 0, pending: 2 });
-    expect(dispatched.commands.browse).toEqual({ started: 1, completed: 0, pending: 1 });
+    expect(dispatched.commands.search).toEqual({ started: 2, completed: 0, failed: 0, pending: 2 });
+    expect(dispatched.commands.browse).toEqual({ started: 1, completed: 0, failed: 0, pending: 1 });
 
     second.resolve("latest search");
     await b;
     expect(activity.snapshot().pending).toBe(2);
-    expect(activity.snapshot().commands.search).toEqual({ started: 2, completed: 1, pending: 1 });
+    expect(activity.snapshot().commands.search).toEqual({ started: 2, completed: 1, failed: 0, pending: 1 });
     other.resolve("browse done");
     await c;
     expect(activity.snapshot().pending).toBe(1);
-    expect(activity.snapshot().commands.browse).toEqual({ started: 1, completed: 1, pending: 0 });
+    expect(activity.snapshot().commands.browse).toEqual({ started: 1, completed: 1, failed: 0, pending: 0 });
     first.resolve("earlier search");
     await a;
     expect(activity.snapshot().pending).toBe(0);
-    expect(activity.snapshot().commands.search).toEqual({ started: 2, completed: 2, pending: 0 });
+    expect(activity.snapshot().commands.search).toEqual({ started: 2, completed: 2, failed: 0, pending: 0 });
     expect(dispatched.pending).toBe(3);
     expect(dispatched.commands.search.pending).toBe(2);
   });

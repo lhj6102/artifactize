@@ -390,31 +390,14 @@ the original review ends.
 
 ### Local readers
 
-Monitor and Review use read-only state queries and cached Git discovery, rather
-than rediscovering declarations or fingerprints on every refresh. The list of Runs and
-its counts are a query that reads no Run's definitions; only the Run you open is decoded,
-and while it stays open only its records whose `revision` changed are read again. Local
-readers share a temporary hub inside the first subscriber process: an owner-only Unix
-socket or Windows named pipe, not a permanent daemon. Registration is acknowledged
-before the initial snapshot; writers never elect a hub.
-
-A writer's hint names what it changed. A write to a Run's state, a request or an
-execution names each Run that holds it, and a reader queries that Run's row of the list
-again, and the Run itself if it is open. A Run created or removed, or a write that cannot
-be tied to a Run, changes the list, and a reader queries the list and the open Run again.
-Pending Run hints are bounded; an overflow becomes a change of the list. Readers resync
-on connecting, on reconnecting after hub exit, after a gap or a bounded hint-queue
-overflow, and when the database is replaced. A resync is the same queries, with no
-caches dropped.
-
-A persistent read-only SQLite `data_version` connection and file-identity probe check
-every five seconds: a commit no hint reported is read like a change of the list, and a
-replaced database is resynced. If IPC is unsafe or unavailable, or the hub speaks another
-version, that five-second reconciliation replaces it without an insecure transport
-fallback. Clocks and spinners redraw cached data. Session hints wake only the
-selected transcript reader; a five-second file probe also catches missed appends
-or removal. Rendering does no file I/O, and input takes priority over history work.
-This is local coordination, not remote team-store push delivery.
+Monitor and Review only read the state; they never rediscover declarations or
+fingerprints to refresh. They follow changes as they happen: the first open reader
+hosts a temporary owner-only local channel (no daemon) on which writers announce which
+Runs they changed, and readers read only those again, the Run you have open included.
+Without the channel, or when it misses something, a check every five seconds catches
+up, and a replaced database is read again from the start. Opening a reader reads only
+the list of Runs and the Run you open, so even a very large Run is quick to follow.
+This is local coordination, not push delivery from a team store.
 
 The Run worker separately reconciles dead execution owners and backend slots and
 optional remote results, without a Human wait deadline. Explicit Human actions use

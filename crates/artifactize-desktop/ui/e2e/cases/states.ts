@@ -95,17 +95,16 @@ export const scenarios: Scenario[] = [
       // Each Artifact's one eval, in the colour of its own verdict. Each Detail closes before the
       // next Artifact's click, so it covers none of it.
       const expected = [
-        ["a:red", "red", "tone-red", /RED/, "✗", "RED"],
-        ["a:crash", "crash", "tone-error", /ERROR/, "!", "ERROR"],
-        ["a:down", "down", "tone-blocked", /blocked by red/, "⊘", "BLOCKED"],
-        ["a:gate", "gate", "tone-human", /Human/, "?", "WAITING_HUMAN"],
-        ["a:fine", "fine", "tone-green", /GREEN/, "✓", "GREEN"],
+        ["a:red", "red", /RED/, "✗", "RED"],
+        ["a:crash", "crash", /ERROR/, "!", "ERROR"],
+        ["a:down", "down", /blocked by red/, "⊘", "BLOCKED"],
+        ["a:gate", "gate", /Human/, "?", "WAITING_HUMAN"],
+        ["a:fine", "fine", /GREEN/, "✓", "GREEN"],
       ] as const;
       const painted = new Set<string>();
-      for (const [id, name, tone, status, glyph, shownStatus] of expected) {
+      for (const [id, name, status, glyph, shownStatus] of expected) {
         const shown = await openArtifact(browser, id, `Artifact ${name}`);
         assert.equal(shown.tabs.length, 2, `${name}'s Artifact tab and its one eval's tab`);
-        assert.equal(shown.tabs[1].tone, tone, `${name}'s eval tab shows its verdict's colour`);
         assert.equal(shown.tabs[1].glyph, glyph, `${name}'s eval tab shows its exact visible verdict glyph`);
         const row = await browser.execute(() => {
           const glyph = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .evals button .glyph');

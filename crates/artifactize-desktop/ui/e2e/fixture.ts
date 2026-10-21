@@ -13,7 +13,7 @@ import {
   type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
-export { createdRoots, releaseFixtures } from "./build-fixtures.ts";
+export { createdRoots, releaseFixtures, settleFixtures } from "./build-fixtures.ts";
 export { slowTool } from "./process-fixtures.ts";
 
 /** The declared immutable candidates inherited from the owning suite or tool session. */
@@ -335,7 +335,7 @@ export function orderRuns(fixture: Fixture, runs: readonly string[]): void {
 
 /**
  * A one-Artifact repository verified GREEN `count` times in a row, with no Run in progress: a
- * branch whose timeline holds more Runs than it first shows. Returns the Runs, oldest first.
+ * branch whose chip row holds more Runs than it first shows. Returns the Runs, oldest first.
  */
 export function createHistory(count: number): { fixture: Fixture; runs: string[] } {
   const fixture = createChain(1);
@@ -439,9 +439,8 @@ export async function addWaiting(fixture: Fixture, name: string, count: number):
   return requests(target).filter((request) => request.runId === run).map((request) => request.id);
 }
 
-/** A saved Run's selection as this version writes it, and as one with a selection kind it no
- * longer reads. */
-const SELECTIONS: [string, string] = ['"selection":{"kind":"all"}', '"selection":{"kind":"dependency"}'];
+/** A saved Run's selection as written, and as a version that no longer reads it would see it. */
+const [readableSelection, unreadableSelection] = ['"selection":{"kind":"all"}', '"selection":{"kind":"dependency"}'];
 
 /**
  * One GREEN Artifact `n000` verified four times. The three older Runs are rewritten as Runs saved
@@ -481,14 +480,13 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
         }
       });
     });
-    const [current, removed] = SELECTIONS;
-    rewrite(current, removed);
+    rewrite(readableSelection, unreadableSelection);
     return {
       fixture, readable: runs[3], unreadable,
       restore: () => {
-        rewrite(removed, current);
+        rewrite(unreadableSelection, readableSelection);
         // The readable Run too, if a case spoiled it.
-        if (!allUnreadable) updateDatabase(database, (db) => db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3").run(removed, current, runs[3]));
+        if (!allUnreadable) updateDatabase(database, (db) => db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3").run(unreadableSelection, readableSelection, runs[3]));
       },
     };
   }, fixture.root);
@@ -498,7 +496,7 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
  * another version would; that fixture's restore undoes it. */
 export function spoilRun(fixture: Fixture, run: string): void {
   updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
-    if (db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run(...SELECTIONS, run).changes !== 1) {
+    if (db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run(readableSelection, unreadableSelection, run).changes !== 1) {
       throw new Error(`Run ${run} was not rewritten`);
     }
   });

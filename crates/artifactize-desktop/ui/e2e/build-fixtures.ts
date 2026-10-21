@@ -33,16 +33,14 @@ export function createdRoots(): NativePath[] {
   return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
 }
 
-/** Cancel and join every fixture's Runs, keeping their files: an app not confirmed stopped may
- * still read them, but no fixture Run outlives the batch. */
+/** Cancel and join the Runs every fixture started, keeping all their inputs. */
 export function settleFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): void {
   const failures: unknown[] = [];
   for (const root of roots) {
-    if (!exists(root)) continue;
     try { settleFixtureRuns(candidate.cli, root, candidate.observer); } catch (error) { failures.push(error); }
   }
   if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, "fixture Runs could not be settled");
+  if (failures.length > 1) throw new AggregateError(failures, "fixture Run settlement failed; preserve inputs");
 }
 
 export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): Promise<void> {

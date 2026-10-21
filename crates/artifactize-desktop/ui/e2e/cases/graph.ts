@@ -30,10 +30,14 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
   const at = () => browser.execute((want) => [...document.querySelectorAll(`.svelte-flow__node[data-id="${want}"]`)]
     .find((node) => !node.closest('aside[aria-label="Detail"]'))?.getBoundingClientRect().toJSON(), id);
   const [before, where] = [await camera(browser), await at()];
-  for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) await press(browser, [key], () => true, `${key} reached the page`);
-  assert.equal(await camera(browser), before, "arrow keys moved no camera");
-  assert.deepEqual(await at(), where, "arrow keys moved no Artifact");
-  assert.equal(await focusedNode(browser), id, "the keyboard stays on the Artifact");
+  // Each key on its own, once the page has rendered it: a move one key undoes cannot hide.
+  for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+    await press(browser, [key], () => true, `${key} reached the page`);
+    await afterRender(browser);
+    assert.equal(await camera(browser), before, `${key} moved no camera`);
+    assert.deepEqual(await at(), where, `${key} moved no Artifact`);
+    assert.equal(await focusedNode(browser), id, `the keyboard stays on the Artifact after ${key}`);
+  }
 }
 
 export const scenarios: Scenario[] = [
@@ -67,7 +71,7 @@ export const scenarios: Scenario[] = [
       assert.equal(opened.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
       await browser.waitUntil(async () => (await detail(browser))?.tabs[0]?.icon === true,
         { timeout: 15000, timeoutMsg: "release's chip draws the Artifact icon before its name" });
-      assert.equal(opened.tabs[1].tone, "tone-human", "the sign-off's tab shows it waiting for a Human");
+      assert.equal(opened.tabs[1].glyph, "?", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
       assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
 
@@ -93,7 +97,7 @@ export const scenarios: Scenario[] = [
       for (const node of ["a:release", "a:ship", "a:docs"]) {
         assert.equal(after.nodes[node].at, before.nodes[node].at, `${node} kept its place`);
       }
-      await browser.waitUntil(async () => (await detail(browser))?.tabs[1]?.tone === "tone-green",
+      await browser.waitUntil(async () => (await detail(browser))?.tabs[1]?.glyph === "✓",
         { timeout: 15000, timeoutMsg: "the open Detail's sign-off tab turned GREEN" });
       assert.equal((await detail(browser))?.title, "Artifact release", "a live update keeps the open Detail on release");
 
@@ -411,7 +415,7 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:app");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");
-      assert.ok(opened.tabs.slice(1).every((tab) => tab.tone === "tone-green" && tab.glyph !== ""), "each eval's tab shows its GREEN glyph in GREEN");
+      assert.ok(opened.tabs.slice(1).every((tab) => tab.glyph === "✓"), "each eval's tab shows its GREEN glyph");
       assert.deepEqual(opened.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's own evals");
       assert.ok(opened.evals.every((row) => /GREEN/.test(row.status)), "with their verdicts");
       // A click on an eval of the list shows its tab: its own status, instruction and result.

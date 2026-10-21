@@ -402,8 +402,8 @@ and asks for a pasted redirect instead. On another machine, use the same fallbac
 Paste the full URL starting `http://localhost:1455/auth/callback?code=` into the
 terminal, or the desktop sign-in's paste field. Find it in the browser's address bar
 after the failed load, or in DevTools → Network if the page keeps loading.
-`logout codex` revokes and deletes
-artifactize's tokens. To use the tokens of an existing Codex sign-in instead, set
+`logout codex` deletes artifactize's tokens
+and asks the server to revoke them; it warns when the revocation is not confirmed. To use the tokens of an existing Codex sign-in instead, set
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`; artifactize only reads that file.
 See [Codex](../features/agent.md#codex).
 

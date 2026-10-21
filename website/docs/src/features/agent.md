@@ -349,7 +349,7 @@ artifactize login codex     # sign in to ChatGPT in the browser
 artifactize models codex    # the account's Codex models
 # Declare backend = "codex", model = "gpt-6-luna", reasoning = "max", then:
 artifactize verify --all --wait
-artifactize logout codex    # revoke and delete artifactize's tokens
+artifactize logout codex    # delete artifactize's tokens; their revocation is attempted
 ```
 
 - **Sign-in.** `login codex` uses the Codex OAuth client with PKCE, as the Codex

@@ -79,12 +79,13 @@ function palette(browser: WebdriverIO.Browser) {
     await browser.$('[aria-label="Request ID"]').click();
     await typeText(browser, id);
     const before = await checkpoint(browser);
-    const completed = before.activity.commands.requestDetail?.completed ?? 0;
+    const lookups = before.activity.commands.requestDetail;
     await browser.$('[role="dialog"] button[type="submit"]').click();
     // Opening an already shown original/follower can leave the same review visible.
-    // Correlate this ID lookup's completion before accepting the rendered review.
-    await waitFor(browser, async () => ((await checkpoint(browser)).activity.commands.requestDetail?.completed ?? 0) === completed + 1,
+    // Correlate this ID lookup's own success before accepting the rendered review.
+    await waitFor(browser, async () => ((await checkpoint(browser)).activity.commands.requestDetail?.completed ?? 0) === (lookups?.completed ?? 0) + 1,
       `the lookup of ${id} completed`);
+    assert.equal((await checkpoint(browser)).activity.commands.requestDetail?.failed ?? 0, lookups?.failed ?? 0, `the lookup of ${id} succeeded`);
     await commandsRendered(browser, before);
     await waitFor(browser, async () =>
       !(await browser.$('[aria-label="Request ID"]').isExisting()) && (await mainTitle(browser)) === "Review" && await browser.$('[aria-label="Human review"]').isExisting(),

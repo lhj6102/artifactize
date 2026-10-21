@@ -120,12 +120,22 @@ export const scenarios: Scenario[] = [
       const transcript = () => browser.execute(() => {
         const pane = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .transcript')!;
         const content = pane.closest<HTMLElement>(".content")!;
-        return { top: content.scrollTop, own: !!pane.querySelector(".track .thumb"), text: pane.innerText };
+        const window = pane.querySelector<HTMLElement>('[role="log"][aria-label="Agent transcript"]')!;
+        return { top: content.scrollTop, own: !!pane.querySelector(".track .thumb"), text: pane.innerText,
+          // A loading or failed read shows a status line instead of rows.
+          status: window.querySelector(":scope > p.status")?.textContent?.trim() ?? null,
+          rows: window.querySelectorAll(":scope > .row").length,
+          // Where the shown rows sit in the whole transcript, as its scrollbar draws it.
+          at: pane.querySelector<HTMLElement>(".track .thumb")?.style.top ?? null };
       });
       const bottom = await transcript();
       assert.ok(bottom.own, "the transcript has its own scrolling box");
       await aside(browser).$("button*=Top").click();
-      await browser.waitUntil(async () => (await transcript()).text !== bottom.text, { timeout: 15000, timeoutMsg: "the Agent log scrolled independently to its beginning" });
+      assert.notEqual(bottom.at, "0%", "the Agent log opened away from its beginning");
+      await browser.waitUntil(async () => {
+        const shown = await transcript();
+        return shown.status === null && shown.rows > 0 && shown.at === "0%";
+      }, { timeout: 15000, timeoutMsg: `the Agent log scrolled independently to its beginning: ${JSON.stringify(await transcript())}` });
       assert.equal((await transcript()).top, bottom.top, "the surrounding Detail did not scroll");
       assert.equal((await containment()).width, before.width, "long transcript lines do not expand the chosen Detail width");
       assert.ok((await containment()).bounded);

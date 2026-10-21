@@ -34,11 +34,12 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
         await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the request ID dialog");
         await fill(browser, '[aria-label="Request ID"]', id);
         const before = await checkpoint(browser);
-        const completed = before.activity.commands.requestDetail?.completed ?? 0;
+        const lookups = before.activity.commands.requestDetail;
         await browser.$('[role="dialog"] button[type="submit"]').click();
-        // The same review may already show: only this lookup's completion, rendered, resolves it.
-        await browser.waitUntil(async () => ((await checkpoint(browser)).activity.commands.requestDetail?.completed ?? 0) === completed + 1,
+        // The same review may already show: only this lookup's own success, rendered, resolves it.
+        await browser.waitUntil(async () => ((await checkpoint(browser)).activity.commands.requestDetail?.completed ?? 0) === (lookups?.completed ?? 0) + 1,
           { timeout: 15000, timeoutMsg: `the lookup of ${id} completed` });
+        assert.equal((await checkpoint(browser)).activity.commands.requestDetail?.failed ?? 0, lookups?.failed ?? 0, `the lookup of ${id} succeeded`);
         await commandsRendered(browser, before);
         await browser.waitUntil(
           async () => !(await browser.$('[aria-label="Request ID"]').isExisting()) && await human().isExisting(),

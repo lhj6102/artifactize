@@ -103,8 +103,7 @@ export const scenarios: Scenario[] = [
     "shows the branch's Run under its headline as its graph, with release's waiting sign-off a click away",
     () => atRepo(),
     async (browser, { fixture }) => {
-      const { text } = await monitorUI(browser, fixture);
-      const shown = await text();
+      await monitorUI(browser, fixture);
       assert.equal(await browser.$(".brand").getText(), "Artifactize");
       await browser.waitUntil(() => browser.execute(() => {
         const mark = document.querySelector<HTMLImageElement>(".brand img");
@@ -120,7 +119,17 @@ export const scenarios: Scenario[] = [
       const headline = await browser.$(`${MAIN} button.headline`).getText();
       assert.match(headline, /RUNNING/);
       assert.match(headline, /validation pending/);
-      assert.match(shown, /release\/signoff/, "what needs attention reads above the graph");
+      // What needs attention is the Run's own, in its Main area above its graph: the Waiting
+      // stack in the Pane names the same sign-off.
+      const attention = () => browser.execute((main) => {
+        const area = document.querySelector(main)!;
+        const graph = area.querySelector(".svelte-flow")?.getBoundingClientRect();
+        return [...area.querySelectorAll<HTMLElement>("*")]
+          .filter((element) => !element.closest(".svelte-flow") && [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes("release/signoff")))
+          .map((element) => ({ text: element.textContent?.trim() ?? "", above: !!graph && element.getBoundingClientRect().bottom <= graph.top + 1 }));
+      }, MAIN);
+      await browser.waitUntil(async () => (await attention()).some((line) => line.above),
+        { timeout: 15000, timeoutMsg: `what needs attention reads in the Run's Main area above its graph: ${JSON.stringify(await attention())}` });
       // The Run fills the right side as its graph, with every Artifact as a node.
       for (const id of ["a:release", "a:ship", "a:docs"]) await graphShown(browser, id);
       // Enter steps from the Pane into the Main area; a click on release shows its waiting sign-off.
@@ -569,7 +578,7 @@ export const scenarios: Scenario[] = [
     "groups tools by their declaring Artifact, own first, and runs the tool of each group",
     () => atRepo({ title: "Grouped tools", instruction: "Read {docs} and approve." }),
     async (browser, { fixture }) => {
-      const { human, openReview, runOf } = await monitorUI(browser, fixture, "Read {docs} and approve.");
+      const { human, openReview, runOf, toolLog } = await monitorUI(browser, fixture, "Read {docs} and approve.");
       await openReview();
       const groups = await browser.execute(() => [...document.querySelectorAll('[aria-label="Tools"] .group')].map((group) => group.getAttribute("aria-label")));
       assert.deepEqual(groups, ["Tools of release", "Tools of docs"], "own tools precede the alphabetically earlier dependency");
@@ -577,6 +586,11 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "release's notes completed" });
       await human().$('[aria-label="Tools of docs"]').$('button=▶ reference').click();
       await browser.waitUntil(async () => (await human().getText()).includes("Documentation checked."), { timeout: 15000, timeoutMsg: "the dependency's own notes were printed" });
+      // The printed text is not its end: wait for docs's reference run to end, and end well.
+      await browser.waitUntil(async () => (await runIn(browser, '[aria-label="Human review"]', "reference", "docs"))?.at(-1)?.kind === "end",
+        { timeout: 15000, timeoutMsg: "docs's reference completed" });
+      const reference = (await runIn(browser, '[aria-label="Human review"]', "reference", "docs"))!;
+      assert.ok(!reference.some((row) => row.error) && !(await toolLog()).noticeError, `docs's reference succeeded: ${JSON.stringify(reference)}`);
       const text = await human().getText();
       assert.match(text, /reference · docs/);
       assert.match(text, /notes · release/);

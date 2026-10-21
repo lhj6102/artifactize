@@ -31,7 +31,7 @@ function searched(name: string, argument: unknown): string | undefined {
 
 export class Activity {
   #revision = $state(0);
-  #commands = $state<Record<string, { started: number; completed: number }>>({});
+  #commands = $state<Record<string, { started: number; completed: number; failed: number }>>({});
   #search = $state<{ query: string; sequence: number; completed: boolean } | null>(null);
   readonly #projectedCommands = $derived(Object.freeze(Object.fromEntries(
     Object.entries(this.#commands).map(([name, state]) => [name, Object.freeze({
@@ -57,7 +57,7 @@ export class Activity {
 
   /** Availability comes from the commands actually wrapped, not a missing-as-zero guess. */
   register(name: string): void {
-    this.#commands[name] ??= { started: 0, completed: 0 };
+    this.#commands[name] ??= { started: 0, completed: 0, failed: 0 };
   }
 
   async run<T>(name: string, operation: () => Promise<T>, query?: string): Promise<T> {
@@ -68,6 +68,10 @@ export class Activity {
     const sequence = state.started;
     if (query !== undefined) this.#search = { query, sequence, completed: false };
     try { return await operation(); }
+    catch (error) {
+      state.failed += 1;
+      throw error;
+    }
     finally {
       state.completed += 1;
       this.#revision += 1;
