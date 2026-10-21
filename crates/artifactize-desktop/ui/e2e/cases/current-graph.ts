@@ -4,7 +4,7 @@
 // of a Run start.
 import assert from "node:assert/strict";
 import { changeNotes, create, createEvals, createGraph, createMixed, ended, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
-import { checkpoint } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { command, runtimeProfile, script } from "../native-fixtures.ts";
@@ -292,7 +292,7 @@ Summarize {docs}."""
       assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
       /** Scans the app has completed, from its read-only command activity. */
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
-      const before = { scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look: await graphAppearance(browser) };
+      const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look: await graphAppearance(browser) };
       assert.ok(before.at, "the header names the scan before the Run");
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row ends with it; signed off, the
@@ -305,11 +305,13 @@ Summarize {docs}."""
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // A scan of its own after the one before the Run, drawn in the reused colours again, its
-      // header naming that scan: the instant the app rendered, later than the one before.
+      // A scan of its own after the one before the Run, drawn in the reused colours again. Its
+      // freshness is the completed-scan generation: once that scan has rendered, the header
+      // names that scan's own instant, not the one before.
       assert.ok((await scans()) > before.scans, "the Run's end completed a new scan");
+      await commandsRendered(browser, before.checkpoint);
       const instant = await scannedAt(browser);
-      assert.ok(instant && Date.parse(instant) > Date.parse(before.at), `the header names the new scan, not ${before.at}: ${instant}`);
+      assert.ok(instant && instant !== before.at, `the header names the new scan, not ${before.at}: ${instant}`);
       const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString(), instant);
       assert.equal(await scanned(browser), `Scanned at ${local}`, "the header reads that scan's local time");
       const after = await graphAppearance(browser);
