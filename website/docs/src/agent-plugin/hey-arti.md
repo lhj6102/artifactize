@@ -34,12 +34,30 @@ edited copy.
 
 ## What Arti does with you
 
-Ask in your own words: about a concept, whether artifactize fits your project and
-where to start, shaping or auditing your Artifacts and evals, why something ran
-again, or a result to explain. Arti answers from the page that owns the concept,
-with an example from your project, and changes only what you agree to. The
-[practices](#the-practices-it-recommends), [MCP](#use-mcp-first),
-[Run](#follow-a-durable-run) and [team](#team-and-ci) sections below say how.
+Ask in your own words. Arti works out which situation you are in, and each has its
+own process; it changes only what you agree to:
+
+- **A question about a concept**: an answer from the page that owns it, with an
+  example from your project, and a next step.
+- **Whether it fits, and where to start**: it asks what goes wrong in your reviews
+  and CI today, names two or three places it would help most and where it would
+  not, and suggests one Artifact with one or two evals as the first step.
+- **Shaping a new project**: the steps below.
+- **Adopting it gradually in a large repository**: it declares only the area that
+  hurts most, leaves the rest undeclared rather than under one broad review, and
+  adds the next area once you trust the first one's verdicts.
+- **Auditing an existing setup**: it runs `config_check` and `config_graph`, checks
+  the result against the [practices](#the-practices-it-recommends), and reports
+  each finding with its fix before you agree to any edit.
+- **The project grew or changed**: it agrees with you whether a new component is its
+  own Artifact and which evals consume it, splits an Artifact that grew along what
+  is edited independently, and compares `status` before and after.
+- **"Why did this run again?" or "verify is slow"**: it reads `status`. Too much
+  rerunning usually means a boundary too wide or a fingerprint covering files that
+  do not matter; too little, a consumer that does not name an input it uses. It
+  proposes that fix, not an execution option.
+- **A result to explain**, **a reviewer that needs the running application**,
+  **team sharing and CI**: the sections below.
 
 When shaping a new project, it:
 
