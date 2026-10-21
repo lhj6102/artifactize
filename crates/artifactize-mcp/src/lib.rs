@@ -4,7 +4,7 @@ mod input;
 mod page;
 mod read;
 
-use artifactize_core::{project::VerifyOptions, runs};
+use artifactize_core::{platform, project::VerifyOptions, runs};
 use input::*;
 use rmcp::{
     ErrorData, ServerHandler, ServiceExt,
@@ -68,9 +68,6 @@ impl Server {
             executable,
         } = &self.launch;
         if let Some(project) = project {
-            if !project.is_absolute() {
-                return Err("project must be an absolute folder.".into());
-            }
             return runs::Context::new(&project, state.as_deref(), executable);
         }
         if let Some(repo) = repo {
@@ -189,9 +186,10 @@ impl Server {
 }
 /// The client's first `file:` root, if the client has roots; an error when it has roots but
 /// names no local folder, since its working directory is then the plugin's, not a project.
-// SEP-2577 deprecates roots without a replacement, and every spec version still serves them for
-// a year after 2026-07-28; the `project` argument covers hosts without them.
-#[allow(deprecated)]
+#[expect(
+    deprecated,
+    reason = "SEP-2577 deprecates roots without a replacement, and every spec version still serves them for a year after 2026-07-28; the `project` argument covers hosts without them"
+)]
 async fn root(call: &RequestContext<rmcp::RoleServer>) -> Result<Option<PathBuf>, String> {
     let declared = call
         .meta
@@ -210,7 +208,7 @@ async fn root(call: &RequestContext<rmcp::RoleServer>) -> Result<Option<PathBuf>
     listed
         .roots
         .iter()
-        .find_map(|root| url::Url::parse(&root.uri).ok()?.to_file_path().ok())
+        .find_map(|root| platform::file_uri_path(&root.uri))
         .map(Some)
         .ok_or_else(|| {
             "The client's roots name no local folder; pass `project`, the absolute project folder."
@@ -235,7 +233,9 @@ fn project(arguments: &mut Value) -> Result<Option<PathBuf>, String> {
         .and_then(|map| map.remove("project"))
     {
         None => Ok(None),
-        Some(Value::String(folder)) => Ok(Some(PathBuf::from(folder))),
+        Some(Value::String(folder)) => platform::absolute_folder(&folder)
+            .map(Some)
+            .ok_or_else(|| "project must be an absolute folder.".into()),
         Some(_) => Err("Invalid arguments: project must be a string.".into()),
     }
 }
