@@ -98,7 +98,9 @@ it("opens on the Current of the branch it was started for, and scans it again on
   const main = branch("main", [{ kind: "current" }]);
   const { scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
   render(App);
-  await screen.findByText("Scanned at", { exact: false });
+  /** The header names the time of the scan with this revision. */
+  const header = (revision: number) => `Scanned at ${new Date(current(revision).scannedAt).toLocaleTimeString()}`;
+  await screen.findByText(header(1));
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Current · app  main");
   await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
   expect(screen.getByLabelText("app: reused")).toBeTruthy();
@@ -108,6 +110,7 @@ it("opens on the Current of the branch it was started for, and scans it again on
   expect(screen.getByText("app → graph; criteria revision 1")).toBeTruthy();
   await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(screen.getByText("app → graph; criteria revision 2")).toBeTruthy());
+  expect(screen.getByText(header(2))).toBeTruthy();
   await fireEvent.keyDown(window, { key: "r", ctrlKey: true });
   await waitFor(() => expect(screen.getByText("app → graph; criteria revision 3")).toBeTruthy());
   await fireEvent.keyDown(window, { key: "F5" });

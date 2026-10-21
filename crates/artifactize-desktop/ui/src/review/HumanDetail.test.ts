@@ -4,6 +4,7 @@ import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { tick } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
@@ -190,7 +191,9 @@ describe("HumanDetail", () => {
     let finish!: (value: unknown) => void;
     backend("review", () => new Promise((resolve) => (finish = resolve)));
     const user = userEvent.setup();
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    let submitted!: () => void;
+    const settled = new Promise<void>((resolve) => (submitted = resolve));
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {}, onsubmitted: () => submitted() });
     await screen.findByText("REVIEW (yours)");
     await user.keyboard("g");
     await screen.findByLabelText(/comment/);
@@ -203,6 +206,9 @@ describe("HumanDetail", () => {
       await user.click(elsewhere);
       finish({ notice: null, view: humanView("completed"), settled: "published" });
       await screen.findByText("Completed result");
+      // The submission's focus recovery runs on the tick after it settled; wait for that step.
+      await settled;
+      await tick();
       expect(document.activeElement).toBe(elsewhere);
     } finally {
       elsewhere.remove();

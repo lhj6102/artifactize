@@ -234,13 +234,9 @@ Each stream's `evidence` says `complete` (full local capture, including the tail
 (older/remote/pruned local capture; possibly only the first 128 KiB), `missing`,
 or `not_runtime` (use request/session evidence instead). Empty is not missing.
 A reused request follows its original local producer; remote records do not
-promise locally retained logs. Full raw stdout/stderr belong to the Run output's
-invocation directory, not SQLite/remote result JSON. `artifactize prune` removes
-recognized scratch and output directories there but leaves the raw stream files and
-completion markers; only when the capture files themselves are gone, such as after
-the invocation directory is removed, does a query fall back to `saved_audit`. That
-128 KiB cleaned per-stream audit remains compatible and bounded; pagination
-cannot recover a tail when only that old/truncated audit survives.
+promise locally retained logs. How long raw captures are kept, and what
+`artifactize prune` leaves, is in the
+[runtime execution reference](../features/declarations.md#runtime-execution-library).
 
 `config_graph` discovers static definitions, evals, cycle peers and input-to-consumer
 relations without invoking hooks. Select an Artifact/eval for its required closure;
