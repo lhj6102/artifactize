@@ -36,19 +36,29 @@ function current(browser: WebdriverIO.Browser) {
    * target before one WebDriver click, rather than clicking during that transition. */
   async function clickArtifact(name: string) {
     const selector = `${CURRENT} .svelte-flow__node[data-id="a:${name}"]`;
-    await browser.waitUntil(() => browser.executeAsync<boolean, [string]>((selector, done) => {
-      const node = document.querySelector(selector);
-      if (!node) return done(false);
-      const before = node.getBoundingClientRect();
-      requestAnimationFrame(() => {
-        const after = node.getBoundingClientRect();
-        const canvas = node.closest(".svelte-flow")?.getBoundingClientRect();
-        const hit = document.elementFromPoint(after.x + after.width / 2, after.y + after.height / 2);
-        done(node.isConnected && before.x === after.x && before.y === after.y && before.width === after.width && before.height === after.height &&
-          !!canvas && after.left >= canvas.left && after.right <= canvas.right && after.top >= canvas.top && after.bottom <= canvas.bottom &&
-          hit?.closest(".svelte-flow__node") === node);
-      });
-    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` });
+    // Empty when it is a target; otherwise which condition failed, with the boxes involved.
+    let last = "";
+    await browser.waitUntil(async () => {
+      last = await browser.executeAsync<string, [string]>((selector, done) => {
+        const node = document.querySelector(selector);
+        if (!node) return done("no node");
+        const before = node.getBoundingClientRect();
+        requestAnimationFrame(() => {
+          const after = node.getBoundingClientRect();
+          const canvas = node.closest(".svelte-flow")?.getBoundingClientRect();
+          const hit = document.elementFromPoint(after.x + after.width / 2, after.y + after.height / 2);
+          const box = (rect: DOMRect | undefined) => rect ? [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(",") : "none";
+          const facts = `node ${box(after)}, canvas ${box(canvas)}, window ${innerWidth}×${innerHeight}`;
+          if (!node.isConnected) return done("detached");
+          if (before.x !== after.x || before.y !== after.y || before.width !== after.width || before.height !== after.height) return done(`moving: ${facts}`);
+          if (!canvas || after.left < canvas.left || after.right > canvas.right || after.top < canvas.top || after.bottom > canvas.bottom) return done(`outside its canvas: ${facts}`);
+          if (hit?.closest(".svelte-flow__node") !== node) return done(`covered by ${hit?.tagName ?? "nothing"} ${hit?.getAttribute("class") ?? ""}: ${facts}`);
+          done("");
+        });
+      }, selector);
+      return last === "";
+    }, { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` })
+      .catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
     await browser.$(selector).click();
   }
   return { structure, expanded, drawn, clickArtifact };
@@ -290,7 +300,13 @@ Summarize {docs}."""
       assert.match(result, /comment.*Checked notes 7f3a against the tag\./s, `the reused comment: ${result}`);
       assert.match(result, /approved.*true/s, `the reused approval: ${result}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
-      const reusedLook = await graphAppearance(browser);
+      // The look once every Artifact and the relation are painted reused, not a frame before
+      // the relation is drawn.
+      let reusedLook = await graphAppearance(browser);
+      await browser.waitUntil(async () => currentHasColours(reusedLook = await graphAppearance(browser),
+        { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
+      { timeout: 15000, timeoutMsg: "every Artifact and the relation painted reused" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(reusedLook)}`); });
       // The notes change on disk; the Current shows it only once its chip is chosen again.
       changeNotes(fixture, "# Release notes\n- A second release.\n");
       assert.deepEqual((await drawn()).nodes, allReused, "no scan without a choice, a Refresh or a Run's end");
@@ -299,13 +315,14 @@ Summarize {docs}."""
       assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
       /** Scans the app has completed, from its read-only command activity. */
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
-      const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look: await graphAppearance(browser) };
+      // Its look once release and its relation are painted would run, and ship waiting.
+      let look = await graphAppearance(browser);
+      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "waiting" }, { "a:release>a:ship": "run" }),
+        { timeout: 15000, timeoutMsg: "would run and waiting painted in their legend colours" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
+      const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look };
       assert.ok(before.at, "the header names the scan before the Run");
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
-      assert.ok(currentHasColours(reusedLook, { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
-        `reused in the legend's reused colour: ${JSON.stringify(reusedLook)}`);
-      assert.ok(currentHasColours(before.look, { "a:release": "run", "a:ship": "waiting" }, { "a:release>a:ship": "run" }),
-        `would run and waiting in their legend colours: ${JSON.stringify(before.look)}`);
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);

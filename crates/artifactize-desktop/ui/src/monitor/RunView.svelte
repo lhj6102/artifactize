@@ -8,7 +8,6 @@
     run,
     revision,
     opened = null,
-    cover = null,
     onopen,
     onclose,
     onrun,
@@ -18,8 +17,6 @@
     revision: number;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
-    /** The open Detail, docked over the graph. */
-    cover?: HTMLElement | null;
     onopen: (id: string) => void;
     onclose: () => void;
     /** Open the Detail of the Run. */
@@ -47,7 +44,7 @@
     {#await import("./SourceGraph.svelte")}
       <p class="empty">Loading the graph…</p>
     {:then { default: SourceGraph }}
-      <SourceGraph source={{ kind: "run", run: run.id }} {revision} {opened} {cover} {onopen} {onclose} />
+      <SourceGraph source={{ kind: "run", run: run.id }} {revision} {opened} {onopen} {onclose} />
     {/await}
   </div>
 </div>

@@ -7,15 +7,24 @@ export function focusedNode(browser: WebdriverIO.Browser): Promise<string | null
   return browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
 }
 
-/** Wait until the live graph draws a visible, hit-testable node `id`, not a retained element. */
+/** Wait until the live graph draws a visible, hit-testable node `id`, not a retained element.
+ * A timeout says what stood in the way: no node, an empty box, or what covers its centre. */
 export async function graphShown(browser: WebdriverIO.Browser, id: string, timeout = 15000): Promise<void> {
-  await browser.waitUntil(() => browser.execute((want) => {
-    const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
-    const box = node?.getBoundingClientRect();
-    if (!node || !box || box.width <= 0 || box.height <= 0) return false;
-    const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return target?.closest(".svelte-flow__node") === node;
-  }, id), { timeout, timeoutMsg: `the graph draws ${id}` });
+  let last = "";
+  await browser.waitUntil(async () => {
+    last = await browser.execute((want) => {
+      const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
+      const box = node?.getBoundingClientRect();
+      if (!node || !box) return "no node";
+      const at = [box.left, box.top, box.width, box.height].map(Math.round).join(",");
+      if (box.width <= 0 || box.height <= 0) return `an empty box at ${at}`;
+      const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      if (target?.closest(".svelte-flow__node") === node) return "";
+      const cover = target?.closest("[aria-label]") ?? target;
+      return `its box ${at} in a ${innerWidth}×${innerHeight} window is covered at its centre by ${cover?.tagName ?? "nothing"} ${cover?.getAttribute("aria-label") ?? cover?.className ?? ""}`;
+    }, id);
+    return last === "";
+  }, { timeout, timeoutMsg: `the graph draws ${id}` }).catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
 }
 
 /** The camera (translation and scale) of the Main area's graph, read once it holds still over a

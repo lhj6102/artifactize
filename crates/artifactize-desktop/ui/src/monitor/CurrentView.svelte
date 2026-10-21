@@ -9,15 +9,12 @@
   let {
     branch,
     opened = null,
-    cover = null,
     onopen,
     onclose,
   }: {
     branch: BranchKey;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
-    /** The open Detail, docked over the graph. */
-    cover?: HTMLElement | null;
     onopen: (id: string) => void;
     onclose: () => void;
   } = $props();
@@ -41,7 +38,7 @@
       {#await import("./SourceGraph.svelte")}
         <p class="note">Loading the graph…</p>
       {:then { default: SourceGraph }}
-        <SourceGraph source={{ kind: "current", branch }} revision={view.revision} {opened} {cover} {onopen} {onclose} />
+        <SourceGraph source={{ kind: "current", branch }} revision={view.revision} {opened} {onopen} {onclose} />
       {/await}
     </div>
     <details bind:open={current.structure}>

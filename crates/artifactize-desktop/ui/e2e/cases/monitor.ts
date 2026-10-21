@@ -96,6 +96,23 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
   return { text, human, toolLog, runOf, tool, openReview };
 }
 
+/** The nonblank lines of `text`, as typed or pasted on any platform. */
+const linesOf = (text: string) => text.split(/\r?\n/).filter((line) => line !== "");
+
+/** Whether `text` holds `lines` unchanged, in order, with no other line between them. */
+function holds(text: string, lines: string[]): boolean {
+  const got = linesOf(text);
+  return got.some((_, at) => lines.every((line, step) => got[at + step] === line));
+}
+
+/** Where `text` first leaves `lines`, from where their first line appears in it. */
+function difference(lines: string[], text: string): string {
+  const got = linesOf(text);
+  const start = Math.max(got.indexOf(lines[0]), 0);
+  const at = lines.findIndex((line, step) => got[start + step] !== line);
+  return `the log has ${lines.length} lines, the pasted text ${got.length}; log line ${at} ${JSON.stringify(lines[at])}, pasted ${JSON.stringify(got[start + at])}`;
+}
+
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-MAIN-RUN; UX edges: E-LAUNCH-REPO E-MON-RUNS-GRAPH
   scenario<null>(
@@ -344,17 +361,24 @@ export const scenarios: Scenario[] = [
       await browser.keys([primaryModifier, "a"]);
       const copied = await browser.execute(() => getSelection()?.toString() ?? "");
       assert.ok(copied.includes("- Ready to ship."), "the selected text includes the selectable Tool log");
+      // The Tool log as it shows, line by line. Engines serialize the rest of a whole-page
+      // selection differently (WebView2 copies form field values that a selection string
+      // leaves out, and blank lines between blocks vary), so the result is checked for the
+      // log's own lines, unchanged and in order with nothing between them.
+      const shown = await browser.execute((log) => [...document.querySelectorAll(`${log} p`)].map((row) => row.textContent ?? ""), LOG);
       // The pristine provider has no clipboard shortcuts. The evaluated device uses only
       // the WebView's editing API; it copies our selection and pastes into the focused field.
       await nativeInput(browser, { type: "copy" });
       await browser.$("#field-comment").click();
       await nativeInput(browser, { type: "paste" });
-      await browser.waitUntil(async () => (await browser.$("#field-comment").getValue()) === copied,
-        { timeout: 15000, timeoutMsg: "the copied Tool log text pasted unchanged into the result" });
+      let pasted = "";
+      await browser.waitUntil(async () => holds(pasted = await browser.$("#field-comment").getValue(), shown),
+        { timeout: 15000, timeoutMsg: "the copied Tool log text pasted unchanged into the result" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${pasted ? difference(shown, pasted) : "nothing pasted"}`); });
       // A submission clears the Tool log; the completed result stays open.
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
-      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: copied });
+      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: pasted });
       await browser.waitUntil(async () => (await toolLog()).rows.length === 0, { timeout: 15000, timeoutMsg: "the Tool log cleared by the submission" });
       await browser.waitUntil(async () => /completed result/i.test(await human().getText()), { timeout: 15000, timeoutMsg: "the completed result open" });
     },

@@ -408,14 +408,14 @@
             <Settings active={m.settings} />
           {:else if shown.kind === "run"}
             {#if run}
-              <RunView {run} {revision} opened={m.opened?.node ?? null} cover={m.dock} onopen={openNode} onclose={closeDetail} onrun={openRun} />
+              <RunView {run} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
             {:else if view?.missing}
               <p class="empty">This Run cannot be read; choose another.</p>
             {:else}
               <p class="empty">Loading the Run…</p>
             {/if}
           {:else if shown.kind === "current"}
-            <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} cover={m.dock} onopen={openNode} onclose={closeDetail} />
+            <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
           {:else if shown.kind === "review"}
             {#if review}
               <div class="review">
@@ -434,7 +434,7 @@
           {/if}
         </Panel>
         {#if m.opened && source && keyOf(m.opened.source) === keyOf(source) && !m.settings}
-          <aside class="dock" aria-label="Detail" bind:this={m.dock} style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
+          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
             <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
                  the resize cursor. -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

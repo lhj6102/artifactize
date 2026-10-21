@@ -2,7 +2,7 @@ import { createContext } from "svelte";
 import type { Area } from "./camera";
 
 export class GraphViewState {
-  /** The canvas as last measured with a size, and the part a docked panel covers. */
+  /** The canvas as last measured with a size. */
   area = $state.raw<Area | null>(null);
   /** Svelte Flow measured the first draw. */
   initialized = $state(false);

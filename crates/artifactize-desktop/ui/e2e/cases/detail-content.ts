@@ -2,7 +2,7 @@
 // actual Agent conversation/runtime output, and the different tab and view treatments.
 import assert from "node:assert/strict";
 import { createRich, FINDING, LONG_NAME, LONG_WORD, MODEL, OWNER } from "../rich-fixture.ts";
-import { aside, camera, detail, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
+import { aside, detail, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { subdued } from "../rendering.ts";
@@ -152,18 +152,16 @@ export const scenarios: Scenario[] = [
         return { own: getComputedStyle(pane).overflowY, long: pane.scrollHeight > pane.clientHeight };
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
-      // While the old eval's log is still open, a different Artifact replaces it with its
-      // own Artifact tab. No stale Summary or log is allowed to survive the switch. Fit View
-      // brings it out from under the Detail, which moves no camera of its own.
-      await browser.$(".monitor .graph .svelte-flow__controls-fitview").click();
-      await camera(browser);
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the runtime log's Detail closed back to the graph");
+      // An eval-free Artifact's Detail holds only its own Artifact chip: no eval chip, no "/",
+      // and no Summary or log left from the Artifact shown before.
       await graphShown(browser, "a:basis");
       const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
       assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);
       assert.equal(basis.path, "basis", "an eval-free Artifact has no trailing slash");
       assert.ok(basis.tabs[0].selected && basis.evals.length === 0);
-      assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log was replaced");
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the replacement Detail closed back to the graph");
+      assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log is gone");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the basis Detail closed back to the graph");
       // The other saved Run actually executed the Agent, rather than reusing its result.
       await selectRun(runs[0]);
       await graphShown(browser, `a:${LONG_NAME}`);

@@ -57,8 +57,6 @@ export class MonitorState {
   settings = $state(false);
   /** The Detail floating over the graph. */
   opened = $state.raw<Opened | null>(null);
-  /** The Detail's docked box while it is open: the graph keeps its Artifacts out from under it. */
-  dock = $state<HTMLElement | null>(null);
   /** The Detail's dragged width in pixels, or `null` for its default. */
   detailWidth = $state<number | null>(loadWidth());
   /** The notice shows in full rather than cut to one line. */
