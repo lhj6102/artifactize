@@ -7,7 +7,7 @@ pub(crate) mod test_support;
 mod tests;
 mod transport;
 
-use crate::types::SessionId;
+use crate::types::{RunId, SessionId};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -31,29 +31,94 @@ const RECONNECT: Duration = Duration::from_millis(500);
 const DELIVERY_TIMEOUT: Duration = Duration::from_millis(300);
 /// Bound hostile frames before allocation (IDs are at most 200 bytes).
 const MAX_FRAME_BYTES: usize = 1024;
-/// Bound per-process publishers, per-hub connections, broadcast backlog and session dirty sets.
+/// Bound per-process publishers, per-hub connections, broadcast backlog and dirty sets.
 const MAX_STATES: usize = 32;
 const MAX_CLIENTS: usize = 64;
 const MAX_BACKLOG: usize = 64;
 const MAX_DIRTY_SESSIONS: usize = 64;
-/// Version 1 is the first ephemeral invalidation wire format, independent of the state
-/// database schema and durable session-event format. The Hello handshake rejects any
-/// unsupported version instead of interpreting incompatible hints; readers reconcile safely.
-const VERSION: u32 = 1;
+const MAX_DIRTY_RUNS: usize = 64;
+/// Version 2 names the Run a write changed ([`Change::RunInvalidated`]). The wire format is
+/// independent of the state database schema and durable session-event format. The Hello
+/// handshake rejects any unsupported version instead of interpreting incompatible hints; a
+/// reader that cannot connect reconciles every [`RECONCILE`] instead.
+const VERSION: u32 = 2;
 
 /// Hints carry no records, credentials, scheduler decisions or remote-store events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Change {
+    /// The list of Runs changed: a Run was created or removed, or a write could not be tied to
+    /// a Run. Any Run may have changed with it.
     StateInvalidated,
+    /// That Run's records changed: its state, a request, or an execution one of its requests
+    /// holds.
+    RunInvalidated(RunId),
     SessionInvalidated(SessionId),
     /// Initial registration, reconnect, gap, overflow or database replacement: read afresh.
     Resync,
 }
 
-/// Changes not yet delivered: a resync replaces everything else pending.
+/// What the hints since a reader's last read say it must read again: nothing, these Runs, or
+/// everything. Session hints are not about the state database and change nothing here.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Changed {
+    #[default]
+    Nothing,
+    Runs(BTreeSet<RunId>),
+    Everything,
+}
+impl Changed {
+    pub fn add(&mut self, change: &Change) {
+        match change {
+            Change::StateInvalidated | Change::Resync => *self = Self::Everything,
+            Change::RunInvalidated(id) => match self {
+                Self::Nothing => *self = Self::Runs(BTreeSet::from([id.clone()])),
+                Self::Runs(ids) => {
+                    ids.insert(id.clone());
+                    if ids.len() > MAX_DIRTY_RUNS {
+                        *self = Self::Everything;
+                    }
+                }
+                Self::Everything => {}
+            },
+            Change::SessionInvalidated(_) => {}
+        }
+    }
+    /// Keep what `other` says changed as well, as when a read that took it was not used.
+    pub fn merge(&mut self, other: Self) {
+        match other {
+            Self::Nothing => {}
+            Self::Everything => *self = Self::Everything,
+            Self::Runs(ids) => {
+                for id in ids {
+                    self.add(&Change::RunInvalidated(id));
+                }
+            }
+        }
+    }
+    /// What a read reads again: what the hints named or, when the database was `written` and
+    /// no hint named the change yet (a writer that could not reach the hub), everything.
+    pub fn or_written(&self, written: bool) -> Self {
+        match self {
+            Self::Nothing if written => Self::Everything,
+            changed => changed.clone(),
+        }
+    }
+    /// Whether Run `id` may have changed.
+    pub fn run(&self, id: &RunId) -> bool {
+        match self {
+            Self::Nothing => false,
+            Self::Runs(ids) => ids.contains(id),
+            Self::Everything => true,
+        }
+    }
+}
+
+/// Changes not yet delivered: a resync replaces everything else pending, and a state change
+/// replaces pending Run changes.
 enum Dirty {
     Pending {
         state: bool,
+        runs: BTreeSet<RunId>,
         sessions: BTreeSet<SessionId>,
     },
     Resync,
@@ -62,18 +127,36 @@ impl Default for Dirty {
     fn default() -> Self {
         Self::Pending {
             state: false,
+            runs: BTreeSet::new(),
             sessions: BTreeSet::new(),
         }
     }
 }
 impl Dirty {
     fn add(&mut self, change: Change) {
-        let Self::Pending { state, sessions } = self else {
+        let Self::Pending {
+            state,
+            runs,
+            sessions,
+        } = self
+        else {
             return;
         };
         match change {
             Change::Resync => *self = Self::Resync,
-            Change::StateInvalidated => *state = true,
+            Change::StateInvalidated => {
+                *state = true;
+                runs.clear();
+            }
+            Change::RunInvalidated(id) => {
+                if !*state {
+                    runs.insert(id);
+                    if runs.len() > MAX_DIRTY_RUNS {
+                        *state = true;
+                        runs.clear();
+                    }
+                }
+            }
             Change::SessionInvalidated(id) => {
                 sessions.insert(id);
                 if sessions.len() > MAX_DIRTY_SESSIONS {
@@ -88,9 +171,15 @@ impl Dirty {
                 *self = Self::default();
                 Some(Change::Resync)
             }
-            Self::Pending { state, sessions } => {
+            Self::Pending {
+                state,
+                runs,
+                sessions,
+            } => {
                 if std::mem::take(state) {
                     Some(Change::StateInvalidated)
+                } else if let Some(id) = runs.pop_first() {
+                    Some(Change::RunInvalidated(id))
                 } else {
                     sessions.pop_first().map(Change::SessionInvalidated)
                 }
@@ -98,7 +187,7 @@ impl Dirty {
         }
     }
     fn is_empty(&self) -> bool {
-        matches!(self, Self::Pending { state: false, sessions } if sessions.is_empty())
+        matches!(self, Self::Pending { state: false, runs, sessions } if runs.is_empty() && sessions.is_empty())
     }
 }
 struct Inbox {
@@ -180,6 +269,7 @@ impl Subscription {
         self.inbox.next().await
     }
     /// Schedulers and non-session UIs can ignore session-only hints without reloading state.
+    /// A Run's hint is returned: the caller reads that Run again, or the state.
     pub async fn next_state(&mut self) -> Change {
         loop {
             let change = self.next().await;
@@ -442,10 +532,12 @@ async fn watch(
                                     inbox.add(Change::Resync);
                                     break;
                                 }
-                                _ = reconcile.tick() => {
-                                    if probe.changed().await {
-                                        inbox.add(Change::Resync);
-                                    }
+                                // A commit no hint reported is read like one; only a
+                                // replaced database is read afresh.
+                                _ = reconcile.tick() => match probe.changed().await {
+                                    probe::Probed::Same => {}
+                                    probe::Probed::Written => inbox.add(Change::StateInvalidated),
+                                    probe::Probed::Replaced => inbox.add(Change::Resync),
                                 }
                             }
                         }

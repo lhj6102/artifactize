@@ -5,9 +5,9 @@ use std::{collections::BTreeSet, path::Path};
 use rusqlite::params;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use super::{receipts::Error, run_record::Seen};
+use super::receipts::Error;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Unreadable {
     pub kind: String,
@@ -114,89 +114,17 @@ pub async fn read_unreadable(state: &Path, repo: Option<&Path>) -> Result<Vec<Un
     super::connection::finish(connection, result).await
 }
 
-/// Audit a bounded page in one query, including executions produced by it but no longer linked.
+/// Audit the given Runs in one query: their state and definitions rows, their requests and
+/// executions, including executions produced by them but no longer linked. Every record is
+/// decoded once; nothing is kept between audits.
 pub(super) fn in_runs(
     db: &rusqlite::Connection,
     runs: &[crate::types::RunId],
 ) -> Result<std::collections::BTreeMap<crate::types::RunId, Vec<Unreadable>>, Error> {
-    in_runs_cached(db, runs, &mut Audit::default())
-}
-
-#[derive(Default)]
-pub(super) struct Audit {
-    records: std::collections::BTreeMap<(String, String), (String, Option<Unreadable>)>,
-    pub selected: Option<crate::types::RunId>,
-    parsed: std::collections::BTreeMap<(String, String), Record>,
-    /// What decoding Run records learned of their definitions, shared with every read of them.
-    pub definitions: Seen,
-}
-
-/// Only the selected Run's freshly decoded records survive its page audit; the selected loader
-/// consumes them, avoiding a second decode without caching every page's rich request bodies.
-enum Record {
-    Run(Box<super::Run>),
-    Request(Box<super::Request>),
-    Execution(Box<super::Execution>),
-}
-impl Record {
-    fn decode(kind: &str, id: &str, data: &str, seen: &mut Seen) -> Result<Self, Unreadable> {
-        match kind {
-            "run" => seen.read(id, data).map(|run| Self::Run(Box::new(run))),
-            "request" => {
-                decode("request", id, data).map(|request| Self::Request(Box::new(request)))
-            }
-            _ => {
-                decode("execution", id, data).map(|execution| Self::Execution(Box::new(execution)))
-            }
-        }
-    }
-}
-impl Audit {
-    fn take(&mut self, kind: &str, id: &str, data: &str) -> Option<Record> {
-        let key = (kind.to_owned(), id.to_owned());
-        (self
-            .records
-            .get(&key)
-            .is_some_and(|(saved, _)| saved == data))
-        .then(|| self.parsed.remove(&key))
-        .flatten()
-    }
-    pub fn take_run(&mut self, id: &crate::types::RunId, data: &str) -> Option<super::Run> {
-        match self.take("run", id, data)? {
-            Record::Run(run) => Some(*run),
-            _ => unreachable!("Run audit key"),
-        }
-    }
-    pub fn take_request(
-        &mut self,
-        id: &crate::types::RequestId,
-        data: &str,
-    ) -> Option<super::Request> {
-        match self.take("request", id, data)? {
-            Record::Request(request) => Some(*request),
-            _ => unreachable!("request audit key"),
-        }
-    }
-    pub fn take_execution(
-        &mut self,
-        id: &crate::types::ExecutionId,
-        data: &str,
-    ) -> Option<super::Execution> {
-        match self.take("execution", id, data)? {
-            Record::Execution(execution) => Some(*execution),
-            _ => unreachable!("execution audit key"),
-        }
-    }
-}
-
-pub(super) fn in_runs_cached(
-    db: &rusqlite::Connection,
-    runs: &[crate::types::RunId],
-    audit: &mut Audit,
-) -> Result<std::collections::BTreeMap<crate::types::RunId, Vec<Unreadable>>, Error> {
     let mut statement = db.prepare_cached(
         "WITH page(id) AS (SELECT value FROM json_each(?1))
         SELECT r.id,'run',r.id,r.data FROM runs r JOIN page p ON p.id=r.id
+        UNION ALL SELECT d.run_id,'definitions',d.run_id,d.data FROM run_definitions d JOIN page p ON p.id=d.run_id
         UNION ALL SELECT q.run_id,'request',q.id,q.data FROM requests q JOIN page p ON p.id=q.run_id
         UNION ALL SELECT q.run_id,'execution',e.id,e.data FROM (SELECT DISTINCT run_id,execution_id FROM requests WHERE run_id IN (SELECT id FROM page) AND execution_id IS NOT NULL) q JOIN executions e ON e.id=q.execution_id
         UNION ALL SELECT json_extract(e.data,'$.provenance.runId'),'execution',e.id,e.data FROM executions e WHERE json_extract(e.data,'$.provenance.runId') IN (SELECT id FROM page)",
@@ -209,36 +137,20 @@ pub(super) fn in_runs_cached(
             row.get::<_, String>(3)?,
         ))
     })?;
-    audit.parsed.clear();
     let mut unreadable: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
-    let mut retained = std::collections::BTreeMap::new();
     let mut seen = BTreeSet::new();
     for record in records {
         let (run, kind, id, data) = record?;
         if !seen.insert((run.clone(), kind.clone(), id.clone())) {
             continue;
         }
-        let key = (kind.clone(), id.clone());
-        let error = if let Some((saved, error)) =
-            audit.records.get(&key).or_else(|| retained.get(&key))
-            && saved == &data
-        {
-            error.clone()
-        } else if audit.selected.as_ref() == Some(&run) {
-            match Record::decode(&kind, &id, &data, &mut audit.definitions) {
-                Ok(record) => {
-                    audit.parsed.insert(key.clone(), record);
-                    None
-                }
-                Err(error) => Some(error),
-            }
-        } else if kind == "run" {
-            // Only whether it reads: definitions seen before are not decoded again.
-            audit.definitions.check(&id, &data).err()
-        } else {
-            Record::decode(&kind, &id, &data, &mut audit.definitions).err()
+        let error = match kind.as_str() {
+            "run" => decode::<super::Run>("run", &id, &data).err(),
+            // A Run whose definitions do not read is an unreadable Run.
+            "definitions" => decode::<super::definitions::Definitions>("run", &id, &data).err(),
+            "request" => decode::<super::Request>("request", &id, &data).err(),
+            _ => decode::<super::Execution>("execution", &id, &data).err(),
         };
-        retained.insert(key, (data, error.clone()));
         if let Some(error) = error {
             unreadable.entry(run).or_default().push(error);
         }
@@ -246,6 +158,5 @@ pub(super) fn in_runs_cached(
     for records in unreadable.values_mut() {
         records.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
     }
-    audit.records = retained;
     Ok(unreadable)
 }

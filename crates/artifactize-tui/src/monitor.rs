@@ -176,6 +176,8 @@ pub struct Monitor {
     load_revision: u64,
     navigation: bool,
     loader: Option<loader::Loader>,
+    /// What the change hints since the last read named.
+    changed: crate::changes::Changed,
     origin: loader::Origin,
     runs: Vec<RunSummary>,
     repositories: TableState,
@@ -217,6 +219,7 @@ impl Monitor {
             load_revision: 0,
             navigation: false,
             loader: Some(Default::default()),
+            changed: Default::default(),
             origin: loader::Origin::default(),
             runs: Vec::new(),
             repositories: TableState::default(),

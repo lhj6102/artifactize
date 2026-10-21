@@ -199,7 +199,7 @@ pub async fn result(
             let mut reader = crate::store::reader::Reader::default();
             reader.snapshot(&state_path, |db, cache, state| {
                 cache
-                    .selected(db, state, &run_id, None, true)?
+                    .selected(db, state, &run_id, true)?
                     .ok_or_else(|| crate::store::receipts::Error::Invalid("Run not found.".into()))
             })
         })

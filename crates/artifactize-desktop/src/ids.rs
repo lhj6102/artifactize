@@ -32,6 +32,19 @@ numbered!(
     ShapeKey
 );
 
+numbered!(
+    /// A scan of a branch's Current, numbered by the backend as it starts one: a later scan
+    /// has a higher number.
+    ScanId
+);
+
+impl ScanId {
+    /// The scan after the last one `counter` handed out.
+    pub(crate) fn allocate(counter: &AtomicU32) -> Self {
+        Self(allocate(counter) + 1)
+    }
+}
+
 impl ShapeKey {
     /// Before the first shape.
     pub(crate) const NONE: Self = Self(0);

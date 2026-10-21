@@ -125,7 +125,9 @@ async fn drive(
                 _ = spin.tick(), if review.busy() => Action::None,
                 _ = tick.tick() => Action::None,
                 change = changes.next() => match change {
-                    crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
+                    crate::changes::Change::StateInvalidated
+                    | crate::changes::Change::RunInvalidated(_)
+                    | crate::changes::Change::Resync => {
                         Action::Refresh
                     }
                     crate::changes::Change::SessionInvalidated(id) => {

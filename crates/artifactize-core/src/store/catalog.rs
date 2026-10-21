@@ -1,12 +1,12 @@
 //! Global monitor catalog, intentionally independent of any visible Run page.
 use super::{
-    DATABASE,
+    DATABASE, Unreadable,
     receipts::{Error, check_files, schema_initialized},
-    run_record::Seen,
+    unreadable::decode,
 };
 use crate::{
     repository::Identity,
-    types::{ExecutionId, RequestId, RequestStatus, RunStatus, Sha256Bytes},
+    types::{ExecutionId, RequestId, RequestStatus, RunStatus},
     workspace::{canonical_target, outside_workspaces},
 };
 use std::path::{Path, PathBuf};
@@ -54,56 +54,35 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
             if !schema_initialized(&transaction)? {
                 return Ok(Vec::new());
             }
-            let catalog = in_snapshot(&transaction, &state)?;
+            let catalog = in_snapshot(&transaction, &state, None)?;
             transaction.commit()?;
-            Ok(catalog)
+            Ok(catalog.runs)
         })
         .await
         .map_err(|error| error.to_string());
     super::connection::finish(connection, result).await
 }
 
+/// The saved Runs, oldest first, and the Run records that could not be read.
+pub(crate) struct Catalog {
+    pub runs: Vec<CatalogRun>,
+    pub unreadable: Vec<Unreadable>,
+}
+
+/// Read every saved Run's state, or only the state of the Runs `only` names, never their
+/// definitions: they live in their own row, so a Run's state is small however many Artifacts
+/// it has.
 pub(super) fn in_snapshot(
     db: &rusqlite::Connection,
     state: &Path,
-) -> Result<Vec<CatalogRun>, Error> {
-    in_snapshot_cached(db, state, &mut Facts::default(), &mut Seen::default())
-}
-
-/// Each saved Run's catalog fact, or why its record cannot be read, by the digest of the
-/// record it was decoded from, with the digest of its definitions: an unchanged record is
-/// never decoded again.
-#[derive(Default)]
-pub(super) struct Facts {
-    runs: std::collections::BTreeMap<crate::types::RunId, Fact>,
-}
-
-/// A Run record's digest, its definitions' digest, and its catalog fact or why it is unreadable.
-type Fact = (
-    Sha256Bytes,
-    Option<Sha256Bytes>,
-    Result<CatalogRun, super::Unreadable>,
-);
-
-impl Facts {
-    /// The Run records the last catalog read could not decode, in the state's order.
-    pub(super) fn unreadable(&self) -> Vec<super::Unreadable> {
-        self.runs
-            .values()
-            .filter_map(|(_, _, fact)| fact.as_ref().err().cloned())
-            .collect()
-    }
-}
-
-pub(super) fn in_snapshot_cached(
-    db: &rusqlite::Connection,
-    state: &Path,
-    facts: &mut Facts,
-    seen: &mut Seen,
-) -> Result<Vec<CatalogRun>, Error> {
-    let mut statement = db.prepare_cached("SELECT id,data FROM runs ORDER BY rowid")?;
-    let runs = statement
-        .query_map([], |row| {
+    only: Option<&[crate::types::RunId]>,
+) -> Result<Catalog, Error> {
+    let only = only.map(serde_json::to_string).transpose()?;
+    let mut statement = db.prepare_cached(
+        "SELECT id,data FROM runs WHERE ?1 IS NULL OR id IN (SELECT value FROM json_each(?1)) ORDER BY rowid",
+    )?;
+    let rows = statement
+        .query_map([&only], |row| {
             Ok((
                 row.get::<_, crate::types::RunId>(0)?,
                 row.get::<_, String>(1)?,
@@ -112,20 +91,15 @@ pub(super) fn in_snapshot_cached(
         .collect::<Result<Vec<_>, _>>()?;
     let mut catalog = std::collections::BTreeMap::new();
     let mut order = Vec::new();
-    let mut retained = std::collections::BTreeMap::new();
-    for (id, data) in runs {
-        let digest = Sha256Bytes::of(data.as_bytes());
-        let (definitions, fact) = match facts.runs.remove(&id) {
-            Some((saved, definitions, fact)) if saved == digest => (definitions, fact),
-            // The Run's own facts, and whether its definitions read: each set of definitions
-            // is checked once by its digest, never kept here.
-            _ => match seen
-                .facts(&id, &data)
-                .and_then(|facts| seen.check(&id, &data).map(|()| facts))
-            {
-                Ok((run, definitions)) => {
-                    let status = run.status();
-                    let fact = CatalogRun {
+    let mut unreadable = Vec::new();
+    for (id, data) in rows {
+        match decode::<super::Run>("run", &id, &data) {
+            Ok(run) => {
+                let status = run.status();
+                order.push(id.clone());
+                catalog.insert(
+                    id,
+                    CatalogRun {
                         id: run.id.clone(),
                         created_at: run.created_at,
                         completed_at: run.completed_at(),
@@ -135,55 +109,62 @@ pub(super) fn in_snapshot_cached(
                         red: 0,
                         error: 0,
                         waiting: Vec::new(),
-                    };
-                    (definitions, Ok(fact))
-                }
-                Err(unreadable) => (None, Err(unreadable)),
-            },
-        };
-        retained.insert(id.clone(), (digest, definitions, fact.clone()));
-        if let Ok(fact) = fact {
-            order.push(id.clone());
-            catalog.insert(id, fact);
+                    },
+                );
+            }
+            Err(error) => unreadable.push(error),
         }
     }
     outside_workspaces(catalog.values().map(|run| run.repo_path.as_path()), state)
         .map_err(|error| Error::Invalid(error.to_string()))?;
-    seen.retain(
-        &retained
-            .values()
-            .filter_map(|(_, definitions, _)| *definitions)
-            .collect(),
-    );
-    facts.runs = retained;
+    // Counts come from the status column alone; only a sign-off still waiting reads its records.
     let mut statement = db.prepare_cached(
-        "SELECT q.run_id,q.status,q.execution_id,coalesce(json_extract(e.data,'$.provenance.requestId'),json_extract(q.data,'$.provenance.requestId'),q.id)
-        FROM requests q LEFT JOIN executions e ON e.id=q.execution_id WHERE q.status IN ('RED','ERROR','WAITING_HUMAN','DEFERRED') ORDER BY q.run_id,q.ordinal",
+        "SELECT run_id,status,count(*) FROM requests WHERE status IN ('RED','ERROR')
+        AND (?1 IS NULL OR run_id IN (SELECT value FROM json_each(?1))) GROUP BY run_id,status",
     )?;
-    let attention = statement.query_map([], |row| {
+    let counts = statement.query_map([&only], |row| {
         Ok((
             row.get::<_, crate::types::RunId>(0)?,
             row.get::<_, RequestStatus>(1)?,
-            row.get::<_, Option<ExecutionId>>(2)?,
-            row.get::<_, RequestId>(3)?,
+            row.get::<_, i64>(2)?,
         ))
     })?;
-    for row in attention {
-        let (id, status, execution, request) = row?;
+    for row in counts {
+        let (id, status, count) = row?;
+        let count = u64::try_from(count).expect("COUNT(*) is nonnegative");
         if let Some(run) = catalog.get_mut(&id) {
             match status {
-                RequestStatus::Red => run.red += 1,
-                RequestStatus::Error => run.error += 1,
-                // A deferred sign-off waits for a person as well, after its Run has ended too.
-                RequestStatus::WaitingHuman | RequestStatus::Deferred => run
-                    .waiting
-                    .push(execution.map_or(Signoff::Request(request), Signoff::Execution)),
-                _ => unreachable!("attention query filters states"),
+                RequestStatus::Red => run.red = count,
+                RequestStatus::Error => run.error = count,
+                _ => unreachable!("count query filters states"),
             }
         }
     }
-    Ok(order
-        .into_iter()
-        .filter_map(|id| catalog.remove(&id))
-        .collect())
+    let mut statement = db.prepare_cached(
+        "SELECT q.run_id,q.execution_id,coalesce(json_extract(e.data,'$.provenance.requestId'),json_extract(q.data,'$.provenance.requestId'),q.id)
+        FROM requests q LEFT JOIN executions e ON e.id=q.execution_id WHERE q.status IN ('WAITING_HUMAN','DEFERRED')
+        AND (?1 IS NULL OR q.run_id IN (SELECT value FROM json_each(?1))) ORDER BY q.run_id,q.ordinal",
+    )?;
+    let waiting = statement.query_map([&only], |row| {
+        Ok((
+            row.get::<_, crate::types::RunId>(0)?,
+            row.get::<_, Option<ExecutionId>>(1)?,
+            row.get::<_, RequestId>(2)?,
+        ))
+    })?;
+    for row in waiting {
+        let (id, execution, request) = row?;
+        // A deferred sign-off waits for a person as well, after its Run has ended too.
+        if let Some(run) = catalog.get_mut(&id) {
+            run.waiting
+                .push(execution.map_or(Signoff::Request(request), Signoff::Execution));
+        }
+    }
+    Ok(Catalog {
+        runs: order
+            .into_iter()
+            .filter_map(|id| catalog.remove(&id))
+            .collect(),
+        unreadable,
+    })
 }

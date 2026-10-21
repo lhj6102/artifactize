@@ -1,10 +1,11 @@
 //! One in-flight snapshot job, isolated from UI navigation. Generation checks discard stale
-//! scopes/pages; state hints coalesce in the driver and resyncs drop the worker's caches.
+//! scopes/pages; state hints coalesce in the driver, and a read reads again what they named.
 //!
 //! [`Loader`] is the UI-agnostic seam: the terminal monitor and the desktop app both read
 //! their catalog, Runs page and selected Run through it.
 use super::{Node, Scope, catalog, model};
 use crate::{
+    changes::Changed,
     store::{self, RequestView, RunSummary, RunView, reader::Reader},
     types::RunId,
 };
@@ -49,10 +50,13 @@ pub struct Input {
     /// False before the first accepted snapshot, which picks the initial scope.
     pub initialized: bool,
     pub page: Page,
-    /// Read the database catalog afresh; Git discovery stays cached until [`Loader::reset`].
+    /// Read the database catalog and the shown Run afresh; Git discovery stays cached until
+    /// [`Loader::rescan`].
     pub full: bool,
-    /// The Run the caller already shows; the reader decodes it again only when it changed.
+    /// The Run the caller already shows; it is read again only when a hint named it.
     pub displayed: Option<RunId>,
+    /// What the change hints since the last read named.
+    pub changed: Changed,
     /// The page the caller already shows, reused while the database is unchanged.
     pub runs: Option<Vec<RunSummary>>,
 }
@@ -134,9 +138,9 @@ impl Loader {
         }
         result
     }
-    /// Drop every cache, so the next load reads the whole state and Git metadata afresh.
-    pub fn reset(&mut self) {
-        self.reader.reset();
+    /// Ask Git again on the next load. The state is read by queries, which keep nothing that a
+    /// change could make wrong.
+    pub fn rescan(&mut self) {
         self.reset_git = true;
     }
 }
@@ -242,14 +246,27 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
                 }
             });
         let selected_id = selected.map(|run| run.id.clone());
-        let selected = match selected.filter(|run| run.readable()) {
-            Some(run) => cache.selected(
-                db,
-                state,
-                &run.id,
-                Some(run.unreadable.clone()),
-                input.displayed.as_ref() != Some(&run.id),
-            )?,
+        let mut runs = runs;
+        // The shown Run is read again when a hint named it; another Run is read in full.
+        let shown = |id: &RunId| input.displayed.as_ref() == Some(id);
+        let changed = input.changed.or_written(cache.changed());
+        let read = selected_id
+            .as_ref()
+            .filter(|id| !shown(id) || input.full || changed.run(id) || !cache.holds(id));
+        let selected = match read {
+            Some(id) => match cache.selected(db, state, id, !shown(id)) {
+                Ok(selected) => selected,
+                // The Run's own record does not decode: it is listed with why, and not opened.
+                Err(store::receipts::Error::Unreadable(record)) => {
+                    let run = runs.iter_mut().find(|run| &run.id == id);
+                    let run = run.expect("the selected Run is listed");
+                    if !run.unreadable.contains(&record) {
+                        run.unreadable.push(record);
+                    }
+                    None
+                }
+                Err(error) => return Err(error),
+            },
             None => None,
         };
         Ok((cache.identity(db)?, runs, selected_id, selected))

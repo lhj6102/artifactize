@@ -325,7 +325,7 @@ export type CurrentView = {
 	/**  Each Artifact with its evals, as the Detail's chips and lists show them. */
 	tree: TreeNode[],
 	/**  Grows with each scan: the graph and an open Detail read again when it does. */
-	revision: number,
+	revision: ScanId,
 };
 
 /**  What a Detail describes, from the library's [`Target`]. */
@@ -583,7 +583,7 @@ export type Navigate = {
 	older: BranchKey | null,
 	/**  Read the waiting reviews again: refreshes and change hints; navigation reuses them. */
 	full: boolean,
-	/**  Drop every cache first, after a resync hint or a manual refresh. */
+	/**  Read everything again, after a resync hint or a manual refresh. */
 	resync: boolean,
 };
 
@@ -686,6 +686,12 @@ export type RunPanel = {
 	/**  Attention lines beyond the shown ones. */
 	more: number,
 };
+
+/**
+ *  A scan of a branch's Current, numbered by the backend as it starts one: a later scan
+ *  has a higher number.
+ */
+export type ScanId = number;
 
 export type SectionName = "outcome" | "waits" | "what" | "provenance" | "technical";
 

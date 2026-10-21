@@ -8,6 +8,7 @@ pub(crate) use view::{NodeKind, Segment, TreeNode, row};
 
 use crate::{App, Failure};
 use artifactize_core::{
+    changes::{Change, Changed},
     monitor::{
         self, Node, Origin,
         live::{self, Branch, Labels, Loader, Place, Query, Waiting},
@@ -111,6 +112,8 @@ pub struct Browse {
     launch: Option<PathBuf>,
     loader: tokio::sync::Mutex<Loader>,
     shown: Mutex<Shown>,
+    /// What the change hints since the last load named; the next load reads it again.
+    changed: Mutex<Changed>,
 }
 
 /// A step of the pane and how to read the state for it.
@@ -127,7 +130,7 @@ pub struct Navigate {
     pub older: Option<BranchKey>,
     /// Read the waiting reviews again: refreshes and change hints; navigation reuses them.
     pub full: bool,
-    /// Drop every cache first, after a resync hint or a manual refresh.
+    /// Read everything again, after a resync hint or a manual refresh.
     pub resync: bool,
 }
 
@@ -153,7 +156,26 @@ impl Browse {
                 revision: 0,
                 shapes: crate::ids::ShapeKey::NONE,
             }),
+            changed: Mutex::default(),
         }
+    }
+
+    /// Keep what a change hint names for the next load.
+    pub fn invalidate(&self, change: &Change) {
+        self.changed.lock().expect("browse hints lock").add(change);
+    }
+
+    /// What the hints since the last load named, now for this load to read.
+    fn take_changed(&self) -> Changed {
+        std::mem::take(&mut *self.changed.lock().expect("browse hints lock"))
+    }
+
+    /// Give back what a load took and did not use.
+    fn restore_changed(&self, changed: Changed) {
+        self.changed
+            .lock()
+            .expect("browse hints lock")
+            .merge(changed);
     }
 
     fn shown(&self) -> std::sync::MutexGuard<'_, Shown> {
@@ -195,8 +217,9 @@ impl Browse {
         read: Read,
     ) -> Result<Option<Origin>, Failure> {
         let mut loader = self.loader.lock().await;
+        let mut changed = self.take_changed();
         if read.resync {
-            loader.reset();
+            changed = Changed::Everything;
         }
         let (open, input, before) = {
             let shown = self.shown();
@@ -206,6 +229,7 @@ impl Browse {
                 open: shown.opened.id().cloned(),
                 force: shown.opened.loaded().is_none(),
                 rescan: read.rescan || !shown.initialized,
+                changed: changed.clone(),
             };
             (
                 shown.opened.id().cloned(),
@@ -240,6 +264,7 @@ impl Browse {
         let (snapshot, selected) = match result {
             Ok(read) => read,
             Err(error) => {
+                self.restore_changed(changed);
                 self.shown().error = Some(format!("read failed: {error}"));
                 return Err(Failure::Read(error));
             }
@@ -255,7 +280,9 @@ impl Browse {
         };
         let mut shown = self.shown();
         if shown.opened.id() != open.as_ref() {
-            loader.reset();
+            // The newly shown Run's own load reads it; what this one read stays cached.
+            drop(shown);
+            self.restore_changed(changed);
             return Ok(None);
         }
         let changed = read.full

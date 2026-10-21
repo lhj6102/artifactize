@@ -474,6 +474,68 @@ pub fn waiting_program(directory: &Path) -> String {
     ))
 }
 
+/// A program in `directory` that runs the steps its arguments spell, in order, in its working
+/// directory, and then exits 0: `pid FILE` appends its process id as a line, `append FILE TEXT`
+/// appends a line, `touch FILE` creates a file, `wait FILE` waits until a file exists,
+/// `print TEXT` prints, `equals A B` exits 1 unless A is B, `exit CODE` exits, and `from FILE`
+/// runs the steps FILE holds, one argument per line, followed by the rest.
+pub fn steps_program(directory: &Path) -> String {
+    path_text(&compiled_program(
+        directory,
+        "steps",
+        r#"use std::io::Write;
+fn line(path: &str, text: &str) {
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+    writeln!(file, "{text}").unwrap();
+}
+fn next(steps: &mut std::vec::IntoIter<String>) -> String {
+    steps.next().expect("the step's argument")
+}
+fn run(steps: Vec<String>) {
+    let mut steps = steps.into_iter();
+    while let Some(step) = steps.next() {
+        match step.as_str() {
+            "pid" => line(&next(&mut steps), &std::process::id().to_string()),
+            "append" => {
+                let path = next(&mut steps);
+                line(&path, &next(&mut steps));
+            }
+            "touch" => {
+                std::fs::OpenOptions::new().create(true).append(true).open(next(&mut steps)).unwrap();
+            }
+            "wait" => {
+                let path = next(&mut steps);
+                while !std::path::Path::new(&path).exists() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+            "print" => {
+                print!("{}", next(&mut steps));
+                std::io::stdout().flush().unwrap();
+            }
+            "equals" => {
+                if next(&mut steps) != next(&mut steps) {
+                    std::process::exit(1);
+                }
+            }
+            "exit" => std::process::exit(next(&mut steps).parse().unwrap()),
+            "from" => {
+                let file = std::fs::read_to_string(next(&mut steps)).unwrap();
+                let mut steps: Vec<String> = file.lines().map(str::to_owned).chain(steps).collect();
+                steps.retain(|step| !step.is_empty());
+                return run(steps);
+            }
+            other => panic!("unknown step {other}"),
+        }
+    }
+}
+fn main() {
+    run(std::env::args().skip(1).collect());
+}
+"#,
+    ))
+}
+
 /// A program in `directory` that exits 1 while the file named by its first argument exists, and
 /// 0 once it is gone.
 pub fn fails_while_present_program(directory: &Path) -> String {

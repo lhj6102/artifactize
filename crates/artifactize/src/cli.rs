@@ -213,7 +213,7 @@ pub enum Command {
         /// repository's term instead.
         #[arg(long)]
         all: bool,
-        /// Reviewer name (defaults to USER).
+        /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<artifactize_core::types::ReviewerId>,
     },

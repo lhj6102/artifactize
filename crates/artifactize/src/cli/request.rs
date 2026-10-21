@@ -32,14 +32,14 @@ pub enum RequestCommand {
     /// Acquire the Human reviewer lock.
     Claim {
         id: RequestId,
-        /// Reviewer name (defaults to USER).
+        /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<artifactize_core::types::ReviewerId>,
     },
     /// Release your Human reviewer lock while the request still waits.
     Unclaim {
         id: RequestId,
-        /// Reviewer name (defaults to USER).
+        /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<artifactize_core::types::ReviewerId>,
     },
@@ -47,7 +47,7 @@ pub enum RequestCommand {
     Tool {
         id: RequestId,
         tool: artifactize_core::config::ToolName,
-        /// Reviewer name (defaults to USER).
+        /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<artifactize_core::types::ReviewerId>,
     },
@@ -62,7 +62,7 @@ pub enum RequestCommand {
         /// Read owner fields from a regular JSON file.
         #[arg(long, value_name = "PATH")]
         fields_file: Option<PathBuf>,
-        /// Reviewer name (defaults to USER).
+        /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<artifactize_core::types::ReviewerId>,
     },

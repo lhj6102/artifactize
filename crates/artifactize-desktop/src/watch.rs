@@ -1,6 +1,7 @@
 //! Live updates: the state's invalidation hub, as the terminal monitor subscribes to it, and
 //! a rescan of which worktrees exist, which no state change reports. Hints only say what to
-//! read again; the frontend reads through the commands.
+//! read again: the next load reads what they named, and the frontend reads through the
+//! commands.
 use crate::App;
 use artifactize_core::changes::{Change, Subscription};
 use serde::{Deserialize, Serialize};
@@ -35,13 +36,14 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
     tauri::async_runtime::spawn(async move {
         let mut changes = Subscription::new(&state).await;
         loop {
-            let sent = match changes.next().await {
-                Change::StateInvalidated => StateChanged { resync: false }.emit(&hub),
-                Change::Resync => StateChanged { resync: true }.emit(&hub),
-                Change::SessionInvalidated(id) => SessionChanged {
-                    session: id.clone().into(),
+            let change = changes.next().await;
+            hub.state::<App>().browse.invalidate(&change);
+            let sent = match change {
+                Change::StateInvalidated | Change::RunInvalidated(_) => {
+                    StateChanged { resync: false }.emit(&hub)
                 }
-                .emit(&hub),
+                Change::Resync => StateChanged { resync: true }.emit(&hub),
+                Change::SessionInvalidated(id) => SessionChanged { session: id.into() }.emit(&hub),
             };
             // The app is closing; nobody listens any more.
             if sent.is_err() {

@@ -17,6 +17,15 @@ struct Open {
     connection: Connection,
     version: i64,
 }
+/// What a check found since the last one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Probed {
+    Same,
+    /// The same database was written.
+    Written,
+    /// The database was opened, created, removed or replaced, or could not be checked.
+    Replaced,
+}
 pub(super) struct Probe {
     state: PathBuf,
     open: Option<Open>,
@@ -32,11 +41,11 @@ impl Probe {
         }
         Ok(())
     }
-    pub async fn changed(&mut self) -> bool {
+    pub async fn changed(&mut self) -> Probed {
         // Errors request a safe read retry at low frequency, never a hot loop.
-        self.check().await.unwrap_or(true)
+        self.check().await.unwrap_or(Probed::Replaced)
     }
-    async fn check(&mut self) -> Result<bool, String> {
+    async fn check(&mut self) -> Result<Probed, String> {
         crate::store::check_probe_files(&self.state)?;
         let path = self.state.join(DATABASE);
         let file = match platform::open_no_follow(File::options().read(true), &path) {
@@ -44,7 +53,11 @@ impl Probe {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let changed = self.open.is_some();
                 self.close().await?;
-                return Ok(changed);
+                return Ok(if changed {
+                    Probed::Replaced
+                } else {
+                    Probed::Same
+                });
             }
             Err(error) => {
                 self.close().await?;
@@ -66,7 +79,11 @@ impl Probe {
             let version = data_version(&open.connection).await?;
             let changed = version != open.version;
             open.version = version;
-            return Ok(changed);
+            return Ok(if changed {
+                Probed::Written
+            } else {
+                Probed::Same
+            });
         }
         self.close().await?;
         let connection = open(&path).await?;
@@ -94,7 +111,7 @@ impl Probe {
                 other?;
             }
         }
-        Ok(true)
+        Ok(Probed::Replaced)
     }
 }
 async fn open(path: &Path) -> Result<Connection, String> {
