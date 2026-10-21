@@ -28,6 +28,9 @@ const LAUNCH_TIMEOUT = 60000;
 const REQUEST_TIMEOUT = 45 * 60000; // Includes the standalone API's bounded startup retries.
 const ENDPOINT = "control.json";
 type Session = { browser: WebdriverIO.Browser; stop: () => Promise<void> };
+/** The app's launch modes: none, `--repo`, `review` and `graph --repo`. */
+const SCREENS = ["monitor", "repo", "review", "graph"] as const;
+type Screen = (typeof SCREENS)[number];
 type Endpoint = { port: number; token: string };
 const sessionDir = process.env.ARTIFACTIZE_SESSION_DIR;
 
@@ -37,7 +40,7 @@ type Request =
   | { op: "type"; element?: number; text: string }
   | { op: "key"; key: string }
   | { op: "cli"; args: string[] }
-  | { op: "launch"; screen: "monitor" | "review" | "graph" }
+  | { op: "launch"; screen: Screen }
   | { op: "change-declaration" }
   | { op: "stop" };
 
@@ -100,14 +103,18 @@ async function settled(browser: WebdriverIO.Browser, before?: Checkpoint): Promi
 }
 
 /** A launch is ready when the fixture's actual entry-point content has rendered. */
-async function rendered(browser: WebdriverIO.Browser, screen: "monitor" | "review" | "graph") {
+async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
   await browser.waitUntil(() => browser.execute((entry) => {
-    if (entry === "review") {
-      return [...document.querySelectorAll('[aria-label="Requests"] [role="option"]')].some((row) => row.textContent?.includes("signoff"));
+    const main = document.querySelector('section.panel[aria-label="Main area"]');
+    // Without arguments: the Pane lists the fixture's branch, the Main area shows nothing chosen.
+    if (entry === "monitor") {
+      return [...document.querySelectorAll('[aria-label="Branches"] [role="option"]')].some((row) => row.textContent?.includes("repo"))
+        && main?.querySelector(":scope > header h2")?.textContent?.trim() === "Nothing chosen";
     }
-    // The Monitor's Run graph and the current-graph tool both draw the fixture's release.
-    const shown = entry === "monitor" ? ".monitor" : ".current";
-    return !!document.querySelector(`${shown} .svelte-flow__node[data-id="a:release"]`);
+    if (entry === "review") return !!main?.querySelector('[aria-label="Human review"] .instruction');
+    // The branch's Run graph and its Current both draw the fixture's release.
+    const shown = entry === "repo" ? ".graph" : ".current";
+    return !!main?.querySelector(`${shown} .svelte-flow__node[data-id="a:release"]`);
   }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
 }
 
@@ -391,11 +398,11 @@ async function serve(): Promise<void> {
             const input = candidate;
             if (!input) throw new Error("the app session has no prepared candidate");
             if (request.op === "launch") {
-              if (!["monitor", "review", "graph"].includes(request.screen)) throw new Error("unknown desktop launch screen");
+              if (!SCREENS.includes(request.screen)) throw new Error("unknown desktop launch screen");
               await shown?.session.stop();
               shown = undefined;
               const target = request.screen === "graph" ? { ...fixture, state: nativePath(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
-              const args = request.screen === "graph" ? ["graph", "--repo", target.repo] : request.screen === "review" ? ["review"] : [];
+              const args = { monitor: [], repo: ["--repo", target.repo], review: ["review"], graph: ["graph", "--repo", target.repo] }[request.screen];
               const session = await acquire(input, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.
               shown = { session, fixture: target };
@@ -536,7 +543,7 @@ if (import.meta.main) {
         : mode === "cli"
           ? { op: "cli", args: args.args as string[] }
           : mode === "launch"
-            ? { op: "launch", screen: args.screen as "monitor" | "review" | "graph" }
+            ? { op: "launch", screen: args.screen as Screen }
             : mode === "change-declaration"
               ? { op: "change-declaration" }
               : args.action === "click"

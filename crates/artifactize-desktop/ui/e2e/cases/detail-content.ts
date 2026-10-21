@@ -6,6 +6,7 @@ import { aside, detail, graphShown, openArtifact, openTab, summary } from "../gr
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { subdued } from "../rendering.ts";
+import { listed, showRun } from "../pane.ts";
 
 export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-LOG E-MON-DETAIL-BACK
@@ -18,12 +19,8 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { data: { runs } }) => {
       const selectRun = async (id: string) => {
-        await browser.$('[aria-label="Runs"]').waitForExist({ timeout: 15000 });
-        const index = await browser.execute((id) => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')]
-          .find((row) => row.querySelector(".id")?.textContent?.split(/\s/)[0] === id)?.dataset.index ?? null, id);
-        assert.notEqual(index, null, "the requested fixture Run is in the Runs pane");
-        await browser.$(`[aria-label="Runs"] [data-index="${index}"]`).click();
-        await browser.waitUntil(() => browser.$('section.panel[aria-label="Run ' + id + '"]').isExisting(), { timeout: 15000, timeoutMsg: `Run ${id} selected` });
+        await listed(browser, "repo  master");
+        await showRun(browser, "repo  master", id);
       };
       await selectRun(runs[1]);
       await graphShown(browser, `a:${LONG_NAME}`);

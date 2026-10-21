@@ -29,12 +29,19 @@
 
   const label = (chip: Chip) => (chip.kind === "run" ? chip.text : "Current");
 
+  /** The row stays at its newest end until the person moves it: by a drag, or by choosing a
+   * chip the row scrolls to. */
+  let pinned = true;
+
   /** The fades follow the scroll position; older Runs are asked for at the oldest end. Only
    * the DOM is touched: the row's own scroll offset and two data attributes. */
   const scroll: Attachment<HTMLElement> = (row) => {
     let width = row.scrollWidth;
     let anchored = false;
     const fade = () => {
+      // Not laid out yet: nothing is in view, so nothing fades and nothing is asked for.
+      if (row.clientWidth === 0) return;
+      if (pinned) row.scrollLeft = row.scrollWidth;
       const right = row.scrollWidth - row.clientWidth - row.scrollLeft;
       row.dataset.fadeLeft = String(row.scrollLeft > 1);
       row.dataset.fadeRight = String(right > 1);
@@ -53,7 +60,6 @@
     });
     grown.observe(row, { childList: true, subtree: true, characterData: true });
     // A row starts at its newest end; later snapshots never move it.
-    row.scrollLeft = row.scrollWidth;
     untrack(fade);
     row.addEventListener("scroll", fade);
     const resized = new ResizeObserver(fade);
@@ -68,7 +74,9 @@
   /** The filled chip scrolls into view when it changes. */
   const reveal: Attachment<HTMLElement> = (row) => {
     if (filled === null) return;
+    const before = row.scrollLeft;
     row.querySelector<HTMLElement>(`[data-index="${filled}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (row.scrollLeft !== before) pinned = false;
   };
 
   /** Holding the mouse on the row drags it with the pointer until the button is released. */
@@ -81,13 +89,19 @@
       const by = moved.clientX - start;
       if (!dragged && Math.abs(by) < DRAG) return;
       dragged = true;
+      pinned = false;
       row.scrollLeft = offset - by;
     };
     const drop = () => {
       window.removeEventListener("mousemove", drag);
       window.removeEventListener("mouseup", drop);
-      // The click that ends a drag chooses no chip.
-      if (dragged) row.addEventListener("click", (click) => click.stopPropagation(), { capture: true, once: true });
+      // The click that ends a drag chooses no chip. It follows the button's release in the
+      // same task, if at all (released over another chip, there is none): the next click is
+      // a choice again.
+      if (!dragged) return;
+      const swallow = (click: MouseEvent) => click.stopPropagation();
+      row.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => row.removeEventListener("click", swallow, { capture: true }));
     };
     window.addEventListener("mousemove", drag);
     window.addEventListener("mouseup", drop);
@@ -97,7 +111,7 @@
 <!-- The row takes the mouse to drag it; its chips are the buttons. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-  class="chips"
+  class="runs"
   role="group"
   aria-label="Runs of {branch.project} {branch.name}"
   onmousedown={press}
@@ -124,25 +138,27 @@
 </div>
 
 <style>
-  .chips {
+  /* One line, never wider than its place in the Pane: it scrolls instead. */
+  .runs {
     display: flex;
     gap: 6px;
+    min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
     padding: 2px 0 4px;
     cursor: grab;
     user-select: none;
   }
-  .chips::-webkit-scrollbar {
+  .runs::-webkit-scrollbar {
     display: none;
   }
-  .chips:global([data-fade-left="true"]) {
+  .runs:global([data-fade-left="true"]) {
     mask-image: linear-gradient(to right, transparent, black 32px);
   }
-  .chips:global([data-fade-right="true"]) {
+  .runs:global([data-fade-right="true"]) {
     mask-image: linear-gradient(to left, transparent, black 32px);
   }
-  .chips:global([data-fade-left="true"][data-fade-right="true"]) {
+  .runs:global([data-fade-left="true"][data-fade-right="true"]) {
     mask-image: linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent);
   }
   .chip {

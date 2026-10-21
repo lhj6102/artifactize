@@ -1,7 +1,7 @@
 // A branch's chip row: chips oldest to newest with the shown one filled, a click chooses a chip,
 // a drag of the row chooses nothing, and the oldest end in view asks for older Runs once.
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
-import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, onTestFinished, vi } from "vitest";
 import ChipRow from "./ChipRow.svelte";
 import { branch, runChip } from "./fixtures";
 
@@ -46,6 +46,9 @@ it("drags sideways while the mouse is held, and the click that ends a drag choos
 });
 
 it("asks for older Runs when its oldest end is in view and older ones exist, and only then", () => {
+  // jsdom lays nothing out: give the row a width, so its oldest end is in view.
+  const laidOut = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(200);
+  onTestFinished(() => laidOut.mockRestore());
   const onolder = vi.fn();
   render(ChipRow, { branch: branch("main", [runChip("run-1", "RED")], true), filled: null, onchoose: vi.fn(), onolder });
   expect(onolder).toHaveBeenCalledOnce();

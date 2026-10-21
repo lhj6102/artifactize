@@ -1,226 +1,163 @@
-// The review screen's request search on real state: several repositories share eval IDs. The
-// launch lists its own repository's waiting sign-off; a search reaches the others, completion
-// takes a typed partial key and its value, and any other request opens read-only.
+// The Pane's search on real state: several projects and worktrees share eval IDs. Its starting
+// query is sort:recent; free text and key:value terms narrow the Branches and the Waiting stack
+// alike, suggestions complete keys and values, Esc steps back to sort:recent and then to the
+// entries, and the sort orders the Branches. A request that is no waiting review opens by ID
+// read-only.
 import assert from "node:assert/strict";
-import { addRepository, artifactize, create, requests } from "../fixture.ts";
-import { press, typeText } from "../keys.ts";
+import { addRepository, addWorktrees, create, requests } from "../fixture.ts";
+import { git } from "../environment.ts";
+import { fill, press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
-
-import { activeScreen, reviewTab } from "../screens.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier } from "../platform.ts";
+import { nativePath, primaryModifier } from "../platform.ts";
+import { branches, entriesFocused, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
 }
 
+const ALL = ["other  master", "repo  master", "repo  scope-one", "repo  scope-two", "third  master"];
+
+/** Five branches of three projects, each with a Run waiting for its sign-off. */
 async function prepareSearch() {
   const fixture = await create();
+  await addWorktrees(fixture);
   await addRepository(fixture, "other");
   await addRepository(fixture, "third");
-  return { fixture, args: ["review", "--repo", fixture.repo], data: {} };
+  return { fixture, data: {} };
 }
 
 function search(browser: WebdriverIO.Browser) {
-  /** Read the rendered grid rows independently of provider-specific element-text behavior. */
-  const rows = () =>
-    browser.execute(() =>
-      [...document.querySelectorAll('[aria-label="Requests"] [role="option"]')].map((row) => (row as HTMLElement).innerText),
-    );
-  const query = () => browser.execute(() => (document.querySelector('[aria-label="Search requests"]') as HTMLInputElement).value);
-  const type = (text: string) => typeText(browser, text);
-  const focused = (label: string) => () => browser.execute((name) => document.activeElement?.getAttribute("aria-label") === name, label);
+  const query = () => browser.$(SEARCH).getValue();
   const holds = (text: string) => async () => (await query()) === text;
-  /** Only an opened RecordDetail has a document; a list row or Preview cannot match. */
-  const record = () => browser.$('[role="document"]');
-  const detail = () => browser.execute(() => {
-    const opened = document.querySelector<HTMLElement>('[role="document"]');
-    const pane = opened?.closest("section.panel");
-    if (!opened || !pane) return null;
-    return {
-      title: pane.querySelector("header h2")?.textContent?.trim(),
-      fields: Object.fromEntries([...opened.querySelectorAll("dt")].map((key) => [key.textContent?.trim(), key.nextElementSibling?.textContent?.trim()])),
-      editable: !!opened.querySelector('input, textarea, select, [contenteditable="true"], [aria-label="Human review"]'),
-      close: [...pane.querySelectorAll("header button")].some((button) => /^Close/.test(button.textContent?.trim() ?? "")),
-    };
-  });
   const suggestions = () =>
     browser.execute(() => [...document.querySelectorAll('[aria-label="Suggestions"] [role="option"]')].map((option) => option.textContent?.trim()));
-  return { rows, query, type, focused, holds, record, detail, suggestions };
+  const names = async () => (await branches(browser)).map((entry) => entry.name);
+  const where = async () => (await waiting(browser)).rows.map((row) => row.where);
+  /** Both lists narrowed to exactly these branches. */
+  const narrowed = (expected: string[]) => async () =>
+    JSON.stringify([...await names()].sort()) === JSON.stringify([...expected].sort()) && JSON.stringify([...await where()].sort()) === JSON.stringify([...expected].sort());
+  /** Set the whole query and wait for its own search to show. */
+  const set = async (text: string) => {
+    const before = await checkpoint(browser);
+    await fill(browser, SEARCH, text);
+    await commandsRendered(browser, before);
+  };
+  return { query, holds, suggestions, names, where, narrowed, set };
 }
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-LAUNCH-REVIEW
+  // UX journey: J-PANE-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST
+  // E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR E-REVIEW-SEARCH-LEAVE
   scenario<Record<string, never>>(
-    "search-scoped",
-    "starts on the named repository's waiting sign-off",
-    async () => prepareSearch(),
+    "search-terms",
+    "narrows the Branches and the Waiting stack alike by free text, repo: and branch:, takes suggestions, and steps back with Esc",
+    prepareSearch,
     async (browser) => {
-      const { rows, query } = search(browser);
-      await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
-      await waitFor(browser, async () => (await rows()).length === 1, "one waiting row");
-      assert.match((await rows())[0], /release\/signoff/);
-      assert.match(await query(), /^kind:human status:waiting_human repo:/);
-      await commandsRendered(browser);
-      // The row can render before the search records its completion; wait for that record.
-      await waitFor(browser, async () => (await checkpoint(browser)).activity.search?.completed === true, "the search completion record");
-      const activity = (await checkpoint(browser)).activity;
-      assert.ok(activity.commands.reviewSearch?.started > 0, "the context-captured search dispatch is observed");
-      assert.ok(activity.commands.reviewSearch?.completed > 0, "normal search completion is observed");
-      assert.equal(activity.search?.query, await query());
-      assert.equal(activity.search?.completed, true);
-    },
-  ),
-  // J-REVIEW-SEARCH; UX edges: E-SCREEN-MONITOR E-SCREEN-REVIEW E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS
-  scenario<Record<string, never>>(
-    "search-empty-focus",
-    "focuses search with / after switching to Review with no waiting requests, without taking typed slashes",
-    async () => prepareSearch(),
-    async (browser, { fixture }) => {
-      const { rows, query, type, focused, holds } = search(browser);
-      await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
-      await waitFor(browser, async () => (await rows()).length === 1, "the repository's waiting sign-off");
-      // The public request queue spans every repository in this state. Complete the exact
-      // row shown by this repository-scoped search, not its newest same-eval request elsewhere.
-      const id = await browser.execute(() => document.querySelector('[aria-label="Requests"] [role="option"] .mono')?.textContent?.trim());
-      assert.ok(id, "the visible waiting row names its request");
-      const waiting = requests(fixture).find((request) => request.id === id);
-      assert.ok(waiting, "the displayed request is in the public queue");
-      assert.equal(waiting.evalId, "release/signoff", "the displayed request is the sign-off");
-      assert.equal(waiting.status, "WAITING_HUMAN", "that exact displayed request still waits");
-      assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "alice"), 0);
-      assert.equal(artifactize(fixture, "request", "submit", id, "--reviewer", "alice", "--verdict", "GREEN", "--fields", '{"approved":true,"comment":"ok"}'), 0);
-      assert.equal(requests(fixture).find((request) => request.id === id)?.status, "GREEN", "the exact displayed request is settled in the public queue");
-      await waitFor(browser, async () => (await rows()).length === 0 &&
-        (await browser.execute(() => document.body.innerText)).includes("No Human reviews are waiting."), "the settled, empty waiting list");
-      assert.equal(await browser.$('[aria-label="Requests"]').isExisting(), false, "there is no Requests list to receive keyboard focus");
-      const kept = await query();
-      await press(browser, [primaryModifier, "1"], focused("Runs"), "Monitor focused");
-      await press(browser, ["/"], async () => await focused("Runs")() && (await query()) === kept, "inactive Review leaves focus and its query alone");
-      // With nothing waiting, Review shows its name alone, not a count of 0.
-      await press(browser, [primaryModifier, "2"], async () =>
-        (await activeScreen(browser)) === "Review" && (await reviewTab(browser)) === "Review", "the empty Review screen shown");
-      await press(browser, ["/"], focused("Search requests"), "search focused without a Requests list");
-      assert.equal(await query(), kept, "the shortcut focuses search without typing a slash");
-      await press(browser, ["Escape"], holds(""), "the waiting query cleared for typing");
-      const beforeTyped = await checkpoint(browser);
-      await type("release/signoff ");
-      await commandsRendered(browser, beforeTyped);
-      assert.equal(await query(), "release/signoff ", "a slash typed in the field remains part of the query");
-      await waitFor(browser, async () => (await rows()).length === 3 &&
-        (await rows()).every((row) => row.includes("release/signoff")), "the typed query searches the saved sign-offs");
-    },
-  ),
-  // J-REVIEW-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR E-REVIEW-SEARCH-LEAVE
-  scenario<Record<string, never>>(
-    "search-suggestions",
-    "filters every repository's requests and takes suggestions for a partial key and value",
-    async () => prepareSearch(),
-    async (browser) => {
-      const { rows, query, type, focused, holds, suggestions } = search(browser);
-      await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
-      await press(browser, ["/"], focused("Search requests"), "focus in the search");
-      // Esc clears the query: every request of every repository.
-      await press(browser, ["Escape"], holds(""), "the query cleared");
-      await waitFor(browser, async () => (await rows()).length === 3 * 3, "every request of the three repositories");
-
-      await type("kind:hu");
-      await waitFor(browser, async () => (await suggestions()).includes("kind:human"), "the kind suggestion");
-      // Esc closes the suggestions and keeps the query; the next Esc clears it.
-      await press(browser, ["Escape"], async () => (await suggestions()).length === 0, "the suggestions closed");
-      assert.equal(await query(), "kind:hu", "the query is kept");
-      await press(browser, ["Escape"], holds(""), "the query cleared");
-      await type("kind:hu");
-      await waitFor(browser, async () => (await suggestions()).includes("kind:human"), "the kind suggestion again");
-      const beforeKind = await checkpoint(browser);
-      await press(browser, ["Tab"], holds("kind:human "), "the kind taken");
-      await commandsRendered(browser, beforeKind);
-      await waitFor(browser, async () => (await rows()).length === 3 &&
-        (await rows()).every((row) => row.includes("release/signoff")), "the accepted kind's three sign-offs");
-
-      await type("rep");
-      await waitFor(browser, async () => (await suggestions()).includes("repo:"), "the repo key");
-      const chosen = () =>
-        browser.execute(() => document.querySelector('[aria-label="Suggestions"] [aria-selected="true"]')?.textContent?.trim() ?? null);
+      const { query, holds, suggestions, names, narrowed, set } = search(browser);
+      await waitFor(browser, narrowed(ALL), "every branch and every waiting review listed");
+      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
+      // / focuses the search without typing a slash; its starting query is sort:recent.
+      await press(browser, ["/"], () => searchFocused(browser), "the search focused");
+      assert.equal(await query(), "sort:recent");
+      // Free text: part of a branch, here of two worktrees' branches.
+      await set("sort:recent scope");
+      await waitFor(browser, narrowed(["repo  scope-one", "repo  scope-two"]), "both lists narrowed to the scope branches");
+      // Free text also matches a waiting review's eval: every review waits for release/signoff,
+      // while no project or branch is named so.
+      await set("sort:recent signoff");
+      await waitFor(browser, async () => (await names()).length === 0 && (await waiting(browser)).rows.length === ALL.length, "only the waiting reviews match their eval");
+      // branch: matches part of the branch alone.
+      await set("sort:recent branch:one");
+      await waitFor(browser, narrowed(["repo  scope-one"]), "branch:one narrowed to scope-one");
+      // A key is suggested, then the projects as its values; all terms must match.
+      await set("sort:recent ");
+      await typeText(browser, "rep");
+      await waitFor(browser, async () => (await suggestions()).includes("repo:"), "the repo key suggested");
+      const chosen = () => browser.execute(() => document.querySelector('[aria-label="Suggestions"] [aria-selected="true"]')?.textContent?.trim() ?? null);
       await press(browser, ["ArrowDown"], async () => (await chosen()) === "repo:", "the repo key chosen", { handled: true });
-      await press(browser, ["Enter"], holds("kind:human repo:"), "the repo key taken");
-      // A taken key offers the listed repositories' folders.
-      await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the repository values");
-      await type("oth");
-      await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the other repository");
+      await press(browser, ["Enter"], holds("sort:recent repo:"), "the repo key taken");
+      await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the projects as its values");
+      await typeText(browser, "oth");
+      await waitFor(browser, async () => JSON.stringify(await suggestions()) === JSON.stringify(["repo:other"]), "only the other project left");
       const beforeRepository = await checkpoint(browser);
-      await press(browser, ["Tab"], holds("kind:human repo:other "), "the repository taken");
+      await press(browser, ["Tab"], holds("sort:recent repo:other "), "the project taken");
       await commandsRendered(browser, beforeRepository);
-      await waitFor(browser, async () => {
-        const shown = await rows();
-        return shown.length === 1 && /release\/signoff/.test(shown[0]) && /other/.test(shown[0]);
-      }, "the other repository's sign-off");
-
-      // Continue this same journey after accepting the completion: Esc first closes
-      // another offered suggestion without losing that query, then clears all terms,
-      // restores the complete request list, and finally returns focus to Requests.
-      await type("sta");
-      await waitFor(browser, async () => (await suggestions()).length > 0, "suggestions after the accepted repository");
-      const kept = await query();
-      await press(browser, ["Escape"], async () => (await suggestions()).length === 0, "the post-completion suggestions closed");
-      assert.equal(await query(), kept, "closing suggestions preserves the completed terms and partial input");
+      await waitFor(browser, narrowed(["other  master"]), "repo:other narrowed both lists to its branch");
+      // Esc closes the suggestions first, keeping the query.
+      await typeText(browser, "bra");
+      await waitFor(browser, async () => (await suggestions()).includes("branch:"), "the branch key suggested");
+      await press(browser, ["Escape"], async () => (await suggestions()).length === 0, "the suggestions closed");
+      assert.equal(await query(), "sort:recent repo:other bra", "the query is kept");
+      // The next Esc puts sort:recent back, every branch and review listed again.
       const beforeClear = await checkpoint(browser);
-      await press(browser, ["Escape"], holds(""), "the same journey's query cleared");
+      await press(browser, ["Escape"], holds("sort:recent"), "sort:recent put back");
       await commandsRendered(browser, beforeClear);
-      await waitFor(browser, async () => (await rows()).length === 3 * 3, "all three repositories' requests restored after clearing");
-      await press(browser, ["Escape"], focused("Requests"), "the empty search returns focus to Requests");
+      await waitFor(browser, narrowed(ALL), "every branch and waiting review listed again");
+      // Esc on sort:recent returns to the entries.
+      await press(browser, ["Escape"], () => entriesFocused(browser), "back to the entries");
+      // Ctrl+F focuses it too; Enter after a finished term returns to the entries.
+      await press(browser, [primaryModifier, "f"], () => searchFocused(browser), "the search focused with Ctrl+F");
+      await set("sort:recent branch:two ");
+      await waitFor(browser, narrowed(["repo  scope-two"]), "branch:two narrowed to scope-two");
+      await press(browser, ["Enter"], () => entriesFocused(browser), "Enter after a finished term returns to the entries");
+      assert.equal(await query(), "sort:recent branch:two ", "leaving keeps the query");
     },
   ),
-  // UX edges: E-REVIEW-READONLY E-REVIEW-SEARCH-LEAVE
+
+  // UX journey: J-PANE-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-PANE-SORT
   scenario<Record<string, never>>(
-    "search-readonly",
-    "opens a request that is not a Human review read-only",
-    async () => prepareSearch(),
+    "search-sort",
+    "orders the Branches by their most recent Run with branches without Runs last, by project and branch with sort:name, and back",
+    async () => {
+      const { fixture } = await prepareSearch();
+      git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "added", nativePath(fixture.root, "added"));
+      return { fixture, data: {} };
+    },
     async (browser) => {
-      const { rows, type, focused, holds, record, detail } = search(browser);
-      await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
-      await press(browser, ["/"], focused("Search requests"), "this case's search field");
-      // Esc clears the query; a new search, then Enter leaves for the list.
-      await press(browser, ["Escape"], holds(""), "the query cleared");
-      // A space ends the term and closes the suggestions, so Enter leaves the field.
-      await type("kind:runtime eval:docs repo:third ");
-      await press(browser, ["Enter"], focused("Requests"), "focus on the list");
-      // An empty query's Esc leaves the field for the list as well.
-      await press(browser, ["/"], focused("Search requests"), "focus in the search again");
-      await press(browser, ["Escape"], holds(""), "the query cleared again");
-      await press(browser, ["Escape"], focused("Requests"), "Esc left for the list");
-      await press(browser, ["/"], focused("Search requests"), "focus in the search a third time");
-      // The same query was searched before: only a newer, completed and rendered search of
-      // it, not the rows the earlier one left, shows the current result.
-      const beforeFinal = await checkpoint(browser);
-      await type("kind:runtime eval:docs repo:third ");
-      await press(browser, ["Enter"], focused("Requests"), "focus on the list again");
-      await commandsRendered(browser, beforeFinal);
-      await waitFor(browser, async () => {
-        const shown = await rows();
-        return shown.length === 1 && shown[0].includes("docs/lint") && shown[0].includes("third");
-      }, "the third repository's docs eval");
-      const listed = (await rows())[0];
-      const requestId = /run-\S+/.exec(listed)?.[0];
-      assert.ok(requestId, `the row names its request: ${listed}`);
-      assert.equal(await record().isExisting(), false, "the read-only Preview is not an opened Detail");
-      await press(browser, ["Enter"], async () => {
-        const opened = await detail();
-        return opened?.title === "docs/lint · Docs build · read-only" && opened.close;
-      }, "the non-Human read-only Detail opened");
-      // Its Summary first; the request and every other fact fold under Debug.
-      await waitFor(browser, async () => (await record().getText()).includes("Build the docs."), "the opened Detail's Summary");
-      const opened = await detail();
-      assert.ok(opened);
-      assert.equal(opened.title, "docs/lint · Docs build · read-only", "this Detail names the eval and its read-only state");
-      assert.equal(opened.editable, false, "this non-Human Detail has no review form or editing controls");
-      assert.ok(opened.close, "the opened Detail offers Close back to the list");
-      assert.equal(opened.fields.Request, undefined, "the Debug facts start folded");
+      const { holds, names, set } = search(browser);
+      // Each Run started after the one before: third's last, then other's, the worktrees' and repo's.
+      const recent = ["third  master", "other  master", "repo  scope-two", "repo  scope-one", "repo  master", "repo  added"];
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(recent), `the most recent Run first, without Runs last: ${JSON.stringify(await names())}`);
+      await press(browser, ["/"], () => searchFocused(browser), "the search focused");
+      await set("sort:name");
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(
+        ["other  master", "repo  added", "repo  master", "repo  scope-one", "repo  scope-two", "third  master"]), "ordered by project and branch");
+      await set("sort:recent");
+      await waitFor(browser, holds("sort:recent"), "sort:recent typed back");
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(recent), "the most recent Run first again");
+    },
+  ),
+
+  // UX journey: J-OPEN-ID; UX edge: E-REVIEW-READONLY
+  scenario<{ id: string }>(
+    "search-readonly",
+    "opens a request by ID that is not a waiting review read-only, its facts under Debug, and Close returns to the Pane",
+    async () => {
+      const fixture = await create();
+      const docs = requests(fixture).find((request) => request.evalId === "docs/lint");
+      assert.ok(docs, "the docs eval's request was saved");
+      return { fixture, data: { id: docs.id } };
+    },
+    async (browser, { data: { id } }) => {
+      const record = () => browser.$('section.panel[aria-label="Main area"] [role="document"]');
+      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
+      await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+      await fill(browser, '[aria-label="Request ID"]', id);
+      await browser.$('[role="dialog"] button[type="submit"]').click();
+      await waitFor(browser, async () => (await mainTitle(browser)) === "docs/lint · Docs build · read-only", "the request open read-only");
+      await waitFor(browser, async () => (await record().getText()).includes("Build the docs."), "its Summary");
+      const editable = await browser.execute(() => !!document.querySelector('section.panel[aria-label="Main area"] [role="document"]')
+        ?.querySelector('input, textarea, select, [contenteditable="true"], [aria-label="Human review"]'));
+      assert.equal(editable, false, "no review form or editing controls");
+      const fields = () => browser.execute(() => Object.fromEntries([...document.querySelectorAll('section.panel[aria-label="Main area"] [role="document"] dt')]
+        .map((key) => [key.textContent?.trim(), key.nextElementSibling?.textContent?.trim()])));
+      assert.equal((await fields()).Request, undefined, "the Debug facts start folded");
       const debug = () => record().$("button*=Debug");
       await debug().click();
-      await waitFor(browser, async () => (await debug().getAttribute("aria-expanded")) === "true" && (await detail())?.fields.Request === requestId,
-        "Debug identifies the exact opened request");
-      await press(browser, ["Escape"], async () => !(await record().isExisting()) && await focused("Requests")(), "the opened Detail closed back to the list");
+      await waitFor(browser, async () => (await debug().getAttribute("aria-expanded")) === "true" && (await fields()).Request === id, "Debug identifies the exact opened request");
+      await browser.$('section.panel[aria-label="Main area"] > header').$("button*=Close").click();
+      await waitFor(browser, () => entriesFocused(browser), "Close returned to the Pane");
     },
   ),
 ];

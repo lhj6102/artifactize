@@ -53,11 +53,11 @@ additionalProperties = false
 
 [views.agent_tools.launch]
 session = "app"
-description = "Restart the real headless desktop app with its actual monitor, review or graph launch mode. Graph uses current declarations and fresh state with no saved Run. Answers with the new window snapshot; builds nothing."
+description = "Restart the real headless desktop app in one of its actual launch modes: monitor (no arguments: nothing chosen), repo (`--repo`: the fixture's branch selected, its last Run shown), review (`review`: the newest waiting review open) or graph (`graph --repo`: the branch's Current, from current declarations and fresh state with no saved Run). Answers with the new window snapshot; builds nothing."
 command = "node"
 args = ["harness/harness.mts", "launch"]
 protocol = "json"
-input_schema = { type = "object", properties = { screen = { enum = ["monitor", "review", "graph"] } }, required = ["screen"], additionalProperties = false }
+input_schema = { type = "object", properties = { screen = { enum = ["monitor", "repo", "review", "graph"] } }, required = ["screen"], additionalProperties = false }
 
 [views.agent_tools.change_declaration]
 session = "app"

@@ -1,16 +1,28 @@
-// The monitor's Run graph in the real app on CLI-made state: release waits for its Human,
+// A Run's graph in the Main area, in the real app on CLI-made state: release waits for its Human,
 // ship waits for release, docs is GREEN. The graph lights them and follows a submission made by
 // another process live without moving any node while release's Detail stays open; a click on an
 // Artifact opens its Detail with a tab per eval, every Artifact stays clickable beside the Detail,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, requests, savedRuns, signoff } from "../fixture.ts";
 import { afterRender, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
 import { aside, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
+import { branch, ENTRIES, entriesFocused, listed, MAIN, mainFocused, showRun } from "../pane.ts";
+
+/** A fixture whose one Run ended: the branch's last chip is its Current, so its Run is chosen. */
+function ended(fixture: ReturnType<typeof createChain>) {
+  const [run] = savedRuns(fixture);
+  return { fixture, args: ["--repo", fixture.repo], data: { run: run.id } };
+}
+
+async function shownRun(browser: WebdriverIO.Browser, run: string) {
+  await listed(browser, "repo  master");
+  await showRun(browser, "repo  master", run);
+}
 
 export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-RECOLOUR E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-BACK
@@ -83,10 +95,10 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
+  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
   scenario<Record<string, never>>(
     "graph-click-detail",
-    "opens an Artifact's Detail on a click or Enter, keeps every Artifact clickable beside it, switches it on another click, closes it on the background, then steps back to Runs",
+    "opens an Artifact's Detail on a click or Enter, keeps every Artifact clickable beside it, switches it on another click, closes it on the background, then steps back to the Pane",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -97,11 +109,9 @@ export const scenarios: Scenario[] = [
       await browser.setWindowSize(1440, 872);
       await afterRender(browser);
       await graphShown(browser, "a:release");
-      const runs = () => browser.$('[role="listbox"][aria-label="Runs"]');
-      const pane = () => browser.$('section.panel[aria-label^="Run run-"]');
-      await browser.waitUntil(() => runs().isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
-      // Enter steps from Runs into the graph's pane.
-      await press(browser, ["Enter"], () => pane().isFocused(), "the graph's pane focused");
+      await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane's entries focused at launch" });
+      // Enter steps from the Pane into the Main area.
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
       /** Each Artifact's right edge in the window, and the open Detail's left edge (null without one). */
       const placed = () => browser.execute(() => ({
         nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
@@ -131,7 +141,7 @@ export const scenarios: Scenario[] = [
       assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
       for (const id of Object.keys(whole)) await graphShown(browser, id);
       // A click on it switches the Detail to that Artifact, and a click on the graph's
-      // background closes it. Esc then steps back to Runs.
+      // background closes it. Esc then steps back to the Pane.
       await openArtifact(browser, under[0], `Artifact ${under[0].slice(2)}`);
       const canvas = await browser.execute(() => {
         const box = document.querySelector(".graph .canvas")!.getBoundingClientRect();
@@ -144,19 +154,23 @@ export const scenarios: Scenario[] = [
       });
       await browser.action("pointer").move({ x: canvas.x, y: canvas.y }).down().up().perform();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the background click closed the Detail" });
-      await press(browser, ["Escape"], () => runs().isFocused(), "back to Runs");
+      await press(browser, ["Escape"], () => entriesFocused(browser), "back to the Pane");
+      assert.equal((await branch(browser, "repo  master"))?.selected, true, "the same branch stays selected");
     },
   ),
 
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "graph-keyboard-artifacts",
-    "Tabs from the graph pane to every Artifact and opens the corresponding Detail with Enter, without clicking a node",
-    async () => ({ fixture: await create(), data: {} }),
+    "Tabs from the Main area to every Artifact and opens the corresponding Detail with Enter, without clicking a node",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
     async (browser) => {
       await graphShown(browser, "a:release");
-      await browser.waitUntil(() => browser.$('[aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "Runs initially has the keyboard" });
-      await press(browser, ["Enter"], () => browser.$('section.panel[aria-label^="Run run-"]').isFocused(), "the graph pane reached by keyboard");
+      await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area reached by keyboard");
       const expected = new Map([["a:release", "release"], ["a:ship", "ship"], ["a:docs", "docs"]]);
       const visited = new Set<string>();
       // A bound on traversing this small fixture's controls, not a claimed tab order.
@@ -186,7 +200,7 @@ export const scenarios: Scenario[] = [
     },
     async (browser) => {
       await graphShown(browser, "a:release");
-      const run = await browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
+      const run = (await branch(browser, "repo  master"))?.chips.find((chip) => chip.filled)?.id ?? "";
       assert.match(run, /^run-/);
       await browser.$("button.headline").click();
       await browser.waitUntil(async () => (await detail(browser))?.title === `Run ${run}`,
@@ -201,15 +215,15 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX edges: E-GRAPH-BEYOND
-  scenario<Record<string, never>>(
+  scenario<{ run: string }>(
     "graph-chain-culling",
     "draws the Artifacts the camera brings into view when zooming over a chain too large to draw at once",
     async () => {
       // Even a wide desktop needs a scale below 5% to fit this chain in the split canvas.
-      const fixture = createChain(125);
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
+      return ended(createChain(125));
     },
-    async (browser) => {
+    async (browser, { data: { run } }) => {
+      await shownRun(browser, run);
       const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
       /** The chain's Artifacts drawn now and wholly inside the canvas. */
       const visible = () => browser.execute(() => {
@@ -239,14 +253,14 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-BACK
-  scenario<Record<string, never>>(
+  scenario<{ run: string }>(
     "graph-eval-tabs",
     "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, and another from the tabs",
     async () => {
-      const fixture = createEvals(["alpha", "beta", "gamma"]);
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
+      return ended(createEvals(["alpha", "beta", "gamma"]));
     },
-    async (browser, { fixture }) => {
+    async (browser, { fixture, data: { run } }) => {
+      await shownRun(browser, run);
       await graphShown(browser, "a:app");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");

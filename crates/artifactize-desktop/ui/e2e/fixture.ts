@@ -219,37 +219,6 @@ instruction = ${JSON.stringify(`Review ${title}.`)}
 `);
 }
 
-/** Three otherwise comparable Human records: ignoring any tested filter leaves
- * extra rows. Expected identities come from the submitted Run, never from search. */
-export async function addSearchExamples(fixture: Fixture): Promise<{
-  baseQuery: string; allIds: string[];
-  tag: { term: string; id: string }; status: { term: string; id: string }; text: { term: string; id: string };
-}> {
-  const repo = nativePath(fixture.root, "search-examples");
-  humanExample(repo, "amber", "check", "AmberOnly example", ["search:target"]);
-  humanExample(repo, "blue", "check", "Blue example", ["search:other"]);
-  humanExample(repo, "cyan", "check", "Cyan example", ["search:other"]);
-  git(repo, "init", "-q", "--initial-branch=master", repo);
-  const target = { ...fixture, repo };
-  const run = await verifyWaiting(target);
-  const saved = requests(target).filter((request) => request.runId === run);
-  const named = (evalId: string) => {
-    const request = saved.find((request) => request.evalId === evalId);
-    if (!request) throw new Error(`missing search example ${evalId}`);
-    return request.id;
-  };
-  const red = named("blue/check");
-  for (const args of [["request", "claim", red, "--reviewer", "alice"],
-    ["request", "submit", red, "--reviewer", "alice", "--verdict", "RED", "--fields", "{}"]]) {
-    if (artifactize(target, ...args) !== 0) throw new Error(`cannot prepare RED search example: ${args.join(" ")}`);
-  }
-  return {
-    baseQuery: "kind:human repo:search-examples", allIds: saved.map((request) => request.id),
-    tag: { term: "tag:search:target", id: named("amber/check") },
-    status: { term: "status:red", id: red }, text: { term: "amber/check", id: named("amber/check") },
-  };
-}
-
 function deferredHuman(fixture: Fixture): string {
   const submitted = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
     "verify", "--all", "--defer-human", "--wait", "--json"], { env: environment(fixture) });
@@ -342,35 +311,50 @@ export function createChain(count: number): Fixture {
   });
 }
 
-/** Two given chronological Run batches, with independently ordered request identities. */
-export function createPagedRequests(): { fixture: Fixture; expected: string[] } {
-  const fixture = createChain(100);
+/**
+ * A one-Artifact repository verified GREEN `count` times in a row, with no Run in progress: a
+ * branch whose chip row holds more Runs than it first shows. Returns the Runs, oldest first.
+ */
+export function createHistory(count: number): { fixture: Fixture; runs: string[] } {
+  const fixture = createChain(1);
   return prepareFixture(() => {
-    const older = requests(fixture);
-    const completed = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
-      "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], { env: environment(fixture) });
-    if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
-    const newer = (JSON.parse(completed.stdout) as { requests: Saved[] }).requests;
-    // --wait observes terminal publication, not worker exit. Join every writer before
-    // installing the controlled chronology, so finalization cannot overwrite its inputs.
+    const runs = savedRuns(fixture).map((run) => run.id);
+    while (runs.length < count) {
+      const completed = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json"],
+        { env: environment(fixture) });
+      if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+      runs.push((JSON.parse(completed.stdout) as { id: string }).id);
+    }
+    // Join every writer before the app reads the Runs, so none of them is still in progress.
     settleRuns(cli(), fixture.repo, fixture.state);
-    // This is fixture setup, not an observation: explicit times make the two batches
-    // genuinely older/newer without depending on clock resolution or elapsed time.
-    updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
-      for (const [batch, created] of [[older, "2000-01-01T00:00:00.000000000Z"],
-        [newer, "2000-01-02T00:00:00.000000000Z"]] as const) {
-        db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, batch[0].runId);
-        for (const request of batch) db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
-      }
-    });
-    const identity = (batch: Saved[], count: number) => Array.from({ length: count }, (_, index) => {
-      const evalId = `n${String(index).padStart(3, "0")}/check`;
-      const request = batch.find((request) => request.evalId === evalId);
-      if (!request) throw new Error(`missing fixture request ${evalId}`);
-      return request.id;
-    });
-    return { fixture, expected: [...identity(newer, 3), ...identity(older, 100)] };
+    return { fixture, runs };
   }, fixture.root);
+}
+
+/** Change release's notes: its sign-off's inputs change, so the next verify asks a person again. */
+export function changeNotes(fixture: Fixture, text: string): void {
+  writeText(nativePath(fixture.repo, "release", "notes.md"), text);
+}
+
+/** Sign the waiting request `id` off GREEN with `fields` as bob through the CLI, as another process. */
+export function signOff(fixture: Fixture, id: string, fields = '{"approved":true,"comment":"ok"}', reviewer = "bob"): void {
+  for (const args of [["request", "claim", id, "--reviewer", reviewer],
+    ["request", "submit", id, "--reviewer", reviewer, "--verdict", "GREEN", "--fields", fields]]) {
+    if (artifactize(fixture, ...args) !== 0) throw new Error(`cannot sign off ${id}: ${args.join(" ")}`);
+  }
+}
+
+/** A repository `name` beside the fixture's, in the same state, whose `count` Artifacts each
+ * wait for a person's sign-off; returns their requests. */
+export async function addWaiting(fixture: Fixture, name: string, count: number): Promise<string[]> {
+  const repo = nativePath(fixture.root, name);
+  for (let index = 0; index < count; index += 1) {
+    humanExample(repo, `gate${String(index).padStart(2, "0")}`, "signoff", `Gate ${index} approval`);
+  }
+  git(repo, "init", "-q", "--initial-branch=master", repo);
+  const target = { ...fixture, repo };
+  const run = await verifyWaiting(target);
+  return requests(target).filter((request) => request.runId === run).map((request) => request.id);
 }
 
 /**

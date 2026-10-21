@@ -6,6 +6,7 @@
   // and their Tool log; then comes one tab per eval. An eval's tab shows its Summary or its log
   // (an Agent's transcript, a runtime's saved output), or in a Run the shared Human Detail. Its
   // width is the Detail's: everything in it wraps or scrolls in its own box.
+  import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, message, type BranchView, type Source, type TreeNode } from "../ipc/client";
   import type { Review } from "../review/review.svelte";
@@ -123,6 +124,14 @@
     return reviewing !== undefined && (reviewing.busy !== null || reviewing.editing);
   });
 
+  /** An eval chosen from the Artifact tab's list: the list goes with that tab, so the keyboard
+   * moves to the chosen eval's chip rather than out of the Detail. */
+  async function showEval(id: string) {
+    ontab(id);
+    await tick();
+    element?.querySelector<HTMLElement>(`[role="tab"][data-tab="${CSS.escape(id)}"]`)?.focus();
+  }
+
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
     if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
@@ -164,7 +173,7 @@
         <ul class="evals" aria-label="Evals of {row.name}">
           {#each evals as item (item.id)}
             <li>
-              <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => ontab(item.id)}>
+              <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => void showEval(item.id)}>
                 <span class="glyph {tone(item.tone)}">{item.glyph}</span>
                 <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
                 <span class="status">

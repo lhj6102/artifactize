@@ -1,5 +1,5 @@
-// The Monitor's Run graph as a person sees it: the Artifact that has the keyboard, and the Detail
-// a click opens over the graph's right side with its tabs. Every reading is read-only; a timeout
+// A Run's or a Current's graph in the Main area as a person sees it: the Artifact that has the
+// keyboard, and the Detail a click opens over the graph's right side with its tabs. Every reading is read-only; a timeout
 // reports what the window showed instead.
 
 /** The Artifact node with keyboard focus (`a:<name>`), or null. */
@@ -15,7 +15,7 @@ export async function graphShown(browser: WebdriverIO.Browser, id: string, timeo
     if (!node || !box || box.width <= 0 || box.height <= 0) return false;
     const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
     return target?.closest(".svelte-flow__node") === node;
-  }, id), { timeout, timeoutMsg: `the Run graph draws ${id}` });
+  }, id), { timeout, timeoutMsg: `the graph draws ${id}` });
 }
 
 /** The node selector of the Artifact `id`. */
@@ -38,12 +38,12 @@ export type Detail = {
   path: string;
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
-  /** Whether the Detail lies within the graph's area, right of Scope and Runs, with a gap
-   * from the area's right edge. */
+  /** Whether the Detail lies within the Main area, right of the Pane, with a gap from the
+   * area's right edge. */
   docked: boolean;
 };
 
-/** The open Detail of the Monitor, or null while none is open. */
+/** The open Detail, or null while none is open. */
 export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
   return browser.execute(() => {
     const aside = document.querySelector<HTMLElement>('.stage aside[aria-label="Detail"]');

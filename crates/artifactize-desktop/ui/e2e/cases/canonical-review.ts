@@ -5,9 +5,10 @@ import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
+import { entriesFocused, mainTitle } from "../pane.ts";
 
 export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
-  // UX edges: E-REVIEW-OPEN-ID E-HUMAN-ESC-FORM E-HUMAN-SWITCH
+  // UX journey: J-OPEN-ID; UX edges: E-REVIEW-OPEN-ID E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL
   scenario<{ ids: string[] }>(
     `canonical-review-${followerFirst ? "follower" : "original"}-first`,
     `canonical Review (${followerFirst ? "follower" : "original"} first): keeps the same draft through original/follower/original request openings`,
@@ -26,7 +27,7 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
     async (browser, { fixture, data: { ids } }) => {
       const human = () => browser.$('[aria-label="Human review"]');
       const field = () => browser.$("#field-comment");
-      await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
+      await browser.waitUntil(async () => (await mainTitle(browser)) === "Review", { timeout: 15000, timeoutMsg: "the newest waiting review open at launch" });
 
       async function open(id: string) {
         await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the request ID dialog");
@@ -42,7 +43,7 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
       }
       async function close() {
         await press(browser, ["Escape"], async () => !(await field().isExisting()), "the form closes with its draft kept");
-        await press(browser, ["Escape"], async () => !(await human().isExisting()), "the Detail closes");
+        await press(browser, ["Escape"], () => entriesFocused(browser), "the review left for the Pane");
       }
 
       await open(ids[0]);
