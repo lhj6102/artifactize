@@ -19,9 +19,12 @@ first; the same page shows how to get the [desktop app](../desktop/index.md). If
 program is missing, Hey Arti tells you so and offers your system's default install
 from that page.
 
-## Install
+## Add the plugin to your assistant
 
-In a Claude Code session, add the marketplace, then install the plugin from it:
+These steps add the plugin to your assistant; they do not install the `artifactize`
+program, which the [installation page](../getting-started/install.md) covers.
+
+In a Claude Code session, add the marketplace, then add the plugin from it:
 
 ```text
 /plugin marketplace add lhj6102/artifactize

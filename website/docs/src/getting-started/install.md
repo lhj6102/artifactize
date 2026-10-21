@@ -286,7 +286,7 @@ CLI, not the Store app's private state.
 The [plugin](../agent-plugin/plugin.md) adds the Hey Arti skill and the
 artifactize MCP server to Claude Code or Codex. Install the `artifactize` program
 first with one of the channels above, then follow the
-[plugin page](../agent-plugin/plugin.md#install).
+[plugin page](../agent-plugin/plugin.md#add-the-plugin-to-your-assistant).
 
 ## Update
 
