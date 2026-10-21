@@ -569,7 +569,7 @@ export const scenarios: Scenario[] = [
     "groups tools by their declaring Artifact, own first, and runs the tool of each group",
     () => atRepo({ title: "Grouped tools", instruction: "Read {docs} and approve." }),
     async (browser, { fixture }) => {
-      const { human, openReview, runOf } = await monitorUI(browser, fixture, "Read {docs} and approve.");
+      const { human, openReview, runOf, toolLog } = await monitorUI(browser, fixture, "Read {docs} and approve.");
       await openReview();
       const groups = await browser.execute(() => [...document.querySelectorAll('[aria-label="Tools"] .group')].map((group) => group.getAttribute("aria-label")));
       assert.deepEqual(groups, ["Tools of release", "Tools of docs"], "own tools precede the alphabetically earlier dependency");
@@ -577,6 +577,11 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "release's notes completed" });
       await human().$('[aria-label="Tools of docs"]').$('button=▶ reference').click();
       await browser.waitUntil(async () => (await human().getText()).includes("Documentation checked."), { timeout: 15000, timeoutMsg: "the dependency's own notes were printed" });
+      // The printed text is not its end: wait for docs's reference run to end, and end well.
+      await browser.waitUntil(async () => (await runIn(browser, '[aria-label="Human review"]', "reference", "docs"))?.at(-1)?.kind === "end",
+        { timeout: 15000, timeoutMsg: "docs's reference completed" });
+      const reference = (await runIn(browser, '[aria-label="Human review"]', "reference", "docs"))!;
+      assert.ok(!reference.some((row) => row.error) && !(await toolLog()).noticeError, `docs's reference succeeded: ${JSON.stringify(reference)}`);
       const text = await human().getText();
       assert.match(text, /reference · docs/);
       assert.match(text, /notes · release/);
