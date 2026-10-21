@@ -181,7 +181,21 @@
       const ended = before !== undefined && before.some((id) => !now.includes(id));
       if (ended && m.shown.kind === "current" && keyOf(m.shown.branch) === keyOf(item.key)) void current.scan(item.key);
     }
+    // The state changed (another process, Ctrl+R or F5): a request shown by ID is read again.
+    const byId = m.shown.kind === "request" ? m.shown.detail.request : null;
+    if (byId !== null && next.revision !== m.followed) void reread(byId);
+    m.followed = next.revision;
     start(next);
+  }
+
+  /** Read the request shown by ID again, unless another one was opened meanwhile. */
+  async function reread(id: string) {
+    try {
+      const detail = await call(app.ipc.requestDetail(id));
+      if (m.shown.kind === "request" && m.shown.detail.request === id) m.shown = { kind: "request", detail };
+    } catch (failure) {
+      browse.error = message(failure);
+    }
   }
 
   /** Open what the launch asked for, once, on the first snapshot read. */

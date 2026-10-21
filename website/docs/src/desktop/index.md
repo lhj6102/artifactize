@@ -175,9 +175,11 @@ Detail. Below it are its evals with their verdicts (click one to show its chip),
 The **Tools** are the [Human tools](../features/tools/human.md) the Artifact
 declares, as `▶ operation` buttons with their own **Tool log**, like a review's
 (below). A click runs one at once in the branch's worktree as it is now, whichever
-Run is shown, with no claim, and records nothing as a review's evidence. Its runs
-stay in the Artifact's Tool log while the app runs. The graph's nodes carry no tool
-buttons.
+Run is shown, with no claim, and records nothing as a review's evidence. While one
+runs, the Artifact's other tool buttons wait and a **Cancel** button beside its name
+stops it; closing the Detail does not stop it, and its output keeps arriving in the
+Artifact's Tool log, shown when the Detail opens again. Its runs stay in that Tool
+log while the app runs. The graph's nodes carry no tool buttons.
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
@@ -207,7 +209,8 @@ Ctrl+O, or the palette's **Open a request by ID**, opens a saved request of any
 repository in the Main area: a waiting Human review actionable, as from the Pane, and
 any other request read-only. A read-only request with a log switches between its
 Summary and its Agent or Runtime log, as an eval's chip does, and `t` shows or hides
-its **Debug** facts; **Close** returns to the Pane.
+its **Debug** facts; **Close** returns to the Pane. It follows its request's changes
+made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 
 ## Human reviews
 

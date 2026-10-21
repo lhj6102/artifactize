@@ -4,7 +4,7 @@
 // entries, and the sort orders the Branches. A request that is no waiting review opens by ID
 // read-only.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, create, orderRuns, requests, signoff, type Fixture } from "../fixture.ts";
+import { addRepository, addWorktrees, create, orderRuns, requests, signOff, signoff, type Fixture } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
@@ -182,6 +182,32 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await debug().getAttribute("aria-expanded")) === "true" && (await fields()).Request === id, "Debug identifies the exact opened request");
       await browser.$('section.panel[aria-label="Main area"] > header').$("button*=Close").click();
       await waitFor(browser, () => entriesFocused(browser), "Close returned to the Pane");
+    },
+  ),
+
+  // UX journeys: J-OPEN-ID J-LIVE; UX edges: E-REVIEW-READONLY E-MON-LIVE
+  scenario<{ id: string }>(
+    "search-readonly-live",
+    "follows a request opened by ID read-only as it changes in another process, without opening it again",
+    async () => {
+      const fixture = await create();
+      const ship = requests(fixture).find((request) => request.evalId === "ship/check");
+      assert.ok(ship, "the ship eval's request was saved");
+      return { fixture, data: { id: ship.id } };
+    },
+    async (browser, { fixture, data: { id } }) => {
+      const status = () => browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] [role="document"] .summary')?.textContent?.replace(/\s+/g, " ").trim() ?? "");
+      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
+      await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+      await fill(browser, '[aria-label="Request ID"]', id);
+      await browser.$('[role="dialog"] button[type="submit"]').click();
+      await waitFor(browser, async () => (await mainTitle(browser)) === "ship/check · Ship the release · read-only", "the waiting request open read-only");
+      await waitFor(browser, async () => (await status()) !== "", "its status shown");
+      assert.doesNotMatch(await status(), /GREEN/, `it waits for the release's sign-off: ${await status()}`);
+      // The sign-off is given in another process: ship runs and passes, and the open request shows it.
+      signOff(fixture, signoff(fixture).id);
+      await waitFor(browser, async () => /GREEN/.test(await status()), `the open request followed its change: ${await status()}`, 30000);
+      assert.equal(await mainTitle(browser), "ship/check · Ship the release · read-only", "the same request stays open");
     },
   ),
 ];

@@ -478,23 +478,33 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         checkout(step.ref, fixture.repo);
         await browser.$("button=Refresh").click();
       }
-      // This release's own Artifacts, as the CLI reads its declarations: the graph drawn is
-      // this release's only once its nodes are exactly these, never the previous release's.
+      // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
+      // edge for every relation between two of them, as the Current draws them. The graph drawn
+      // is this release's only once its nodes and edges are exactly these, never the previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
-        { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown> };
-      const expected = Object.keys(graph.artifacts).map((name) => `a:${name}`).sort().join("\n");
-      await browser.waitUntil(() => browser.execute((expected) => !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
-        && [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")].map((node) => node.dataset.id ?? "").sort().join("\n") === expected, expected),
-      { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
+        { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string }[] };
+      const names = new Set(Object.keys(graph.artifacts));
+      const expected = [
+        [...names].map((name) => `a:${name}`).sort().join(" "),
+        [...new Set(graph.relations.filter(({ source, target }) => source !== target && names.has(source) && names.has(target))
+          .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
+      ].join("\n");
+      await browser.waitUntil(() => browser.execute((expected) => {
+        const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
+        return !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
+          && `${ids(".current .svelte-flow__node")}\n${ids(".current .svelte-flow__edge")}` === expected;
+      }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: exactly this release's nodes, every one drawn inside the canvas,
-      // every edge drawn as a visible line, and nothing (nodes, edges, camera) changing over 300 ms.
+      // Complete and still: exactly this release's nodes and edges, every node drawn inside the
+      // canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
+      // over 300 ms.
       const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {
           const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
-          if (nodes.map((node) => node.dataset.id ?? "").sort().join("\n") !== expected) return null;
+          const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
+          if (`${ids(".current .svelte-flow__node")}\n${ids(".current .svelte-flow__edge")}` !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
             const box = line.getBoundingClientRect();

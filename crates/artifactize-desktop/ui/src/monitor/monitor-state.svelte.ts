@@ -50,6 +50,8 @@ export class MonitorState {
   folds = $state({ technical: false, pending: false, log: false, debug: false });
   /** The ID typed into the Open by ID dialog. */
   wanted = $state("");
+  /** The snapshot revision a request shown by ID was last read for; never drawn. */
+  followed = $state(0);
   /** The Runs each branch had in progress by its key, to notice one ending; never drawn. */
   running = $state<Record<string, string[]>>({});
   /** What the launch asked for was opened: only the first snapshot opens it. */
