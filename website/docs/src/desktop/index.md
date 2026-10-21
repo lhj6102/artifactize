@@ -110,11 +110,13 @@ removed, appear without a manual reload.
 
 The Main area shows what was chosen in the Pane: a Run, a branch's Current, a
 review, a request opened by ID, or Settings. With nothing chosen, while loading, on
-an error or with an empty graph, the graph's place stays and says so. A problem, such
-as Runs that cannot be read, shows as one line in the Main area's header without
-moving or hiding the graph; a click on it shows it in full. After a failed read, what
-was last read stays on screen and can be stale, so refresh (Ctrl+R) once its cause is
-fixed. Damaged records are
+an error or with an empty graph, the graph's place stays and says so. A problem
+reading this machine's records, such as other Runs that cannot be read, shows as one
+line in the Main area's header without moving or hiding the graph; a click on it shows
+it in full. After such a failed read, what was last read stays on screen and can be
+stale, so refresh (Ctrl+R) once its cause is fixed. The chosen Run itself turning
+unreadable, or its graph failing to load, is different: a message takes the graph's
+place, and you choose another. Damaged records are
 [marked unreadable](../features/others/state.md#unreadable-records), not treated
 as successful evidence.
 
@@ -304,9 +306,10 @@ window opened is not.
 
 ## Settings
 
-Settings shows in the Main area; the **Settings** button again, Ctrl+, again or a
-choice in the Pane returns to what the Main area showed, and so does Esc outside a
-text field or a choice list (in one, Esc stays with the field). It reloads account/store information
+Settings shows in the Main area; the **Settings** button again or Ctrl+, again
+returns to what the Main area showed, and so does Esc outside a text field or a choice
+list (in one, Esc stays with the field). Choosing a branch, chip or review in the Pane
+instead shows that choice. It reloads account/store information
 when shown. Reopen it or use the palette's **Refresh settings** command to reload it.
 
 - **API keys:** reports whether OpenAI and Anthropic key environment variables
