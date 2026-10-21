@@ -162,10 +162,12 @@
   }
   .branches li {
     display: grid;
-    gap: 2px;
-    padding: 6px var(--pad);
+    gap: 4px;
+    padding: 8px var(--pad);
     min-width: 0;
   }
+  /* The branch's name labels its chips, which carry what matters: a smaller, regular, secondary
+     label above them. */
   .name {
     justify-self: start;
     max-width: 100%;
@@ -173,9 +175,10 @@
     padding: 0;
     border: 0;
     background: none;
-    color: inherit;
+    color: var(--muted);
     font: inherit;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 400;
     white-space: pre;
     overflow: hidden;
     text-overflow: ellipsis;

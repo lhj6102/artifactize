@@ -53,6 +53,8 @@ environment, including any credentials already present there.
   status, and retains the bounded text. Timeout, cancellation and dropped calls
   use normal process-group cleanup, not intentional handoff.
 
+## Tool log
+
 A tool's stdout and stderr appear live in the reviewer's Tool log, so a tool may
 print what the person did in it (a choice made, a value measured, a file saved)
 for the reviewer to copy into the result. The log shows each run as

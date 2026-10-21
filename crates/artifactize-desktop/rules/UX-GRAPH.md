@@ -26,7 +26,9 @@ that makes the transition happen and checks where it leads.
     Who ran a Run makes no entry: a branch's Runs are its project's Runs on that branch, from
     whichever folder they ran in. Under the name sits the branch's **chip row**: one chip per
     Run, oldest to newest left to right, each its status and age (a running one its time so
-    far), ending with the Run in progress on the branch, or else with a **Current** chip. The
+    far), tinted with its status colour, ending with the Run in progress on the branch, or else
+    with a **Current** chip, tinted with the accent. The chips carry the entry; the name above
+    them is a smaller, quieter label. The shown chip is filled with its colour. The
     row has no scrollbar; chips fade out at whichever end has more. `sort:recent` puts the
     branch with the most recent Run first and branches without Runs last; `sort:name` orders
     by project and branch. States: a branch selected, one of its chips shown (filled), the row
@@ -56,7 +58,8 @@ that makes the transition happen and checks where it leads.
   by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
 - **Current graph**: the current declarations' Artifacts and relations, each Artifact coloured
   by what verify would do now: reused (every eval's result would be reused without
-  evaluation), would run (with how many of its evals would run), waiting, blocked.
+  evaluation), would run, waiting, blocked. A node shows only its name, as on a Run graph;
+  read aloud it says which, would run with how many of its evals would run.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does; they have no other keys of their own. Hovering only highlights.
 - **Detail**: floats over a graph docked toward its right edge, with a gap, and shows a Run or
@@ -167,13 +170,16 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-CURRENT-CHIP | Pane | choose a Current chip (a click, ← →, or a branch selected without a Run in progress), also when it is already shown | Current: the worktree scanned again, its header saying when; the Current graph with each Artifact marked reused, would run (n evals), waiting or blocked |
+| E-CURRENT-CHIP | Pane | choose a Current chip (a click, ← →, or a branch selected without a Run in progress), also when it is already shown | Current: the worktree scanned again, its header saying when; the Current graph with each Artifact coloured reused, would run, waiting or blocked, its name read aloud with which (would run with its count of evals) |
 | E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | Current scanned again, its header the new time, the graph recoloured in place |
 | E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | Current scanned again and its graph and structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan ends | the graph, nodes and edges recoloured in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
+| E-GRAPH-FIRST | Pane | choose a chip whose graph is not shown yet | its Run graph or Current graph drawn whole |
+| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
+| E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 
 ## Detail
 
@@ -284,6 +290,7 @@ E-PANE-SELECT.
 - J-GRAPH-COLOURS: E-PANE-CHIP → E-GRAPH-RECOLOUR
   E-CURRENT-CHIP → E-CURRENT-RUN-END
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
+- J-GRAPH-CAMERA: E-GRAPH-FIRST → E-GRAPH-CAMERA-KEPT → E-GRAPH-CAMERA → E-GRAPH-CAMERA-KEPT
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
 - J-HUMAN-LAYOUT: E-MON-DETAIL-TAB | E-REVIEW-OPEN

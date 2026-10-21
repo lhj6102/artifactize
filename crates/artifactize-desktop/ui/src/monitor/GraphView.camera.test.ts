@@ -1,7 +1,7 @@
 // The public camera-command seam: the viewport the graph asks Svelte Flow for, read against the
-// canvas and the Detail docked over its right side, as a 1440×872 window lays them out. A
-// camera showing the whole graph fits it into what the Detail leaves; one the person moved keeps
-// its zoom and only brings the opened Artifact out from under the Detail.
+// canvas and the Detail docked over its right side, as a 1440×872 window lays them out. The
+// graph's first view shows it whole; from then on only the person moves the camera, Fit View
+// fitting the whole graph into what the Detail leaves.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, screen } from "@testing-library/svelte";
@@ -131,54 +131,47 @@ async function drawn() {
   return { ...shown, canvas };
 }
 
-it("fits the whole graph into what the Detail leaves as it opens, changes width and closes", async () => {
+it("shows the whole graph first, then leaves the camera as the Detail opens, changes width and closes", async () => {
   const { rerender, canvas } = await drawn();
   const names = Object.keys(PLACED);
   // Without a Detail the whole graph fills the canvas, publish where the Detail docks.
   expect(names.every((name) => within(name, CANVAS.right))).toBe(true);
   expect(onScreen("publish").right).toBeGreaterThan(DETAIL.left);
-  const full = viewport;
+  const first = viewport;
+  camera.setViewport.mockClear();
 
-  // Opening publish's Detail fits every Artifact into the canvas left of it.
+  // Opening publish's Detail, widening it, a new snapshot and closing it move nothing.
   const detail = detailAt(DETAIL);
   await rerender({ opened: "a:publish", cover: detail });
   layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
-  expect(names.filter((name) => !within(name, DETAIL.left))).toEqual([]);
-
-  // A wider Detail fits them again, left of its new edge.
   const wider = box(700, 52, 728, 808);
   detail.getBoundingClientRect = () => wider;
   layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
-  expect(names.filter((name) => !within(name, wider.left))).toEqual([]);
-
-  // Closing it gives the graph the whole canvas again.
-  await rerender({ opened: null, cover: null });
-  layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
-  expect(viewport).toEqual(full);
-});
-
-it("keeps a camera the person moved, bringing only the opened Artifact out from under the Detail", async () => {
-  const { rerender, canvas } = await drawn();
-  // The person zoomed in towards the right: publish lies where the Detail docks.
-  viewport = { x: -300, y: 40, zoom: 1.5 };
-  expect(onScreen("publish").left).toBeGreaterThan(DETAIL.left);
-  const detail = detailAt(DETAIL);
-  await rerender({ opened: "a:publish", cover: detail });
-  layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
-  expect(viewport.zoom).toBe(1.5);
-  expect(within("publish", DETAIL.left)).toBe(true);
-
-  // A neighbour opened from the Detail, out of view to the left, comes into view too.
-  expect(onScreen("docs").left).toBeLessThan(CANVAS.left);
-  await rerender({ opened: "a:docs" });
-  expect(viewport.zoom).toBe(1.5);
-  expect(within("docs", DETAIL.left)).toBe(true);
-
-  // Closing the Detail leaves the person's camera where it is.
-  camera.setViewport.mockClear();
+  await rerender({ revision: 2 });
   await rerender({ opened: null, cover: null });
   layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
   expect(camera.setViewport).not.toHaveBeenCalled();
+  expect(viewport).toEqual(first);
+});
+
+it("keeps a camera the person moved, and fits the whole graph beside the Detail only on Fit View", async () => {
+  const { rerender, canvas } = await drawn();
+  // The person zoomed in towards the right: publish lies where the Detail docks.
+  viewport = { x: -300, y: 40, zoom: 1.5 };
+  const moved = viewport;
+  camera.setViewport.mockClear();
+  const detail = detailAt(DETAIL);
+  await rerender({ opened: "a:publish", cover: detail });
+  layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
+  // A neighbour opened from the Detail, out of view to the left, stays out of view.
+  await rerender({ opened: "a:docs" });
+  expect(camera.setViewport).not.toHaveBeenCalled();
+  expect(viewport).toEqual(moved);
+  expect(within("publish", DETAIL.left)).toBe(false);
+
+  // Fit View, the person's own, shows every Artifact left of the Detail.
+  screen.getByRole("button", { name: "Fit View" }).click();
+  expect(Object.keys(PLACED).filter((name) => !within(name, DETAIL.left))).toEqual([]);
 });
 
 it("fits a graph drawn in a hidden screen once its canvas first has a size", async () => {

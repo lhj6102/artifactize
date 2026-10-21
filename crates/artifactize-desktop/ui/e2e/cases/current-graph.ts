@@ -9,7 +9,7 @@ import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { command, runtimeProfile, script } from "../native-fixtures.ts";
 import { makeDirectory, nativePath, primaryModifier, readText, removeTree, writeText } from "../platform.ts";
-import { detail, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
+import { camera, detail, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, chooseChip, mainTitle, scanned } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
 import { graphAppearance } from "./graph-appearance.ts";
@@ -32,7 +32,7 @@ function current(browser: WebdriverIO.Browser) {
       .map((edge) => [edge.dataset.id ?? "", edge.dataset.light ?? ""])),
   }));
 
-  /** Refresh also resets the camera. Wait for a stable, hit-testable real pointer
+  /** The camera may have just moved (Fit View). Wait for a stable, hit-testable real pointer
    * target before one WebDriver click, rather than clicking during that transition. */
   async function clickArtifact(name: string) {
     const selector = `${CURRENT} .svelte-flow__node[data-id="a:${name}"]`;
@@ -66,8 +66,8 @@ const evalRows = (browser: WebdriverIO.Browser) => browser.execute((root) => [..
   .map((row) => ({ name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "", status: row.querySelector(".status")?.textContent?.trim() ?? "" })), DETAIL);
 
 export const scenarios: Scenario[] = [
-  // UX journeys: J-LAUNCH J-MAIN-CURRENT J-DETAIL J-DETAIL-SUMMARY J-DETAIL-TOOLS J-GRAPH-COLOURS
-  // UX edges: E-CURRENT-LAUNCH E-CURRENT-EVALS E-CURRENT-TAB E-DETAIL-TOOL E-CURRENT-STRUCTURE E-CURRENT-CLOSE E-CURRENT-REFRESH
+  // UX journeys: J-LAUNCH J-MAIN-CURRENT J-DETAIL J-DETAIL-SUMMARY J-DETAIL-TOOLS J-GRAPH-COLOURS J-GRAPH-CAMERA
+  // UX edges: E-CURRENT-LAUNCH E-CURRENT-EVALS E-CURRENT-TAB E-DETAIL-TOOL E-CURRENT-STRUCTURE E-CURRENT-CLOSE E-CURRENT-REFRESH E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
   scenario<Record<string, never>>(
     "current-launch",
     "opens graph --repo on the branch's Current without a Run, marks what verify would run, opens an Artifact's evals and tools, expands the criteria, closes, then refreshes changed declarations",
@@ -154,8 +154,10 @@ export const scenarios: Scenario[] = [
         'release → ship {"kind":"instruction","eval_id":"ship/check","name":"release"}',
       ], "the concrete input-to-consumer relation carries its instruction label");
 
-      // Esc closes the Detail; Close does too, and a click on the background.
+      // Esc closes the Detail; Close does too, and a click on the background. The expanded text
+      // left the graph less room without moving its camera: Fit View shows it whole again.
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closed release's Detail");
+      await browser.$(`${CURRENT} .svelte-flow__controls-fitview`).click();
       await clickArtifact("release");
       await waitFor(browser, async () => (await detail(browser)) !== null, "release's Detail open again");
       await browser.$(DETAIL).$("button*=Close").click();
@@ -173,6 +175,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await detail(browser)) === null, "a click on the background closed docs' Detail");
 
       // Each Refresh, Ctrl+R and F5 scans the changed declarations again, the text staying open.
+      // The person zooms out; no scan or new layout below moves that camera.
+      await browser.$(`${CURRENT} .svelte-flow__controls-zoomout`).click();
+      const moved = await camera(browser);
       const declaration = nativePath(fixture.repo, "docs", "index.artf");
       let previousTitle = "Docs build";
       for (const [index, keys] of [null, [primaryModifier, "r"], ["F5"]].entries()) {
@@ -188,6 +193,7 @@ export const scenarios: Scenario[] = [
         assert.equal(await expanded(), true, "the structure text stays open");
         previousTitle = title;
       }
+      assert.equal(await camera(browser), moved, "the scans left the person's camera");
       // A scan also redraws the structure: an Artifact that reads docs adds a node and an edge,
       // and removing it takes both away.
       const digest = makeDirectory(nativePath(fixture.repo, "digest"));
@@ -207,6 +213,7 @@ Summarize {docs}."""
         return nodes["a:digest"] === "digest: waiting" && edges["a:docs>a:digest"] !== undefined;
       }, "the added digest Artifact and its relation from docs drawn");
       assert.ok((await structure()).split("\n").some((line) => line.startsWith("docs → digest ")), "the structure text lists the added relation");
+      assert.equal(await camera(browser), moved, "the new layout left the person's camera");
       await browser.$(CURRENT).$("button=Refresh").waitForEnabled({ timeout: 15000 });
       removeTree(digest);
       await browser.$(CURRENT).$("button=Refresh").click();
@@ -339,6 +346,10 @@ Summarize {docs}."""
       await graphShown(browser, "a:app");
       const marked = { "a:app": "app: would run (2 evals)", "a:down": "down: blocked", "a:red": "red: reused" };
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(marked), `each Artifact marked: ${JSON.stringify(await drawn())}`);
+      // Drawn by colour alone, as a Run's Artifacts are: each node shows only its name.
+      const texts = await browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('section[aria-label="Current"] .svelte-flow__node')]
+        .filter((node) => !node.closest("aside")).map((node) => [node.dataset.id ?? "", node.textContent?.trim() ?? ""])));
+      assert.deepEqual(texts, { "a:app": "app", "a:down": "down", "a:red": "red" });
       const look = await graphAppearance(browser);
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:app"].dot, "blocked is painted unlike would run");
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:red"].dot, "blocked is painted unlike reused");
@@ -347,6 +358,18 @@ Summarize {docs}."""
       assert.deepEqual(await evalRows(browser), [
         { name: "alpha", status: "reused" }, { name: "beta", status: "would run" }, { name: "gamma", status: "would run" },
       ]);
+      // A title wider than the Detail wraps; each eval's name and status stay on one line.
+      const lines = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] .evals .eval')].map((row) => {
+        const count = (part: Element | null) => {
+          if (!part) return 0;
+          const range = document.createRange();
+          range.selectNodeContents(part);
+          return new Set([...range.getClientRects()].map((box) => Math.round(box.top))).size;
+        };
+        return { name: count(row.querySelector(".name")), status: count(row.querySelector(".status")), title: count(row.querySelector(".right")) };
+      }));
+      assert.ok(lines[0].title > 1, `alpha's long title wraps: ${JSON.stringify(lines)}`);
+      assert.ok(lines.every((row) => row.name === 1 && row.status === 1), `names and statuses on one line: ${JSON.stringify(lines)}`);
       await openTab(browser, "e:app/alpha", { row: true });
       await waitFor(browser, async () => (await summary(browser)).status === `↻ reused ${CACHED}`, `alpha's plan: ${JSON.stringify(await summary(browser))}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "app's Detail closed");

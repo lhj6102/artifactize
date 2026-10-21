@@ -479,8 +479,25 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
     });
     const [current, removed] = ['"kind":"runtime"', '"kind":"dependency"'];
     rewrite(current, removed);
-    return { fixture, readable: runs[3], unreadable, restore: () => rewrite(removed, current) };
+    return {
+      fixture, readable: runs[3], unreadable,
+      restore: () => {
+        rewrite(removed, current);
+        // The readable Run too, if a case spoiled it.
+        if (!allUnreadable) updateDatabase(database, (db) => db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3").run(removed, current, runs[3]));
+      },
+    };
   }, fixture.root);
+}
+
+/** Make `run` of a fixture from {@link createUnreadableRuns} unreadable too, as a write by
+ * another version would; that fixture's restore undoes it. */
+export function spoilRun(fixture: Fixture, run: string): void {
+  updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
+    if (db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run('"kind":"runtime"', '"kind":"dependency"', run).changes !== 1) {
+      throw new Error(`Run ${run} was not rewritten`);
+    }
+  });
 }
 
 /**
@@ -580,9 +597,9 @@ export function createMixed(): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
-    const check = (name: string, operation: Operation, instruction: string) => `
+    const check = (name: string, operation: Operation, instruction: string, title = `Check ${name}`) => `
 [evals.${name}]
-title = "Check ${name}"
+title = "${title}"
 profile = ${runtimeProfile(operation)}
 
 [evals.${name}.payload]
@@ -591,7 +608,9 @@ ${instruction}"""
 `;
     writeText(nativePath(makeDirectory(nativePath(repo, "red")), "index.artf"), `name = "red"\n${check("check", "fail", "Fail.")}`);
     writeText(nativePath(makeDirectory(nativePath(repo, "down")), "index.artf"), `name = "down"\n${check("check", "pass", "Run after {red}.")}`);
-    const app = (changed: boolean) => `name = "app"\n${check("alpha", "pass", "Check alpha.")}${
+    // alpha's title is wider than the Detail: its row wraps the title, never its status.
+    const title = "Alpha follows every rule of the frontend checklist the desktop UI keeps, from its state owners to its effects";
+    const app = (changed: boolean) => `name = "app"\n${check("alpha", "pass", "Check alpha.", title)}${
       check("beta", "pass", changed ? "Check beta again." : "Check beta.")}${check("gamma", "pass", changed ? "Check gamma again." : "Check gamma.")}`;
     writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), app(false));
     git(repo, "init", "-q", "--initial-branch=master", repo);

@@ -18,6 +18,21 @@ export async function graphShown(browser: WebdriverIO.Browser, id: string, timeo
   }, id), { timeout, timeoutMsg: `the graph draws ${id}` });
 }
 
+/** The camera (translation and scale) of the Main area's graph, read once it holds still over a
+ * painted frame: a zoom control animates it. */
+export async function camera(browser: WebdriverIO.Browser): Promise<string> {
+  const read = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>(".svelte-flow__viewport")]
+    .find((viewport) => !viewport.closest('aside[aria-label="Detail"]'))?.style.transform ?? "");
+  let shown = await read();
+  await browser.waitUntil(async () => {
+    const before = shown;
+    await browser.execute(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    shown = await read();
+    return before === shown;
+  }, { timeout: 15000, timeoutMsg: "the graph's camera held still" });
+  return shown;
+}
+
 /** The node selector of the Artifact `id`. */
 export const nodeAt = (id: string) => `.svelte-flow__node[data-id="${id}"]`;
 
