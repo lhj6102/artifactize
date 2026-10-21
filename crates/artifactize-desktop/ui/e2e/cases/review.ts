@@ -109,9 +109,11 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], () => entriesFocused(browser), "back in the Pane");
       assert.equal((await waiting(browser)).rows.find((row) => row.selected)?.id, signoff(fixture).id, "its row stays selected");
       // Enter opens the same review again, its claim and draft kept.
-      await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review" && await reviewing(browser), "the same review again");
+      // Enter moves the keyboard from the Pane into the review it opens.
+      const inReview = () => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]'));
+      await press(browser, ["Enter"], async () => !(await entriesFocused(browser)) && await inReview() && (await mainTitle(browser)) === "Review" && await reviewing(browser),
+        "the same review again, with the keyboard");
       assert.equal(signoff(fixture).claim?.reviewer, "alice");
-      await browser.$('[aria-label="Human review"]').click();
       await press(browser, ["g"], async () => (await browser.$("#field-comment").isExisting()) && (await browser.$("#field-comment").getValue()) === "kept draft", "the kept draft");
     },
   ),

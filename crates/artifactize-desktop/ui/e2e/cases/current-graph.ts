@@ -4,6 +4,7 @@
 // of a Run start.
 import assert from "node:assert/strict";
 import { changeNotes, create, createEvals, createGraph, createMixed, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
+import { checkpoint } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { command, runtimeProfile, script } from "../native-fixtures.ts";
@@ -280,13 +281,11 @@ Summarize {docs}."""
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await drawn()).nodes["a:release"] === "release: would run (1 eval)", "release would run again");
       assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
-      const before = { scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
-      assert.match(before.scanned, /^Scanned at \d/);
+      /** Scans the app has completed, from its read-only command activity. */
+      const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
+      const before = { scans: await scans(), drawn: await drawn(), look: await graphAppearance(browser) };
+      assert.match(await scanned(browser), /^Scanned at \d/);
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
-      // The header tells scans apart by the second: the Run starts once the window's clock has
-      // passed the second of this scan, so the scan its end starts reads a later time.
-      await waitFor(browser, async () => `Scanned at ${await browser.execute(() => new Date().toLocaleTimeString())}` !== before.scanned,
-        "the window's clock past the scan's second");
       // Another process verifies: while its Run waits the row ends with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);
@@ -297,9 +296,10 @@ Summarize {docs}."""
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // A scan of its own, later than the one before the Run, drawn in the reused colours again.
-      await waitFor(browser, async () => (await scanned(browser)) !== before.scanned, `a new scan time: ${await scanned(browser)}`);
-      assert.match(await scanned(browser), /^Scanned at \d/);
+      // A scan of its own after the one before the Run, its time in the header, drawn in the
+      // reused colours again.
+      assert.ok((await scans()) > before.scans, "the Run's end completed a new scan");
+      await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the new scan's time in the header");
       const after = await graphAppearance(browser);
       for (const id of ["a:release", "a:ship"]) {
         assert.notEqual(after.nodes[id].dot, before.look.nodes[id].dot, `${id} recoloured`);

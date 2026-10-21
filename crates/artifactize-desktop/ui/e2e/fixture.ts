@@ -386,6 +386,26 @@ export function createSharedBranch(): { fixture: Fixture; master: string; shared
   }, fixture.root);
 }
 
+/** A folder `name` outside Git beside the fixture's repository, in the same state, that is itself
+ * an Artifact `plain` verified GREEN; returns its path and its Run. */
+export function addFolder(fixture: Fixture, name: string): { folder: NativePath; run: string } {
+  const folder = nativePath(fixture.root, name);
+  writeText(nativePath(makeDirectory(folder), "index.artf"), `name = "plain"
+
+[evals.check]
+title = "Check plain"
+profile = ${runtimeProfile()}
+
+[evals.check.payload]
+instruction = """
+Check the plain folder."""
+`);
+  const completed = runProgram(cli(), ["--repo", folder, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json"], { env: environment(fixture) });
+  // Its Run ended with the wait; settling here would also cancel the state's waiting Runs.
+  if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+  return { folder, run: (JSON.parse(completed.stdout) as { id: string }).id };
+}
+
 /** Change release's notes: its sign-off's inputs change, so the next verify asks a person again. */
 export function changeNotes(fixture: Fixture, text: string): void {
   writeText(nativePath(fixture.repo, "release", "notes.md"), text);

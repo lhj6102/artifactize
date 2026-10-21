@@ -4,17 +4,17 @@
 // branch without being closed.
 import assert from "node:assert/strict";
 import {
-  addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, orderRuns, requests, signOff, signoff,
+  addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, orderRuns, requests, signOff, signoff,
   verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativePath, removeTree } from "../platform.ts";
+import { nativePath, removeTree, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
-import { branch, branches, chooseChip, listed, mainTitle, openWaiting, selectBranch, showRun, waiting } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -144,17 +144,27 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journeys: J-BRANCHES J-LIVE J-WAITING; UX edge: E-PANE-WORKTREES
-  scenario<{ runs: string[] }>(
+  scenario<{ runs: string[]; plain: { folder: NativePath; run: string } }>(
     "branches-worktrees",
-    "lists worktrees another process adds, a detached one by its folder, and drops removed or deleted ones while their waiting reviews stay",
+    "lists worktrees another process adds, a detached one by its folder, a folder outside Git by its name, and drops removed or deleted ones while their waiting reviews stay",
     async () => {
       const fixture = await create();
       const runs = await addWorktrees(fixture);
-      return { fixture, data: { runs } };
+      const plain = addFolder(fixture, "loosefiles");
+      return { fixture, data: { runs, plain } };
     },
-    async (browser, { fixture, data: { runs } }) => {
+    async (browser, { fixture, data: { runs, plain } }) => {
       const names = async () => (await branches(browser)).map((entry) => entry.name).sort();
-      await waitFor(browser, async () => (await names()).length === 3, "the three live branches");
+      await waitFor(browser, async () => (await names()).length === 4, "the four live entries");
+      assert.deepEqual(await names(), ["loosefiles", "repo  master", "repo  scope-one", "repo  scope-two"]);
+      // A folder outside Git with a Run is listed by its name, and selecting it shows its Current.
+      assert.deepEqual((await branch(browser, "loosefiles"))?.chips.map((chip) => chip.id), [plain.run, "current"]);
+      await selectBranch(browser, "loosefiles");
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Current · loosefiles", "the folder's Current shown");
+      await graphShown(browser, "a:plain");
+      // Deleted, it goes.
+      removeTree(plain.folder);
+      await waitFor(browser, async () => (await names()).length === 3, "the deleted folder gone");
       assert.deepEqual(await names(), ["repo  master", "repo  scope-one", "repo  scope-two"]);
       const reviews = requests(fixture).filter((request) => runs.includes(request.runId) && request.status === "WAITING_HUMAN").map((request) => request.id);
       assert.equal(reviews.length, 2, "each worktree's Run waits for a person");
@@ -227,6 +237,25 @@ export const scenarios: Scenario[] = [
       assert.ok(drawn.stack <= drawn.pane / 2 + 1 && drawn.stack > drawn.pane / 2 - 40, `the stack takes half of the Pane: ${JSON.stringify(drawn)}`);
       assert.ok(drawn.bottom <= 1, "it sits at the bottom of the Pane");
       assert.ok(drawn.scrolls, "beyond half of the Pane its list scrolls");
+      // The bottom review starts hidden below the list's box. Moving the selection down to it
+      // with j scrolls the list until it shows, and Enter opens that review.
+      const last = (await waiting(browser)).rows.at(-1)!.id;
+      const visible = () => browser.execute((key) => {
+        const list = document.querySelector<HTMLElement>('[aria-label="Waiting reviews"]')!;
+        const box = list.getBoundingClientRect();
+        const row = list.querySelector<HTMLElement>(`[data-key=${JSON.stringify(key)}]`)!.getBoundingClientRect();
+        return row.top >= box.top - 1 && row.bottom <= box.bottom + 1;
+      }, last);
+      assert.equal(await visible(), false, "the bottom review starts out of view");
+      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
+      const selected = async () => (await waiting(browser)).rows.find((row) => row.selected)?.id ?? null;
+      // A bound on the moves through this fixture's two branches and sixteen reviews.
+      const MOVES = 40;
+      for (let move = 0; move < MOVES && (await selected()) !== last; move += 1) await browser.keys(["j"]);
+      await waitFor(browser, async () => (await selected()) === last, "the bottom review selected");
+      await waitFor(browser, visible, "the list scrolled the selected review into view");
+      await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "its Review shown");
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${last} · WAITING_HUMAN`), "the scrolled-to review open");
     },
   ),
 
