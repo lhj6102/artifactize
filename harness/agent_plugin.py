@@ -6,7 +6,8 @@ configuration and compare what the host loaded with the plugin folder.
 
 The host is the installed `claude` or `codex` program found on PATH. Only the
 host's own commands and answers are observed: its validator, install, plugin and
-MCP listings, and Codex's skill inventory. No MCP server is started.
+MCP listings, and Codex's skill inventory. No MCP server is started. It runs on
+Linux and macOS, where each host command's processes are owned through its process group.
 """
 import json
 import os
@@ -45,19 +46,15 @@ def started(argv, env, cwd, **pipes):
     program = shutil.which(argv[0], path=env.get("PATH"))
     if program is None:
         sys.exit(f"{argv[0]} is not on PATH; install the host to check its plugin")
-    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
-    return subprocess.Popen([program, *argv[1:]], cwd=cwd, env=env, text=True, **group, **pipes)
+    return subprocess.Popen([program, *argv[1:]], cwd=cwd, env=env, text=True, start_new_session=True, **pipes)
 
 
 def ended(process):
     """End every process still in the host command's group, then reap its leader."""
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     process.wait()
 
 
@@ -188,4 +185,8 @@ def main(host, plugin, catalog_path):
 if __name__ == "__main__":
     if len(sys.argv) != 4 or sys.argv[1] not in CATALOGS:
         sys.exit(__doc__)
+    # A host command's descendants are owned through its process group, which Windows lacks:
+    # there they could outlive the check and keep its scratch configuration in use.
+    if os.name != "posix":
+        sys.exit("The agent plugin check runs on Linux and macOS only.")
     main(sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]))
