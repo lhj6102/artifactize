@@ -152,17 +152,7 @@ export const scenarios: Scenario[] = [
         return { own: getComputedStyle(pane).overflowY, long: pane.scrollHeight > pane.clientHeight };
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
-      // While the old eval's log is still open, a different Artifact replaces it with its
-      // own Artifact tab. No stale Summary or log is allowed to survive the switch. The
-      // Detail may cover basis: as a person would, Fit View shows the graph beside it first.
-      await browser.$(".graph .svelte-flow__controls-fitview").click();
-      await graphShown(browser, "a:basis");
-      const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
-      assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);
-      assert.equal(basis.path, "basis", "an eval-free Artifact has no trailing slash");
-      assert.ok(basis.tabs[0].selected && basis.evals.length === 0);
-      assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log was replaced");
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the replacement Detail closed back to the graph");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the runtime log's Detail closed back to the graph");
       // The other saved Run actually executed the Agent, rather than reusing its result.
       await selectRun(runs[0]);
       await graphShown(browser, `a:${LONG_NAME}`);

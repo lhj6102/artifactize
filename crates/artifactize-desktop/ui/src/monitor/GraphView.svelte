@@ -1,9 +1,9 @@
 <script lang="ts">
   // The laid-out graph. It takes the pointer: a click on an Artifact asks for its Detail, a
   // click on the background closes it. The keyboard reaches the nodes with Tab, and Enter on a
-  // focused node does what a click does. Its first view shows the whole graph in the part of the
-  // canvas a panel docked over its right side (the Detail) leaves; from then on only the person
-  // moves the camera, by panning, zooming or Fit View.
+  // focused node does what a click does. Its first view shows the whole graph in its canvas; the
+  // Detail floats over the canvas and takes no part in it. From then on only the person moves the
+  // camera, by panning, zooming or Fit View.
   //
   // A graph of more Artifacts than the window keeps as elements (a Run of tens of thousands)
   // draws its edges on a canvas below them, and keeps as elements only the Artifacts in view
@@ -16,7 +16,7 @@
   import ArtifactNode from "./ArtifactNode.svelte";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
   import { NODE } from "./layout";
-  import { area, padding, whole, type Area, type Fit } from "./camera";
+  import { area, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
 
@@ -24,7 +24,6 @@
     graph,
     positions,
     opened = null,
-    cover = null,
     current = false,
     onopen,
     onclose,
@@ -35,8 +34,6 @@
     positions: Map<string, Point>;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
-    /** The panel docked over the graph's right side while it is open, such as the Detail. */
-    cover?: HTMLElement | null;
     /** Open the Detail of the Artifact `id`. */
     onopen: (id: string) => void;
     /** Close the open Detail. */
@@ -57,8 +54,8 @@
   const DRAWN = 500;
   /** How the whole graph fits: its first view and Fit View. */
   const FIT: Fit = { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, padding: 0.1 };
-  /** Fit View, the first fit included, fits into what the docked panel leaves. */
-  const fitViewOptions = $derived({ minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: padding(v.area, FIT) });
+  /** Fit View, the first fit included, fits the whole canvas. */
+  const fitViewOptions = { minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: FIT.padding };
 
   /** Where every Artifact is, indexed by area. */
   const laid = $derived(scene(positions));
@@ -112,36 +109,34 @@
         })),
   );
 
-  /** The canvas and the panel over it, measured whenever either changes size; the panel's
-   * opening and closing gives a new one. */
-  const measure = (panel: HTMLElement | null): Attachment<HTMLElement> => (canvas) => {
+  /** The canvas, measured whenever it changes size. */
+  const measure: Attachment<HTMLElement> = (canvas) => {
     const resized = new ResizeObserver(() => {
-      const next = area(canvas.clientWidth, canvas.clientHeight, canvas.getBoundingClientRect(), panel?.getBoundingClientRect() ?? null);
+      const next = area(canvas.clientWidth, canvas.clientHeight);
       // A hidden canvas has no size; it keeps the camera for when it shows again.
       if (next) follow(next);
     });
     resized.observe(canvas);
-    if (panel) resized.observe(panel);
     return () => resized.disconnect();
   };
 
-  /** What the panel leaves changed: Fit View fits into the new part from now on, and a graph
-   * first drawn in a hidden screen gets its first view once its canvas has a size. Nothing else
-   * moves the camera. */
+  /** The canvas's size changed: Fit View fits the new size from now on, and a graph first drawn
+   * in a hidden screen gets its first view once its canvas has a size. Nothing else moves the
+   * camera. */
   function follow(next: Area) {
     v.area = next;
     first();
   }
 
   /** The first view, once Svelte Flow drew the graph into a canvas with a size: the whole graph
-   * in what the panel leaves. */
+   * in its canvas. */
   function first() {
     if (v.fitted || !v.initialized || !v.area) return;
     v.fitted = true;
     fitAll();
   }
 
-  /** Fit View: every Artifact, kept as an element or not, in what the panel leaves. */
+  /** Fit View: every Artifact, kept as an element or not, in the canvas. */
   function fitAll() {
     if (v.area) void flow.setViewport(whole(laid.bounds, v.area, FIT), { duration: 0 });
   }
@@ -195,7 +190,7 @@
 
 <div class="graph">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" {@attach measure(cover)} onkeydown={keydown} tabindex="-1">
+  <div class="canvas" {@attach measure} onkeydown={keydown} tabindex="-1">
     {#if large}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
     <SvelteFlow
       bind:nodes
@@ -213,8 +208,8 @@
       onlyRenderVisibleElements={graph.nodes.length > 80}
       oninit={() => {
         v.initialized = true;
-        // The first draw shows whole beside an open panel; a canvas without a size yet (a
-        // hidden screen) gets its first view once it has one.
+        // The first draw shows whole; a canvas without a size yet (a hidden screen) gets its
+        // first view once it has one.
         first();
       }}
       proOptions={{ hideAttribution: true }}

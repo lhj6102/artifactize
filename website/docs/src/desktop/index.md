@@ -149,8 +149,8 @@ the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
 These gestures move the camera, not the divider or the Detail. A graph shows whole
 when it first appears; from then on only you move
 its camera. Opening, switching, resizing or closing the Detail, a new result or scan
-and a new layout never zoom or pan it; **Fit View** shows the whole graph again,
-beside the Detail when one is open.
+and a new layout never zoom or pan it; **Fit View** shows the whole graph again in
+the whole canvas, the same whether the Detail floats over it or not.
 
 Every graph is laid out whole at once, upstream on the left. A graph of up to
 **1,000 Artifacts** gets a roomy layout (ELK) that widens the space where many edges
@@ -171,7 +171,7 @@ neighbours on each side, failing ones first, and counts the rest.
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
 with the graph still visible behind it, never beside the Pane. It leaves the camera
-where it is: pan, or choose **Fit View**, to bring an Artifact under it into view.
+where it is: pan to bring an Artifact under it into view.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close** or Esc closes it. On a Human review's Detail all three step

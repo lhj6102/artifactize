@@ -19,7 +19,6 @@
     source,
     revision,
     opened = null,
-    cover = null,
     onopen,
     onclose,
   }: {
@@ -28,8 +27,6 @@
     revision: number;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
-    /** The open Detail, docked over the graph. */
-    cover?: HTMLElement | null;
     /** Open the Detail of an Artifact. */
     onopen: (id: string) => void;
     /** Close the open Detail. */
@@ -84,7 +81,7 @@
 {:else}
   {#key keyOf(g.shown.source)}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {current} {opened} {cover} {onopen} {onclose} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {current} {opened} {onopen} {onclose} />
     </SvelteFlowProvider>
   {/key}
 {/if}
