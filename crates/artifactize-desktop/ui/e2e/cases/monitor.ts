@@ -96,6 +96,14 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
   return { text, human, toolLog, runOf, tool, openReview };
 }
 
+/** Where `got` first differs from `want`: both lengths, and the code points around it. */
+function difference(want: string, got: string): string {
+  let at = 0;
+  while (at < want.length && at < got.length && want[at] === got[at]) at += 1;
+  const points = (text: string) => [...text.slice(Math.max(at - 8, 0), at + 8)].map((char) => char.codePointAt(0)!.toString(16)).join(" ");
+  return `selected ${want.length} characters, pasted ${got.length}; first difference at ${at}: selected [${points(want)}], pasted [${points(got)}]`;
+}
+
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-MAIN-RUN; UX edges: E-LAUNCH-REPO E-MON-RUNS-GRAPH
   scenario<null>(
@@ -349,8 +357,10 @@ export const scenarios: Scenario[] = [
       await nativeInput(browser, { type: "copy" });
       await browser.$("#field-comment").click();
       await nativeInput(browser, { type: "paste" });
-      await browser.waitUntil(async () => (await browser.$("#field-comment").getValue()) === copied,
-        { timeout: 15000, timeoutMsg: "the copied Tool log text pasted unchanged into the result" });
+      let pasted = "";
+      await browser.waitUntil(async () => (pasted = await browser.$("#field-comment").getValue()) === copied,
+        { timeout: 15000, timeoutMsg: "the copied Tool log text pasted unchanged into the result" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${difference(copied, pasted)}`); });
       // A submission clears the Tool log; the completed result stays open.
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });

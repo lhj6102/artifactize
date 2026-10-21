@@ -36,19 +36,29 @@ function current(browser: WebdriverIO.Browser) {
    * target before one WebDriver click, rather than clicking during that transition. */
   async function clickArtifact(name: string) {
     const selector = `${CURRENT} .svelte-flow__node[data-id="a:${name}"]`;
-    await browser.waitUntil(() => browser.executeAsync<boolean, [string]>((selector, done) => {
-      const node = document.querySelector(selector);
-      if (!node) return done(false);
-      const before = node.getBoundingClientRect();
-      requestAnimationFrame(() => {
-        const after = node.getBoundingClientRect();
-        const canvas = node.closest(".svelte-flow")?.getBoundingClientRect();
-        const hit = document.elementFromPoint(after.x + after.width / 2, after.y + after.height / 2);
-        done(node.isConnected && before.x === after.x && before.y === after.y && before.width === after.width && before.height === after.height &&
-          !!canvas && after.left >= canvas.left && after.right <= canvas.right && after.top >= canvas.top && after.bottom <= canvas.bottom &&
-          hit?.closest(".svelte-flow__node") === node);
-      });
-    }, selector), { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` });
+    // Empty when it is a target; otherwise which condition failed, with the boxes involved.
+    let last = "";
+    await browser.waitUntil(async () => {
+      last = await browser.executeAsync<string, [string]>((selector, done) => {
+        const node = document.querySelector(selector);
+        if (!node) return done("no node");
+        const before = node.getBoundingClientRect();
+        requestAnimationFrame(() => {
+          const after = node.getBoundingClientRect();
+          const canvas = node.closest(".svelte-flow")?.getBoundingClientRect();
+          const hit = document.elementFromPoint(after.x + after.width / 2, after.y + after.height / 2);
+          const box = (rect: DOMRect | undefined) => rect ? [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(",") : "none";
+          const facts = `node ${box(after)}, canvas ${box(canvas)}, window ${innerWidth}×${innerHeight}`;
+          if (!node.isConnected) return done("detached");
+          if (before.x !== after.x || before.y !== after.y || before.width !== after.width || before.height !== after.height) return done(`moving: ${facts}`);
+          if (!canvas || after.left < canvas.left || after.right > canvas.right || after.top < canvas.top || after.bottom > canvas.bottom) return done(`outside its canvas: ${facts}`);
+          if (hit?.closest(".svelte-flow__node") !== node) return done(`covered by ${hit?.tagName ?? "nothing"} ${hit?.getAttribute("class") ?? ""}: ${facts}`);
+          done("");
+        });
+      }, selector);
+      return last === "";
+    }, { timeout: 15000, timeoutMsg: `${name} is a stable, visible graph pointer target` })
+      .catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
     await browser.$(selector).click();
   }
   return { structure, expanded, drawn, clickArtifact };

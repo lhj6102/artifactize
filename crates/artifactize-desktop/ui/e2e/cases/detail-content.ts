@@ -153,7 +153,9 @@ export const scenarios: Scenario[] = [
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
       // While the old eval's log is still open, a different Artifact replaces it with its
-      // own Artifact tab. No stale Summary or log is allowed to survive the switch.
+      // own Artifact tab. No stale Summary or log is allowed to survive the switch. The
+      // Detail may cover basis: as a person would, Fit View shows the graph beside it first.
+      await browser.$(".graph .svelte-flow__controls-fitview").click();
       await graphShown(browser, "a:basis");
       const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
       assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);
