@@ -1,11 +1,19 @@
 pub(crate) mod current;
 
-// The selected Run as a graph of Artifacts for the monitor's Graph view: nodes, dependency
-// edges and their lights come from the library's [`monitor::graph`] over the shown tree.
-use crate::{App, Failure};
+// A graph of Artifacts for the Main area: the shown Run's, lit by the library's
+// [`monitor::graph`] over the shown tree, or a branch's Current, lit by what verify would do.
+use crate::{App, Failure, browse::BranchKey};
 use artifactize_core::monitor;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
+
+/// What a graph or Detail shows: a saved Run, or a branch's worktree as it is now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Source {
+    Run { run: crate::ids::RunKey },
+    Current { branch: BranchKey },
+}
 
 /// How a node or edge is lit, in precedence order; the frontend maps each to one colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -23,6 +31,10 @@ pub enum Light {
     Waiting,
     /// Every eval is GREEN.
     Green,
+    /// On a Current: at least one eval would run.
+    Run,
+    /// On a Current: every eval's result would be reused.
+    Reused,
 }
 
 impl From<monitor::Light> for Light {
@@ -38,6 +50,18 @@ impl From<monitor::Light> for Light {
     }
 }
 
+impl From<monitor::live::Plan> for Light {
+    fn from(plan: monitor::live::Plan) -> Self {
+        use monitor::live::Plan;
+        match plan {
+            Plan::Run => Self::Run,
+            Plan::Blocked => Self::Blocked,
+            Plan::Wait => Self::Waiting,
+            Plan::Reuse => Self::Reused,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphNode {
@@ -45,6 +69,8 @@ pub struct GraphNode {
     pub id: crate::ids::NodeKey,
     pub name: String,
     pub light: Light,
+    /// Under the name: on a Current what verify would do, `would run (2 evals)`.
+    pub note: Option<String>,
 }
 
 /// `target`'s evals depend on `source`; both are tree ids.
@@ -58,41 +84,53 @@ pub struct GraphEdge {
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct RunGraph {
-    pub run: crate::ids::RunKey,
+pub struct Graph {
+    pub source: Source,
     /// Upstream first, in the tree's order.
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
 }
 
-/// The selected Run `run` as a graph of its Artifacts, from the shown snapshot.
+pub(crate) fn node_id(name: &artifactize_core::types::ArtifactName) -> crate::ids::NodeKey {
+    monitor::NodeId::artifact(name.clone()).into()
+}
+
+/// The graph of `source`: the shown Run's, from the shown snapshot, or a branch's Current as
+/// its last scan found it.
 #[tauri::command]
 #[specta::specta]
-pub fn run_graph(app: tauri::State<'_, App>, run: crate::ids::RunKey) -> Result<RunGraph, Failure> {
-    let run = run.into_inner();
-    let graph = app.browse.with_tree(&run, monitor::graph)?;
-    let id = |name: &artifactize_core::types::ArtifactName| -> crate::ids::NodeKey {
-        monitor::NodeId::artifact(name.clone()).into()
-    };
-    Ok(RunGraph {
-        nodes: graph
-            .nodes
-            .iter()
-            .map(|node| GraphNode {
-                id: node.id.clone().into(),
-                name: node.name.to_string(),
-                light: node.light.into(),
+pub fn graph(app: tauri::State<'_, App>, source: Source) -> Result<Graph, Failure> {
+    match &source {
+        Source::Run { run } => {
+            let graph = app
+                .browse
+                .with_tree(&run.clone().into_inner(), monitor::graph)?;
+            Ok(Graph {
+                nodes: graph
+                    .nodes
+                    .iter()
+                    .map(|node| GraphNode {
+                        id: node.id.clone().into(),
+                        name: node.name.to_string(),
+                        light: node.light.into(),
+                        note: None,
+                    })
+                    .collect(),
+                edges: graph
+                    .edges
+                    .iter()
+                    .map(|edge| GraphEdge {
+                        source: node_id(&edge.from),
+                        target: node_id(&edge.to),
+                        light: edge.light.into(),
+                    })
+                    .collect(),
+                source,
             })
-            .collect(),
-        edges: graph
-            .edges
-            .iter()
-            .map(|edge| GraphEdge {
-                source: id(&edge.from),
-                target: id(&edge.to),
-                light: edge.light.into(),
-            })
-            .collect(),
-        run: run.into(),
-    })
+        }
+        Source::Current { branch } => {
+            let current = app.currents.shown(&branch.to_place())?;
+            Ok(current::graph(&current.current, source))
+        }
+    }
 }

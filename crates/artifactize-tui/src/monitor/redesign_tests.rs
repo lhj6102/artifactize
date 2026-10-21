@@ -315,6 +315,9 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
 fn waiting_badges_deduplicate_execution_and_original_request() {
     let mut catalog = catalog::Catalog::default();
     let mut rows = vec![store::CatalogRun {
+        id: "run-1".parse().unwrap(),
+        created_at: crate::types::Timestamp::now(),
+        completed_at: None,
         repo_path: "deleted/a".into(),
         repository: Default::default(),
         status: crate::types::RunStatus::Running,

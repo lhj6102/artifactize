@@ -7,126 +7,191 @@ that makes the transition happen and checks where it leads.
 
 ## Screens and states
 
-- **Launch**: the window opening. It opens on the Monitor, or on Review when started with
-  `review`. The window's title is "Artifactize". The person narrows
-  the view inside the app, with the Scope pane or the Review search.
-- **Monitor**: **Scope** and **Runs** stacked on the left, and on the right the **Run pane**
-  (the graph area), the divider between them always shown. Scope lists ALL repositories and each
-  repository and worktree; Runs lists the selected scope's Runs, newest first. The Run pane is
-  titled with the selected Run and shows its headline and what needs attention above its
-  **Graph**; the **notice** of what went wrong (such as Runs that cannot be read) is one line in
-  the Run pane's header, whichever pane has focus, and neither moves nor hides the Graph. With no
-  Run, while loading, on an error or with an empty graph, the Graph's place stays and says so.
-  The **Detail** floats over the Graph docked toward its right edge, with a gap, and shows the
-  Run or an Artifact. Its left edge takes a drag that sets its width, between a readable column
-  and a width that leaves some of the Graph visible on its left; it stays within the graph area,
-  never over Scope or Runs. An Artifact's Detail has tabs, a chip choice that reads as a path,
-  `[Artifact icon] {name} / [eval] …`: the Artifact's own chip (the Artifact icon before its name,
-  read aloud as "Artifact {name}"; only the name is cut short when long, the Detail's title
-  showing it whole), then a `/` and one chip per eval
-  with its verdict's glyph and colour; an Artifact without evals has its own chip only, without
-  the `/`. Eval chips that do not fit on one line wrap onto further lines within the Detail, the
-  `/` staying with the Artifact's chip. The Artifact's tab draws it between its neighbours with the
-  Run graph's nodes and edges (the Artifacts its evals use on its left, those whose evals use it
-  on its right), a drawing that does not pan, zoom or drag, then lists its evals with their verdicts, then
-  shows its path, every other fact (what it waits for included) under Debug (unfolded with `t`
-  or a click). An eval's tab shows its Summary (its status, beside it in grey what running it took
-  and spent: time, tokens in `k` or `M` and model, or what reuse saved; its instruction; its
-  result, each owner field by name and a list as numbered items; execution options, metadata
-  and fingerprint, every other fact under Debug, unfolded
-  with `t` or a click) or, switched below the tabs, its Agent log or Runtime log; for a Human
-  eval the Human review. Everything in the Detail, transcript and log lines, long words and code
-  included, wraps or scrolls within its width. Hovering only highlights, and over a divider or
-  the Detail's left edge shows only the resize cursor; nothing opens on hover.
-  States: Scope, Runs or Graph focused; Detail open on a tab (the Artifact's, an eval's Summary,
-  Debug unfolded, or a log), its chips on one line or wrapped; notice as one line or in full.
-- **Run graph**: the selected Run's Artifacts as nodes and their dependencies as edges,
-  coloured by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked. It
-  takes the pointer; Tab reaches its Artifacts and Enter on one does what a click does.
-- **Current graph**: current declarations opened with `artifactize-desktop graph --repo PATH`
-  or the Human `graph` tool, without a saved Run or Run verdicts. States: whole graph,
-  an Artifact's evals docked over the graph's right side, structure text expanded (all
-  evaluation criteria and labeled relations). Refresh, Ctrl+R or F5 reloads declarations.
-- **Review**: the saved-request list (at first the waiting Human reviews of every repository)
-  with a read-only preview of the selected request, and the search field above it. States:
-  Requests focused, Search focused (with or without suggestions), a request open (a Human
-  review is actionable, any other request read-only).
-- **Human review** (on a Human eval's tab of the Monitor's Detail, or in Review): its
-  instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the reviewed one first), the
-  Tool log of every run in this review, and the Result. States: Unclaimed, Taken (another
-  reviewer holds the claim), Claimed (by this reviewer), Editing GREEN (the form built from the
-  eval's pass schema), Editing RED (built from its fail schema), Submitted (the completed result
-  shown); a tool or a submission may be running, and a launched application may still be
-  logging. The form has text, number, true/false and choice fields, lists of text (one text per
-  item) and lists of groups of fields; a list always keeps one item to type in. Constants are
-  filled in and not shown; `*` marks a required field and an empty optional one says Optional in
-  grey. There is no JSON editor.
-  The **Tool log** shows each run as `▶ HH:MM:SS · operation · Artifact`, then each line the tool
-  prints (stderr in red), then its end line (`■ exit 0`, `■ launched`, `■ done`, `■ error: …`);
-  a launched application's lines keep arriving under its own run until it exits. It is monospace, wraps within the review's width and scrolls in its own box,
-  apart from the rest of the review. Its states: Following (it shows its newest line as lines
-  arrive) and Scrolled up (the reader scrolled away from the bottom: it stays where the reader
-  left it while lines arrive below). Its text selects and copies like any page text.
-- **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token).
-- **Overlays**: Palette (a filterable list of commands), Help (the keys of the screen below),
-  Leave dialog (quit while this window holds claims).
+- **Launch**: the window opening, titled "Artifactize". It opens on its one screen, the
+  **Pane** beside the **Main area**, the divider between them always shown. Started with
+  `--repo PATH` it selects the branch of PATH; with `review ID` it opens that review, with
+  `review` alone the newest waiting one; with `graph --repo PATH` (also the declared Human
+  `graph` tool) it shows the Current of the branch of PATH. A branch the app was started for
+  is listed even before its project has a Run. There is no screen switch.
+- **Pane**: one column: the **Search** field at the top, the **Branches** below it and the
+  **Waiting** stack at the bottom. There is no Scope heading and no Runs list.
+  - **Search**: its starting query is `sort:recent`. Free text and `key:value` terms (`repo:`,
+    `branch:`, `sort:recent`, `sort:name`) must all match; they narrow the Branches and the
+    Waiting stack alike. States: not focused, focused, focused with suggestions.
+  - **Branches**: one entry per live branch of every project with Runs on this machine, read
+    as `project  branch`: a Git worktree that exists now with the branch it has checked out
+    (a detached one by its folder's name), or a folder outside Git that exists now and holds
+    its declarations. A removed worktree or folder, or one Git no longer lists, has no entry.
+    Who ran a Run makes no entry: a branch's Runs are its project's Runs on that branch, from
+    whichever folder they ran in. Under the name sits the branch's **chip row**: one chip per
+    Run, oldest to newest left to right, each its status and age (a running one its time so
+    far), ending with the Run in progress on the branch, or else with a **Current** chip. The
+    row has no scrollbar; chips fade out at whichever end has more. `sort:recent` puts the
+    branch with the most recent Run first and branches without Runs last; `sort:name` orders
+    by project and branch. States: a branch selected, one of its chips shown (filled), the row
+    scrolled to any position.
+  - **Waiting**: the waiting Human reviews of every repository on this machine, those of
+    removed branches included, newest at the top, each with its eval, its project and branch,
+    how long it waits and who claimed it. With none it is a thin bar at the bottom of the pane
+    reading `(0)`; each waiting review adds a row, the area growing upward like a stack up to
+    half of the pane's height, beyond which it scrolls. States: a waiting review selected.
+  - The keys move one selection through the Branches and then the Waiting stack. Focus is in
+    the Pane (its entries or its Search) or in the Main area.
+- **Main area**: shows one view at a time, with what went wrong (such as Runs that cannot be
+  read) as the **notice**, one line in its header that neither moves nor hides what is below.
+  - **Nothing chosen**: no branch or review chosen yet; the graph's place says so.
+  - **Run**: the shown Run's headline and what needs attention above the **Run graph**; while
+    loading, on an error or with an empty graph the graph's place stays and says so.
+  - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: a
+    header saying when it was scanned, a Refresh button, the **Current graph** and, below it,
+    the expandable **Structure and evaluation criteria** text (every criterion and labeled
+    relation). It scans again when chosen again, on Refresh and when a Run of the branch ends.
+  - **Review**: a waiting Human review opened from the Pane, its eval and Artifact above the
+    **Human review**. Choosing a branch or chip leaves it without closing it: its claim, draft
+    and Tool log stay for when it is opened again.
+  - **Request**: a request opened by ID that is not a waiting Human review, read-only.
+  - **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token).
+- **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
+  by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
+- **Current graph**: the current declarations' Artifacts and relations, each Artifact coloured
+  by what verify would do now: reused (every eval's result would be reused without
+  evaluation), would run (with how many of its evals would run), waiting, blocked.
+- Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
+  does; they have no other keys of their own. Hovering only highlights.
+- **Detail**: floats over a graph docked toward its right edge, with a gap, and shows a Run or
+  an Artifact; it never sits beside the Pane. Its left edge takes a drag that sets its width,
+  between a readable column and a width that leaves some of the graph visible on its left.
+  An Artifact's Detail has tabs, a chip choice that reads as a path, `[Artifact icon] {name} /
+  [eval] …`: the Artifact's own chip (the Artifact icon before its name, read aloud as
+  "Artifact {name}"; only the name is cut short when long, the Detail's title showing it
+  whole), then a `/` and one chip per eval with its verdict's glyph and colour, on a Current
+  whether it would run or be reused; an Artifact without evals has its own chip only, without
+  the `/`. Eval chips that do not fit on one line wrap onto further lines within the Detail,
+  the `/` staying with the Artifact's chip. The Artifact's tab draws it between its
+  neighbours with its graph's nodes and edges (the Artifacts its evals use on its left, those
+  whose evals use it on its right), a drawing that does not pan, zoom or drag, then lists its
+  evals with their verdicts, then its **Tools** and their **Tool log**, then its path, every
+  other fact (what it waits for included) under Debug (unfolded with `t` or a click). Its
+  Tools are the Human tools the Artifact declares in the branch's worktree as it is now,
+  whichever Run is shown, each a `▶` button; the graph's nodes carry no tool buttons. An
+  eval's tab shows its Summary (its status, beside it in grey what running it took and spent:
+  time, tokens in `k` or `M` and model, or what reuse saved; its instruction; its result, each
+  owner field by name and a list as numbered items; execution options, metadata and
+  fingerprint, every other fact under Debug), on a Current whether it would run or be reused
+  and why and the result it would reuse, or, switched below the tabs, its Agent log or Runtime
+  log; in a Run a Human eval's tab holds its Human review. Everything in the Detail,
+  transcript and log lines, long words and code included, wraps or scrolls within its width.
+  States: open on a tab (the Artifact's, an eval's Summary, Debug unfolded, or a log), its
+  chips on one line or wrapped; an Artifact's tool running.
+- **Human review** (on a Human eval's tab of a Run's Detail, or the Review view): its
+  instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the
+  reviewed one first), the Tool log of every run in this review, and the Result. States:
+  Unclaimed, Taken (another reviewer holds the claim), Claimed (by this reviewer), Editing
+  GREEN (the form built from the eval's pass schema), Editing RED (built from its fail schema),
+  Submitted (the completed result shown); a tool or a submission may be running, and a
+  launched application may still be logging. The form has text, number, true/false and choice
+  fields, lists of text (one text per item) and lists of groups of fields; a list always keeps
+  one item to type in. Constants are filled in and not shown; `*` marks a required field and
+  an empty optional one says Optional in grey. There is no JSON editor.
+- **Tool log** (of a review, or of an Artifact while the app runs): each run as `▶ HH:MM:SS ·
+  operation · Artifact`, then each line the tool prints (stderr in red), then its end line
+  (`■ exit 0`, `■ launched`, `■ done`, `■ error: …`); a launched application's lines keep
+  arriving under its own run until it exits. It is monospace, wraps within its width and
+  scrolls in its own box. Its states: Following (it shows its newest line as lines arrive)
+  and Scrolled up (the reader scrolled away from the bottom: it stays where the reader left
+  it while lines arrive below). Its text selects and copies like any page text. A review's
+  submission clears its log; an Artifact's tool runs record nothing as a review's evidence.
+- **Overlays**: Palette (a filterable list of commands), Help (the keys of what has focus),
+  Open by ID (a field for a request ID), Leave dialog (quit while this window holds claims).
 
 ## Window
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-LAUNCH-MONITOR | Launch | start without arguments | Monitor |
-| E-LAUNCH-REVIEW | Launch | start with `review` | Review, listing the waiting Human reviews of every repository |
-| E-SCREEN-MONITOR | any screen | Ctrl+1 | Monitor |
-| E-SCREEN-REVIEW | any screen | Ctrl+2 | Review |
-| E-SCREEN-SETTINGS | any screen | Ctrl+, | Settings |
-| E-SCREEN-REVIEW-COUNT | any screen | a Human review starts or stops waiting, in this window or another process | same screen, Review showing after its name how many wait as Review's starting search lists them, or its name alone with none |
-| E-PALETTE-OPEN | any screen | Ctrl+K or the palette button | Palette, all enabled commands listed |
+| E-LAUNCH-MONITOR | Launch | start without arguments | Pane and Main area, the Main area with Nothing chosen |
+| E-LAUNCH-REPO | Launch | start with `--repo PATH` | the branch of PATH selected in the Branches, its last chip shown in the Main area |
+| E-LAUNCH-REVIEW | Launch | start with `review` | the newest waiting Human review open in the Main area as Review |
+| E-LAUNCH-REVIEW-ID | Launch | start with `review ID` | the review ID open in the Main area as Review |
+| E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | the branch of PATH selected, its Current shown |
+| E-SCREEN-SETTINGS | any view | Ctrl+, or the Settings button | Settings in the Main area |
+| E-SETTINGS-BACK | Settings | Esc, the Settings button again, or a choice in the Pane | the Main area's view before Settings, or the one chosen |
+| E-PALETTE-OPEN | any view | Ctrl+K or the palette button | Palette, all enabled commands listed |
 | E-PALETTE-FILTER | Palette | type text | Palette, the commands filtered by the text |
 | E-PALETTE-RUN | Palette | Enter on a command | the command's target, Palette closed |
-| E-PALETTE-CLOSE | Palette | Esc or a click outside | the screen below |
-| E-HELP-OPEN | any screen, outside fields | `?` | Help, listing the keys of the current screen |
-| E-HELP-CLOSE | Help | Esc | the screen below |
-| E-REFRESH | any screen | F5, or Ctrl+R outside verdict editing (while editing a verdict Ctrl+R switches to RED, E-HUMAN-SWITCH) | same screen, state reloaded |
-| E-QUIT-CLEAN | any screen, no claims held | `q` outside fields, or closing the window from anywhere | window closed |
-| E-QUIT-ASK | any screen, claims held | `q` outside fields, or closing the window from anywhere | Leave dialog |
-| E-QUIT-STAY | Leave dialog | Esc | the screen below |
+| E-PALETTE-CLOSE | Palette | Esc or a click outside | the view below |
+| E-HELP-OPEN | any view, outside fields | `?` | Help, listing the keys of what has focus (Pane, Main area or Settings) |
+| E-HELP-CLOSE | Help | Esc | the view below |
+| E-REFRESH | any view | F5, or Ctrl+R outside verdict editing (while editing a verdict Ctrl+R switches to RED, E-HUMAN-SWITCH) | same view, the state reloaded and the Branches scanned again; a shown Current scanned again (E-CURRENT-REFRESH) |
+| E-REVIEW-OPEN-ID | any view | Ctrl+O, or the palette's "Open a request by ID", then a waiting Human review's ID | Review of that request in the Main area, actionable |
+| E-REVIEW-READONLY | any view | Ctrl+O, or the palette's "Open a request by ID", then the ID of any other request | Request: that request in the Main area, read-only |
+| E-QUIT-CLEAN | any view, no claims held | `q` outside fields, or closing the window from anywhere | window closed |
+| E-QUIT-ASK | any view, claims held | `q` outside fields, or closing the window from anywhere | Leave dialog |
+| E-QUIT-STAY | Leave dialog | Esc | the view below |
 | E-QUIT-RELEASE | Leave dialog | `u` | claims released, window closed |
 
-## Monitor
+## Pane
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-MON-SCOPE-MOVE | Scope | `j`, `k`, ↑ or ↓ | Scope, another scope selected (ALL, a repository or a worktree); Runs narrows to its Runs |
-| E-MON-SCOPE-RUNS | Scope | Enter or → | Runs |
-| E-MON-RUNS-MOVE | Runs | `j`, `k`, ↑ or ↓ | Runs, another Run selected; Graph shows it |
-| E-MON-RUNS-GRAPH | Runs | Enter or → | Graph focused |
-| E-MON-GRAPH-TO-RUNS | Graph, no Detail open | Esc | Runs |
-| E-MON-RUNS-TO-SCOPE | Runs | Esc or ← | Scope |
-| E-MON-NOTICE | Monitor with a notice, any pane focused | click the notice in the Run pane's header | the notice shown in full, wrapped within the Run pane's header, the Graph neither moved nor hidden; another click shows it as one line again |
-| E-MON-DETAIL-ARTIFACT | Graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab: its chips as a path (eval chips wrapping onto further lines with the `/` kept with the Artifact's chip; no `/` without evals), the Artifact between its neighbours, its evals listed with their verdicts, then its path, every other fact (what it waits for included) folded under Debug |
-| E-MON-DETAIL-TAB | Detail of an Artifact | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's tab shown: its Summary (status, instruction, result), or its Human review, long words and code wrapping within the Detail's width |
+| E-PANE-SELECT | Pane | click a branch's name | that branch selected, its last chip (the running Run, else Current) shown in the Main area and filled |
+| E-PANE-CHIP | Pane | click a chip of a branch | that branch selected, the chip shown in the Main area (a Run's chip as Run, the Current chip as Current) and filled |
+| E-PANE-DRAG | a branch's chip row | hold the mouse on it and drag sideways | the row scrolled with the pointer, older Runs arriving as its oldest end comes into view, chips fading out at whichever end has more; no chip chosen |
+| E-MON-SCOPE-MOVE | Pane entries focused | `j`, `k`, ↑ or ↓ | the next or previous entry selected, through the Branches and then the Waiting stack; a branch shows its last chip in the Main area, a waiting review is only selected |
+| E-MON-RUNS-MOVE | Pane entries focused, a branch selected | ← or → | the branch's previous or next chip shown in the Main area and filled, its row scrolling to show it |
+| E-MON-RUNS-GRAPH | Pane entries focused, a branch selected | Enter | Main area focused, on the shown view |
+| E-MON-GRAPH-TO-RUNS | Main area focused, no Detail open | Esc | Pane entries focused, the same entry selected |
+| E-REVIEW-OPEN | Pane, a waiting review in the Waiting stack | click it, or Enter on it selected | Review of that request in the Main area |
+| E-PANE-WORKTREES | Pane | a worktree of a listed project is added or removed (or its folder deleted), in another process | within seconds and without a reload, its branch appears in the Branches or goes from them |
+| E-BRANCH-RUNNING | Pane | a Run starts on a listed branch, in another process | its row ends with that Run's chip, `Running` and its time so far; the Current chip goes |
+| E-BRANCH-RUN-END | Pane, a branch's row ending with a running Run | that Run ends | its chip shows its final status and age; the row ends with a Current chip |
+| E-WAITING-CHANGE | Pane | a Human review starts or stops waiting, in this window or another process | the Waiting stack adds or drops its row, the bar's count following: `(0)` with none |
+| E-MAIN-REVIEW-LEAVE | Review in the Main area | choose a branch or one of its chips | that view shown, the review left without being closed; opening it again shows it as it was left |
+| E-MON-NOTICE | Main area with a notice, focus anywhere | click the notice in the Main area's header | the notice shown in full, wrapped within the header, what is below neither moved nor hidden; another click shows it as one line again |
+| E-MON-LIVE | any view | another process changes the state (a new Run, a result, a claim, a submission) | same view, updated without a reload |
+| E-MON-RESIZE | Pane and Main area | drag the divider between them (hovering it shows only the resize cursor) | same view, the split resized and kept whatever the Main area shows |
+
+## Search
+
+| Edge | From | Action | To |
+| --- | --- | --- | --- |
+| E-REVIEW-SEARCH-FOCUS | Pane or Main area, outside fields | `/` or Ctrl+F | Search focused |
+| E-REVIEW-SEARCH-TERMS | Search | type free text, `repo:` or `branch:` terms, all of which must match | Search, the Branches and the Waiting stack narrowed alike (free text: part of a project, a branch or a waiting review's eval; `repo:` part of the project; `branch:` part of the branch), suggestions for the last term |
+| E-PANE-SORT | Search | replace `sort:recent` with `sort:name`, or back | Branches ordered by project and branch, or most recent Run first with branches without Runs last |
+| E-REVIEW-SUGGEST | Search with suggestions | ↑ ↓ then Tab or Enter | Search, the suggestion (a key, a project, a branch or a sort order) taken |
+| E-REVIEW-SUGGEST-CLOSE | Search with suggestions | Esc | Search, suggestions closed, query kept |
+| E-REVIEW-SEARCH-CLEAR | Search, no suggestions, query other than `sort:recent` | Esc | Search, `sort:recent` put back, every branch and waiting review listed |
+| E-REVIEW-SEARCH-LEAVE | Search | Enter after a finished term, or Esc on `sort:recent` | Pane entries focused |
+
+## Main area
+
+| Edge | From | Action | To |
+| --- | --- | --- | --- |
+| E-CURRENT-CHIP | Pane | choose a Current chip (a click, ← →, or a branch selected without a Run in progress), also when it is already shown | Current: the worktree scanned again, its header saying when; the Current graph with each Artifact marked reused, would run (n evals), waiting or blocked |
+| E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | Current scanned again, its header the new time, the graph recoloured in place |
+| E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | Current scanned again and its graph and structure text updated |
+| E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
+| E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan ends | the graph, nodes and edges recoloured in place |
+| E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
+
+## Detail
+
+| Edge | From | Action | To |
+| --- | --- | --- | --- |
+| E-MON-DETAIL-ARTIFACT | Run graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab: its chips as a path (eval chips wrapping onto further lines with the `/` kept with the Artifact's chip; no `/` without evals), the Artifact between its neighbours, its evals listed with their verdicts, its Tools and Tool log, then its path, every other fact (what it waits for included) folded under Debug |
+| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Detail of that Artifact over the Current: its eval chips and listed evals saying whether each would run or be reused, the Artifact between its neighbours, its Tools and Tool log, its path, the rest under Debug |
+| E-MON-DETAIL-TAB | Detail of an Artifact of a Run | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's tab shown: its Summary (status, instruction, result), or its Human review, long words and code wrapping within the Detail's width |
+| E-CURRENT-TAB | Detail of an Artifact of a Current | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's Summary: whether it would run or be reused and why, and the result it would reuse |
 | E-MON-DETAIL-NEIGHBOUR | Detail of an Artifact, on its Artifact tab | click a neighbour drawn beside it | Detail of that Artifact, on its Artifact tab, between its own neighbours |
-| E-MON-DETAIL-SWITCH | Detail | click another Artifact | Detail of that Artifact, on its Artifact tab |
-| E-MON-DETAIL-RUN | Graph | click the Run's headline | Detail of the Run opened |
+| E-MON-DETAIL-SWITCH | Detail | click another Artifact of the graph | Detail of that Artifact, on its Artifact tab |
+| E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened |
 | E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab | `t`, or a click on Debug | Detail, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts) shown or hidden |
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
+| E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
+| E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened and said so; its run open in the Artifact's Tool log until it exits |
+| E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
-| E-MON-LIVE | Monitor | another process changes state | same state, updated |
-| E-MON-RESIZE | Monitor | drag a divider (hovering it shows only the resize cursor) | same state, pane resized, the split kept whether or not a graph is shown |
-| E-MON-DETAIL-WIDTH | Detail | drag its left edge (hovering it shows only the resize cursor) | Detail resized, never narrower than a readable column nor so wide that no Graph shows on its left, within the graph area and never over Scope or Runs; the width kept for the next opening and launch |
-| E-GRAPH-RECOLOUR | Graph | a result arrives | Graph, nodes and edges recoloured in place |
-| E-GRAPH-BEYOND | Graph of a large Run | pan or zoom the camera past the drawn nodes | Graph, the Artifacts brought into view drawn |
-
-## Current graph
-
-| Edge | From | Action | To |
-| --- | --- | --- | --- |
-| E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | Current graph, current declarations drawn without Run verdicts |
-| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Current graph, its evals docked over the graph's right side |
-| E-CURRENT-STRUCTURE | Current graph | expand Structure and evaluation criteria, or click a docked eval | Current graph, complete criteria and labeled relations shown as text |
-| E-CURRENT-CLOSE | Current graph, an Artifact's evals docked | Esc, Close, or a click on the graph's background | Current graph, the evals closed |
-| E-CURRENT-REFRESH | Current graph | Refresh, Ctrl+R or F5 | Current graph, declarations reloaded and the graph and structure text updated |
+| E-CURRENT-CLOSE | Detail over a Current | Esc, Close, or a click on the graph's background | the Current graph, Detail closed |
+| E-MON-DETAIL-WIDTH | Detail | drag its left edge (hovering it shows only the resize cursor) | Detail resized, never narrower than a readable column nor so wide that no graph shows on its left, never over the Pane; the width kept for the next opening and launch |
 
 ## Human review
 
@@ -153,26 +218,9 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-LOG-UP | Tool log Following, longer than its box | scroll it up | Tool log Scrolled up; new lines arrive below without moving it, and the rest of the review does not scroll |
 | E-HUMAN-LOG-FOLLOW | Tool log Scrolled up | scroll it back to its bottom | Tool log Following, showing each newest line again |
 | E-HUMAN-LOG-COPY | Editing, the Tool log holding lines | select text in the Tool log, copy it and paste it into a Result field | Editing, the field holding the log's text as shown |
-| E-HUMAN-ESC-CANCEL | a tool or submission running | Esc in the review or on the Detail's tabs, the review's Close, or in the Monitor Esc on the Graph or a click on its background | same state, the running work cancelled, the Detail still open |
-| E-HUMAN-ESC-FORM | Editing, nothing running | Esc, Close or a click as for E-HUMAN-ESC-CANCEL | Claimed, the form left with its draft kept, the Detail still open |
-| E-HUMAN-ESC-DETAIL | Unclaimed, Taken, Claimed or Submitted, nothing running or being edited | Esc | the list or graph the Detail was opened from |
-
-## Review
-
-| Edge | From | Action | To |
-| --- | --- | --- | --- |
-| E-REVIEW-PREVIEW | Requests | select a request | Requests, read-only preview shown |
-| E-REVIEW-OPEN | Requests | Enter or → on a Human review | Human review open |
-| E-REVIEW-OPEN-TOOLS | Requests | the context menu or the palette command "Open the selected request with Tools focused" | Human review open, Tools focused |
-| E-REVIEW-OPEN-ID | Requests | Ctrl+O and an ID | request open |
-| E-REVIEW-READONLY | Requests | Enter on a non-Human request | request open, read-only |
-| E-REVIEW-SEARCH-FOCUS | Requests | `/` or Ctrl+F | Search focused |
-| E-REVIEW-SEARCH-TERMS | Search | type free text and `key:value` terms (repo, eval, request, reviewer, tag, kind, status, is), all of which must match | Search, Requests filtered, suggestions for the last term |
-| E-REVIEW-SUGGEST | Search with suggestions | ↑ ↓ then Tab or Enter | Search, the suggestion taken |
-| E-REVIEW-SUGGEST-CLOSE | Search with suggestions | Esc | Search, suggestions closed, query kept |
-| E-REVIEW-SEARCH-CLEAR | Search, no suggestions, query not empty | Esc | Search, query cleared, every request listed |
-| E-REVIEW-SEARCH-LEAVE | Search | Enter after a finished term, or Esc on an empty query | Requests |
-| E-REVIEW-PAGE | Requests | PgDn or PgUp | Requests, older or newer page |
+| E-HUMAN-ESC-CANCEL | a tool or submission running | Esc in the review or on the Detail's tabs, the review's Close, or Esc on the graph or a click on its background | same state, the running work cancelled, the review still open |
+| E-HUMAN-ESC-FORM | Editing, nothing running | Esc, Close or a click as for E-HUMAN-ESC-CANCEL | Claimed, the form left with its draft kept, the review still open |
+| E-HUMAN-ESC-DETAIL | Unclaimed, Taken, Claimed or Submitted, nothing running or being edited | Esc | in a Run's Detail the graph, Detail closed; for a review opened from the Pane, Pane entries focused |
 
 ## Settings
 
@@ -194,31 +242,48 @@ that makes the transition happen and checks where it leads.
 
 Each journey of UX-FEATURES.md as walks through the edges above: `→` joins edges one after the
 other (each starts where the one before ended), `|` separates alternatives, and a journey with
-several walks lists them one per line. Selecting a row first is the movement edge of its pane.
+several walks lists them one per line. Selecting an entry first is E-MON-SCOPE-MOVE or
+E-PANE-SELECT.
 
-- J-LAUNCH: E-LAUNCH-MONITOR | E-LAUNCH-REVIEW
-- J-SWITCH-SCREEN: E-SCREEN-MONITOR | E-SCREEN-REVIEW | E-SCREEN-SETTINGS | E-SCREEN-REVIEW-COUNT
+- J-LAUNCH: E-LAUNCH-MONITOR | E-LAUNCH-REPO | E-LAUNCH-REVIEW | E-LAUNCH-REVIEW-ID | E-CURRENT-LAUNCH
+- J-SETTINGS: E-SCREEN-SETTINGS → E-SETTINGS-BACK
 - J-PALETTE: E-PALETTE-OPEN → E-PALETTE-FILTER → E-PALETTE-RUN | E-PALETTE-CLOSE
 - J-HELP: E-HELP-OPEN → E-HELP-CLOSE
 - J-REFRESH: E-REFRESH
+  E-CURRENT-CHIP → E-REFRESH
 - J-QUIT: E-QUIT-CLEAN | E-QUIT-ASK → E-QUIT-STAY | E-QUIT-ASK → E-QUIT-RELEASE
-- J-MON-CATALOG: E-LAUNCH-MONITOR → E-MON-SCOPE-MOVE → E-MON-SCOPE-RUNS → E-MON-RUNS-MOVE → E-MON-RUNS-GRAPH
-  E-MON-RUNS-MOVE → E-MON-NOTICE
-- J-MON-NAVIGATE: E-MON-SCOPE-MOVE → E-MON-SCOPE-RUNS → E-MON-RUNS-MOVE → E-MON-RUNS-GRAPH → E-MON-GRAPH-TO-RUNS → E-MON-RUNS-TO-SCOPE
-- J-MON-DETAIL: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-LOG → E-MON-DETAIL-SWITCH → E-MON-DETAIL-BACK
-  E-MON-DETAIL-RUN → E-MON-DETAIL-BACK
-- J-MON-NEIGHBOURS: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-TAB
-- J-MON-SUMMARY: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-LOG
-- J-MON-LIVE: E-MON-LIVE
-- J-MON-RESIZE: E-MON-RESIZE
+- J-OPEN-ID: E-REVIEW-OPEN-ID | E-REVIEW-READONLY
+- J-PANE: E-LAUNCH-MONITOR → E-MON-RESIZE
+- J-BRANCHES: E-LAUNCH-MONITOR → E-PANE-SELECT
+  E-PANE-WORKTREES
+- J-BRANCH-RUNS: E-PANE-SELECT → E-PANE-DRAG → E-PANE-CHIP
+  E-BRANCH-RUNNING → E-BRANCH-RUN-END
+- J-PANE-SEARCH: E-REVIEW-SEARCH-FOCUS → E-REVIEW-SEARCH-TERMS → E-REVIEW-SUGGEST → E-REVIEW-SUGGEST-CLOSE → E-REVIEW-SEARCH-CLEAR → E-REVIEW-SEARCH-LEAVE
+  E-REVIEW-SEARCH-FOCUS → E-PANE-SORT
+- J-PANE-NAVIGATE: E-MON-SCOPE-MOVE → E-MON-RUNS-MOVE → E-MON-RUNS-GRAPH → E-MON-GRAPH-TO-RUNS
+- J-WAITING: E-WAITING-CHANGE → E-REVIEW-OPEN
+- J-LIVE: E-MON-LIVE | E-PANE-WORKTREES | E-BRANCH-RUNNING | E-WAITING-CHANGE
+- J-RESIZE: E-MON-RESIZE
   E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-WIDTH → E-MON-DETAIL-BACK → E-MON-DETAIL-ARTIFACT
-- J-GRAPH-CURRENT: E-CURRENT-LAUNCH → E-CURRENT-EVALS → E-CURRENT-STRUCTURE → E-CURRENT-CLOSE → E-CURRENT-REFRESH
-- J-GRAPH-COLOURS: E-MON-RUNS-GRAPH → E-GRAPH-RECOLOUR
-- J-GRAPH-LARGE: E-MON-RUNS-GRAPH → E-GRAPH-BEYOND
+- J-MAIN-RUN: E-PANE-CHIP → E-MON-NOTICE
+- J-MAIN-CURRENT: E-CURRENT-CHIP → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
+  E-CURRENT-CHIP → E-CURRENT-RUN-END
+- J-MAIN-REVIEW: E-REVIEW-OPEN → E-MAIN-REVIEW-LEAVE → E-REVIEW-OPEN
+- J-DETAIL: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-LOG → E-MON-DETAIL-SWITCH → E-MON-DETAIL-BACK
+  E-MON-DETAIL-RUN → E-MON-DETAIL-BACK
+  E-CURRENT-CHIP → E-CURRENT-EVALS → E-CURRENT-CLOSE
+- J-DETAIL-NEIGHBOURS: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-TAB
+- J-DETAIL-TOOLS: E-MON-DETAIL-ARTIFACT → E-DETAIL-TOOL | E-DETAIL-TOOL-LAUNCH | E-DETAIL-TOOL-FAIL
+  E-CURRENT-EVALS → E-DETAIL-TOOL
+- J-DETAIL-SUMMARY: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-LOG
+  E-CURRENT-EVALS → E-CURRENT-TAB
+- J-GRAPH-COLOURS: E-PANE-CHIP → E-GRAPH-RECOLOUR
+  E-CURRENT-CHIP → E-CURRENT-RUN-END
+- J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
 - J-HUMAN-LAYOUT: E-MON-DETAIL-TAB | E-REVIEW-OPEN
-- J-HUMAN-TOOL: E-HUMAN-TOOL | E-HUMAN-TOOL-LAUNCH | E-HUMAN-TOOL-FAIL
+- J-HUMAN-TOOL: E-HUMAN-CLAIM → E-HUMAN-TOOL | E-HUMAN-TOOL-LAUNCH | E-HUMAN-TOOL-FAIL
 - J-HUMAN-LOG: E-HUMAN-TOOL → E-HUMAN-TOOL-FAIL
   E-HUMAN-TOOL-LAUNCH → E-HUMAN-GREEN → E-HUMAN-LOG-LIVE
   E-HUMAN-TOOL → E-HUMAN-LOG-UP → E-HUMAN-TOOL → E-HUMAN-LOG-FOLLOW → E-HUMAN-TOOL
@@ -228,11 +293,7 @@ several walks lists them one per line. Selecting a row first is the movement edg
 - J-HUMAN-FORM: E-HUMAN-CLAIM → E-HUMAN-RED → E-HUMAN-LIST-ADD → E-HUMAN-LIST-REMOVE → E-HUMAN-GROUP-ADD → E-HUMAN-GROUP-REMOVE → E-HUMAN-SUBMIT
 - J-HUMAN-TEXT: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TEXT
 - J-HUMAN-ESC: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TOOL → E-HUMAN-ESC-CANCEL → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
-  E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
-- J-REVIEW-LIST: E-LAUNCH-REVIEW | E-SCREEN-REVIEW → E-REVIEW-PREVIEW
-- J-REVIEW-OPEN: E-REVIEW-OPEN | E-REVIEW-OPEN-TOOLS | E-REVIEW-OPEN-ID | E-REVIEW-READONLY
-- J-REVIEW-SEARCH: E-REVIEW-SEARCH-FOCUS → E-REVIEW-SEARCH-TERMS → E-REVIEW-SUGGEST → E-REVIEW-SUGGEST-CLOSE → E-REVIEW-SEARCH-CLEAR → E-REVIEW-SEARCH-LEAVE
-- J-REVIEW-PAGE: E-REVIEW-PAGE
+  E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
 - J-SET-KEYS: E-SCREEN-SETTINGS → E-SET-KEYS
 - J-SET-CODEX: E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
 - J-SET-MODELS: E-SET-MODELS

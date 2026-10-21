@@ -18,6 +18,9 @@ pub enum Signoff {
 
 #[derive(Debug, Clone)]
 pub struct CatalogRun {
+    pub id: crate::types::RunId,
+    pub created_at: crate::types::Timestamp,
+    pub completed_at: Option<crate::types::Timestamp>,
     pub repo_path: PathBuf,
     pub repository: Identity,
     pub status: RunStatus,
@@ -66,9 +69,24 @@ pub(super) fn in_snapshot(
     in_snapshot_cached(db, state, &mut Facts::default())
 }
 
+/// Each saved Run's catalog fact, or why its record cannot be read, by the digest of the
+/// record it was decoded from: an unchanged record is never decoded again.
 #[derive(Default)]
 pub(super) struct Facts {
-    runs: std::collections::BTreeMap<crate::types::RunId, (Sha256Bytes, Option<CatalogRun>)>,
+    runs: std::collections::BTreeMap<
+        crate::types::RunId,
+        (Sha256Bytes, Result<CatalogRun, super::Unreadable>),
+    >,
+}
+
+impl Facts {
+    /// The Run records the last catalog read could not decode, in the state's order.
+    pub(super) fn unreadable(&self) -> Vec<super::Unreadable> {
+        self.runs
+            .values()
+            .filter_map(|(_, fact)| fact.as_ref().err().cloned())
+            .collect()
+    }
 }
 
 pub(super) fn in_snapshot_cached(
@@ -92,9 +110,12 @@ pub(super) fn in_snapshot_cached(
         let digest = Sha256Bytes::of(data.as_bytes());
         let fact = match facts.runs.remove(&id) {
             Some((saved, fact)) if saved == digest => fact,
-            _ => super::unreadable::evidence::<super::Run>("run", &data).map(|run| {
+            _ => super::unreadable::decode::<super::Run>("run", id.as_str(), &data).map(|run| {
                 let status = run.status();
                 CatalogRun {
+                    id: run.id.clone(),
+                    created_at: run.created_at,
+                    completed_at: run.completed_at(),
                     repo_path: run.repo_path,
                     repository: run.repository,
                     status,
@@ -105,7 +126,7 @@ pub(super) fn in_snapshot_cached(
             }),
         };
         retained.insert(id.clone(), (digest, fact.clone()));
-        if let Some(fact) = fact {
+        if let Ok(fact) = fact {
             order.push(id.clone());
             catalog.insert(id, fact);
         }

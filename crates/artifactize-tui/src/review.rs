@@ -710,7 +710,7 @@ impl Review {
     /// Take a Tool log event in, and any others already waiting. Events of a request this
     /// review no longer shows are dropped.
     pub(crate) fn logged(&mut self, event: log::Event) {
-        if self.open.as_ref() == Some(&event.request) {
+        if self.open.as_ref() == event.key.request() {
             self.log.apply(event);
         }
         self.drain_log();
@@ -719,7 +719,7 @@ impl Review {
     /// Take in the Tool log events already waiting.
     pub(crate) fn drain_log(&mut self) {
         while let Ok(event) = self.events.try_recv() {
-            if self.open.as_ref() == Some(&event.request) {
+            if self.open.as_ref() == event.key.request() {
                 self.log.apply(event);
             }
         }

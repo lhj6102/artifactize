@@ -1,9 +1,12 @@
 //! The Detail of a tree row: the monitor's sections in their order, and saved runtime logs.
 //! Human requests open the shared Human Detail ([`crate::human`]); Agent requests read their
 //! session ([`crate::transcript`]).
-use crate::ids::{NodeKey, RunKey};
-use crate::{App, Failure, status::Mark};
-use artifactize_core::types::RunId;
+use crate::graph::Source;
+use crate::ids::NodeKey;
+use crate::{
+    App, Failure,
+    status::{Mark, Tone},
+};
 use artifactize_core::{
     config::ProfileKind,
     monitor::{self, NodeId, Section, Target},
@@ -196,10 +199,21 @@ impl From<monitor::Card> for CardView {
     }
 }
 
+/// On a Current: what verify would do with the Artifact or eval, and why.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanLine {
+    pub glyph: String,
+    /// `would run (2 evals)`, `reused`, `waiting` or `blocked`.
+    pub text: String,
+    pub tone: Tone,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DetailView {
-    pub run: RunKey,
+    pub source: Source,
     pub node: NodeKey,
     pub target: DetailTarget,
     pub title: String,
@@ -209,6 +223,8 @@ pub struct DetailView {
     pub request: Option<crate::ids::RequestKey>,
     pub profile: Option<Profile>,
     pub mark: Option<Mark>,
+    /// On a Current, in place of a status: what verify would do.
+    pub plan: Option<PlanLine>,
     /// Outcome → Waits for → What → Provenance → Technical; empty sections are left out.
     pub sections: Vec<SectionView>,
     /// Saved runtime stdout/stderr, or why there are none.
@@ -219,7 +235,6 @@ pub struct DetailView {
     pub running: bool,
 }
 
-/// The Detail of `node` in the selected Run `run`, from the shown snapshot.
 /// The Detail of `node` in Run `run` with its `requests`: the monitor's model, laid out.
 pub fn view(
     state: &std::path::Path,
@@ -281,7 +296,10 @@ pub fn view(
             text: evidence.text,
         });
     DetailView {
-        run: run.run.id.clone().into(),
+        source: Source::Run {
+            run: run.run.id.clone().into(),
+        },
+        plan: None,
         node: id.clone().into(),
         target: (&target).into(),
         title: detail.title.clone(),
@@ -298,23 +316,31 @@ pub fn view(
     }
 }
 
-/// The Detail of `node` in the selected Run `run`, from the shown snapshot.
+/// The Detail of `node` of `source`: in the shown Run, from the shown snapshot, or in a
+/// branch's Current, from its last scan.
 #[tauri::command]
 #[specta::specta]
 pub fn detail(
     app: tauri::State<'_, App>,
-    run: RunKey,
+    source: Source,
     node: NodeKey,
 ) -> Result<DetailView, Failure> {
     let id: NodeId = node.into_inner();
-    let run: RunId = run.into_inner();
-    app.browse.with_run(&run, |run, requests| {
-        view(
-            &app.launch.state,
-            run,
-            requests,
-            &id,
-            OffsetDateTime::now_utc(),
-        )
-    })
+    match &source {
+        Source::Run { run } => app
+            .browse
+            .with_run(&run.clone().into_inner(), |run, requests| {
+                view(
+                    &app.launch.state,
+                    run,
+                    requests,
+                    &id,
+                    OffsetDateTime::now_utc(),
+                )
+            }),
+        Source::Current { branch } => {
+            let shown = app.currents.shown(&branch.to_place())?;
+            crate::graph::current::detail(&shown.current, source.clone(), &id)
+        }
+    }
 }

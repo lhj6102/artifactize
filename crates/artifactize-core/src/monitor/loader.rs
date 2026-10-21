@@ -64,6 +64,13 @@ pub struct Origin {
     database: Option<crate::platform::FileIdentity>,
 }
 impl Origin {
+    /// The origin of a snapshot read from the state `identity` in the database file `database`.
+    pub(crate) fn new(
+        identity: Option<crate::types::StateId>,
+        database: Option<crate::platform::FileIdentity>,
+    ) -> Self {
+        Self { identity, database }
+    }
     /// The state was replaced since `previous` was read: Details, drafts and sessions
     /// of the old state no longer apply.
     pub fn replaces(&self, previous: &Self) -> bool {

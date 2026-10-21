@@ -69,23 +69,6 @@ impl From<monitor::Status> for Mark {
     }
 }
 
-/// A badge part such as `!2`: a status and how many.
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Count {
-    pub mark: Mark,
-    pub count: u32,
-}
-
-impl Count {
-    pub fn new(status: monitor::Status, count: u64) -> Self {
-        Self {
-            mark: status.into(),
-            count: u32::try_from(count).unwrap_or(u32::MAX),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Tone {

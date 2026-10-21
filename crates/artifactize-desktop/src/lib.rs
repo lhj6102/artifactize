@@ -1,7 +1,8 @@
-//! The artifactize desktop app: `monitor` and `review` as one Tauri window.
+//! The artifactize desktop app: every live branch, its Runs and Current, and the waiting Human
+//! reviews in one Tauri window.
 //!
-//! The Rust side owns no state of its own beyond UI snapshots: it reads through the same
-//! [`artifactize_core::monitor::Loader`] as the terminal monitor and acts through the same
+//! The Rust side owns no state of its own beyond UI snapshots: it reads through the library's
+//! [`artifactize_core::monitor::live::Loader`] and acts through the same
 //! [`artifactize_core::review::Job`]s as the terminal review. Commands and events are typed with
 //! tauri-specta; [`bindings`] is the single list of what the frontend may call.
 
@@ -15,9 +16,10 @@ mod graph;
 mod human;
 mod ids;
 mod launch;
-mod search;
+mod request;
 mod settings;
 mod status;
+mod tools;
 mod transcript;
 mod watch;
 
@@ -40,7 +42,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             launch::launch,
             browse::browse,
             browse::redraw,
-            browse::toggle_worktrees,
+            browse::pane_complete,
             detail::detail,
             human::human_open,
             human::human_form,
@@ -52,12 +54,11 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             human::human_cancel,
             human::human_submit,
             human::human_release,
-            graph::run_graph,
-            graph::current::current_graph,
-            search::review_search,
-            search::review_waiting,
-            search::review_complete,
-            search::review_detail,
+            graph::graph,
+            graph::current::current_scan,
+            tools::artifact_tools,
+            tools::artifact_tool_run,
+            request::request_detail,
             human::human_taken,
             transcript::transcript_open,
             transcript::transcript_window,
@@ -97,8 +98,8 @@ pub struct App {
     pub launch: Launch,
     browse: browse::Browse,
     human: human::Reviews,
+    currents: graph::current::Currents,
     transcripts: transcript::Transcripts,
-    searches: search::Searches,
     settings: settings::Settings,
     generation: generation::Generation,
 }
@@ -106,25 +107,26 @@ pub struct App {
 impl App {
     pub fn new(launch: Launch) -> Self {
         Self {
-            browse: browse::Browse::new(launch.initial()),
+            browse: browse::Browse::new(launch.repo.clone()),
             launch,
             human: human::Reviews::default(),
+            currents: graph::current::Currents::default(),
             transcripts: transcript::Transcripts::default(),
-            searches: search::Searches::default(),
             settings: settings::Settings::default(),
             generation: generation::Generation::default(),
         }
     }
 
     /// Note the state origin a read found and return the state's generation. A replaced state
-    /// (the monitor's [`Origin::replaces`]) drops the Human caches, claims taken here and running
-    /// jobs of the old one.
+    /// (the monitor's [`Origin::replaces`]) drops the Human caches, claims taken here, running
+    /// jobs and Current scans of the old one.
     ///
     /// [`Origin::replaces`]: artifactize_core::monitor::Origin::replaces
     fn observe(&self, origin: artifactize_core::monitor::Origin) -> u32 {
         let (generation, replaced) = self.generation.observe(origin);
         if replaced {
             self.human.reset();
+            self.currents.reset();
         }
         generation
     }

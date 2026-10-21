@@ -7,7 +7,7 @@ mod states;
 mod status;
 #[cfg(test)]
 mod tests;
-mod tree;
+pub(crate) mod tree;
 pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
 pub use status::Status;
 pub use tree::{Clock, Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
@@ -232,7 +232,7 @@ fn typed_durations_keep_the_display_units_and_clamp_clock_skew() {
 }
 
 /// Saved RFC 3339 times; an open end is measured to `now`.
-fn span(
+pub(crate) fn span(
     start: crate::types::Timestamp,
     end: Option<crate::types::Timestamp>,
     now: OffsetDateTime,
@@ -901,6 +901,22 @@ pub struct Card {
     pub model: Option<String>,
 }
 
+/// A result's own entries, without its verdict and saved output, as a Card shows them.
+pub(crate) fn entries(result: &crate::store::ExecutionResult) -> serde_json::Map<String, Value> {
+    let mut entries = result.to_json().as_object().cloned().unwrap_or_default();
+    for key in [
+        "verdict",
+        "stdout",
+        "stderr",
+        "exitCode",
+        "durationMs",
+        "truncated",
+    ] {
+        entries.remove(key);
+    }
+    entries
+}
+
 pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
     use crate::config::StoredProfile;
     use crate::store::ExecutionResult;
@@ -922,20 +938,7 @@ pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
         .filter(|tokens| *tokens > 0);
     Card {
         instruction: request.payload.instruction().to_owned(),
-        result: result.map(|result| {
-            let mut entries = result.to_json().as_object().cloned().unwrap_or_default();
-            for key in [
-                "verdict",
-                "stdout",
-                "stderr",
-                "exitCode",
-                "durationMs",
-                "truncated",
-            ] {
-                entries.remove(key);
-            }
-            entries
-        }),
+        result: result.map(entries),
         exit_code: match result {
             Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
             _ => None,

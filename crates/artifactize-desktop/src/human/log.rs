@@ -1,10 +1,11 @@
 //! The Tool log as Tauri events: the library's runs log their lines to one channel per app,
-//! the library's [`ToolLog`] of each review takes them in, and this sends the logs they
-//! changed to the frontend. A log for a review nobody has open is dropped by the frontend;
-//! nothing is saved.
+//! the library's [`ToolLog`] of each review (or each Artifact whose tool runs without one)
+//! takes them in, and this sends the logs they changed to the frontend. A log nobody has open
+//! is dropped by the frontend; nothing is saved.
 use crate::App;
+use crate::browse::PathKey;
 use crate::ids::{RequestKey, ToolRunKey};
-use artifactize_core::review::log::{Entry, Events, Stream, ToolLog};
+use artifactize_core::review::log::{Entry, Events, Key, Stream, ToolLog};
 use serde::Serialize;
 use specta::Type;
 use tauri::Manager;
@@ -18,14 +19,41 @@ const BATCH: usize = 256;
 #[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanToolLog {
-    pub logs: Vec<RequestLog>,
+    pub logs: Vec<KeyedLog>,
 }
 
-/// The Tool log of one review: one entry per run, in the order they started.
+/// Whose Tool log it is: a review's, or an Artifact's in a worktree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LogKey {
+    Review {
+        request: RequestKey,
+    },
+    Artifact {
+        workspace: PathKey,
+        artifact: String,
+    },
+}
+
+impl From<&Key> for LogKey {
+    fn from(key: &Key) -> Self {
+        match key {
+            Key::Review(request) => Self::Review {
+                request: request.clone().into(),
+            },
+            Key::Artifact { repo, artifact } => Self::Artifact {
+                workspace: PathKey::new(repo),
+                artifact: artifact.to_string(),
+            },
+        }
+    }
+}
+
+/// One Tool log: one entry per run, in the order they started.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct RequestLog {
-    pub request: RequestKey,
+pub struct KeyedLog {
+    pub key: LogKey,
     pub entries: Vec<LogEntry>,
 }
 
@@ -74,10 +102,10 @@ fn entry(entry: &Entry) -> LogEntry {
     }
 }
 
-/// `log` of the review `request`, as the frontend shows it.
-pub fn request_log(request: RequestKey, log: &ToolLog) -> RequestLog {
-    RequestLog {
-        request,
+/// `log` of `key`, as the frontend shows it.
+pub fn keyed_log(key: &Key, log: &ToolLog) -> KeyedLog {
+    KeyedLog {
+        key: key.into(),
         entries: log.entries().iter().map(entry).collect(),
     }
 }
@@ -110,7 +138,7 @@ mod tests {
     #[test]
     fn a_review_log_reaches_the_frontend_with_each_run_its_lines_and_end() {
         let (sink, mut events) = channel();
-        let request = "run-1-1".parse().unwrap();
+        let request: artifactize_core::types::RequestId = "run-1-1".parse().unwrap();
         let run = sink.start(&request, "open", "notes");
         run.text(Stream::Stdout, "out\n");
         run.text(Stream::Stderr, "err\n");
@@ -123,8 +151,8 @@ mod tests {
             }
             log.apply(event);
         }
-        let sent = serde_json::to_value(request_log(request.into(), &log)).unwrap();
-        assert_eq!(sent["request"], "run-1-1");
+        let sent = serde_json::to_value(keyed_log(&Key::from(&request), &log)).unwrap();
+        assert_eq!(sent["key"], json!({"kind": "review", "request": "run-1-1"}));
         let [entry] = sent["entries"].as_array().unwrap().as_slice() else {
             panic!("{sent}");
         };

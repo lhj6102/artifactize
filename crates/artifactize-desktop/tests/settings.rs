@@ -145,7 +145,6 @@ fn settings_command_probe() {
         repo: Some(repo),
         reviewer: "alice".parse().unwrap(),
         request: None,
-        search: artifactize_core::review::search::DEFAULT.into(),
     };
     let app = artifactize_desktop::app(mock_builder(), launch)
         // Settings commands do not observe live hints. Keep this fixture free of an
