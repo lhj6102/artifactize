@@ -386,17 +386,40 @@ fn a_branch_name_is_a_valid_ref_and_a_stored_star_with_another_is_refused() {
         );
     }
     for bad in [
-        "", "-x", "/x", "x/", "x.", "x.lock", "@", "a..b", "a//b", "a@{b", ".x", "a/.b", "a b",
-        "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "a\tb",
+        "",
+        "-x",
+        "/x",
+        "x/",
+        "x.",
+        "x.lock",
+        "@",
+        "a..b",
+        "a//b",
+        "a@{b",
+        ".x",
+        "a/.b",
+        "a b",
+        "a~b",
+        "a^b",
+        "a:b",
+        "a?b",
+        "a*b",
+        "a[b",
+        "a\\b",
+        "a\tb",
+        "topic.lock/child",
+        "a/.b/c",
     ] {
         assert!(BranchName::try_from(bad.to_owned()).is_err(), "{bad:?}");
     }
-    // A stored star with no branch name is refused when read back, never listed.
+    // A stored star whose branch is no branch name is refused when read back, never listed.
     let state = crate::test_os::tempdir();
-    std::fs::write(
-        state.path().join("starred-branches.json"),
-        r#"[{"git":{"common":"/repo/.git","head":{"branch":""}}}]"#,
-    )
-    .unwrap();
-    assert!(starred(Some(state.path())).is_err());
+    for bad in ["", "topic.lock/child"] {
+        std::fs::write(
+            state.path().join("starred-branches.json"),
+            format!(r#"[{{"git":{{"common":"/repo/.git","head":{{"branch":"{bad}"}}}}}}]"#),
+        )
+        .unwrap();
+        assert!(starred(Some(state.path())).is_err(), "{bad:?}");
+    }
 }

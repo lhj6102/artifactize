@@ -46,17 +46,16 @@ impl TryFrom<String> for BranchName {
     type Error = String;
 
     fn try_from(name: String) -> Result<Self, String> {
-        let refused = name.is_empty()
-            || name.starts_with('-')
-            || name.starts_with('/')
-            || name.ends_with('/')
+        // Each `/`-separated part is a name of its own: not empty, not starting with `.`, not
+        // ending with `.lock`.
+        let refused = name.starts_with('-')
             || name.ends_with('.')
-            || name.ends_with(".lock")
             || name == "@"
-            || ["..", "//", "@{", "/."]
-                .iter()
-                .any(|bad| name.contains(bad))
-            || name.starts_with('.')
+            || name.contains("..")
+            || name.contains("@{")
+            || name
+                .split('/')
+                .any(|part| part.is_empty() || part.starts_with('.') || part.ends_with(".lock"))
             || name.chars().any(|c| {
                 c.is_control() || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\')
             });

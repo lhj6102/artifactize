@@ -1202,20 +1202,58 @@ fn privileged(created: std::io::Result<()>) -> Option<()> {
 /// A junction (mount point) to an existing directory, which needs no privilege.
 #[cfg(windows)]
 pub fn junction(target: &Path, link: &Path) {
-    // mklink reads a `/` as the start of a switch, and wants plain absolute paths.
-    let native = |path: &Path| {
-        let path = std::path::absolute(path).unwrap();
-        let path = path.to_str().unwrap().replace('/', r"\");
-        path.strip_prefix(r"\\?\")
-            .map_or(path.clone(), str::to_owned)
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+    use windows_sys::Win32::{
+        Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT},
+        System::{
+            IO::DeviceIoControl, Ioctl::FSCTL_SET_REPARSE_POINT,
+            SystemServices::IO_REPARSE_TAG_MOUNT_POINT,
+        },
     };
-    let output = Command::new("cmd")
-        .args(["/d", "/c", "mklink", "/J"])
-        .arg(native(link))
-        .arg(native(target))
-        .output()
+    // A mount point names its target as a plain absolute path, `\??\`-prefixed for the
+    // object manager and bare for people.
+    let target = std::path::absolute(target).unwrap();
+    let target = target.to_str().unwrap().replace('/', r"\");
+    let target = target.strip_prefix(r"\\?\").unwrap_or(&target);
+    let wide = |text: &str| text.encode_utf16().collect::<Vec<u16>>();
+    let substitute = wide(&format!(r"\??\{target}"));
+    let print = wide(target);
+    let bytes = |units: &[u16]| u16::try_from(units.len() * 2).unwrap();
+    // REPARSE_DATA_BUFFER's MountPointReparseBuffer: four name offsets and lengths, then both
+    // names, each NUL-terminated.
+    let mut names = Vec::new();
+    for name in [&substitute, &print] {
+        names.extend(name.iter().chain([&0]).flat_map(|unit| unit.to_le_bytes()));
+    }
+    let mut buffer = Vec::new();
+    buffer.extend(IO_REPARSE_TAG_MOUNT_POINT.to_le_bytes());
+    buffer.extend(u16::try_from(8 + names.len()).unwrap().to_le_bytes());
+    buffer.extend(0u16.to_le_bytes());
+    for field in [0, bytes(&substitute), bytes(&substitute) + 2, bytes(&print)] {
+        buffer.extend(field.to_le_bytes());
+    }
+    buffer.extend(names);
+    fs::create_dir(link).unwrap();
+    let dir = fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(link)
         .unwrap();
-    assert!(output.status.success(), "{output:?}");
+    let mut returned = 0;
+    // SAFETY: an open directory handle, a buffer of the length given, and no output buffer.
+    let set = unsafe {
+        DeviceIoControl(
+            dir.as_raw_handle(),
+            FSCTL_SET_REPARSE_POINT,
+            buffer.as_ptr().cast(),
+            u32::try_from(buffer.len()).unwrap(),
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_ne!(set, 0, "{}", std::io::Error::last_os_error());
 }
 
 /// Also let everyone read `path`: an extra allow ACE on Windows, mode 0644 on Unix.
