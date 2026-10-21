@@ -31,6 +31,7 @@ use serde_json::{Value, json};
 pub mod declaration;
 pub mod os;
 pub mod runs;
+pub mod schema;
 pub mod tool_sessions;
 
 /// A fixture task is joined on success and cancelled on assertion failure or timeout,

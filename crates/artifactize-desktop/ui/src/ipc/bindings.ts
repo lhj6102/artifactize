@@ -583,7 +583,7 @@ export type Navigate = {
 	older: BranchKey | null,
 	/**  Read the waiting reviews again: refreshes and change hints; navigation reuses them. */
 	full: boolean,
-	/**  Drop every cache first, after a resync hint or a manual refresh. */
+	/**  Read everything again, after a resync hint or a manual refresh. */
 	resync: boolean,
 };
 

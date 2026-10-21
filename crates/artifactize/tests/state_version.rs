@@ -123,7 +123,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
 
     // Only the new real submissions have worker lifetimes; the old schemas are inert input.
     temp.track(&state, &repo);
-    // A new state has the four tables, and works.
+    // A new state has the five tables, and works.
     let output = artifactize(root, &["verify", "--wait", "--all", "--json"]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -145,7 +145,13 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             &db,
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ),
-        ["executions", "requests", "runs", "state_meta"]
+        [
+            "executions",
+            "requests",
+            "run_definitions",
+            "runs",
+            "state_meta"
+        ]
     );
     let columns = |table: &str| {
         names(
@@ -164,7 +170,8 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             "status",
             "claimed_by",
             "claimed_at",
-            "data"
+            "data",
+            "revision"
         ]
     );
     assert_eq!(
@@ -181,7 +188,8 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             "completed_at",
             "bytes",
             "last_used",
-            "data"
+            "data",
+            "revision"
         ]
     );
     let output = artifactize(root, &["doctor", "--json"]);

@@ -1,6 +1,6 @@
 //! A persistent, read-only monitor worker. Each job ends its deferred transaction before
-//! projection/rendering. Caches compare saved rows, not hints, and retain only one selected Run
-//! and the bounded visible page's audit. Unscoped hints still require a linear reconciliation.
+//! projection/rendering. It keeps only the opened Run: its definitions, which never change once
+//! saved, and the views of its requests by the revisions of the rows they were read from.
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -10,8 +10,7 @@ use std::{
 use super::{
     CatalogRun, DATABASE, RequestView, Run, RunSummary, RunView,
     receipts::{Error, schema_initialized},
-    requests::{self, DefinitionIndex, Query, Row},
-    unreadable::{self, Audit},
+    requests::{self, DefinitionIndex, Query},
 };
 use crate::{
     platform,
@@ -61,8 +60,8 @@ pub(crate) struct Cache {
     changed: bool,
     catalog_seen: bool,
     identity: StateIdentity,
-    audit: Audit,
-    facts: super::catalog::Facts,
+    /// The Run records the last catalog read could not decode.
+    unreadable_runs: Vec<super::Unreadable>,
     selected: Option<Selected>,
 }
 #[derive(Default)]
@@ -72,11 +71,28 @@ enum StateIdentity {
     Missing,
     Known(crate::types::StateId),
 }
+/// The opened Run as last read.
 struct Selected {
-    data: String,
+    /// The revision of the Run's row its state was read at.
+    revision: i64,
     run: Run,
     index: DefinitionIndex,
-    rows: BTreeMap<RequestId, (Row, Option<RequestView>)>,
+    rows: BTreeMap<RequestId, Kept>,
+}
+
+/// What a request row and the rows it shows were at, so a later read decodes only what changed:
+/// the request, its execution and the requests holding a Human claim on that execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Marks {
+    request: i64,
+    execution: Option<(crate::types::ExecutionId, i64)>,
+    claims: Vec<(RequestId, i64)>,
+}
+
+/// A request's view, or why its records do not read, at `marks`.
+struct Kept {
+    marks: Marks,
+    view: Option<RequestView>,
     unreadable: Vec<super::Unreadable>,
 }
 impl Reader {
@@ -234,18 +250,30 @@ impl Cache {
         self.catalog_seen
     }
     pub fn catalog(&mut self, db: &Connection, state: &Path) -> Result<Vec<CatalogRun>, Error> {
-        let catalog = super::catalog::in_snapshot_cached(
-            db,
-            state,
-            &mut self.facts,
-            &mut self.audit.definitions,
-        )?;
+        let catalog = super::catalog::in_snapshot(db, state, None)?;
+        self.unreadable_runs = catalog.unreadable;
         self.catalog_seen = true;
-        Ok(catalog)
+        Ok(catalog.runs)
+    }
+    /// The catalog rows of the Runs `ids` alone, and those of their records that do not read.
+    /// A Run that no longer exists has no row.
+    pub fn catalog_rows(
+        &mut self,
+        db: &Connection,
+        state: &Path,
+        ids: &[RunId],
+    ) -> Result<super::catalog::Catalog, Error> {
+        super::catalog::in_snapshot(db, state, Some(ids))
+    }
+    /// The opened Run is `id`: a later [`Cache::selected`] of it reads only what changed.
+    pub fn holds(&self, id: &RunId) -> bool {
+        self.selected
+            .as_ref()
+            .is_some_and(|selected| &selected.run.id == id)
     }
     /// The Run records the last [`Cache::catalog`] read could not decode.
     pub fn unreadable_runs(&self) -> Vec<super::Unreadable> {
-        self.facts.unreadable()
+        self.unreadable_runs.clone()
     }
     pub fn page(
         &mut self,
@@ -265,109 +293,136 @@ impl Cache {
         let repos = paths
             .map(|paths| serde_json::to_string(&paths))
             .transpose()?;
-        super::runs::in_snapshot_cached(
-            db,
-            state,
-            repos.as_deref(),
-            limit,
-            offset,
-            pinned,
-            &mut self.audit,
-        )
+        let mut runs = super::runs::page(db, state, repos.as_deref(), limit, offset, pinned)?;
+        // A Run whose record the catalog could not decode is listed with why.
+        for run in &mut runs {
+            run.unreadable = self
+                .unreadable_runs
+                .iter()
+                .filter(|record| record.id == run.id.as_str())
+                .cloned()
+                .collect();
+        }
+        Ok(runs)
     }
-    /// None means byte-identical selected rows and audit: retain the last-good tree/details.
+    /// Read the opened Run `id`. Its definitions are decoded once, when it is first opened, and
+    /// a request is decoded again only when its row, its execution or its claim changed. None
+    /// means nothing of the Run changed since the last read and `force` is unset. A Run whose
+    /// own record or definitions do not decode is [`Error::Unreadable`].
     pub fn selected(
         &mut self,
         db: &Connection,
         state: &Path,
         id: &RunId,
-        audit: Option<Vec<super::Unreadable>>,
         force: bool,
     ) -> Result<Option<(RunView, Vec<RequestView>)>, Error> {
-        let (repo, data): (String, String) = db
-            .query_row("SELECT repo,data FROM runs WHERE id=?", [id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+        let saved = self.selected.take().filter(|saved| &saved.run.id == id);
+        // The state's text only when its revision moved, the definitions only on opening.
+        let (repo, revision, data, definitions): (String, i64, Option<String>, Option<String>) = db
+            .query_row(
+                "SELECT r.repo,r.revision,CASE WHEN r.revision IS ?2 THEN NULL ELSE r.data END,
+                CASE WHEN ?2 IS NULL THEN (SELECT d.data FROM run_definitions d WHERE d.run_id=r.id) END
+                FROM runs r WHERE r.id=?1",
+                rusqlite::params![id, saved.as_ref().map(|saved| saved.revision)],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
             .optional()?
             .ok_or_else(|| Error::Invalid("Run not found.".into()))?;
         outside_workspace(Path::new(&repo), state)
             .map_err(|error| Error::Invalid(error.to_string()))?;
-        let same_run = self
-            .selected
-            .as_ref()
-            .is_some_and(|saved| saved.data == data && &saved.run.id == id);
-        let mut selected = match self.selected.take() {
-            Some(saved) if same_run => saved,
-            saved => {
-                let run: Run = match self.audit.take_run(id, &data) {
-                    Some(run) => run,
-                    None => self
-                        .audit
-                        .definitions
-                        .read(id, &data)
-                        .map_err(|error| Error::Invalid(error.to_string()))?,
+        let (mut selected, state_changed) = match (saved, data) {
+            (Some(saved), None) => (saved, false),
+            // The Run's state changed; its definitions did not.
+            (Some(mut saved), Some(data)) => {
+                let definitions = saved.run.definitions.clone();
+                saved.run = super::run_record::whole(id, &data, None).map_err(Error::Unreadable)?;
+                saved.run.definitions = definitions;
+                saved.revision = revision;
+                (saved, true)
+            }
+            (None, data) => {
+                let data = data.expect("an unopened Run reads its state");
+                let run = super::run_record::whole(id, &data, definitions.as_deref())
+                    .map_err(Error::Unreadable)?;
+                let opened = Selected {
+                    revision,
+                    index: DefinitionIndex::new(&run),
+                    run,
+                    rows: BTreeMap::new(),
                 };
-                match saved.filter(|saved| &saved.run.id == id) {
-                    // The same decoded definitions keep their index.
-                    Some(mut saved) if saved.run.definitions.shared(&run.definitions) => {
-                        saved.data = data;
-                        saved.run = run;
-                        saved
-                    }
-                    _ => {
-                        let index = DefinitionIndex::new(&run);
-                        Selected {
-                            data,
-                            run,
-                            index,
-                            rows: BTreeMap::new(),
-                            unreadable: Vec::new(),
-                        }
-                    }
-                }
+                (opened, true)
             }
         };
-        let rows = requests::rows(
-            db,
-            &Query {
-                run: Some(id.clone()),
-                ..Query::default()
-            },
-        )?;
-        let audit = match audit {
-            Some(audit) => audit,
-            None => unreadable::in_run(db, id)?,
+        let marks = marks(db, id)?;
+        let stale: Vec<_> = marks
+            .iter()
+            .filter(|(request, marks)| {
+                selected
+                    .rows
+                    .get(request)
+                    .is_none_or(|kept| &kept.marks != marks)
+            })
+            .map(|(request, _)| request.clone())
+            .collect();
+        let changed =
+            force || state_changed || !stale.is_empty() || selected.rows.len() != marks.len();
+        let mut fresh: BTreeMap<_, _> = if stale.is_empty() {
+            BTreeMap::new()
+        } else {
+            requests::rows(
+                db,
+                &Query {
+                    run: Some(id.clone()),
+                    ids: (stale.len() < marks.len()).then_some(stale),
+                    ..Query::default()
+                },
+            )?
+            .into_iter()
+            .map(|row| (row.id.clone(), row))
+            .collect()
         };
-        let mut changed = force
-            || !same_run
-            || selected.rows.len() != rows.len()
-            || serde_json::to_string(&selected.unreadable)? != serde_json::to_string(&audit)?;
-        let mut retained = BTreeMap::new();
-        let mut order = Vec::with_capacity(rows.len());
-        for row in rows {
-            let saved = selected.rows.remove(&row.id);
-            let view = match saved {
-                Some((old, view)) if old == row => view,
-                _ => {
-                    changed = true;
-                    row.view_cached(&selected.index, &mut self.audit)
-                }
-            };
-            order.push(row.id.clone());
-            retained.insert(row.id.clone(), (row, view));
-        }
-        selected.rows = retained;
-        selected.unreadable = audit;
+        let mut kept = std::mem::take(&mut selected.rows);
+        selected.rows = marks
+            .iter()
+            .map(|(request, marks)| {
+                let row = match fresh.remove(request) {
+                    Some(row) => {
+                        let (view, unreadable) = row.read(&selected.index);
+                        Kept {
+                            marks: marks.clone(),
+                            view,
+                            unreadable,
+                        }
+                    }
+                    None => kept
+                        .remove(request)
+                        .expect("an unchanged request was read before"),
+                };
+                (request.clone(), row)
+            })
+            .collect();
         let result = changed.then(|| {
-            let views: Vec<_> = order
+            let views: Vec<_> = marks
                 .iter()
-                .filter_map(|id| selected.rows.get(id).and_then(|(_, view)| view.clone()))
+                .filter_map(|(request, _)| {
+                    selected
+                        .rows
+                        .get(request)
+                        .and_then(|kept| kept.view.clone())
+                })
                 .collect();
+            let mut unreadable: Vec<_> = marks
+                .iter()
+                .filter_map(|(request, _)| selected.rows.get(request))
+                .flat_map(|kept| kept.unreadable.iter().cloned())
+                .collect();
+            unreadable.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
+            unreadable.dedup_by(|a, b| (&a.kind, &a.id) == (&b.kind, &b.id));
             (
                 RunView {
                     run: selected.run.clone(),
                     requests: views.iter().map(|view| view.request.clone()).collect(),
-                    unreadable: selected.unreadable.clone(),
+                    unreadable,
                 },
                 views,
             )
@@ -375,4 +430,44 @@ impl Cache {
         self.selected = Some(selected);
         Ok(result)
     }
+}
+
+/// The revisions of every request of the Run and of the rows each one shows, in its order.
+fn marks(db: &Connection, id: &RunId) -> Result<Vec<(RequestId, Marks)>, Error> {
+    // It reads indexes alone: no request's or execution's data.
+    let mut statement = db.prepare_cached(
+        "SELECT q.id,q.revision,e.id,e.revision,h.id,h.revision FROM requests q
+        LEFT JOIN executions e ON e.id=q.execution_id
+        LEFT JOIN requests h ON h.execution_id=q.execution_id AND h.claimed_by IS NOT NULL
+        WHERE q.run_id=? ORDER BY q.ordinal,h.id",
+    )?;
+    let mut marks: Vec<(RequestId, Marks)> = Vec::new();
+    let rows = statement.query_map([id], |row| {
+        let execution: Option<crate::types::ExecutionId> = row.get(2)?;
+        let revision: Option<i64> = row.get(3)?;
+        let claim: Option<RequestId> = row.get(4)?;
+        let claimed: Option<i64> = row.get(5)?;
+        Ok((
+            row.get::<_, RequestId>(0)?,
+            row.get(1)?,
+            execution.zip(revision),
+            claim.zip(claimed),
+        ))
+    })?;
+    for row in rows {
+        let (request, revision, execution, claim) = row?;
+        // A request whose execution holds several claims comes once per claim, in a row.
+        match marks.last_mut() {
+            Some((last, mark)) if *last == request => mark.claims.extend(claim),
+            _ => marks.push((
+                request,
+                Marks {
+                    request: revision,
+                    execution,
+                    claims: claim.into_iter().collect(),
+                },
+            )),
+        }
+    }
+    Ok(marks)
 }

@@ -6,7 +6,7 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 8),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 9),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
@@ -55,16 +55,22 @@ ancestor. Keep state and credentials outside such workspaces explicitly; do not
 rely on sidecar detection where directory listing is unavailable.
 
 The state keeps what was reviewed, with which verdict, and how it was executed, in
-four tables:
+five tables:
 
 | Table | One row per | Columns besides the saved JSON in `data` |
 |---|---|---|
-| `runs` | Run | `id`, `repo`, `status`, nullable `request_key` |
-| `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, and `claimed_by` and `claimed_at`, the Human claim of a waiting request |
-| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), `profile_identity` (the effective profile of a keyed claim), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
+| `runs` | Run | `id`, `repo`, `status`, nullable `request_key`, `revision` |
+| `run_definitions` | Run with definitions | `run_id` |
+| `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, `claimed_by` and `claimed_at` (the Human claim of a waiting request), `revision` |
+| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), `profile_identity` (the effective profile of a keyed claim), the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used`, and `revision` |
 | `state_meta` | named value of the state | `name`, `value` |
 
-A Run has one request per eval and per ordinal.
+A Run's `data` is its changing state: status, control, validation and evidence. Its
+definitions (the Artifacts, evals and relations it was started with) are fixed for
+the Run's life and live in `run_definitions`, written once with the Run; saving the Run
+again never rewrites them. A trigger raises `revision` on every update of a `runs`,
+`requests` or `executions` row, so a reader learns what changed by comparing numbers
+instead of reading records. A Run has one request per eval and per ordinal.
 One execution per (reuse key, effective evaluation profile) can be
 active (RUNNING or WAITING_HUMAN) at a time; a forced (`--force`) execution bypasses this claim and
 never holds its key's active slot. `state_meta` holds the state's stable
@@ -78,7 +84,10 @@ opening write transaction; the version is read again under that lock. Schema 6 u
 to 7 by adding nullable `runs.request_key` and a partial unique index on `(repo, request_key)`
 where the key is not NULL. Existing Runs keep NULL keys. Schema 7 upgrades to 8 by
 adding `executions.profile_identity`, filling it from saved profiles and replacing
-the active-key uniqueness index with `(key, profile_identity)`. Run/request/execution IDs, cache,
+the active-key uniqueness index with `(key, profile_identity)`. Schema 8 upgrades to 9 by
+moving each Run's definitions out of its record into `run_definitions` (a record that does
+not read keeps its text) and adding the `revision` columns, their triggers and the indexes
+that read them. Run/request/execution IDs, cache,
 state identity and Human approvals survive; repeated opens do not remigrate. Existing-state
 readers and `doctor` use the same preflight without creating an absent database. Migration
 requires write access; a failed transaction rolls back rather than bypassing version checks.
@@ -92,7 +101,7 @@ Dead-worker recovery keeps committed evidence, cleans only identity-checked owne
 and releases dead slots. It records OWNER_DIED instead of replaying work; unconfirmed
 cleanup retains its journal records.
 
-**Downgrade boundary:** Binaries that only support schema 6 or 7 cannot open a schema-8
+**Downgrade boundary:** Binaries that only support schemas 6 to 8 cannot open a schema-9
 state after upgrade; their version guards refuse it. Unknown/newer versions and schemas 1–5 remain unsupported;
 commands exit 2 and `doctor` reports a hard error (exit 1). The older-schema message is:
 
@@ -380,16 +389,27 @@ the original review ends.
 ### Local readers
 
 Monitor and Review use read-only state queries and cached Git discovery, rather
-than rediscovering declarations or fingerprints on every refresh. Local readers
-share a temporary hub inside the first subscriber process: an owner-only Unix
+than rediscovering declarations or fingerprints on every refresh. The list of Runs and
+its counts are a query that reads no Run's definitions; only the Run you open is decoded,
+and while it stays open only its records whose `revision` changed are read again. Local
+readers share a temporary hub inside the first subscriber process: an owner-only Unix
 socket or Windows named pipe, not a permanent daemon. Registration is acknowledged
-before the initial snapshot. Readers reconnect and resync after hub exit or a
-bounded hint-queue overflow; writers never elect a hub.
+before the initial snapshot; writers never elect a hub.
 
-If IPC is unsafe or unavailable, five-second authoritative reconciliation replaces
-it without an insecure transport fallback. A persistent read-only SQLite
-`data_version` connection and file-identity probe detect missed commits and database
-replacement. Clocks and spinners redraw cached data. Session hints wake only the
+A writer's hint names what it changed. A write to a Run's state, a request or an
+execution names each Run that holds it, and a reader queries that Run's row of the list
+again, and the Run itself if it is open. A Run created or removed, or a write that cannot
+be tied to a Run, changes the list, and a reader queries the list and the open Run again.
+Pending Run hints are bounded; an overflow becomes a change of the list. Readers resync
+on connecting, on reconnecting after hub exit, after a gap or a bounded hint-queue
+overflow, and when the database is replaced. A resync is the same queries, with no
+caches dropped.
+
+A persistent read-only SQLite `data_version` connection and file-identity probe check
+every five seconds: a commit no hint reported is read like a change of the list, and a
+replaced database is resynced. If IPC is unsafe or unavailable, or the hub speaks another
+version, that five-second reconciliation replaces it without an insecure transport
+fallback. Clocks and spinners redraw cached data. Session hints wake only the
 selected transcript reader; a five-second file probe also catches missed appends
 or removal. Rendering does no file I/O, and input takes priority over history work.
 This is local coordination, not remote team-store push delivery.

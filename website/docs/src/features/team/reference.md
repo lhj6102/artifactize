@@ -70,7 +70,7 @@ together.
 results and Human sign-offs. Existing store records cannot satisfy the new keys;
 clients review once and publish new records. This is separate from local state
 upgrades: schemas 1–5 need replacement, while existing schemas 6 and 7 upgrade
-automatically to schema 8 with Runs, cache records and Human approvals preserved.
+automatically to schema 9 with Runs, cache records and Human approvals preserved.
 
 ## Remote review store client
 

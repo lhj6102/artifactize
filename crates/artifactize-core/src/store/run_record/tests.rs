@@ -1,94 +1,129 @@
-use super::*;
+use crate::store::{self, DATABASE, OwnedReceipts};
+use rusqlite::Connection;
 use serde_json::{Value, json};
+use std::path::Path;
+
+fn run(id: &str, repo: &Path, state: &Path, definitions: Value) -> store::Run {
+    serde_json::from_value(json!({
+        "id":id,"repoPath":repo,"stateDir":state,"status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z","completedAt":null,
+        "selection":{"kind":"all"},"definitions":definitions,"validation":null,"evidence":{}
+    }))
+    .unwrap()
+}
+
+fn request(run: &str, artifact: &str, repo: &Path) -> store::Request {
+    crate::test_request::request(
+        &format!("{artifact}/check"),
+        "QUEUED",
+        json!({"id":format!("{run}-{artifact}"),"runId":run,"cwd":repo}),
+    )
+    .request
+}
 
 const DEFINED: &str = r#"{"artifacts":{"app":{"path":"app"}},"evals":[{"id":"app/check","target":"app","deps":[],"declaration":{"title":"Check"}}]}"#;
-/// Definitions that do not decode: Artifacts that are not a map.
-const BROKEN: &str = r#"{"artifacts":7,"evals":[]}"#;
 
-/// A Run record saved with `definitions` (JSON text) and `jobs` executions.
-fn record(definitions: &str, jobs: u32) -> String {
-    let mut head = json!({
-        "id":"run-1","repoPath":"/repo","stateDir":"/state","status":"GREEN",
-        "createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z",
-        "selection":{"kind":"all"},"validation":null,"evidence":{},"jobs":jobs
-    })
-    .to_string();
-    head.pop();
-    format!(r#"{head},"definitions":{definitions}}}"#)
-}
-
-#[test]
-fn split_takes_the_definitions_out_by_their_text() {
-    let data = record(DEFINED, 1);
-    let (rest, definitions) = split(&data).unwrap();
-    let (text, digest) = definitions.unwrap();
-    assert_eq!(text, DEFINED);
-    assert_eq!(digest, Sha256Bytes::of(DEFINED.as_bytes()));
-    let rest: Value = serde_json::from_str(&rest).unwrap();
-    assert!(rest.get(DEFINITIONS).is_none());
-    assert_eq!(rest["jobs"], 1);
-}
-
-#[test]
-fn definitions_named_twice_stay_in_the_rest_and_read_as_the_whole_record_would() {
-    let data = record(DEFINED, 1).replacen('{', &format!(r#"{{"definitions":{DEFINED},"#), 1);
-    let (rest, definitions) = split(&data).unwrap();
-    assert!(definitions.is_none());
-    assert_eq!(rest.matches("\"definitions\"").count(), 2);
-    let whole = decode::<Run>("run", "run-1", &data)
-        .map(|_| ())
-        .map_err(|error| error.reason);
-    let parts = Seen::default()
-        .read("run-1", &data)
-        .map(|_| ())
-        .map_err(|error| error.reason);
-    assert_eq!(parts, whole);
-}
-
-#[test]
-fn read_shares_definitions_it_has_seen_and_decodes_new_ones() {
-    let mut seen = Seen::default();
-    let first = seen.read("run-1", &record(DEFINED, 1)).unwrap();
-    let again = seen.read("run-1", &record(DEFINED, 2)).unwrap();
-    assert_eq!(again.jobs, Some(2));
-    assert!(again.definitions.shared(&first.definitions));
-    let other = DEFINED.replace("Check", "Other");
-    let changed = seen.read("run-1", &record(&other, 2)).unwrap();
-    assert!(!changed.definitions.shared(&first.definitions));
-    let title = &changed.definitions.graph().unwrap().evals.value().unwrap()[0];
-    assert_eq!(
-        serde_json::to_value(title).unwrap()["declaration"]["title"],
-        "Other"
+async fn fixture() -> (
+    tempfile::TempDir,
+    std::path::PathBuf,
+    OwnedReceipts,
+    store::Run,
+) {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&repo).unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
+    let saved = run(
+        "run-1",
+        &repo,
+        &state,
+        serde_json::from_str(DEFINED).unwrap(),
     );
+    receipts
+        .create_run(
+            &saved,
+            &[
+                request("run-1", "app", &repo),
+                request("run-1", "web", &repo),
+            ],
+        )
+        .await
+        .unwrap();
+    (root, state, receipts, saved)
 }
 
-#[test]
-fn check_and_read_judge_definitions_alike_and_facts_never_decode_them() {
-    let mut seen = Seen::default();
-    let broken = record(BROKEN, 1);
-    let reason = seen.check("run-1", &broken).unwrap_err().reason;
-    // The same definitions saved again, read whole or only checked, fail for the same reason.
-    assert_eq!(
-        seen.check("run-1", &record(BROKEN, 2)).unwrap_err().reason,
-        reason
+fn row<T: rusqlite::types::FromSql>(state: &Path, sql: &str) -> T {
+    Connection::open(state.join(DATABASE))
+        .unwrap()
+        .query_row(sql, [], |row| row.get(0))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_run_saves_its_definitions_once_and_its_state_without_them() {
+    let (_root, state, receipts, mut saved) = fixture().await;
+    let written: String = row(
+        &state,
+        "SELECT data FROM run_definitions WHERE run_id='run-1'",
     );
-    assert_eq!(seen.read("run-1", &broken).unwrap_err().reason, reason);
-    // Forgetting definitions no Run holds any more changes no verdict.
-    seen.retain(&BTreeSet::from([Sha256Bytes::of(DEFINED.as_bytes())]));
-    assert_eq!(seen.check("run-1", &broken).unwrap_err().reason, reason);
-    seen.check("run-1", &record(DEFINED, 1)).unwrap();
-    // A Run's facts read without its definitions, broken or not.
-    let (run, digest) = seen.facts("run-1", &broken).unwrap();
-    assert_eq!(run.jobs, Some(1));
-    assert_eq!(digest, Some(Sha256Bytes::of(BROKEN.as_bytes())));
+    assert_eq!(
+        serde_json::from_str::<Value>(&written).unwrap(),
+        serde_json::from_str::<Value>(DEFINED).unwrap()
+    );
+    // Saving the Run again writes its state; the definitions it holds are not written again.
+    saved.jobs = Some(7);
+    saved.definitions =
+        serde_json::from_value(json!({"artifacts":{"web":{"path":"web"}},"evals":[]})).unwrap();
+    receipts.save_run(&saved).await.unwrap();
+    let state_text: String = row(&state, "SELECT data FROM runs WHERE id='run-1'");
+    let state_value: Value = serde_json::from_str(&state_text).unwrap();
+    assert_eq!(state_value["jobs"], 7);
+    assert!(state_value["definitions"].is_null());
+    assert_eq!(
+        row::<String>(
+            &state,
+            "SELECT data FROM run_definitions WHERE run_id='run-1'"
+        ),
+        written
+    );
+    let read = store::read_run(&state, "run-1").await.unwrap();
+    assert_eq!(read.run.jobs, Some(7));
+    let artifacts = read
+        .run
+        .definitions
+        .graph()
+        .unwrap()
+        .artifacts
+        .value()
+        .unwrap();
+    assert!(artifacts.contains_key("app") && !artifacts.contains_key("web"));
 }
 
-#[test]
-fn a_record_that_is_not_an_object_is_unreadable() {
-    let mut seen = Seen::default();
-    for data in ["[]", "{", "null"] {
-        assert_eq!(seen.read("run-1", data).unwrap_err().kind, "run");
-        assert!(seen.check("run-1", data).is_err());
-        assert!(seen.facts("run-1", data).is_err());
-    }
+#[tokio::test]
+async fn an_update_raises_the_revision_of_only_the_row_it_changes() {
+    let (_root, state, receipts, saved) = fixture().await;
+    let revisions = |state: &Path| -> (i64, i64, i64) {
+        (
+            row(state, "SELECT revision FROM runs WHERE id='run-1'"),
+            row(state, "SELECT revision FROM requests WHERE id='run-1-app'"),
+            row(state, "SELECT revision FROM requests WHERE id='run-1-web'"),
+        )
+    };
+    assert_eq!(revisions(&state), (0, 0, 0));
+    let mut app = request("run-1", "app", saved.repo_path.as_path());
+    app.state = store::RequestState::failed("stopped".into(), None, crate::broker::now());
+    receipts.save_request(&app).await.unwrap();
+    receipts.save_run(&saved).await.unwrap();
+    receipts.save_run(&saved).await.unwrap();
+    assert_eq!(revisions(&state), (2, 1, 0));
+    // A writer that bypasses the store is numbered too.
+    Connection::open(state.join(DATABASE))
+        .unwrap()
+        .execute(
+            "UPDATE requests SET status='ERROR' WHERE id='run-1-web'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(revisions(&state), (2, 1, 1));
 }

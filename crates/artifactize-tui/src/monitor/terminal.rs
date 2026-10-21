@@ -22,7 +22,7 @@ enum Wanted {
     Changes,
     /// A read of everything.
     Everything,
-    /// A read of everything after the reader's caches were dropped.
+    /// A read of everything after hints may have been missed; Git is asked again too.
     Resynced,
 }
 
@@ -204,6 +204,12 @@ async fn watch(
             change = changes.next() => match change {
                 crate::changes::Change::StateInvalidated => {
                     wanted.at_least(Wanted::Everything);
+                    Action::None
+                }
+                // The list is read again, and the shown Run only when it is this one.
+                crate::changes::Change::RunInvalidated(_) => {
+                    monitor.changed.add(&change);
+                    wanted.at_least(Wanted::Changes);
                     Action::None
                 }
                 crate::changes::Change::Resync => {

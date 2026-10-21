@@ -381,12 +381,37 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
             row.get(0)
         })
         .unwrap();
+    // Back to schema 8, which kept a Run's definitions in its record, then back to schema 6.
+    db.execute_batch(support::schema::EIGHT).unwrap();
+    assert!(
+        db.query_row(
+            "SELECT json_type(data,'$.definitions') FROM runs WHERE id=?",
+            [&started.run],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap()
+            == "object"
+    );
     db.execute_batch("UPDATE runs SET data=json_remove(data,'$.control','$.requestKey'); DROP INDEX run_request_key; ALTER TABLE runs DROP COLUMN request_key; DROP INDEX active_key; ALTER TABLE executions DROP COLUMN profile_identity; CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN'); PRAGMA user_version=6;").unwrap();
     drop(db);
     // Existing-state read preflight upgrades too; no receipt/cache/approval is replaced.
     let migrated = store::read_run(&fixture.state, &started.run).await.unwrap();
     assert_eq!(migrated.run.id, before.run.id);
     assert!(migrated.run.control.is_none());
+    // The definitions moved to their own row and read back as they were saved.
+    assert_eq!(
+        serde_json::to_value(&migrated.run.definitions).unwrap(),
+        serde_json::to_value(&before.run.definitions).unwrap()
+    );
+    let moved = rusqlite::Connection::open(fixture.state.join(store::DATABASE))
+        .unwrap()
+        .query_row(
+            "SELECT json_type(r.data,'$.definitions'),d.run_id FROM runs r JOIN run_definitions d ON d.run_id=r.id WHERE r.id=?",
+            [&started.run],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+        )
+        .unwrap();
+    assert_eq!(moved.0, None);
     assert_eq!(migrated.requests.len(), before.requests.len());
     let output = fixture
         .command()
