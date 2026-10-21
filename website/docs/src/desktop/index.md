@@ -141,8 +141,10 @@ approves nothing.
 
 ### Graphs
 
-Both graphs, a Run's and the Current, take the pointer: Tab reaches their Artifacts
-and Enter on one does what a click does; they have no other keys of their own.
+Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
+Artifacts and Enter on one does what a click does; they have no other keys of their
+own. While more than 500 Artifacts are in view they are painted boxes that only a
+click opens; zoom in until fewer are in view for Tab and Enter to reach them.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms
 the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
 These gestures move the camera, not the divider or the Detail. A graph shows whole
