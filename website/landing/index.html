@@ -259,6 +259,22 @@
       <h2 id="start-title">Try it in five minutes.</h2>
       <p>Artifactize is open source under the Apache License 2.0. It runs on Linux, macOS and Windows; the quick start reviews an example project without an AI account or provider access key.</p>
       <div class="install" data-install>
+        <div class="downloads">
+          <a class="btn btn-ghost download" data-os="macos" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg">
+            <span>Download for macOS</span>
+            <span class="download-meta">Apple silicon and Intel · .dmg</span>
+          </a>
+          <a class="btn btn-ghost download" data-os="windows" href="https://apps.microsoft.com/detail/9PB6W4LL165D">
+            <span>Get it for Windows</span>
+            <span class="download-meta">Microsoft Store · x64</span>
+          </a>
+          <a class="btn btn-ghost download" data-os="linux" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb">
+            <span>Download for Linux</span>
+            <span class="download-meta">x86_64 · .deb</span>
+          </a>
+        </div>
+        <p class="download-note">The app brings the <code>artifactize</code> command with it. On a Mac, open the app once to set up the Terminal command. On Ubuntu 22.04, Debian 12 or later, open the .deb with your software installer or run <code>sudo apt install ./Artifactize-amd64.deb</code>.</p>
+        <h3 class="install-cli-title">Or install from the command line</h3>
         <div class="demo-tabs install-tabs" role="tablist" aria-label="Operating system" hidden>
           <button type="button" class="demo-tab" role="tab" id="install-tab-linux" aria-controls="install-linux" aria-selected="true" data-os="linux">Linux</button>
           <button type="button" class="demo-tab" role="tab" id="install-tab-macos" aria-controls="install-macos" aria-selected="false" tabindex="-1" data-os="macos">macOS</button>
@@ -285,10 +301,7 @@
 <pre class="code term"><code><span class="t-dim"># Without Homebrew: installs to ~/.local/bin and the app to ~/Applications, no sudo</span>
 <span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span></code></pre>
           </div>
-          <p class="install-alt install-download">
-            <a class="btn btn-primary" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg">Download the Mac app</a>
-            <span>One disk image for Apple silicon and Intel, checked by Apple. First launch offers to set up the Terminal command. With Homebrew, the app and the commands: <code>brew install --cask lhj6102/tap/artifactize</code></span>
-          </p>
+          <p class="install-alt">With Homebrew, the app and the commands: <code>brew install --cask lhj6102/tap/artifactize</code></p>
         </div>
         <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows">
           <div data-copy="winget install 9PB6W4LL165D --source msstore">
@@ -304,7 +317,7 @@
 <pre class="code term"><code><span class="t-dim"># Without the Store, in PowerShell with no administrator rights</span>
 <span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span></code></pre>
           </div>
-          <p class="install-alt">Or open <a href="https://apps.microsoft.com/detail/9PB6W4LL165D">Artifactize in the Microsoft Store</a>. The PowerShell download is not code-signed, so Smart App Control may block it; the Store version is signed by Microsoft.</p>
+          <p class="install-alt">The PowerShell download is not code-signed, so Smart App Control may block it; the Store version is signed by Microsoft.</p>
         </div>
       </div>
       <div class="cta center">

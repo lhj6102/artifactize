@@ -8,9 +8,9 @@ commands, because it shows Runs that the `artifactize` command starts, so every
 install of the app carries that command too:
 in the Windows zip and the MSIX (its own Start entry beside the CLI's),
 and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
-(`desktop-<target>` artifacts). The release also attaches the dmg as `Artifactize.dmg`,
-the stable name the landing page's download button links to through
-`releases/latest/download`.
+(`desktop-<target>` artifacts). The release also attaches the dmg as `Artifactize.dmg`
+and the deb as `Artifactize-amd64.deb`, the stable names the landing page's download
+buttons and the README link to through `releases/latest/download`.
 The other channels carry the app too: the Homebrew cask `artifactize` installs
 `Artifactize.app` from the dmg and links its bundled commands onto Homebrew's PATH (the CLI-only formula must be uninstalled first), the winget manifest adds
 an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
