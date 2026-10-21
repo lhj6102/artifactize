@@ -181,6 +181,9 @@ pub(crate) fn spawn_watched(mut command: Command) -> io::Result<tokio::process::
     command.spawn()
 }
 
+/// Unix programs open no console window; a host probe runs as it is.
+pub(crate) fn hide_console_window(_command: &mut std::process::Command) {}
+
 /// The index of `starttime` (field 22 of /proc/PID/stat, see proc(5)) among the fields after
 /// the command name. The name, field 2, is cut off at its closing parenthesis because it may
 /// contain spaces, so the remaining fields start at field 3: 22 - 3 = 19.
