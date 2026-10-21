@@ -841,6 +841,17 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await logIn(browser, DETAIL)).notice === "open_release launched.", { timeout: 15000, timeoutMsg: "the launch said" });
       await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application ran" });
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "its exit logged" });
+      // A launch tool whose application keeps running still returns at once: the launch is said,
+      // the Detail's tools are usable again and its run stays open in the Tool log.
+      await tools().$("button=▶ talk").click();
+      await browser.waitUntil(async () => (await logIn(browser, DETAIL)).notice === "talk_release launched." &&
+        (await runIn(browser, DETAIL, "talk"))?.some((row) => row.text === "opened the stand-in") === true &&
+        await tools().$("button=▶ notes").isEnabled(), { timeout: 15000, timeoutMsg: "the launch returned while its application runs" });
+      assert.ok(!(await runIn(browser, DETAIL, "talk"))!.some((row) => row.kind === "end"), "the launched application has not ended");
+      // Let it go on: what it prints next joins its run, and its exit ends it.
+      finishTalk(fixture);
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "talk"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "the stand-in's exit logged" });
+      assert.ok((await runIn(browser, DETAIL, "talk"))!.some((row) => row.text === "chose: B"), "its later lines joined its own run");
       // A failing tool says so, its run ended red.
       await tools().$("button=▶ fail").click();
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "fail"))?.at(-1)?.kind === "end" && (await logIn(browser, DETAIL)).noticeError,

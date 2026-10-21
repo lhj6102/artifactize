@@ -312,7 +312,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-BRANCHES
+  // UX journeys: J-BRANCHES J-BRANCH-RUNS; UX edge: E-PANE-CHIP
   scenario<{ master: string; shared: string[] }>(
     "branches-one-entry",
     "lists a branch once with the Runs made on it from every folder, by a person and by an agent session, and no entry per folder or session",
@@ -328,9 +328,18 @@ export const scenarios: Scenario[] = [
       // live one, oldest first, then its Current.
       assert.deepEqual((await branch(browser, "repo  shared"))?.chips.map((chip) => chip.id), [...shared, "current"]);
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id), [master, "current"]);
-      // The Run from the removed folder still shows as the branch's.
+      // A click on a chip of a branch not selected selects that branch and shows the chip's Run:
+      // here the one from the removed folder, still the branch's.
+      assert.deepEqual((await branches(browser)).filter((entry) => entry.selected), [], "no branch selected yet");
       await showRun(browser, "repo  shared", shared[0]);
       await graphShown(browser, "a:n000");
+      assert.equal((await branch(browser, "repo  shared"))?.selected, true, "the chip's branch selected");
+      assert.deepEqual((await branch(browser, "repo  shared"))?.chips.filter((chip) => chip.filled).map((chip) => chip.id), [shared[0]]);
+      // Then a chip of the other branch: that branch is selected instead, its chip the one filled.
+      await showRun(browser, "repo  master", master);
+      assert.deepEqual((await branches(browser)).filter((entry) => entry.selected).map((entry) => entry.name), ["repo  master"], "only the other branch selected");
+      assert.deepEqual((await branch(browser, "repo  master"))?.chips.filter((chip) => chip.filled).map((chip) => chip.id), [master]);
+      assert.deepEqual((await branch(browser, "repo  shared"))?.chips.filter((chip) => chip.filled), [], "the first branch's chip no longer filled");
     },
   ),
 ];
