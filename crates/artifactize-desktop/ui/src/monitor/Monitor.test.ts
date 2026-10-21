@@ -1,5 +1,6 @@
 // The window's one screen against a mocked command boundary: the Pane lists the branches the
-// backend sends and moves one selection through them and the Waiting stack; a chip shows its
+// backend sends, expands them to their timelines and moves one selection through them and the
+// Waiting stack; a timeline entry shows its
 // Run or the branch's Current; a waiting review opens as Review; a Current scans again when
 // chosen, refreshed or when a Run of its branch ends; the search's Esc puts sort:recent back.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -111,8 +112,8 @@ it("opens on the Current of the branch it was started for, and scans it again on
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Current · app  main");
   await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
   expect(screen.getByLabelText("app: reused")).toBeTruthy();
-  // The Current chip is the one shown, filled.
-  expect(screen.getByRole("button", { name: "Current" }).getAttribute("aria-pressed")).toBe("true");
+  // The launched branch opens expanded; its Current is the entry shown.
+  expect(screen.getByRole("button", { name: /^Current\b/ }).getAttribute("aria-pressed")).toBe("true");
   await fireEvent.click(screen.getByText(/Structure and evaluation criteria/));
   expect(screen.getByText("app → graph; criteria revision 1")).toBeTruthy();
   await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
@@ -127,33 +128,89 @@ it("opens on the Current of the branch it was started for, and scans it again on
   expect(navigations().filter((step) => step.resync)).toHaveLength(2);
 });
 
-it("selects a branch's last chip, steps through its chips and the Waiting stack with the keys, and opens a review", async () => {
-  const feature = branch("feat/x", [runChip("run-1", "GREEN"), runChip("run-2", "RUNNING", true)]);
-  const main = branch("main", [runChip("run-0", "RED"), { kind: "current" }]);
+it("expands a clicked branch to its timeline, moves through timelines and the Waiting stack with the keys, and opens a review", async () => {
+  const feature = branch("feat/x", [runChip("run-2", "RUNNING", true), runChip("run-1", "GREEN")]);
+  const main = branch("main", [{ kind: "current" }, runChip("run-0", "RED")]);
   const { navigations, scanned } = backend(monitor(), () => browseView(1, { branches: [feature, main], waiting: [waitingRow("run-0-1")] }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
-  await waitFor(() => expect(within(entries).getByText(/^app\s+feat\/x$/)).toBeTruthy());
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Nothing chosen");
-  // A click on a branch's name shows its last chip: the Run in progress.
-  await fireEvent.click(within(entries).getByText(/^app\s+feat\/x$/));
+  const name = (text: RegExp) => within(entries).getByRole("button", { name: text });
+  const header = () => screen.getByLabelText("Main area").querySelector("h2")?.textContent;
+  // Collapsed, a branch shows its newest Run's status under its name.
+  await waitFor(() => expect(name(/^app \/ feat\/x/).textContent).toMatch(/Running\s*5m/));
+  expect(name(/^app \/ main/).textContent).toMatch(/RED\s*5m ago/);
+  expect(screen.queryByRole("group", { name: /^Runs of/ })).toBeNull();
+  expect(header()).toBe("Nothing chosen");
+  // A click on a branch expands it and shows its newest entry: the Run in progress.
+  await fireEvent.click(name(/^app \/ feat\/x/));
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-2" }));
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Run run-2");
-  // ← steps to the older chip; ↓ to the next branch, whose last chip is its Current.
+  expect(header()).toBe("Run run-2");
+  const timeline = screen.getByRole("group", { name: "Runs of app feat/x" });
+  expect(within(timeline).getAllByRole("button").map((entry) => entry.textContent?.replace(/\s+/g, " ").trim())).toEqual([
+    "Running 5m run-2",
+    "GREEN 5m ago run-1",
+  ]);
+  // ↓ enters the timeline, then steps to the older Run; ← goes back to the branch, ← again folds it.
   entries.focus();
-  await fireEvent.keyDown(entries, { key: "ArrowLeft" });
+  await fireEvent.keyDown(entries, { key: "ArrowDown" });
+  await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-1" }));
+  await fireEvent.keyDown(entries, { key: "ArrowLeft" });
+  await fireEvent.keyDown(entries, { key: "ArrowLeft" });
+  await waitFor(() => expect(screen.queryByRole("group", { name: "Runs of app feat/x" })).toBeNull());
+  expect(header()).toBe("Run run-1");
+  // ↓ to the next branch shows its newest entry, its Current; → expands it, → enters it, ↓ shows its Run.
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(scanned()).toBe(1));
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Current · app  main");
+  expect(header()).toBe("Current · app  main");
+  await fireEvent.keyDown(entries, { key: "ArrowRight" });
+  expect(screen.getByRole("group", { name: "Runs of app main" })).toBeTruthy();
+  await fireEvent.keyDown(entries, { key: "ArrowRight" });
+  await fireEvent.keyDown(entries, { key: "ArrowDown" });
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-0" }));
   // ↓ again only selects the waiting review; Enter opens it as Review.
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   const waiting = within(screen.getByRole("listbox", { name: "Waiting reviews" })).getByRole("option");
   expect(waiting.getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Current · app  main");
+  expect(header()).toBe("Run run-0");
   await fireEvent.keyDown(entries, { key: "Enter" });
   await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Review"));
   expect(screen.getByRole("heading", { name: "Waiting (1)" })).toBeTruthy();
+});
+
+it("stars a branch from its entry, and takes a star away", async () => {
+  const starred = branch("feat/x", [{ kind: "current" }], false, true);
+  const main = branch("main", [{ kind: "current" }]);
+  const { navigations } = backend(monitor(), () => browseView(1, { branches: [starred, main] }));
+  render(App);
+  const star = await screen.findByRole("button", { name: "Star app / main" });
+  expect(star.getAttribute("aria-pressed")).toBe("false");
+  await fireEvent.click(star);
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ star: { branch: main.key, on: true } }));
+  const on = screen.getByRole("button", { name: "Star app / feat/x" });
+  expect(on.getAttribute("aria-pressed")).toBe("true");
+  await fireEvent.click(on);
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ star: { branch: starred.key, on: false } }));
+});
+
+it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest entry", async () => {
+  const main = branch("main", [{ kind: "current" }, runChip("run-1", "GREEN")], true);
+  const later = branch("later", [{ kind: "current" }]);
+  const { navigations } = backend(monitor(), () => browseView(1, { branches: [main, later] }));
+  render(App);
+  const entries = await screen.findByRole("group", { name: "Pane entries" });
+  await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
+  await fireEvent.click(screen.getByRole("button", { name: "Older runs" }));
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ older: main.key }));
+  // At the oldest entry, ↓ asks again instead of leaving for the next branch.
+  const asked = navigations().filter((step) => step.older).length;
+  entries.focus();
+  await fireEvent.keyDown(entries, { key: "ArrowDown" });
+  await fireEvent.keyDown(entries, { key: "ArrowDown" });
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-1" }));
+  await fireEvent.keyDown(entries, { key: "ArrowDown" });
+  await waitFor(() => expect(navigations().filter((step) => step.older)).toHaveLength(asked + 1));
+  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Run run-1");
 });
 
 it("scans the shown Current again when a Run of its branch ends", async () => {
@@ -161,22 +218,24 @@ it("scans the shown Current again when a Run of its branch ends", async () => {
   let revision = 0;
   const snapshot = () =>
     browseView(++revision, {
-      branches: [branch("main", ended ? [runChip("run-1", "GREEN"), { kind: "current" }] : [runChip("run-1", "RUNNING", true)])],
+      branches: [branch("main", ended ? [{ kind: "current" }, runChip("run-1", "GREEN")] : [runChip("run-1", "RUNNING", true)])],
     });
   const { scanned } = backend(monitor(), snapshot);
   render(App);
-  // The Run in progress ends its row; once it ended, the row ends with the Current chip.
-  const entries = await screen.findByRole("group", { name: "Pane entries" });
-  await waitFor(() => expect(within(entries).getByText(/^app\s+main$/)).toBeTruthy());
+  // The Run in progress leads its timeline; once it ended, the Current leads it.
+  await fireEvent.click(await screen.findByRole("button", { name: "Expand app / main" }));
+  const current = () => screen.queryByRole("button", { name: /^Current\b/ });
+  await waitFor(() => expect(screen.getByRole("group", { name: "Runs of app main" })).toBeTruthy());
+  expect(current()).toBeNull();
   ended = true;
   await emit("state-changed", { resync: false });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Current" })).toBeTruthy());
-  await fireEvent.click(screen.getByRole("button", { name: "Current" }));
+  await waitFor(() => expect(current()).toBeTruthy());
+  await fireEvent.click(current()!);
   await waitFor(() => expect(scanned()).toBe(1));
   // Another Run starts and ends on the branch: the Current is scanned again by itself.
   ended = false;
   await emit("state-changed", { resync: false });
-  await waitFor(() => expect(screen.queryByRole("button", { name: "Current" })).toBeNull());
+  await waitFor(() => expect(current()).toBeNull());
   expect(scanned()).toBe(1);
   ended = true;
   await emit("state-changed", { resync: false });

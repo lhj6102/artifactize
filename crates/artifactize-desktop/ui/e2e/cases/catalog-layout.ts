@@ -6,7 +6,7 @@ import { createOutside, createUnreadableRuns, savedRuns, spoilRun } from "../fix
 import { createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
-import { aside, detail, graphShown, nodeAt } from "../graph-view.ts";
+import { aside, camera, detail, graphShown, nodeAt } from "../graph-view.ts";
 import { afterRender } from "../keys.ts";
 
 function slot(browser: WebdriverIO.Browser) {
@@ -131,7 +131,8 @@ export const scenarios: Scenario[] = [
       assert.ok(loading.every((shown) => !/Lay out all/.test(shown.text)), "the Run lays out without asking first");
       assert.ok(loading.every((shown) => shown.divider && JSON.stringify(shown.bounds) === JSON.stringify(before.bounds)), "loading kept the same pane geometry and its divider");
       // A click where the layout puts the tree's first Artifact, its top-left corner, opens
-      // that Artifact's Detail.
+      // that Artifact's Detail, once the first view holds still.
+      await camera(browser);
       const corner = await browser.execute(() => {
         const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
         const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);

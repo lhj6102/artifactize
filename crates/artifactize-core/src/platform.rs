@@ -87,6 +87,22 @@ pub(crate) use artifactize_tools::files::{
 };
 pub use artifactize_tools::files::{open_nonblocking, path_text};
 
+/// The absolute local folder a `file:` URI names, by this OS's path rules (a drive letter
+/// or UNC host on Windows); `None` for another scheme, a remote host or a relative path.
+pub fn file_uri_path(uri: &str) -> Option<std::path::PathBuf> {
+    url::Url::parse(uri)
+        .ok()?
+        .to_file_path()
+        .ok()
+        .filter(|path| path.is_absolute())
+}
+
+/// The absolute folder a caller names; a relative one would resolve against this
+/// process's working directory, which the caller cannot see.
+pub fn absolute_folder(text: &str) -> Option<std::path::PathBuf> {
+    Some(std::path::PathBuf::from(text)).filter(|path| path.is_absolute())
+}
+
 /// Open an existing regular file for reading without following a link in its last
 /// component (on Windows, any reparse point), and check what was opened.
 pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {

@@ -110,7 +110,15 @@ struct Client {
     modern: bool,
 }
 impl Client {
-    async fn new(mut command: std::process::Command, version: &str) -> Self {
+    async fn new(command: std::process::Command, version: &str) -> Self {
+        Self::declaring(command, version, json!({})).await
+    }
+    /// A client declaring `capabilities` in its initialize request.
+    async fn declaring(
+        mut command: std::process::Command,
+        version: &str,
+        capabilities: Value,
+    ) -> Self {
         command.arg("mcp");
         let mut child = support::os::spawn_piped_test(command);
         let input = child.take_stdin();
@@ -132,7 +140,7 @@ impl Client {
             );
             assert_eq!(discovered["result"]["capabilities"], json!({"tools":{}}));
         } else {
-            let initialized = client.rpc("initialize", json!({"protocolVersion":version,"capabilities":{},"clientInfo":{"name":"seam","version":"1"}})).await;
+            let initialized = client.rpc("initialize", json!({"protocolVersion":version,"capabilities":capabilities,"clientInfo":{"name":"seam","version":"1"}})).await;
             assert_eq!(initialized["result"]["protocolVersion"], version);
             assert_eq!(initialized["result"]["capabilities"], json!({"tools":{}}));
             client
@@ -224,6 +232,22 @@ impl Client {
             "verify_wait returned an active snapshot instead of controlled settlement: {result}"
         );
         result
+    }
+    /// Answer the server's next request, which must be `roots/list`, with the one folder `root`.
+    async fn answer_roots(&mut self, root: &std::path::Path) {
+        let mut line = String::new();
+        tokio::time::timeout(
+            support::os::patience(PROTOCOL_BOUND),
+            self.output.read_line(&mut line),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let request: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(request["method"], "roots/list", "{request}");
+        let uri = url::Url::from_directory_path(root).unwrap().to_string();
+        self.send(json!({"jsonrpc":"2.0","id":request["id"],"result":{"roots":[{"uri":uri,"name":"project"}]}}))
+            .await;
     }
     async fn inspect(&mut self, name: &str, mut arguments: Value) -> Value {
         let mut text = String::new();
@@ -1030,5 +1054,95 @@ async fn graph_discovery_and_conservative_impact_match_cli() {
     assert!(mcp["artifacts"].get("consumer").is_some());
     assert!(mcp["artifacts"].get("input").is_some());
     assert!(mcp["artifacts"].get("independent").is_none());
+    client.close().await;
+}
+
+#[tokio::test]
+async fn without_repo_the_clients_roots_name_the_project_and_a_change_asks_again() {
+    // A plugin's server starts in the plugin's folder, no project, and names none with --repo.
+    let first = Project::new(json!([]));
+    let second = Project::new(json!([]));
+    support::declaration::write(
+        second.repo.join("index.artf"),
+        json!({"name":"other","fingerprint":{"files":["content.txt"]},"evals":[]}).to_string(),
+    )
+    .unwrap();
+    let plugin = support::os::tempdir();
+    let mut command = std::process::Command::new(support::os::cli());
+    command
+        .arg("--state-dir")
+        .arg(&first.state)
+        .env("ARTIFACTIZE_REMOTE", "off")
+        .current_dir(plugin.path());
+    let mut client =
+        Client::declaring(command, "2024-11-05", json!({"roots":{"listChanged":true}})).await;
+    let graph = |artifact: &str| json!({"scope":{"kind":"artifact","artifactId":artifact}});
+    let call = |artifact: &str| json!({"name":"config_graph","arguments":graph(artifact)});
+    let names = |page: &Value| page["entries"][0]["text"].as_str().unwrap().to_owned();
+    // The first tool call asks the client for its roots and serves the first one.
+    let id = client.request("tools/call", call("app")).await;
+    client.answer_roots(&first.repo).await;
+    let page = Client::tool_result("config_graph", client.response(id).await);
+    assert!(names(&page).contains("\"app\""), "{page}");
+    // Later calls keep that project without asking again.
+    let kept = client.call("config_graph", graph("app")).await;
+    assert!(names(&kept).contains("\"app\""), "{kept}");
+    // The client's roots change: the next call asks again and serves the new root.
+    client
+        .send(json!({"jsonrpc":"2.0","method":"notifications/roots/list_changed"}))
+        .await;
+    let id = client.request("tools/call", call("other")).await;
+    client.answer_roots(&second.repo).await;
+    let page = Client::tool_result("config_graph", client.response(id).await);
+    assert!(names(&page).contains("\"other\""), "{page}");
+    client.close().await;
+}
+
+#[tokio::test]
+async fn in_its_plugins_folder_without_roots_the_server_serves_each_calls_project() {
+    // A host without roots starts the plugin's server in the plugin's folder.
+    let project = Project::new(json!([]));
+    let plugin = support::os::tempdir();
+    fs::write(plugin.path().join("plugin.json"), "{}").unwrap();
+    fs::write(plugin.path().join("mcp.json"), "{}").unwrap();
+    let mut command = std::process::Command::new(support::os::cli());
+    command
+        .arg("--state-dir")
+        .arg(&project.state)
+        .env("ARTIFACTIZE_REMOTE", "off")
+        .current_dir(plugin.path());
+    let mut client = Client::new(command, "2026-07-28").await;
+    let graph = json!({"scope":{"kind":"artifact","artifactId":"app"}});
+    // Without `project` the call says what is missing instead of serving the plugin.
+    let refused = client
+        .rpc(
+            "tools/call",
+            json!({"name":"config_graph","arguments":graph}),
+        )
+        .await;
+    assert_eq!(refused["result"]["isError"], true, "{refused}");
+    assert!(
+        refused["result"]["structuredContent"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("pass `project`"),
+        "{refused}"
+    );
+    // With it, the call serves that project, exactly as the CLI there does.
+    let mut arguments = graph.clone();
+    arguments["project"] = json!(project.repo);
+    let mcp = client.inspect("config_graph", arguments).await;
+    let cli = support::os::run(project.command().args(["config", "graph", "app", "--json"]));
+    assert_eq!(mcp, serde_json::from_slice::<Value>(&cli.stdout).unwrap());
+    // A relative folder would resolve against the plugin's folder: refused.
+    let mut relative = graph;
+    relative["project"] = json!("repo");
+    let refused = client
+        .rpc(
+            "tools/call",
+            json!({"name":"config_graph","arguments":relative}),
+        )
+        .await;
+    assert_eq!(refused["result"]["isError"], true, "{refused}");
     client.close().await;
 }

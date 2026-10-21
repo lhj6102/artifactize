@@ -179,6 +179,11 @@ fn open_run(run: &str) -> Value {
     json!({"run": run, "close": false, "query": null, "older": null, "full": false, "resync": false})
 }
 
+/// Star `branch`, or take its star away.
+fn star(branch: &Value, on: bool) -> Value {
+    json!({"run": null, "close": false, "query": null, "older": null, "star": {"branch": branch, "on": on}, "full": false, "resync": false})
+}
+
 /// Read the state afresh with the pane's search `query`.
 fn search(query: &str) -> Value {
     json!({"run": null, "close": false, "query": query, "older": null, "full": true, "resync": false})
@@ -270,16 +275,15 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     assert_eq!(branch["project"], "repo");
     assert_eq!(branch["name"], identity.branch.unwrap());
     assert_eq!(view["launch"], branch["key"]);
-    // Its row ends with the Run in progress, the Human waiting: no Current chip yet.
+    // Its timeline holds the Run in progress, the Human waiting: no Current yet.
     let [chip] = branch["chips"].as_array().unwrap().as_slice() else {
         panic!("one chip: {branch}");
     };
     assert_eq!(chip["kind"], "run");
     assert_eq!(chip["running"], json!(true));
-    assert!(
-        chip["text"].as_str().unwrap().starts_with("Running "),
-        "{chip}"
-    );
+    assert_eq!(chip["status"], "Running");
+    // A running Run's age is its time so far, not a time ago.
+    assert!(!chip["age"].as_str().unwrap().ends_with(" ago"), "{chip}");
     assert_eq!(view["run"], Value::Null, "nothing chosen yet");
     // The waiting stack lists the sign-off with its project and branch.
     assert_eq!(view["waiting"][0]["eval"], "release/signoff");
@@ -859,6 +863,36 @@ fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
 }
 
 #[test]
+fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Monitor);
+    let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
+    assert_eq!(view["branches"][0]["starred"], json!(false));
+    let branch = view["branches"][0]["key"].clone();
+    let starred = invoke(&monitor, "browse", json!({"navigate": star(&branch, true)})).unwrap();
+    assert_eq!(starred["branches"][0]["starred"], json!(true), "{starred}");
+    // Kept in the state directory, where another monitor of this user reads it.
+    assert_eq!(
+        artifactize_core::monitor::live::starred(Some(&fixture.state))
+            .unwrap()
+            .len(),
+        1
+    );
+    let unstarred = invoke(
+        &monitor,
+        "browse",
+        json!({"navigate": star(&branch, false)}),
+    )
+    .unwrap();
+    assert_eq!(unstarred["branches"][0]["starred"], json!(false));
+    assert!(
+        artifactize_core::monitor::live::starred(Some(&fixture.state))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);
@@ -954,16 +988,15 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
         );
     });
     let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
-    // The Run ended: its chip shows its final status, and the row ends with a Current chip.
-    assert_eq!(view["branches"][0]["chips"][0]["running"], json!(false));
+    // The Run ended: the timeline starts with the Current, then the Run with its final status.
+    let chips = &view["branches"][0]["chips"];
+    assert_eq!(chips[0], json!({"kind": "current"}));
+    assert_eq!(chips[1]["running"], json!(false));
+    assert_eq!(chips[1]["status"], "GREEN", "{view}");
     assert!(
-        view["branches"][0]["chips"][0]["text"]
-            .as_str()
-            .unwrap()
-            .starts_with("GREEN "),
+        chips[1]["age"].as_str().unwrap().ends_with(" ago"),
         "{view}"
     );
-    assert_eq!(view["branches"][0]["chips"][1], json!({"kind": "current"}));
     // The shape the caller holds comes back as its lights alone, in its order.
     let after = graph(&monitor, read["shape"].clone());
     assert_eq!(after["shape"], read["shape"]);

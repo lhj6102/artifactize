@@ -7,7 +7,7 @@
 // and drives the app the way a person would. Nothing is mocked and no model is called.
 //
 // The scenes (assets/screenshots/):
-//   A. monitor.png — the app's one screen: the Pane with the example's branch, its Run chips
+//   A. monitor.png — the app's one screen: the Pane with the example's branch expanded to its Runs
 //      and the waiting sign-off, and the Run's graph in the Main area with mixed verdicts
 //      (GREEN, RED, blocked, waiting for a person).
 //   B. detail.png  — an Artifact's Detail over the graph on its Artifact tab: the Artifact
@@ -207,11 +207,11 @@ async function capture(output: string, work: string): Promise<void> {
       writeFileSync(join(output, name), Buffer.from(await app.takeScreenshot(), "base64"));
     };
 
-    // A. The branch's Run shown by its chip, its graph drawn, and the sign-off in the Waiting
-    // stack. The branch's last chip is its Current, since the Run ended; its one Run chip is
-    // the one before it.
+    // A. The branch's Run shown from its timeline, its graph drawn, and the sign-off in the
+    // Waiting stack. The launched branch opens expanded: its Current first, since the Run ended,
+    // then its one Run.
     const MAIN = 'section.panel[aria-label="Main area"]';
-    const runChip = '[aria-label="Branches"] [role="option"] button[data-chip]:not([data-chip="current"])';
+    const runChip = '[aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])';
     await app.$(runChip).waitForExist({ timeout: WAIT });
     await app.$(runChip).click();
     await app.waitUntil(() => app.execute((main) => /^Run /.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),

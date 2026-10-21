@@ -23,12 +23,12 @@ sys.dont_write_bytecode = True
 # Where each host documents its marketplace file, relative to the marketplace root.
 CATALOGS = {"claude": Path(".claude-plugin", "marketplace.json"), "codex": Path(".agents", "plugins", "marketplace.json")}
 # The MCP server must run `artifactize mcp` for the session's project: Claude Code
-# substitutes its project root into the arguments, Codex starts the server in the
-# session's directory when no cwd is configured.
+# substitutes its project root into the arguments; Codex starts the server in the
+# installed plugin's folder, where each call names the project or the client's roots do.
 SERVER = "artifactize"
 LAUNCH = {
     "claude": {"command": "artifactize", "args": ["--repo", "${CLAUDE_PROJECT_DIR}", "mcp"]},
-    "codex": {"command": "artifactize", "args": ["mcp"], "cwd": None},
+    "codex": {"command": "artifactize", "args": ["mcp"]},
 }
 # Host commands only read and copy local files; the bound stops a hung host, it does not order anything.
 COMMAND_SECONDS = 120
@@ -135,7 +135,8 @@ def main(host, plugin, catalog_path):
     catalog_path = catalog_path.resolve(strict=True)
     root = catalog_path.parents[len(CATALOGS[host].parts) - 1]
     plugin_id = listed_plugin(host, json.loads(catalog_path.read_text(encoding="utf-8")), root, plugin)
-    expected = {path.parent.name for path in plugin.glob("*/SKILL.md")}
+    # Agent Plugins finds skills only in skills/<name>/SKILL.md, one level down.
+    expected = {path.parent.name for path in plugin.glob("skills/*/SKILL.md")}
     with tempfile.TemporaryDirectory(prefix="agent-plugin-") as scratch:
         scratch = Path(scratch)
         # Copy only the catalog and the plugin folder: like a host's plugin cache,

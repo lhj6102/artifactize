@@ -55,11 +55,11 @@ export const HELP: Record<"pane" | "main" | "settings", Section[]> = {
     {
       title: "Pane",
       keys: [
-        ["↑ / ↓ · j / k", "Select a branch, then a waiting review"],
-        ["← / →", "The selected branch's previous / next chip"],
+        ["↑ / ↓ · j / k", "Select a branch or a timeline entry, then a waiting review"],
+        ["← / →", "Fold / expand the selected branch, or step out of / into its timeline"],
         ["Enter", "Go to the Main area, or open the selected review"],
-        ["Click a branch · a chip", "Show its last chip · that chip"],
-        ["Drag a chip row", "Scroll it; older Runs arrive at its start"],
+        ["Click a branch · an entry", "Expand it and show its newest entry · show that entry"],
+        ["Older runs", "Bring older Runs in below the oldest"],
       ],
     },
     {

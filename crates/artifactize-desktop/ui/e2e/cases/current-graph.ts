@@ -12,7 +12,7 @@ import { makeDirectory, nativePath, primaryModifier, readText, removeTree, write
 import { camera, detail, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, chooseChip, mainTitle, scanned, scannedAt } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
-import { graphAppearance } from "./graph-appearance.ts";
+import { currentHasColours, graphAppearance } from "./graph-appearance.ts";
 
 const CURRENT = 'section[aria-label="Current"]';
 const DETAIL = 'aside[aria-label="Detail"]';
@@ -95,7 +95,8 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify({
         "a:docs": "docs: would run (1 eval)", "a:release": "release: would run (1 eval)", "a:ship": "ship: waiting",
       }), `each Artifact marked by what verify would do: ${JSON.stringify(await drawn())}`);
-      assert.deepEqual((await drawn()).edges, { "a:release>a:ship": "run" }, "the relation carries what its source would do");
+      await waitFor(browser, async () => JSON.stringify((await drawn()).edges) === JSON.stringify({ "a:release>a:ship": "run" }),
+        `the relation carries what its source would do: ${JSON.stringify(await drawn())}`);
       const appearance = await graphAppearance(browser);
       assert.notEqual(appearance.nodes["a:release"].dot, appearance.nodes["a:ship"].dot, "would run and waiting are painted apart");
       assert.deepEqual(await browser.execute((root) => [...document.querySelectorAll(`${root} [aria-label="Legend"] li`)].map((item) => item.textContent?.trim()), CURRENT),
@@ -123,7 +124,7 @@ export const scenarios: Scenario[] = [
       // The eval's tab says it would run and why.
       await openTab(browser, "e:release/signoff");
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("○ would run"), `the eval's plan: ${JSON.stringify(await summary(browser))}`);
-      assert.match((await summary(browser)).status, /would run .+/, "with why");
+      assert.equal((await summary(browser)).status, "○ would run Record a request awaiting a Human claim and submission.", "with why: a Human eval asks a person");
       assert.equal((await summary(browser)).instruction, "Read the release notes and approve them.");
       assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false, "a Current holds no Human review");
 
@@ -165,9 +166,13 @@ export const scenarios: Scenario[] = [
       ], "the concrete input-to-consumer relation carries its instruction label");
 
       // Esc closes the Detail; Close does too, and a click on the background. The expanded text
-      // left the graph less room without moving its camera: Fit View shows it whole again.
+      // left the graph less room without moving its camera: folded again, with Fit View, the
+      // graph shows whole.
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closed release's Detail");
+      await browser.$(`${CURRENT} details summary`).click();
+      await waitFor(browser, async () => !(await expanded()), "structure text folded");
       await browser.$(`${CURRENT} .svelte-flow__controls-fitview`).click();
+      await camera(browser);
       await clickArtifact("release");
       await waitFor(browser, async () => (await detail(browser)) !== null, "release's Detail open again");
       await browser.$(DETAIL).$("button*=Close").click();
@@ -185,6 +190,8 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await detail(browser)) === null, "a click on the background closed docs' Detail");
 
       // Each Refresh, Ctrl+R and F5 scans the changed declarations again, the text staying open.
+      await browser.$(`${CURRENT} details summary`).click();
+      await waitFor(browser, expanded, "structure text expanded again");
       // The person zooms out; no scan or new layout below moves that camera.
       await browser.$(`${CURRENT} .svelte-flow__controls-zoomout`).click();
       const moved = await camera(browser);
@@ -244,9 +251,9 @@ Summarize {docs}."""
       return { fixture, args: ["--repo", fixture.repo], data: { run: savedRuns(fixture)[0].id } };
     },
     async (browser, { data: { run } }) => {
-      // The Run ended, so the branch's last chip is its Current.
+      // The Run ended, so the branch's newest entry is its Current.
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
-      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[run, false], ["current", true]]);
+      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [["current", true], [run, false]]);
       await graphShown(browser, "a:app");
       await waitFor(browser, async () => (await browser.$(nodeAt("a:app")).getAttribute("aria-label")) === "app: reused", "app marked reused");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
@@ -305,10 +312,14 @@ Summarize {docs}."""
       const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look: await graphAppearance(browser) };
       assert.ok(before.at, "the header names the scan before the Run");
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
-      // Another process verifies: while its Run waits the row ends with it; signed off, the
+      assert.ok(currentHasColours(reusedLook, { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
+        `reused in the legend's reused colour: ${JSON.stringify(reusedLook)}`);
+      assert.ok(currentHasColours(before.look, { "a:release": "run", "a:ship": "waiting" }, { "a:release>a:ship": "run" }),
+        `would run and waiting in their legend colours: ${JSON.stringify(before.look)}`);
+      // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);
-      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips.at(-1)?.id === run, "the Run in progress ends the row");
+      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === run, "the Run in progress starts the row");
       assert.equal(await mainTitle(browser), "Current · repo  master", "the Current stays shown");
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request);
@@ -360,6 +371,8 @@ Summarize {docs}."""
       const look = await graphAppearance(browser);
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:app"].dot, "blocked is painted unlike would run");
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:red"].dot, "blocked is painted unlike reused");
+      assert.ok(currentHasColours(look, { "a:app": "run", "a:down": "blocked", "a:red": "reused" }, {}),
+        `each Artifact in its legend colour: ${JSON.stringify(look)}`);
       // Two of app's three evals would run; the third's result is reused.
       await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(await evalRows(browser), [

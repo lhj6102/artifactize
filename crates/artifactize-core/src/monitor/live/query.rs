@@ -12,7 +12,7 @@
 //!
 //! Values with spaces are quoted, and a quoted word is always free text, as in the review
 //! search ([`crate::review::search`]), whose words this one reads.
-use super::{Branch, Waiting};
+use super::{Branch, Place, Waiting};
 use crate::review::search::{self, Completion};
 use std::collections::BTreeSet;
 
@@ -169,18 +169,24 @@ pub(super) fn order(branches: &mut [Branch], sort: Sort) {
     branches.sort_by(|a, b| compare(sort, a, b));
 }
 
-/// The branches and waiting reviews `query` keeps, the branches in its order and the waiting
-/// reviews as they came (newest first).
+/// The branches and waiting reviews `query` keeps: the branches `starred` first, each group in
+/// the query's order, and the waiting reviews as they came (newest first).
 pub fn show<'a>(
     query: &Query,
     branches: &'a [Branch],
     waiting: &'a [Waiting],
+    starred: &BTreeSet<Place>,
 ) -> (Vec<&'a Branch>, Vec<&'a Waiting>) {
     let mut kept: Vec<&Branch> = branches
         .iter()
         .filter(|branch| query.branch(branch))
         .collect();
-    kept.sort_by(|a, b| compare(query.sort, a, b));
+    let first = |branch: &Branch| !starred.contains(&branch.place);
+    kept.sort_by(|a, b| {
+        first(a)
+            .cmp(&first(b))
+            .then_with(|| compare(query.sort, a, b))
+    });
     let waiting = waiting
         .iter()
         .filter(|waiting| query.waiting(waiting))

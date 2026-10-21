@@ -1,13 +1,18 @@
 // What the window's one screen holds of its own: where focus is, the Pane's selected entry,
 // what the Main area shows, the open Detail with its tab and width, and whether the notice
 // shows in full. One owner, kept in the AppState; the snapshot it shows is the Browse.
-import type { BranchKey, DetailView, Source } from "../ipc/client";
+import { SvelteSet } from "svelte/reactivity";
+import type { BranchKey, Chip, DetailView, Source } from "../ipc/client";
 import { loadWidth } from "./detail-width";
 
 export type Focus = "pane" | "main" | "detail";
 
-/** The Pane's selected entry: a branch, or a waiting review. */
-export type Entry = { kind: "branch"; branch: BranchKey } | { kind: "waiting"; id: string };
+/** The Pane's selected entry: a branch, one entry of an expanded branch's timeline (a Run by
+ * its ID, the Current as `current`), or a waiting review. */
+export type Entry =
+  | { kind: "branch"; branch: BranchKey }
+  | { kind: "chip"; branch: BranchKey; chip: string }
+  | { kind: "waiting"; id: string };
 
 /** What the Main area shows. */
 export type Shown =
@@ -25,6 +30,16 @@ export type Opened = { source: Source; node: string; tab: string | null; request
 /** One text for a value the backend sends: branches and sources compare by it. */
 export const keyOf = (value: BranchKey | Source): string => JSON.stringify(value);
 
+/** A timeline entry's name among its branch's: a Run's ID, or `current`. */
+export const chipKey = (chip: Chip): string => (chip.kind === "run" ? chip.id : "current");
+
+/** One text for an entry: the selection compares by it. */
+export function entryKey(entry: Entry | null): string | null {
+  if (entry === null) return null;
+  if (entry.kind === "waiting") return entry.id;
+  return entry.kind === "branch" ? keyOf(entry.branch) : `${keyOf(entry.branch)} ${entry.chip}`;
+}
+
 /** The graph source a shown Run or Current reads from. */
 export function sourceOf(shown: Shown): Source | null {
   if (shown.kind === "run") return { kind: "run", run: shown.run };
@@ -35,6 +50,8 @@ export function sourceOf(shown: Shown): Source | null {
 export class MonitorState {
   focus = $state<Focus>("pane");
   selected = $state.raw<Entry | null>(null);
+  /** The branches expanded to their timelines, by key; any number, for this window. */
+  readonly expanded = new SvelteSet<string>();
   shown = $state.raw<Shown>({ kind: "none" });
   /** Settings show in the Main area over what it showed before. */
   settings = $state(false);

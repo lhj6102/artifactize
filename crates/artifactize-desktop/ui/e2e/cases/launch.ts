@@ -1,5 +1,5 @@
 // Launching the window on its one screen: the Pane of live branches beside the Main area, and
-// what each way of starting the app opens first: nothing, a branch's last chip, the newest
+// what each way of starting the app opens first: nothing, a branch's newest entry, the newest
 // waiting review or a named one.
 import assert from "node:assert/strict";
 import { addRepository, addWorktrees, create, orderRuns, requests, signoff, type Fixture } from "../fixture.ts";
@@ -45,7 +45,7 @@ export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-PANE J-BRANCHES; UX edges: E-LAUNCH-MONITOR E-PANE-SELECT
   scenario<{ initialRun: string; worktreeRuns: string[] }>(
     "launch-monitor",
-    "opens on the Pane of every live branch beside the Main area with nothing chosen, and a branch's name shows its last chip",
+    "opens on the Pane of every live branch beside the Main area with nothing chosen, each folded to its newest Run, and a branch's name expands it and shows its newest entry",
     async () => {
       const fixture = await create();
       const initialRun = signoff(fixture).runId;
@@ -87,14 +87,16 @@ export const scenarios: Scenario[] = [
       assert.deepEqual((await branches(browser)).map((entry) => entry.name).sort(),
         ["other  master", "repo  master", "repo  scope-one", "repo  scope-two"]);
       assert.equal((await branches(browser)).filter((entry) => entry.selected).length, 0, "nothing selected yet");
-      // Each branch's row holds its own Run in progress as its last chip.
-      for (const [name, run] of [["repo  master", initialRun], ["repo  scope-one", worktreeRuns[0]], ["repo  scope-two", worktreeRuns[1]]]) {
-        assert.deepEqual((await branch(browser, name))?.chips.map((chip) => chip.id), [run], `${name}'s one Run`);
+      // Each branch starts folded, its own Run in progress under its name.
+      for (const name of ["repo  master", "repo  scope-one", "repo  scope-two"]) {
+        const shown = await branch(browser, name);
+        assert.equal(shown?.expanded, false, `${name} starts folded`);
+        assert.match(shown?.latest ?? "", /^Running \d+[smh]/, `${name}'s own Run in progress`);
       }
-      // A click on a branch's name selects it and shows its last chip, filled.
+      // A click on a branch's name expands it and shows its newest entry, its one Run, marked.
       await selectBranch(browser, "repo  master");
       await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${initialRun}`, "the branch's running Run shown");
-      assert.equal((await branch(browser, "repo  master"))?.chips[0].filled, true, "the shown chip is filled");
+      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[initialRun, true]], "its one Run, shown");
       await graphShown(browser, "a:release");
       // The shown Run's own verdicts: release waits for its Human, ship waits, docs is GREEN.
       for (const [id, label] of [["a:release", "release: in progress"], ["a:ship", "ship: waiting"], ["a:docs", "docs: GREEN"]]) {
@@ -117,6 +119,7 @@ export const scenarios: Scenario[] = [
       // Another branch's name shows that branch's own Run instead.
       await selectBranch(browser, "repo  scope-one");
       await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${worktreeRuns[0]}`, "scope-one's own Run shown");
+      assert.deepEqual((await branch(browser, "repo  scope-one"))?.chips.map((chip) => chip.id), [worktreeRuns[0]], "scope-one's one Run");
       assert.equal((await branch(browser, "repo  master"))?.selected, false, "one branch selected at a time");
     },
   ),
@@ -124,7 +127,7 @@ export const scenarios: Scenario[] = [
   // UX journey: J-LAUNCH; UX edge: E-LAUNCH-REPO
   scenario<{ run: string }>(
     "launch-repo",
-    "starts with --repo on that branch selected, its last chip (the Run in progress) shown",
+    "starts with --repo on that branch selected and expanded, its newest entry (the Run in progress) shown",
     async () => {
       const fixture = await create();
       const run = signoff(fixture).runId;
@@ -132,10 +135,11 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: { run } };
     },
     async (browser, { data: { run } }) => {
-      await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${run}`, "the branch's last chip shown");
+      await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${run}`, "the branch's newest entry shown");
       const shown = await branch(browser, "repo  master");
       assert.equal(shown?.selected, true, "the branch of --repo is selected");
-      assert.deepEqual(shown?.chips.map((chip) => [chip.id, chip.filled]), [[run, true]], "its last chip, the running Run, is filled");
+      assert.equal(shown?.expanded, true, "and expanded");
+      assert.deepEqual(shown?.chips.map((chip) => [chip.id, chip.filled]), [[run, true]], "its newest entry, the running Run, is marked");
       assert.equal((await branch(browser, "other  master"))?.selected, false, "no other branch is selected");
       await graphShown(browser, "a:release");
     },
@@ -144,7 +148,7 @@ export const scenarios: Scenario[] = [
   // UX journey: J-LAUNCH; UX edge: E-LAUNCH-REPO
   scenario<Record<string, never>>(
     "launch-repo-without-runs",
-    "lists the branch of --repo before its project has a Run, its Current chip shown",
+    "lists the branch of --repo before its project has a Run, its Current shown",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", emptyRepository(fixture)], data: {} };
@@ -153,7 +157,7 @@ export const scenarios: Scenario[] = [
       await listed(browser, "empty-repo  master");
       const shown = await branch(browser, "empty-repo  master");
       assert.equal(shown?.selected, true);
-      assert.deepEqual(shown?.chips.map((chip) => [chip.id, chip.filled]), [["current", true]], "a branch without Runs ends with its Current chip");
+      assert.deepEqual(shown?.chips.map((chip) => [chip.id, chip.filled]), [["current", true]], "a branch without Runs has only its Current");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · empty-repo  master", "its Current shown");
       await waitFor(browser, async () => /^Scanned at /.test(await scanned(browser)), "its worktree scanned");
       // The project with Runs is listed too; the new one, without Runs, sorts last.
