@@ -441,9 +441,9 @@ export async function addWaiting(fixture: Fixture, name: string, count: number):
 
 /**
  * One GREEN Artifact `n000` verified four times. The three older Runs are rewritten as Runs saved
- * with a profile kind this version no longer reads (as before `dependency` was removed), so they
- * cannot be read; the newest stays readable. `restore` writes them back as they were saved, so
- * teardown settles every Run through the public CLI.
+ * with a selection kind this version does not read, so the list of Runs cannot read them; the
+ * newest stays readable. `restore` writes them back as they were saved, so teardown settles every
+ * Run through the public CLI.
  */
 export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture; readable: string; unreadable: string[]; restore: () => void } {
   const fixture = createChain(1);
@@ -477,7 +477,7 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
         }
       });
     });
-    const [current, removed] = ['"kind":"runtime"', '"kind":"dependency"'];
+    const [current, removed] = ['"selection":{"kind":"all"}', '"selection":{"kind":"dependency"}'];
     rewrite(current, removed);
     return { fixture, readable: runs[3], unreadable, restore: () => rewrite(removed, current) };
   }, fixture.root);

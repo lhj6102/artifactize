@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Clone)]
 pub struct Shown {
     pub current: Arc<Current>,
-    pub revision: u32,
+    pub revision: crate::ids::ScanId,
     /// Stays while a scan finds the same Artifacts and edges, whatever their plans.
     pub shape: crate::ids::ShapeKey,
 }
@@ -35,7 +35,7 @@ pub struct Shown {
 #[derive(Default)]
 pub struct Currents {
     shown: Mutex<BTreeMap<Place, Shown>>,
-    running: Mutex<BTreeMap<Place, (u32, CancellationToken)>>,
+    running: Mutex<BTreeMap<Place, (crate::ids::ScanId, CancellationToken)>>,
     scans: std::sync::atomic::AtomicU32,
     /// The last graph shape handed out.
     shapes: Mutex<crate::ids::ShapeKey>,
@@ -53,12 +53,9 @@ impl Currents {
             })
     }
 
-    /// Start scan number `scan` of `place`, cancelling the one still running.
-    fn start(&self, place: &Place) -> (u32, CancellationToken) {
-        let scan = self
-            .scans
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            + 1;
+    /// Start a scan of `place`, cancelling the one still running.
+    fn start(&self, place: &Place) -> (crate::ids::ScanId, CancellationToken) {
+        let scan = crate::ids::ScanId::allocate(&self.scans);
         let token = CancellationToken::new();
         if let Some((_, old)) = self
             .running
@@ -72,7 +69,7 @@ impl Currents {
     }
 
     /// Scan `scan` of `place` ended: keep what it found unless a newer scan started.
-    fn end(&self, place: &Place, scan: u32, found: Option<Current>) -> bool {
+    fn end(&self, place: &Place, scan: crate::ids::ScanId, found: Option<Current>) -> bool {
         let mut running = self.running.lock().expect("scans lock");
         if running.get(place).is_none_or(|(at, _)| *at != scan) {
             return false;
@@ -118,7 +115,7 @@ pub struct CurrentView {
     /// Each Artifact with its evals, as the Detail's chips and lists show them.
     pub tree: Vec<TreeNode>,
     /// Grows with each scan: the graph and an open Detail read again when it does.
-    pub revision: u32,
+    pub revision: crate::ids::ScanId,
 }
 
 fn segment(text: String, tone: Tone) -> Vec<Segment> {
