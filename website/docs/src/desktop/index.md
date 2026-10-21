@@ -143,8 +143,7 @@ approves nothing.
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does; they have no other keys of their
-own. While more than 500 Artifacts are in view they are painted boxes that only a
-click opens; zoom in until fewer are in view for Tab and Enter to reach them.
+own. Above 500 Artifacts in view, the boxes described below take only clicks.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms
 the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
 These gestures move the camera, not the divider or the Detail. A graph shows whole
@@ -163,7 +162,7 @@ elements in view are rendered: panning or zooming draws those it brings into vie
 A graph of **more than 500 Artifacts** draws its edges on a canvas below the
 Artifacts and has no minimap. While more than 500 Artifacts are in view, they are
 painted as boxes in their lights, and a click on one opens its Detail; zoom in until
-fewer are in view to see them as named nodes again. A new snapshot or scan relights a
+fewer are in view to see them as named nodes that Tab and Enter reach again. A new snapshot or scan relights a
 graph in place, and lays it out again only when its Artifacts or edges change, keeping
 the graph shown until the new layout is ready. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.

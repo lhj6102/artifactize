@@ -33,7 +33,7 @@ it("reacts through shared context to dispatch, reverse completion and failure wi
   const view = render(ActivityHost, { label: "A", query: "public query" });
   await waitFor(() => expect(pending).toHaveLength(2));
   expect(shown("A first")).toEqual(shown("A second"));
-  expect(shown("A first").commands.browse).toEqual({ started: 2, completed: 0, pending: 2 });
+  expect(shown("A first").commands.browse).toEqual({ started: 2, completed: 0, failed: 0, pending: 2 });
   const before = window.artifactizeCommands;
   expect(before.search).toEqual({ query: "public query", sequence: 2, completed: false });
   expect(Object.getOwnPropertyDescriptor(window, "artifactizeCommands")?.set).toBeUndefined();
@@ -48,7 +48,7 @@ it("reacts through shared context to dispatch, reverse completion and failure wi
   pending[0].resolve(results);
   await waitFor(() => expect(shown("A first").pending).toBe(0));
   expect(shown("A first")).toEqual(shown("A second"));
-  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 2, pending: 0 });
+  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 2, failed: 0, pending: 0 });
   expect(before.commands.browse.pending).toBe(2);
   expect(before.search?.completed).toBe(false);
   expect(pending).toHaveLength(2);
@@ -56,7 +56,7 @@ it("reacts through shared context to dispatch, reverse completion and failure wi
 
   // A helper created by AppState and a component captured from context update the same owner.
   await fireEvent.click(screen.getByRole("button", { name: "A first browse" }));
-  await waitFor(() => expect(shown("A second").commands.browse).toEqual({ started: 3, completed: 3, pending: 0 }));
+  await waitFor(() => expect(shown("A second").commands.browse).toEqual({ started: 3, completed: 3, failed: 0, pending: 0 }));
   expect(window.artifactizeCommands.revision).toBe(6);
   view.unmount();
   expect(Object.hasOwn(window, "artifactizeCommands")).toBe(false);
@@ -98,14 +98,14 @@ it("keeps roots and captured async commands isolated when an older root unmounts
   pending[3].resolve(results);
   pending[2].resolve(results);
   await waitFor(() => expect(shown("B second").pending).toBe(0));
-  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 2, pending: 0 });
+  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 2, failed: 0, pending: 0 });
   expect(window.artifactizeCommands.search).toEqual({ query: "B", sequence: 2, completed: true });
   b.unmount();
   expect(Object.hasOwn(window, "artifactizeCommands")).toBe(false);
 
   const c = render(ActivityHost, { label: "C", query: "C" });
   await waitFor(() => expect(pending).toHaveLength(7));
-  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 0, pending: 2 });
+  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 0, failed: 0, pending: 2 });
   expect(window.artifactizeCommands.search).toEqual({ query: "C", sequence: 2, completed: false });
   pending[5].resolve(results);
   pending[6].resolve(results);

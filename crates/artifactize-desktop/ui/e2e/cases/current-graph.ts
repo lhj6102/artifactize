@@ -4,13 +4,13 @@
 // of a Run start.
 import assert from "node:assert/strict";
 import { changeNotes, create, createEvals, createGraph, createMixed, ended, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
-import { checkpoint } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { command, runtimeProfile, script } from "../native-fixtures.ts";
 import { makeDirectory, nativePath, primaryModifier, readText, removeTree, writeText } from "../platform.ts";
 import { camera, detail, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
-import { branch, chooseChip, mainTitle, scanned } from "../pane.ts";
+import { branch, chooseChip, mainTitle, scanned, scannedAt } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
 import { graphAppearance } from "./graph-appearance.ts";
 
@@ -292,8 +292,8 @@ Summarize {docs}."""
       assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
       /** Scans the app has completed, from its read-only command activity. */
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
-      const before = { scans: await scans(), scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
-      assert.match(before.scanned, /^Scanned at \d/);
+      const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look: await graphAppearance(browser) };
+      assert.ok(before.at, "the header names the scan before the Run");
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row ends with it; signed off, the
       // Run ends and the Current is scanned again by itself.
@@ -302,21 +302,18 @@ Summarize {docs}."""
       assert.equal(await mainTitle(browser), "Current · repo  master", "the Current stays shown");
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request);
-      // The scan the Run's end starts happens after this moment, read from the clock, not waited on.
-      const signed = Math.floor(Date.now() / 1000);
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
-      const observed = Math.ceil(Date.now() / 1000);
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // A scan of its own after the one before the Run, drawn in the reused colours again, its
-      // header naming that scan's time: a second between the sign-off and seeing the scan.
+      // A scan of its own after the one before the Run, drawn in the reused colours again. Its
+      // freshness is the completed-scan generation: once that scan has rendered, the header
+      // names that scan's own instant, not the one before.
       assert.ok((await scans()) > before.scans, "the Run's end completed a new scan");
-      const header = await scanned(browser);
-      const fresh = await browser.execute((from: number, to: number, text: string) => {
-        for (let second = from; second <= to; second += 1) if (text === `Scanned at ${new Date(second * 1000).toLocaleTimeString()}`) return true;
-        return false;
-      }, signed, observed, header);
-      assert.ok(fresh, `the header shows the new scan's time, not only the previous ${before.scanned}: ${header}`);
+      await commandsRendered(browser, before.checkpoint);
+      const instant = await scannedAt(browser);
+      assert.ok(instant && instant !== before.at, `the header names the new scan, not ${before.at}: ${instant}`);
+      const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString(), instant);
+      assert.equal(await scanned(browser), `Scanned at ${local}`, "the header reads that scan's local time");
       const after = await graphAppearance(browser);
       for (const id of ["a:release", "a:ship"]) {
         assert.notEqual(after.nodes[id].dot, before.look.nodes[id].dot, `${id} recoloured`);
