@@ -10,7 +10,6 @@
   "repository": "https://github.com/lhj6102/artifactize",
   "license": "Apache-2.0",
   "keywords": ["artifactize", "review", "verification", "evals", "mcp"],
-  "skills": ["./hey-arti"],
   "mcpServers": {
     "artifactize": {
       "type": "stdio",

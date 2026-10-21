@@ -9,8 +9,8 @@ and it never approves anything in a person's place. (The name comes from
 *Artifactizer*.)
 
 Its instruction guide, called a **skill**, is
-[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/skills/hey-arti/SKILL.md),
-in the repository's `skills/` folder. There is one body, not separate instructions per
+[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md),
+in the plugin's `agent-plugin/skills/` folder. There is one body, not separate instructions per
 host. It is short on purpose: these docs are its **source of truth**. It maps each
 concept to the page that owns it and has Arti read a page before explaining or
 writing what it is unsure of; when a page and the skill disagree, the page wins.
@@ -34,26 +34,12 @@ edited copy.
 
 ## What Arti does with you
 
-Arti first works out which situation you are in, and each has its own process:
-
-- **A question about artifactize or one of its concepts**: it answers from the page
-  that owns the concept, with an example from your project, and offers a next step.
-- **Whether artifactize fits, and where to start**: it asks what goes wrong today,
-  names the few places it would help most (and where it would not), and suggests
-  one small first Artifact.
-- **Shaping a new project**: the steps below.
-- **Adopting it gradually in a large repository**: it declares the area that hurts
-  most first and leaves the rest undeclared rather than under one broad review.
-- **Auditing an existing setup**: it checks the current Artifacts and evals against
-  the practices below, reports each finding with its fix, and changes only what you
-  agree to.
-- **The project grew or changed**: it decides with you whether a new component is
-  its own Artifact, splits one that grew, and compares `status` before and after.
-- **"Why did this run again?" or "verify is slow"**: it reads `status` and proposes
-  a boundary fix (too wide, or a missing consumer reference), not an execution option.
-- **A result to explain or fix**, **a reviewer that needs the running application**
-  (a tool session), **team sharing and CI**, and **the Human boundary**: covered in
-  the sections below.
+Ask in your own words: about a concept, whether artifactize fits your project and
+where to start, shaping or auditing your Artifacts and evals, why something ran
+again, or a result to explain. Arti answers from the page that owns the concept,
+with an example from your project, and changes only what you agree to. The
+[practices](#the-practices-it-recommends), [MCP](#use-mcp-first),
+[Run](#follow-a-durable-run) and [team](#team-and-ci) sections below say how.
 
 When shaping a new project, it:
 

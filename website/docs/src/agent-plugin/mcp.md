@@ -3,9 +3,19 @@
 `artifactize mcp` serves the verification and non-interactive inspection tools in
 the **same binary** as the CLI. Register it in the coding host, starting from the
 project directory; see [registration below](#register-the-mcp-server).
-`--repo PATH` selects a different project and `--state-dir PATH` selects its state.
-The server resolves these once at startup. Run/request/session reads stay bound
-to that repository; cache records are reusable across repositories in the state.
+`--state-dir PATH` selects the state. Run/request/session reads stay bound to the
+call's project; cache records are reusable across repositories in the state.
+
+## Which project
+
+Each tool call serves one project, the first of:
+
+1. the call's `project` argument, an absolute folder, which every tool accepts;
+2. `--repo PATH`, given when the server starts;
+3. the host's first local [MCP root](https://modelcontextprotocol.io/specification/2025-06-18/client/roots),
+   asked on the first call and again after the host's roots change;
+4. the directory the server started in, unless that is the folder of the plugin that
+   started it: there the call answers that it needs `project`.
 
 It works with current MCP hosts and with older ones. The host talks to it only
 through the program's input and output: stdout carries protocol messages, and
@@ -22,9 +32,9 @@ standard input and output, rather than connecting to a network port.
 
 Complete the [installation setup](../getting-started/install.md), then launch
 the coding host from **your project directory**.
-The stdio server uses the same binary and shared state as the CLI. It binds to one
-repository/state when started; it is not the HTTP review store (`artifactize
-server`), and requires no port, token argument or changed host timeout.
+The stdio server uses the same binary and shared state as the CLI. It is not the
+HTTP review store (`artifactize server`), and requires no port, token argument or
+changed host timeout.
 
 In Claude Code and Codex, the [plugin](plugin.md) registers this server together
 with the Hey Arti skill; the commands below are the manual registration. They

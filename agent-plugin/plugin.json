@@ -1,0 +1,30 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "artifactize",
+  "description": "Hey Arti, artifactize's Forward Deployed Engineer, as a skill, and the artifactize MCP server for inspecting and verifying the project. Needs the artifactize program on PATH.",
+  "author": {
+    "name": "Hyukjin LIM",
+    "url": "https://github.com/lhj6102"
+  },
+  "homepage": "https://artifactize.dev/docs/agent-plugin/plugin.html",
+  "repository": "https://github.com/lhj6102/artifactize",
+  "license": "Apache-2.0",
+  "keywords": ["artifactize", "review", "verification", "evals", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "artifactize",
+        "shortDescription": "Shape and verify your project's reviews",
+        "longDescription": "Hey Arti helps you shape your project into Artifacts and evals, and the artifactize MCP server lets Codex inspect the project and start and follow verification Runs. Install the artifactize program first.",
+        "developerName": "Hyukjin LIM",
+        "category": "Developer Tools",
+        "capabilities": ["Interactive", "Read", "Write"],
+        "websiteURL": "https://artifactize.dev",
+        "defaultPrompt": [
+          "Hey Arti, is artifactize a fit for this repository, and where would I start?",
+          "Verify this project with artifactize and explain the result."
+        ]
+      }
+    }
+  }
+}

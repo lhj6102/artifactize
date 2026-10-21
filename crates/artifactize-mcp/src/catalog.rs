@@ -179,6 +179,7 @@ fn tool(
     } else {
         description.to_owned()
     };
+    properties["project"] = json!({"type":"string","description":"The absolute project folder; needed only when the host names no project."});
     let schema = json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
     Tool::new(
         name,

@@ -9,7 +9,9 @@ plugin gives Claude Code and Codex two things together:
   project and start and follow verification Runs.
 
 This repository is the plugin's marketplace: a catalog the host reads to find and
-install the plugin. The plugin installs no program, runs no hooks and holds no
+install the plugin. The plugin is one [Agent Plugins](https://agent-plugins.org)
+package, the `agent-plugin/` folder, which every host installs; Claude Code adds only
+its own manifest. The plugin installs no program, runs no hooks and holds no
 credentials.
 
 ## Before you start
@@ -48,9 +50,10 @@ for the `artifactize` server. Ask in your own words, or invoke the skill as
 `/artifactize:hey-arti`. The server runs as `artifactize --repo <project> mcp`,
 where `<project>` is the directory the session started in.
 
-**Codex:** start a new Codex session in your project directory; the server runs as
-`artifactize mcp` in that directory. Ask in your own words, or mention the skill as
-`$artifactize:hey-arti`.
+**Codex:** start a new Codex session in your project directory. The server runs as
+`artifactize mcp` in the plugin's folder, and Hey Arti names your project with each
+call ([how the server finds the project](mcp.md#which-project)). Ask in your own
+words, or mention the skill as `$artifactize:hey-arti`.
 
 ## Updates
 
@@ -65,6 +68,6 @@ auto-update for the marketplace in `/plugin`), or
 
 Other hosts, or a setup you manage yourself, can register the server by hand
 ([MCP setup](mcp.md#register-the-mcp-server)) and give the assistant
-[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/skills/hey-arti/SKILL.md)
+[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)
 as described in [Hey Arti](hey-arti.md). Do not install both the plugin and a manual
 registration of the same server in one host.
