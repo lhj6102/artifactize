@@ -11,7 +11,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::os::{shell, symlink_file, true_program};
+use support::os::{steps, symlink_file, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -95,17 +95,19 @@ impl Fixture {
     }
 }
 
-fn eval(id: &str, script: &str) -> Value {
+/// A runtime eval that runs the steps program with `run`.
+fn eval(id: &str, run: &[&str]) -> Value {
     json!({
         "id":id,
         "title":"Check",
-        "profile":{"kind":"runtime","command":shell(),"args":["-c",script]},
+        "profile":{"kind":"runtime","command":steps(),"args":run},
         "payload":{"instruction":"Check input."},
     })
 }
 
-fn fingerprint(script: &str) -> Value {
-    json!({"script":{"command":shell(),"args":["-c",script]}})
+/// A fingerprint script that runs the steps program with `run`.
+fn fingerprint(run: &[&str]) -> Value {
+    json!({"script":{"command":steps(),"args":run}})
 }
 
 #[test]
@@ -117,8 +119,8 @@ fn exact_output_is_validated_before_any_review_can_start() {
             "index.artf",
             json!({
                 "name":"test",
-                "fingerprint":fingerprint("cat key"),
-                "evals":[eval("check", "touch executed")],
+                "fingerprint":fingerprint(&["cat", "key"]),
+                "evals":[eval("check", &["touch", "executed"])],
             }),
         );
         let error = fixture.verify(&["--all"], 2);
@@ -164,7 +166,14 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     let (lingering, lingering_args) = support::os::lingering_command();
     for (declared, message) in [
         (
-            fingerprint("printf valid; printf private-diagnostic >&2; exit 7"),
+            fingerprint(&[
+                "print",
+                "valid",
+                "eprint",
+                "private-diagnostic",
+                "exit",
+                "7",
+            ]),
             "exited with",
         ),
         (
@@ -194,7 +203,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     {
         fixture.write(
             "index.artf",
-            json!({"name":"test","fingerprint":declared,"evals":[eval("check", "touch executed")]}),
+            json!({"name":"test","fingerprint":declared,"evals":[eval("check", &["touch", "executed"])]}),
         );
         let run = fixture.verify(&["--all"], 2);
         let error = run["error"].as_str().unwrap();
@@ -239,7 +248,7 @@ print('protocol:v1')
         json!({
             "name":"test",
             "fingerprint":{"script":{"command":command,"args":args,"files":["key"]}},
-            "evals":[eval("one", "exit 0"),eval("two", "exit 3")],
+            "evals":[eval("one", &["exit", "0"]),eval("two", &["exit", "3"])],
         }),
     );
     fs::write(fixture.repo.join("owner/key"), "material").unwrap();
@@ -282,13 +291,16 @@ print('protocol:v1')
 fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
     let fixture = Fixture::new();
     for (review, code) in [
-        ("printf after > key; exit 0", "INPUT_CHANGED"),
-        ("printf after > key; exit 1", "INPUT_CHANGED"),
-        ("printf 'bad value' > key", "FINGERPRINT_RECHECK_FAILED"),
-        ("rm key", "FINGERPRINT_RECHECK_FAILED"),
+        (&["write", "key", "after", "exit", "0"][..], "INPUT_CHANGED"),
+        (&["write", "key", "after", "exit", "1"][..], "INPUT_CHANGED"),
+        (
+            &["write", "key", "bad value"][..],
+            "FINGERPRINT_RECHECK_FAILED",
+        ),
+        (&["remove", "key"][..], "FINGERPRINT_RECHECK_FAILED"),
     ] {
         fs::write(fixture.repo.join("key"), "before").unwrap();
-        let mut declared = fingerprint("cat key");
+        let mut declared = fingerprint(&["cat", "key"]);
         declared["script"]["files"] = json!(["key"]);
         fixture.write(
             "index.artf",
@@ -309,7 +321,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
     }
     fixture.write(
         "index.artf",
-        json!({"name":"test","fingerprint":false,"evals":[eval("check", "printf after > key")]}),
+        json!({"name":"test","fingerprint":false,"evals":[eval("check", &["write", "key", "after"])]}),
     );
     let run = fixture.verify(&["--all"], 0);
     assert!(run["requests"][0]["fingerprint"].is_null());
@@ -319,7 +331,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
 #[test]
 fn preparation_covers_only_required_artifacts_but_includes_unselected_dependencies() {
     let fixture = Fixture::new();
-    let mut selected = eval("check", "exit 0");
+    let mut selected = eval("check", &["exit", "0"]);
     selected["payload"]["instruction"] = json!("Check {dependency}.");
     fixture.write(
         "a/index.artf",
@@ -327,14 +339,14 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
     );
     fixture.write(
         "b/index.artf",
-        json!({"name":"dependency","basis":true,"fingerprint":fingerprint("printf dependency:v1")}),
+        json!({"name":"dependency","basis":true,"fingerprint":fingerprint(&["print", "dependency:v1"])}),
     );
     fixture.write(
         "c/index.artf",
         json!({
             "name":"unrelated",
-            "fingerprint":fingerprint("exit 9"),
-            "evals":[eval("check", "touch executed")],
+            "fingerprint":fingerprint(&["exit", "9"]),
+            "evals":[eval("check", &["touch", "executed"])],
         }),
     );
     let run = fixture.verify(&["--eval", "selected/check"], 0);
@@ -348,7 +360,7 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
     );
     fixture.write(
         "b/index.artf",
-        json!({"name":"dependency","basis":true,"fingerprint":fingerprint("exit 9")}),
+        json!({"name":"dependency","basis":true,"fingerprint":fingerprint(&["exit", "9"])}),
     );
     let error = fixture.verify(&["--eval", "selected/check"], 2);
     assert!(
@@ -365,20 +377,35 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let fixture = Fixture::new();
         let marker = fixture.root.path().join("started 'marker");
         // Fixture language stays static; even quoted or spaced paths are literal argv.
-        let source = format!(
-            "if {}; then printf '%s\\n%s\\n' \"$$\" \"$ARTIFACTIZE_OUTPUT_DIR\" > \"$1\"; {} & wait; fi; printf stable",
-            if recheck { "test -e executed" } else { "true" },
-            support::os::LINGERING
-        );
+        let marker_text = support::os::path_text(&marker);
+        let held = support::os::path_text(&fixture.root.path().join("held"));
+        // Preparation prints stable at once when it only rechecks; otherwise, and on the
+        // recheck after the eval ran, it saves its identity and stays up with a child.
+        let mut source = if recheck {
+            vec!["needs", "executed", "stable"]
+        } else {
+            vec![]
+        };
+        source.extend([
+            "pid",
+            &marker_text,
+            "env",
+            &marker_text,
+            "ARTIFACTIZE_OUTPUT_DIR",
+            "hold",
+            &held,
+            "print",
+            "stable",
+        ]);
         fixture.write(
             "index.artf",
             json!({
                 "name":"test",
                 "fingerprint":{"script":{
-                    "command":shell(),
-                    "args":["-c",source,"fingerprint",support::os::path_text(&marker)],
+                    "command":steps(),
+                    "args":source,
                 }},
-                "evals":[eval("check", "touch executed")],
+                "evals":[eval("check", &["touch", "executed"])],
             }),
         );
         let child = fixture
@@ -540,18 +567,26 @@ impl Drop for FingerprintCaller {
 fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
     let markers = fixture.root.path().join("markers");
     fs::create_dir(&markers).unwrap();
-    // Each script marks itself running, counts the running markers, and stays up for a moment.
-    let script = r#"touch "$2/running.$1"; ls "$2" | grep -c '^running\.' >> "$2/counts.$1"; while [ ! -e "$2/release" ]; do sleep 0.01; done; rm "$2/running.$1"; echo "$1-v1""#;
+    // Each script marks itself running, counts the running markers, and stays up until released.
+    let directory = support::os::path_text(&markers);
     for index in 0..8 {
         let name = format!("part{index}");
+        let running = format!("{directory}/running.{name}");
+        let counts = format!("{directory}/counts.{name}");
+        let release = format!("{directory}/release");
+        let output = format!("{name}-v1\n");
+        let script = [
+            "touch", &running, "count", &directory, "running.", &counts, "wait", &release,
+            "remove", &running, "print", &output,
+        ];
         fixture.write(
             &format!("{name}/index.artf"),
             json!({
                 "name":name,
                 "fingerprint":{
-                    "script":{"command":shell(),"args":["-c",script,"fingerprint",name,support::os::path_text(&markers)]},
+                    "script":{"command":steps(),"args":script},
                 },
-                "evals":[eval("check", "exit 0")],
+                "evals":[eval("check", &["exit", "0"])],
             }),
         );
     }
@@ -679,30 +714,39 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         // Fails last, but comes first.
         (
             "alpha",
-            "while [ ! -e ../gamma/finished ]; do sleep 0.01; done; echo first failure >&2; exit 3",
+            &[
+                "wait",
+                "../gamma/finished",
+                "eprint",
+                "first failure\n",
+                "exit",
+                "3",
+            ][..],
         ),
         // Would run long; it comes after alpha's failure, so it is cancelled.
         (
             "beta",
-            "echo $$ > pid; touch ready; while [ ! -e release ]; do sleep 0.01; done; echo beta",
+            &[
+                "pid", "pid", "touch", "ready", "wait", "release", "print", "beta\n",
+            ][..],
         ),
         (
             "gamma",
-            "while [ ! -e ../beta/ready ]; do sleep 0.01; done; touch finished; exit 4",
+            &["wait", "../beta/ready", "touch", "finished", "exit", "4"][..],
         ),
     ] {
+        let start = support::os::path_text(&started.join(name));
+        let mut run = vec!["touch", &start];
+        run.extend(script);
         fixture.write(
             &format!("{name}/index.artf"),
             json!({
                 "name":name,
                 "fingerprint":{"script":{
-                    "command":shell(),
-                    "args":[
-                        "-c",format!("touch \"$1\"; {script}"),"fingerprint",
-                        support::os::path_text(&started.join(name)),
-                    ],
+                    "command":steps(),
+                    "args":run,
                 }},
-                "evals":[eval("check", "touch executed")],
+                "evals":[eval("check", &["touch", "executed"])],
             }),
         );
     }

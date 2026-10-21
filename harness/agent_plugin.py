@@ -6,17 +6,20 @@ configuration and compare what the host loaded with the plugin folder.
 
 The host is the installed `claude` or `codex` program found on PATH. Only the
 host's own commands and answers are observed: its validator, install, plugin and
-MCP listings, and Codex's skill inventory. No MCP server is started.
+MCP listings, and Codex's skill inventory. No MCP server is started. It runs on
+Linux and macOS, where each host command's processes are owned through its process group.
 """
 import json
 import os
 from pathlib import Path
 import queue
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 sys.dont_write_bytecode = True
 
@@ -34,19 +37,49 @@ LAUNCH = {
 COMMAND_SECONDS = 120
 # Bound for one Codex app-server answer, for the same reason.
 ANSWER_SECONDS = 60
+# Bound for a killed host command's processes to exit; it stops a hang, it orders nothing.
+EXIT_SECONDS = 30
 # A parent Claude Code session exports these; a host started under them acts as its child.
 SESSION_VARIABLES = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID")
 
 
-def run(argv, env, cwd):
+def started(argv, env, cwd, **pipes):
+    """Start a host command as the leader of its own process group, so that `ended` can end
+    every process it starts."""
     program = shutil.which(argv[0], path=env.get("PATH"))
     if program is None:
         sys.exit(f"{argv[0]} is not on PATH; install the host to check its plugin")
-    result = subprocess.run([program, *argv[1:]], cwd=cwd, env=env, capture_output=True, text=True,
-                            timeout=COMMAND_SECONDS)
-    if result.returncode != 0:
-        sys.exit(f"{' '.join(argv)} exited {result.returncode}:\n{result.stdout}{result.stderr}")
-    return result.stdout
+    return subprocess.Popen([program, *argv[1:]], cwd=cwd, env=env, text=True, start_new_session=True, **pipes)
+
+
+def ended(process):
+    """End every process still in the host command's group, reap its leader, and return only
+    once no member of the group is left, so none outlives the scratch configuration."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+    deadline = time.monotonic() + EXIT_SECONDS
+    while True:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        if time.monotonic() > deadline:
+            sys.exit(f"host command {process.pid}'s processes did not exit after being killed")
+        time.sleep(0.01)
+
+
+def run(argv, env, cwd):
+    process = started(argv, env, cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        stdout, stderr = process.communicate(timeout=COMMAND_SECONDS)
+    finally:
+        ended(process)
+    if process.returncode != 0:
+        sys.exit(f"{' '.join(argv)} exited {process.returncode}:\n{stdout}{stderr}")
+    return stdout
 
 
 def listed_plugin(host, catalog, root, plugin):
@@ -86,9 +119,8 @@ def codex(market, project, env, plugin_id):
 
 def codex_skills(project, env):
     """Codex's skill inventory for the project, from its app-server; it starts no MCP server."""
-    program = shutil.which("codex", path=env.get("PATH"))
-    process = subprocess.Popen([program, "app-server", "--stdio"], cwd=project, env=env, stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    process = started(["codex", "app-server", "--stdio"], env, project, stdin=subprocess.PIPE,
+                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     lines = queue.Queue()
 
     def read():
@@ -119,14 +151,14 @@ def codex_skills(project, env):
         return ask(2, "skills/list", {"cwds": [str(project)]})["data"]
     finally:
         try:
+            # The app-server leaves when its input closes; whatever it started is ended with it.
             process.stdin.close()
-        finally:
-            process.terminate()
             try:
                 process.wait(timeout=ANSWER_SECONDS)
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+                pass
+        finally:
+            ended(process)
             reader.join()
 
 
@@ -166,4 +198,8 @@ def main(host, plugin, catalog_path):
 if __name__ == "__main__":
     if len(sys.argv) != 4 or sys.argv[1] not in CATALOGS:
         sys.exit(__doc__)
+    # A host command's descendants are owned through its process group, which Windows lacks:
+    # there they could outlive the check and keep its scratch configuration in use.
+    if os.name != "posix":
+        sys.exit("The agent plugin check runs on Linux and macOS only.")
     main(sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]))

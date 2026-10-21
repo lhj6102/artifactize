@@ -4,7 +4,10 @@ This walkthrough reuses [examples/runtime-relations](https://github.com/lhj6102/
 Alice and Bob each have a checkout and their own state directory. CI has a third
 checkout. One `artifactize server` holds the shared verdicts. You can run every
 step on one computer. Each "machine" is just a `--state-dir`, and `USER` sets
-the producer name.
+the producer name. The commands are for a POSIX shell (Linux, macOS or WSL) opened
+at the root of an artifactize checkout
+([`git clone https://github.com/lhj6102/artifactize`](https://github.com/lhj6102/artifactize)),
+which holds `examples/`.
 
 ```sh
 export WALK=$(mktemp -d)            # outside any Git checkout

@@ -385,8 +385,8 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     // docs/report names app, so it waits for app's GREEN result.
     let marker = fixture._root.path().join("executed");
     let fingerprint = json!({"script":{"command":support::os::cat_program(),"args":["version"]}});
-    let check = json!({"kind":"runtime","command":support::os::shell(),
-        "args":["-c","echo run >> \"$1\"","fixture",support::os::path_text(&marker)]});
+    let check = json!({"kind":"runtime","command":support::os::steps(),
+        "args":["append",support::os::path_text(&marker),"run"]});
     let report = json!({"kind":"runtime","command":support::os::true_program(),"args":[]});
     support::declaration::write(
         fixture.repo.join("index.artf"),
@@ -444,10 +444,9 @@ fn wait_for(mut child: RunChild) -> Output {
 fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() {
     let fixture = Fixture::new();
     let marker = fixture._root.path().join("started");
-    let script = format!("{} & echo $! > \"$1\"; wait", support::os::LINGERING);
     fixture.runtime(
-        &support::os::shell(),
-        &["-c", &script, "fixture", &support::os::path_text(&marker)],
+        &support::os::steps(),
+        &["hold", &support::os::path_text(&marker)],
     );
     let child = support::os::start(
         fixture
@@ -988,13 +987,8 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
     let fixture = Fixture::new();
     let release = fixture._root.path().join("release");
     fixture.runtime(
-        &support::os::shell(),
-        &[
-            "-c",
-            "while [ ! -e \"$1\" ]; do sleep 0.05; done",
-            "fixture",
-            &support::os::path_text(&release),
-        ],
+        &support::os::steps(),
+        &["wait", &support::os::path_text(&release)],
     );
     for json in [true, false] {
         let mut command = fixture.command();
