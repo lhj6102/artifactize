@@ -1,160 +1,84 @@
-//! A saved Run record read in two parts. Its definitions are fixed for the Run's life and can
-//! be by far the largest part of it (hundreds of megabytes for a catalog of Artifacts), while
-//! the rest changes as the Run goes on: every execution it starts saves the record again. A
-//! reader keeps what it learned about definitions it has seen, by their digest, and decodes only
-//! the rest of a record whose definitions it has seen before.
-use std::collections::{BTreeMap, BTreeSet};
+//! A saved Run is two rows. `runs.data` holds its changing state, and `run_definitions` holds
+//! its definitions, which are fixed for the Run's life and can be hundreds of megabytes for a
+//! catalog of Artifacts. The definitions are written once, with the Run; saving the Run again
+//! writes only its state, and only a reader that opens the Run decodes its definitions.
+use super::{Run, Unreadable, definitions::Definitions, receipts::Error, unreadable::decode};
+use crate::types::RunId;
+use rusqlite::{OptionalExtension, params};
 
-use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};
-use serde_json::value::RawValue;
-
-use super::{Run, Unreadable, definitions::Definitions, unreadable::decode};
-use crate::types::Sha256Bytes;
-
-/// The member of a Run record that holds its definitions.
-const DEFINITIONS: &str = "definitions";
-/// The most room reserved at once for a record's text without its definitions: 1 MiB holds
-/// any Run's own facts, which are a few kilobytes, while the whole record can run to hundreds
-/// of megabytes.
-const REST_CAPACITY: usize = 1 << 20;
-
-/// What a reader learned about the definitions of the Runs it read.
-#[derive(Default)]
-pub(crate) struct Seen {
-    /// Whether the definitions with each digest decode: `None` when they do, else the reason.
-    verdicts: BTreeMap<Sha256Bytes, Option<String>>,
-    /// The definitions [`Seen::read`] decoded last, for the Run the reader shows.
-    kept: Option<(Sha256Bytes, Definitions)>,
+/// The Run's state as `runs.data` keeps it: the whole Run but its definitions.
+pub(super) fn state_text(run: &Run) -> Result<String, serde_json::Error> {
+    let mut state = run.clone();
+    state.definitions = Definitions::default();
+    serde_json::to_string(&state)
 }
 
-/// One saved record's members in order, each still as its JSON text.
-struct Members<'a>(Vec<(String, &'a RawValue)>);
-
-impl<'de> Deserialize<'de> for Members<'de> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Object;
-        impl<'de> Visitor<'de> for Object {
-            type Value = Members<'de>;
-            fn expecting(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                out.write_str("a Run record")
-            }
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                let mut members = Vec::new();
-                while let Some(member) = map.next_entry::<String, &'de RawValue>()? {
-                    members.push(member);
-                }
-                Ok(Members(members))
-            }
-        }
-        deserializer.deserialize_map(Object)
+/// Save a new Run: its state row and, when it has them, its definitions.
+pub(super) fn insert(db: &rusqlite::Connection, run: &Run) -> Result<(), Error> {
+    db.execute(
+        "INSERT INTO runs(id,repo,status,data,request_key) VALUES (?,?,?,?,?)",
+        params![
+            run.id,
+            crate::platform::path_text(&run.repo_path),
+            run.status(),
+            state_text(run)?,
+            run.request_key
+        ],
+    )?;
+    if run.definitions.graph().is_some() {
+        db.execute(
+            "INSERT INTO run_definitions(run_id,data) VALUES (?,?)",
+            params![run.id, serde_json::to_string(&run.definitions)?],
+        )?;
     }
+    Ok(())
 }
 
-/// A record's definitions as saved: their JSON text and its digest.
-type Saved<'a> = Option<(&'a str, Sha256Bytes)>;
-
-/// The record's text without its definitions, and the definitions' text with its digest. A
-/// record that names its definitions more than once keeps them all in the rest, which then
-/// fails to decode just as the whole record would.
-fn split(data: &str) -> Result<(String, Saved<'_>), serde_json::Error> {
-    let Members(members) = serde_json::from_str(data)?;
-    let single = members.iter().filter(|(key, _)| key == DEFINITIONS).count() == 1;
-    let mut rest = String::with_capacity(data.len().min(REST_CAPACITY));
-    let mut definitions = None;
-    rest.push('{');
-    for (key, value) in members {
-        if single && key == DEFINITIONS {
-            let text = value.get();
-            definitions = Some((text, Sha256Bytes::of(text.as_bytes())));
-            continue;
-        }
-        if rest.len() > 1 {
-            rest.push(',');
-        }
-        rest.push_str(&serde_json::to_string(&key)?);
-        rest.push(':');
-        rest.push_str(value.get());
-    }
-    rest.push('}');
-    Ok((rest, definitions))
+/// Save the Run's changed state. Its definitions were written with the Run and stay.
+pub(super) fn update(db: &rusqlite::Connection, run: &Run) -> Result<(), Error> {
+    db.execute(
+        "UPDATE runs SET status=?,data=? WHERE id=?",
+        params![run.status(), state_text(run)?, run.id],
+    )?;
+    Ok(())
 }
 
-impl Seen {
-    /// The Run `id` saved as `data` without its definitions, which are neither decoded nor
-    /// checked, and their digest: for readers of a Run's own facts (its status, repository and
-    /// times), such as the catalog of repositories.
-    pub(crate) fn facts(
-        &self,
-        id: &str,
-        data: &str,
-    ) -> Result<(Run, Option<Sha256Bytes>), Unreadable> {
-        let (run, definitions) = rest(id, data)?;
-        Ok((run, definitions.map(|(_, digest)| digest)))
+/// Decode a Run from its saved state and definitions, or none when it was saved without any.
+pub(super) fn whole(id: &str, state: &str, definitions: Option<&str>) -> Result<Run, Unreadable> {
+    let mut run: Run = decode("run", id, state)?;
+    if let Some(definitions) = definitions {
+        run.definitions = decode("run", id, definitions)?;
     }
-
-    /// Whether the Run `id` saved as `data` reads whole. Definitions seen before are not
-    /// decoded again.
-    pub(crate) fn check(&mut self, id: &str, data: &str) -> Result<(), Unreadable> {
-        let (_, definitions) = rest(id, data)?;
-        let Some((text, digest)) = definitions else {
-            return Ok(());
-        };
-        let verdict = match self.verdicts.get(&digest) {
-            Some(verdict) => verdict.clone(),
-            None => {
-                let verdict = decode::<Definitions>("run", id, text)
-                    .err()
-                    .map(|unreadable| unreadable.reason);
-                self.verdicts.insert(digest, verdict.clone());
-                verdict
-            }
-        };
-        verdict.map_or(Ok(()), |reason| Err(unreadable(id, reason)))
-    }
-
-    /// The whole Run `id` saved as `data`. Its definitions are the ones decoded last when they
-    /// have the same digest, shared rather than decoded again; otherwise they are decoded and
-    /// kept for the next read.
-    pub(crate) fn read(&mut self, id: &str, data: &str) -> Result<Run, Unreadable> {
-        let (mut run, definitions) = rest(id, data)?;
-        if let Some((text, digest)) = definitions {
-            run.definitions = match &self.kept {
-                Some((kept, definitions)) if *kept == digest => definitions.clone(),
-                _ => match decode::<Definitions>("run", id, text) {
-                    Ok(definitions) => {
-                        self.verdicts.insert(digest, None);
-                        self.kept = Some((digest, definitions.clone()));
-                        definitions
-                    }
-                    Err(unreadable) => {
-                        self.verdicts
-                            .insert(digest, Some(unreadable.reason.clone()));
-                        return Err(unreadable);
-                    }
-                },
-            };
-        }
-        Ok(run)
-    }
-
-    /// Forget the verdicts of definitions no saved Run holds any more.
-    pub(crate) fn retain(&mut self, held: &BTreeSet<Sha256Bytes>) {
-        self.verdicts.retain(|digest, _| held.contains(digest));
-    }
+    Ok(run)
 }
 
-/// The record without its definitions, decoded, and its definitions' text and digest.
-fn rest<'a>(id: &str, data: &'a str) -> Result<(Run, Saved<'a>), Unreadable> {
-    let (rest, definitions) = split(data).map_err(|error| unreadable(id, error.to_string()))?;
-    Ok((decode::<Run>("run", id, &rest)?, definitions))
+/// The Run's definitions, or none when it was saved without any.
+pub(super) fn definitions(
+    db: &rusqlite::Connection,
+    id: &RunId,
+) -> Result<Result<Definitions, Unreadable>, Error> {
+    let data: Option<String> = db
+        .query_row(
+            "SELECT data FROM run_definitions WHERE run_id=?",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(data.map_or_else(
+        || Ok(Definitions::default()),
+        |data| decode("run", id, &data),
+    ))
 }
 
-fn unreadable(id: &str, reason: String) -> Unreadable {
-    Unreadable {
-        kind: "run".into(),
-        id: id.to_owned(),
-        reason,
-    }
+/// The whole Run: its state and its definitions.
+pub(super) fn load(db: &rusqlite::Connection, id: &RunId) -> Result<Run, Error> {
+    let (state, definitions): (String, Option<String>) = db.query_row(
+        "SELECT r.data,d.data FROM runs r LEFT JOIN run_definitions d ON d.run_id=r.id WHERE r.id=?",
+        [id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    whole(id, &state, definitions.as_deref())
+        .map_err(|unreadable| Error::Invalid(unreadable.to_string()))
 }
 
 #[cfg(test)]

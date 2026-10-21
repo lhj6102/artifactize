@@ -6,19 +6,34 @@ use crate::{
 };
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
-pub(super) fn load(db: &rusqlite::Connection, id: &RunId) -> Result<Run, Error> {
-    let data: String = db.query_row("SELECT data FROM runs WHERE id=?", [id], |row| row.get(0))?;
-    Ok(serde_json::from_str(&data)?)
+use super::run_record::load;
+
+/// The saved Run's status and control, which a save merges with.
+fn saved_control(
+    db: &rusqlite::Connection,
+    id: &RunId,
+) -> Result<(RunStatus, Option<Control>), Error> {
+    let (status, control): (RunStatus, Option<String>) = db.query_row(
+        "SELECT status,json_extract(data,'$.control') FROM runs WHERE id=?",
+        [id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    Ok((
+        status,
+        control
+            .map(|text| serde_json::from_str(&text))
+            .transpose()?,
+    ))
 }
 
 /// Never replace concurrent admission/cancellation with an older scheduler clone.
 pub(super) fn save(db: &rusqlite::Connection, mut run: Run) -> Result<(), Error> {
-    let current = load(db, &run.id)?;
-    if current.status() != RunStatus::Running && current.control.is_some() {
+    let (status, saved) = saved_control(db, &run.id)?;
+    if status != RunStatus::Running && saved.is_some() {
         return Ok(());
     }
     let running = run.status() == RunStatus::Running;
-    if let (Some(control), Some(saved)) = (&mut run.control, current.control) {
+    if let (Some(control), Some(saved)) = (&mut run.control, saved) {
         control.worker = saved.worker;
         control.cancellation_requested |= saved.cancellation_requested;
         if control.cancellation_requested
@@ -38,11 +53,7 @@ pub(super) fn save(db: &rusqlite::Connection, mut run: Run) -> Result<(), Error>
             control.activity = Activity::Cancelling;
         }
     }
-    db.execute(
-        "UPDATE runs SET status=?,data=? WHERE id=?",
-        params![run.status(), serde_json::to_string(&run)?, run.id],
-    )?;
-    Ok(())
+    super::run_record::update(db, &run)
 }
 
 impl Receipts {
@@ -77,7 +88,7 @@ impl Receipts {
                 && let Some(id) = transaction.query_row("SELECT id FROM runs WHERE repo=? AND request_key=?", params![repo,key], |row| row.get(0)).optional()? {
                 return Ok(id);
             }
-            transaction.execute("INSERT INTO runs(id,repo,status,data,request_key) VALUES (?,?,?,?,?)", params![run.id,repo,run.status(),serde_json::to_string(&run)?,run.request_key])?;
+            super::run_record::insert(&transaction, &run)?;
             for (ordinal, request) in requests.iter().enumerate() {
                 transaction.execute("INSERT INTO requests(id,run_id,eval_id,ordinal,status,data) VALUES (?,?,?,?,?,?)", params![request.id,run.id,request.eval_id,ordinal as i64,request.status(),serde_json::to_string(request)?])?;
             }
@@ -97,10 +108,7 @@ impl Receipts {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let mut run = load(&transaction, &id)?;
                 change(&mut run).map_err(Error::Invalid)?;
-                transaction.execute(
-                    "UPDATE runs SET status=?,data=? WHERE id=?",
-                    params![run.status(), serde_json::to_string(&run)?, id],
-                )?;
+                super::run_record::update(&transaction, &run)?;
                 transaction.commit()?;
                 Ok(run)
             })
@@ -176,8 +184,8 @@ impl Receipts {
         let id = id.clone();
         self.connection.call(move |db| -> Result<(), Error> {
             let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let run = load(&transaction, &id)?;
-            if let Some(Control { worker: Worker::Admitted { owner }, .. }) = run.control {
+            let (_, control) = saved_control(&transaction, &id)?;
+            if let Some(Control { worker: Worker::Admitted { owner }, .. }) = control {
                 let executions = {
                     let mut statement = transaction.prepare("SELECT id FROM executions WHERE owner_pid=?1 AND owner_start_time=?2 AND status IN ('RUNNING','WAITING_HUMAN')")?;
                     statement.query_map(params![owner.pid, owner.start_time as i64], |row| row.get(0))?.collect::<Result<Vec<crate::types::ExecutionId>, _>>()?

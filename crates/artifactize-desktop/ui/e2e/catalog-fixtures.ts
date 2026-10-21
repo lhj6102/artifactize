@@ -11,10 +11,10 @@ export function createEmptyAudit(): { fixture: Fixture; restore: () => void } {
   cancelRuns(fixture);
   const database = nativePath(fixture.state, "state.sqlite");
   updateDatabase(database, (db) => {
-    db.exec("CREATE TABLE fixture_requests AS SELECT * FROM requests; CREATE TABLE fixture_runs AS SELECT * FROM runs; DELETE FROM requests; UPDATE runs SET data=json_set(data,'$.definitions',json('{}'));");
+    db.exec("CREATE TABLE fixture_requests AS SELECT * FROM requests; CREATE TABLE fixture_definitions AS SELECT * FROM run_definitions; DELETE FROM requests; DELETE FROM run_definitions;");
   });
   return { fixture, restore: () => updateDatabase(database, (db) => {
-    db.exec("INSERT INTO requests SELECT * FROM fixture_requests; UPDATE runs SET data=(SELECT data FROM fixture_runs WHERE fixture_runs.id=runs.id); DROP TABLE fixture_requests; DROP TABLE fixture_runs;");
+    db.exec("INSERT INTO requests SELECT * FROM fixture_requests; INSERT INTO run_definitions SELECT * FROM fixture_definitions; DROP TABLE fixture_requests; DROP TABLE fixture_definitions;");
   }) };
 }
 

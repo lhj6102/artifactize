@@ -32,6 +32,19 @@ numbered!(
     ShapeKey
 );
 
+numbered!(
+    /// A scan of a branch's Current, numbered by the backend as it starts one: a later scan
+    /// has a higher number.
+    ScanId
+);
+
+impl ScanId {
+    /// The scan after the last one `counter` handed out.
+    pub(crate) fn allocate(counter: &AtomicU32) -> Self {
+        Self(allocate(counter) + 1)
+    }
+}
+
 impl ShapeKey {
     /// Before the first shape.
     pub(crate) const NONE: Self = Self(0);
@@ -81,27 +94,6 @@ fn allocate(counter: &AtomicU32) -> u32 {
 impl SignInId {
     pub(crate) fn allocate(counter: &AtomicU32) -> Self {
         Self(allocate(counter))
-    }
-}
-
-/// One scan of a branch's Current, numbered in the order this app starts them: a later scan
-/// has a larger number. Never crosses IPC; its view carries [`ScanId::revision`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ScanId(u32);
-
-impl ScanId {
-    /// The next scan of `counter`, after every scan it numbered before.
-    pub(crate) fn allocate(counter: &AtomicU32) -> Self {
-        Self(
-            allocate(counter)
-                .checked_add(1)
-                .expect("Current scans exhausted"),
-        )
-    }
-
-    /// The scan's number as the frontend's revision: it grows with each scan.
-    pub(crate) fn revision(self) -> u32 {
-        self.0
     }
 }
 

@@ -44,7 +44,7 @@ struct Args {
     /// State database and Run output directory.
     #[arg(long, global = true, value_name = "PATH")]
     state_dir: Option<PathBuf>,
-    /// Reviewer name (defaults to USER).
+    /// Reviewer name (defaults to the signed-in user).
     #[arg(long, global = true, value_name = "NAME")]
     reviewer: Option<artifactize_core::types::ReviewerId>,
 }

@@ -23,9 +23,12 @@ pub const DATABASE: &str = "state.sqlite";
 /// shared SQLite contention deadline used by the outer initialization loop.
 const INITIALIZATION_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 
-/// The four tables of a state and the indexes its lookups use.
+/// The five tables of a state and the indexes its lookups use.
 ///
-/// - `runs`: one row per Run.
+/// - `runs`: one row per Run, its changing state without its definitions.
+/// - `run_definitions`: one row per Run with definitions: the Artifacts, evals and relations it
+///   was started with. They are fixed for the Run's life, written once with the Run and never
+///   updated, so a change of the Run never rewrites them.
 /// - `requests`: one row per eval of a Run, at its `ordinal` in the Run's selection order;
 ///   `claimed_by` and `claimed_at` hold the Human claim of a waiting request.
 /// - `executions`: one row per execution. `backend` names the Agent backend it runs on, and
@@ -35,17 +38,37 @@ const INITIALIZATION_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 ///   clear them, and the execution stays.
 /// - `state_meta`: named values of the state itself: `id`, a random UUID made when the
 ///   database is created, which identifies the state in Agent session references.
+///
+/// `runs`, `requests` and `executions` carry a `revision` that [`REVISIONS`] raises on every
+/// update of the row, so a reader learns which rows changed by comparing numbers.
 const SCHEMA: &str =
-    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, request_key TEXT);
+    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, request_key TEXT, revision INTEGER NOT NULL DEFAULT 0);
     CREATE UNIQUE INDEX run_request_key ON runs(repo,request_key) WHERE request_key IS NOT NULL;
-    CREATE TABLE requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT, data TEXT NOT NULL, UNIQUE(run_id, eval_id), UNIQUE(run_id, ordinal));
-    CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, profile_identity TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL);
+    CREATE TABLE run_definitions(run_id TEXT PRIMARY KEY REFERENCES runs(id), data TEXT NOT NULL);
+    CREATE TABLE requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, UNIQUE(run_id, eval_id), UNIQUE(run_id, ordinal));
+    CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, profile_identity TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE INDEX active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
     CREATE UNIQUE INDEX active_key ON executions(key,profile_identity) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
     CREATE INDEX key_history ON executions(key, completed_at);
     CREATE INDEX definition_history ON executions(eval_def_hash, completed_at);
     CREATE INDEX running_backend ON executions(backend) WHERE status='RUNNING';";
+
+/// Raise a row's `revision` on every update that does not set it. Writers need not know about
+/// it: the trigger's own update leaves `revision` changed, so it never fires again. The indexes
+/// let readers count, list and compare revisions without reading a record's data:
+/// `request_status` counts a Run's requests by status, `request_marks` and `execution_marks`
+/// hold the revisions of a Run's requests and their executions, `request_claim` the Human
+/// claims, and `request_execution` names the Runs an execution's change touches.
+pub(super) const REVISIONS: &str =
+    "CREATE TRIGGER run_revision AFTER UPDATE ON runs FOR EACH ROW WHEN NEW.revision=OLD.revision BEGIN UPDATE runs SET revision=OLD.revision+1 WHERE rowid=NEW.rowid; END;
+    CREATE TRIGGER request_revision AFTER UPDATE ON requests FOR EACH ROW WHEN NEW.revision=OLD.revision BEGIN UPDATE requests SET revision=OLD.revision+1 WHERE rowid=NEW.rowid; END;
+    CREATE TRIGGER execution_revision AFTER UPDATE ON executions FOR EACH ROW WHEN NEW.revision=OLD.revision BEGIN UPDATE executions SET revision=OLD.revision+1 WHERE rowid=NEW.rowid; END;
+    CREATE INDEX request_status ON requests(status,run_id);
+    CREATE INDEX request_marks ON requests(run_id,ordinal,id,execution_id,revision);
+    CREATE INDEX request_execution ON requests(execution_id,run_id);
+    CREATE INDEX request_claim ON requests(execution_id,id,revision) WHERE claimed_by IS NOT NULL;
+    CREATE INDEX execution_marks ON executions(id,revision);";
 
 /// Versions before the supported additive upgrade boundary are refused.
 pub const EARLIER_STATE: &str = "This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). Only schema 6 and later supported versions can be upgraded.";
@@ -69,6 +92,9 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("{0}")]
     Invalid(String),
+    /// A saved record that does not decode: the Run it belongs to cannot be opened.
+    #[error("{0}")]
+    Unreadable(super::Unreadable),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -645,6 +671,8 @@ mod ownership_tests {
 pub(crate) struct NotifyingConnection {
     inner: Connection,
     publisher: crate::changes::Publisher,
+    /// The connection notes which Runs its writes touch ([`super::touched`]).
+    noting: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 impl NotifyingConnection {
     pub(super) async fn finish<T>(self, result: Result<T, String>) -> Result<T, String> {
@@ -654,6 +682,7 @@ impl NotifyingConnection {
         Self {
             inner,
             publisher: crate::changes::Publisher::new(state),
+            noting: Default::default(),
         }
     }
     pub(crate) async fn call<F, R, E>(&self, function: F) -> Result<R, tokio_rusqlite::Error<E>>
@@ -663,12 +692,21 @@ impl NotifyingConnection {
         E: Send + 'static,
     {
         let publisher = self.publisher.clone();
+        let noting = self.noting.clone();
         self.inner
             .call(move |db| {
+                if !noting.load(std::sync::atomic::Ordering::Relaxed)
+                    && db.is_autocommit()
+                    && super::touched::install(db).unwrap_or(false)
+                {
+                    noting.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 let before = db.total_changes();
                 let result = function(db);
                 if db.is_autocommit() && db.total_changes() != before {
-                    publisher.notify(crate::changes::Change::StateInvalidated);
+                    for change in super::touched::take(db) {
+                        publisher.notify(change);
+                    }
                 }
                 result
             })
@@ -715,6 +753,7 @@ impl Receipts {
                     super::migrations::apply(&transaction)?;
                     if !schema_initialized(&transaction)? {
                         transaction.execute_batch(SCHEMA)?;
+                        transaction.execute_batch(REVISIONS)?;
                         transaction.execute(
                             "INSERT INTO state_meta(name,value) VALUES ('id',?)",
                             [&state_id],
@@ -767,16 +806,7 @@ impl Receipts {
         self.connection
             .call(move |db| -> Result<(), Error> {
                 let transaction = db.transaction()?;
-                transaction.execute(
-                    "INSERT INTO runs(id,repo,status,data,request_key) VALUES (?,?,?,?,?)",
-                    params![
-                        run.id,
-                        crate::platform::path_text(&run.repo_path),
-                        run.status(),
-                        serde_json::to_string(&run)?,
-                        run.request_key
-                    ],
-                )?;
+                super::run_record::insert(&transaction, &run)?;
                 for (ordinal, request) in requests.iter().enumerate() {
                     transaction.execute(
                         "INSERT INTO requests(id,run_id,eval_id,ordinal,status,data) VALUES (?,?,?,?,?,?)",
@@ -1080,7 +1110,9 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
                 let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
                 outside_workspace(Path::new(&repo), &state)
                     .map_err(|e| Error::Invalid(e.to_string()))?;
-                let run = super::unreadable::decode("run", &id, &data)
+                let mut run: Run = super::unreadable::decode("run", &id, &data)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
+                run.definitions = super::run_record::definitions(&transaction, &id)?
                     .map_err(|error| Error::Invalid(error.to_string()))?;
                 let requests = {
                     let mut statement = transaction

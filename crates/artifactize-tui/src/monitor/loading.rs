@@ -32,7 +32,7 @@ impl Monitor {
     ) -> Option<tokio::task::JoinHandle<Completed>> {
         let mut loader = self.loader.take()?;
         if resync {
-            loader.reset();
+            loader.rescan();
         }
         let selection = self.selection();
         let input = Input {
@@ -43,6 +43,7 @@ impl Monitor {
             page: selection.page.clone(),
             full,
             displayed: self.run.as_ref().map(|(run, _)| run.run.id.clone()),
+            changed: std::mem::take(&mut self.changed),
             runs: (!full && !self.runs.is_empty()).then(|| self.runs.clone()),
         };
         Some(tokio::task::spawn_blocking(move || {
@@ -51,9 +52,9 @@ impl Monitor {
         }))
     }
     /// Returns false for obsolete navigation; the driver queues a fresh job in that case.
-    pub(super) async fn finish_refresh(&mut self, mut completed: Completed) -> bool {
+    pub(super) async fn finish_refresh(&mut self, completed: Completed) -> bool {
         if completed.selection != self.selection() {
-            completed.loader.reset();
+            // The driver reads everything again for the new selection.
             self.loader = Some(completed.loader);
             return false;
         }

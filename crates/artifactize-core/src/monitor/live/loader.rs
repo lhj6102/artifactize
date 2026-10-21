@@ -1,15 +1,19 @@
 //! One consistent read of the live branches and of the Run the Main area shows. Call
-//! [`Loader::load`] on a blocking thread; it never writes. The catalog of saved Runs is read
-//! again only when the database changed, and Git is asked again which worktrees exist on a
-//! rescan.
+//! [`Loader::load`] on a blocking thread; it never writes. What the change hints since the last
+//! read name is read again: the whole catalog of saved Runs, or the rows of the Runs named, and
+//! the open Run when it is one of them. Git is asked again which worktrees exist on a rescan.
 use super::{Branch, Discovery, Labels, Place, branches};
 use crate::{
+    changes::Changed,
     monitor::{Node, Origin, model},
     store::{self, CatalogRun, RequestView, RunView, Unreadable, reader::Reader},
     types::RunId,
 };
 use std::{path::PathBuf, sync::Arc};
 use time::OffsetDateTime;
+
+#[cfg(test)]
+mod tests;
 
 /// What one read needs.
 #[derive(Debug, Clone, Default)]
@@ -19,10 +23,12 @@ pub struct Input {
     pub launch: Option<PathBuf>,
     /// The Run the Main area shows, read in full.
     pub open: Option<RunId>,
-    /// Read the open Run again even when its records did not change.
+    /// Read the open Run again even when no hint named it.
     pub force: bool,
     /// Ask Git again which worktrees exist.
     pub rescan: bool,
+    /// What the change hints since the last read named.
+    pub changed: Changed,
 }
 
 /// The open Run: its view, its requests and their projected tree.
@@ -51,18 +57,11 @@ pub struct Snapshot {
 pub struct Loader {
     reader: Reader,
     discovery: Discovery,
-    /// The catalog last read, kept while the database is unchanged.
+    /// The catalog last read, kept until a hint names a change.
     facts: Option<(Arc<Vec<CatalogRun>>, Vec<Unreadable>)>,
 }
 
 impl Loader {
-    /// Drop every cache: the next load reads the whole state and asks Git afresh.
-    pub fn reset(&mut self) {
-        self.reader.reset();
-        self.discovery = Discovery::default();
-        self.facts = None;
-    }
-
     pub fn load(&mut self, input: Input) -> Result<Snapshot, String> {
         if input.rescan {
             self.discovery.rescan();
@@ -79,24 +78,46 @@ impl Loader {
         let saved = self
             .reader
             .snapshot_optional(&input.state, |db, cache, state| {
-                if facts.is_none() || cache.changed() || !cache.has_catalog() {
-                    let runs = cache.catalog(db, state)?;
-                    *facts = Some((Arc::new(runs), cache.unreadable_runs()));
+                let changed = input.changed.or_written(cache.changed());
+                match (facts.as_mut(), &changed) {
+                    (Some((runs, unreadable)), Changed::Runs(ids)) if cache.has_catalog() => {
+                        let ids: Vec<_> = ids.iter().cloned().collect();
+                        let rows = cache.catalog_rows(db, state, &ids)?;
+                        *runs = Arc::new(merged(runs, &ids, rows.runs));
+                        unreadable.retain(|record| !ids.iter().any(|id| record.id == id.as_str()));
+                        unreadable.extend(rows.unreadable);
+                    }
+                    (Some(_), Changed::Nothing) if cache.has_catalog() => {}
+                    _ => {
+                        let runs = cache.catalog(db, state)?;
+                        *facts = Some((Arc::new(runs), cache.unreadable_runs()));
+                    }
                 }
                 let (runs, _) = facts.as_ref().expect("read above");
                 let open = input
                     .open
                     .as_ref()
                     .filter(|id| runs.iter().any(|run| &run.id == *id));
-                let opened = match open {
-                    Some(id) => cache.selected(db, state, id, None, input.force)?,
-                    None => None,
+                // The open Run is read when it is new here or a hint named it.
+                let read = open.filter(|id| input.force || !cache.holds(id) || changed.run(id));
+                let opened = match read {
+                    Some(id) => match cache.selected(db, state, id, input.force) {
+                        Ok(opened) => Ok(opened),
+                        // The Run's definitions do not decode: it is listed with why, not opened.
+                        Err(store::receipts::Error::Unreadable(record)) => Err(record),
+                        Err(error) => return Err(error),
+                    },
+                    None => Ok(None),
                 };
                 Ok((cache.identity(db)?, open.is_some(), opened))
             })?;
         let Some((identity, open, opened)) = saved else {
             self.facts = None;
             return Ok(self.empty(&input, Origin::new(None, self.reader.database())));
+        };
+        let (opened, unopened) = match opened {
+            Ok(opened) => (opened, None),
+            Err(record) => (None, Some(record)),
         };
         // No read transaction survives heavy projection or Git discovery.
         let opened = opened.map(|(run, requests)| {
@@ -107,6 +128,7 @@ impl Loader {
         if let Some((run, _, _)) = &opened {
             unreadable.extend(run.unreadable.iter().cloned());
         }
+        unreadable.extend(unopened);
         let listing = branches(&runs, input.launch.as_deref(), &mut self.discovery);
         self.reader.require_current(&input.state)?;
         Ok(Snapshot {
@@ -132,4 +154,23 @@ impl Loader {
             open: false,
         }
     }
+}
+
+/// `runs` with the rows of the Runs `ids` replaced by `rows`: a Run without a row is gone, and
+/// a new one is the newest, listed last.
+fn merged(runs: &[CatalogRun], ids: &[RunId], rows: Vec<CatalogRun>) -> Vec<CatalogRun> {
+    let mut rows: std::collections::BTreeMap<_, _> =
+        rows.into_iter().map(|run| (run.id.clone(), run)).collect();
+    let mut merged: Vec<_> = runs
+        .iter()
+        .filter_map(|run| {
+            if ids.contains(&run.id) {
+                rows.remove(&run.id)
+            } else {
+                Some(run.clone())
+            }
+        })
+        .collect();
+    merged.extend(rows.into_values());
+    merged
 }

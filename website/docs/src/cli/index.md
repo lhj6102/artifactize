@@ -134,8 +134,8 @@ Both exit 2 for a reference to another machine or state, a session the GC remove
 that was not saved, a request that is still running (`send`), and a failed follow-up.
 
 Commands opening an existing state apply supported additive schema upgrades with write
-access. Schemas 6 and 7 upgrade to 8 (6 → 7 → 8 or 7 → 8) while preserving Runs,
-cache and Human approvals; schemas 1–5 and versions above 8 are refused ([State](../features/others/state.md#state)).
+access. Schemas 6 to 8 upgrade to 9 (6 → 7 → 8 → 9, each step additive) while preserving Runs,
+cache and Human approvals; schemas 1–5 and versions above 9 are refused ([State](../features/others/state.md#state)).
 `doctor` reports an incompatible schema as a hard error and exits 1.
 
 ## Submission and watching

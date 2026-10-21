@@ -175,8 +175,8 @@ async fn unsupported_wire_version_is_refused_before_registration() {
         write_frame(
             &mut stream,
             &Frame::Hello {
-                // Only version 1 belongs to the public invalidation protocol.
-                version: 2,
+                // Version 1, without Run hints, is no longer spoken.
+                version: 1,
                 identity: endpoint.identity.clone(),
                 subscriber: true,
             },
@@ -422,16 +422,18 @@ async fn idle_probe_never_reloads_and_missed_commit_is_detected_on_persistent_co
         .unwrap();
     let mut probe = probe::Probe::new(state.path().into());
     let outcome = unwound(async {
-        assert!(probe.changed().await);
+        assert_eq!(probe.changed().await, probe::Probed::Replaced);
         for _ in 0..3 {
-            assert!(
-                !probe.changed().await,
+            assert_eq!(
+                probe.changed().await,
+                probe::Probed::Same,
                 "idle observation requested a reload"
             );
         }
+        // A commit on the same database is a write, not a replacement.
         db.execute("INSERT INTO fixture VALUES(1)", []).unwrap();
-        assert!(probe.changed().await);
-        assert!(!probe.changed().await);
+        assert_eq!(probe.changed().await, probe::Probed::Written);
+        assert_eq!(probe.changed().await, probe::Probed::Same);
     })
     .await;
     settled(outcome, [probe.close().await]);
@@ -450,17 +452,17 @@ async fn database_replacement_and_deletion_force_resync() {
         .unwrap();
     let mut probe = probe::Probe::new(state.path().into());
     let outcome = unwound(async {
-        assert!(probe.changed().await);
-        assert!(!probe.changed().await);
+        assert_eq!(probe.changed().await, probe::Probed::Replaced);
+        assert_eq!(probe.changed().await, probe::Probed::Same);
         std::fs::rename(&database, state.path().join("old.sqlite")).unwrap();
         rusqlite::Connection::open(&database)
             .unwrap()
             .execute_batch("CREATE TABLE replacement(value);")
             .unwrap();
-        assert!(probe.changed().await);
+        assert_eq!(probe.changed().await, probe::Probed::Replaced);
         std::fs::remove_file(&database).unwrap();
-        assert!(probe.changed().await);
-        assert!(!probe.changed().await);
+        assert_eq!(probe.changed().await, probe::Probed::Replaced);
+        assert_eq!(probe.changed().await, probe::Probed::Same);
     })
     .await;
     settled(outcome, [probe.close().await]);
@@ -652,9 +654,9 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
     }
     let mut probe = probe::Probe::new(state.path().into());
     let outcome = unwound(async {
-        assert!(probe.changed().await);
-        // Refusal keeps requesting reconciliation; a successful idle open would return false.
-        assert!(probe.changed().await);
+        assert_eq!(probe.changed().await, probe::Probed::Replaced);
+        // Refusal keeps requesting reconciliation; a successful idle open would be Same.
+        assert_eq!(probe.changed().await, probe::Probed::Replaced);
         assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");
     })
     .await;
@@ -763,4 +765,161 @@ async fn multiprocess_two_readers_short_writer_and_crashed_hub() {
     })
     .await;
     settled(outcome, [close_held(replacement).await]);
+}
+
+/// A saved Run of `repo` with requests for `artifacts`, as a writer creates it.
+fn saved_run(
+    id: &str,
+    repo: &Path,
+    state: &Path,
+    artifacts: &[&str],
+) -> (crate::store::Run, Vec<crate::store::Request>) {
+    let run = serde_json::from_value(serde_json::json!({
+        "id":id,"repoPath":repo,"stateDir":state,"status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z","completedAt":null,
+        "selection":{"kind":"all"},"definitions":{},"validation":null,"evidence":{}
+    }))
+    .unwrap();
+    let requests = artifacts
+        .iter()
+        .map(|artifact| {
+            crate::test_request::request(
+                &format!("{artifact}/check"),
+                "QUEUED",
+                serde_json::json!({"id":format!("{id}-{artifact}"),"runId":id,"cwd":repo}),
+            )
+            .request
+        })
+        .collect();
+    (run, requests)
+}
+
+#[tokio::test]
+async fn a_write_names_the_runs_it_touched_and_a_new_run_changes_the_list() {
+    let state = temporary_state();
+    let repo = crate::test_os::tempdir();
+    let receipts = crate::store::OwnedReceipts::open(state.path(), repo.path())
+        .await
+        .unwrap();
+    let (first, first_requests) = saved_run("run-1", repo.path(), state.path(), &["app", "web"]);
+    let (second, second_requests) = saved_run("run-2", repo.path(), state.path(), &["app"]);
+    receipts.create_run(&first, &first_requests).await.unwrap();
+    receipts
+        .create_run(&second, &second_requests)
+        .await
+        .unwrap();
+    drain().await;
+    // Subscribed after the setup's writes: each later write is its own hint.
+    let mut subscriber = Subscription::new(state.path()).await;
+    let inner = tokio_rusqlite::Connection::open(state.path().join(crate::store::DATABASE))
+        .await
+        .unwrap();
+    let outcome = unwound(async {
+        registered(&mut subscriber).await;
+        let run = |id: &str| Change::RunInvalidated(id.parse().unwrap());
+        let mut request = first_requests[1].clone();
+        request.state =
+            crate::store::RequestState::failed("stopped".into(), None, crate::broker::now());
+        receipts.save_request(&request).await.unwrap();
+        assert_eq!(next(&mut subscriber).await, run("run-1"));
+        receipts.save_run(&second).await.unwrap();
+        assert_eq!(next(&mut subscriber).await, run("run-2"));
+        // An execution held by requests of two Runs names both of them.
+        let writer =
+            crate::store::receipts::NotifyingConnection::new(inner.clone(), state.path());
+        writer
+            .call(|db| {
+                db.execute_batch(
+                    "BEGIN;
+                    INSERT INTO executions(id,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES('shared','hash','RUNNING',1,1,'{}');
+                    UPDATE requests SET execution_id='shared' WHERE id IN ('run-1-app','run-2-app');
+                    COMMIT;",
+                )
+            })
+            .await
+            .unwrap();
+        assert_eq!(next(&mut subscriber).await, run("run-1"));
+        assert_eq!(next(&mut subscriber).await, run("run-2"));
+        writer
+            .call(|db| db.execute("UPDATE executions SET status='GREEN' WHERE id='shared'", []))
+            .await
+            .unwrap();
+        assert_eq!(next(&mut subscriber).await, run("run-1"));
+        assert_eq!(next(&mut subscriber).await, run("run-2"));
+        // A new Run changes the list of Runs.
+        let (third, third_requests) = saved_run("run-3", repo.path(), state.path(), &["app"]);
+        receipts.create_run(&third, &third_requests).await.unwrap();
+        assert_eq!(next(&mut subscriber).await, Change::StateInvalidated);
+        // A write no Run holds cannot be tied to one.
+        writer
+            .call(|db| db.execute("UPDATE state_meta SET value=value WHERE name='id'", []))
+            .await
+            .unwrap();
+        assert_eq!(next(&mut subscriber).await, Change::StateInvalidated);
+    })
+    .await;
+    // The test writer closes its connection when dropped.
+    drop(receipts);
+    settled(
+        outcome,
+        [
+            inner.close().await.map_err(|error| error.to_string()),
+            subscriber.close().await,
+        ],
+    );
+}
+
+#[test]
+fn pending_run_hints_are_bounded_and_a_state_change_replaces_them() {
+    let run = |index: usize| Change::RunInvalidated(format!("run-{index:03}").parse().unwrap());
+    let mut dirty = Dirty::default();
+    for index in 0..MAX_DIRTY_RUNS {
+        dirty.add(run(index));
+    }
+    assert_eq!(dirty.pop(), Some(run(0)));
+    for index in 0..=MAX_DIRTY_RUNS {
+        dirty.add(run(index));
+    }
+    assert_eq!(dirty.pop(), Some(Change::StateInvalidated));
+    assert_eq!(dirty.pop(), None);
+    dirty.add(run(1));
+    dirty.add(Change::StateInvalidated);
+    dirty.add(run(2));
+    assert_eq!(dirty.pop(), Some(Change::StateInvalidated));
+    assert_eq!(dirty.pop(), None);
+
+    let mut changed = Changed::default();
+    assert_eq!(changed.or_written(true), Changed::Everything);
+    changed.add(&run(1));
+    assert!(changed.run(&"run-001".parse().unwrap()));
+    assert!(!changed.run(&"run-002".parse().unwrap()));
+    assert_eq!(changed.or_written(true), changed);
+    for index in 0..=MAX_DIRTY_RUNS {
+        changed.add(&run(index));
+    }
+    assert_eq!(changed, Changed::Everything);
+}
+
+#[tokio::test]
+async fn a_commit_no_hint_reported_is_read_like_a_state_change_not_a_resync() {
+    let state = temporary_state();
+    let database = state.path().join(crate::store::DATABASE);
+    let db = rusqlite::Connection::open(&database).unwrap();
+    db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE fixture(value INTEGER);")
+        .unwrap();
+    let mut subscriber = Subscription::new(state.path()).await;
+    let outcome = unwound(async {
+        registered(&mut subscriber).await;
+        // A writer that never reaches the hub: the reconcile finds its commit.
+        db.execute("INSERT INTO fixture VALUES(1)", []).unwrap();
+        let change = tokio::time::timeout(
+            crate::test_os::patience(RECONCILE + WAIT),
+            subscriber.next(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(change, Change::StateInvalidated);
+    })
+    .await;
+    settled(outcome, [subscriber.close().await]);
 }

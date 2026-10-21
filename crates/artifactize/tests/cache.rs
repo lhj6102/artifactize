@@ -2,6 +2,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
+    sync::OnceLock,
     thread,
     time::{Duration, Instant},
 };
@@ -12,7 +13,7 @@ use artifactize_core::{
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::{cat_program, echo_program, false_program, shell, true_program};
+use support::os::{cat_program, echo_program, false_program, true_program};
 
 #[path = "support/order.rs"]
 mod order;
@@ -225,8 +226,15 @@ impl Fixture {
         serde_json::from_str(&data).unwrap()
     }
 
-    /// The same Artifact in its own repository: every shared repository has the same key.
-    fn shared_repo(&self, name: &str, script: &str) -> PathBuf {
+    /// The same Artifact in its own repository: every shared repository has the same key. Its
+    /// review runs `steps` from a file, where `STARTS` and `RELEASE` name the fixture's marker
+    /// files.
+    fn shared_repo(&self, name: &str, steps: &[&str]) -> PathBuf {
+        let marker = |step: &&str| match *step {
+            "STARTS" => support::os::path_text(&self.root.path().join("starts")),
+            "RELEASE" => support::os::path_text(&self.root.path().join("release")),
+            step => step.to_owned(),
+        };
         let repo = self.repo(
             name,
             json!({
@@ -238,19 +246,16 @@ impl Fixture {
                         "title":"Review",
                         "profile":{
                             "kind":"runtime",
-                            "command":shell(),
-                            "args":[
-                                "review.sh",
-                                support::os::path_text(&self.root.path().join("starts")),
-                                support::os::path_text(&self.root.path().join("release")),
-                            ],
+                            "command":self::steps(),
+                            "args":["from", "review.txt"],
                         },
                         "payload":{"instruction":"Review."},
                     },
                 ],
             }),
         );
-        fs::write(repo.join("review.sh"), script).unwrap();
+        let lines: Vec<_> = steps.iter().map(marker).collect();
+        fs::write(repo.join("review.txt"), lines.join("\n")).unwrap();
         repo
     }
 
@@ -325,7 +330,7 @@ impl Fixture {
             json!({
                 "name":"publisher",
                 "fingerprint":fingerprint(name),
-                "evals":[eval("check", "exit 0")],
+                "evals":[eval("check", &[])],
             }),
         );
         let run = self.command(&repo, &["verify", "--wait", "--all"], 0);
@@ -426,8 +431,19 @@ impl ClaimProvider {
     }
 }
 
-const WAIT_SCRIPT: &str =
-    "echo $$ >> \"$1\"; while [ ! -e \"$2\" ]; do sleep 0.05; done; printf original";
+/// Record the review's process, wait for the release and print a result.
+const WAIT: &[&str] = &["pid", "STARTS", "wait", "RELEASE", "print", "original"];
+
+/// The steps program, built once for this test binary: fixture reviews run it with their steps
+/// as arguments, the same on every system.
+fn steps() -> &'static str {
+    static PROGRAM: OnceLock<String> = OnceLock::new();
+    PROGRAM.get_or_init(|| {
+        let directory = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cache-steps");
+        fs::create_dir_all(&directory).unwrap();
+        support::os::steps_program(&directory)
+    })
+}
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + support::os::patience(OBSERVATION_BOUND);
@@ -497,11 +513,11 @@ fn write(repo: &Path, path: &str, value: Value) {
     support::declaration::write(path, value.to_string()).unwrap();
 }
 
-fn eval(id: &str, script: &str) -> Value {
+fn eval(id: &str, steps: &[&str]) -> Value {
     json!({
         "id":id,
         "title":"Review",
-        "profile":{"kind":"runtime","command":shell(),"args":["-c",script]},
+        "profile":{"kind":"runtime","command":self::steps(),"args":steps},
         "payload":{"instruction":"Review."},
     })
 }
@@ -533,7 +549,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
         json!({
             "name":"dependency",
             "fingerprint":fingerprint("shared:red"),
-            "evals":[eval("first", "printf original; exit 7")],
+            "evals":[eval("first", &["print", "original", "exit", "7"])],
         }),
     );
     // The path artifactize records, taken before the source is deleted below.
@@ -546,14 +562,14 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     assert_eq!(fixture.records(), 1);
     fs::remove_dir_all(&source).unwrap();
     let target = fixture.repo("target", json!({"name":"root","basis":true}));
-    let mut same = eval("second", "printf original; exit 7");
+    let mut same = eval("second", &["print", "original", "exit", "7"]);
     same["title"] = json!("Renamed review");
     write(
         &target,
         "dependency/index.artf",
         json!({"name":"dependency","fingerprint":fingerprint("shared:red"),"evals":[same]}),
     );
-    let mut consumer = eval("check", "touch must-not-run");
+    let mut consumer = eval("check", &["touch", "must-not-run"]);
     consumer["payload"]["instruction"] = json!("Check {dependency}.");
     write(
         &target,
@@ -704,7 +720,7 @@ fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
         json!({
             "name":"test",
             "fingerprint":fingerprint("cached"),
-            "evals":[eval("check", "exit 0")],
+            "evals":[eval("check", &[])],
         }),
     );
     fixture.command(&repo, &["verify", "--wait", "--all"], 0);
@@ -715,7 +731,7 @@ fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
         json!({
             "name":"test",
             "fingerprint":false,
-            "evals":[eval("check", "echo run >> starts; exit 8")],
+            "evals":[eval("check", &["append", "starts", "run", "exit", "8"])],
         }),
     );
     for _ in 0..2 {
@@ -741,7 +757,7 @@ fn errors_are_audited_but_never_published() {
         .into_iter()
         .find(|(_, _, code)| *code == "SPAWN_FAILED")
         .unwrap();
-    let mut failed = eval("check", "");
+    let mut failed = eval("check", &[]);
     failed["profile"]["command"] = json!(program);
     failed["profile"]["args"] = json!(args);
     let repo = fixture.repo(
@@ -765,7 +781,7 @@ fn errors_are_audited_but_never_published() {
         json!({
             "name":"test",
             "fingerprint":fingerprint("retryable"),
-            "evals":[eval("check", "exit 0")],
+            "evals":[eval("check", &[])],
         }),
     );
     fixture.command(&repo, &["verify", "--wait", "--all"], 0);
@@ -775,10 +791,7 @@ fn errors_are_audited_but_never_published() {
 #[test]
 fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies_reuse() {
     let fixture = Fixture::new();
-    let (program, args) = support::os::script_file(Path::new("review.sh"));
-    let mut check = eval("check", "");
-    check["profile"]["command"] = json!(program);
-    check["profile"]["args"] = json!(args);
+    let check = eval("check", &["from", "review.txt"]);
     let repo = fixture.repo(
         "repo",
         json!({
@@ -787,10 +800,10 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
             "evals":[check],
         }),
     );
-    fs::write(repo.join("review.sh"), "exit 7").unwrap();
+    fs::write(repo.join("review.txt"), "exit\n7\n").unwrap();
     let original = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
     assert_eq!(fixture.entries().len(), 1);
-    fs::write(repo.join("review.sh"), "echo force >> starts").unwrap();
+    fs::write(repo.join("review.txt"), "append\nstarts\nforce\n").unwrap();
     let forced = fixture.command(&repo, &["verify", "--wait", "--all", "--force"], 0);
     assert_ne!(
         forced["requests"][0]["executionId"],
@@ -859,7 +872,7 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
         json!({
             "name":"dep",
             "fingerprint":fingerprint("dependency"),
-            "evals":[eval("check", "exit 0")],
+            "evals":[eval("check", &[])],
         }),
     );
     fixture.command(&dependency, &["verify", "--wait", "--all"], 0);
@@ -869,7 +882,7 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
         json!({
             "name":"dep",
             "fingerprint":fingerprint("dependency"),
-            "evals":[eval("check", "exit 0")],
+            "evals":[eval("check", &[])],
         }),
     );
     let forced = fixture.command(
@@ -886,7 +899,7 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
         json!({
             "name":"absent",
             "fingerprint":fingerprint("never-published"),
-            "evals":[eval("check", "exit 0")],
+            "evals":[eval("check", &[])],
         }),
     );
     let before = fixture.entries().len();
@@ -905,7 +918,7 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
         json!({
             "name":"test",
             "fingerprint":{"script":{"command":cat_program(),"args":["key"]}},
-            "evals":[eval("check", "touch executed")],
+            "evals":[eval("check", &["touch", "executed"])],
         }),
     );
     fs::write(repo.join("key"), "first").unwrap();
@@ -934,7 +947,7 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
         json!({
             "name":"selected",
             "fingerprint":fingerprint("isolated"),
-            "evals":[eval("check", "touch must-not-run")],
+            "evals":[eval("check", &["touch", "must-not-run"])],
         }),
     );
     let selected = fixture.command(&repo, &["status", "selected"], 1);
@@ -946,8 +959,8 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
 #[test]
 fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
     let fixture = Fixture::new();
-    let first = fixture.shared_repo("first", &format!("{WAIT_SCRIPT}; exit 7"));
-    let second = fixture.shared_repo("second", &format!("{WAIT_SCRIPT}; exit 7"));
+    let first = fixture.shared_repo("first", &[WAIT, &["exit", "7"]].concat());
+    let second = fixture.shared_repo("second", &[WAIT, &["exit", "7"]].concat());
     let owner = fixture.spawn(&first, &[]);
     let waiter = fixture.spawn(&second, &[]);
     let waiting = fixture.waiting_request();
@@ -991,8 +1004,8 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
 #[test]
 fn schema_seven_live_claim_upgrades_without_starting_a_duplicate() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", WAIT_SCRIPT);
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo("target", WAIT);
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() == 1);
     // Pause the current binary while supplying the prior schema: only the upgrading
@@ -1000,12 +1013,13 @@ fn schema_seven_live_claim_upgrades_without_starting_a_duplicate() {
     let suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &source));
     // Supply the prior schema, including a genuinely live owner, at the upgrade seam.
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute_batch("BEGIN IMMEDIATE;
+    db.execute_batch(&format!("BEGIN IMMEDIATE;
+        {}
         DROP INDEX active_key;
         ALTER TABLE executions DROP COLUMN profile_identity;
         CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
         PRAGMA user_version=7;
-        COMMIT;").unwrap();
+        COMMIT;", support::schema::EIGHT)).unwrap();
     assert_eq!(
         fixture.command(&target, &["status"], 1)["evals"][0]["action"],
         "wait"
@@ -1026,8 +1040,11 @@ fn schema_seven_live_claim_upgrades_without_starting_a_duplicate() {
 #[test]
 fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", "echo replacement >> \"$1\"; printf recovered");
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo(
+        "target",
+        &["append", "STARTS", "replacement", "print", "recovered"],
+    );
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
     let orphans = orphan_group(&fixture);
@@ -1136,8 +1153,8 @@ fn different_profiles_execute_independently_for_the_same_reuse_key() {
 async fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_owner_releases_the_claim()
  {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo("target", &["append", "STARTS", "retry", "print", "retried"]);
     // These live claims finish only through the test's cancellation and release stimuli.
     let mut owner = fixture.spawn(&source, &[]);
     let owner_id = Fixture::announced(&mut owner);
@@ -1193,7 +1210,7 @@ async fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_own
 #[test]
 fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconcile() {
     let fixture = Fixture::new();
-    let repo = fixture.shared_repo("repo", "echo attempt >> \"$1\"");
+    let repo = fixture.shared_repo("repo", &["append", "STARTS", "attempt"]);
     let original = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     let id = original["requests"][0]["executionId"].as_str().unwrap();
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
@@ -1222,8 +1239,8 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
 #[test]
 fn joined_waiter_keeps_its_execution_when_a_forced_result_completes_first() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", "printf forced");
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo("target", &["print", "forced"]);
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() == 1);
     let waiter = fixture.spawn(&target, &[]);
@@ -1244,8 +1261,8 @@ fn joined_waiter_keeps_its_execution_when_a_forced_result_completes_first() {
 #[tokio::test]
 async fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", "echo forced >> \"$1\"; printf forced");
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo("target", &["append", "STARTS", "forced", "print", "forced"]);
     let mut owner = fixture.spawn(&source, &[]);
     let owner_id = Fixture::announced(&mut owner);
     fixture
@@ -1289,9 +1306,9 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("one-start"),"evals":[
-            eval("first", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done"),
-            eval("second", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done"),
-            eval("third", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done")
+            eval("first", &["append", "starts", "first", "wait", "release"]),
+            eval("second", &["append", "starts", "first", "wait", "release"]),
+            eval("third", &["append", "starts", "first", "wait", "release"])
         ]}),
     );
     let child = fixture.spawn(&repo, &["--jobs", "3", "--max-executions", "1"]);
@@ -1341,8 +1358,8 @@ fn source_names_the_execution_a_result_came_from_and_how() {
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("sources"),"evals":[
-            eval("first", "touch started; while [ ! -e release ]; do sleep 0.01; done"),
-            eval("second", "touch started; while [ ! -e release ]; do sleep 0.01; done")
+            eval("first", &["touch", "started", "wait", "release"]),
+            eval("second", &["touch", "started", "wait", "release"])
         ]}),
     );
     // Siblings share a reuse key: the second joins the first's live execution.
@@ -1427,8 +1444,8 @@ fn zero_budget_can_join_an_owner_and_receive_its_success_or_error() {
 #[test]
 fn zero_budget_waiter_does_not_replace_a_crashed_owner() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", WAIT_SCRIPT);
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo("target", WAIT);
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() == 1);
     let orphans = orphan_group(&fixture);
@@ -1449,14 +1466,14 @@ fn zero_budget_waiter_does_not_replace_a_crashed_owner() {
 #[test]
 fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let source = fixture.shared_repo("source", WAIT);
     // The shared Artifact and an unrelated sibling, without a parent that would own both.
     let target = fixture.root.path().join("a-target");
-    let shared = fixture.shared_repo("a-target/a-shared", "touch must-not-run");
+    let shared = fixture.shared_repo("a-target/a-shared", &["touch", "must-not-run"]);
     write(
         &target,
         "independent/index.artf",
-        json!({"name":"z-independent","fingerprint":false,"evals":[eval("check", "touch ran")]}),
+        json!({"name":"z-independent","fingerprint":false,"evals":[eval("check", &["touch", "ran"])]}),
     );
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
@@ -1517,7 +1534,7 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
         json!({
             "name":"original",
             "fingerprint":fingerprint("entry"),
-            "evals":[eval("check", "printf original; exit 7")],
+            "evals":[eval("check", &["print", "original", "exit", "7"])],
         }),
     );
     let run = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
@@ -1599,7 +1616,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","fingerprint":fingerprint("seed"),"evals":[eval("check", "exit 0")]}),
+        json!({"name":"test","fingerprint":fingerprint("seed"),"evals":[eval("check", &[])]}),
     );
     let original = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
@@ -1641,7 +1658,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     write(
         &repo,
         "index.artf",
-        json!({"name":"test","fingerprint":fingerprint("new"),"evals":[eval("check", "exit 0")]}),
+        json!({"name":"test","fingerprint":fingerprint("new"),"evals":[eval("check", &[])]}),
     );
     let new = key(
         &fixture.command(&repo, &["verify", "--wait", "--all"], 0),
@@ -1682,7 +1699,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         json!({
             "name":"test",
             "fingerprint":fingerprint("original"),
-            "evals":[eval("check", "exit 0")],
+            "evals":[eval("check", &[])],
         }),
     );
     let original = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
@@ -1796,7 +1813,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
 #[test]
 fn rm_refuses_an_active_key_even_without_an_entry() {
     let fixture = Fixture::new();
-    let repo = fixture.shared_repo("repo", WAIT_SCRIPT);
+    let repo = fixture.shared_repo("repo", WAIT);
     let mut owner = fixture.spawn(&repo, &[]);
     wait_until(|| fixture.starts() > 0);
     assert!(
@@ -1814,8 +1831,11 @@ fn rm_refuses_an_active_key_even_without_an_entry() {
 #[test]
 fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo(
+        "target",
+        &["append", "STARTS", "unexpected", "print", "unexpected"],
+    );
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
@@ -1852,8 +1872,11 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
 async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained() {
     use artifactize_core::store::{Execution, OwnedReceipts as Receipts, Request};
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
+    let source = fixture.shared_repo("source", WAIT);
+    let target = fixture.shared_repo(
+        "target",
+        &["append", "STARTS", "unexpected", "print", "unexpected"],
+    );
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
     let orphans = orphan_group(&fixture);
@@ -1927,7 +1950,7 @@ fn gc_failure_does_not_replace_a_completed_result() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","fingerprint":fingerprint("first"),"evals":[eval("check", "exit 0")]}),
+        json!({"name":"test","fingerprint":fingerprint("first"),"evals":[eval("check", &[])]}),
     );
     let first_run = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
     fixture.last_used(&repo, &first_run, "2000-01-01T00:00:00Z");
@@ -1948,7 +1971,7 @@ fn gc_failure_does_not_replace_a_completed_result() {
         json!({
             "name":"test",
             "fingerprint":fingerprint("second"),
-            "evals":[eval("check", "exit 0")],
+            "evals":[eval("check", &[])],
         }),
     );
     let verified = fixture.spawn(&repo, &[]).wait_with_output().unwrap();
@@ -2058,14 +2081,14 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
 #[test]
 fn profile_variants_share_a_result_unless_they_change_the_strategy() {
     let fixture = Fixture::new();
-    let mut declaration = eval("check", "exit 0");
+    let mut declaration = eval("check", &[]);
     declaration["profile"]["timeout_ms"] = json!(5000);
     declaration["profile_variants"] = json!({
         "fail":{"kind":"runtime","command":false_program(),"args":[]},
         "patient":{
             "kind":"runtime",
-            "command":shell(),
-            "args":["-c","exit 0"],
+            "command":steps(),
+            "args":[],
             "timeout_ms":60000,
         },
     });
@@ -2216,7 +2239,8 @@ fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() 
 #[test]
 fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
     let fixture = Fixture::new();
-    let script = format!("{WAIT_SCRIPT}; [ \"$3\" = pass ]");
+    // The verdict each repository adds to its arguments is compared with `pass`.
+    let script = [WAIT, &["equals", "pass"]].concat();
     let mut repos = Vec::new();
     for (name, verdict) in [
         ("pass-one", "pass"),
@@ -2281,7 +2305,7 @@ fn gc_and_removal_protect_only_the_matching_key() {
         json!({
             "name":"test",
             "fingerprint":fingerprint("shared"),
-            "evals":[eval("pass", "exit 0"),eval("fail", "exit 1")],
+            "evals":[eval("pass", &[]),eval("fail", &["exit", "1"])],
         }),
     );
     let run = fixture.command(&repo, &["verify", "--wait", "--all"], 1);

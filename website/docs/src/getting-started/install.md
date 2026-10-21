@@ -332,9 +332,9 @@ in Codex.
 
 ### Upgrading from 0.11
 
-State schemas 6 and 7 are upgraded additively to 8 on first use. Existing Runs, cache records
-and Human approvals are preserved. An older binary limited to schema 6 or 7 cannot open the upgraded
-state; keep a backup before switching versions.
+State schemas 6 to 8 are upgraded additively to the current schema 9 on first use. Existing
+Runs, cache records and Human approvals are preserved. An older binary limited to schemas 6 to 8
+cannot open the upgraded state; keep a backup before switching versions.
 
 `artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
 Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal
@@ -358,7 +358,7 @@ you want templates and commit its `.artf` output. See [Declarations (.artf)](../
 
 The original 0.9 transition introduced state schema 6 and required replacing
 pre-schema-6 state. Current versions preserve existing schema-6 or schema-7 state
-by upgrading it automatically to schema 8, including Runs, cache records and Human
+by upgrading it automatically to schema 9, including Runs, cache records and Human
 approvals. Only schemas 1–5 require a new state: they are refused with exit 2, and
 `artifactize doctor` reports a hard error and exits 1. For those older states, set
 `ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new directory, or move the old one away.
