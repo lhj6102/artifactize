@@ -1,10 +1,12 @@
 <script lang="ts">
-  // An Artifact between its neighbours, drawn as its graph draws them: the Artifacts its evals
-  // use on the left, the ones whose evals use it on the right, with the graph's nodes and edges.
-  // It holds still: no pan, zoom or drag; a click on a neighbour opens its Detail.
+  // An Artifact between its neighbours, drawn as its graph draws them: the Artifacts its
+  // evals use on the left, the ones whose evals use it on the right, with the graph's nodes and
+  // edges. It holds still: no pan, zoom or drag; a click on a neighbour opens its Detail. A
+  // shared input's thousands of users are cut to the backend's first few, failing ones first,
+  // and the rest counted below.
   import { SvelteFlow, SvelteFlowProvider, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, type Graph, type Source } from "../ipc/client";
+  import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
   import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
@@ -28,13 +30,13 @@
 
   const n = new NeighboursState();
   setNeighboursState(n);
-  /** Read the graph again for every new snapshot or scan: it may relight the neighbours. */
+  /** Read the neighbours again for every new snapshot or scan: it may relight them. */
   const reread: Attachment<HTMLElement> = () => {
     void revision;
-    const at = source;
+    const [at, of] = [source, node];
     let current = true;
-    call(commands.graph(at)).then(
-      (next: Graph) => current && (n.graph = next),
+    call(commands.neighbours(at, of)).then(
+      (next: Neighbours) => current && (n.graph = next),
       () => current && (n.graph = null),
     );
     return () => {
@@ -43,8 +45,8 @@
   };
 
   const shown = $derived.by(() => {
-    const graph = n.graph;
-    if (!graph) return null;
+    if (!n.graph) return null;
+    const { shape: graph, moreUses, moreUsedBy } = n.graph;
     const uses = graph.edges.filter((edge) => edge.target === node);
     const usedBy = graph.edges.filter((edge) => edge.source === node);
     const byId = new Map(graph.nodes.map((item) => [item.id, item]));
@@ -81,7 +83,17 @@
       focusable: false,
     }));
     const rows = Math.max(uses.length, usedBy.length, 1);
-    return { nodes, edges, height: rows * (NODE.height + GAP.y) + 24, key: placed.map(({ item }) => item.id).join() };
+    const more = [
+      moreUses > 0 ? `${moreUses.toLocaleString()} more it uses` : "",
+      moreUsedBy > 0 ? `${moreUsedBy.toLocaleString()} more that use it` : "",
+    ].filter(Boolean);
+    return {
+      nodes,
+      edges,
+      height: rows * (NODE.height + GAP.y) + 24,
+      key: placed.map(({ item }) => item.id).join(),
+      more: more.length > 0 ? `And ${more.join(" and ")}, not shown.` : "",
+    };
   });
 </script>
 
@@ -112,6 +124,7 @@
       </SvelteFlowProvider>
     {/key}
   </div>
+  {#if shown.more}<p class="more">{shown.more}</p>{/if}
 {/if}
 </div>
 
@@ -129,5 +142,10 @@
   }
   .neighbours :global(.svelte-flow__node) {
     cursor: pointer;
+  }
+  .more {
+    margin: -6px var(--pad) 12px;
+    color: var(--muted);
+    font-size: 12px;
   }
 </style>

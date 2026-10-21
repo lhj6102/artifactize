@@ -111,7 +111,12 @@ export const scenarios: Scenario[] = [
       assert.ok(views[0].weight > views[1].weight && views[0].colour !== views[1].colour, "the selected Summary choice is darker and bold");
       assert.ok(views.every((view) => view.radius === 0 && (view.fill === "rgba(0, 0, 0, 0)" || view.fill === "transparent")), "view choices are plain text rather than chips");
       await aside(browser).$('[aria-label="Views"]').$('button=Agent log').click();
-      await browser.waitUntil(async () => (await aside(browser).getText()).includes("Receipt review complete."), { timeout: 15000, timeoutMsg: "the actual saved Agent answer in its transcript" });
+      // The Summary also quotes the answer: wait for the selected Agent log's own transcript.
+      await browser.waitUntil(() => browser.execute(() => {
+        const dock = document.querySelector('aside[aria-label="Detail"]');
+        const selected = dock?.querySelector('[aria-label="Views"] [role="tab"][aria-selected="true"]')?.textContent?.trim();
+        return selected === "Agent log" && !!dock?.querySelector(".transcript")?.textContent?.includes("Receipt review complete.");
+      }), { timeout: 15000, timeoutMsg: "the actual saved Agent answer in the selected Agent log's transcript" });
       const transcript = () => browser.execute(() => {
         const pane = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .transcript')!;
         const content = pane.closest<HTMLElement>(".content")!;

@@ -217,19 +217,41 @@ fn saved(fixture: &Fixture, eval: &str) -> artifactize_core::store::RequestView 
     })
 }
 
-fn tree_names(view: &Value) -> Vec<String> {
-    view["run"]["tree"]
-        .as_array()
-        .unwrap()
-        .iter()
+/// The shown Run's tree row `node` with its children, as the Detail reads it.
+fn row(window: &WebviewWindow<MockRuntime>, run: &str, node: &str) -> Value {
+    invoke(
+        window,
+        "detail_row",
+        json!({"source": {"kind": "run", "run": run}, "node": node}),
+    )
+    .unwrap()
+}
+
+/// The names of the shown Run's tree: its Run row, then each Artifact in the graph's order with
+/// its evals.
+fn tree_names(window: &WebviewWindow<MockRuntime>, view: &Value) -> Vec<String> {
+    let run = view["run"]["id"].as_str().unwrap();
+    let graph = invoke(
+        window,
+        "graph",
+        json!({"source": {"kind": "run", "run": run}, "known": null}),
+    )
+    .unwrap();
+    let artifacts = graph["update"]["nodes"].as_array().unwrap().clone();
+    std::iter::once(row(window, run, view["run"]["node"].as_str().unwrap()))
+        .chain(
+            artifacts
+                .iter()
+                .map(|node| row(window, run, node["id"].as_str().unwrap())),
+        )
         .flat_map(|node| {
-            std::iter::once(node["name"].as_str().unwrap().to_owned()).chain(
-                node["children"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|child| child["name"].as_str().unwrap().to_owned()),
-            )
+            let children: Vec<_> = node["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|child| child["name"].as_str().unwrap().to_owned())
+                .collect();
+            std::iter::once(node["name"].as_str().unwrap().to_owned()).chain(children)
         })
         .collect()
 }
@@ -267,14 +289,15 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     let run = chip["id"].as_str().unwrap().to_owned();
     let view = invoke(&window, "browse", json!({"navigate": open_run(&run)})).unwrap();
     assert_eq!(
-        tree_names(&view),
+        tree_names(&window, &view),
         ["Run", "release", "signoff", "ship", "check"]
     );
-    let signoff = &view["run"]["tree"][1]["children"][0];
+    let shown = view["run"]["id"].as_str().unwrap();
+    let signoff = &row(&window, shown, "a:release")["children"][0];
     assert_eq!(signoff["urgent"], json!(true));
     assert_eq!(signoff["text"][0]["text"], "Human sign-off · unclaimed");
     // ship waits for release: its eval marks release as an unmet upstream Artifact.
-    let check = &view["run"]["tree"][2]["children"][0];
+    let check = &row(&window, shown, "a:ship")["children"][0];
     assert_eq!(
         check["upstream"],
         json!([{"node": "a:release", "complete": false}])
@@ -846,12 +869,15 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
         .to_owned();
     invoke(&monitor, "browse", json!({"navigate": open_run(&run)})).unwrap();
     let source = json!({"kind": "run", "run": run});
-    let graph = |window: &WebviewWindow<MockRuntime>| {
-        invoke(window, "graph", json!({"source": source})).unwrap()
+    let graph = |window: &WebviewWindow<MockRuntime>, known: Value| {
+        invoke(window, "graph", json!({"source": source, "known": known})).unwrap()
     };
     // Release waits for its Human; the downstream runtime Eval waits for release.
     // The edge shows its input Artifact’s active light.
-    let before = graph(&monitor);
+    let read = graph(&monitor, Value::Null);
+    assert_eq!(read["source"], source);
+    assert_eq!(read["update"]["kind"], "shape");
+    let before = &read["update"];
     assert_eq!(
         before["nodes"],
         json!([
@@ -862,6 +888,34 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     assert_eq!(
         before["edges"],
         json!([{"source": "a:release", "target": "a:ship", "light": "active"}])
+    );
+    // An Artifact between its neighbours: ship uses release, which nothing else uses.
+    assert_eq!(
+        invoke(
+            &monitor,
+            "neighbours",
+            json!({"source": source, "node": "a:ship"})
+        )
+        .unwrap(),
+        json!({
+            "shape": {
+                "nodes": before["nodes"],
+                "edges": before["edges"],
+            },
+            "moreUses": 0,
+            "moreUsedBy": 0,
+        })
+    );
+    // An Artifact the Run lacks has no row and no neighbours.
+    assert_eq!(row(&monitor, &run, "a:gone"), Value::Null);
+    assert_eq!(
+        invoke(
+            &monitor,
+            "neighbours",
+            json!({"source": source, "node": "a:gone"})
+        )
+        .unwrap()["shape"],
+        json!({"nodes": [], "edges": []})
     );
 
     let id = saved(&fixture, "release/signoff").request.id.to_string();
@@ -910,18 +964,22 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
         "{view}"
     );
     assert_eq!(view["branches"][0]["chips"][1], json!({"kind": "current"}));
-    let after = graph(&monitor);
-    assert_eq!(after["nodes"][0]["light"], "green");
+    // The shape the caller holds comes back as its lights alone, in its order.
+    let after = graph(&monitor, read["shape"].clone());
+    assert_eq!(after["shape"], read["shape"]);
     assert_eq!(
-        after["nodes"][1]["light"], "green",
+        after["update"],
+        json!({"kind": "lights", "nodes": ["green", "green"], "edges": ["green"]}),
         "the downstream runtime Eval completes"
     );
-    assert_eq!(after["edges"][0]["light"], "green");
+    // A caller holding another shape gets this one whole.
+    let other = graph(&monitor, json!(read["shape"].as_u64().unwrap() + 1));
+    assert_eq!(other["update"]["kind"], "shape");
     // Another Run than the shown one is refused.
     let missing = invoke(
         &monitor,
         "graph",
-        json!({"source": {"kind": "run", "run": "run-gone"}}),
+        json!({"source": {"kind": "run", "run": "run-gone"}, "known": null}),
     );
     assert_eq!(missing.unwrap_err()["kind"], "missing");
 }
@@ -960,9 +1018,10 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
     let graph = invoke(
         &monitor,
         "graph",
-        json!({"source": {"kind": "run", "run": run}}),
+        json!({"source": {"kind": "run", "run": run}, "known": null}),
     )
     .unwrap();
+    let graph = &graph["update"];
     let light = |id: &str| {
         graph["nodes"]
             .as_array()
@@ -1029,7 +1088,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     );
     // Never verified: the Human eval would run; the Artifact without evals is reused.
     let source = json!({"kind": "current", "branch": branch});
-    let graph = invoke(&viewer, "graph", json!({"source": source})).unwrap();
+    let graph = invoke(&viewer, "graph", json!({"source": source, "known": null})).unwrap();
+    // A Current comes whole on every read, its shape named.
+    assert_eq!(graph["update"]["kind"], "shape");
+    assert!(graph["shape"].as_u64().is_some(), "{graph}");
+    let graph = &graph["update"];
     assert_eq!(
         graph["nodes"],
         json!([
@@ -1040,6 +1103,37 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(
         graph["edges"],
         json!([{"source": "a:app", "target": "a:graph", "light": "reused"}])
+    );
+    // graph between its neighbours: it uses app, which nothing else uses.
+    assert_eq!(
+        invoke(
+            &viewer,
+            "neighbours",
+            json!({"source": source, "node": "a:graph"})
+        )
+        .unwrap(),
+        json!({
+            "shape": {"nodes": graph["nodes"], "edges": graph["edges"]},
+            "moreUses": 0,
+            "moreUsedBy": 0,
+        })
+    );
+    // Its row, with its eval, as the Detail's chips show them; none for an Artifact it lacks.
+    let row = invoke(
+        &viewer,
+        "detail_row",
+        json!({"source": source, "node": "a:graph"}),
+    )
+    .unwrap();
+    assert_eq!(row["children"][0]["name"], "review");
+    assert_eq!(
+        invoke(
+            &viewer,
+            "detail_row",
+            json!({"source": source, "node": "a:gone"})
+        )
+        .unwrap(),
+        Value::Null
     );
     let detail = invoke(
         &viewer,

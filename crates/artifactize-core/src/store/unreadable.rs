@@ -5,7 +5,7 @@ use std::{collections::BTreeSet, path::Path};
 use rusqlite::params;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use super::receipts::Error;
+use super::{receipts::Error, run_record::Seen};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,16 +46,20 @@ pub(super) fn evidence<T: DeserializeOwned>(kind: &'static str, data: &str) -> O
             let id = serde_json::from_str::<Identity>(data)
                 .map(|identity| identity.id)
                 .unwrap_or_else(|_| "(unknown id)".into());
-            let unreadable = Unreadable {
+            skipped(&Unreadable {
                 kind: kind.into(),
                 id,
                 reason: error.to_string(),
-            };
-            use std::io::Write;
-            let _ = writeln!(std::io::stderr().lock(), "{unreadable}");
+            });
             None
         }
     }
+}
+
+/// Explain a record a read skipped.
+pub(super) fn skipped(unreadable: &Unreadable) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr().lock(), "{unreadable}");
 }
 
 pub(super) fn in_run(
@@ -123,6 +127,8 @@ pub(super) struct Audit {
     records: std::collections::BTreeMap<(String, String), (String, Option<Unreadable>)>,
     pub selected: Option<crate::types::RunId>,
     parsed: std::collections::BTreeMap<(String, String), Record>,
+    /// What decoding Run records learned of their definitions, shared with every read of them.
+    pub definitions: Seen,
 }
 
 /// Only the selected Run's freshly decoded records survive its page audit; the selected loader
@@ -133,9 +139,9 @@ enum Record {
     Execution(Box<super::Execution>),
 }
 impl Record {
-    fn decode(kind: &str, id: &str, data: &str) -> Result<Self, Unreadable> {
+    fn decode(kind: &str, id: &str, data: &str, seen: &mut Seen) -> Result<Self, Unreadable> {
         match kind {
-            "run" => decode("run", id, data).map(|run| Self::Run(Box::new(run))),
+            "run" => seen.read(id, data).map(|run| Self::Run(Box::new(run))),
             "request" => {
                 decode("request", id, data).map(|request| Self::Request(Box::new(request)))
             }
@@ -218,16 +224,19 @@ pub(super) fn in_runs_cached(
             && saved == &data
         {
             error.clone()
-        } else {
-            match Record::decode(&kind, &id, &data) {
+        } else if audit.selected.as_ref() == Some(&run) {
+            match Record::decode(&kind, &id, &data, &mut audit.definitions) {
                 Ok(record) => {
-                    if audit.selected.as_ref() == Some(&run) {
-                        audit.parsed.insert(key.clone(), record);
-                    }
+                    audit.parsed.insert(key.clone(), record);
                     None
                 }
                 Err(error) => Some(error),
             }
+        } else if kind == "run" {
+            // Only whether it reads: definitions seen before are not decoded again.
+            audit.definitions.check(&id, &data).err()
+        } else {
+            Record::decode(&kind, &id, &data, &mut audit.definitions).err()
         };
         retained.insert(key, (data, error.clone()));
         if let Some(error) = error {

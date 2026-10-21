@@ -145,11 +145,22 @@ Both graphs, a Run's and the Current, take the pointer: Tab reaches their Artifa
 and Enter on one does what a click does; they have no other keys of their own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms
 the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
-These gestures move the camera, not the divider or the Detail. Above 40 nodes, a
-pannable, zoomable minimap helps navigate the graph. Graphs with **more than 300
-Artifacts** ask before layout: choose **Lay out all** to display the whole graph.
-Above **80 Artifacts**, only elements in view are rendered: panning or zooming draws
-those it brings into view. Smaller graphs render every element.
+These gestures move the camera, not the divider or the Detail.
+
+Every graph is laid out whole at once, upstream on the left. A graph of up to
+**1,000 Artifacts** gets a roomy layout (ELK) that widens the space where many edges
+pass; a larger one gets a quicker, more compact layout. An Artifact that a great many
+others use (such as one criteria file every review reads) stands in its own column on
+the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
+pannable, zoomable minimap helps navigate the graph, and above **80 Artifacts** only
+elements in view are rendered: panning or zooming draws those it brings into view.
+A graph of **more than 500 Artifacts** draws its edges on a canvas below the
+Artifacts and has no minimap. While more than 500 Artifacts are in view, they are
+painted as boxes in their lights, and a click on one opens its Detail; zoom in until
+fewer are in view to see them as named nodes again. A new snapshot or scan relights a
+graph in place, and lays it out again only when its Artifacts or edges change, keeping
+the graph shown until the new layout is ready. An Artifact's Detail draws at most 16
+neighbours on each side, failing ones first, and counts the rest.
 
 ### Detail
 

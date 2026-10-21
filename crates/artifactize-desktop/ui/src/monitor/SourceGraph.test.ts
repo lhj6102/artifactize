@@ -1,14 +1,12 @@
 import { renderHosted as render } from "../test-host";
 // A Run's or a Current's graph against a mocked command boundary and layout: nodes take their lights, a click
 // (or Enter on a focused node) on an Artifact asks for its Detail and one on the background
-// closes it, and a new snapshot recolours in place.
+// closes it, a new snapshot recolours in place, and a new shape replaces the graph once laid out.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { tick } from "svelte";
-import type { Graph, Source } from "../ipc/client";
+import type { Graph, Shape, Source } from "../ipc/client";
 import SourceGraph from "./SourceGraph.svelte";
-import { LIMIT } from "./graph";
 
 const layout = vi.hoisted(() => vi.fn());
 vi.mock("./layout", () => ({ NODE: { width: 168, height: 44 }, layout }));
@@ -43,31 +41,61 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function graph(release: Graph["nodes"][number]["light"], ship = "waiting" as const): Graph {
+const source = (run: string): Source => ({ kind: "run", run });
+
+/** The Run a `graph` call asks for and the shape it holds. */
+function runOf(args: unknown): { run: string; known: number | null } {
+  const { source, known } = args as { source: Source; known: number | null };
+  return { run: source.kind === "run" ? source.run : "", known };
+}
+
+function graph(release: Shape["nodes"][number]["light"], ship = "waiting" as const): Shape {
   return {
-    source: source("run-a"),
     nodes: [
-      { id: "a:release", name: "release", light: release , note: null },
-      { id: "a:ship", name: "ship", light: ship , note: null },
+      { id: "a:release", name: "release", light: release, note: null },
+      { id: "a:ship", name: "ship", light: ship, note: null },
     ],
     edges: [{ source: "a:release", target: "a:ship", light: release }],
   };
 }
 
-function setup(served: () => Graph) {
-  mockIPC((cmd) => (cmd === "graph" ? served() : null));
-  layout.mockImplementation(async (laid: Graph) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
+/** The backend's answer for Run `run` now serving `shape`: its lights alone when the caller
+ * holds that shape, else the shape. A shape is named by its Artifacts and edges. */
+function answer(run: string, shape: Shape, known: number | null): Graph {
+  const source: Source = { kind: "run", run };
+  const named = [shape.nodes.map((node) => node.id), shape.edges.map((edge) => `${edge.source}>${edge.target}`)].join("|");
+  const key = names.get(named) ?? names.set(named, names.size + 1).get(named)!;
+  return {
+    source,
+    shape: key,
+    update: known === key
+      ? { kind: "lights", nodes: shape.nodes.map((node) => node.light), edges: shape.edges.map((edge) => edge.light) }
+      : { kind: "shape", ...shape },
+  };
+}
+const names = new Map<string, number>();
+
+/** Every `graph` call's Run and the shape it held, in order. */
+let asked: { run: string; known: number | null }[] = [];
+
+function serve(served: (run: string) => Shape) {
+  asked = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "graph") return null;
+    const { run, known } = runOf(args);
+    asked.push({ run, known });
+    return answer(run, served(run), known);
+  });
+}
+
+function setup(served: () => Shape) {
+  serve(served);
+  layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
   const onopen = vi.fn();
   const onclose = vi.fn();
   const view = render(SourceGraph, { source: source("run-a"), revision: 1, onopen, onclose });
   return { ...view, onopen, onclose };
 }
-
-const source = (run: string): Source => ({ kind: "run", run });
-const runOf = (args: unknown) => {
-  const wanted = (args as { source: Source }).source;
-  return wanted.kind === "run" ? wanted.run : "";
-};
 
 const node = (id: string) => document.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
 
@@ -98,127 +126,112 @@ describe("SourceGraph", () => {
     expect(onclose).toHaveBeenCalledOnce();
   });
 
-  it("recolours a new snapshot in place and lays out again only for a new shape", async () => {
+  it("asks only for the lights of the shape it holds, recolours them in place, and lays out only a new shape", async () => {
     let served = graph("active");
     const { rerender } = setup(() => served);
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("active"));
     expect(layout).toHaveBeenCalledOnce();
+    const shown = asked[0];
+    expect(shown.known).toBeNull();
+
     served = graph("green");
     await rerender({ revision: 2 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
+    // Only the new snapshot read again: showing a read does not read once more. The second read
+    // named the shape the first one gave, and only relit it.
+    expect(asked).toHaveLength(2);
+    expect(asked[1].known).not.toBeNull();
     expect(layout).toHaveBeenCalledOnce();
+
     served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting", note: null }] };
     await rerender({ revision: 3 });
     await waitFor(() => expect(node("a:docs")).not.toBeNull());
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
-  it("never lets a slower layout of another Run replace the Run shown now", async () => {
-    // Run A lays out at once; Run B's layout waits until the test releases it.
-    const runs: Record<string, Graph> = {
-      "run-a": graph("active"),
-      "run-b": { ...graph("red"), source: source("run-b"), nodes: [{ id: "a:other", name: "other", light: "red", note: null }], edges: [] },
-    };
-    mockIPC((cmd, args) => (cmd === "graph" ? runs[runOf(args)] : null));
-    let release!: (positions: Map<string, { x: number; y: number }>) => void;
-    const staleLayout = new Promise<Map<string, { x: number; y: number }>>((done) => (release = done));
-    let started!: () => void;
-    const layingOut = new Promise<void>((done) => (started = done));
-    layout.mockImplementation((laid: Graph) => {
-      if (laid.source.kind === "run" && laid.source.run === "run-b") {
-        started();
-        return staleLayout;
-      }
-      return Promise.resolve(new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
+  it("keeps the graph shown while a new shape lays out, and lays out each shape once whatever snapshots arrive", async () => {
+    const docs = { id: "a:docs", name: "docs", light: "waiting" as const, note: null };
+    const grown = (release: Shape["nodes"][number]["light"]): Shape => ({ ...graph(release), nodes: [...graph(release).nodes, docs] });
+    let served = graph("active");
+    const { rerender } = setup(() => served);
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("active"));
+    // The grown shape's layout finishes only when the test says so.
+    let finish!: () => void;
+    const finished = new Promise<void>((done) => (finish = done));
+    layout.mockImplementation(async (laid: Shape) => {
+      await finished;
+      return new Map(laid.nodes.map((each, index) => [each.id, { x: index * 240, y: 0 }]));
     });
-    const props = { source: source("run-a"), revision: 1, onopen: vi.fn(), onclose: vi.fn() };
-    const { rerender } = render(SourceGraph, props);
+
+    served = grown("green");
+    await rerender({ revision: 2 });
+    await waitFor(() => expect(layout).toHaveBeenCalledTimes(2));
+    // Another snapshot of the grown shape arrives while it lays out.
+    served = grown("red");
+    await rerender({ revision: 3 });
+    await waitFor(() => expect(asked).toHaveLength(3));
+    // Nothing shown can change before the layout finishes: the graph before stays, lit as it was.
+    expect(screen.queryByText("Laying out…")).toBeNull();
+    expect(node("a:release")?.dataset.light).toBe("active");
+    expect(node("a:docs")).toBeNull();
+
+    finish();
+    await waitFor(() => expect(node("a:docs")).not.toBeNull());
+    expect(node("a:release")?.dataset.light).toBe("red");
+    expect(layout).toHaveBeenCalledTimes(2);
+    // Later lights of the grown shape relight it without laying it out again.
+    served = grown("green");
+    await rerender({ revision: 4 });
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
+    expect(layout).toHaveBeenCalledTimes(2);
+  });
+
+  it("never lets an older read of another Run replace the Run shown now", async () => {
+    // Run A answers at once; Run B's answer waits until the test releases it.
+    let release!: () => void;
+    const held = new Promise<void>((done) => (release = done));
+    let asking!: () => void;
+    const askedB = new Promise<void>((done) => (asking = done));
+    let lightA = graph("active");
+    mockIPC(async (cmd, args) => {
+      if (cmd !== "graph") return null;
+      const { run, known } = runOf(args);
+      if (run === "run-b") {
+        asking();
+        await held;
+        return answer("run-b", { nodes: [{ id: "a:other", name: "other", light: "red", note: null }], edges: [] }, known);
+      }
+      return answer(run, lightA, known);
+    });
+    layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
+    const { rerender } = render(SourceGraph, { source: source("run-a"), revision: 1, onopen: vi.fn(), onclose: vi.fn() });
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     await rerender({ source: source("run-b"), revision: 2 });
-    await layingOut;
-    runs["run-a"] = graph("green");
+    await askedB;
+    lightA = graph("green");
     await rerender({ source: source("run-a"), revision: 3 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
-    release(new Map([["a:other", { x: 0, y: 0 }]]));
-    // place() already awaits this exact layout promise: let its continuation run, then
-    // flush any view update before asserting that the stale response did not replace Run A.
-    await staleLayout;
-    await tick();
+    release();
+    // Run B's held answer arrives before the answer to a newer read of Run A, which asks only
+    // after the release: once that newer read shows, B's answer has been handled.
+    await held;
+    lightA = graph("red");
+    await rerender({ source: source("run-a"), revision: 4 });
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("red"));
     expect(node("a:other")).toBeNull();
-    expect(node("a:release")?.dataset.light).toBe("green");
-    expect(layout).toHaveBeenCalledTimes(2);
   });
 
-  it("asks before laying out more than the limit, once per Run", async () => {
-    let size = LIMIT + 1;
-    const many = (run: string): Graph => ({
-      source: source(run),
-      nodes: Array.from({ length: size }, (_, index) => ({ id: `a:${run}-${index}`, name: `${run}-${index}`, light: "green", note: null })),
-      edges: [],
-    });
-    mockIPC((cmd, args) => (cmd === "graph" ? many(runOf(args)) : null));
-    layout.mockImplementation(async (laid: Graph) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
-    const props = { source: source("run-a"), revision: 1, onopen: vi.fn(), onclose: vi.fn() };
-    const { rerender } = render(SourceGraph, props);
-    await screen.findByText(new RegExp(`has ${LIMIT + 1} Artifacts`));
-    expect(layout).not.toHaveBeenCalled();
-    await fireEvent.click(screen.getByRole("button", { name: `Lay out all ${LIMIT + 1}` }));
-    await waitFor(() => expect(node("a:run-a-0")).not.toBeNull());
-    expect(layout).toHaveBeenCalledOnce();
-    // A new snapshot of the same Run with another Artifact (a new shape, still above the
-    // limit) keeps the answer and lays out again; another Run asks again.
-    size = LIMIT + 2;
-    await rerender({ revision: 2 });
-    await waitFor(() => expect(node(`a:run-a-${LIMIT + 1}`)).not.toBeNull());
-    expect(layout).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("button", { name: /Lay out all/ })).toBeNull();
-    await rerender({ source: source("run-b"), revision: 3 });
-    await screen.findByRole("button", { name: `Lay out all ${LIMIT + 2}` });
-    expect(layout).toHaveBeenCalledTimes(2);
-  });
-
-  it("lays out again after a failed layout, and after the layout cache dropped a Run", async () => {
-    const small = (run: string): Graph => ({
-      source: source(run),
-      nodes: [{ id: `a:${run}`, name: run, light: "green", note: null }],
-      edges: [],
-    });
-    mockIPC((cmd, args) => (cmd === "graph" ? small(runOf(args)) : null));
-    let failing = true;
-    layout.mockImplementation(async (laid: Graph) => {
-      if (failing) throw new Error("layout failed");
-      return new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }]));
-    });
-    const props = { source: source("run-0"), revision: 1, onopen: vi.fn(), onclose: vi.fn() };
-    const { rerender } = render(SourceGraph, props);
-    await screen.findByText("layout failed");
-    // A failed layout is not kept: the next snapshot tries again.
-    failing = false;
-    await rerender({ revision: 2 });
-    await waitFor(() => expect(node("a:run-0")).not.toBeNull());
-    expect(layout).toHaveBeenCalledTimes(2);
-    // Eight more Runs push run-0's layout out of the cache; back on run-0 it is laid out again.
-    let revision = 3;
-    for (let run = 1; run <= 8; run += 1) {
-      await rerender({ source: source(`run-${run}`), revision: revision++ });
-      await waitFor(() => expect(node(`a:run-${run}`)).not.toBeNull());
-    }
-    await rerender({ source: source("run-8"), revision: revision++ });
-    await rerender({ source: source("run-1"), revision: revision++ });
-    await waitFor(() => expect(node("a:run-1")).not.toBeNull());
-    expect(layout).toHaveBeenCalledTimes(10);
-    await rerender({ source: source("run-0"), revision: revision++ });
-    await waitFor(() => expect(node("a:run-0")).not.toBeNull());
-    expect(layout).toHaveBeenCalledTimes(11);
+  it("explains a Run without Artifacts", async () => {
+    setup(() => ({ nodes: [], edges: [] }));
+    await screen.findByText("This Run has no Artifacts.");
   });
 
   it("shows ERROR apart from RED, and a legend of all six lights", async () => {
     setup(() => ({
-      source: source("run-a"),
       nodes: [
         { id: "a:release", name: "release", light: "red", note: null },
-        { id: "a:ship", name: "ship", light: "error" , note: null },
-        { id: "a:docs", name: "docs", light: "blocked" , note: null },
+        { id: "a:ship", name: "ship", light: "error", note: null },
+        { id: "a:docs", name: "docs", light: "blocked", note: null },
       ],
       edges: [{ source: "a:ship", target: "a:docs", light: "error" }],
     }));
@@ -237,22 +250,25 @@ describe("SourceGraph", () => {
       "light-blocked",
     ]);
   });
-
   it("marks a Current's Artifacts by what verify would do, with a legend of its own", async () => {
     const current: Source = { kind: "current", branch: { kind: "branch", common: "/work/app/.git", branch: "main" } };
     mockIPC((cmd, args) =>
       cmd === "graph"
         ? {
             source: (args as { source: Source }).source,
-            nodes: [
-              { id: "a:app", name: "app", light: "reused", note: "reused" },
-              { id: "a:graph", name: "graph", light: "run", note: "would run (2 evals)" },
-            ],
-            edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
+            shape: 1,
+            update: {
+              kind: "shape",
+              nodes: [
+                { id: "a:app", name: "app", light: "reused", note: "reused" },
+                { id: "a:graph", name: "graph", light: "run", note: "would run (2 evals)" },
+              ],
+              edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
+            },
           }
         : null,
     );
-    layout.mockImplementation(async (laid: Graph) => new Map(laid.nodes.map((item, index) => [item.id, { x: index * 240, y: 0 }])));
+    layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((item, index) => [item.id, { x: index * 240, y: 0 }])));
     render(SourceGraph, { source: current, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
     await waitFor(() => expect(node("a:graph")).not.toBeNull());
     expect(node("a:graph")?.getAttribute("aria-label")).toBe("graph: would run (2 evals)");

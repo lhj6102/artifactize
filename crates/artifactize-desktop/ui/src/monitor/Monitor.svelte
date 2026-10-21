@@ -11,7 +11,6 @@
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { find } from "./tree";
   import { GAP, clampWidth, saveWidth } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
@@ -39,8 +38,6 @@
   const branch = $derived(
     shown.kind === "run" || shown.kind === "current" ? (branches.find((item) => keyOf(item.key) === keyOf(shown.branch)) ?? null) : null,
   );
-  /** The tree the Detail's chips and lists come from: the Run's or the Current's. */
-  const tree = $derived(shown.kind === "run" ? (run?.tree ?? []) : shown.kind === "current" && current.of(shown.branch) ? (current.view?.tree ?? []) : []);
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
   const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
   /** The pane's search: the library's, overridden while typed until a pause searches it; a
@@ -170,9 +167,10 @@
       if (m.shown.kind === "review" || m.shown.kind === "request") m.shown = { kind: "none" };
       if (m.focus === "detail") m.focus = "main";
     }
-    // Leaving the shown Run (or losing it, or the node) closes its Detail.
+    // Leaving the shown Run (or losing it) closes its Detail; so does losing the node, which the
+    // Detail finds as it reads its row.
     const opened = m.opened;
-    if (opened?.source.kind === "run" && (opened.source.run !== next.run?.id || !find(next.run.tree, [opened.node]))) m.opened = null;
+    if (opened?.source.kind === "run" && opened.source.run !== next.run?.id) m.opened = null;
     // A Run of the branch whose Current is shown ended: scan it again.
     for (const item of next.branches) {
       const now = item.chips.flatMap((chip) => (chip.kind === "run" && chip.running ? [chip.id] : []));
@@ -247,8 +245,7 @@
 
   /** A click on the Run's headline: the Run's Detail. */
   function openRun() {
-    const row = run?.tree.find((node) => node.kind === "run");
-    if (source && row) m.opened = { source, node: row.id, tab: null };
+    if (source && run) m.opened = { source, node: run.node, tab: null };
   }
 
   /** Another tab of the open Detail; a Human review's tab notes its request when it arrives. */
@@ -408,7 +405,6 @@
               {branch}
               node={m.opened.node}
               tab={m.opened.tab}
-              {tree}
               focused={m.focus === "detail"}
               active={!m.settings}
               review={reviewOf}
@@ -418,6 +414,7 @@
               ontab={showTab}
               onopen={openNode}
               onback={closeDetail}
+              ongone={() => (m.opened = null)}
             />
           </aside>
         {/if}

@@ -2,6 +2,7 @@
 use super::{
     DATABASE,
     receipts::{Error, check_files, schema_initialized},
+    run_record::Seen,
 };
 use crate::{
     repository::Identity,
@@ -66,25 +67,30 @@ pub(super) fn in_snapshot(
     db: &rusqlite::Connection,
     state: &Path,
 ) -> Result<Vec<CatalogRun>, Error> {
-    in_snapshot_cached(db, state, &mut Facts::default())
+    in_snapshot_cached(db, state, &mut Facts::default(), &mut Seen::default())
 }
 
 /// Each saved Run's catalog fact, or why its record cannot be read, by the digest of the
-/// record it was decoded from: an unchanged record is never decoded again.
+/// record it was decoded from, with the digest of its definitions: an unchanged record is
+/// never decoded again.
 #[derive(Default)]
 pub(super) struct Facts {
-    runs: std::collections::BTreeMap<
-        crate::types::RunId,
-        (Sha256Bytes, Result<CatalogRun, super::Unreadable>),
-    >,
+    runs: std::collections::BTreeMap<crate::types::RunId, Fact>,
 }
+
+/// A Run record's digest, its definitions' digest, and its catalog fact or why it is unreadable.
+type Fact = (
+    Sha256Bytes,
+    Option<Sha256Bytes>,
+    Result<CatalogRun, super::Unreadable>,
+);
 
 impl Facts {
     /// The Run records the last catalog read could not decode, in the state's order.
     pub(super) fn unreadable(&self) -> Vec<super::Unreadable> {
         self.runs
             .values()
-            .filter_map(|(_, fact)| fact.as_ref().err().cloned())
+            .filter_map(|(_, _, fact)| fact.as_ref().err().cloned())
             .collect()
     }
 }
@@ -93,6 +99,7 @@ pub(super) fn in_snapshot_cached(
     db: &rusqlite::Connection,
     state: &Path,
     facts: &mut Facts,
+    seen: &mut Seen,
 ) -> Result<Vec<CatalogRun>, Error> {
     let mut statement = db.prepare_cached("SELECT id,data FROM runs ORDER BY rowid")?;
     let runs = statement
@@ -108,24 +115,33 @@ pub(super) fn in_snapshot_cached(
     let mut retained = std::collections::BTreeMap::new();
     for (id, data) in runs {
         let digest = Sha256Bytes::of(data.as_bytes());
-        let fact = match facts.runs.remove(&id) {
-            Some((saved, fact)) if saved == digest => fact,
-            _ => super::unreadable::decode::<super::Run>("run", id.as_str(), &data).map(|run| {
-                let status = run.status();
-                CatalogRun {
-                    id: run.id.clone(),
-                    created_at: run.created_at,
-                    completed_at: run.completed_at(),
-                    repo_path: run.repo_path,
-                    repository: run.repository,
-                    status,
-                    red: 0,
-                    error: 0,
-                    waiting: Vec::new(),
+        let (definitions, fact) = match facts.runs.remove(&id) {
+            Some((saved, definitions, fact)) if saved == digest => (definitions, fact),
+            // The Run's own facts, and whether its definitions read: each set of definitions
+            // is checked once by its digest, never kept here.
+            _ => match seen
+                .facts(&id, &data)
+                .and_then(|facts| seen.check(&id, &data).map(|()| facts))
+            {
+                Ok((run, definitions)) => {
+                    let status = run.status();
+                    let fact = CatalogRun {
+                        id: run.id.clone(),
+                        created_at: run.created_at,
+                        completed_at: run.completed_at(),
+                        repo_path: run.repo_path,
+                        repository: run.repository,
+                        status,
+                        red: 0,
+                        error: 0,
+                        waiting: Vec::new(),
+                    };
+                    (definitions, Ok(fact))
                 }
-            }),
+                Err(unreadable) => (None, Err(unreadable)),
+            },
         };
-        retained.insert(id.clone(), (digest, fact.clone()));
+        retained.insert(id.clone(), (digest, definitions, fact.clone()));
         if let Ok(fact) = fact {
             order.push(id.clone());
             catalog.insert(id, fact);
@@ -133,6 +149,12 @@ pub(super) fn in_snapshot_cached(
     }
     outside_workspaces(catalog.values().map(|run| run.repo_path.as_path()), state)
         .map_err(|error| Error::Invalid(error.to_string()))?;
+    seen.retain(
+        &retained
+            .values()
+            .filter_map(|(_, definitions, _)| *definitions)
+            .collect(),
+    );
     facts.runs = retained;
     let mut statement = db.prepare_cached(
         "SELECT q.run_id,q.status,q.execution_id,coalesce(json_extract(e.data,'$.provenance.requestId'),json_extract(q.data,'$.provenance.requestId'),q.id)

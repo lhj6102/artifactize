@@ -317,30 +317,63 @@ pub fn view(
 }
 
 /// The Detail of `node` of `source`: in the shown Run, from the shown snapshot, or in a
-/// branch's Current, from its last scan.
+/// branch's Current, from its last scan. A large Run takes a moment to derive, so it is built
+/// off the window's thread.
 #[tauri::command]
 #[specta::specta]
-pub fn detail(
+pub async fn detail(
     app: tauri::State<'_, App>,
     source: Source,
     node: NodeKey,
 ) -> Result<DetailView, Failure> {
     let id: NodeId = node.into_inner();
     match &source {
-        Source::Run { run } => app
-            .browse
-            .with_run(&run.clone().into_inner(), |run, requests| {
-                view(
-                    &app.launch.state,
-                    run,
-                    requests,
-                    &id,
-                    OffsetDateTime::now_utc(),
-                )
-            }),
+        Source::Run { run } => {
+            let selected = app.browse.selected(&run.clone().into_inner())?;
+            let state = app.launch.state.clone();
+            crate::failure::joined(
+                tokio::task::spawn_blocking(move || {
+                    view(
+                        &state,
+                        &selected.run,
+                        &selected.requests,
+                        &id,
+                        OffsetDateTime::now_utc(),
+                    )
+                })
+                .await,
+            )
+        }
         Source::Current { branch } => {
             let shown = app.currents.shown(&branch.to_place())?;
             crate::graph::current::detail(&shown.current, source.clone(), &id)
+        }
+    }
+}
+
+/// The row of `node` in `source`'s tree: in the shown Run an Artifact with its evals, or the
+/// Run's own row; in a Current an Artifact with its evals; `None` when it no longer has it.
+#[tauri::command]
+#[specta::specta]
+pub async fn detail_row(
+    app: tauri::State<'_, App>,
+    source: Source,
+    node: NodeKey,
+) -> Result<Option<crate::browse::TreeNode>, Failure> {
+    let id = node.into_inner();
+    match source {
+        Source::Run { run } => {
+            let selected = app.browse.selected(&run.into_inner())?;
+            Ok(crate::browse::row(
+                &selected.run,
+                &selected.tree,
+                &id,
+                OffsetDateTime::now_utc(),
+            ))
+        }
+        Source::Current { branch } => {
+            let shown = app.currents.shown(&branch.to_place())?;
+            Ok(crate::graph::current::row(&shown.current, &id))
         }
     }
 }

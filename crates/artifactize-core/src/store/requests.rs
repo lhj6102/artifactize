@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use serde::Serialize;
 
@@ -19,10 +19,11 @@ pub struct RequestView {
     pub definition: Option<RequestDefinition>,
 }
 
+/// The saved definitions of a request's eval and Artifact, shared by every view of the Run.
 #[derive(Debug, Clone, Serialize)]
 pub struct RequestDefinition {
-    pub eval: super::definitions::Eval,
-    pub artifact: super::definitions::Artifact,
+    pub eval: Arc<super::definitions::Eval>,
+    pub artifact: Arc<super::definitions::Artifact>,
 }
 
 #[derive(Default)]
@@ -413,15 +414,18 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
 /// Saved definitions are decoded/indexed once per Run, never once per request. First duplicate
 /// Eval wins, matching SQLite's former json_each lookup; missing/null definitions remain absent.
 pub(super) struct DefinitionIndex {
-    artifacts: std::collections::BTreeMap<crate::types::ArtifactName, super::definitions::Artifact>,
-    evals: std::collections::BTreeMap<crate::types::EvalId, super::definitions::Eval>,
+    artifacts:
+        std::collections::BTreeMap<crate::types::ArtifactName, Arc<super::definitions::Artifact>>,
+    evals: std::collections::BTreeMap<crate::types::EvalId, Arc<super::definitions::Eval>>,
 }
 impl DefinitionIndex {
     pub fn new(run: &super::Run) -> Self {
         let mut evals = std::collections::BTreeMap::new();
         if let Some(graph) = run.definitions.graph() {
             for eval in graph.evals() {
-                evals.entry(eval.id.clone()).or_insert_with(|| eval.clone());
+                evals
+                    .entry(eval.id.clone())
+                    .or_insert_with(|| Arc::new(eval.clone()));
             }
         }
         Self {
@@ -431,7 +435,7 @@ impl DefinitionIndex {
                 .map(|graph| {
                     graph
                         .artifacts()
-                        .map(|(id, artifact)| (id.clone(), artifact.clone()))
+                        .map(|(id, artifact)| (id.clone(), Arc::new(artifact.clone())))
                         .collect()
                 })
                 .unwrap_or_default(),

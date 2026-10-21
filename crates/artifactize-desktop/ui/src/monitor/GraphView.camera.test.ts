@@ -8,7 +8,7 @@ import { cleanup, screen } from "@testing-library/svelte";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { tick } from "svelte";
 import type { Viewport } from "@xyflow/svelte";
-import type { Graph } from "../ipc/client";
+import type { Graph, Shape } from "../ipc/client";
 import SourceGraph from "./SourceGraph.svelte";
 
 /** A layered Run: `publish` is the right-most column, where the Detail docks. */
@@ -114,12 +114,14 @@ const within = (name: string, right: number) => {
   return at.left >= CANVAS.left && at.right <= right && at.top >= CANVAS.top && at.bottom <= CANVAS.bottom;
 };
 
+/** Run A's graph as the backend first serves it: its whole shape. */
+const served = (shape: Shape): Graph => ({ source: { kind: "run", run: "run-a" }, shape: 1, update: { kind: "shape", ...shape } });
+
 async function drawn() {
-  const graph: Graph = {
-    source: { kind: "run", run: "run-a" },
+  const graph = served({
     nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: "green" as const, note: null })),
     edges: [{ source: "a:release", target: "a:ship", light: "green" }],
-  };
+  });
   mockIPC((command) => command === "graph" ? graph : null);
   const shown = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("publish: GREEN");
@@ -180,7 +182,7 @@ it("keeps a camera the person moved, bringing only the opened Artifact out from 
 });
 
 it("fits a graph drawn in a hidden screen once its canvas first has a size", async () => {
-  const graph: Graph = { source: { kind: "run", run: "run-a" }, nodes: [{ id: "a:docs", name: "docs", light: "green", note: null }], edges: [] };
+  const graph = served({ nodes: [{ id: "a:docs", name: "docs", light: "green", note: null }], edges: [] });
   mockIPC((command) => command === "graph" ? graph : null);
   renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("docs: GREEN");

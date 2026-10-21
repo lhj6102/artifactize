@@ -1,7 +1,7 @@
 //! A branch's Current: its worktree as it is now, scanned by the library's
 //! [`live::scan`] as `artifactize status` does. The last scan of each branch is kept for its
 //! graph and Details; scanning a branch again cancels its scan still running.
-use super::{Graph, GraphEdge, GraphNode, Source, node_id};
+use super::{GraphEdge, GraphNode, Shape, Source, node_id};
 use crate::{
     App, Failure,
     browse::{BranchKey, NodeKind, Segment, TreeNode},
@@ -22,11 +22,13 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
-/// A branch's last scan and its number among this app's scans.
+/// A branch's last scan, its number among this app's scans, and the shape of its graph.
 #[derive(Clone)]
 pub struct Shown {
     pub current: Arc<Current>,
     pub revision: u32,
+    /// Stays while a scan finds the same Artifacts and edges, whatever their plans.
+    pub shape: crate::ids::ShapeKey,
 }
 
 /// The last scan of each branch, and the scans running.
@@ -35,6 +37,8 @@ pub struct Currents {
     shown: Mutex<BTreeMap<Place, Shown>>,
     running: Mutex<BTreeMap<Place, (u32, CancellationToken)>>,
     scans: std::sync::atomic::AtomicU32,
+    /// The last graph shape handed out.
+    shapes: Mutex<crate::ids::ShapeKey>,
 }
 
 impl Currents {
@@ -75,11 +79,17 @@ impl Currents {
         }
         running.remove(place);
         if let Some(current) = found {
-            self.shown.lock().expect("currents lock").insert(
+            let mut shown = self.shown.lock().expect("currents lock");
+            let shape = match shown.get(place) {
+                Some(before) if same_shape(&before.current, &current) => before.shape,
+                _ => self.shapes.lock().expect("shapes lock").next(),
+            };
+            shown.insert(
                 place.clone(),
                 Shown {
                     current: Arc::new(current),
                     revision: scan,
+                    shape,
                 },
             );
         }
@@ -160,6 +170,15 @@ fn artifact_row(artifact: &CurrentArtifact) -> TreeNode {
     }
 }
 
+/// The row of the Artifact `node` of `current`, with its evals.
+pub(crate) fn row(current: &Current, node: &NodeId) -> Option<TreeNode> {
+    current
+        .artifacts
+        .iter()
+        .find(|artifact| node_id(&artifact.name).inner() == node)
+        .map(artifact_row)
+}
+
 fn view(branch: BranchKey, shown: &Shown) -> CurrentView {
     let current = &shown.current;
     CurrentView {
@@ -172,8 +191,23 @@ fn view(branch: BranchKey, shown: &Shown) -> CurrentView {
     }
 }
 
-pub(crate) fn graph(current: &Current, source: Source) -> Graph {
-    Graph {
+/// The same Artifacts and edges in the same order, whatever they would do.
+fn same_shape(before: &Current, after: &Current) -> bool {
+    before
+        .artifacts
+        .iter()
+        .map(|artifact| &artifact.name)
+        .eq(after.artifacts.iter().map(|artifact| &artifact.name))
+        && before
+            .edges
+            .iter()
+            .map(|edge| (&edge.from, &edge.to))
+            .eq(after.edges.iter().map(|edge| (&edge.from, &edge.to)))
+}
+
+/// The graph of `current`, every Artifact lit and noted by what verify would do.
+pub(crate) fn shape(current: &Current) -> Shape {
+    Shape {
         nodes: current
             .artifacts
             .iter()
@@ -193,7 +227,6 @@ pub(crate) fn graph(current: &Current, source: Source) -> Graph {
                 light: edge.plan.into(),
             })
             .collect(),
-        source,
     }
 }
 

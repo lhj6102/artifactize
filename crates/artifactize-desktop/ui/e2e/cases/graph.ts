@@ -53,7 +53,8 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"], "release's own chip, then its one eval's");
       assert.equal(opened.path, "release / signoff", "the chips read as a path");
       assert.equal(opened.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
-      assert.ok(opened.tabs[0].icon, "release's chip draws the Artifact icon before its name");
+      await browser.waitUntil(async () => (await detail(browser))?.tabs[0]?.icon === true,
+        { timeout: 15000, timeoutMsg: "release's chip draws the Artifact icon before its name" });
       assert.equal(opened.tabs[1].tone, "tone-human", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
       assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
@@ -104,8 +105,7 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      // A 1440×872 window: the Detail at its default width docks where the graph's right-most
-      // Artifact is drawn while no Detail is open.
+      // A 1440×872 window, which the Detail at its default width leaves room beside.
       await browser.setWindowSize(1440, 872);
       await afterRender(browser);
       await graphShown(browser, "a:release");
@@ -134,8 +134,9 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact release", "Enter on release opened its Detail again");
 
-      // The Detail floats over the graph, docked where another Artifact was drawn without it,
-      // and the graph stays visible on its left.
+      // The Detail floats over the graph's right side with a gap, docked where another Artifact
+      // was drawn without it, and the graph stays visible on its left.
+      assert.ok((await detail(browser))?.docked, "the Detail docks over the graph's right side with a gap");
       const edge = (await placed()).detail!;
       const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
       assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);

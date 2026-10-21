@@ -16,9 +16,39 @@ export const commands = {
 	paneComplete: (query: string) => __TAURI_INVOKE<Completion>("pane_complete", { query }),
 	/**
 	 *  The Detail of `node` of `source`: in the shown Run, from the shown snapshot, or in a
-	 *  branch's Current, from its last scan.
+	 *  branch's Current, from its last scan. A large Run takes a moment to derive, so it is built
+	 *  off the window's thread.
 	 */
 	detail: (source: Source, node: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("detail", { source, node })),
+	/**
+	 *  The row of `node` in `source`'s tree: in the shown Run an Artifact with its evals, or the
+	 *  Run's own row; in a Current an Artifact with its evals; `None` when it no longer has it.
+	 */
+	detailRow: (source: Source, node: string) => typedError<{
+	/**  Stable tree id: `run:<id>`, `a:<artifact>` or `e:<eval>`. */
+	id: string,
+	kind: NodeKind,
+	glyph: string,
+	tone: Tone,
+	weight: Weight,
+	name: string,
+	/**  Dim markers after the name: `↻ peer`, `[file]`. */
+	marks: string,
+	text: Segment[],
+	/**  Elapsed time of an eval, `passed/total` of an Artifact. */
+	right: string,
+	/**  The derived state changed after the Run ended. */
+	changed: boolean,
+	/**  An Artifact whose evals are all done. */
+	done: boolean,
+	/**  An in-progress or failed eval. */
+	attention: boolean,
+	/**  An ERROR, RED or waiting Human eval. */
+	urgent: boolean,
+	/**  The Artifacts this row depends on, unmet first. */
+	upstream: UpstreamMark[],
+	children: TreeNode[],
+} | null, Failure>(__TAURI_INVOKE("detail_row", { source, node })),
 	/**
 	 *  Open request `id` in the shared Human Detail. `reload: false` redraws the last read view
 	 *  (its waiting time) without reading the state.
@@ -66,10 +96,15 @@ export const commands = {
 	/**  Release this reviewer's claims on `ids` without a verdict. */
 	humanRelease: (ids: string[], job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**
-	 *  The graph of `source`: the shown Run's, from the shown snapshot, or a branch's Current as
-	 *  its last scan found it.
+	 *  The graph of `source`: the shown Run's, from the shown snapshot, only its lights while it
+	 *  keeps the shape `known` the caller holds; or a branch's Current as its last scan found it.
 	 */
-	graph: (source: Source) => typedError<Graph, Failure>(__TAURI_INVOKE("graph", { source })),
+	graph: (source: Source, known: number | null) => typedError<Graph, Failure>(__TAURI_INVOKE("graph", { source, known })),
+	/**
+	 *  The Artifact `node` of `source` between its neighbours: the Artifacts its evals use,
+	 *  itself, then those whose evals use it, with the edges between it and them.
+	 */
+	neighbours: (source: Source, node: string) => typedError<Neighbours, Failure>(__TAURI_INVOKE("neighbours", { source, node })),
 	/**
 	 *  Scan `branch`'s worktree as it is now. Scanning it again cancels this scan, which then
 	 *  answers with the newer one's view once that one ends.
@@ -392,9 +427,9 @@ export type FormView = {
 
 export type Graph = {
 	source: Source,
-	/**  Upstream first, in the tree's order. */
-	nodes: GraphNode[],
-	edges: GraphEdge[],
+	/**  Names the graph's Artifacts and edges, whatever their lights. */
+	shape: ShapeKey,
+	update: Update,
 };
 
 /**  `target`'s evals depend on `source`; both are tree ids. */
@@ -552,6 +587,19 @@ export type Navigate = {
 	resync: boolean,
 };
 
+/**
+ *  An Artifact between its neighbours, at most [`NEAR`] on each side: those shown first are the
+ *  ones lit first in [`Light`]'s precedence (failing before passing), then in the tree's order.
+ */
+export type Neighbours = {
+	/**  The Artifact, the neighbours shown, and the edges between it and them. */
+	shape: Shape,
+	/**  Artifacts its evals use beyond those shown. */
+	moreUses: number,
+	/**  Artifacts whose evals use it beyond those shown. */
+	moreUsedBy: number,
+};
+
 export type NodeKind = "run" | "artifact" | "eval";
 
 export type Notice = {
@@ -621,9 +669,14 @@ export type Row = {
 	thinking: boolean,
 };
 
-/**  The shown Run: its headline, what needs attention, and the tree under the Run row. */
+/**
+ *  The shown Run: its headline and what needs attention. Its rows come one at a time, as a
+ *  Detail asks for them ([`row`]): a Run can hold tens of thousands.
+ */
 export type RunPanel = {
 	id: string,
+	/**  The Run's own row, whose Detail its headline opens. */
+	node: string,
 	mark: Mark,
 	/**  Validation at Run end, counts, time and tokens. */
 	headline: string,
@@ -632,7 +685,6 @@ export type RunPanel = {
 	attention: Attention[],
 	/**  Attention lines beyond the shown ones. */
 	more: number,
-	tree: TreeNode[],
 };
 
 export type SectionName = "outcome" | "waits" | "what" | "provenance" | "technical";
@@ -664,6 +716,19 @@ export type Settled =
  *  again; the notice says what failed.
  */
 "savedLocally";
+
+/**  The Artifacts and the edges between them, each with its light. */
+export type Shape = {
+	/**  Upstream first, in the tree's order. */
+	nodes: GraphNode[],
+	edges: GraphEdge[],
+};
+
+/**
+ *  A shape of the selected Run's graph, its Artifacts and edges whatever their lights,
+ *  numbered by the backend as it reads one.
+ */
+export type ShapeKey = number;
 
 export type Share = 
 /**  Reduced records without argv, captured output, tool calls or paths. */
@@ -779,6 +844,15 @@ export type TreeNode = {
  *  the library's range is rounded on the way to the frontend.
  */
 export type UnixSeconds = string;
+
+/**  What changed in a graph since the shape the caller holds. */
+export type Update = 
+/**  A shape the caller does not hold, all lit. */
+{
+	kind: "shape",
+} & Shape | 
+/**  The caller's shape, relit: one light per node and per edge, in its order. */
+{ kind: "lights"; nodes: Light[]; edges: Light[] };
 
 /**  The Artifacts a row depends on, with whether each is complete (dim) or unmet (bright). */
 export type UpstreamMark = {

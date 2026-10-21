@@ -67,11 +67,15 @@ function backend(launch: LaunchView, snapshot: () => BrowseView) {
         case "graph":
           return {
             source: (args as { source: unknown }).source,
-            nodes: [
-              { id: "a:app", name: "app", light: "reused", note: "reused" },
-              { id: "a:graph", name: "graph", light: "run", note: "would run (1 eval)" },
-            ],
-            edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
+            shape: 1,
+            update: {
+              kind: "shape",
+              nodes: [
+                { id: "a:app", name: "app", light: "reused", note: "reused" },
+                { id: "a:graph", name: "graph", light: "run", note: "would run (1 eval)" },
+              ],
+              edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
+            },
           };
         case "pane_complete":
           return { keep: "", candidates: [] };

@@ -15,6 +15,7 @@ pub(crate) mod connection;
 pub mod prune;
 pub(crate) mod receipts;
 mod result;
+mod run_record;
 mod runs;
 mod snapshots;
 mod unreadable;

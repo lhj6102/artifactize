@@ -1,31 +1,28 @@
 import { createContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
-import type { Graph } from "../ipc/client";
+import type { Shape, ShapeKey, Source } from "../ipc/client";
 import type { Point } from "./graph";
-import { shape } from "./graph";
 import { layout } from "./layout";
 import { keyOf } from "./monitor-state.svelte";
 
 /** How many graphs' layouts are kept. */
 const KEPT = 8;
 
+/** The graph shown: its source, the shape the backend named, its lit Artifacts and edges, and
+ * where its layout put them. A new snapshot of the same shape only relights it. */
+export type Shown = { source: Source; shape: ShapeKey; graph: Shape; positions: Map<string, Point> };
+
 export class SourceGraphState {
-  shown = $state.raw<{ graph: Graph; positions: Map<string, Point> } | null>(null);
-  /** The shape of the graph shown: only a change of Artifacts or edges lays it out again. */
-  readonly shownShape = $derived(this.shown ? shape(this.shown.graph) : null);
-  pending = $state.raw<Graph | null>(null);
+  shown = $state.raw<Shown | null>(null);
   error = $state<string | null>(null);
-  /** Lay out a graph above the limit anyway, for this source. */
-  forced = $state(false);
   /** Each read of the graph; only the newest one may show what it read. */
   reads = 0;
-  /** The source last read: another one starts without the forced layout. */
-  last: string | null = null;
-  /** Layouts by source and shape, finished or in flight, so returning to a Run reuses its own. */
+  /** Layouts by source and shape, finished or in flight: a read of a shape already laid out,
+   * or being laid out, waits for that layout, and returning to a Run reuses its own. */
   readonly #layouts = new SvelteMap<string, Promise<Map<string, Point>>>();
 
-  positions(graph: Graph, key: string): Promise<Map<string, Point>> {
-    const id = `${keyOf(graph.source)}\n${key}`;
+  positions(source: Source, shape: ShapeKey, graph: Shape): Promise<Map<string, Point>> {
+    const id = `${keyOf(source)}\n${shape}`;
     let laid = this.#layouts.get(id);
     if (!laid) {
       laid = layout(graph);
