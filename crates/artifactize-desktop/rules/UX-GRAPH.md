@@ -11,10 +11,9 @@ that makes the transition happen and checks where it leads.
   **Pane** beside the **Main area**, the divider between them always shown. Started with
   `--repo PATH` it selects the branch of PATH; with `review ID` it opens that review, with
   `review` alone the newest waiting one; with `graph --repo PATH` (also the declared Human
-  `graph` tool) it shows the Current of the branch of PATH. As J-LAUNCH selects that branch, or
-  shows its Current, even before its project has a Run (the Human `graph` tool works before
-  any Run), the branch the app was started for is listed then too, the one exception to the
-  Branches listing only projects with Runs. There is no screen switch.
+  `graph` tool) it shows the Current of the branch of PATH. The Branches list the projects with
+  Runs on this machine and the one the app was started for with `--repo` or `graph --repo`,
+  even before its first Run (J-BRANCHES). There is no screen switch.
 - **Pane**: one column: the **Search** field at the top, the **Branches** below it and the
   **Waiting** stack at the bottom. There is no Scope heading and no Runs list.
   - **Search**: its starting query is `sort:recent`. Free text and `key:value` terms (`repo:`,
