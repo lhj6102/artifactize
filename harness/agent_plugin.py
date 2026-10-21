@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import queue
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -38,15 +39,37 @@ ANSWER_SECONDS = 60
 SESSION_VARIABLES = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID")
 
 
-def run(argv, env, cwd):
+def started(argv, env, cwd, **pipes):
+    """Start a host command as the leader of its own process group, so that `ended` can end
+    every process it starts."""
     program = shutil.which(argv[0], path=env.get("PATH"))
     if program is None:
         sys.exit(f"{argv[0]} is not on PATH; install the host to check its plugin")
-    result = subprocess.run([program, *argv[1:]], cwd=cwd, env=env, capture_output=True, text=True,
-                            timeout=COMMAND_SECONDS)
-    if result.returncode != 0:
-        sys.exit(f"{' '.join(argv)} exited {result.returncode}:\n{result.stdout}{result.stderr}")
-    return result.stdout
+    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    return subprocess.Popen([program, *argv[1:]], cwd=cwd, env=env, text=True, **group, **pipes)
+
+
+def ended(process):
+    """End every process still in the host command's group, then reap its leader."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait()
+
+
+def run(argv, env, cwd):
+    process = started(argv, env, cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        stdout, stderr = process.communicate(timeout=COMMAND_SECONDS)
+    finally:
+        ended(process)
+    if process.returncode != 0:
+        sys.exit(f"{' '.join(argv)} exited {process.returncode}:\n{stdout}{stderr}")
+    return stdout
 
 
 def listed_plugin(host, catalog, root, plugin):
@@ -86,9 +109,8 @@ def codex(market, project, env, plugin_id):
 
 def codex_skills(project, env):
     """Codex's skill inventory for the project, from its app-server; it starts no MCP server."""
-    program = shutil.which("codex", path=env.get("PATH"))
-    process = subprocess.Popen([program, "app-server", "--stdio"], cwd=project, env=env, stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    process = started(["codex", "app-server", "--stdio"], env, project, stdin=subprocess.PIPE,
+                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     lines = queue.Queue()
 
     def read():
@@ -119,14 +141,14 @@ def codex_skills(project, env):
         return ask(2, "skills/list", {"cwds": [str(project)]})["data"]
     finally:
         try:
+            # The app-server leaves when its input closes; whatever it started is ended with it.
             process.stdin.close()
-        finally:
-            process.terminate()
             try:
                 process.wait(timeout=ANSWER_SECONDS)
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+                pass
+        finally:
+            ended(process)
             reader.join()
 
 
