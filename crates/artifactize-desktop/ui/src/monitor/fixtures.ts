@@ -20,13 +20,13 @@ export function browseView(revision: number, extra: Partial<BrowseView> = {}): B
 
 export const branchKey = (branch: string): BranchKey => ({ kind: "branch", common: "/work/app/.git", branch });
 
-/** A Run's chip: `id` of `status`, `running` while it runs. */
+/** A Run's timeline entry: `id` of `status`, `running` while it runs. */
 export function runChip(id: string, status: "GREEN" | "RED" | "RUNNING", running = false): Chip {
   const glyph = { GREEN: "✓", RED: "✗", RUNNING: "◐" }[status];
-  return { kind: "run", id, mark: { status, glyph }, text: `${running ? "Running" : status} 5m`, running };
+  return { kind: "run", id, mark: { status, glyph }, status: running ? "Running" : status, age: running ? "5m" : "5m ago", running };
 }
 
-/** Branch `name` of the project `app` with `chips`, newest first. */
+/** Branch `name` of the project `app` with its timeline `chips`, newest first. */
 export function branch(name: string, chips: Chip[], older = false, starred = false): BranchView {
   return { key: branchKey(name), project: "app", name, workspace: `/work/${name}`, chips, older, starred };
 }

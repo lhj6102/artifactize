@@ -1,7 +1,9 @@
 <script lang="ts">
   // The one left column: the Search at the top, the live Branches below it and the Waiting
-  // stack at the bottom. The keys move one selection through the Branches and then the Waiting
-  // stack; ← → step through the selected branch's chips; Enter goes to the Main area, or opens
+  // stack at the bottom. A branch reads as `project / branch` with its newest Run's status;
+  // expanded, it lists its timeline under its name. ↑ ↓ move one selection through the
+  // branches, the expanded timelines and then the Waiting stack; → expands the selected branch
+  // or enters its timeline, ← steps back out or folds it; Enter goes to the Main area, or opens
   // the selected waiting review. The stack is a thin bar with no review waiting and grows
   // upward with each one, up to half the Pane, beyond which it scrolls.
   import type { BranchView, Chip, WaitingRow } from "../ipc/client";
@@ -9,14 +11,15 @@
   import SearchField from "../shell/SearchField.svelte";
   import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
-  import { tone } from "../shell/tone";
-  import ChipRow from "./ChipRow.svelte";
-  import { keyOf } from "./monitor-state.svelte";
+  import { tone, toneColour } from "../shell/tone";
+  import Timeline from "./Timeline.svelte";
+  import { entryKey, keyOf } from "./monitor-state.svelte";
 
   let {
     query = $bindable(),
     filled,
     onselect,
+    ontoggle,
     onchoose,
     onopen,
     onmove,
@@ -25,17 +28,19 @@
   }: {
     /** The search as typed. */
     query: string;
-    /** The chip of each branch shown in the Main area, by branch key. */
+    /** The timeline entry of each branch shown in the Main area, by its index. */
     filled: (branch: BranchView) => number | null;
-    /** Select a branch: its first chip shows. */
+    /** A click on a branch: it expands and its newest entry shows. */
     onselect: (branch: BranchView) => void;
-    /** Show a chip of a branch. */
+    /** Expand a branch, or fold it back. */
+    ontoggle: (branch: BranchView) => void;
+    /** Show an entry of a branch's timeline. */
     onchoose: (branch: BranchView, chip: Chip) => void;
     /** Open a waiting review in the Main area. */
     onopen: (row: WaitingRow) => void;
     /** Move the selection by one entry. */
     onmove: (by: number) => void;
-    /** Step through the selected branch's chips. */
+    /** → (1) or ← (-1) on the selection. */
     onstep: (by: number) => void;
     /** Go to the Main area. */
     onmain: () => void;
@@ -49,9 +54,14 @@
   const selected = $derived(m.selected);
   const invalid = $derived(view?.query.error ?? null);
 
-  const isSelected = (key: string) => selected !== null && (selected.kind === "branch" ? keyOf(selected.branch) : selected.id) === key;
   /** The selected entry's element, kept in view. */
-  const selectedKey = $derived(selected === null ? null : selected.kind === "branch" ? keyOf(selected.branch) : selected.id);
+  const selectedKey = $derived(entryKey(selected));
+  const isSelected = (key: string) => selectedKey === key;
+  /** The selected entry of `branch`'s timeline, by its name. */
+  const selectedChip = (branch: BranchView) =>
+    selected?.kind === "chip" && keyOf(selected.branch) === keyOf(branch.key) ? selected.chip : null;
+  /** A collapsed branch's line under its name: its newest Run, the one in progress first. */
+  const latest = (branch: BranchView) => branch.chips.find((chip) => chip.kind === "run") ?? null;
 
   function keydown(event: KeyboardEvent) {
     if (plain(event, "ArrowDown") || plain(event, "j")) onmove(1);
@@ -67,7 +77,7 @@
   }
 
   function name(branch: BranchView): string {
-    return branch.name ? `${branch.project}  ${branch.name}` : branch.project;
+    return branch.name ? `${branch.project} / ${branch.name}` : branch.project;
   }
 </script>
 
@@ -92,12 +102,33 @@
     onkeydown={keydown}
     {@attach scrollTo(() => (selectedKey === null ? ":not(*)" : `[data-key="${CSS.escape(selectedKey)}"]`))}
   >
-    <ul class="branches" role="listbox" aria-label="Branches">
+    <ul class="branches" role="tree" aria-label="Branches">
       {#each branches as branch (keyOf(branch.key))}
         {@const key = keyOf(branch.key)}
-        <li role="option" aria-selected={isSelected(key)} class:selected={isSelected(key)} data-key={key}>
-          <div class="head">
-            <button class="name" tabindex="-1" onclick={() => onselect(branch)}>{name(branch)}</button>
+        {@const open = m.expanded.has(key)}
+        {@const newest = latest(branch)}
+        <li role="treeitem" aria-expanded={open} aria-selected={isSelected(key)} class="branch" class:open data-key={key}>
+          <div class="head" class:selected={isSelected(key)}>
+            <button class="chevron" tabindex="-1" aria-label="{open ? 'Fold' : 'Expand'} {name(branch)}" onclick={() => ontoggle(branch)}
+              ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg></button
+            >
+            <button class="name" tabindex="-1" onclick={() => onselect(branch)}>
+              <span class="label"
+                >{#if branch.name}<span class="project">{branch.project} /</span> <span class="branch-name">{branch.name}</span
+                  >{:else}<span class="branch-name">{branch.project}</span>{/if}</span
+              >
+              {#if !open}
+                <span class="latest">
+                  {#if newest?.kind === "run"}
+                    <span class="dot" style:--dot={toneColour(newest.mark.status)} aria-hidden="true"></span>
+                    <span class="status {tone(newest.mark.status)}">{newest.status}</span>
+                    <span class="age">{newest.age}</span>
+                  {:else}
+                    <span class="none">No Runs yet</span>
+                  {/if}
+                </span>
+              {/if}
+            </button>
             <button
               class="star"
               class:on={branch.starred}
@@ -107,7 +138,15 @@
               onclick={() => void browse.star(branch.key, !branch.starred)}>{branch.starred ? "★" : "☆"}</button
             >
           </div>
-          <ChipRow {branch} filled={filled(branch)} onchoose={(chip) => onchoose(branch, chip)} onolder={() => void browse.older(branch.key)} />
+          {#if open}
+            <Timeline
+              {branch}
+              filled={filled(branch)}
+              selected={selectedChip(branch)}
+              onchoose={(chip) => onchoose(branch, chip)}
+              onolder={() => void browse.older(branch.key)}
+            />
+          {/if}
         </li>
       {:else}
         <li class="empty" class:error={!!invalid}>
@@ -170,29 +209,105 @@
     min-height: 0;
     overflow: auto;
   }
-  .branches li {
-    display: grid;
-    gap: 4px;
-    padding: 8px var(--pad);
+  .branch {
     min-width: 0;
+    padding: 6px var(--pad) 8px 6px;
+    border-bottom: 1px solid var(--border);
   }
-  /* The name and its star share a line above the chips; the star stays at the line's end. */
+  /* A chevron, then the name over its newest Run's status, then the star. */
   .head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 4px;
     min-width: 0;
+    border-radius: 8px;
+  }
+  .chevron {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    padding: 3px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .chevron svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 120ms ease;
+  }
+  .open .chevron svg {
+    transform: rotate(90deg);
+  }
+  .name {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    margin: 0;
+    padding: 2px 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  /* The branch reads first; its project is the quieter half of the name. */
+  .label {
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .project {
+    color: var(--muted);
+  }
+  .branch-name {
+    font-weight: 600;
+  }
+  .latest {
+    display: grid;
+    grid-template-columns: 10px auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+    font-size: 12px;
+  }
+  .latest .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--dot);
+  }
+  .latest .status {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .latest .age {
+    justify-self: end;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .latest .none {
+    grid-column: 1 / -1;
+    color: var(--muted);
   }
   /* A star is quiet until it is on; on, it carries the amber of attention. */
   .star {
-    flex: none;
-    margin: 0 0 0 auto;
+    margin: 2px 0 0;
     padding: 0 2px;
     border: 0;
     background: none;
     color: var(--muted);
     font-size: 13px;
-    line-height: 1;
+    line-height: 1.4;
     cursor: pointer;
     opacity: 0.55;
   }
@@ -203,28 +318,18 @@
   .star.on {
     color: var(--light-active);
   }
-  /* The branch's name labels its chips, which carry what matters: a smaller, regular, secondary
-     label above them. */
-  .name {
-    min-width: 0;
-    max-width: 100%;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--muted);
-    font: inherit;
-    font-size: 11px;
-    font-weight: 400;
-    white-space: pre;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
+  .branch :global(.timeline) {
+    margin-left: 26px;
   }
+  .branch :global(.older) {
+    margin-left: 54px;
+  }
+  /* A selected timeline entry is the one shown, already in its grey pill; keys add the bar. */
   .selected {
     background: var(--selection);
   }
-  .entries:focus-visible .selected {
+  .entries:focus-visible .selected,
+  .entries:focus-visible .branch :global(li.selected > .entry) {
     box-shadow: inset 2px 0 0 var(--accent);
   }
   /* Grows upward like a stack, up to half the Pane; beyond that it scrolls. */

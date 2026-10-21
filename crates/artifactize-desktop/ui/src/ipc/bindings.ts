@@ -213,7 +213,7 @@ branch: string } |
 /**  A folder outside Git. */
 { kind: "folder"; path: PathKey };
 
-/**  One live branch of the pane: `project  branch`, then its row of chips, newest first. */
+/**  One live branch of the pane: `project / branch`, then its timeline, newest first. */
 export type BranchView = {
 	key: BranchKey,
 	project: string,
@@ -221,9 +221,9 @@ export type BranchView = {
 	name: string,
 	/**  Where its Current is scanned and its tools run. */
 	workspace: PathKey,
-	/**  Its newest Runs, newest first, led by the one in progress or else the Current chip. */
+	/**  Its timeline: its newest Runs, newest first, led by the one in progress or else the Current. */
 	chips: Chip[],
-	/**  Older Runs than the row holds exist: reaching its oldest end, on the right, shows them. */
+	/**  Older Runs than the timeline holds exist: **Older runs** at its end shows them. */
 	older: boolean,
 	/**  Starred: listed before the branches that are not. */
 	starred: boolean,
@@ -268,10 +268,12 @@ export type CardView = {
 	model: string | null,
 };
 
-/**  One chip of a branch's row: a Run, or the branch's Current. */
+/**  One entry of a branch's timeline: a Run, or the branch's Current. */
 export type Chip = { kind: "run"; id: string; mark: Mark; 
-/**  Its status and age, a running one's its time so far: `RED 25m`, `Running 2m 22s`. */
-text: string; running: boolean } | 
+/**  Its status in words: `GREEN`, `RED`, `Running`. */
+status: string; 
+/**  How long ago it started, `25m ago`; a running one's time so far, `2m 22s`. */
+age: string; running: boolean } | 
 /**  The worktree as it is now. */
 { kind: "current" };
 

@@ -126,7 +126,7 @@ pub struct Branch {
 }
 
 impl Branch {
-    /// The Run in progress the chip row ends with: the newest Run, while it runs.
+    /// The Run in progress a branch's timeline starts with: the newest Run, while it runs.
     pub fn running(&self) -> Option<&Chip> {
         self.runs
             .last()

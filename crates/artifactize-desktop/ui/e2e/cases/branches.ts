@@ -1,7 +1,7 @@
-// The Pane's Branches and Waiting stack in the real app on CLI-made state: a branch's chip row
-// of Runs ending with the Run in progress or its Current, dragged sideways to bring older Runs;
-// worktrees and waiting reviews that come and go in another process; and a review left for a
-// branch without being closed.
+// The Pane's Branches and Waiting stack in the real app on CLI-made state: a branch collapsed to
+// its newest Run's status, expanded to its timeline of Runs led by the Run in progress or its
+// Current, with Older runs bringing older ones; worktrees and waiting reviews that come and go
+// in another process; and a review left for a branch without being closed.
 import assert from "node:assert/strict";
 import {
   addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, ended, orderRuns, requests, signOff, signoff,
@@ -14,36 +14,12 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { exists, nativePath, readText, removeTree, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
-import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, leans, type Chip } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, leans } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
 }
 
-const ROW = '[role="group"][aria-label="Runs of repo master"]';
-
-/** The chip row's scroll position and fades as drawn. */
-function row(browser: WebdriverIO.Browser) {
-  return browser.execute((selector) => {
-    const element = document.querySelector<HTMLElement>(selector)!;
-    const box = element.getBoundingClientRect();
-    return {
-      left: Math.round(element.scrollLeft),
-      right: Math.round(element.scrollWidth - element.clientWidth - element.scrollLeft),
-      overflows: element.scrollWidth > element.clientWidth,
-      // A scrollbar takes height from the row's content box; this row has none.
-      scrollbar: element.offsetHeight - element.clientHeight > 1 || getComputedStyle(element).scrollbarWidth !== "none",
-      fadeLeft: element.dataset.fadeLeft === "true",
-      fadeRight: element.dataset.fadeRight === "true",
-      masked: getComputedStyle(element).maskImage !== "none",
-      end: { x: Math.round(box.right - 12), y: Math.round(box.top + box.height / 2) },
-    };
-  }, ROW);
-}
-
-/** Hold the mouse on the row at its right end, drag it left to the window's edge, bringing older
- * Runs in from the right, and release it; again, until `until` holds. A person's hand does the
- * same strokes. */
 /** The starred branches saved in `state`, or null before the first star. The file is replaced
  * whole, never written in place. */
 function kept(state: NativePath): unknown[] | null {
@@ -51,25 +27,14 @@ function kept(state: NativePath): unknown[] | null {
   return exists(file) ? JSON.parse(readText(file)) as unknown[] : null;
 }
 
-async function drag(browser: WebdriverIO.Browser, until: () => Promise<boolean>) {
-  // A stroke spans about the Pane's width, so a long row takes many.
-  const STROKES = 16;
-  for (let stroke = 0; stroke < STROKES && !(await until()); stroke += 1) {
-    const { end: at } = await row(browser);
-    await browser.action("pointer", { id: "chips" }).move({ x: at.x, y: at.y }).down().perform(true);
-    try {
-      for (let x = at.x - 60; x > 4; x -= 60) await browser.action("pointer", { id: "chips" }).move({ x, y: at.y }).perform(true);
-      await browser.action("pointer", { id: "chips" }).up().perform();
-    } finally { await browser.releaseActions(); }
-  }
-  await waitFor(browser, until, "the dragged row's outcome");
-}
+/** The first row of the Branches: its chevron, and its Older runs button while it shows one. */
+const FIRST = '[aria-label="Branches"] > [role="treeitem"]:first-child';
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-BRANCH-RUNS; UX edges: E-PANE-SELECT E-PANE-DRAG E-PANE-CHIP E-CURRENT-CHIP
+  // UX journey: J-BRANCH-RUNS; UX edges: E-PANE-FOLD E-PANE-SELECT E-PANE-OLDER E-PANE-CHIP E-CURRENT-CHIP
   scenario<{ runs: string[] }>(
-    "branches-chip-row",
-    "lays a branch's Runs out newest to oldest after its Current, drags the row for older Runs without choosing one, and shows a clicked chip",
+    "branches-timeline",
+    "folds a branch to its newest Run's status, expands it on a click to its Runs newest first after its Current, brings older Runs with Older runs, and shows a clicked entry",
     async () => {
       const { fixture, runs } = createHistory(24);
       return { fixture, data: { runs } };
@@ -77,63 +42,63 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { runs } }) => {
       const newest = [...runs].reverse();
       await listed(browser, "repo  master");
-      // Selecting the branch shows its first chip: with no Run in progress, its Current.
+      // Folded, the branch reads `project / branch` over its newest Run's status and age.
+      if ((await branch(browser, "repo  master"))?.expanded) {
+        await browser.$(`${FIRST} button.chevron`).click();
+        await waitFor(browser, async () => (await branch(browser, "repo  master"))?.expanded === false, "the branch folded");
+      }
+      let shown = (await branch(browser, "repo  master"))!;
+      assert.equal(shown.label, "repo / master");
+      assert.match(shown.latest, /^GREEN \d+[smhd]( \d+[smh])? ago$/, `the newest Run's status and age: ${shown.latest}`);
+      assert.deepEqual(shown.chips, [], "no timeline while folded");
+      // A click on it expands it and shows its newest entry: with no Run in progress, its Current.
       await selectBranch(browser, "repo  master");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the branch's Current shown");
-      let shown = (await branch(browser, "repo  master"))!;
-      // The Current chip, filled, then the newest Runs, newest first; older Runs arrive later.
+      shown = (await branch(browser, "repo  master"))!;
+      assert.equal(shown.latest, "", "expanded, the timeline says it instead");
+      // The Current, shown, then the newest Runs, newest first; older Runs arrive later.
       const first = shown.chips.length - 1;
       assert.ok(first > 0 && first < runs.length, `some of the newest Runs first: ${first} of ${runs.length}`);
       assert.deepEqual(shown.chips.map((chip) => chip.id), ["current", ...newest.slice(0, first)]);
       assert.deepEqual(shown.chips.map((chip) => chip.filled), [true, ...Array(first).fill(false)]);
+      assert.deepEqual([shown.chips[0].text, shown.chips[0].sub], ["Current", "Working tree"]);
       for (const chip of shown.chips.slice(1)) {
-        assert.equal(chip.glyph, "✓", `${chip.id} shows its status`);
-        assert.match(chip.text, /^GREEN \d+[smhd]/, `${chip.id} reads its status and age`);
-        // Tinted with its status colour, its glyph in that colour.
-        assert.ok(leans(chip.paint, 1) && leans(chip.ink, 1), `${chip.id} is tinted green, its glyph green: ${JSON.stringify(chip)}`);
+        assert.match(chip.text, /^GREEN \d+[smhd]( \d+[smh])? ago$/, `${chip.id} reads its status and age`);
+        assert.equal(chip.sub, chip.id, `${chip.id} names its Run`);
+        assert.ok(leans(chip.dot, 1), `${chip.id}'s dot is green: ${JSON.stringify(chip)}`);
       }
-      // The shown Current chip is filled with the accent.
-      assert.ok(leans(shown.chips[0].paint, 2), `the shown Current chip is filled with the accent: ${JSON.stringify(shown.chips[0])}`);
-      // The row starts at its newest end with no scrollbar; the chips fade out at the end with more.
-      let drawn = await row(browser);
-      assert.ok(drawn.overflows && !drawn.scrollbar, `the row is wider than its place and has no scrollbar: ${JSON.stringify(drawn)}`);
-      assert.ok(drawn.left <= 1 && !drawn.fadeLeft && drawn.fadeRight && drawn.masked, `the newest end shown, older chips fading: ${JSON.stringify(drawn)}`);
 
-      // Dragging it left brings older chips into view, and at its oldest end older Runs arrive
-      // without moving what is shown.
-      await drag(browser, async () => (await branch(browser, "repo  master"))?.chips.length === 25);
+      // Older runs brings the older Runs in below the oldest, without changing what is shown.
+      for (let click = 0; click < 8 && (await branch(browser, "repo  master"))!.chips.length < runs.length + 1; click += 1) {
+        const count = (await branch(browser, "repo  master"))!.chips.length;
+        await browser.$(`${FIRST} button.older`).click();
+        await waitFor(browser, async () => (await branch(browser, "repo  master"))!.chips.length > count, "older Runs arrived");
+      }
       shown = (await branch(browser, "repo  master"))!;
       assert.deepEqual(shown.chips.map((chip) => chip.id), ["current", ...newest], "every Run of the branch, newest first");
-      drawn = await row(browser);
-      assert.ok(drawn.left > 1 && drawn.fadeLeft, `the row scrolled away from its newest end, newer chips fading: ${JSON.stringify(drawn)}`);
-      await drag(browser, async () => (await row(browser)).right <= 1);
-      drawn = await row(browser);
-      assert.ok(drawn.fadeLeft && !drawn.fadeRight, `the oldest end shown, newer chips fading: ${JSON.stringify(drawn)}`);
-      // No drag chose a chip: the Current is still the one shown.
-      assert.equal(await mainTitle(browser), "Current · repo  master", "a drag chooses nothing");
-      assert.equal((await branch(browser, "repo  master"))?.chips[0]?.filled, true);
+      assert.equal(await browser.$(`${FIRST} button.older`).isExisting(), false, "no Older runs once every Run is listed");
+      assert.equal(await mainTitle(browser), "Current · repo  master", "Older runs chooses nothing");
 
-      // A click on a chip shows that Run, filled.
+      // A click on an entry shows that Run, the only one marked.
       await showRun(browser, "repo  master", runs[0]);
       await graphShown(browser, "a:n000");
       shown = (await branch(browser, "repo  master"))!;
-      assert.deepEqual(shown.chips.filter((chip) => chip.filled).map((chip) => chip.id), [runs[0]], "only the clicked chip is filled");
-      // Filled with its status colour, stronger than the tint of a chip not shown; the Current
-      // chip, not shown, keeps an accent tint.
-      const [filled, tinted] = [shown.chips.at(-1)!, shown.chips.at(-2)!];
-      const strength = (chip: Chip) => chip.paint[1] - Math.max(chip.paint[0], chip.paint[2]);
-      assert.ok(leans(filled.paint, 1) && strength(filled) > strength(tinted), `the shown Run's chip is filled green: ${JSON.stringify({ filled, tinted })}`);
-      assert.ok(leans(shown.chips[0].paint, 2), `the Current chip keeps an accent tint: ${JSON.stringify(shown.chips[0])}`);
-      // The Current chip shows the Current again.
+      assert.deepEqual(shown.chips.filter((chip) => chip.filled).map((chip) => chip.id), [runs[0]], "only the clicked entry is marked");
+      // The Current shows the Current again.
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown again");
+      // The chevron folds it back to its status; what is shown stays.
+      await browser.$(`${FIRST} button.chevron`).click();
+      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.expanded === false, "folded again");
+      assert.match((await branch(browser, "repo  master"))!.latest, /^GREEN /);
+      assert.equal(await mainTitle(browser), "Current · repo  master", "folding chooses nothing");
     },
   ),
 
   // UX journeys: J-BRANCH-RUNS J-LIVE; UX edges: E-BRANCH-RUNNING E-BRANCH-RUN-END
   scenario<{ first: string }>(
     "branches-run-in-progress",
-    "starts a branch's row with a Run another process starts, running its time so far, and with the Current again once it ends",
+    "starts a branch's timeline with a Run another process starts, running its time so far, and with the Current again once it ends",
     async () => {
       const fixture = await create();
       const first = signoff(fixture);
@@ -142,6 +107,7 @@ export const scenarios: Scenario[] = [
       return { fixture, data: { first: first.runId } };
     },
     async (browser, { fixture, data: { first } }) => {
+      await expand(browser, "repo  master");
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify(["current", first]),
         "the Current, then the ended Run");
       // Another process starts a Run that waits for a person.
@@ -150,28 +116,27 @@ export const scenarios: Scenario[] = [
       // Explicitly the newer, whatever times the two verifies were saved at.
       orderRuns(fixture, [first, run]);
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([run, first]),
-        "the row starts with the Run in progress, the Current chip gone");
+        "the timeline starts with the Run in progress, the Current gone");
       const running = (await branch(browser, "repo  master"))!.chips[0];
-      assert.match(running.text, /^Running \d+[smh]/, `the running chip reads its time so far: ${running.text}`);
-      assert.ok(leans(running.paint, 2), `the running chip is tinted blue: ${JSON.stringify(running)}`);
-      // Its sign-off is given elsewhere: the Run ends, its chip shows its final status and age.
+      assert.match(running.text, /^Running \d+[smh]( \d+[smh])?$/, `the running entry reads its time so far, not a time ago: ${running.text}`);
+      assert.equal(running.sub, run);
+      // Its sign-off is given elsewhere: the Run ends, its entry shows its final status and age.
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request, "the new Run asks for the sign-off");
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify(["current", run, first]),
-        "the row starts with the Current again");
+        "the timeline starts with the Current again");
       const ended = (await branch(browser, "repo  master"))!.chips[1];
-      assert.equal(ended.id, run, "the ended Run follows the Current chip");
-      assert.equal(ended.glyph, "✓");
-      assert.match(ended.text, /^GREEN \d+[smhd]/, `the ended chip reads its final status and age: ${ended.text}`);
-      assert.ok(leans(ended.paint, 1), `the GREEN chip is tinted green: ${JSON.stringify(ended)}`);
-      // The chips carry the entry: its name is a smaller, lighter label above them.
+      assert.equal(ended.id, run, "the ended Run follows the Current");
+      assert.match(ended.text, /^GREEN \d+[smhd]( \d+[smh])? ago$/, `the ended entry reads its final status and age: ${ended.text}`);
+      assert.ok(leans(ended.dot, 1), `the GREEN entry's dot is green: ${JSON.stringify(ended)}`);
+      // The branch's name reads first: its branch in bold, its project quieter beside it.
       const type = await browser.execute(() => {
-        const row = document.querySelector('[aria-label="Branches"] [role="option"]')!;
-        const read = (element: Element) => ({ size: parseFloat(getComputedStyle(element).fontSize), weight: Number(getComputedStyle(element).fontWeight) });
-        return { name: read(row.querySelector(".name")!), chip: read(row.querySelector("button[data-chip]")!) };
+        const row = document.querySelector('[aria-label="Branches"] > [role="treeitem"]')!;
+        const read = (element: Element) => ({ weight: Number(getComputedStyle(element).fontWeight), colour: getComputedStyle(element).color });
+        return { branch: read(row.querySelector(".branch-name")!), project: read(row.querySelector(".project")!) };
       });
-      assert.ok(type.name.size < type.chip.size && type.name.weight < type.chip.weight, `the name is quieter than its chips: ${JSON.stringify(type)}`);
+      assert.ok(type.branch.weight > type.project.weight && type.branch.colour !== type.project.colour, `the branch reads before its project: ${JSON.stringify(type)}`);
     },
   ),
 
@@ -230,6 +195,8 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await names()).length === 4, "the four live entries");
       assert.deepEqual(await names(), ["loosefiles", "repo  master", "repo  scope-one", "repo  scope-two"]);
       // A folder outside Git with a Run is listed by its name, and selecting it shows its Current.
+      assert.equal((await branch(browser, "loosefiles"))?.label, "loosefiles");
+      await expand(browser, "loosefiles");
       assert.deepEqual((await branch(browser, "loosefiles"))?.chips.map((chip) => chip.id), ["current", plain.run]);
       await selectBranch(browser, "loosefiles");
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · loosefiles", "the folder's Current shown");
@@ -246,7 +213,9 @@ export const scenarios: Scenario[] = [
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "--detach", nativePath(fixture.root, "loose"));
       await waitFor(browser, async () => (await names()).length === 5, "the added worktrees listed");
       assert.deepEqual(await names(), ["repo  added", "repo  loose", "repo  master", "repo  scope-one", "repo  scope-two"]);
-      assert.deepEqual((await branch(browser, "repo  added"))?.chips.map((chip) => chip.id), ["current"], "a branch without Runs has its Current chip");
+      assert.equal((await branch(browser, "repo  added"))?.latest, "No Runs yet", "folded, a branch without Runs says so");
+      await expand(browser, "repo  added");
+      assert.deepEqual((await branch(browser, "repo  added"))?.chips.map((chip) => chip.id), ["current"], "a branch without Runs has its Current");
       // A worktree Git removes and one whose folder is deleted both go.
       git(fixture.repo, "-C", fixture.repo, "worktree", "remove", nativePath(fixture.root, "added"));
       removeTree(nativePath(fixture.root, "scope-one"));
@@ -393,14 +362,16 @@ export const scenarios: Scenario[] = [
       return { fixture, data: { master, shared } };
     },
     async (browser, { data: { master, shared } }) => {
+      await expand(browser, "repo  shared");
+      await expand(browser, "repo  master");
       await waitFor(browser, async () => (await branch(browser, "repo  shared"))?.chips.length === 3, "the shared branch's Runs listed");
       // One entry per project and branch: none for the removed folder, the live one or the session.
       assert.deepEqual((await branches(browser)).map((entry) => entry.name).sort(), ["repo  master", "repo  shared"]);
-      // Its row holds the person's Run from the removed folder and the agent session's from the
-      // live one after its Current, newest first.
+      // Its timeline holds the person's Run from the removed folder and the agent session's from
+      // the live one after its Current, newest first.
       assert.deepEqual((await branch(browser, "repo  shared"))?.chips.map((chip) => chip.id), ["current", ...[...shared].reverse()]);
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id), ["current", master]);
-      // A click on a chip of a branch not selected selects that branch and shows the chip's Run:
+      // A click on an entry of a branch not selected selects it and shows the entry's Run:
       // here the one from the removed folder, still the branch's.
       assert.deepEqual((await branches(browser)).filter((entry) => entry.selected), [], "no branch selected yet");
       await showRun(browser, "repo  shared", shared[0]);

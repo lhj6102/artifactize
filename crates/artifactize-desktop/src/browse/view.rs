@@ -86,22 +86,24 @@ impl BranchKey {
     }
 }
 
-/// One chip of a branch's row: a Run, or the branch's Current.
+/// One entry of a branch's timeline: a Run, or the branch's Current.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Chip {
     Run {
         id: crate::ids::RunKey,
         mark: Mark,
-        /// Its status and age, a running one's its time so far: `RED 25m`, `Running 2m 22s`.
-        text: String,
+        /// Its status in words: `GREEN`, `RED`, `Running`.
+        status: String,
+        /// How long ago it started, `25m ago`; a running one's time so far, `2m 22s`.
+        age: String,
         running: bool,
     },
     /// The worktree as it is now.
     Current,
 }
 
-/// One live branch of the pane: `project  branch`, then its row of chips, newest first.
+/// One live branch of the pane: `project / branch`, then its timeline, newest first.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BranchView {
@@ -111,9 +113,9 @@ pub struct BranchView {
     pub name: String,
     /// Where its Current is scanned and its tools run.
     pub workspace: PathKey,
-    /// Its newest Runs, newest first, led by the one in progress or else the Current chip.
+    /// Its timeline: its newest Runs, newest first, led by the one in progress or else the Current.
     pub chips: Vec<Chip>,
-    /// Older Runs than the row holds exist: reaching its oldest end, on the right, shows them.
+    /// Older Runs than the timeline holds exist: **Older runs** at its end shows them.
     pub older: bool,
     /// Starred: listed before the branches that are not.
     pub starred: bool,
@@ -333,22 +335,27 @@ fn status_word(status: RunStatus) -> String {
 
 fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> BranchView {
     let skipped = branch.runs.len().saturating_sub(limit);
-    let mut chips: Vec<Chip> = branch.runs[skipped..]
+    let kept = &branch.runs[skipped..];
+    // The newest Run, when one is in progress, stands where the Current would.
+    let running = branch.running().is_some() && !kept.is_empty();
+    let mut chips: Vec<Chip> = kept
         .iter()
-        .map(|chip| Chip::Run {
-            id: chip.id.clone().into(),
-            mark: monitor::Status::from(chip.status).into(),
-            text: format!(
-                "{} {}",
-                status_word(chip.status),
-                monitor::duration(now - chip.created_at.time())
-            ),
-            running: false,
+        .enumerate()
+        .map(|(at, chip)| {
+            let running = running && at + 1 == kept.len();
+            let age = monitor::duration(now - chip.created_at.time());
+            Chip::Run {
+                id: chip.id.clone().into(),
+                mark: monitor::Status::from(chip.status).into(),
+                status: status_word(chip.status),
+                // An ended Run reads as when it was; a running one as its time so far.
+                age: if running { age } else { format!("{age} ago") },
+                running,
+            }
         })
         .collect();
-    match (branch.running(), chips.last_mut()) {
-        (Some(_), Some(Chip::Run { running, .. })) => *running = true,
-        _ => chips.push(Chip::Current),
+    if !running {
+        chips.push(Chip::Current);
     }
     // What is happening now comes first, right under the branch's name.
     chips.reverse();

@@ -21,7 +21,7 @@ artifactize-desktop graph --repo PATH
 ```
 
 Without arguments the app opens with nothing chosen, whatever the current directory.
-`--repo PATH` selects the branch of that folder and shows its first chip; `--all`, the
+`--repo PATH` selects and expands the branch of that folder and shows its newest entry; `--all`, the
 default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
@@ -53,7 +53,7 @@ the Main area to resize them; the split stays as dragged whatever the Main area 
 A branch is a line of work in a Git repository. A worktree is a folder where one
 branch is checked out; a repository can have several, each on its own branch, or
 detached: on a commit rather than a branch. Each entry reads as its project and
-branch, such as `artifactize  feat/x`: a worktree that exists now with the branch it
+branch, such as `artifactize / feat/x`: a worktree that exists now with the branch it
 has checked out (a detached one by its folder's name), or a folder outside Git that
 exists now and holds its declarations.
 Its projects are those with Runs on this machine, and the one the app was started for
@@ -63,22 +63,24 @@ or go within seconds, without a reload. Who ran a Run, an agent session or a per
 makes no entry of its own: a branch's Runs are that project's Runs on that branch,
 from whichever folder they ran in.
 
-Under a branch's name its Runs sit in one row of chips, newest to oldest left to
-right, each with its status and age, a running one with its time so far:
-`[Running 2m 22s] [RED 25m] [RED 1h 20m] …`, coloured by status. While a Run is
-in progress on the branch the row starts with it; otherwise it starts with a
-**Current** chip. Drag the row sideways to scroll it, older Runs arriving at its
-right end. Selecting a branch shows its first chip; a click on a chip shows that one
-in the Main area, the shown chip filled.
+A folded branch shows its newest Run under its name: a dot in its status colour,
+its status and how long ago it ran (a running one, its time so far). Click a branch
+to expand it and show its newest entry; the chevron before its name expands or folds
+it without showing anything. Expanded, its timeline lists its Runs newest first, each
+with its status, age and Run ID. While a Run is in progress it comes first; otherwise
+the **Current** does, the worktree as it is now. **Older runs** at the end brings
+older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
+of branches can be expanded; the one the app was started for starts expanded.
 
 The ☆ at the end of a branch's name stars it: starred branches are listed first,
 each group in the search's order, and stay starred the next time you open the app.
 Click the ★ again to take the star away.
 
-↑/↓ or `j`/`k` move through the branches and then the waiting reviews; ←/→ choose
-the previous or next chip of the selected branch, its row scrolling to show it.
-Enter moves into the Main area, and Esc there, with no Detail open, returns to the
-Pane.
+↑/↓ or `j`/`k` move through the branches, the timelines of expanded ones and then
+the waiting reviews, showing each branch's newest entry or the entry reached. →
+expands the selected branch or enters its timeline; ← steps back out or folds it. ↓
+past a timeline's oldest entry brings older Runs. Enter moves into the Main area, and
+Esc there, with no Detail open, returns to the Pane.
 
 ### Search
 
@@ -122,7 +124,7 @@ as successful evidence.
 
 ### Run
 
-A Run's chip fills the Main area with the graph of its Artifacts and their verdicts,
+A Run chosen in the Pane fills the Main area with the graph of its Artifacts and their verdicts,
 under the Run's headline and what needs attention. Node and relation colours show
 review states (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked)
 and recolour in place as results arrive. Inspect dependencies through the graph's
@@ -136,7 +138,7 @@ or the pending-evals control reveals the unfinished checks behind an upstream wa
 
 ### Current
 
-The **Current** chip scans the branch's worktree as it is now, as
+A branch's **Current** scans its worktree as it is now, as
 [`artifactize status`](../features/run.md#status-and-static-graph) does, and draws
 the graph of its current declarations without needing a Run. Each Artifact is coloured
 reused (every eval's result would be reused without evaluation), would run, waiting or
@@ -234,7 +236,7 @@ made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 ## Human reviews
 
 A waiting review opened from the Pane, or by ID, fills the Main area as a Human
-review, its eval and Artifact above it. Choosing a branch or a chip leaves it without
+review, its eval and Artifact above it. Choosing a branch or a timeline entry leaves it without
 closing it: an open form keeps its draft and running review work goes on. Esc,
 after cancelling running work and leaving the form, returns to the Pane.
 

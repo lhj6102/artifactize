@@ -241,7 +241,7 @@ Summarize {docs}."""
       return { fixture, args: ["--repo", fixture.repo], data: { run: savedRuns(fixture)[0].id } };
     },
     async (browser, { data: { run } }) => {
-      // The Run ended, so the branch's first chip is its Current.
+      // The Run ended, so the branch's newest entry is its Current.
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [["current", true], [run, false]]);
       await graphShown(browser, "a:app");

@@ -335,7 +335,7 @@ export function orderRuns(fixture: Fixture, runs: readonly string[]): void {
 
 /**
  * A one-Artifact repository verified GREEN `count` times in a row, with no Run in progress: a
- * branch whose chip row holds more Runs than it first shows. Returns the Runs, oldest first.
+ * branch whose timeline holds more Runs than it first shows. Returns the Runs, oldest first.
  */
 export function createHistory(count: number): { fixture: Fixture; runs: string[] } {
   const fixture = createChain(1);
