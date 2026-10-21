@@ -21,8 +21,24 @@ from that page.
 
 ## Install
 
-Install the plugin with the steps for your assistant on the
-[installation page](../getting-started/install.md#plugin-for-claude-code-and-codex).
+In a Claude Code session, add the marketplace, then install the plugin from it:
+
+```text
+/plugin marketplace add lhj6102/artifactize
+/plugin install artifactize@artifactize
+```
+
+From a shell, `claude plugin marketplace add lhj6102/artifactize` and
+`claude plugin install artifactize@artifactize` do the same.
+
+For Codex, in a shell:
+
+```sh
+codex plugin marketplace add lhj6102/artifactize
+codex plugin add artifactize@artifactize
+```
+
+Or run `/plugins` in Codex CLI and pick the `artifactize` marketplace.
 
 **Claude Code:** run `/reload-plugins` or start a new session, then check `/mcp`
 for the `artifactize` server. Ask in your own words, or invoke the skill as
@@ -36,8 +52,11 @@ where `<project>` is the directory the session started in.
 ## Updates
 
 The plugin follows this repository's `main` branch, which holds released versions.
-The [installation page](../getting-started/install.md#update) shows how to update
-it in each assistant, and the `artifactize` program itself.
+Update it with `/plugin marketplace update artifactize` in Claude Code (or turn on
+auto-update for the marketplace in `/plugin`), or
+`codex plugin marketplace upgrade artifactize` in Codex. The
+[installation page](../getting-started/install.md#update) shows how to update the
+`artifactize` program itself.
 
 ## Without the plugin
 
