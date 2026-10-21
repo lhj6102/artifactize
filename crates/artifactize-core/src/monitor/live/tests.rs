@@ -205,6 +205,19 @@ fn the_launch_folder_is_listed_before_its_project_has_a_run() {
     assert!(listing.branches[0].runs.is_empty());
 }
 
+#[test]
+fn the_launch_folder_outside_git_is_listed_with_its_artifacts_only_in_subfolders() {
+    let root = crate::test_os::tempdir();
+    let plain = root.path().join("plain");
+    std::fs::create_dir_all(plain.join("docs")).unwrap();
+    std::fs::write(plain.join("docs").join("index.artf"), "name = \"docs\"\n").unwrap();
+    let plain = crate::test_os::canonical(&plain);
+    let listing = branches(&[], Some(&plain), &mut Discovery::default());
+    assert_eq!(names(&listing), [("plain".into(), String::new())]);
+    assert_eq!(listing.launch, Some(Place::Folder(plain.clone())));
+    assert_eq!(listing.branches[0].workspace, plain);
+}
+
 fn branch(project: &str, name: &str, latest: Option<i64>) -> Branch {
     Branch {
         place: Place::Folder(format!("/{project}/{name}").into()),

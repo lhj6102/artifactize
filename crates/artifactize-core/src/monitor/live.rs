@@ -270,11 +270,21 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
             Place::Git { .. } => None,
         })
         .collect();
+    // A Run's folder is live while it still holds declarations; the folder the app was started
+    // for is live while it exists, as the CLI takes any folder as `--repo`, its Artifacts
+    // perhaps only in subfolders.
+    let started = |path: &PathBuf| {
+        launched
+            .as_ref()
+            .is_some_and(|(place, _)| matches!(place, Place::Folder(folder) if folder == path))
+    };
     live.extend(
         folders
             .into_iter()
             .filter(|path| {
-                path.is_dir() && crate::workspace::has_artifact_marker(path).unwrap_or(false)
+                path.is_dir()
+                    && (started(path)
+                        || crate::workspace::has_artifact_marker(path).unwrap_or(false))
             })
             .map(|path| (Place::Folder(path.clone()), path.clone())),
     );
