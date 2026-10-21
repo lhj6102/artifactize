@@ -4,14 +4,14 @@
 // Artifact opens its Detail with a tab per eval, every Artifact stays clickable beside the Detail,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, requests, savedRuns, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
 import { aside, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
-import { branch, ENTRIES, entriesFocused, listed, MAIN, mainFocused, showRun } from "../pane.ts";
+import { branch, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, showRun } from "../pane.ts";
 
 /** A fixture whose one Run ended: the branch's last chip is its Current, so its Run is chosen. */
 function ended(fixture: ReturnType<typeof createChain>) {
@@ -243,6 +243,84 @@ export const scenarios: Scenario[] = [
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       await graphShown(browser, "a:release");
+    },
+  ),
+
+  // UX journey: J-GRAPH-CAMERA; UX edges: E-GRAPH-FIRST E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
+  scenario<{ request: string }>(
+    "graph-camera-stays",
+    "shows the whole graph first, then leaves its camera to the person: the Detail and a new result never move it, Zoom Out and Fit View do",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: { request: signoff(fixture).id } };
+    },
+    async (browser, { fixture, data: { request } }) => {
+      await browser.setWindowSize(1440, 872);
+      await afterRender(browser);
+      await graphShown(browser, "a:release");
+      /** The Run graph's camera, whether every Artifact is inside its canvas, and whether every
+       * one is left of the open Detail. */
+      const camera = () => browser.execute(() => {
+        const ofGraph = (element: Element) => !element.closest('aside[aria-label="Detail"]');
+        const viewport = [...document.querySelectorAll<HTMLElement>(".svelte-flow__viewport")].find(ofGraph)!;
+        const canvas = document.querySelector(".graph .canvas")!.getBoundingClientRect();
+        const edge = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect().left ?? null;
+        const nodes = [...document.querySelectorAll(".svelte-flow__node")].filter(ofGraph).map((node) => node.getBoundingClientRect());
+        return {
+          transform: viewport.style.transform,
+          whole: nodes.every((box) => box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom),
+          beside: edge !== null && nodes.every((box) => box.right <= edge),
+        };
+      });
+      /** The camera once it holds still over a painted frame. */
+      const settled = async () => {
+        let shown = await camera();
+        await browser.waitUntil(async () => {
+          const before = shown.transform;
+          await afterRender(browser);
+          shown = await camera();
+          return before === shown.transform;
+        }, { timeout: 15000, timeoutMsg: "the camera held still" });
+        return shown;
+      };
+      const first = await settled();
+      assert.ok(first.whole, "the graph shows whole when it first appears");
+      const title = await mainTitle(browser);
+
+      // Opening a Detail, switching it to a neighbour and closing it leave the camera.
+      await openArtifact(browser, "a:release", "Artifact release");
+      assert.equal((await settled()).transform, first.transform, "opening the Detail moved nothing");
+      await aside(browser).$('.svelte-flow__node[data-id="a:ship"]').click();
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "the Detail switched to ship" });
+      assert.equal((await settled()).transform, first.transform, "switching the Detail moved nothing");
+      await aside(browser).$("button*=Close").click();
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
+      assert.equal((await settled()).transform, first.transform, "closing the Detail moved nothing");
+
+      // A new result relights the graph in place.
+      signOff(fixture, request);
+      await browser.waitUntil(() => browser.$('.graph .svelte-flow__node[data-id="a:release"]').getAttribute("data-light").then((light) => light === "green"),
+        { timeout: 30000, timeoutMsg: "release relit GREEN" });
+      assert.equal(await mainTitle(browser), title, "the same Run's graph stays shown");
+      assert.equal((await settled()).transform, first.transform, "a new result moved nothing");
+
+      // The person zooms out with the Detail open (a small graph first fits at the largest zoom);
+      // switching it keeps their camera.
+      await openArtifact(browser, "a:release", "Artifact release");
+      await browser.$(".graph .svelte-flow__controls-zoomout").click();
+      const zoomed = await settled();
+      assert.notEqual(zoomed.transform, first.transform, "Zoom Out moved the camera");
+      await aside(browser).$('.svelte-flow__node[data-id="a:ship"]').click();
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "the Detail switched to ship" });
+      assert.equal((await settled()).transform, zoomed.transform, "the person's camera stays");
+
+      // Fit View, the person's own, shows every Artifact beside the open Detail.
+      await browser.$(".graph .svelte-flow__controls-fitview").click();
+      const fitted = await settled();
+      assert.ok(fitted.beside, `Fit View shows every Artifact left of the Detail: ${JSON.stringify(fitted)}`);
+      await aside(browser).$("button*=Close").click();
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
+      assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");
     },
   ),
 

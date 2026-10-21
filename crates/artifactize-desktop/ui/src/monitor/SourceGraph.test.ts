@@ -272,7 +272,8 @@ describe("SourceGraph", () => {
     render(SourceGraph, { source: current, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
     await waitFor(() => expect(node("a:graph")).not.toBeNull());
     expect(node("a:graph")?.getAttribute("aria-label")).toBe("graph: would run (2 evals)");
-    expect(node("a:graph")?.textContent).toContain("would run (2 evals)");
+    // Drawn by its colour alone, as a Run's Artifacts are: the node shows only its name.
+    expect(node("a:graph")?.textContent?.trim()).toBe("graph");
     expect(node("a:app")?.dataset.light).toBe("reused");
     const legend = [...screen.getByRole("list", { name: "Legend" }).querySelectorAll("li")].map((item) => item.textContent?.trim());
     expect(legend).toEqual(["reused", "would run", "waiting", "blocked by upstream"]);

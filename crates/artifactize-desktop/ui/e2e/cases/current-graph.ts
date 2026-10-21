@@ -339,6 +339,10 @@ Summarize {docs}."""
       await graphShown(browser, "a:app");
       const marked = { "a:app": "app: would run (2 evals)", "a:down": "down: blocked", "a:red": "red: reused" };
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(marked), `each Artifact marked: ${JSON.stringify(await drawn())}`);
+      // Drawn by colour alone, as a Run's Artifacts are: each node shows only its name.
+      const texts = await browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('section[aria-label="Current"] .svelte-flow__node')]
+        .filter((node) => !node.closest("aside")).map((node) => [node.dataset.id ?? "", node.textContent?.trim() ?? ""])));
+      assert.deepEqual(texts, { "a:app": "app", "a:down": "down", "a:red": "red" });
       const look = await graphAppearance(browser);
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:app"].dot, "blocked is painted unlike would run");
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:red"].dot, "blocked is painted unlike reused");
@@ -347,6 +351,18 @@ Summarize {docs}."""
       assert.deepEqual(await evalRows(browser), [
         { name: "alpha", status: "reused" }, { name: "beta", status: "would run" }, { name: "gamma", status: "would run" },
       ]);
+      // A title wider than the Detail wraps; each eval's name and status stay on one line.
+      const lines = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] .evals .eval')].map((row) => {
+        const count = (part: Element | null) => {
+          if (!part) return 0;
+          const range = document.createRange();
+          range.selectNodeContents(part);
+          return new Set([...range.getClientRects()].map((box) => Math.round(box.top))).size;
+        };
+        return { name: count(row.querySelector(".name")), status: count(row.querySelector(".status")), title: count(row.querySelector(".right")) };
+      }));
+      assert.ok(lines[0].title > 1, `alpha's long title wraps: ${JSON.stringify(lines)}`);
+      assert.ok(lines.every((row) => row.name === 1 && row.status === 1), `names and statuses on one line: ${JSON.stringify(lines)}`);
       await openTab(browser, "e:app/alpha", { row: true });
       await waitFor(browser, async () => (await summary(browser)).status === `↻ reused ${CACHED}`, `alpha's plan: ${JSON.stringify(await summary(browser))}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "app's Detail closed");

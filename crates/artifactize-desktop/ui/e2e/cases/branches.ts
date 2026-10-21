@@ -14,7 +14,7 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { exists, nativePath, removeTree, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
-import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, type Chip } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -132,6 +132,9 @@ export const scenarios: Scenario[] = [
         "the row ends with the Run in progress, the Current chip gone");
       const running = (await branch(browser, "repo  master"))!.chips[1];
       assert.match(running.text, /^Running \d+[smh]/, `the running chip reads its time so far: ${running.text}`);
+      /** The chip's background leans to the channel at `index` (0 red, 1 green, 2 blue). */
+      const leans = (chip: Chip, index: number) => chip.paint.length === 3 && chip.paint.every((value, at) => at === index || chip.paint[index] > value);
+      assert.ok(leans(running, 2), `the running chip is tinted blue: ${JSON.stringify(running)}`);
       // Its sign-off is given elsewhere: the Run ends, its chip shows its final status and age.
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request, "the new Run asks for the sign-off");
@@ -141,6 +144,14 @@ export const scenarios: Scenario[] = [
       const ended = (await branch(browser, "repo  master"))!.chips[1];
       assert.equal(ended.glyph, "✓");
       assert.match(ended.text, /^GREEN \d+[smhd]/, `the ended chip reads its final status and age: ${ended.text}`);
+      assert.ok(leans(ended, 1), `the GREEN chip is tinted green: ${JSON.stringify(ended)}`);
+      // The chips carry the entry: its name is a smaller, lighter label above them.
+      const type = await browser.execute(() => {
+        const row = document.querySelector('[aria-label="Branches"] [role="option"]')!;
+        const read = (element: Element) => ({ size: parseFloat(getComputedStyle(element).fontSize), weight: Number(getComputedStyle(element).fontWeight) });
+        return { name: read(row.querySelector(".name")!), chip: read(row.querySelector("button[data-chip]")!) };
+      });
+      assert.ok(type.name.size < type.chip.size && type.name.weight < type.chip.weight, `the name is quieter than its chips: ${JSON.stringify(type)}`);
     },
   ),
 

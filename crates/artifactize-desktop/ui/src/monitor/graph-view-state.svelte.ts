@@ -4,8 +4,10 @@ import type { Area } from "./camera";
 export class GraphViewState {
   /** The canvas as last measured with a size, and the part a docked panel covers. */
   area = $state.raw<Area | null>(null);
-  /** Svelte Flow measured the first draw and fitted it into view. */
+  /** Svelte Flow measured the first draw. */
   initialized = $state(false);
+  /** The first view showed the whole graph; from then on only the person moves the camera. */
+  fitted = $state(false);
 }
 
 export const [getGraphViewState, setGraphViewState] = createContext<GraphViewState>();

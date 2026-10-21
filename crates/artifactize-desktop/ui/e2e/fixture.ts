@@ -580,9 +580,9 @@ export function createMixed(): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
-    const check = (name: string, operation: Operation, instruction: string) => `
+    const check = (name: string, operation: Operation, instruction: string, title = `Check ${name}`) => `
 [evals.${name}]
-title = "Check ${name}"
+title = "${title}"
 profile = ${runtimeProfile(operation)}
 
 [evals.${name}.payload]
@@ -591,7 +591,9 @@ ${instruction}"""
 `;
     writeText(nativePath(makeDirectory(nativePath(repo, "red")), "index.artf"), `name = "red"\n${check("check", "fail", "Fail.")}`);
     writeText(nativePath(makeDirectory(nativePath(repo, "down")), "index.artf"), `name = "down"\n${check("check", "pass", "Run after {red}.")}`);
-    const app = (changed: boolean) => `name = "app"\n${check("alpha", "pass", "Check alpha.")}${
+    // alpha's title is wider than the Detail: its row wraps the title, never its status.
+    const title = "Alpha follows every rule of the frontend checklist the desktop UI keeps, from its state owners to its effects";
+    const app = (changed: boolean) => `name = "app"\n${check("alpha", "pass", "Check alpha.", title)}${
       check("beta", "pass", changed ? "Check beta again." : "Check beta.")}${check("gamma", "pass", changed ? "Check gamma again." : "Check gamma.")}`;
     writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), app(false));
     git(repo, "init", "-q", "--initial-branch=master", repo);

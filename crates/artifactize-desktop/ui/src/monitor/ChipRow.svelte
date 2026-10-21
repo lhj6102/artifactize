@@ -6,7 +6,7 @@
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { BranchView, Chip } from "../ipc/client";
-  import { tone } from "../shell/tone";
+  import { tone, toneColour } from "../shell/tone";
   import { ChipRowState, setChipRowState } from "./chip-row-state.svelte";
 
   let {
@@ -123,6 +123,8 @@
       class="chip"
       class:filled={at === filled}
       class:running={chip.kind === "run" && chip.running}
+      class:status={chip.kind === "run"}
+      style:--chip={chip.kind === "run" ? toneColour(chip.mark.status) : null}
       tabindex="-1"
       data-index={at}
       data-chip={chip.kind === "run" ? chip.id : "current"}
@@ -165,13 +167,13 @@
     flex: none;
     display: inline-flex;
     align-items: baseline;
-    gap: 4px;
-    padding: 1px 8px;
+    gap: 5px;
+    padding: 3px 10px;
     border: 1px solid var(--border);
     border-radius: 999px;
     background: var(--surface);
-    color: inherit;
-    font: 11px var(--font);
+    color: var(--text);
+    font: 500 12px var(--font);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -186,7 +188,26 @@
   .chip.filled .glyph {
     color: inherit;
   }
+  /* A Run's chip carries its status colour, as its glyph does: a tinted capsule edged in it,
+     its words in the text colour so they stay readable; shown, it is filled with it. */
+  .chip.status {
+    background: color-mix(in srgb, var(--chip) 10%, var(--surface));
+    border-color: color-mix(in srgb, var(--chip) 55%, var(--surface));
+  }
+  .chip.status:hover {
+    background: color-mix(in srgb, var(--chip) 18%, var(--surface));
+  }
+  .chip.status.filled {
+    background: var(--chip);
+    border-color: var(--chip);
+    color: var(--bg);
+  }
+  /* The Current chip, not a Run: tinted with the accent it is filled with when shown. */
+  .chip:not(.status):not(.filled) {
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--surface));
+  }
   .chip.running {
-    font-weight: 600;
+    font-weight: 700;
   }
 </style>

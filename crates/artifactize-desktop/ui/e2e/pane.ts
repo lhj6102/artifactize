@@ -3,8 +3,9 @@
 // real clicks on what the window shows.
 
 /** A chip as read: the Run it shows (`current` for the Current chip), its text without the
- * glyph, its glyph, and whether it is the one shown in the Main area. */
-export type Chip = { id: string; text: string; glyph: string; filled: boolean };
+ * glyph, its glyph, whether it is the one shown in the Main area, and its painted background
+ * as red, green and blue channels on any one scale. */
+export type Chip = { id: string; text: string; glyph: string; filled: boolean; paint: number[] };
 /** A branch's entry as read: `project  branch`, whether it is selected, and its chip row. */
 export type Branch = { name: string; selected: boolean; chips: Chip[] };
 /** A waiting review's row as read. */
@@ -26,6 +27,8 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
         text: [...chip.childNodes].filter((node) => node !== glyph).map((node) => node.textContent ?? "").join("").trim(),
         glyph: glyph?.textContent?.trim() ?? "",
         filled: chip.getAttribute("aria-pressed") === "true",
+        // `rgb(r, g, b)` or `color(srgb r g b)`: the first three numbers after the space name.
+        paint: (getComputedStyle(chip).backgroundColor.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number),
       };
     }),
   })));

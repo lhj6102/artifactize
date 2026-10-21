@@ -289,9 +289,11 @@
     margin: 0 0 10px;
     padding: 0;
   }
+  /* The name and status take their words first, never cut inside one; the title takes what is
+     left and wraps there. */
   .eval {
     display: grid;
-    grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr) auto;
+    grid-template-columns: 16px minmax(0, auto) auto minmax(0, 1fr);
     gap: 8px;
     width: 100%;
     margin: 0;
@@ -306,8 +308,11 @@
   .eval:hover {
     background: var(--surface-2);
   }
-  .eval .name,
-  .eval .status {
+  .eval .name {
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+  .eval .right {
     min-width: 0;
     overflow-wrap: anywhere;
   }

@@ -1,8 +1,7 @@
 // The graph's camera beside a panel docked over the canvas's right side, such as the Detail.
-// The part of the canvas left of the panel is what a person can see and click. A camera showing
-// the whole graph fits it into that part; a camera the person zoomed or panned keeps its zoom,
-// and moves only to bring the opened Artifact out from under the panel. Pure geometry over
-// Svelte Flow's public viewport calculation.
+// The part of the canvas left of the panel is what a person can see and click: a graph's first
+// view and Fit View show the whole graph in that part. Pure geometry over Svelte Flow's public
+// viewport calculation.
 import { getViewportForBounds, type Rect, type Viewport } from "@xyflow/svelte";
 
 /** The canvas: its size, and how much of its right side a docked panel covers. */
@@ -36,26 +35,4 @@ export function padding(at: Area | null, fit: Fit): Fit["padding"] | { x: number
 /** The viewport that shows all of `bounds` within the part of `at` the panel leaves. */
 export function whole(bounds: Rect, at: Area, fit: Fit): Viewport {
   return getViewportForBounds(bounds, at.width, at.height, fit.minZoom, fit.maxZoom, padding(at, fit));
-}
-
-/** Whether two viewports show the same, up to rounding. */
-export function same(a: Viewport, b: Viewport): boolean {
-  return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.zoom - b.zoom) < 1e-3;
-}
-
-/** The space kept between a revealed Artifact and the edges of what the panel leaves. */
-const MARGIN = 16;
-
-/** The viewport, at the same zoom, that brings `node` (in graph coordinates) into the part of
- * `at` the panel leaves with a margin, moving as little as it can; null when it is already
- * there. A node larger than that part keeps its left and top edges in view. */
-export function reveal(viewport: Viewport, node: Rect, at: Area): Viewport | null {
-  const shift = (start: number, size: number, room: number) => {
-    const end = start + size;
-    if (start < MARGIN || size > room - 2 * MARGIN) return MARGIN - start;
-    return end > room - MARGIN ? room - MARGIN - end : 0;
-  };
-  const dx = shift(node.x * viewport.zoom + viewport.x, node.width * viewport.zoom, at.width - at.covered);
-  const dy = shift(node.y * viewport.zoom + viewport.y, node.height * viewport.zoom, at.height);
-  return dx === 0 && dy === 0 ? null : { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom };
 }
