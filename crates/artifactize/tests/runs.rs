@@ -403,8 +403,11 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         serde_json::to_value(&migrated.run.definitions).unwrap(),
         serde_json::to_value(&before.run.definitions).unwrap()
     );
-    let moved = rusqlite::Connection::open(fixture.state.join(store::DATABASE))
-        .unwrap()
+    let moved = rusqlite::Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
         .query_row(
             "SELECT json_type(r.data,'$.definitions'),d.run_id FROM runs r JOIN run_definitions d ON d.run_id=r.id WHERE r.id=?",
             [&started.run],

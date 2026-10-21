@@ -332,9 +332,9 @@ in Codex.
 
 ### Upgrading from 0.11
 
-State schemas 6 and 7 are upgraded additively to 8 on first use. Existing Runs, cache records
-and Human approvals are preserved. An older binary limited to schema 6 or 7 cannot open the upgraded
-state; keep a backup before switching versions.
+State schemas 6 to 8 are upgraded additively to the current schema 9 on first use. Existing
+Runs, cache records and Human approvals are preserved. An older binary limited to schemas 6 to 8
+cannot open the upgraded state; keep a backup before switching versions.
 
 `artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
 Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal
