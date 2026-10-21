@@ -479,8 +479,25 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
     });
     const [current, removed] = ['"kind":"runtime"', '"kind":"dependency"'];
     rewrite(current, removed);
-    return { fixture, readable: runs[3], unreadable, restore: () => rewrite(removed, current) };
+    return {
+      fixture, readable: runs[3], unreadable,
+      restore: () => {
+        rewrite(removed, current);
+        // The readable Run too, if a case spoiled it.
+        if (!allUnreadable) updateDatabase(database, (db) => db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3").run(removed, current, runs[3]));
+      },
+    };
   }, fixture.root);
+}
+
+/** Make `run` of a fixture from {@link createUnreadableRuns} unreadable too, as a write by
+ * another version would; that fixture's restore undoes it. */
+export function spoilRun(fixture: Fixture, run: string): void {
+  updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
+    if (db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run('"kind":"runtime"', '"kind":"dependency"', run).changes !== 1) {
+      throw new Error(`Run ${run} was not rewritten`);
+    }
+  });
 }
 
 /**

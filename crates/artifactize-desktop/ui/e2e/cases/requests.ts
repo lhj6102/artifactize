@@ -74,6 +74,9 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");
       await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
       assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
+      // Whatever the idempotent Ctrl+R did after its handler, the RED draft outlived it.
+      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form again");
+      assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
     },
   ),
   // UX journey: J-HUMAN-CLAIM; UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE E-HUMAN-CLAIM

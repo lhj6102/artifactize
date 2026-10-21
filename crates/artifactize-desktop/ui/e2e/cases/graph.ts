@@ -343,7 +343,7 @@ export const scenarios: Scenario[] = [
       // Fit View, the person's own, shows every Artifact beside the open Detail.
       await browser.$(".graph .svelte-flow__controls-fitview").click();
       const fitted = await settled();
-      assert.ok(fitted.beside, `Fit View shows every Artifact left of the Detail: ${JSON.stringify(fitted)}`);
+      assert.ok(fitted.whole && fitted.beside, `Fit View shows every Artifact inside the canvas, left of the Detail: ${JSON.stringify(fitted)}`);
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");

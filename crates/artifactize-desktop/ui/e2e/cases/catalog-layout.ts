@@ -2,7 +2,7 @@
 // render: with nothing chosen, an empty Run, unreadable Runs or a layout in progress it stays
 // beside the divider and says so. Each starting condition owns a separate app and fixture.
 import assert from "node:assert/strict";
-import { createOutside, createUnreadableRuns, savedRuns } from "../fixture.ts";
+import { createOutside, createUnreadableRuns, savedRuns, spoilRun } from "../fixture.ts";
 import { createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
@@ -71,6 +71,29 @@ export const scenarios: Scenario[] = [
       const shown = (await slot(browser))!;
       assert.ok(shown.divider && shown.bounds[2] > 0 && shown.bounds[3] > 0);
       assert.match(shown.notice, /unknown variant `dependency`/);
+    },
+  ),
+  // UX journey: J-MAIN-RUN
+  scenario<{ readable: string }>(
+    "main-run-unreadable",
+    "keeps the graph's place and divider when the shown Run can no longer be read, saying so in that place",
+    async () => {
+      const { fixture, readable, restore } = createUnreadableRuns();
+      return { fixture, args: ["--repo", fixture.repo], data: { readable }, release: async () => restore() };
+    },
+    async (browser, { fixture, data: { readable } }) => {
+      await listed(browser, "repo  master");
+      await showRun(browser, "repo  master", readable);
+      await graphShown(browser, "a:n000");
+      const before = (await slot(browser))!;
+      // Another version rewrites the shown Run: its graph can no longer be read.
+      spoilRun(fixture, readable);
+      await browser.waitUntil(async () => (await slot(browser))?.text.includes("This Run cannot be read; choose another.") === true,
+        { timeout: 15000, timeoutMsg: `the graph's place says the shown Run cannot be read: ${JSON.stringify(await slot(browser))}` });
+      const after = (await slot(browser))!;
+      assert.deepEqual(after.bounds, before.bounds, "the graph's place stays where it was");
+      assert.ok(after.divider, "the divider stays");
+      assert.match(after.notice, new RegExp(`Unreadable run ${readable}`), "the notice names the Run");
     },
   ),
   // UX journeys: J-MAIN-RUN J-GRAPH-LARGE; UX edge: E-GRAPH-BEYOND

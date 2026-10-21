@@ -89,7 +89,8 @@ The monitor and standalone `review` use **one Human review component**. Opening
 or previewing a request claims nothing. The instruction comes first, below one
 line of status, claim and waiting time. `t` shows or hides Technical: request,
 Run, repository, full claim details, shared execution, creation time and GREEN/RED
-owner schemas. For a follower, the destination request and repository stay visible.
+owner schemas. A waiting follower opens its original request; press `t` to see that
+request's ID and repository.
 
 Before claim, the instruction fills the body and tools appear on one line. After
 claim, it folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds
