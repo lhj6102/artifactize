@@ -47,16 +47,25 @@ where
     W: std::future::Future + Send + 'static,
     W::Output: Send + 'static,
 {
-    use futures_util::FutureExt;
+    use std::{panic, task::Poll};
     let mut running = tokio::spawn(work);
-    let checked = std::panic::AssertUnwindSafe(check(&mut running))
-        .catch_unwind()
-        .await;
+    // Every crate's tests share this module, so it catches a failed check with std alone.
+    let checked = {
+        let mut check = Box::pin(check(&mut running));
+        std::future::poll_fn(|context| {
+            match panic::catch_unwind(panic::AssertUnwindSafe(|| check.as_mut().poll(context))) {
+                Ok(Poll::Pending) => Poll::Pending,
+                Ok(Poll::Ready(value)) => Poll::Ready(Ok(value)),
+                Err(failure) => Poll::Ready(Err(failure)),
+            }
+        })
+        .await
+    };
     if !running.is_finished() {
         cancellation.cancel();
         let _ = running.await;
     }
-    checked.unwrap_or_else(|failure| std::panic::resume_unwind(failure))
+    checked.unwrap_or_else(|failure| panic::resume_unwind(failure))
 }
 
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the

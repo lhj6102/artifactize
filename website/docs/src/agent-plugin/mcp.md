@@ -13,9 +13,14 @@ Each tool call serves one project, the first of:
 1. the call's `project` argument, an absolute folder, which every tool accepts;
 2. `--repo PATH`, given when the server starts;
 3. the host's first local [MCP root](https://modelcontextprotocol.io/specification/2025-06-18/client/roots),
-   asked on the first call and again after the host's roots change;
-4. the directory the server started in, unless that is the folder of the plugin that
-   started it: there the call answers that it needs `project`.
+   asked on the first call (waiting up to 10 seconds for the answer) and again after
+   the host's roots change;
+4. for a host without roots, the directory the server started in, unless that is the
+   folder of the plugin that started it.
+
+A call that ends up with no project answers that it needs `project`: a host with roots
+that does not answer in time or names no local folder, or a server in its plugin's
+folder.
 
 It works with current MCP hosts and with older ones. The host talks to it only
 through the program's input and output: stdout carries protocol messages, and
@@ -78,7 +83,7 @@ Registration supplies tools, not the [Hey Arti skill](hey-arti.md).
 | --- | --- | --- |
 | `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate`, `defer_human` | Submit via `runs::start`; compact Run observation, not approval |
 | `verify_status` | `run` | `runs::status`: saved state, counts, elapsed seconds and `next_check` |
-| `verify_wait` | `run`, optional `seconds` | `runs::wait`: Run end or bound; default 30, integer 0–40, whole call under 45 seconds |
+| `verify_wait` | `run`, optional `seconds` | `runs::wait`: Run end or bound; default 30, integer 0–40; observing takes under 45 seconds, after the first call's roots question, if any |
 | `verify_watch` | `run`; optional standard `_meta.progressToken` on the tool call | Change-driven `runs::watch`, up to 30 seconds; progress messages contain JSON Run events; compact observation at return |
 | `verify_result` | `run`, optional `cursor` | `runs::result`: verdict and up to 20 concise findings, `next_cursor`; `ready:false` while active |
 | `verify_cancel` | `run` | `runs::cancel`: explicit cancellation acknowledgement; observe settlement for cleanup |
