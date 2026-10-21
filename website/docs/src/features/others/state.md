@@ -14,7 +14,7 @@ with the canonical repository path recorded on each Run. The state home is
 The **Microsoft Store package** uses Windows' default AppData virtualization, with
 no Flexible Virtualization exclusions. New state under AppData is package-private:
 the Store version keeps its own Runs, sign-in and cache instead of sharing them
-with winget, zip or Cargo installs. Windows removes that private state on uninstall.
+with zip or Cargo installs. Windows removes that private state on uninstall.
 The path above is the app's logical view, not necessarily its physical disk location.
 The [Windows packaging smoke test](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
 measured both `state.sqlite` and `review-store.sqlite` under

@@ -8,7 +8,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::os::{cat_program, echo_program, shell, true_program};
+use support::os::{cat_program, echo_program, steps, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -90,14 +90,14 @@ fn artifact(name: &str, fingerprint: Value, instruction: &str, args: &[&str]) ->
             {
                 "id":"check",
                 "title":"Check",
-                "profile":{"kind":"runtime","command":shell(),"args":args},
+                "profile":{"kind":"runtime","command":steps(),"args":args},
                 "payload":{"instruction":instruction},
             },
         ],
     })
 }
 
-const PASS: &[&str] = &["-c", "exit 0"];
+const PASS: &[&str] = &["exit", "0"];
 
 #[test]
 fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerprint() {
@@ -123,8 +123,8 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
     assert_eq!(fixture.fresh_results(0), ["mid/check", "top/check"]);
 
     // A developer whose review of top reads base says so in top's fingerprint.
-    let covered = json!({"script":{"command":shell(),"args":[
-        "-c", "cat file.txt \"$1\" | cksum | tr ' ' -", "fixture", "{base}/file.txt"
+    let covered = json!({"script":{"command":steps(),"args":[
+        "cat", "file.txt", "cat", "{base}/file.txt"
     ]}});
     fixture.artifact("top", artifact("top", covered, "Check with {mid}.", PASS));
     assert_eq!(fixture.fresh_results(0), ["top/check"]);
@@ -229,13 +229,7 @@ fn a_merge_rereviews_only_the_new_pairing_by_default() {
         "pair",
         default.clone(),
         "Check.",
-        &[
-            "-c",
-            "cat \"$1\" \"$2\"",
-            "fixture",
-            "{left}/part.txt",
-            "{right}/part.txt",
-        ],
+        &["cat", "{left}/part.txt", "cat", "{right}/part.txt"],
     );
     pair["evals"][0]["payload"]["instruction"] = json!("Check that {left} and {right} fit.");
     fixture.artifact("pair", pair);
@@ -282,7 +276,7 @@ fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
 
     fixture.artifact(
         "py",
-        artifact("py", json!({}), "Check.", &["-c", "echo stray > stray.txt"]),
+        artifact("py", json!({}), "Check.", &["append", "stray.txt", "stray"]),
     );
     let run = fixture.json(&["verify", "--wait", "--all"], 2);
     assert_eq!(run["requests"][0]["errorCode"], "INPUT_CHANGED");
@@ -489,7 +483,7 @@ fn fingerprint_false_disables_end_of_review_checks_and_reports_the_explicit_choi
             "app",
             json!(false),
             "Check.",
-            &["-c", "echo run >> output.txt"],
+            &["append", "output.txt", "run"],
         ),
     );
     for _ in 0..2 {
