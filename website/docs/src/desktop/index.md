@@ -53,7 +53,8 @@ the Main area to resize them; the split stays as dragged whatever the Main area 
 Each branch reads as its project and branch, such as `artifactize  feat/x`: a Git
 worktree that exists now with the branch it has checked out (a detached one by its
 folder's name), or a folder outside Git that exists now and holds its declarations.
-Its projects are those with Runs on this machine. A worktree or folder that was
+Its projects are those with Runs on this machine, and the one the app was started for
+with `--repo` or `graph --repo`, listed even before its first Run. A worktree or folder that was
 removed, or one Git no longer lists, is not shown; worktrees added or removed appear
 or go within seconds, without a reload. Who ran a Run, an agent session or a person,
 makes no entry of its own: a branch's Runs are that project's Runs on that branch,
@@ -248,7 +249,9 @@ under its own run until it exits, even while you write the result. The log wraps
 scrolls on its own and follows the newest line; scroll up to read and it stays,
 scroll back to the bottom and it follows again. Its text is ordinary selectable
 text, so copy what a tool printed into the result. It lasts while the app runs and
-is cleared by a submission; nothing is saved.
+is cleared when you submit in this window; a submission made with the CLI or in
+another window ends the editing here but leaves this window's log shown. Nothing is
+saved.
 
 After claiming, `g` opens GREEN and `r` RED, each a form built from the eval's
 schema ([the shapes it may use](../features/declarations.md#human-result-schemas)):
