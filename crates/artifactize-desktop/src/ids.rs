@@ -84,6 +84,27 @@ impl SignInId {
     }
 }
 
+/// One scan of a branch's Current, numbered in the order this app starts them: a later scan
+/// has a larger number. Never crosses IPC; its view carries [`ScanId::revision`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScanId(u32);
+
+impl ScanId {
+    /// The next scan of `counter`, after every scan it numbered before.
+    pub(crate) fn allocate(counter: &AtomicU32) -> Self {
+        Self(
+            allocate(counter)
+                .checked_add(1)
+                .expect("Current scans exhausted"),
+        )
+    }
+
+    /// The scan's number as the frontend's revision: it grows with each scan.
+    pub(crate) fn revision(self) -> u32 {
+        self.0
+    }
+}
+
 impl TranscriptHandle {
     pub(crate) fn allocate(counter: &AtomicU32) -> Self {
         Self(allocate(counter))

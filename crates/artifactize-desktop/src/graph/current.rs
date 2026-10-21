@@ -8,6 +8,7 @@ use crate::{
     detail::{
         CardView, DetailTarget, DetailView, Field, PlanLine, Profile, SectionName, SectionView,
     },
+    ids::ScanId,
     status::{Tone, Weight},
 };
 use artifactize_core::monitor::{
@@ -26,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Clone)]
 pub struct Shown {
     pub current: Arc<Current>,
-    pub revision: u32,
+    pub scan: ScanId,
     /// Stays while a scan finds the same Artifacts and edges, whatever their plans.
     pub shape: crate::ids::ShapeKey,
 }
@@ -35,7 +36,7 @@ pub struct Shown {
 #[derive(Default)]
 pub struct Currents {
     shown: Mutex<BTreeMap<Place, Shown>>,
-    running: Mutex<BTreeMap<Place, (u32, CancellationToken)>>,
+    running: Mutex<BTreeMap<Place, (ScanId, CancellationToken)>>,
     scans: std::sync::atomic::AtomicU32,
     /// The last graph shape handed out.
     shapes: Mutex<crate::ids::ShapeKey>,
@@ -54,11 +55,8 @@ impl Currents {
     }
 
     /// Start scan number `scan` of `place`, cancelling the one still running.
-    fn start(&self, place: &Place) -> (u32, CancellationToken) {
-        let scan = self
-            .scans
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            + 1;
+    fn start(&self, place: &Place) -> (ScanId, CancellationToken) {
+        let scan = ScanId::allocate(&self.scans);
         let token = CancellationToken::new();
         if let Some((_, old)) = self
             .running
@@ -72,7 +70,7 @@ impl Currents {
     }
 
     /// Scan `scan` of `place` ended: keep what it found unless a newer scan started.
-    fn end(&self, place: &Place, scan: u32, found: Option<Current>) -> bool {
+    fn end(&self, place: &Place, scan: ScanId, found: Option<Current>) -> bool {
         let mut running = self.running.lock().expect("scans lock");
         if running.get(place).is_none_or(|(at, _)| *at != scan) {
             return false;
@@ -88,7 +86,7 @@ impl Currents {
                 place.clone(),
                 Shown {
                     current: Arc::new(current),
-                    revision: scan,
+                    scan,
                     shape,
                 },
             );
@@ -187,7 +185,7 @@ fn view(branch: BranchKey, shown: &Shown) -> CurrentView {
         fingerprint: current.fingerprint.clone().into(),
         structure: current.structure.clone(),
         tree: current.artifacts.iter().map(artifact_row).collect(),
-        revision: shown.revision,
+        revision: shown.scan.revision(),
     }
 }
 
