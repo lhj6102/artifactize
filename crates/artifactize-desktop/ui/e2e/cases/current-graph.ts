@@ -12,7 +12,7 @@ import { makeDirectory, nativePath, primaryModifier, readText, removeTree, write
 import { camera, detail, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, chooseChip, mainTitle, scanned } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
-import { graphAppearance } from "./graph-appearance.ts";
+import { currentHasColours, graphAppearance } from "./graph-appearance.ts";
 
 const CURRENT = 'section[aria-label="Current"]';
 const DETAIL = 'aside[aria-label="Detail"]';
@@ -114,7 +114,7 @@ export const scenarios: Scenario[] = [
       // The eval's tab says it would run and why.
       await openTab(browser, "e:release/signoff");
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("○ would run"), `the eval's plan: ${JSON.stringify(await summary(browser))}`);
-      assert.match((await summary(browser)).status, /would run .+/, "with why");
+      assert.equal((await summary(browser)).status, "○ would run Record a request awaiting a Human claim and submission.", "with why: a Human eval asks a person");
       assert.equal((await summary(browser)).instruction, "Read the release notes and approve them.");
       assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false, "a Current holds no Human review");
 
@@ -302,6 +302,10 @@ Summarize {docs}."""
       const before = { scans: await scans(), scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
       assert.match(before.scanned, /^Scanned at \d/);
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
+      assert.ok(currentHasColours(reusedLook, { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
+        `reused in the legend's reused colour: ${JSON.stringify(reusedLook)}`);
+      assert.ok(currentHasColours(before.look, { "a:release": "run", "a:ship": "waiting" }, { "a:release>a:ship": "run" }),
+        `would run and waiting in their legend colours: ${JSON.stringify(before.look)}`);
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);
@@ -360,6 +364,8 @@ Summarize {docs}."""
       const look = await graphAppearance(browser);
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:app"].dot, "blocked is painted unlike would run");
       assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:red"].dot, "blocked is painted unlike reused");
+      assert.ok(currentHasColours(look, { "a:app": "run", "a:down": "blocked", "a:red": "reused" }, {}),
+        `each Artifact in its legend colour: ${JSON.stringify(look)}`);
       // Two of app's three evals would run; the third's result is reused.
       await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(await evalRows(browser), [

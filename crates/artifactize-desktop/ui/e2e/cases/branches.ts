@@ -67,6 +67,31 @@ export const scenarios: Scenario[] = [
         assert.equal(chip.sub, chip.id, `${chip.id} names its Run`);
         assert.ok(leans(chip.dot, 1), `${chip.id}'s dot is green: ${JSON.stringify(chip)}`);
       }
+      // Drawn as a timeline: the Current a ring, a line joining each dot to the next, and a
+      // grey pill around the shown entry only.
+      const look = await browser.execute((first: string) => {
+        const clear = (colour: string) => colour === "transparent" || /^rgba\([^)]*,\s*0\s*\)$/.test(colour);
+        const items = [...document.querySelectorAll<HTMLElement>(`${first} ol.timeline > li`)];
+        const dots = items.map((item) => item.querySelector<HTMLElement>(".dot")!);
+        const ring = getComputedStyle(dots[0]);
+        return {
+          ring: ring.boxShadow.includes("inset") && ring.backgroundColor !== getComputedStyle(dots[1]).backgroundColor,
+          lines: items.slice(0, -1).map((item, at) => {
+            const line = getComputedStyle(item, "::before");
+            const centre = (box: DOMRect) => box.left + box.width / 2;
+            const from = dots[at].getBoundingClientRect();
+            const to = dots[at + 1].getBoundingClientRect();
+            const top = item.getBoundingClientRect().top + Number.parseFloat(line.top);
+            return line.content !== "none" && Number.parseFloat(line.width) >= 1 && !clear(line.backgroundColor) &&
+              Math.abs(item.getBoundingClientRect().left + Number.parseFloat(line.left) + Number.parseFloat(line.width) / 2 - centre(from)) <= 1.5 &&
+              top <= from.bottom + 2 && top + Number.parseFloat(line.height) >= to.top - 2;
+          }),
+          pills: items.map((item) => !clear(getComputedStyle(item.querySelector(".entry")!).backgroundColor)),
+        };
+      }, FIRST);
+      assert.ok(look.ring, "the Current's dot is a ring, unlike a Run's light");
+      assert.ok(look.lines.length > 0 && look.lines.every(Boolean), `a line joins each dot to the next: ${JSON.stringify(look.lines)}`);
+      assert.deepEqual(look.pills, [true, ...Array(first).fill(false)], "a grey pill around the shown entry only");
 
       // Older runs brings the older Runs in below the oldest, without changing what is shown.
       for (let click = 0; click < 8 && (await branch(browser, "repo  master"))!.chips.length < runs.length + 1; click += 1) {

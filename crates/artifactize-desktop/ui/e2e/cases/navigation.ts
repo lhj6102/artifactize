@@ -304,14 +304,18 @@ export const scenarios: Scenario[] = [
       assert.ok(held < runs.length, `older Runs are left for later: ${held} of ${runs.length}`);
       const start = (await shown()).scroll;
       // On through every Run, newest to oldest, downwards: each chosen entry shows within the list.
-      // Past the oldest held, ↓ first asks for older Runs, then moves on into them.
+      // On the oldest held, ↓ first lists older Runs below it, the selection staying; ↓ again
+      // moves on into them.
       for (const id of [...runs].reverse()) {
-        for (let tries = 0; tries < 3 && (await shown()).filled !== id; tries += 1) {
-          const before = (await branch(browser, "repo  master"))!.chips.length;
-          await browser.keys(["ArrowDown"]);
-          await waitFor(browser, async () => (await shown()).filled === id || (await branch(browser, "repo  master"))!.chips.length > before, `${id} chosen, or older Runs arrived`);
+        const held = (await branch(browser, "repo  master"))!.chips;
+        const at = (await shown()).filled;
+        if (held[held.length - 1].id === at) {
+          const title = await mainTitle(browser);
+          await press(browser, ["ArrowDown"], async () => (await branch(browser, "repo  master"))!.chips.length > held.length, "older Runs listed below the oldest held");
+          assert.equal((await shown()).filled, at, "the selection stays while older Runs are listed");
+          assert.equal(await mainTitle(browser), title, "the Main area still shows the selected entry");
         }
-        await waitFor(browser, async () => (await shown()).filled === id && (await mainTitle(browser)) === `Run ${id}`, `${id} chosen`);
+        await press(browser, ["ArrowDown"], async () => (await shown()).filled === id && (await mainTitle(browser)) === `Run ${id}`, `${id} chosen`);
         await waitFor(browser, async () => (await shown()).visible, `${id} shows within the list: ${JSON.stringify(await shown())}`);
       }
       assert.equal((await branch(browser, "repo  master"))!.chips.length, runs.length + 1, "the older Runs arrived on the way");
