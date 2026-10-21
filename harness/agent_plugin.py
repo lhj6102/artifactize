@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 sys.dont_write_bytecode = True
 
@@ -36,6 +37,8 @@ LAUNCH = {
 COMMAND_SECONDS = 120
 # Bound for one Codex app-server answer, for the same reason.
 ANSWER_SECONDS = 60
+# Bound for a killed host command's processes to exit; it stops a hang, it orders nothing.
+EXIT_SECONDS = 30
 # A parent Claude Code session exports these; a host started under them acts as its child.
 SESSION_VARIABLES = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID")
 
@@ -50,12 +53,22 @@ def started(argv, env, cwd, **pipes):
 
 
 def ended(process):
-    """End every process still in the host command's group, then reap its leader."""
+    """End every process still in the host command's group, reap its leader, and return only
+    once no member of the group is left, so none outlives the scratch configuration."""
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
     process.wait()
+    deadline = time.monotonic() + EXIT_SECONDS
+    while True:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        if time.monotonic() > deadline:
+            sys.exit(f"host command {process.pid}'s processes did not exit after being killed")
+        time.sleep(0.01)
 
 
 def run(argv, env, cwd):

@@ -173,15 +173,17 @@ error when the `.artf` loads, naming the key path and what is allowed instead.
 | `{ type = "boolean" }` | true / false (and – when optional) |
 | `{ enum = ["a", "b"] }`, only strings, `type = "string"` optional | A choice |
 | `{ const = … }` | Nothing: the value is filled in |
-| `{ type = "array", items = { type = "string" } }`, items optionally with `minLength`, `maxLength` | A list of text boxes, with `+ Add` and ✕ per item |
-| `{ type = "array", items = { type = "object", properties = … } }` whose properties are the scalars above | Repeated groups of those fields, with `+ Add` for a group and ✕ per group |
+| `{ type = "array", items = { type = "string" } }`, items optionally with `minLength`, `maxLength` | A list of text boxes |
+| `{ type = "array", items = { type = "object", properties = … } }` whose properties are the scalars above | Repeated groups of those fields |
 
 Arrays take `minItems` and `maxItems`. The result object and each group's object
 take `type = "object"`, `properties`, `required` and `additionalProperties`; every
 name in `required` must be a declared property. Any schema may add `title`,
 `description` and `$comment`; a property's `description` shows as its hint. A
 required field is marked `*`; an empty optional field says *Optional* and is left
-out of the result, as are empty list items and groups with nothing entered.
+out of the result, as are empty list items and groups with nothing entered. The
+desktop app adds and removes items and groups with `+ Add` and ✕ buttons; the
+terminal UI uses keys, as its [Review form](../tui/index.md) describes.
 Patterns, formats, nested objects, lists inside groups, `$ref` and combinators
 such as `anyOf` are refused: a person could not enter them. Agent schemas keep the
 full validator.

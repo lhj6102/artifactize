@@ -10,8 +10,7 @@ silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum, and 
 notarized by Apple, and a Linux AppImage and `.deb` for x86_64; the Windows zip
 carries the app beside the commands. Stable releases are also published on
 [crates.io](https://crates.io/crates/artifactize), Homebrew and the
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D). winget
-distribution is in preparation and is not available yet. It is open source under the
+[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D). It is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 Before v1, the Linux build gates a release; the macOS and Windows archives and the
@@ -53,7 +52,7 @@ Start with the default for your OS, or choose an alternative below:
 |---|---|---|
 | Linux | [Install script](#linux) | [`.deb` or AppImage](#desktop-app), [Cargo binaries](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
 | macOS | [Homebrew](#macos) | [Install script](#macos), [disk image](#desktop-app), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
-| Windows | [Microsoft Store](#windows) | [PowerShell install script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms); [winget](#windows) is in preparation, not available yet |
+| Windows | [Microsoft Store](#windows) | [PowerShell install script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
 
 The defaults install the desktop app too, except Homebrew, which installs it as a
 separate cask. Cargo and a source build install the commands only.
@@ -134,7 +133,7 @@ Start menu entries: **Artifactize** opens the [desktop app](#desktop-app), and
 PowerShell, then waits for Enter when it owns the console alone; terminal launches
 and redirected input/output never pause. The Store package uses Windows' default
 AppData virtualization: the app and the command keep their own package-private state
-rather than sharing Runs, sign-in and cache with winget, zip or Cargo installs.
+rather than sharing Runs, sign-in and cache with zip or Cargo installs.
 Windows removes that private state when you uninstall the Store app. See
 [State](../features/others/state.md#state) for the Windows overlay caveat.
 
@@ -160,16 +159,9 @@ replacing anything: your previous `artifactize` and `artifactize-tools` stay ins
 and runnable, and `Path` is left unchanged. Do not bypass your application-control
 policy; install from the Microsoft Store instead.
 
-**winget (in preparation — not available yet).** `lhj6102.Artifactize` has not been
-accepted into [winget](https://learn.microsoft.com/windows/package-manager/winget/).
-Use the Microsoft Store now. After the package is published, the intended command is:
-
-```powershell
-winget install lhj6102.Artifactize
-```
-
-That package installs both commands and the desktop app from the release zip and
-follows stable releases.
+**winget** is not available yet: `lhj6102.Artifactize` has not been accepted into
+[winget](https://learn.microsoft.com/windows/package-manager/winget/). Use the
+Microsoft Store or the install script.
 
 **WSL.** Inside WSL 2, artifactize is the Linux build: install it in the distribution
 with the [Linux](#linux) instructions. It is separate from a Windows install and keeps
@@ -238,7 +230,7 @@ open **Artifactize** from your applications menu or the Start menu.
 The app checks standard terminal command locations and its inherited `PATH` in the
 background, without running shell startup files. On macOS this includes the system's
 `/etc/paths` and `/etc/paths.d` entries, which new login terminals use. An existing
-command from Homebrew, an install script, `.deb`, winget or the Store is left alone;
+command from Homebrew, an install script, `.deb` or the Store is left alone;
 there is no setting to choose. Otherwise:
 
 - **macOS:** the app writes its absolute `Contents/MacOS` directory to
@@ -296,14 +288,12 @@ first with one of the channels above, then follow the
 | Homebrew | `brew upgrade artifactize`; the desktop app with `brew upgrade --cask artifactize` |
 | Microsoft Store | Automatic; or **Library → Get updates** in the Store app |
 | Disk image, `.deb` or AppImage | Install the newer file from the release the same way |
-| winget (not available yet) | After publication: `winget upgrade lhj6102.Artifactize` |
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`; from a checkout, `git pull` and repeat `cargo install --path` |
 
 The install scripts and Cargo get a release as soon as it is published. Homebrew
 and the Microsoft Store follow stable releases only; a Store update can lag while
-Microsoft reviews it. The prepared winget channel targets stable releases only; its
-first publication is still pending. Updating keeps your state.
+Microsoft reviews it. Updating keeps your state.
 
 The [plugin page](../agent-plugin/plugin.md#updates) shows how to update the
 plugin.
@@ -467,7 +457,6 @@ Open a new terminal after removing a command's path entry.
 On Windows:
 
 ```powershell
-winget uninstall lhj6102.Artifactize                       # future winget install, after publication
 Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\artifactize"   # install.ps1
 Remove-Item "$([Environment]::GetFolderPath('Programs'))\Artifactize.lnk"   # its Start menu shortcut
 ```
