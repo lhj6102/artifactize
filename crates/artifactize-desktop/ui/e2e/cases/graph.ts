@@ -30,10 +30,14 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
   const at = () => browser.execute((want) => [...document.querySelectorAll(`.svelte-flow__node[data-id="${want}"]`)]
     .find((node) => !node.closest('aside[aria-label="Detail"]'))?.getBoundingClientRect().toJSON(), id);
   const [before, where] = [await camera(browser), await at()];
-  for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) await press(browser, [key], () => true, `${key} reached the page`);
-  assert.equal(await camera(browser), before, "arrow keys moved no camera");
-  assert.deepEqual(await at(), where, "arrow keys moved no Artifact");
-  assert.equal(await focusedNode(browser), id, "the keyboard stays on the Artifact");
+  // Each key on its own, once the page has rendered it: a move one key undoes cannot hide.
+  for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+    await press(browser, [key], () => true, `${key} reached the page`);
+    await afterRender(browser);
+    assert.equal(await camera(browser), before, `${key} moved no camera`);
+    assert.deepEqual(await at(), where, `${key} moved no Artifact`);
+    assert.equal(await focusedNode(browser), id, `the keyboard stays on the Artifact after ${key}`);
+  }
 }
 
 export const scenarios: Scenario[] = [
