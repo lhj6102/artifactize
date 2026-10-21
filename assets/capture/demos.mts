@@ -478,16 +478,23 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         checkout(step.ref, fixture.repo);
         await browser.$("button=Refresh").click();
       }
-      await browser.waitUntil(() => browser.execute(() => !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
-        && document.querySelectorAll(".current .svelte-flow__node").length > 0), { timeout: WAIT, timeoutMsg: `${step.caption}'s graph is drawn` });
+      // This release's own Artifacts, as the CLI reads its declarations: the graph drawn is
+      // this release's only once its nodes are exactly these, never the previous release's.
+      const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
+        { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown> };
+      const expected = Object.keys(graph.artifacts).map((name) => `a:${name}`).sort().join("\n");
+      await browser.waitUntil(() => browser.execute((expected) => !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
+        && [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")].map((node) => node.dataset.id ?? "").sort().join("\n") === expected, expected),
+      { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: every node drawn inside the canvas, every edge drawn as a visible
-      // line, and nothing (nodes, edges, camera) changing over 300 ms.
-      const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean]>((inside, done) => {
+      // Complete and still: exactly this release's nodes, every one drawn inside the canvas,
+      // every edge drawn as a visible line, and nothing (nodes, edges, camera) changing over 300 ms.
+      const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {
           const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
+          if (nodes.map((node) => node.dataset.id ?? "").sort().join("\n") !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
             const box = line.getBoundingClientRect();
@@ -502,7 +509,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         };
         const before = shown();
         setTimeout(() => done(before !== null && before === shown()), 300);
-      }, inside), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is drawn${inside ? " in view" : ""}` });
+      }, inside, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is drawn${inside ? " in view" : ""}` });
       // Refresh keeps the camera: once the grown graph is drawn, fit it into view the way a
       // person would.
       await drawn(false);

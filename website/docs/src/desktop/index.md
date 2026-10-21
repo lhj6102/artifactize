@@ -151,9 +151,11 @@ those it brings into view. Smaller graphs render every element.
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
 with the graph still visible behind it, never beside the Pane. It hides no Artifact:
-a whole graph refits beside it whenever it opens, closes or changes width, and after
-you zoom or pan the camera keeps your zoom and only brings the opened Artifact beside
-it. Clicking another Artifact switches the Detail to it; clicking the graph's
+a whole graph refits beside it whenever it opens, closes or changes width. On a Run's
+graph, after you zoom or pan the camera keeps your zoom and only brings the opened
+Artifact beside it; a Current refits its whole graph whenever the room beside the
+Detail changes, even after you zoomed or panned. Clicking another Artifact switches
+the Detail to it; clicking the graph's
 background, **Close** or Esc closes it. On a Human review's Detail all three step
 back the same way: they cancel active work first, then leave the form, and only then
 close the Detail. Drag the Detail's left edge to resize it, between a readable column
@@ -283,8 +285,9 @@ window opened is not.
 
 ## Settings
 
-Settings shows in the Main area; Esc, the **Settings** button again or a choice in
-the Pane returns to what the Main area showed. It reloads account/store information
+Settings shows in the Main area; the **Settings** button again, Ctrl+, again or a
+choice in the Pane returns to what the Main area showed, and so does Esc outside a
+text field or a choice list (in one, Esc stays with the field). It reloads account/store information
 when shown. Reopen it or use the palette's **Refresh settings** command to reload it.
 
 - **API keys:** reports whether OpenAI and Anthropic key environment variables
