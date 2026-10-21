@@ -8,7 +8,7 @@
       "name": "artifactize",
       "source": {
         "source": "local",
-        "path": "./skills"
+        "path": "./agent-plugin"
       },
       "policy": {
         "installation": "AVAILABLE",

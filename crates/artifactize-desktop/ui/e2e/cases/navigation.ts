@@ -1,5 +1,5 @@
 // Moving through the window in the real app: the keys of what has focus, a refresh, the
-// pointer that only highlights, the Pane's keys through branches, chips and waiting reviews
+// pointer that only highlights, the Pane's keys through branches, timelines and waiting reviews
 // into the Main area and back, a Detail stepped back out of, unreadable Runs beside a readable
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { aside, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
-import { branch, branches, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, showRun, waiting } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, showRun, waiting } from "../pane.ts";
 
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture"> & { review: string };
 
@@ -54,8 +54,8 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:release");
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
       await listed([
-        [/^↑ \/ ↓ · j \/ k$/, /Select a branch, then a waiting review/],
-        [/^← \/ →$/, /previous \/ next chip/],
+        [/^↑ \/ ↓ · j \/ k$/, /Select a branch or a timeline entry, then a waiting review/],
+        [/^← \/ →$/, /Fold \/ expand the selected branch/],
         [/^Esc$/, /sort:recent/],
         [/\bF5\b/, /^Refresh/],
         [shortcutLabel("Ctrl+O"), /^Open a request by ID$/],
@@ -88,8 +88,8 @@ export const scenarios: Scenario[] = [
       const id = await verifyWaiting(fixture);
       // Explicitly the newer, whatever times the two verifies were saved at.
       orderRuns(fixture, [run, id]);
-      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([run, id]),
-        "the new Run's chip arrives without F5");
+      await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([id, run]),
+        "the new Run arrives in the timeline without F5");
       assert.equal(await mainTitle(browser), `Run ${run}`, "the shown Run stays shown");
     },
   ),
@@ -117,7 +117,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await mainTitle(browser), `Run ${run}`, "on the same view");
       assert.equal(await browser.$(`${MAIN} > header [role="status"]`).isExisting(), false, "the refresh read without an error");
       // The new branch's Current: only a refresh or its Refresh button scans it again.
-      await browser.$('//ul[@aria-label="Branches"]/li[.//button[contains(@class,"name")][.="repo  after-refresh"]]//button[@data-chip="current"]').click();
+      await chooseChip(browser, "repo  after-refresh", "current");
       await waitFor(browser, async () => /^Scanned at /.test(await scanned(browser)), "its Current scanned");
       const structure = () => browser.$('section[aria-label="Current"] pre').getText();
       await browser.$('section[aria-label="Current"] details summary').click();
@@ -168,7 +168,7 @@ export const scenarios: Scenario[] = [
   // The pointer rule of the UX journeys: hovering opens nothing; information opens on a click.
   scenario<Record<string, never>>(
     "navigation-hover-opens-nothing",
-    "opens nothing for the Artifact or the chip under the pointer, and opens the Artifact's Detail on a click",
+    "opens nothing for the Artifact or the timeline entry under the pointer, and opens the Artifact's Detail on a click",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -192,25 +192,25 @@ export const scenarios: Scenario[] = [
       }), nodeAt("a:ship"));
       const chip = await browser.$("button[data-chip]");
       await browser.action("pointer").move(await visibleCenter(browser, await chip.getElement())).perform();
-      await browser.waitUntil(async () => (await look()).over.length > 0, { timeout: 15000, timeoutMsg: "the pointer moved over a chip" });
+      await browser.waitUntil(async () => (await look()).over.length > 0, { timeout: 15000, timeoutMsg: "the pointer moved over a timeline entry" });
       const point = await visibleCenter(browser, await browser.$(nodeAt("a:ship")).getElement());
       await browser.action("pointer").move(point).perform();
       await browser.waitUntil(async () => (await look()).over.includes("a:ship"), { timeout: 15000, timeoutMsg: "the pointer moved over ship" });
       const hovered = await look();
       assert.equal(hovered.opened, false, "hovering opens no Detail, summary, eval list, tooltip or menu");
-      assert.equal(hovered.tooltip, false, "neither the Artifact nor a chip carries a tooltip");
+      assert.equal(hovered.tooltip, false, "neither the Artifact nor a timeline entry carries a tooltip");
       // The same probe sees what a click opens.
       await browser.$(nodeAt("a:ship")).click();
-      await browser.waitUntil(async () => (await look()).opened, { timeout: 15000, timeoutMsg: "a click opened ship's Detail" });
-      assert.equal((await detail(browser))?.title, "Artifact ship");
+      await browser.waitUntil(async () => (await look()).opened && (await detail(browser))?.title === "Artifact ship",
+        { timeout: 15000, timeoutMsg: `a click opened ship's Detail: ${JSON.stringify(await detail(browser))}` });
     },
   ),
 
-  // UX journeys: J-PANE-NAVIGATE J-WAITING; UX edges: E-MON-SCOPE-MOVE E-MON-RUNS-MOVE
+  // UX journeys: J-PANE-NAVIGATE J-WAITING; UX edges: E-MON-SCOPE-MOVE E-MON-EXPAND E-MON-RUNS-MOVE
   // E-MON-RUNS-GRAPH E-MON-GRAPH-TO-RUNS E-REVIEW-OPEN E-HUMAN-ESC-DETAIL
   scenario<NavigationData>(
     "navigation-pane-keys",
-    "moves through the branches and then the waiting reviews by keys, steps through a branch's chips, enters the Main area and comes back",
+    "moves through the branches and then the waiting reviews by keys, expands a branch and moves through its timeline, folds it, enters the Main area and comes back",
     async () => {
       const { fixture, ...data } = await createNavigationFixture();
       const [review] = await addWaiting(fixture, "gates", 1);
@@ -225,16 +225,25 @@ export const scenarios: Scenario[] = [
       const selected = async () => (await branches(browser)).find((entry) => entry.selected)?.name
         ?? (await waiting(browser)).rows.find((entry) => entry.selected)?.id ?? null;
       const filled = async (name: string) => (await branch(browser, name))?.chips.find((chip) => chip.filled)?.id ?? null;
-      // ↓ and j select the next entry, which shows its last chip; k and ↑ go back.
+      const expanded = async (name: string) => (await branch(browser, name))?.expanded === true;
+      // ↓ and j select the next branch, which shows its newest entry; k and ↑ go back.
       await press(browser, ["ArrowDown"], async () => (await selected()) === "gates  master" && /^Run /.test(await mainTitle(browser)), "the first branch's Run in progress shown");
       await press(browser, ["j"], async () => (await selected()) === "other  master" && (await mainTitle(browser)) === "Current · other  master", "the next branch's Current shown");
       await press(browser, ["ArrowDown"], async () => (await selected()) === "repo  master" && (await mainTitle(browser)) === "Current · repo  master", "repo's Current shown");
-      // ← and → step through its chips, each shown and filled.
-      await press(browser, ["ArrowLeft"], async () => (await mainTitle(browser)) === `Run ${newer.id}` && (await filled("repo  master")) === newer.id, "the newer Run shown");
-      await press(browser, ["ArrowLeft"], async () => (await mainTitle(browser)) === `Run ${older.id}` && (await filled("repo  master")) === older.id, "the older Run shown");
-      await press(browser, ["ArrowRight"], async () => (await filled("repo  master")) === newer.id, "the newer Run again");
-      await press(browser, ["ArrowRight"], async () => (await filled("repo  master")) === "current", "its Current again");
-      await press(browser, ["ArrowLeft"], async () => (await filled("repo  master")) === newer.id, "back on the newer Run");
+      // → expands it; → again enters its timeline on its Current; ↓ and ↑ move through its Runs,
+      // each shown and marked.
+      await press(browser, ["ArrowRight"], () => expanded("repo  master"), "repo expanded");
+      await press(browser, ["ArrowRight"], async () => (await filled("repo  master")) === "current", "on its Current");
+      await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === `Run ${newer.id}` && (await filled("repo  master")) === newer.id, "the newer Run shown");
+      await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === `Run ${older.id}` && (await filled("repo  master")) === older.id, "the older Run shown");
+      await press(browser, ["ArrowUp"], async () => (await filled("repo  master")) === newer.id, "the newer Run again");
+      await press(browser, ["ArrowUp"], async () => (await filled("repo  master")) === "current", "its Current again");
+      await press(browser, ["ArrowDown"], async () => (await filled("repo  master")) === newer.id, "back on the newer Run");
+      // ← steps back out to the branch, keeping what is shown; ← again folds it.
+      await press(browser, ["ArrowLeft"], async () => (await browser.execute(() =>
+        document.querySelector('[aria-label="Branches"] > [aria-selected="true"]')?.getAttribute("aria-expanded"))) === "true", "the branch itself selected");
+      await press(browser, ["ArrowLeft"], async () => !(await expanded("repo  master")), "repo folded");
+      assert.equal(await mainTitle(browser), `Run ${newer.id}`, "stepping out and folding keep what is shown");
       // Enter goes into the Main area, on the shown Run: its own historical criterion.
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
       await graphShown(browser, "a:subject");
@@ -263,44 +272,58 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-PANE-NAVIGATE; UX edge: E-MON-RUNS-MOVE
+  // UX journey: J-PANE-NAVIGATE; UX edges: E-MON-RUNS-MOVE E-MON-RUNS-OLDER
   scenario<{ runs: string[] }>(
-    "navigation-chip-keys",
-    "steps by ← and → through a chip row longer than the Pane, the row scrolling so that each chosen chip shows",
+    "navigation-timeline-keys",
+    "moves by ↓ and ↑ through a timeline longer than the Pane, the list scrolling so that each chosen entry shows, and asks for older Runs past the oldest",
     async () => {
-      const { fixture, runs } = createHistory(12);
+      const { fixture, runs } = createHistory(30);
       return { fixture, data: { runs } };
     },
     async (browser, { data: { runs } }) => {
-      const ROW = '[role="group"][aria-label="Runs of repo master"]';
-      /** The row's scroll offset, whether it overflows, and the filled chip with whether all of it shows within the row. */
+      const LIST = '[role="tree"][aria-label="Branches"]';
+      /** The list's scroll offset, whether it overflows, and the marked entry with whether all of it shows within the list. */
       const shown = () => browser.execute((selector) => {
-        const row = document.querySelector<HTMLElement>(selector)!;
-        const box = row.getBoundingClientRect();
-        const chip = row.querySelector<HTMLElement>('button[aria-pressed="true"]');
-        const at = chip?.getBoundingClientRect();
+        const list = document.querySelector<HTMLElement>(selector)!;
+        const box = list.getBoundingClientRect();
+        const entry = list.querySelector<HTMLElement>('button[data-chip][aria-pressed="true"]');
+        const at = entry?.getBoundingClientRect();
         return {
-          scroll: Math.round(row.scrollLeft),
-          overflows: row.scrollWidth > row.clientWidth,
-          filled: chip?.dataset.chip ?? null,
-          visible: !!at && at.left >= box.left - 1 && at.right <= box.right + 1,
+          scroll: Math.round(list.scrollTop),
+          overflows: list.scrollHeight > list.clientHeight,
+          filled: entry?.dataset.chip ?? null,
+          visible: !!at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1,
         };
-      }, ROW);
-      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips.length === runs.length + 1, "every Run and the Current chip");
+      }, LIST);
+      await listed(browser, "repo  master");
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
       await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === "Current · repo  master", "the branch's Current shown");
-      assert.equal((await shown()).overflows, true, "the row is longer than the Pane");
+      if (!(await branch(browser, "repo  master"))?.expanded) await press(browser, ["ArrowRight"], async () => (await branch(browser, "repo  master"))?.expanded === true, "expanded");
+      await press(browser, ["ArrowRight"], async () => (await shown()).filled === "current", "on its Current");
+      const held = (await branch(browser, "repo  master"))!.chips.length - 1;
+      assert.ok(held < runs.length, `older Runs are left for later: ${held} of ${runs.length}`);
       const start = (await shown()).scroll;
-      // Back through every Run, newest to oldest: each chosen chip shows within the row.
+      // On through every Run, newest to oldest, downwards: each chosen entry shows within the list.
+      // On the oldest held, ↓ first lists older Runs below it, the selection staying; ↓ again
+      // moves on into them.
       for (const id of [...runs].reverse()) {
-        await press(browser, ["ArrowLeft"], async () => (await shown()).filled === id && (await mainTitle(browser)) === `Run ${id}`, `${id} chosen`);
-        await waitFor(browser, async () => (await shown()).visible, `${id}'s chip shows within the row: ${JSON.stringify(await shown())}`);
+        const held = (await branch(browser, "repo  master"))!.chips;
+        const at = (await shown()).filled;
+        if (held[held.length - 1].id === at) {
+          const title = await mainTitle(browser);
+          await press(browser, ["ArrowDown"], async () => (await branch(browser, "repo  master"))!.chips.length > held.length, "older Runs listed below the oldest held");
+          assert.equal((await shown()).filled, at, "the selection stays while older Runs are listed");
+          assert.equal(await mainTitle(browser), title, "the Main area still shows the selected entry");
+        }
+        await press(browser, ["ArrowDown"], async () => (await shown()).filled === id && (await mainTitle(browser)) === `Run ${id}`, `${id} chosen`);
+        await waitFor(browser, async () => (await shown()).visible, `${id} shows within the list: ${JSON.stringify(await shown())}`);
       }
-      assert.ok((await shown()).scroll < start, "the row scrolled toward its oldest end to show them");
-      // Forward again to the Current, the row scrolling back to show each.
+      assert.equal((await branch(browser, "repo  master"))!.chips.length, runs.length + 1, "the older Runs arrived on the way");
+      assert.ok((await shown()).overflows && (await shown()).scroll > start, "the list scrolled toward the oldest to show them");
+      // Back up to the Current, the list scrolling back to show each.
       for (const id of [...runs.slice(1), "current"]) {
-        await press(browser, ["ArrowRight"], async () => (await shown()).filled === id, `${id} chosen again`);
-        await waitFor(browser, async () => (await shown()).visible, `${id}'s chip shows within the row: ${JSON.stringify(await shown())}`);
+        await press(browser, ["ArrowUp"], async () => (await shown()).filled === id, `${id} chosen again`);
+        await waitFor(browser, async () => (await shown()).visible, `${id} shows within the list: ${JSON.stringify(await shown())}`);
       }
       assert.equal(await mainTitle(browser), "Current · repo  master");
     },

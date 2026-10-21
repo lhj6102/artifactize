@@ -144,25 +144,25 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
         Some(1000),
     );
     let (registered, child) = oneshot::channel();
-    let running = support::spawn(runtime::execute(
-        command,
-        CancellationToken::new(),
-        |child| async move {
-            registered.send(child.pid).unwrap();
-            Ok(())
-        },
-    ));
-    let pid = child.await.unwrap();
-    tokio::time::advance(Duration::from_millis(1000)).await;
-    let outcome = running.await.unwrap();
-    assert!(
-        matches!(
-            outcome,
-            Outcome::OperationalError(Error::Process(process::Error::Timeout))
-        ),
-        "{outcome:?}"
-    );
-    assert_gone(pid.get()).await;
+    let cancellation = CancellationToken::new();
+    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+        registered.send(child.pid).unwrap();
+        Ok(())
+    });
+    support::scoped(cancellation, work, async |running| {
+        let pid = child.await.unwrap();
+        tokio::time::advance(Duration::from_millis(1000)).await;
+        let outcome = running.await.unwrap();
+        assert!(
+            matches!(
+                outcome,
+                Outcome::OperationalError(Error::Process(process::Error::Timeout))
+            ),
+            "{outcome:?}"
+        );
+        assert_gone(pid.get()).await;
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -173,29 +173,28 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     // exec keeps the observed PID stable while the final long-lived command runs.
     let script = support::os::cancellation_script();
     let command = scratch.command(&support::os::shell(), &["-c", script], None);
-    let running = support::spawn(runtime::execute(
-        command,
-        cancellation.clone(),
-        |child| async move {
-            registered.send(child).unwrap();
-            Ok(())
-        },
-    ));
-    let child = child.await.unwrap();
-    wait_for(|| scratch.workspace().join("started").exists()).await;
-    cancellation.cancel();
-    let outcome = timeout(support::os::patience(TEST_TIMEOUT), running)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(
-        matches!(
-            outcome,
-            Outcome::OperationalError(Error::Process(process::Error::Cancelled))
-        ),
-        "{outcome:?}"
-    );
-    assert_gone(child.pid.get()).await;
+    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+        registered.send(child).unwrap();
+        Ok(())
+    });
+    support::scoped(cancellation.clone(), work, async |running| {
+        let child = child.await.unwrap();
+        wait_for(|| scratch.workspace().join("started").exists()).await;
+        cancellation.cancel();
+        let outcome = timeout(support::os::patience(TEST_TIMEOUT), running)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(
+                outcome,
+                Outcome::OperationalError(Error::Process(process::Error::Cancelled))
+            ),
+            "{outcome:?}"
+        );
+        assert_gone(child.pid.get()).await;
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -513,27 +512,27 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
         Some(1000),
     );
     let marker = command.directory().join("output/grandchild");
-    let running = support::spawn(runtime::execute(
-        command,
-        CancellationToken::new(),
-        |_| async { Ok(()) },
-    ));
-    let pid = grandchild(&marker, &running).await;
-    tokio::time::advance(Duration::from_millis(1000)).await;
-    let outcome = running.await.unwrap();
-    assert!(
-        matches!(
-            outcome,
-            Outcome::OperationalError(Error::Process(process::Error::Timeout))
-        ),
-        "{outcome:?}"
-    );
-    assert_gone(pid).await;
+    let cancellation = CancellationToken::new();
+    let work = runtime::execute(command, cancellation.clone(), |_| async { Ok(()) });
+    support::scoped(cancellation, work, async |running| {
+        let pid = grandchild(&marker, running).await;
+        tokio::time::advance(Duration::from_millis(1000)).await;
+        let outcome = running.await.unwrap();
+        assert!(
+            matches!(
+                outcome,
+                Outcome::OperationalError(Error::Process(process::Error::Timeout))
+            ),
+            "{outcome:?}"
+        );
+        assert_gone(pid).await;
+    })
+    .await;
 }
 
 /// The PID the lingering grandchild wrote to `marker`, once it has. The test yields rather
 /// than sleeps while it waits, so that a paused clock stands still.
-async fn grandchild(marker: &Path, running: &tokio_util::task::AbortOnDropHandle<Outcome>) -> u32 {
+async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -> u32 {
     let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
     loop {
         let written = std::fs::read_to_string(marker).ok();
@@ -586,27 +585,28 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     );
     let marker = command.directory().join("output/grandchild");
     let (registered, child) = oneshot::channel();
-    let running = support::spawn(runtime::execute(
-        command,
-        CancellationToken::new(),
-        |child| async move {
-            registered.send(child).unwrap();
-            Ok(())
-        },
-    ));
-    let child = child.await.unwrap();
-    wait_for(|| {
-        std::fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
+    let cancellation = CancellationToken::new();
+    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+        registered.send(child).unwrap();
+        Ok(())
+    });
+    support::scoped(cancellation, work, async |running| {
+        let child = child.await.unwrap();
+        wait_for(|| {
+            std::fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
+        })
+        .await;
+        let pid = std::fs::read_to_string(&marker)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        // Dropping the caller is what is under test: abort it rather than cancel it.
+        running.abort();
+        assert_gone(child.pid.get()).await;
+        assert_gone(pid).await;
     })
     .await;
-    let pid = std::fs::read_to_string(marker)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
-    drop(running);
-    assert_gone(child.pid.get()).await;
-    assert_gone(pid).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -622,50 +622,46 @@ async fn deadline_is_not_reset_after_registration() {
     );
     let (registered, child) = oneshot::channel();
     let (release, held) = oneshot::channel();
-    let running = support::spawn(runtime::execute(
-        command,
-        CancellationToken::new(),
-        |child| async move {
-            registered.send(child).unwrap();
-            held.await.unwrap();
-            Ok(())
-        },
-    ));
-    let child = child.await.unwrap();
-    // Consume most of the one deadline while user code is still behind registration.
-    tokio::time::advance(Duration::from_millis(600)).await;
-    release.send(()).unwrap();
-    while !scratch.workspace().join("started").exists() {
-        assert!(
-            !running.is_finished(),
-            "registration failed before execution"
-        );
+    let cancellation = CancellationToken::new();
+    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+        registered.send(child).unwrap();
+        held.await.unwrap();
+        Ok(())
+    });
+    support::scoped(cancellation, work, async |running| {
+        let child = child.await.unwrap();
+        // Consume most of the one deadline while user code is still behind registration.
+        tokio::time::advance(Duration::from_millis(600)).await;
+        release.send(()).unwrap();
+        while !scratch.workspace().join("started").exists() {
+            assert!(
+                !running.is_finished(),
+                "registration failed before execution"
+            );
+            tokio::task::yield_now().await;
+        }
+        // Only 400 ms remains. A reset at registration would leave this process running.
+        tokio::time::advance(Duration::from_millis(401)).await;
         tokio::task::yield_now().await;
-    }
-    // Only 400 ms remains. A reset at registration would leave this process running.
-    tokio::time::advance(Duration::from_millis(401)).await;
-    tokio::task::yield_now().await;
-    let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
-    while !running.is_finished() {
+        let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
+        while !running.is_finished() {
+            assert!(
+                std::time::Instant::now() < failure_deadline,
+                "execution reset the registration deadline"
+            );
+            tokio::task::yield_now().await;
+        }
+        let outcome = running.await.unwrap();
         assert!(
-            std::time::Instant::now() < failure_deadline,
-            "execution reset the registration deadline"
+            matches!(
+                outcome,
+                Outcome::OperationalError(Error::Process(process::Error::Timeout))
+            ),
+            "{outcome:?}"
         );
-        tokio::task::yield_now().await;
-    }
-    assert!(
-        running.is_finished(),
-        "execution reset the registration deadline"
-    );
-    let outcome = running.await.unwrap();
-    assert!(
-        matches!(
-            outcome,
-            Outcome::OperationalError(Error::Process(process::Error::Timeout))
-        ),
-        "{outcome:?}"
-    );
-    assert_gone(child.pid.get()).await;
+        assert_gone(child.pid.get()).await;
+    })
+    .await;
 }
 
 async fn assert_gone(pid: u32) {
@@ -673,12 +669,16 @@ async fn assert_gone(pid: u32) {
     wait_for(|| support::os::gone(pid)).await;
 }
 
+/// A wall-clock deadline: under a paused clock, tokio's own timer would skip ahead whenever
+/// the test idles and expire before a busy machine reaps a real process.
 async fn wait_for(condition: impl Fn() -> bool) {
-    timeout(support::os::patience(TEST_TIMEOUT), async {
-        while !condition() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("process did not reach the expected state");
+    let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
+    while !condition() {
+        assert!(
+            std::time::Instant::now() < failure_deadline,
+            "process did not reach the expected state"
+        );
+        tokio::task::yield_now().await;
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }

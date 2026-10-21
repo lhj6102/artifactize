@@ -7,10 +7,10 @@
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
-  import type { BranchView, BrowseView, Chip, WaitingRow } from "../ipc/client";
+  import type { BranchKey, BranchView, BrowseView, Chip, WaitingRow } from "../ipc/client";
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
-  import { keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
+  import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
   import { GAP, clampWidth, saveWidth } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
@@ -45,12 +45,16 @@
   let query = $derived(browse.query);
   let typing: ReturnType<typeof setTimeout> | undefined;
 
-  /** The entries the keys move through: the Branches, then the Waiting stack. */
+  /** The entries the keys move through: each branch and, expanded, its timeline, then the
+   * Waiting stack. */
   const entries = $derived<Entry[]>([
-    ...branches.map((item): Entry => ({ kind: "branch", branch: item.key })),
+    ...branches.flatMap((item): Entry[] => [
+      { kind: "branch", branch: item.key },
+      ...(m.expanded.has(keyOf(item.key)) ? item.chips.map((chip): Entry => ({ kind: "chip", branch: item.key, chip: chipKey(chip) })) : []),
+    ]),
     ...waiting.map((row): Entry => ({ kind: "waiting", id: row.id })),
   ]);
-  const entryKey = (entry: Entry | null) => (entry === null ? null : entry.kind === "branch" ? keyOf(entry.branch) : entry.id);
+  const branchOf = (key: BranchKey) => branches.find((candidate) => keyOf(candidate.key) === keyOf(key));
 
   /** The chip of `item` shown in the Main area, by its index. */
   function filled(item: BranchView): number | null {
@@ -63,9 +67,15 @@
     if (m.opened && keyOf(m.opened.source) !== next) m.opened = null;
   }
 
-  /** Show `chip` of `item`: a Run's chip its Run, the Current chip its Current, scanned again. */
+  /** Show `chip` of `item`, selected in its timeline: a Run its Run, the Current its Current,
+   * scanned again. */
   function choose(item: BranchView, chip: Chip) {
-    m.selected = { kind: "branch", branch: item.key };
+    show(item, chip);
+    m.selected = { kind: "chip", branch: item.key, chip: chipKey(chip) };
+  }
+
+  /** Show `chip` of `item` in the Main area. */
+  function show(item: BranchView, chip: Chip) {
     m.settings = false;
     if (chip.kind === "run") {
       m.shown = { kind: "run", branch: item.key, run: chip.id };
@@ -76,7 +86,6 @@
   }
 
   function showCurrent(item: BranchView) {
-    m.selected = { kind: "branch", branch: item.key };
     m.settings = false;
     m.shown = { kind: "current", branch: item.key };
     closeDetailOf(keyOf({ kind: "current", branch: item.key }));
@@ -84,10 +93,24 @@
     void current.scan(item.key);
   }
 
-  /** Select a branch: its last chip, the Run in progress or else its Current, shows. */
+  /** Select a branch: its newest entry, the Run in progress or else its Current, shows. */
   function select(item: BranchView) {
-    const last = item.chips[item.chips.length - 1];
-    if (last) choose(item, last);
+    const first = item.chips[0];
+    if (first) show(item, first);
+    m.selected = { kind: "branch", branch: item.key };
+  }
+
+  /** A click on a branch: it expands, and its newest entry shows. */
+  function open(item: BranchView) {
+    m.expanded.add(keyOf(item.key));
+    select(item);
+  }
+
+  /** Expand a branch to its timeline, or fold it back. */
+  function toggle(item: BranchView) {
+    const key = keyOf(item.key);
+    if (m.expanded.has(key)) m.expanded.delete(key);
+    else m.expanded.add(key);
   }
 
   /** Open a waiting review (or a Human request opened by ID) in the Main area. */
@@ -123,30 +146,42 @@
     }
   }
 
-  /** Move the selection by `by` entries: a branch shows its last chip, a review is only selected. */
+  /** Move the selection by `by` entries: a branch shows its newest entry, a timeline entry
+   * shows itself, a review is only selected. Down past a timeline's oldest entry, older Runs
+   * are asked for before the next branch is reached. */
   function move(by: number) {
     if (entries.length === 0) return;
-    const at = entries.findIndex((entry) => entryKey(entry) === entryKey(m.selected));
+    const selected = m.selected;
+    const at = entries.findIndex((entry) => entryKey(entry) === entryKey(selected));
+    if (by > 0 && selected?.kind === "chip") {
+      const item = branchOf(selected.branch);
+      if (item?.older && chipKey(item.chips[item.chips.length - 1]) === selected.chip) return void browse.older(item.key);
+    }
     const next = entries[Math.max(0, Math.min(entries.length - 1, at < 0 ? 0 : at + by))];
-    if (entryKey(next) === entryKey(m.selected)) return;
+    if (entryKey(next) === entryKey(selected)) return;
     if (next.kind === "waiting") m.selected = next;
     else {
-      const item = branches.find((candidate) => keyOf(candidate.key) === keyOf(next.branch));
-      if (item) select(item);
+      const item = branchOf(next.branch);
+      const chip = next.kind === "chip" ? item?.chips.find((candidate) => chipKey(candidate) === next.chip) : undefined;
+      if (item && chip) choose(item, chip);
+      else if (item) select(item);
     }
   }
 
-  /** Step `by` chips through the selected branch's row; at its oldest end, ask for older Runs. */
+  /** → expands the selected branch, or enters its timeline when expanded; ← steps from a
+   * timeline entry back to its branch, or folds an expanded branch. */
   function step(by: number) {
     const selected = m.selected;
-    if (selected?.kind !== "branch") return;
-    const item = branches.find((candidate) => keyOf(candidate.key) === keyOf(selected.branch));
+    if (selected === null || selected.kind === "waiting") return;
+    const item = branchOf(selected.branch);
     if (!item) return;
-    const at = filled(item) ?? item.chips.length - 1;
-    const next = at + by;
-    if (next < 0 && item.older) void browse.older(item.key);
-    const chip = item.chips[Math.max(0, Math.min(item.chips.length - 1, next))];
-    if (chip && Math.max(0, Math.min(item.chips.length - 1, next)) !== filled(item)) choose(item, chip);
+    const key = keyOf(item.key);
+    if (by > 0 && selected.kind === "branch") {
+      const first = item.chips[0];
+      if (!m.expanded.has(key)) m.expanded.add(key);
+      else if (first) choose(item, first);
+    } else if (by < 0 && selected.kind === "chip") m.selected = { kind: "branch", branch: item.key };
+    else if (by < 0) m.expanded.delete(key);
   }
 
   /** Move focus to the Pane's entries, the Main area or the Detail. */
@@ -207,8 +242,12 @@
       else if (next.waiting.length > 0) openWaiting(next.waiting[0]);
       return;
     }
-    if (launched && mode === "graph") showCurrent(launched);
-    else if (launched) select(launched);
+    // The launched branch opens expanded, so the entry it shows is in view.
+    if (launched) m.expanded.add(keyOf(launched.key));
+    if (launched && mode === "graph") {
+      showCurrent(launched);
+      m.selected = { kind: "branch", branch: launched.key };
+    } else if (launched) select(launched);
     void focus("pane");
   }
 
@@ -338,7 +377,8 @@
       <Pane
         bind:query={() => query, setQuery}
         {filled}
-        onselect={select}
+        onselect={open}
+        ontoggle={toggle}
         onchoose={choose}
         onopen={openWaiting}
         onmove={move}

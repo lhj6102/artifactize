@@ -13,7 +13,7 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
 import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, showRun } from "../pane.ts";
 
-/** A fixture whose one Run ended: the branch's last chip is its Current, so its Run is chosen. */
+/** A fixture whose one Run ended: the branch's newest entry is its Current, so its Run is chosen. */
 function ended(fixture: ReturnType<typeof createChain>) {
   const [run] = savedRuns(fixture);
   return { fixture, args: ["--repo", fixture.repo], data: { run: run.id } };
@@ -216,7 +216,7 @@ export const scenarios: Scenario[] = [
     "graph-keyboard-current",
     "Tabs from the Main area to an Artifact of a branch's Current, opening nothing, and opens its Detail with Enter and closes it with Esc, without clicking a node",
     async () => {
-      // Its Runs ended, so the branch's last chip, shown at launch, is its Current.
+      // Its Runs ended, so the branch's newest entry, shown at launch, is its Current.
       const fixture = createChain(3);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },

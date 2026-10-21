@@ -20,19 +20,25 @@ that makes the transition happen and checks where it leads.
     `branch:`, `sort:recent`, `sort:name`) must all match; they narrow the Branches and the
     Waiting stack alike. States: not focused, focused, focused with suggestions.
   - **Branches**: one entry per live branch of every project with Runs on this machine, read
-    as `project  branch`: a Git worktree that exists now with the branch it has checked out
-    (a detached one by its folder's name), or a folder outside Git that exists now and holds
-    its declarations. A removed worktree or folder, or one Git no longer lists, has no entry.
-    Who ran a Run makes no entry: a branch's Runs are its project's Runs on that branch, from
-    whichever folder they ran in. Under the name sits the branch's **chip row**: one chip per
-    Run, oldest to newest left to right, each its status and age (a running one its time so
-    far), tinted with its status colour, ending with the Run in progress on the branch, or else
-    with a **Current** chip, tinted with the accent. The chips carry the entry; the name above
-    them is a smaller, quieter label. The shown chip is filled with its colour. The
-    row has no scrollbar; chips fade out at whichever end has more. `sort:recent` puts the
-    branch with the most recent Run first and branches without Runs last; `sort:name` orders
-    by project and branch. States: a branch selected, one of its chips shown (filled), the row
-    scrolled to any position.
+    as `project / branch`, the branch in bold and the project quieter: a Git worktree that
+    exists now with the branch it has checked out (a detached one by its folder's name), or a
+    folder outside Git that exists now and holds its declarations. A removed worktree or
+    folder, or one Git no longer lists, has no entry. Who ran a Run makes no entry: a branch's
+    Runs are its project's Runs on that branch, from whichever folder they ran in. Each entry
+    has a **chevron** before its name and its **star** at its line's end. Folded, the name
+    sits over the branch's newest Run, its status dot and word on the left and its age on the
+    right (a running one its time so far), or `No Runs yet`. Expanded, its **timeline** sits
+    under the name instead: one entry per Run, newest first, each a dot in its status colour,
+    its status word, its age on the right and its Run ID below, joined by a line through the
+    dots, starting with the Run in progress on the branch, or else with the **Current**, a
+    ring rather than a dot, reading `Working tree` below. The entry shown in the Main area
+    sits in a grey pill. **Older runs** at a timeline's end, while older Runs exist, brings
+    them in below the oldest. Any number of branches may be expanded at once, for the
+    window's life; the branch the app was started for starts expanded. Starred branches come
+    first; within each group `sort:recent` puts the branch with the most recent Run first and
+    branches without Runs last, and `sort:name` orders by project and branch. States: a
+    branch folded or expanded, selected, starred or not, one of its entries shown (in its
+    pill) and selected.
   - **Waiting**: the waiting Human reviews of every repository on this machine, those of
     removed branches included, newest at the top, each with its eval, its project and branch,
     how long it waits and who claimed it. With none it is a thin bar at the bottom of the pane
@@ -50,7 +56,7 @@ that makes the transition happen and checks where it leads.
     the expandable **Structure and evaluation criteria** text (every criterion and labeled
     relation). It scans again when chosen again, on Refresh and when a Run of the branch ends.
   - **Review**: a waiting Human review opened from the Pane, its eval and Artifact above the
-    **Human review**. Choosing a branch or chip leaves it without closing it: its claim, draft
+    **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
   - **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token).
@@ -113,7 +119,7 @@ that makes the transition happen and checks where it leads.
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-LAUNCH-MONITOR | Launch | start without arguments | Pane and Main area, the Main area with Nothing chosen |
-| E-LAUNCH-REPO | Launch | start with `--repo PATH` | the branch of PATH selected in the Branches, its last chip shown in the Main area |
+| E-LAUNCH-REPO | Launch | start with `--repo PATH` | the branch of PATH selected and expanded in the Branches, its newest entry shown in the Main area |
 | E-LAUNCH-REVIEW | Launch | start with `review` | the newest waiting Human review open in the Main area as Review |
 | E-LAUNCH-REVIEW-ID | Launch | start with `review ID` | the review ID open in the Main area as Review |
 | E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | the branch of PATH selected, its Current shown |
@@ -137,19 +143,23 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-PANE-SELECT | Pane | click a branch's name | that branch selected, its last chip (the running Run, else Current) shown in the Main area and filled |
-| E-PANE-CHIP | Pane | click a chip of a branch | that branch selected, the chip shown in the Main area (a Run's chip as Run, the Current chip as Current) and filled |
-| E-PANE-DRAG | a branch's chip row | hold the mouse on it and drag sideways | the row scrolled with the pointer, older Runs arriving as its oldest end comes into view, chips fading out at whichever end has more; no chip chosen |
-| E-MON-SCOPE-MOVE | Pane entries focused | `j`, `k`, ↑ or ↓ | the next or previous entry selected, through the Branches and then the Waiting stack; a branch shows its last chip in the Main area, a waiting review is only selected |
-| E-MON-RUNS-MOVE | Pane entries focused, a branch selected | ← or → | the branch's previous or next chip shown in the Main area and filled, its row scrolling to show it |
-| E-MON-RUNS-GRAPH | Pane entries focused, a branch selected | Enter | Main area focused, on the shown view |
+| E-PANE-SELECT | Pane | click a branch's name | that branch selected and expanded, its newest entry (the running Run, else Current) shown in the Main area in its pill |
+| E-PANE-STAR | Pane | click a branch's star | the branch starred, or its star taken away; starred branches listed first, each group in the search's order, kept for the next monitor |
+| E-PANE-CHIP | Pane, a branch expanded | click an entry of its timeline | that entry selected and shown in the Main area (a Run as Run, the Current as Current), in its pill |
+| E-PANE-FOLD | Pane | click a branch's chevron | the branch expanded to its timeline, or folded back to its newest Run's status; nothing chosen |
+| E-PANE-OLDER | Pane, a branch expanded with older Runs | click Older runs | older Runs listed below the oldest; nothing chosen |
+| E-MON-SCOPE-MOVE | Pane entries focused | `j`, `k`, ↑ or ↓ | the next or previous entry selected, through the Branches, the timelines of expanded branches and then the Waiting stack; a branch shows its newest entry in the Main area, a timeline entry shows itself, a waiting review is only selected; the list scrolls to show the selected entry |
+| E-MON-EXPAND | Pane entries focused, a branch or a timeline entry selected | → or ← | → expands a folded branch, or enters an expanded one's timeline on its newest entry; ← steps from a timeline entry back to its branch, or folds an expanded branch; what is shown stays unless an entry is entered |
+| E-MON-RUNS-MOVE | Pane entries focused, a timeline entry selected | ↓ or ↑ | the next or previous entry shown in the Main area and in its pill, the list scrolling to show it |
+| E-MON-RUNS-OLDER | Pane entries focused, the oldest listed entry of a timeline selected, older Runs existing | ↓ | older Runs listed below it, the selection staying; ↓ again moves into them |
+| E-MON-RUNS-GRAPH | Pane entries focused, a branch or a timeline entry selected | Enter | Main area focused, on the shown view |
 | E-MON-GRAPH-TO-RUNS | Main area focused, no Detail open | Esc | Pane entries focused, the same entry selected |
 | E-REVIEW-OPEN | Pane, a waiting review in the Waiting stack | click it, or Enter on it selected | Review of that request in the Main area |
 | E-PANE-WORKTREES | Pane | a worktree of a listed project is added or removed (or its folder deleted), in another process | within seconds and without a reload, its branch appears in the Branches or goes from them |
-| E-BRANCH-RUNNING | Pane | a Run starts on a listed branch, in another process | its row ends with that Run's chip, `Running` and its time so far; the Current chip goes |
-| E-BRANCH-RUN-END | Pane, a branch's row ending with a running Run | that Run ends | its chip shows its final status and age; the row ends with a Current chip |
+| E-BRANCH-RUNNING | Pane | a Run starts on a listed branch, in another process | its timeline starts with that Run, `Running` and its time so far, the Current gone; folded, its status line says the same |
+| E-BRANCH-RUN-END | Pane, a branch's timeline starting with a running Run | that Run ends | its entry shows its final status and age; the timeline starts with the Current |
 | E-WAITING-CHANGE | Pane | a Human review starts or stops waiting, in this window or another process | the Waiting stack adds or drops its row, the bar's count following: `(0)` with none |
-| E-MAIN-REVIEW-LEAVE | Review in the Main area | choose a branch or one of its chips | that view shown, the review left without being closed; opening it again shows it as it was left |
+| E-MAIN-REVIEW-LEAVE | Review in the Main area | choose a branch or an entry of its timeline | that view shown, the review left without being closed; opening it again shows it as it was left |
 | E-MON-NOTICE | Main area with a notice, focus anywhere | click the notice in the Main area's header | the notice shown in full, wrapped within the header, what is below neither moved nor hidden; another click shows it as one line again |
 | E-MON-LIVE | any view | another process changes the state (a new Run, a result, a claim, a submission) | same view, updated without a reload |
 | E-MON-RESIZE | Pane and Main area | drag the divider between them (hovering it shows only the resize cursor) | same view, the split resized and kept whatever the Main area shows |
@@ -170,14 +180,14 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-CURRENT-CHIP | Pane | choose a Current chip (a click, ← →, or a branch selected without a Run in progress), also when it is already shown | Current: the worktree scanned again, its header saying when; the Current graph with each Artifact coloured reused, would run, waiting or blocked, its name read aloud with which (would run with its count of evals) |
+| E-CURRENT-CHIP | Pane | choose a branch's Current (a click on it, ↓ or ↑ onto it, or a branch selected without a Run in progress), also when it is already shown | Current: the worktree scanned again, its header saying when; the Current graph with each Artifact coloured reused, would run, waiting or blocked, its name read aloud with which (would run with its count of evals) |
 | E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | Current scanned again, its header the new time, the graph recoloured in place |
 | E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | Current scanned again and its graph and structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan ends | the graph, nodes and edges recoloured in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
-| E-GRAPH-FIRST | Pane | choose a chip whose graph is not shown yet | its Run graph or Current graph drawn whole |
+| E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 
@@ -264,11 +274,13 @@ E-PANE-SELECT.
 - J-PANE: E-LAUNCH-MONITOR → E-MON-RESIZE
 - J-BRANCHES: E-LAUNCH-MONITOR → E-PANE-SELECT
   E-PANE-WORKTREES
-- J-BRANCH-RUNS: E-PANE-SELECT → E-PANE-DRAG → E-PANE-CHIP
+- J-BRANCH-RUNS: E-PANE-FOLD → E-PANE-SELECT → E-PANE-OLDER → E-PANE-CHIP
+- J-BRANCH-STAR: E-PANE-STAR → E-PANE-STAR
   E-BRANCH-RUNNING → E-BRANCH-RUN-END
 - J-PANE-SEARCH: E-REVIEW-SEARCH-FOCUS → E-REVIEW-SEARCH-TERMS → E-REVIEW-SUGGEST → E-REVIEW-SUGGEST-CLOSE → E-REVIEW-SEARCH-CLEAR → E-REVIEW-SEARCH-LEAVE
   E-REVIEW-SEARCH-FOCUS → E-PANE-SORT
-- J-PANE-NAVIGATE: E-MON-SCOPE-MOVE → E-MON-RUNS-MOVE → E-MON-RUNS-GRAPH → E-MON-GRAPH-TO-RUNS
+- J-PANE-NAVIGATE: E-MON-SCOPE-MOVE → E-MON-EXPAND → E-MON-RUNS-MOVE → E-MON-RUNS-GRAPH → E-MON-GRAPH-TO-RUNS
+  E-MON-RUNS-MOVE → E-MON-RUNS-OLDER
 - J-WAITING: E-WAITING-CHANGE → E-REVIEW-OPEN
 - J-LIVE: E-MON-LIVE | E-PANE-WORKTREES | E-BRANCH-RUNNING | E-WAITING-CHANGE
 - J-RESIZE: E-MON-RESIZE

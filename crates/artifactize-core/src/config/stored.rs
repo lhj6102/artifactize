@@ -152,7 +152,8 @@ impl From<&Profile> for StoredProfile {
                 args,
                 timeout_ms,
             } => Self::Runtime {
-                command: command.clone(),
+                // A program path is saved with `/`, as every stored path is.
+                command: crate::platform::path_text(std::path::Path::new(command)),
                 args: args.iter().map(ToString::to_string).collect(),
                 timeout_ms: (*timeout_ms).into(),
             },

@@ -6,6 +6,7 @@
 mod current;
 mod loader;
 mod query;
+mod starred;
 mod waiting;
 
 #[cfg(test)]
@@ -14,6 +15,7 @@ mod tests;
 pub use current::{Current, CurrentArtifact, CurrentEdge, CurrentEval, Plan, scan};
 pub use loader::{Input, Loader, Snapshot};
 pub use query::{DEFAULT, Query, Sort, complete, show};
+pub use starred::{star, starred};
 pub use waiting::{Waiting, waiting};
 
 use crate::{
@@ -21,25 +23,82 @@ use crate::{
     store::CatalogRun,
     types::{RunId, RunStatus, Timestamp},
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
+/// A branch's name as Git accepts one: not empty, and none of the characters or sequences
+/// `git check-ref-format --branch` refuses. Made at the Git and serde boundaries, so no other
+/// name becomes a branch's key.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct BranchName(String);
+
+impl BranchName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for BranchName {
+    type Error = String;
+
+    fn try_from(name: String) -> Result<Self, String> {
+        // Each `/`-separated part is a name of its own: not empty, not starting with `.`, not
+        // ending with `.lock`.
+        let refused = name.starts_with('-')
+            || name.ends_with('.')
+            || name == "@"
+            || name.contains("..")
+            || name.contains("@{")
+            || name
+                .split('/')
+                .any(|part| part.is_empty() || part.starts_with('.') || part.ends_with(".lock"))
+            || name.chars().any(|c| {
+                c.is_control() || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\')
+            });
+        if refused {
+            Err(format!("not a branch name: {name:?}"))
+        } else {
+            Ok(Self(name))
+        }
+    }
+}
+
+impl From<BranchName> for String {
+    fn from(name: BranchName) -> Self {
+        name.0
+    }
+}
+
+impl std::fmt::Display for BranchName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// How a Git worktree has its project checked out.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Head {
-    Branch(String),
+    Branch(BranchName),
     /// A detached worktree, known by its folder.
-    Detached(PathBuf),
+    Detached(#[serde(with = "crate::platform::path_serde")] PathBuf),
 }
 
 /// Where a branch lives: a Git repository's checked-out branch, by the repository's common
 /// directory, or a folder outside Git.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Place {
-    Git { common: PathBuf, head: Head },
-    Folder(PathBuf),
+    Git {
+        #[serde(with = "crate::platform::path_serde")]
+        common: PathBuf,
+        head: Head,
+    },
+    Folder(#[serde(with = "crate::platform::path_serde")] PathBuf),
 }
 
 /// One Run of a branch as its chip shows it.
@@ -67,7 +126,7 @@ pub struct Branch {
 }
 
 impl Branch {
-    /// The Run in progress the chip row ends with: the newest Run, while it runs.
+    /// The Run in progress a branch's timeline starts with: the newest Run, while it runs.
     pub fn running(&self) -> Option<&Chip> {
         self.runs
             .last()
@@ -129,13 +188,18 @@ impl Discovery {
 }
 
 /// Where `identity` (of the workspace `repo`) lives, and `repo` relative to its worktree.
+/// The head of the worktree at `tree` with `branch` checked out, or detached without one. A
+/// name Git reports that is no branch name is known by the worktree's folder instead.
+fn head(branch: Option<String>, tree: &Path) -> Head {
+    branch
+        .and_then(|name| BranchName::try_from(name).ok())
+        .map_or_else(|| Head::Detached(tree.to_path_buf()), Head::Branch)
+}
+
 fn place_of(identity: &Identity, repo: &Path) -> (Place, PathBuf) {
     match (&identity.common_dir, &identity.worktree_path) {
         (Some(common), Some(tree)) => {
-            let head = identity
-                .branch
-                .clone()
-                .map_or_else(|| Head::Detached(tree.clone()), Head::Branch);
+            let head = head(identity.branch.clone(), tree);
             let relative = repo
                 .strip_prefix(tree)
                 .map(Path::to_path_buf)
@@ -180,7 +244,7 @@ fn branch_name(place: &Place) -> String {
         Place::Git {
             head: Head::Branch(branch),
             ..
-        } => branch.clone(),
+        } => branch.to_string(),
         Place::Git {
             head: Head::Detached(tree),
             ..
@@ -249,9 +313,7 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
         .into_iter()
         .flat_map(|common| {
             discovery.worktrees(&common).into_iter().map(move |tree| {
-                let head = tree
-                    .branch
-                    .map_or_else(|| Head::Detached(tree.path.clone()), Head::Branch);
+                let head = head(tree.branch, &tree.path);
                 (
                     Place::Git {
                         common: common.clone(),

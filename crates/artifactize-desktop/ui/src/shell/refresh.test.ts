@@ -21,7 +21,8 @@ vi.hoisted(() => {
 
 const launch: LaunchView = { mode: "monitor", state: "/state", reviewer: "alice", request: null };
 
-type Read = { navigate: Navigate; answer: () => Promise<void>; fail: (message: string) => Promise<void> };
+/** A read the test answers, optionally with a notice that shows once the window took it. */
+type Read = { navigate: Navigate; answer: (notice?: string) => Promise<void>; fail: (message: string) => Promise<void> };
 
 /** Every browse read waits until the test answers it, in the order the window asked. */
 function backend(): Read[] {
@@ -36,7 +37,7 @@ function backend(): Read[] {
           return new Promise((resolve, reject) =>
             reads.push({
               navigate: (args as { navigate: Navigate }).navigate,
-              answer: () => completed(() => resolve(browseView(++revision))),
+              answer: (notice) => completed(() => resolve(browseView(++revision, notice ? { notice } : {}))),
               fail: (message) => completed(() => reject({ kind: "read", message })),
             }),
           );
@@ -132,10 +133,12 @@ describe("the manual refresh witness", () => {
     const manual = await next(reads, true);
     // A state-changed read shows a snapshot; the refresh is not done.
     await emit("state-changed", { resync: false });
-    await (await next(reads, false)).answer();
+    await (await next(reads, false)).answer("the state-changed snapshot");
+    await vi.waitFor(() => expect(screen.getByText("the state-changed snapshot")).toBeTruthy(), WAIT);
     expect(witnessed()).toBeNull();
     // Its own read failing late is still a failed refresh.
     await manual.fail("database is locked");
+    await vi.waitFor(() => expect(screen.getByText("database is locked")).toBeTruthy(), WAIT);
     expect(witnessed()).toBeNull();
   });
 });

@@ -4,7 +4,7 @@
 import { call, commands, message, type Commands } from "../ipc/client";
 import type { BranchKey, BrowseView, Completion, Navigate } from "../ipc/client";
 
-const still: Navigate = { run: null, close: false, query: null, older: null, full: false, resync: false };
+const still: Navigate = { run: null, close: false, query: null, older: null, star: null, full: false, resync: false };
 
 export class Browse {
   constructor(readonly ipc: Commands = commands) {}
@@ -61,6 +61,11 @@ export class Browse {
   /** Reach further back in `branch`'s Runs. */
   older(branch: BranchKey): Promise<boolean> {
     return this.navigate({ older: branch });
+  }
+
+  /** Star `branch`, or take its star away: starred branches are listed first. */
+  star(branch: BranchKey, on: boolean): Promise<boolean> {
+    return this.navigate({ star: { branch, on } });
   }
 
   /** Candidates for the last term of the Pane's search. */

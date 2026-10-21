@@ -16,7 +16,7 @@ import { clickOption, dispatchInput, tab } from "../input.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
 import { textContrast } from "../rendering.ts";
 import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
-import { branch, ENTRIES, listed, MAIN, mainTitle, selectBranch } from "../pane.ts";
+import { branch, ENTRIES, expand, listed, MAIN, mainTitle, selectBranch } from "../pane.ts";
 import { runOf as runIn, toolLog as logIn } from "../tool-log.ts";
 
 /** A fresh release waiting for its sign-off, the app started on its branch: its Run shown. */
@@ -650,6 +650,7 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: korean });
       const run = signoff(fixture).runId;
+      await expand(browser, "repo  master");
       await browser.waitUntil(async () => /^GREEN /.test((await branch(browser, "repo  master"))?.chips.find((chip) => chip.id === run)?.text ?? ""),
         { timeout: 15000, timeoutMsg: "the app has rendered this Run's terminal GREEN update on its chip" });
       await commandsRendered(browser);

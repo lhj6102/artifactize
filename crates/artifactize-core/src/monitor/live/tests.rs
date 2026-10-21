@@ -245,8 +245,12 @@ fn branch(project: &str, name: &str, latest: Option<i64>) -> Branch {
 }
 
 fn shown(query: &str, branches: &[Branch]) -> Vec<String> {
+    shown_starred(query, branches, &BTreeSet::new())
+}
+
+fn shown_starred(query: &str, branches: &[Branch], starred: &BTreeSet<Place>) -> Vec<String> {
     let query: Query = query.parse().unwrap();
-    show(&query, branches, &[])
+    show(&query, branches, &[], starred)
         .0
         .into_iter()
         .map(|branch| format!("{} {}", branch.project, branch.name))
@@ -302,6 +306,60 @@ fn the_search_narrows_by_project_and_branch_and_sorts_by_recency_or_name() {
 }
 
 #[test]
+fn starred_branches_come_first_in_the_search_order_and_stay_starred() {
+    let branches = [
+        branch("beta", "main", Some(1)),
+        branch("alpha", "feat/search", None),
+        branch("alpha", "main", Some(3)),
+        branch("beta", "fix/alpha", Some(2)),
+    ];
+    let state = crate::test_os::tempdir();
+    assert_eq!(
+        starred(Some(state.path())).unwrap(),
+        BTreeSet::new(),
+        "none before the first star"
+    );
+    star(Some(state.path()), &branches[0].place, true).unwrap();
+    let kept = star(Some(state.path()), &branches[1].place, true).unwrap();
+    // Read back as kept, for the next monitor of this user.
+    assert_eq!(starred(Some(state.path())).unwrap(), kept);
+    assert_eq!(
+        shown_starred(DEFAULT, &branches, &kept),
+        [
+            "beta main",
+            "alpha feat/search",
+            "alpha main",
+            "beta fix/alpha"
+        ],
+        "the starred first, each group the most recent Run first"
+    );
+    assert_eq!(
+        shown_starred("sort:name", &branches, &kept),
+        [
+            "alpha feat/search",
+            "beta main",
+            "alpha main",
+            "beta fix/alpha"
+        ]
+    );
+    // A search still narrows the starred; a star taken away lists the branch with the others.
+    assert_eq!(
+        shown_starred("alpha sort:name", &branches, &kept),
+        ["alpha feat/search", "alpha main", "beta fix/alpha"]
+    );
+    let kept = star(Some(state.path()), &branches[0].place, false).unwrap();
+    assert_eq!(
+        shown_starred(DEFAULT, &branches, &kept),
+        [
+            "alpha feat/search",
+            "alpha main",
+            "beta fix/alpha",
+            "beta main"
+        ]
+    );
+}
+
+#[test]
 fn the_search_completes_keys_projects_branches_and_orders() {
     let branches = [
         branch("alpha", "main", None),
@@ -317,4 +375,51 @@ fn the_search_completes_keys_projects_branches_and_orders() {
         complete("sort:recent b", &branches, &[]).keep,
         "sort:recent "
     );
+}
+
+#[test]
+fn a_branch_name_is_a_valid_ref_and_a_stored_star_with_another_is_refused() {
+    for good in ["main", "feat/x", "release-1.2", "user@laptop/fix"] {
+        assert_eq!(
+            BranchName::try_from(good.to_owned()).unwrap().as_str(),
+            good
+        );
+    }
+    for bad in [
+        "",
+        "-x",
+        "/x",
+        "x/",
+        "x.",
+        "x.lock",
+        "@",
+        "a..b",
+        "a//b",
+        "a@{b",
+        ".x",
+        "a/.b",
+        "a b",
+        "a~b",
+        "a^b",
+        "a:b",
+        "a?b",
+        "a*b",
+        "a[b",
+        "a\\b",
+        "a\tb",
+        "topic.lock/child",
+        "a/.b/c",
+    ] {
+        assert!(BranchName::try_from(bad.to_owned()).is_err(), "{bad:?}");
+    }
+    // A stored star whose branch is no branch name is refused when read back, never listed.
+    let state = crate::test_os::tempdir();
+    for bad in ["", "topic.lock/child"] {
+        std::fs::write(
+            state.path().join("starred-branches.json"),
+            format!(r#"[{{"git":{{"common":"/repo/.git","head":{{"branch":"{bad}"}}}}}}]"#),
+        )
+        .unwrap();
+        assert!(starred(Some(state.path())).is_err(), "{bad:?}");
+    }
 }

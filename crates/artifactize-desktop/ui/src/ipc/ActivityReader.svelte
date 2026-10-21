@@ -13,7 +13,7 @@
   const snapshot = $derived(activity.snapshot());
 
   async function search() {
-    try { await call(commands.browse({ run: null, close: false, query, older: null, full: false, resync: false })); }
+    try { await call(commands.browse({ run: null, close: false, query, older: null, star: null, full: false, resync: false })); }
     catch (error) { app.failure = message(error); }
   }
 

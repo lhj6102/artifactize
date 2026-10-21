@@ -9,7 +9,7 @@
 // The demos (assets/demos/):
 //   A. review-loop.gif — an example shaped like this repository (core, cli, tui, mcp, docs,
 //      site, release) goes through four Runs of real `verify`, recorded from the app with its
-//      branch selected in the Pane, each new Run's chip shown in the Main area, and played back
+//      branch expanded in the Pane, each new Run shown from its timeline in the Main area, and played back
 //      fast. Each eval is a runtime check that fails while its Artifact's code.txt
 //      contains BUG; between Runs this script removes the BUG it just saw, as an AI would fix
 //      the code. Try 1 fails mcp and site; try 2 reuses the rest at once and fails docs partway;
@@ -307,7 +307,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   loopProject(root, fixture.repo);
   e2e.git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
   const env = e2e.environment(fixture);
-  // Started on the example's branch: the Pane selects it, and each new Run arrives as its chip.
+  // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
   const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
   const segments: Segment[] = [];
   // The graph's top-left corner, below however many attention lines a Run's headline has.
@@ -349,8 +349,8 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       mkdirSync(frames);
       const started = run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], { env: { ...env } });
       const id = (JSON.parse(started) as { run: string }).run;
-      // Show the new Run as soon as its chip ends the branch's row, then record it until it ends.
-      await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's row ends with ${id}` });
+      // Show the new Run as soon as it starts the branch's timeline, then record it until it ends.
+      await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's timeline starts with ${id}` });
       await browser.execute((main) => {
         const shown = document.querySelector(main);
         const canvas = shown?.querySelector(".run .svelte-flow") ?? null;

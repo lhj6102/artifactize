@@ -1,17 +1,31 @@
 // The window's one screen as a person sees it: the Pane (its Search, the Branches with their
-// chip rows, the Waiting stack) beside the Main area. Every reading is read-only; actions are
+// timelines, the Waiting stack) beside the Main area. Every reading is read-only; actions are
 // real clicks on what the window shows.
 
-/** A chip as read: the Run it shows (`current` for the Current chip), its text without the
- * glyph, its glyph, whether it is the one shown in the Main area, and its painted background
- * and glyph colour as red, green and blue channels on any one scale. */
-export type Chip = { id: string; text: string; glyph: string; filled: boolean; paint: number[]; ink: number[] };
+/** A timeline entry as read: the Run it shows (`current` for the Current), its status word and
+ * age as `text` (`GREEN 5m ago`, `Running 2m`, `Current`), the line under it (a Run's ID,
+ * `Working tree`), whether it is the one shown in the Main area, and its dot's colour as red,
+ * green and blue channels on any one scale. */
+export type Chip = { id: string; text: string; sub: string; filled: boolean; dot: number[] };
 
 /** Red, green or blue (0, 1, 2) is the strongest channel of `colour`. */
 export const leans = (colour: number[], channel: number) =>
   colour.length === 3 && colour.every((value, at) => at === channel || colour[channel] > value);
-/** A branch's entry as read: `project  branch`, whether it is selected, and its chip row. */
-export type Branch = { name: string; selected: boolean; chips: Chip[] };
+/** A branch's entry as read: `project  branch` as the Main area's title names it, its label as
+ * drawn (`project / branch`), whether the selection is on it or in its timeline, whether it is
+ * expanded, the newest Run's status
+ * under its name while collapsed (`RED 25m ago`), its star as drawn (`★` on, `☆` off) and
+ * whether it is pressed, and its timeline, empty while collapsed. */
+export type Branch = {
+  name: string;
+  label: string;
+  selected: boolean;
+  expanded: boolean;
+  latest: string;
+  star: string;
+  starred: boolean;
+  chips: Chip[];
+};
 /** A waiting review's row as read. */
 export type WaitingRow = { id: string; eval: string; where: string; meta: string; selected: boolean };
 
@@ -21,22 +35,32 @@ export const MAIN = 'section.panel[aria-label="Main area"]';
 
 /** The Branches in the order shown. */
 export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
-  return browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Branches"] [role="option"]')].map((row) => ({
-    name: row.querySelector(".name")?.textContent ?? "",
-    selected: row.getAttribute("aria-selected") === "true",
-    chips: [...row.querySelectorAll<HTMLElement>("button[data-chip]")].map((chip) => {
-      const glyph = chip.querySelector(".glyph");
+  return browser.execute(() => {
+    const words = (element: Element | null | undefined) => (element?.textContent ?? "").replace(/\s+/g, " ").trim();
+    // `rgb(r, g, b)` or `color(srgb r g b)`: the first three numbers after the space name.
+    const channels = (colour: string) => (colour.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+    return [...document.querySelectorAll<HTMLElement>('[aria-label="Branches"] > [role="treeitem"]')].map((row) => {
+      const project = words(row.querySelector(".project")).replace(/ \/$/, "");
+      const branch = words(row.querySelector(".branch-name"));
       return {
-        id: chip.dataset.chip ?? "",
-        text: [...chip.childNodes].filter((node) => node !== glyph).map((node) => node.textContent ?? "").join("").trim(),
-        glyph: glyph?.textContent?.trim() ?? "",
-        filled: chip.getAttribute("aria-pressed") === "true",
-        // `rgb(r, g, b)` or `color(srgb r g b)`: the first three numbers after the space name.
-        paint: (getComputedStyle(chip).backgroundColor.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number),
-        ink: glyph ? (getComputedStyle(glyph).color.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number) : [],
+        name: project ? `${project}  ${branch}` : branch,
+        label: words(row.querySelector(".label")),
+        // The selection is on the branch itself or on an entry of its timeline.
+        selected: row.getAttribute("aria-selected") === "true" || row.querySelector('[role="treeitem"][aria-selected="true"]') !== null,
+        expanded: row.getAttribute("aria-expanded") === "true",
+        latest: words(row.querySelector(".latest")),
+        star: row.querySelector(".star")?.textContent?.trim() ?? "",
+        starred: row.querySelector(".star")?.getAttribute("aria-pressed") === "true",
+        chips: [...row.querySelectorAll<HTMLElement>("button[data-chip]")].map((chip) => ({
+          id: chip.dataset.chip ?? "",
+          text: `${words(chip.querySelector(".status"))} ${words(chip.querySelector(".age"))}`.trim(),
+          sub: words(chip.querySelector(".sub")),
+          filled: chip.getAttribute("aria-pressed") === "true",
+          dot: channels(getComputedStyle(chip.querySelector(".dot")!).backgroundColor),
+        })),
       };
-    }),
-  })));
+    });
+  });
 }
 
 /** The branch read as `name`, or undefined while it is not listed. */
@@ -69,8 +93,20 @@ export const entriesFocused = (browser: WebdriverIO.Browser) => browser.$(ENTRIE
 export const searchFocused = (browser: WebdriverIO.Browser) => browser.$(SEARCH).isFocused();
 export const mainFocused = (browser: WebdriverIO.Browser) => browser.$(MAIN).isFocused();
 
-/** The XPath of the branch row named `name`. */
-const row = (name: string) => `//ul[@aria-label="Branches"]/li[.//button[contains(@class,"name")][.=${JSON.stringify(name)}]]`;
+/** The branch row named `name` (as {@link Branch.name}), by its place in the list. */
+async function row(browser: WebdriverIO.Browser, name: string): Promise<string> {
+  const at = (await branches(browser)).findIndex((entry) => entry.name === name);
+  if (at < 0) throw new Error(`${name} is not listed: ${JSON.stringify(await branches(browser))}`);
+  return `[aria-label="Branches"] > [role="treeitem"]:nth-child(${at + 1})`;
+}
+
+/** Expand the branch `name` to its timeline with its chevron, if it is not already. */
+export async function expand(browser: WebdriverIO.Browser, name: string): Promise<void> {
+  await listed(browser, name);
+  if ((await branch(browser, name))?.expanded) return;
+  await browser.$(`${await row(browser, name)} button.chevron`).click();
+  await browser.waitUntil(async () => (await branch(browser, name))?.expanded === true, { timeout: 15000, timeoutMsg: `${name} expanded` });
+}
 
 /** Wait until `name` is listed. */
 export async function listed(browser: WebdriverIO.Browser, name: string, timeout = 15000): Promise<void> {
@@ -78,19 +114,23 @@ export async function listed(browser: WebdriverIO.Browser, name: string, timeout
     { timeout, timeoutMsg: `${name} is listed in the Branches: ${JSON.stringify(await branches(browser))}` });
 }
 
-/** Click a branch's name and wait until it is selected. */
+/** Click a branch's name and wait until it is selected and expanded. */
 export async function selectBranch(browser: WebdriverIO.Browser, name: string): Promise<void> {
   await listed(browser, name);
-  await browser.$(`${row(name)}//button[contains(@class,"name")]`).click();
-  await browser.waitUntil(async () => (await branch(browser, name))?.selected === true, { timeout: 15000, timeoutMsg: `${name} selected` });
+  await browser.$(`${await row(browser, name)} button.name`).click();
+  await browser.waitUntil(async () => {
+    const entry = await branch(browser, name);
+    return entry?.selected === true && entry.expanded;
+  }, { timeout: 15000, timeoutMsg: `${name} selected and expanded` });
 }
 
-/** Click the chip `chip` (a Run's ID, or `current`) of the branch `name`, and wait until it is
- * the filled one. */
+/** Click the timeline entry `chip` (a Run's ID, or `current`) of the branch `name`, expanding
+ * it first, and wait until it is the one shown. */
 export async function chooseChip(browser: WebdriverIO.Browser, name: string, chip: string): Promise<void> {
+  await expand(browser, name);
   await browser.waitUntil(async () => (await branch(browser, name))?.chips.some((entry) => entry.id === chip) === true,
-    { timeout: 15000, timeoutMsg: `${name} has the chip ${chip}: ${JSON.stringify(await branch(browser, name))}` });
-  await browser.$(`${row(name)}//button[@data-chip=${JSON.stringify(chip)}]`).click();
+    { timeout: 15000, timeoutMsg: `${name} has the entry ${chip}: ${JSON.stringify(await branch(browser, name))}` });
+  await browser.$(`${await row(browser, name)} button[data-chip=${JSON.stringify(chip)}]`).click();
   await browser.waitUntil(async () => (await branch(browser, name))?.chips.find((entry) => entry.id === chip)?.filled === true,
     { timeout: 15000, timeoutMsg: `${name}'s chip ${chip} shown` });
 }

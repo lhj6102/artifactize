@@ -2,7 +2,7 @@
 // actual Agent conversation/runtime output, and the different tab and view treatments.
 import assert from "node:assert/strict";
 import { createRich, FINDING, LONG_NAME, LONG_WORD, MODEL, OWNER } from "../rich-fixture.ts";
-import { aside, detail, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
+import { aside, camera, detail, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { subdued } from "../rendering.ts";
@@ -153,7 +153,10 @@ export const scenarios: Scenario[] = [
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
       // While the old eval's log is still open, a different Artifact replaces it with its
-      // own Artifact tab. No stale Summary or log is allowed to survive the switch.
+      // own Artifact tab. No stale Summary or log is allowed to survive the switch. Fit View
+      // brings it out from under the Detail, which moves no camera of its own.
+      await browser.$(".monitor .graph .svelte-flow__controls-fitview").click();
+      await camera(browser);
       await graphShown(browser, "a:basis");
       const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
       assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);

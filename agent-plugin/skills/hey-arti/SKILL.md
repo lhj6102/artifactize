@@ -58,7 +58,8 @@ process ends by telling the user what you found or changed.
 `artifactize` program; a plugin cannot install it for the user.
 
 1. Check that the MCP tools answer, for example `doctor`, or run `artifactize
-   --version`.
+   --version`. If a tool answers that the host names no project, pass `project`, the
+   session's absolute project folder, with every call.
 2. If it is missing, say so plainly and show the default for their system from
    [Install](https://artifactize.dev/docs/getting-started/install.html). Run it only
    when they ask you to.
