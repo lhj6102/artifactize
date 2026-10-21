@@ -691,6 +691,40 @@ pub fn environment_variable(name: &str) -> Option<std::ffi::OsString> {
     std::env::var_os(name)
 }
 
+/// Run `work`, which observes `cancellation`, while `check` watches it through its handle.
+/// Whether `check` returns or fails an assertion or deadline, unfinished work is then
+/// cancelled and awaited, and with it the process runner's supervisor, which kills and reaps
+/// its children: the caller's temporary files outlive them all.
+pub async fn scoped<W, R>(
+    cancellation: tokio_util::sync::CancellationToken,
+    work: W,
+    check: impl AsyncFnOnce(&mut tokio::task::JoinHandle<W::Output>) -> R,
+) -> R
+where
+    W: std::future::Future + Send + 'static,
+    W::Output: Send + 'static,
+{
+    use std::{panic, task::Poll};
+    let mut running = tokio::spawn(work);
+    // Every crate's tests share this module, so it catches a failed check with std alone.
+    let checked = {
+        let mut check = Box::pin(check(&mut running));
+        std::future::poll_fn(|context| {
+            match panic::catch_unwind(panic::AssertUnwindSafe(|| check.as_mut().poll(context))) {
+                Ok(Poll::Pending) => Poll::Pending,
+                Ok(Poll::Ready(value)) => Poll::Ready(Ok(value)),
+                Err(failure) => Poll::Ready(Err(failure)),
+            }
+        })
+        .await
+    };
+    if !running.is_finished() {
+        cancellation.cancel();
+        let _ = running.await;
+    }
+    checked.unwrap_or_else(|failure| panic::resume_unwind(failure))
+}
+
 /// Run `command` to its end and collect its output.
 pub fn run(command: &mut Command) -> std::process::Output {
     command.output().expect("the command runs")

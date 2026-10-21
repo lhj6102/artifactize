@@ -140,7 +140,7 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
         registered.send(child.pid).unwrap();
         Ok(())
     });
-    support::scoped(cancellation, work, async |running| {
+    support::os::scoped(cancellation, work, async |running| {
         let pid = child.await.unwrap();
         tokio::time::advance(Duration::from_millis(1000)).await;
         let outcome = running.await.unwrap();
@@ -167,7 +167,7 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
         registered.send(child).unwrap();
         Ok(())
     });
-    support::scoped(cancellation.clone(), work, async |running| {
+    support::os::scoped(cancellation.clone(), work, async |running| {
         let child = child.await.unwrap();
         wait_for(|| scratch.workspace().join("started").exists()).await;
         cancellation.cancel();
@@ -504,7 +504,7 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let marker = scratch.workspace().join("grandchild");
     let cancellation = CancellationToken::new();
     let work = runtime::execute(command, cancellation.clone(), |_| async { Ok(()) });
-    support::scoped(cancellation, work, async |running| {
+    support::os::scoped(cancellation, work, async |running| {
         let pid = grandchild(&marker, running).await;
         tokio::time::advance(Duration::from_millis(1000)).await;
         let outcome = running.await.unwrap();
@@ -569,7 +569,7 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
         registered.send(child).unwrap();
         Ok(())
     });
-    support::scoped(cancellation, work, async |running| {
+    support::os::scoped(cancellation, work, async |running| {
         let child = child.await.unwrap();
         wait_for(|| {
             std::fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
@@ -604,7 +604,7 @@ async fn deadline_is_not_reset_after_registration() {
         held.await.unwrap();
         Ok(())
     });
-    support::scoped(cancellation, work, async |running| {
+    support::os::scoped(cancellation, work, async |running| {
         let child = child.await.unwrap();
         // Consume most of the one deadline while user code is still behind registration.
         tokio::time::advance(Duration::from_millis(600)).await;

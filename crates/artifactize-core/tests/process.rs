@@ -80,7 +80,7 @@ async fn registration_observes_inert_group_leader_before_exec() {
         );
         Ok(())
     });
-    support::scoped(cancellation, work, async |running| {
+    support::os::scoped(cancellation, work, async |running| {
         let child = identity.await.unwrap();
         assert!(support::os::running(child.pid.get()));
         assert!(!scratch.0.join("started").exists());
@@ -127,7 +127,7 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
         registered.send(child).unwrap();
         std::future::pending().await
     });
-    support::scoped(cancellation, work, async |running| {
+    support::os::scoped(cancellation, work, async |running| {
         let child = child.await.unwrap();
         // Dropping the caller is what is under test: abort it rather than cancel it.
         running.abort();
@@ -155,7 +155,7 @@ async fn registration_is_covered_by_the_deadline() {
             std::future::pending().await
         },
     );
-    support::scoped(cancellation, work, async |running| {
+    support::os::scoped(cancellation, work, async |running| {
         let pid = pid.await.unwrap();
         tokio::time::advance(Duration::from_secs(60)).await;
         assert!(matches!(
