@@ -159,10 +159,10 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
+  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-GRAPH-TAB E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "graph-keyboard-artifacts",
-    "Tabs from the Main area to every Artifact and opens the corresponding Detail with Enter, without clicking a node",
+    "Tabs from the Main area to every Artifact of the Run's graph, opening nothing, and opens the corresponding Detail with Enter, without clicking a node",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -181,12 +181,41 @@ export const scenarios: Scenario[] = [
         if (!id || visited.has(id)) continue;
         const name = expected.get(id);
         assert.ok(name, `Tab reached the expected Artifact ${id}`);
+        assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
         await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail`);
         assert.equal((await detail(browser))?.tabs[0]?.name, name);
         visited.add(id);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the keyboard-opened Detail closes");
       }
       assert.deepEqual([...visited].sort(), [...expected.keys()].sort(), "every Artifact is reachable with Tab and Enter alone");
+    },
+  ),
+
+  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-GRAPH-TAB E-CURRENT-EVALS E-CURRENT-CLOSE
+  scenario<Record<string, never>>(
+    "graph-keyboard-current",
+    "Tabs from the Main area to an Artifact of a branch's Current, opening nothing, and opens its Detail with Enter and closes it with Esc, without clicking a node",
+    async () => {
+      // Its Runs ended, so the branch's last chip, shown at launch, is its Current.
+      const fixture = createChain(3);
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const node = (id: string) => `section[aria-label="Current"] .svelte-flow__node[data-id="${id}"]`;
+      await browser.$(node("a:n002")).waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn" });
+      await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area reached by keyboard");
+      let reached: string | null = null;
+      // A bound on traversing this small fixture's controls, not a claimed tab order.
+      for (let attempt = 0; attempt < 40 && reached === null; attempt += 1) {
+        await tab(browser);
+        reached = await browser.execute(() => document.activeElement?.closest('section[aria-label="Current"] .svelte-flow__node')?.getAttribute("data-id") ?? null);
+      }
+      assert.ok(reached && /^a:n00[0-2]$/.test(reached), `Tab reached an Artifact of the Current: ${reached}`);
+      assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
+      const name = reached!.slice(2);
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail over the Current`);
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Current's Detail closes");
     },
   ),
 

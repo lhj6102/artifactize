@@ -3,6 +3,7 @@ import { SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { environment, releaseFixtures } from "./fixture.ts";
+import { settleRetainedFixtures } from "./build-fixtures.ts";
 import {
   accountBrowserEnvironment, asNativePath, releaseAccountBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
   assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
@@ -32,12 +33,16 @@ export const fixedResources = {
 
 /** Called by the runner AFTER Launcher.run returns, never from config onComplete:
  * WDIO runs the user's onComplete before the upstream service's shutdown hook. */
-export async function releasePrepared(): Promise<void> {
+export async function releasePrepared({ retainFiles = false } = {}): Promise<void> {
   const failures: unknown[] = [];
   for (const input of prepared.splice(0)) {
     try { await input.release?.(); } catch (error) { failures.push(error); }
   }
-  try { await releaseFixtures(); } catch (error) { failures.push(error); }
+  // An app whose shutdown is unconfirmed may still read its fixture: settle its Runs, keep its files.
+  try {
+    if (retainFiles) settleRetainedFixtures();
+    else await releaseFixtures();
+  } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }
 

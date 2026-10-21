@@ -2,7 +2,7 @@
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
 import { childDirectories, exists, isLink, nameOf, nativePath, newDirectory, parentOf, type NativePath } from "./platform.ts";
-import { removeFixture } from "./runs.ts";
+import { removeFixture, settleFixtureRuns } from "./runs.ts";
 import { slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 
@@ -31,6 +31,18 @@ export function createdRoots(): NativePath[] {
   const scratch = fixturesRoot();
   if (!exists(scratch)) return [];
   return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
+}
+
+/** Cancel and join the fixture Runs of every created root, its files kept: an app whose native
+ * shutdown is unconfirmed may still read them. */
+export function settleRetainedFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): void {
+  const failures: unknown[] = [];
+  for (const root of roots) {
+    if (!exists(root)) continue;
+    try { settleFixtureRuns(candidate.cli, root, candidate.observer); } catch (error) { failures.push(error); }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "fixture Runs could not be settled; inputs retained");
 }
 
 export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): Promise<void> {

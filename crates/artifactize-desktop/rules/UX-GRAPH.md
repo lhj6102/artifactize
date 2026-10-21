@@ -171,6 +171,7 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | Current scanned again and its graph and structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan ends | the graph, nodes and edges recoloured in place |
+| E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
 
 ## Detail
@@ -272,6 +273,8 @@ E-PANE-SELECT.
 - J-DETAIL: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-LOG → E-MON-DETAIL-SWITCH → E-MON-DETAIL-BACK
   E-MON-DETAIL-RUN → E-MON-DETAIL-BACK
   E-CURRENT-CHIP → E-CURRENT-EVALS → E-CURRENT-CLOSE
+  E-MON-RUNS-GRAPH → E-GRAPH-TAB → E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-BACK
+  E-MON-RUNS-GRAPH → E-GRAPH-TAB → E-CURRENT-EVALS → E-CURRENT-CLOSE
 - J-DETAIL-NEIGHBOURS: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-TAB
 - J-DETAIL-TOOLS: E-MON-DETAIL-ARTIFACT → E-DETAIL-TOOL | E-DETAIL-TOOL-LAUNCH | E-DETAIL-TOOL-FAIL
   E-CURRENT-EVALS → E-DETAIL-TOOL

@@ -4,7 +4,7 @@
 // entries, and the sort orders the Branches. A request that is no waiting review opens by ID
 // read-only.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, create, requests } from "../fixture.ts";
+import { addRepository, addWorktrees, create, orderRuns, requests, signoff, type Fixture } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
@@ -18,12 +18,25 @@ async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolea
 
 const ALL = ["other  master", "repo  master", "repo  scope-one", "repo  scope-two", "third  master"];
 
-/** Five branches of three projects, each with a Run waiting for its sign-off. */
+/** The Run of the sign-off a repository added after `before` was read waits with. */
+function addedRun(fixture: Fixture, before: Set<string>): string {
+  const found = requests(fixture).find((request) => request.evalId === "release/signoff" && !before.has(request.id));
+  assert.ok(found, "the added repository's own sign-off waits");
+  return found.runId;
+}
+
+/** Five branches of three projects, each with a Run waiting for its sign-off, started in this
+ * order: repo's master, its two worktrees, other's and third's. */
 async function prepareSearch() {
   const fixture = await create();
-  await addWorktrees(fixture);
-  await addRepository(fixture, "other");
-  await addRepository(fixture, "third");
+  const runs = [signoff(fixture).runId, ...await addWorktrees(fixture)];
+  for (const name of ["other", "third"]) {
+    const before = new Set(requests(fixture).map((request) => request.id));
+    await addRepository(fixture, name);
+    runs.push(addedRun(fixture, before));
+  }
+  // Explicitly in that order, whatever times the verifies were saved at.
+  orderRuns(fixture, runs);
   return { fixture, data: {} };
 }
 
@@ -116,7 +129,7 @@ export const scenarios: Scenario[] = [
     },
     async (browser) => {
       const { holds, names, set } = search(browser);
-      // Each Run started after the one before: third's last, then other's, the worktrees' and repo's.
+      // The Runs as dated: third's newest, then other's, the worktrees' and repo's.
       const recent = ["third  master", "other  master", "repo  scope-two", "repo  scope-one", "repo  master", "repo  added"];
       await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(recent), `the most recent Run first, without Runs last: ${JSON.stringify(await names())}`);
       await press(browser, ["/"], () => searchFocused(browser), "the search focused");

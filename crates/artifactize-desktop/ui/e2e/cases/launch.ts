@@ -2,7 +2,7 @@
 // what each way of starting the app opens first: nothing, a branch's last chip, the newest
 // waiting review or a named one.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, create, requests, signoff, type Fixture } from "../fixture.ts";
+import { addRepository, addWorktrees, create, orderRuns, requests, signoff, type Fixture } from "../fixture.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { detail, evalAt, graphShown, nodeAt, openArtifact } from "../graph-view.ts";
@@ -36,6 +36,8 @@ async function prepareReviews() {
     await addRepository(fixture, name);
     ids.push(added(fixture, before));
   }
+  // Explicitly oldest first, whatever times the three verifies were saved at.
+  orderRuns(fixture, ids.map((id) => requests(fixture).find((request) => request.id === id)!.runId));
   return { fixture, ids };
 }
 

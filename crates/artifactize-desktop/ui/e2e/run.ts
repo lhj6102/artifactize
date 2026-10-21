@@ -62,8 +62,12 @@ async function batch(): Promise<void> {
       await configuration.releasePrepared();
       writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
     } else {
-      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
-      await configuration.releasePrepared();
+      let unconfirmed: unknown = null;
+      try { assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`))); }
+      catch (error) { unconfirmed = error; }
+      // Unconfirmed: still close external inputs and settle the Runs, but keep the files.
+      try { await configuration.releasePrepared({ retainFiles: unconfirmed !== null }); }
+      finally { if (unconfirmed !== null) failures.push(unconfirmed); }
     }
   } catch (error) { failures.push(error); }
   if (failures.length) {
