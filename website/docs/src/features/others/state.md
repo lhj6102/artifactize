@@ -391,7 +391,9 @@ the original review ends.
 ### Local readers
 
 Monitor and Review only read the state; they never rediscover declarations or
-fingerprints to refresh. They follow changes as they happen: the first open reader
+fingerprints to refresh. The one exception is opening a waiting Human review's
+Detail: it reads the current declarations to show that review's tool commands,
+without claiming the review or running anything. They follow changes as they happen: the first open reader
 hosts a temporary owner-only local channel (no daemon) on which writers announce which
 Runs they changed, and readers read only those again, the Run you have open included.
 Without the channel, or when it misses something, a check every five seconds catches
