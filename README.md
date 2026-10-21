@@ -107,23 +107,24 @@ and Review screens.
 recording script removes what failed, standing in for an AI fixing the code; work that
 didn't change is reused at once.
 
-<img src="assets/demos/review-loop.gif" width="1200" alt="Real recording of the Artifactize desktop Monitor over four Runs: failures turn red, are fixed between Runs, unchanged work is reused, and the fourth Run is satisfied.">
+<img src="assets/demos/review-loop.gif" width="1200" alt="Real recording of the Artifactize desktop app over four Runs of one branch: failures turn red, are fixed between Runs, unchanged work is reused, and the fourth Run is satisfied.">
 
 **How this project grew:** Artifactize's own Artifact graph at each release, from
 0.7.0 to today.
 
-<img src="assets/demos/graph-growth.gif" width="1200" alt="Real recording of the Artifactize desktop graph view showing this repository's Artifact graph growing release by release from 0.7.0 to the current main.">
+<img src="assets/demos/graph-growth.gif" width="1200" alt="Real recording of the Artifactize desktop app showing the current Artifact graph of this repository growing release by release from 0.7.0 to the current main.">
 
-**Monitor:** the example's Run: core passed, cli's tests failed so docs is blocked,
-and release waits for a person's sign-off.
+**Branches and Runs:** the example's branch with its Run chips and the sign-off waiting
+in the left pane, and its Run: core passed, cli's tests failed so docs is blocked, and
+release waits for a person's sign-off.
 
-<img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop Monitor: an example Run graph where core passed, cli failed, docs is blocked and release waits for a sign-off.">
+<img src="assets/screenshots/monitor.png" width="1200" alt="Real Artifactize desktop app: the example branch and its waiting sign-off in the left pane, and its Run graph where core passed, cli failed, docs is blocked and release waits for a sign-off.">
 
 **Detail:** cli between the core it uses and the docs that use it, with its checks.
 
 <img src="assets/screenshots/detail.png" width="1200" alt="Real Artifactize desktop Detail of the cli Artifact: its neighbours core and docs, and its lint and tests checks.">
 
-**Review:** the release sign-off, claimed by the example reviewer, after running its
-notes tool, with the GREEN form open.
+**Review:** the release sign-off, opened from the waiting reviews and claimed by the
+example reviewer, after running its notes tool, with the GREEN form open.
 
 <img src="assets/screenshots/review.png" width="1200" alt="Real Artifactize desktop Review: the example's claimed sign-off with its instruction, notes tool, tool log and GREEN form.">

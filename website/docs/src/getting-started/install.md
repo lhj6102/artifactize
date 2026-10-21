@@ -215,8 +215,8 @@ placeholder version `0.0.0-dev`.
 
 ### Desktop app
 
-The [desktop app](../desktop/index.md) runs Monitor, Review and Graph in a window. It
-shows the Runs that `artifactize verify` starts, so the commands come with it: the
+The [desktop app](../desktop/index.md) shows every live branch with its Runs and what it
+would run now, and the Human reviews waiting, in one window. It shows the Runs that `artifactize verify` starts, so the commands come with it: the
 Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` put
 `artifactize` on `PATH`. From the disk image or an AppImage run on its own, the app
 sets up the commands on first launch (below). TUI and MCP already come with the ordinary
