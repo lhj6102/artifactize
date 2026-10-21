@@ -156,7 +156,7 @@ export const scenarios: Scenario[] = [
       const last = before.at(-1)!;
       assert.deepEqual((await branches(browser)).map((entry) => [entry.star, entry.starred]), [["☆", false], ["☆", false], ["☆", false]], "no star yet");
       // Starred, the last branch is listed first, the others in their order after it.
-      await browser.$(`button[aria-label=${JSON.stringify(`Star ${last}`)}]`).click();
+      await browser.$(`button[aria-label=${JSON.stringify(`Star ${(await branch(browser, last))!.label}`)}]`).click();
       await waitFor(browser, async () => (await names())[0] === last, `${last} listed first: ${JSON.stringify(await names())}`);
       assert.deepEqual(await names(), [last, ...before.slice(0, -1)]);
       const starred = (await branch(browser, last))!;
@@ -171,7 +171,7 @@ export const scenarios: Scenario[] = [
       const shown = await branches(browser);
       assert.deepEqual(shown.map((entry) => [entry.star, entry.starred]), [["★", true], ["☆", false], ["☆", false]], `the star kept: ${JSON.stringify(shown)}`);
       const starred = shown[0].name;
-      await browser.$(`button[aria-label=${JSON.stringify(`Star ${starred}`)}]`).click();
+      await browser.$(`button[aria-label=${JSON.stringify(`Star ${shown[0].label}`)}]`).click();
       // It was the last of the search's order before it was starred.
       const after = [...shown.slice(1).map((entry) => entry.name), starred];
       await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(after), `listed with the others: ${JSON.stringify(await names())}`);

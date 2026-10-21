@@ -9,7 +9,7 @@ import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, requestWindowClose } from "../platform.ts";
-import { branch, entriesFocused, listed, mainTitle, waiting } from "../pane.ts";
+import { branch, entriesFocused, expand, mainTitle, waiting } from "../pane.ts";
 
 /** How many Human reviews this case's state holds waiting, read through the public CLI. */
 function waitingReviews(fixture: Fixture): number {
@@ -180,7 +180,7 @@ export const scenarios: Scenario[] = [
       // Nothing waits any more: the bar reads (0), and the branch's Run ends GREEN.
       await waitFor(browser, async () => (await waiting(browser)).bar === "Waiting (0)", "the stack empty after the submission");
       const run = signoff(fixture).runId;
-      await listed(browser, "repo  master");
+      await expand(browser, "repo  master");
       await waitFor(browser, async () => /^GREEN /.test((await branch(browser, "repo  master"))?.chips.find((chip) => chip.id === run)?.text ?? ""),
         "the app has rendered this Run's terminal GREEN update on its chip");
       await commandsRendered(browser);
