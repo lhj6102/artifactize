@@ -50,6 +50,8 @@ export class MonitorState {
   folds = $state({ technical: false, pending: false, log: false, debug: false });
   /** The ID typed into the Open by ID dialog. */
   wanted = $state("");
+  /** The Runs each branch had in progress by its key, to notice one ending; never drawn. */
+  running = $state<Record<string, string[]>>({});
   /** What the launch asked for was opened: only the first snapshot opens it. */
   started = $state(false);
   /** The parts focus moves into. */

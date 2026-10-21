@@ -283,6 +283,10 @@ Summarize {docs}."""
       const before = { scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
       assert.match(before.scanned, /^Scanned at \d/);
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
+      // The header tells scans apart by the second: the Run starts once the window's clock has
+      // passed the second of this scan, so the scan its end starts reads a later time.
+      await waitFor(browser, async () => `Scanned at ${await browser.execute(() => new Date().toLocaleTimeString())}` !== before.scanned,
+        "the window's clock past the scan's second");
       // Another process verifies: while its Run waits the row ends with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);

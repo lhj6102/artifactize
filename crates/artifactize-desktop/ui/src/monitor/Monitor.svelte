@@ -47,8 +47,6 @@
    * failed search puts the library's back. */
   let query = $derived(browse.query);
   let typing: ReturnType<typeof setTimeout> | undefined;
-  /** The Runs each branch had in progress, to notice one ending: bookkeeping, never drawn. */
-  const running: Record<string, string[]> = {};
 
   /** The entries the keys move through: the Branches, then the Waiting stack. */
   const entries = $derived<Entry[]>([
@@ -178,8 +176,8 @@
     // A Run of the branch whose Current is shown ended: scan it again.
     for (const item of next.branches) {
       const now = item.chips.flatMap((chip) => (chip.kind === "run" && chip.running ? [chip.id] : []));
-      const before = running[keyOf(item.key)];
-      running[keyOf(item.key)] = now;
+      const before = m.running[keyOf(item.key)];
+      m.running[keyOf(item.key)] = now;
       const ended = before !== undefined && before.some((id) => !now.includes(id));
       if (ended && m.shown.kind === "current" && keyOf(m.shown.branch) === keyOf(item.key)) void current.scan(item.key);
     }
