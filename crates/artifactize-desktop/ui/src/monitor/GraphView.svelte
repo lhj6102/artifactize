@@ -109,15 +109,22 @@
         })),
   );
 
+  /** The canvas element, while it is mounted. */
+  let shown: HTMLElement | null = null;
+
   /** The canvas, measured whenever it changes size. */
   const measure: Attachment<HTMLElement> = (canvas) => {
+    shown = canvas;
     const resized = new ResizeObserver(() => {
       const next = area(canvas.clientWidth, canvas.clientHeight);
       // A hidden canvas has no size; it keeps the camera for when it shows again.
       if (next) follow(next);
     });
     resized.observe(canvas);
-    return () => resized.disconnect();
+    return () => {
+      resized.disconnect();
+      if (shown === canvas) shown = null;
+    };
   };
 
   /** The canvas's size changed: Fit View fits the new size from now on, and a graph first drawn
@@ -136,8 +143,12 @@
     fitAll();
   }
 
-  /** Fit View: every Artifact, kept as an element or not, in the canvas. */
+  /** Fit View: every Artifact, kept as an element or not, in the canvas as it is now. It
+   * measures the canvas itself rather than trust the last size change reported, which may
+   * not have arrived yet. */
   function fitAll() {
+    const now = shown ? area(shown.clientWidth, shown.clientHeight) : null;
+    if (now) v.area = now;
     if (v.area) void flow.setViewport(whole(laid.bounds, v.area, FIT), { duration: 0 });
   }
 
