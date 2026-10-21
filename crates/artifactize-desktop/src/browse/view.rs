@@ -36,7 +36,12 @@ impl PathKey {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum BranchKey {
     /// A Git repository's branch, by the repository's common directory.
-    Branch { common: PathKey, branch: String },
+    Branch {
+        common: PathKey,
+        /// Refused at the boundary unless a branch name.
+        #[specta(type = String)]
+        branch: live::BranchName,
+    },
     /// A detached Git worktree, by its folder.
     Detached { common: PathKey, path: PathKey },
     /// A folder outside Git.

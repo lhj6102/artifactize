@@ -205,7 +205,9 @@ export type Attention = {
  */
 export type BranchKey = 
 /**  A Git repository's branch, by the repository's common directory. */
-{ kind: "branch"; common: PathKey; branch: string } | 
+{ kind: "branch"; common: PathKey; 
+/**  Refused at the boundary unless a branch name. */
+branch: string } | 
 /**  A detached Git worktree, by its folder. */
 { kind: "detached"; common: PathKey; path: PathKey } | 
 /**  A folder outside Git. */

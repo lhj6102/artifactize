@@ -29,11 +29,62 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// A branch's name as Git accepts one: not empty, and none of the characters or sequences
+/// `git check-ref-format --branch` refuses. Made at the Git and serde boundaries, so no other
+/// name becomes a branch's key.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct BranchName(String);
+
+impl BranchName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for BranchName {
+    type Error = String;
+
+    fn try_from(name: String) -> Result<Self, String> {
+        let refused = name.is_empty()
+            || name.starts_with('-')
+            || name.starts_with('/')
+            || name.ends_with('/')
+            || name.ends_with('.')
+            || name.ends_with(".lock")
+            || name == "@"
+            || ["..", "//", "@{", "/."]
+                .iter()
+                .any(|bad| name.contains(bad))
+            || name.starts_with('.')
+            || name.chars().any(|c| {
+                c.is_control() || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\')
+            });
+        if refused {
+            Err(format!("not a branch name: {name:?}"))
+        } else {
+            Ok(Self(name))
+        }
+    }
+}
+
+impl From<BranchName> for String {
+    fn from(name: BranchName) -> Self {
+        name.0
+    }
+}
+
+impl std::fmt::Display for BranchName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// How a Git worktree has its project checked out.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Head {
-    Branch(String),
+    Branch(BranchName),
     /// A detached worktree, known by its folder.
     Detached(#[serde(with = "crate::platform::path_serde")] PathBuf),
 }
@@ -138,13 +189,18 @@ impl Discovery {
 }
 
 /// Where `identity` (of the workspace `repo`) lives, and `repo` relative to its worktree.
+/// The head of the worktree at `tree` with `branch` checked out, or detached without one. A
+/// name Git reports that is no branch name is known by the worktree's folder instead.
+fn head(branch: Option<String>, tree: &Path) -> Head {
+    branch
+        .and_then(|name| BranchName::try_from(name).ok())
+        .map_or_else(|| Head::Detached(tree.to_path_buf()), Head::Branch)
+}
+
 fn place_of(identity: &Identity, repo: &Path) -> (Place, PathBuf) {
     match (&identity.common_dir, &identity.worktree_path) {
         (Some(common), Some(tree)) => {
-            let head = identity
-                .branch
-                .clone()
-                .map_or_else(|| Head::Detached(tree.clone()), Head::Branch);
+            let head = head(identity.branch.clone(), tree);
             let relative = repo
                 .strip_prefix(tree)
                 .map(Path::to_path_buf)
@@ -189,7 +245,7 @@ fn branch_name(place: &Place) -> String {
         Place::Git {
             head: Head::Branch(branch),
             ..
-        } => branch.clone(),
+        } => branch.to_string(),
         Place::Git {
             head: Head::Detached(tree),
             ..
@@ -258,9 +314,7 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
         .into_iter()
         .flat_map(|common| {
             discovery.worktrees(&common).into_iter().map(move |tree| {
-                let head = tree
-                    .branch
-                    .map_or_else(|| Head::Detached(tree.path.clone()), Head::Branch);
+                let head = head(tree.branch, &tree.path);
                 (
                     Place::Git {
                         common: common.clone(),
