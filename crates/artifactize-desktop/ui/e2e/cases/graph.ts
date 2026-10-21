@@ -318,6 +318,10 @@ export const scenarios: Scenario[] = [
         { timeout: 30000, timeoutMsg: "release relit GREEN" });
       assert.equal(await mainTitle(browser), title, "the same Run's graph stays shown");
       assert.equal((await settled()).transform, first.transform, "a new result moved nothing");
+      // The Run ends with nothing left needing attention, so the lines above the graph, and with
+      // them the canvas, keep their size while the person moves the camera below.
+      await browser.waitUntil(() => browser.execute(() => document.querySelector(".run .attention") === null),
+        { timeout: 30000, timeoutMsg: "the Run ended with nothing needing attention" });
 
       // The person zooms out with the Detail open (a small graph first fits at the largest zoom);
       // switching it keeps their camera.
