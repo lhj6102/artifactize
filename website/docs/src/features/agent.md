@@ -324,8 +324,9 @@ session GC`, and one that was never saved `was not saved`.
 **Retention.** The session store is bounded by size in
 [`limits.json`](others/state.md#agent-sessions) (`agentSessions`):
 once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
-it is at or below `targetBytes` (768 MiB). This runs at the end of every `verify` and in
-`artifactize prune`, and never touches the session of a request that is still running
+it is at or below `targetBytes` (768 MiB). This runs once a `verify` Run has scheduled
+and settled its evals (a Run that fails earlier skips it) and in `artifactize prune`,
+and never touches the session of a request that is still running
 or one a `session send` holds. `doctor` shows the store's size. `"enabled": false`
 stops saving new conversations.
 

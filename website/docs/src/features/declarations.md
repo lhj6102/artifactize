@@ -427,7 +427,7 @@ are checked when the command is prepared. There are no interpreter-specific
 flags, wrappers or entry-file rules.
 
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
-file/directory paths. They must exist without symlink traversal on every call;
+file/directory paths of up to 1024 UTF-16 code units each. They must exist without symlink traversal on every call;
 their contents are never hashed. Commands share the runtime environment, cancellation,
 bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
 1–2,147,483,647). Private output and temporary directories are removed after
@@ -462,6 +462,8 @@ closure, not the referenced Artifacts' eval instructions.
 ids; `Scope::resolve_input` additionally requires existing files/directories
 without symlink traversal. Logical paths reject absolute paths, traversal, empty
 components, backslashes, colons, ASCII controls and lengths above 4096 UTF-16 code units.
+Declared paths (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`)
+are shorter: up to 1024 units each.
 
 Before preparing a runtime command, call `scope::resolve_argv` with the admitted
 scope. Explicit `{name}`, `{name}/path` and `--flag={name}/path` operands resolve to

@@ -285,7 +285,9 @@ Each Agent review's conversation is saved under the state, for
 | `maxBytes` | 1 GiB | The store's size that starts a collection; at least 1 |
 | `targetBytes` | 768 MiB when `maxBytes` is greater than 768 MiB; otherwise `(maxBytes / 4) * 3`, dividing first with integer division | The size a collection brings the store down to; an explicit value overrides the default and must be lower than `maxBytes` |
 
-A collection runs at the end of every `verify` Run and in `prune`. When the
+A collection runs once a `verify` Run has scheduled and settled its evals, and in
+`prune`; a Run that fails earlier, while preparing, scheduling or saving, skips it, and
+`prune` collects on request. When the
 conversation files take more than `maxBytes`, it deletes the sessions written longest
 ago, one at a time, until they take `targetBytes` or less, so each collection frees a
 fixed amount rather than one session at a time. It never deletes the session of a

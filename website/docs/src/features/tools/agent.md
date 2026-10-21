@@ -114,7 +114,7 @@ folder. File Artifact references reject `/path` suffixes.
 These protocol keys stay camelCase; declarations use `execution_paths` and
 `input_schema`. `executionPaths` is
 omitted when empty. Declared execution paths are up to 64 unique workspace-relative
-files/directories, resolved without symlinks or copying. This remains
+files/directories of up to 1024 UTF-16 code units each, resolved without symlinks or copying. This remains
 workspace-relative for file Artifacts; it is not relative to their cwd or target.
 
 When an Agent review starts, artifactize pins each execution path of the eval's
