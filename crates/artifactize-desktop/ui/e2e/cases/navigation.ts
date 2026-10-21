@@ -3,7 +3,7 @@
 // into the Main area and back, a Detail stepped back out of, unreadable Runs beside a readable
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { addWaiting, create, createNavigationFixture, createUnreadableRuns, orderRuns, requests, verifyWaiting } from "../fixture.ts";
+import { addWaiting, create, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { press } from "../keys.ts";
 import { checkpoint, refreshed } from "../commands.ts";
@@ -260,6 +260,49 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], () => entriesFocused(browser), "back in the Pane from the review");
       assert.equal(await selected(), example.review);
       await press(browser, ["k"], async () => (await selected()) === "repo  master", "k back to the last branch");
+    },
+  ),
+
+  // UX journey: J-PANE-NAVIGATE; UX edge: E-MON-RUNS-MOVE
+  scenario<{ runs: string[] }>(
+    "navigation-chip-keys",
+    "steps by ← and → through a chip row longer than the Pane, the row scrolling so that each chosen chip shows",
+    async () => {
+      const { fixture, runs } = createHistory(12);
+      return { fixture, data: { runs } };
+    },
+    async (browser, { data: { runs } }) => {
+      const ROW = '[role="group"][aria-label="Runs of repo master"]';
+      /** The row's scroll offset, whether it overflows, and the filled chip with whether all of it shows within the row. */
+      const shown = () => browser.execute((selector) => {
+        const row = document.querySelector<HTMLElement>(selector)!;
+        const box = row.getBoundingClientRect();
+        const chip = row.querySelector<HTMLElement>('button[aria-pressed="true"]');
+        const at = chip?.getBoundingClientRect();
+        return {
+          scroll: Math.round(row.scrollLeft),
+          overflows: row.scrollWidth > row.clientWidth,
+          filled: chip?.dataset.chip ?? null,
+          visible: !!at && at.left >= box.left - 1 && at.right <= box.right + 1,
+        };
+      }, ROW);
+      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips.length === runs.length + 1, "every Run and the Current chip");
+      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
+      await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === "Current · repo  master", "the branch's Current shown");
+      assert.equal((await shown()).overflows, true, "the row is longer than the Pane");
+      const start = (await shown()).scroll;
+      // Back through every Run, newest to oldest: each chosen chip shows within the row.
+      for (const id of [...runs].reverse()) {
+        await press(browser, ["ArrowLeft"], async () => (await shown()).filled === id && (await mainTitle(browser)) === `Run ${id}`, `${id} chosen`);
+        await waitFor(browser, async () => (await shown()).visible, `${id}'s chip shows within the row: ${JSON.stringify(await shown())}`);
+      }
+      assert.ok((await shown()).scroll < start, "the row scrolled toward its oldest end to show them");
+      // Forward again to the Current, the row scrolling back to show each.
+      for (const id of [...runs.slice(1), "current"]) {
+        await press(browser, ["ArrowRight"], async () => (await shown()).filled === id, `${id} chosen again`);
+        await waitFor(browser, async () => (await shown()).visible, `${id}'s chip shows within the row: ${JSON.stringify(await shown())}`);
+      }
+      assert.equal(await mainTitle(browser), "Current · repo  master");
     },
   ),
 

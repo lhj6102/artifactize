@@ -98,7 +98,7 @@ export const scenarios: Scenario[] = [
   // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
   scenario<Record<string, never>>(
     "graph-click-detail",
-    "opens an Artifact's Detail on a click or Enter, keeps every Artifact clickable beside it, switches it on another click, closes it on the background, then steps back to the Pane",
+    "opens an Artifact's Detail on a click or Enter over the graph's right side with the graph visible beside it, switches it on a click on another Artifact, closes it on the background, then steps back to the Pane",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -134,15 +134,17 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact release", "Enter on release opened its Detail again");
 
-      // The Detail takes the place where another Artifact was drawn without it; every Artifact
-      // stays visible and takes the pointer beside the Detail.
+      // The Detail floats over the graph, docked where another Artifact was drawn without it,
+      // and the graph stays visible on its left.
       const edge = (await placed()).detail!;
       const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
       assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
-      for (const id of Object.keys(whole)) await graphShown(browser, id);
-      // A click on it switches the Detail to that Artifact, and a click on the graph's
-      // background closes it. Esc then steps back to the Pane.
-      await openArtifact(browser, under[0], `Artifact ${under[0].slice(2)}`);
+      const beside = await placed();
+      const exposed = Object.keys(beside.nodes).filter((id) => id !== "a:release" && beside.nodes[id] < beside.detail!);
+      assert.ok(exposed.length > 0, `another Artifact stays visible beside the Detail: ${JSON.stringify(beside)}`);
+      // A click on an Artifact shown beside it switches the Detail to that Artifact, and a click
+      // on the graph's background closes it. Esc then steps back to the Pane.
+      await openArtifact(browser, exposed[0], `Artifact ${exposed[0].slice(2)}`);
       const canvas = await browser.execute(() => {
         const box = document.querySelector(".graph .canvas")!.getBoundingClientRect();
         const nodes = [...document.querySelectorAll(".svelte-flow__node")].map((node) => node.getBoundingClientRect());

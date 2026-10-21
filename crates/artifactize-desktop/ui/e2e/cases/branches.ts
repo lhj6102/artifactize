@@ -4,7 +4,8 @@
 // branch without being closed.
 import assert from "node:assert/strict";
 import {
-  addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, orderRuns, requests, signOff, signoff, verifyWaiting,
+  addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, orderRuns, requests, signOff, signoff,
+  verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
@@ -12,6 +13,7 @@ import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativePath, removeTree } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
+import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, listed, mainTitle, openWaiting, selectBranch, showRun, waiting } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -231,7 +233,7 @@ export const scenarios: Scenario[] = [
   // UX journey: J-MAIN-REVIEW; UX edges: E-REVIEW-OPEN E-MAIN-REVIEW-LEAVE
   scenario<{ run: string }>(
     "branches-review-leave",
-    "leaves a review opened from the Pane for a branch's chip without closing it, and opens it again as it was left",
+    "leaves a review opened from the Pane for a branch's chip without closing it, and opens it again as it was left, its Tool log included",
     async () => {
       const fixture = await create();
       return { fixture, data: { run: signoff(fixture).runId } };
@@ -245,6 +247,20 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$('section.panel[aria-label="Main area"] .crumb').getText(), "release/signoff · A person approves the release · Artifact release");
       await review().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "claimed");
+      // A tool run of the review, in its Tool log before the review is left.
+      const REVIEW = '[aria-label="Human review"]';
+      await review().$('[aria-label="Tools of release"]').$("button=▶ notes").waitForEnabled({ timeout: 15000, timeoutMsg: "the notes tool usable" });
+      await review().$('[aria-label="Tools of release"]').$("button=▶ notes").click();
+      await waitFor(browser, async () => (await runOf(browser, REVIEW, "notes"))?.at(-1)?.kind === "end", "the notes run ended in the review's Tool log");
+      const logged = await runOf(browser, REVIEW, "notes");
+      assert.deepEqual(logged, [
+        { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
+        { text: "# Release notes", kind: "line", error: false },
+        { text: "- Ready to ship.", kind: "line", error: false },
+        { text: "■ exit 0", kind: "end", error: false },
+      ]);
+      // The tool's button let go of the keyboard while it ran: the instruction takes it.
+      await review().$('[aria-label="Instruction"]').click();
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       await fill(browser, "#field-comment", "half-written note");
       // A branch's chip shows its Run; the review is left, not closed: its claim stays.
@@ -257,6 +273,29 @@ export const scenarios: Scenario[] = [
       await browser.$("#field-comment").waitForExist({ timeout: 15000, timeoutMsg: "the form as it was left" });
       assert.equal(await browser.$("#field-comment").getValue(), "half-written note");
       assert.match(await review().$(".meta").getText(), /claimed by you \(alice\)/);
+      assert.deepEqual(await runOf(browser, REVIEW, "notes"), logged, "its Tool log kept the run made before it was left");
+    },
+  ),
+
+  // UX journey: J-BRANCHES
+  scenario<{ master: string; shared: string[] }>(
+    "branches-one-entry",
+    "lists a branch once with the Runs made on it from every folder, by a person and by an agent session, and no entry per folder or session",
+    async () => {
+      const { fixture, master, shared } = createSharedBranch();
+      return { fixture, data: { master, shared } };
+    },
+    async (browser, { data: { master, shared } }) => {
+      await waitFor(browser, async () => (await branch(browser, "repo  shared"))?.chips.length === 3, "the shared branch's Runs listed");
+      // One entry per project and branch: none for the removed folder, the live one or the session.
+      assert.deepEqual((await branches(browser)).map((entry) => entry.name).sort(), ["repo  master", "repo  shared"]);
+      // Its row holds the person's Run from the removed folder and the agent session's from the
+      // live one, oldest first, then its Current.
+      assert.deepEqual((await branch(browser, "repo  shared"))?.chips.map((chip) => chip.id), [...shared, "current"]);
+      assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id), [master, "current"]);
+      // The Run from the removed folder still shows as the branch's.
+      await showRun(browser, "repo  shared", shared[0]);
+      await graphShown(browser, "a:n000");
     },
   ),
 ];

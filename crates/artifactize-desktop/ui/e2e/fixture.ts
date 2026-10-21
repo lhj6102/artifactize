@@ -354,6 +354,38 @@ export function createHistory(count: number): { fixture: Fixture; runs: string[]
   }, fixture.root);
 }
 
+/**
+ * One branch `shared` verified from two folders by two callers: first in the worktree `first`
+ * by a person, then, once that worktree was removed, in the worktree `second` by an agent
+ * session (its retry-safe attempt key, as an agent's `verify_start` saves it). With the
+ * repository's own Run on `master` before them; returns the Runs, oldest first.
+ */
+export function createSharedBranch(): { fixture: Fixture; master: string; shared: string[] } {
+  const fixture = createChain(1);
+  return prepareFixture(() => {
+    const [master] = savedRuns(fixture).map((run) => run.id);
+    git(fixture.repo, "-C", fixture.repo, "add", ".");
+    git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Fixture inputs");
+    const verify = (repo: NativePath, ...args: string[]) => {
+      const completed = runProgram(cli(), ["--repo", repo, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json", ...args],
+        { env: environment(fixture) });
+      if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+      return (JSON.parse(completed.stdout) as { id: string }).id;
+    };
+    const first = nativePath(fixture.root, "first");
+    git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "shared", first);
+    const byPerson = verify(first);
+    settleRuns(cli(), first, fixture.state);
+    git(fixture.repo, "-C", fixture.repo, "worktree", "remove", "--force", first);
+    const second = nativePath(fixture.root, "second");
+    git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", second, "shared");
+    const byAgent = verify(second, "--request-key", "agent-session.e2e-1");
+    settleRuns(cli(), second, fixture.state);
+    orderRuns(fixture, [master, byPerson, byAgent]);
+    return { fixture, master, shared: [byPerson, byAgent] };
+  }, fixture.root);
+}
+
 /** Change release's notes: its sign-off's inputs change, so the next verify asks a person again. */
 export function changeNotes(fixture: Fixture, text: string): void {
   writeText(nativePath(fixture.repo, "release", "notes.md"), text);
@@ -508,6 +540,39 @@ export function createEvals(names: string[]): Fixture {
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
     if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    return fixture;
+  });
+}
+
+/**
+ * A repository verified once, its Run ended RED: `red` fails, `down` runs after it and so is
+ * blocked, and `app`'s three evals passed. Afterwards two of `app`'s instructions changed, so
+ * a Current would run those two and reuse the third.
+ */
+export function createMixed(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    const check = (name: string, operation: Operation, instruction: string) => `
+[evals.${name}]
+title = "Check ${name}"
+profile = ${runtimeProfile(operation)}
+
+[evals.${name}.payload]
+instruction = """
+${instruction}"""
+`;
+    writeText(nativePath(makeDirectory(nativePath(repo, "red")), "index.artf"), `name = "red"\n${check("check", "fail", "Fail.")}`);
+    writeText(nativePath(makeDirectory(nativePath(repo, "down")), "index.artf"), `name = "down"\n${check("check", "pass", "Run after {red}.")}`);
+    const app = (changed: boolean) => `name = "app"\n${check("alpha", "pass", "Check alpha.")}${
+      check("beta", "pass", changed ? "Check beta again." : "Check beta.")}${check("gamma", "pass", changed ? "Check gamma again." : "Check gamma.")}`;
+    writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), app(false));
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 1) throw new Error(`verify exited ${status}, expected 1 (RED)`);
+    settleRuns(cli(), repo, state);
+    writeText(nativePath(repo, "app", "index.artf"), app(true));
     return fixture;
   });
 }

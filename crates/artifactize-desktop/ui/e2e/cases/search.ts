@@ -83,6 +83,17 @@ export const scenarios: Scenario[] = [
       // branch: matches part of the branch alone.
       await set("sort:recent branch:one");
       await waitFor(browser, narrowed(["repo  scope-one"]), "branch:one narrowed to scope-one");
+      // Terms together keep only what every one of them matches, in both lists: repo's master
+      // and the other projects are decoys that match one term but not the other.
+      await set("sort:recent scope repo:repo");
+      await waitFor(browser, narrowed(["repo  scope-one", "repo  scope-two"]), "free text and repo: together");
+      await set("sort:recent repo:repo branch:two");
+      await waitFor(browser, narrowed(["repo  scope-two"]), "repo: and branch: together");
+      await set("sort:recent master repo:thi");
+      await waitFor(browser, narrowed(["third  master"]), "free text and repo: together, other projects' master left out");
+      // A term nobody matches empties both lists, whatever the other terms match.
+      await set("sort:recent repo:repo branch:nothing");
+      await waitFor(browser, narrowed([]), "no branch named nothing: both lists empty");
       // A key is suggested, then the projects as its values; all terms must match.
       await set("sort:recent ");
       await typeText(browser, "rep");

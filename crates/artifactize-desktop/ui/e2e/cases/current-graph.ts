@@ -3,7 +3,7 @@
 // and its own Human tools, the structure text, and the scans a Refresh, a choice and the end
 // of a Run start.
 import assert from "node:assert/strict";
-import { changeNotes, create, createEvals, createGraph, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
+import { changeNotes, create, createEvals, createGraph, createMixed, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { command, runtimeProfile, script } from "../native-fixtures.ts";
@@ -52,6 +52,13 @@ function current(browser: WebdriverIO.Browser) {
   }
   return { structure, expanded, drawn, clickArtifact };
 }
+
+/** The reason a Current's eval gives for reusing a result kept on this machine. */
+const CACHED = "The current eval and fingerprints have a completed cached result.";
+
+/** The text of the open Detail's Summary block titled `title`. */
+const block = (browser: WebdriverIO.Browser, title: string) => browser.execute((wanted) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] .block')]
+  .find((shown) => shown.querySelector("h3")?.textContent?.trim() === wanted)?.textContent ?? "", title);
 
 /** Each eval row of the open Detail's Artifact tab: its name and what it says. */
 const evalRows = (browser: WebdriverIO.Browser) => browser.execute((root) => [...document.querySelectorAll<HTMLElement>(`${root} button[data-eval]`)]
@@ -232,20 +239,21 @@ Summarize {docs}."""
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("↻ reused"), `beta's plan: ${JSON.stringify(await summary(browser))}`);
       const shown = await summary(browser);
       assert.ok(shown.blocks.includes("Result"), `the result it would reuse: ${shown.blocks}`);
-      assert.match(shown.status, /reused .*\S/, "with why");
+      assert.equal(shown.status, `↻ reused ${CACHED}`, "with why");
       assert.equal(shown.instruction, "Check beta.");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
     },
   ),
 
-  // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS; UX edges: E-CURRENT-CHIP E-CURRENT-RUN-END E-GRAPH-RECOLOUR
+  // UX journeys: J-MAIN-CURRENT J-DETAIL-SUMMARY J-GRAPH-COLOURS
+  // UX edges: E-CURRENT-CHIP E-CURRENT-EVALS E-CURRENT-TAB E-CURRENT-RUN-END E-GRAPH-RECOLOUR
   scenario<{ first: string }>(
     "current-run-end",
-    "scans the Current again when its chip is chosen again and when a Run of its branch ends, recolouring the graph in place",
+    "shows the signed-off result a Current would reuse, scans again when its chip is chosen again and when a Run of its branch ends, recolouring the graph in place",
     async () => {
       const fixture = await create();
       const first = signoff(fixture);
-      signOff(fixture, first.id);
+      signOff(fixture, first.id, '{"approved":true,"comment":"Checked notes 7f3a against the tag."}');
       return { fixture, args: ["--repo", fixture.repo], data: { first: first.runId } };
     },
     async (browser, { fixture }) => {
@@ -256,12 +264,25 @@ Summarize {docs}."""
       const allReused = { "a:docs": "docs: reused", "a:release": "release: reused", "a:ship": "ship: reused" };
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), `every Artifact reused: ${JSON.stringify(await drawn())}`);
       const at = await placed();
+      // The sign-off's tab holds the result it would reuse, its owner fields by name, and why.
+      await openArtifact(browser, "a:release", "Artifact release");
+      await openTab(browser, "e:release/signoff");
+      await waitFor(browser, async () => (await summary(browser)).status.startsWith("↻ reused"), `the sign-off's plan: ${JSON.stringify(await summary(browser))}`);
+      assert.equal((await summary(browser)).status, `↻ reused ${CACHED}`);
+      const result = await block(browser, "Result");
+      assert.match(result, /comment.*Checked notes 7f3a against the tag\./s, `the reused comment: ${result}`);
+      assert.match(result, /approved.*true/s, `the reused approval: ${result}`);
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+      const reusedLook = await graphAppearance(browser);
       // The notes change on disk; the Current shows it only once its chip is chosen again.
       changeNotes(fixture, "# Release notes\n- A second release.\n");
       assert.deepEqual((await drawn()).nodes, allReused, "no scan without a choice, a Refresh or a Run's end");
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await drawn()).nodes["a:release"] === "release: would run (1 eval)", "release would run again");
       assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
+      const before = { scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
+      assert.match(before.scanned, /^Scanned at \d/);
+      assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row ends with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);
@@ -272,7 +293,49 @@ Summarize {docs}."""
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
+      // A scan of its own, later than the one before the Run, drawn in the reused colours again.
+      await waitFor(browser, async () => (await scanned(browser)) !== before.scanned, `a new scan time: ${await scanned(browser)}`);
       assert.match(await scanned(browser), /^Scanned at \d/);
+      const after = await graphAppearance(browser);
+      for (const id of ["a:release", "a:ship"]) {
+        assert.notEqual(after.nodes[id].dot, before.look.nodes[id].dot, `${id} recoloured`);
+        assert.equal(after.nodes[id].dot, reusedLook.nodes[id].dot, `${id} painted as reused`);
+      }
+      assert.notEqual((await drawn()).edges["a:release>a:ship"], before.drawn.edges["a:release>a:ship"], "the relation relit by its source's new plan");
+    },
+  ),
+
+  // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS; UX edges: E-CURRENT-CHIP E-CURRENT-EVALS
+  scenario<Record<string, never>>(
+    "current-mixed",
+    "marks a Current's Artifacts blocked by a RED one, and an Artifact some of whose evals would run with how many",
+    async () => {
+      const fixture = createMixed();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const { drawn } = current(browser);
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown after the ended Run");
+      await graphShown(browser, "a:app");
+      const marked = { "a:app": "app: would run (2 evals)", "a:down": "down: blocked", "a:red": "red: reused" };
+      await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(marked), `each Artifact marked: ${JSON.stringify(await drawn())}`);
+      const look = await graphAppearance(browser);
+      assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:app"].dot, "blocked is painted unlike would run");
+      assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:red"].dot, "blocked is painted unlike reused");
+      // Two of app's three evals would run; the third's result is reused.
+      await openArtifact(browser, "a:app", "Artifact app");
+      assert.deepEqual(await evalRows(browser), [
+        { name: "alpha", status: "reused" }, { name: "beta", status: "would run" }, { name: "gamma", status: "would run" },
+      ]);
+      await openTab(browser, "e:app/alpha", { row: true });
+      await waitFor(browser, async () => (await summary(browser)).status === `↻ reused ${CACHED}`, `alpha's plan: ${JSON.stringify(await summary(browser))}`);
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "app's Detail closed");
+      // down cannot be evaluated while red is RED, and says so.
+      await openArtifact(browser, "a:down", "Artifact down");
+      assert.deepEqual(await evalRows(browser), [{ name: "check", status: "blocked" }]);
+      await openTab(browser, "e:down/check", { row: true });
+      await waitFor(browser, async () => /^\S+ blocked \S.*red\/check/.test((await summary(browser)).status),
+        `down's plan is blocked and names the RED eval that blocks it: ${JSON.stringify(await summary(browser))}`);
     },
   ),
 ];

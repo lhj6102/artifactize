@@ -10,7 +10,7 @@ import { sessionEndedByApp } from "../observation.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativeInput, primaryModifier } from "../platform.ts";
+import { nativeInput, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { clickOption, dispatchInput, tab } from "../input.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
@@ -857,6 +857,48 @@ export const scenarios: Scenario[] = [
       await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
       await browser.waitUntil(async () => (await logIn(browser, '[aria-label="Human review"]')).rows.length === 0 &&
         await browser.$('[aria-label="Human review"] [role="log"][aria-label="Tool log"]').isExisting(), { timeout: 15000, timeoutMsg: "the review's own Tool log is empty" });
+    },
+  ),
+
+  // UX journey: J-DETAIL-TOOLS; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-TOOL
+  scenario<{ run: string }>(
+    "monitor-detail-tools-now",
+    "runs a shown Run's Artifact tools as the branch declares them now, in its worktree as it is now, not as the Run saw it",
+    async () => {
+      const fixture = await create();
+      const run = signoff(fixture).runId;
+      // After the Run was saved: release declares one more tool, and its notes change.
+      const declaration = nativePath(fixture.repo, "release", "index.artf");
+      writeText(declaration, readText(declaration).replace("[views.human_tools]\n",
+        '[views.human_tools]\nlatest = { description = "Print the notes as they are now.", builtin = "read", args = ["{artifactPath}/notes.md"] }\n'));
+      writeText(nativePath(fixture.repo, "release", "notes.md"), "# Release notes\n- Changed after the Run.\n");
+      return { fixture, args: ["--repo", fixture.repo], data: { run } };
+    },
+    async (browser, { data: { run } }) => {
+      const DETAIL = 'aside[aria-label="Detail"]';
+      await browser.waitUntil(async () => (await mainTitle(browser)) === `Run ${run}`, { timeout: 15000, timeoutMsg: "the Run saved before the change shown" });
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:release", "Artifact release");
+      const tools = () => browser.$(DETAIL).$('section[aria-label="Tools of release"]');
+      // The tool declared only after the Run was saved is listed and runs.
+      await tools().$("button=▶ latest").waitForEnabled({ timeout: 15000, timeoutMsg: "the tool declared now listed" });
+      await tools().$("button=▶ latest").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "latest"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the latest run ended" });
+      const latest = (await runIn(browser, DETAIL, "latest"))!;
+      assert.deepEqual([latest[0], latest.at(-1)], [
+        { text: "▶ HH:MM:SS · latest · release", kind: "start", error: false },
+        { text: "■ done", kind: "end", error: false },
+      ]);
+      assert.ok(latest.some((row) => row.kind === "line" && row.text.includes("- Changed after the Run.")), `it read today's notes: ${JSON.stringify(latest)}`);
+      // A command tool runs in the worktree as it is now: it prints the changed notes.
+      await tools().$("button=▶ notes").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the notes run ended" });
+      assert.deepEqual(await runIn(browser, DETAIL, "notes"), [
+        { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
+        { text: "# Release notes", kind: "line", error: false },
+        { text: "- Changed after the Run.", kind: "line", error: false },
+        { text: "■ exit 0", kind: "end", error: false },
+      ]);
     },
   ),
 
