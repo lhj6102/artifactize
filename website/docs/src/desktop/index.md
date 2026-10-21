@@ -33,8 +33,11 @@ Ctrl+K, F1 or the **Commands** button opens a searchable command palette; Enter 
 command and Esc closes it. Ctrl+, or the **Settings** button shows
 [Settings](#settings) in the Main area. Ctrl+O opens a request by ID. `?` lists the
 keys of what has focus. Ctrl+R or F5 reloads the state from disk, scans the branches
-again and, on a Current, scans its worktree again (in a Human form, Ctrl+R switches
-to RED instead). The app follows the system's light or dark appearance.
+again and, on a Current, scans its worktree again. While a Human review has the
+keyboard and runs nothing, Ctrl+R is its RED command instead, with or without its
+form open: it opens or switches to RED once claimed, and says the review must be
+claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
+The app follows the system's light or dark appearance.
 
 Hovering only highlights; information opens on a click.
 
