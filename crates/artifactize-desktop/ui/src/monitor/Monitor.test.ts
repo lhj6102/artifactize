@@ -40,9 +40,12 @@ afterEach(() => {
   clearMocks();
 });
 
+/** The fixed instant of the scan with this revision. */
+const scannedAt = (revision: number) => Date.UTC(2026, 9, 21, 9, 0, revision);
+
 const current = (revision: number): CurrentView => ({
   branch: branchKey("main"),
-  scannedAt: Date.UTC(2026, 9, 21, 9, 0, revision),
+  scannedAt: scannedAt(revision),
   fingerprint: `graph:revision-${revision}`,
   structure: `app → graph; criteria revision ${revision}`,
   tree: [],
@@ -99,8 +102,12 @@ it("opens on the Current of the branch it was started for, and scans it again on
   const { scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
   render(App);
   /** The header names the time of the scan with this revision. */
-  const header = (revision: number) => `Scanned at ${new Date(current(revision).scannedAt).toLocaleTimeString()}`;
-  await screen.findByText(header(1));
+  const header = async (revision: number) => {
+    const status = await screen.findByText("Scanned at", { exact: false });
+    await waitFor(() => expect(status.textContent?.trim()).toBe(`Scanned at ${new Date(scannedAt(revision)).toLocaleTimeString()}`));
+    expect(status.querySelector("time")?.getAttribute("datetime")).toBe(new Date(scannedAt(revision)).toISOString());
+  };
+  await header(1);
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Current · app  main");
   await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
   expect(screen.getByLabelText("app: reused")).toBeTruthy();
@@ -110,7 +117,7 @@ it("opens on the Current of the branch it was started for, and scans it again on
   expect(screen.getByText("app → graph; criteria revision 1")).toBeTruthy();
   await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(screen.getByText("app → graph; criteria revision 2")).toBeTruthy());
-  expect(screen.getByText(header(2))).toBeTruthy();
+  await header(2);
   await fireEvent.keyDown(window, { key: "r", ctrlKey: true });
   await waitFor(() => expect(screen.getByText("app → graph; criteria revision 3")).toBeTruthy());
   await fireEvent.keyDown(window, { key: "F5" });

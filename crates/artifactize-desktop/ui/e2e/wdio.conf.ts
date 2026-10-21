@@ -2,7 +2,7 @@
 import { SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { environment, releaseFixtures } from "./fixture.ts";
+import { environment, releaseFixtures, settleFixtures } from "./fixture.ts";
 import {
   accountBrowserEnvironment, asNativePath, releaseAccountBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
   assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
@@ -32,6 +32,12 @@ export const fixedResources = {
 
 /** Called by the runner AFTER Launcher.run returns, never from config onComplete:
  * WDIO runs the user's onComplete before the upstream service's shutdown hook. */
+/** Called by the runner when an app was not confirmed stopped: its inputs stay, but the
+ * Runs the fixtures started are cancelled and joined, so no fixture worker outlives the batch. */
+export function settlePrepared(): void {
+  settleFixtures();
+}
+
 export async function releasePrepared(): Promise<void> {
   const failures: unknown[] = [];
   for (const input of prepared.splice(0)) {

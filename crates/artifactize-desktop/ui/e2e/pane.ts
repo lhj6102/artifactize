@@ -106,6 +106,11 @@ export function scanned(browser: WebdriverIO.Browser): Promise<string> {
   return browser.execute(() => document.querySelector('section[aria-label="Current"] .when')?.textContent?.trim() ?? "");
 }
 
+/** The instant the Current's header says it was scanned, as the app rendered it; null without one. */
+export function scannedAt(browser: WebdriverIO.Browser): Promise<string | null> {
+  return browser.execute(() => document.querySelector('section[aria-label="Current"] .when time')?.getAttribute("datetime") ?? null);
+}
+
 /** Open the waiting review `id` with a click on its row, and wait for its Review. */
 export async function openWaiting(browser: WebdriverIO.Browser, id: string): Promise<void> {
   await browser.waitUntil(async () => (await waiting(browser)).rows.some((entry) => entry.id === id),
