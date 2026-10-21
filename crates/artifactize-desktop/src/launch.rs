@@ -1,15 +1,18 @@
-//! What the app was started for: the CLI's `monitor` and `review` options.
+//! What the app was started for: the CLI's `monitor` and `review` options, and `graph`.
 use crate::{App, Failure};
 use serde::Serialize;
 use specta::Type;
 use std::{ffi::OsString, path::PathBuf};
 
-/// The screen the app opens on; both stay reachable.
+/// What the Main area opens on; everything else stays reachable from the Pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Mode {
+    /// The branch of `--repo` with its last chip, or nothing chosen.
     Monitor,
+    /// A waiting Human review: the one named, else the newest.
     Review,
+    /// The Current of the branch of `--repo`.
     Graph,
 }
 
@@ -17,45 +20,44 @@ pub enum Mode {
 pub struct Launch {
     pub mode: Mode,
     pub state: PathBuf,
-    /// `--repo` when given; `None` (the default, or `--all`) is every repository.
+    /// `--repo` when given, canonical: its branch is selected and listed even before its first
+    /// Run.
     pub repo: Option<PathBuf>,
     pub reviewer: artifactize_core::types::ReviewerId,
     /// `review REQUEST_ID`: the request to open first.
     pub request: Option<artifactize_core::types::RequestId>,
-    /// The review list's first search: the waiting Human reviews, of `--repo` when given.
-    pub search: String,
 }
 
 /// The options as `artifactize monitor` and `artifactize review` take them, with their typed
-/// values; the reviewer may follow either screen.
+/// values; the reviewer may follow either.
 #[derive(clap::Parser)]
 #[command(name = "artifactize-desktop", about = "The artifactize desktop app.")]
 struct Args {
     #[command(subcommand)]
     screen: Option<Screen>,
-    /// Repository input path.
+    /// Select the branch of this folder.
     #[arg(long, global = true, value_name = "PATH", conflicts_with = "all")]
     repo: Option<PathBuf>,
-    /// Review every repository.
+    /// Select no branch: every branch is listed either way.
     #[arg(long, global = true)]
     all: bool,
     /// State database and Run output directory.
     #[arg(long, global = true, value_name = "PATH")]
     state_dir: Option<PathBuf>,
-    /// Reviewer name (defaults to USER).
+    /// Reviewer name (defaults to the signed-in user).
     #[arg(long, global = true, value_name = "NAME")]
     reviewer: Option<artifactize_core::types::ReviewerId>,
 }
 
 #[derive(clap::Subcommand)]
 enum Screen {
-    /// Open on the Monitor.
+    /// Open on the branches.
     Monitor,
-    /// Open the current repository Artifact graph (not a saved Run).
+    /// Open on the current Artifact graph of the branch of --repo (not a saved Run).
     Graph,
-    /// Open on Review.
+    /// Open a waiting Human review.
     Review {
-        /// Open this request instead of the list.
+        /// Open this request instead of the newest waiting one.
         #[arg(value_name = "REQUEST_ID")]
         request: Option<artifactize_core::types::RequestId>,
     },
@@ -83,23 +85,13 @@ impl Launch {
             None => artifactize_core::human::default_reviewer()?,
         };
         let state = artifactize_core::store::state_dir(state.as_deref())?;
-        // Only an explicit --repo narrows the monitor's scope and the review search.
-        let search = artifactize_core::review::search::Query::text_for(
-            artifactize_core::monitor::initial(repo.clone()).as_deref(),
-        );
         Ok(Self {
             mode,
             state,
-            search,
-            repo,
+            repo: artifactize_core::monitor::initial(repo),
             reviewer,
             request,
         })
-    }
-
-    /// The path that picks the first scope, canonical like the terminal monitor's.
-    pub fn initial(&self) -> Option<PathBuf> {
-        artifactize_core::monitor::initial(self.repo.clone())
     }
 }
 
@@ -110,8 +102,6 @@ pub struct LaunchView {
     pub mode: Mode,
     pub state: String,
     pub reviewer: String,
-    /// The review list's first search.
-    pub search: String,
     pub request: Option<crate::ids::RequestKey>,
 }
 
@@ -123,7 +113,6 @@ pub fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
         mode: launch.mode,
         state: artifactize_tools::files::path_text(&launch.state),
         reviewer: launch.reviewer.to_string(),
-        search: launch.search.clone(),
         request: launch.request.clone().map(Into::into),
     })
 }

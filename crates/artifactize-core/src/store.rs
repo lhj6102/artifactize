@@ -15,8 +15,10 @@ pub(crate) mod connection;
 pub mod prune;
 pub(crate) mod receipts;
 mod result;
+mod run_record;
 mod runs;
 mod snapshots;
+mod touched;
 mod unreadable;
 mod validation;
 pub use unreadable::{Unreadable, read_unreadable};
@@ -132,9 +134,10 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     canonical_target(&path).map_err(|e| e.to_string())
 }
 
-/// SQLite `user_version`; schema 8 scopes active claims by key and profile.
-/// Versions from schema 6 upgrade additively.
-pub const STATE_SCHEMA_VERSION: u32 = 8;
+/// SQLite `user_version`; schema 9 keeps a Run's definitions in their own row, written once,
+/// and numbers every change of a Run, request or execution row. Versions from schema 6 upgrade
+/// additively.
+pub const STATE_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set {}", state_home_variables())]

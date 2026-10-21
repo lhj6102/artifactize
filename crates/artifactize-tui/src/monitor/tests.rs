@@ -643,6 +643,9 @@ fn header_names_the_selected_scope_and_counts_attention_globally() {
     let (_monitor_root, mut monitor) = monitor();
     monitor.catalog.update(
         &[crate::store::CatalogRun {
+            id: "run-1".parse().unwrap(),
+            created_at: crate::types::Timestamp::now(),
+            completed_at: None,
             repo_path: "work/alpha".into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,
@@ -785,6 +788,9 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
     let (_monitor_root, mut monitor) = monitor();
     monitor.catalog.update(
         &[crate::store::CatalogRun {
+            id: "run-1".parse().unwrap(),
+            created_at: crate::types::Timestamp::now(),
+            completed_at: None,
             repo_path: format!("work/{long}").into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,
@@ -872,6 +878,9 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
     let path = "work/line\nbreak\tname";
     monitor.catalog.update(
         &[crate::store::CatalogRun {
+            id: "run-1".parse().unwrap(),
+            created_at: crate::types::Timestamp::now(),
+            completed_at: None,
             repo_path: path.into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One Artifact of the Run graph: its name and how it is lit, nothing about its evals.
+  // One Artifact of a graph: its name and how it is lit, nothing about its evals.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
   import type { Light } from "../ipc/client";
 

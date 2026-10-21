@@ -17,10 +17,12 @@ script records each demo below from the real desktop app at 1920×1080, with rea
 through the real CLI and nothing mocked:
 
 A. The review loop, played back fast: an example project goes through four Runs of real \
-verify in the Monitor (J-MON-CATALOG, J-GRAPH-COLOURS). Between Runs the script changes the \
+verify, its branch selected in the left pane and each new Run's chip shown in the main area \
+(J-BRANCH-RUNS, J-MAIN-RUN, J-GRAPH-COLOURS). Between Runs the script changes the \
 files that just failed, standing in for an AI fixing the code; unchanged work is reused; the \
 last Run is SATISFIED. An overlay names the try (try n/4) and the speed (×8).
-B. The graph's growth: this repository's own Artifact graph in the graph view, one step per \
+B. The graph's growth: this repository's own Artifact graph in the app opened on the \
+branch's Current by `graph --repo` (J-LAUNCH, J-MAIN-CURRENT), one step per \
 release on main from 0.7.0 to the current main, with the release in the graph's top-left corner; one \
 step says 0.1.0–0.6.0 had no Artifacts; examples/ is left out; 0.7–0.8 declarations are \
 converted once to the current format so the lineage shows.

@@ -1,19 +1,53 @@
-//! The Tool log: what Human tools print while a review is open, line by line as it arrives.
+//! The Tool log: what Human tools print while a review or an Artifact's Detail shows them, line
+//! by line as it arrives.
 //!
-//! A review opens a [`channel`]. Each tool run it starts is a [`Run`]: its output lines and
-//! its end reach the channel as [`Event`]s, a launched program's for as long as it runs. A
-//! run keeps draining its program's output whether or not anyone still receives; what nobody
-//! shows is discarded. Nothing is saved.
+//! A screen opens a [`channel`]. Each tool run it starts is a [`Run`] of one log [`Key`]: a
+//! review's, or an Artifact's own for the tools run from its Detail. Its output lines and its
+//! end reach the channel as [`Event`]s, a launched program's for as long as it runs. A run keeps
+//! draining its program's output whether or not anyone still receives; what nobody shows is
+//! discarded. Nothing is saved.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    },
 };
 
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 
-use crate::types::RequestId;
+use crate::types::{ArtifactName, RequestId};
+
+/// Whose Tool log a run belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Key {
+    /// A Human review's: the tools its reviewer ran.
+    Review(RequestId),
+    /// An Artifact's own, in the workspace at `repo`: the tools run from its Detail, for no
+    /// review.
+    Artifact {
+        repo: PathBuf,
+        artifact: ArtifactName,
+    },
+}
+
+impl Key {
+    /// The review this log belongs to, if it is a review's.
+    pub fn request(&self) -> Option<&RequestId> {
+        match self {
+            Self::Review(request) => Some(request),
+            Self::Artifact { .. } => None,
+        }
+    }
+}
+
+impl From<&RequestId> for Key {
+    fn from(request: &RequestId) -> Self {
+        Self::Review(request.clone())
+    }
+}
 
 /// Output bytes one run shows at most: a launched program may print for hours, and the log
 /// is held in memory for as long as the review is open.
@@ -110,10 +144,10 @@ pub enum Kind {
     End(End),
 }
 
-/// One thing a run logged, for the review of `request`.
+/// One thing a run logged, for the log of `key`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
-    pub request: RequestId,
+    pub key: Key,
     pub run: RunNo,
     pub kind: Kind,
 }
@@ -131,9 +165,10 @@ pub fn channel() -> (Sink, Events) {
 }
 
 impl Sink {
-    /// Start a run of `operation` of `artifact` for `request`: its start line is logged now.
-    pub fn start(&self, request: &RequestId, operation: &str, artifact: &str) -> Run {
-        let run = Run::new(Some((self.clone(), request.clone())));
+    /// Start a run of `operation` of `artifact` in the log of `key`: its start line is logged
+    /// now.
+    pub fn start(&self, key: impl Into<Key>, operation: &str, artifact: &str) -> Run {
+        let run = Run::new(Some((self.clone(), key.into())));
         run.shared.send(Kind::Start {
             at: OffsetDateTime::now_utc(),
             operation: operation.to_owned(),
@@ -144,8 +179,8 @@ impl Sink {
 }
 
 struct Shared {
-    /// Where the run's events go and the review they belong to; `None` when nobody watches.
-    watch: Option<(Sink, RequestId)>,
+    /// Where the run's events go and the log they belong to; `None` when nobody watches.
+    watch: Option<(Sink, Key)>,
     run: RunNo,
     /// Output bytes this run may still show.
     left: AtomicUsize,
@@ -154,10 +189,10 @@ struct Shared {
 
 impl Shared {
     fn send(&self, kind: Kind) {
-        if let Some((sink, request)) = &self.watch {
+        if let Some((sink, key)) = &self.watch {
             // A closed review discards what its runs still print.
             let _ = sink.0.send(Event {
-                request: request.clone(),
+                key: key.clone(),
                 run: self.run,
                 kind,
             });
@@ -213,7 +248,7 @@ impl std::fmt::Debug for Run {
 }
 
 impl Run {
-    fn new(watch: Option<(Sink, RequestId)>) -> Self {
+    fn new(watch: Option<(Sink, Key)>) -> Self {
         Self {
             shared: Arc::new(Shared {
                 watch,

@@ -67,36 +67,36 @@ async fn registration_observes_inert_group_leader_before_exec() {
     let expected_cwd = scratch.0.clone();
     let (registered, identity) = oneshot::channel();
     let (release, held) = oneshot::channel();
-    let running = support::spawn(process::run(
-        command,
-        CancellationToken::new(),
-        move |child| async move {
-            assert!(!marker.exists());
-            support::os::assert_group(child.pid.get());
-            assert_eq!(support::os::start_time(child.pid.get()), child.start_time);
-            registered.send(child).unwrap();
-            held.await.unwrap();
-            assert!(
-                !marker.exists(),
-                "user code ran before registration finished"
-            );
-            Ok(())
-        },
-    ));
-    let child = identity.await.unwrap();
-    assert!(support::os::running(child.pid.get()));
-    assert!(!scratch.0.join("started").exists());
-    release.send(()).unwrap();
-    let output = running.await.unwrap().unwrap();
-    assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap().trim(),
-        support::os::path_text(&support::os::canonical(&expected_cwd))
-    );
-    assert_eq!(
-        std::fs::read(scratch.0.join("started")).unwrap(),
-        b"started"
-    );
+    let cancellation = CancellationToken::new();
+    let work = process::run(command, cancellation.clone(), move |child| async move {
+        assert!(!marker.exists());
+        support::os::assert_group(child.pid.get());
+        assert_eq!(support::os::start_time(child.pid.get()), child.start_time);
+        registered.send(child).unwrap();
+        held.await.unwrap();
+        assert!(
+            !marker.exists(),
+            "user code ran before registration finished"
+        );
+        Ok(())
+    });
+    support::scoped(cancellation, work, async |running| {
+        let child = identity.await.unwrap();
+        assert!(support::os::running(child.pid.get()));
+        assert!(!scratch.0.join("started").exists());
+        release.send(()).unwrap();
+        let output = running.await.unwrap().unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap().trim(),
+            support::os::path_text(&support::os::canonical(&expected_cwd))
+        );
+        assert_eq!(
+            std::fs::read(scratch.0.join("started")).unwrap(),
+            b"started"
+        );
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -122,18 +122,19 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     let mut command = command(&support::os::shell(), &["-c", "touch started"]);
     command.cwd = scratch.0.clone();
     let (registered, child) = oneshot::channel::<ChildIdentity>();
-    let running = support::spawn(process::run(
-        command,
-        CancellationToken::new(),
-        |child| async move {
-            registered.send(child).unwrap();
-            std::future::pending().await
-        },
-    ));
-    let child = child.await.unwrap();
-    drop(running);
-    assert_gone(child.pid.get()).await;
-    assert!(!scratch.0.join("started").exists());
+    let cancellation = CancellationToken::new();
+    let work = process::run(command, cancellation.clone(), |child| async move {
+        registered.send(child).unwrap();
+        std::future::pending().await
+    });
+    support::scoped(cancellation, work, async |running| {
+        let child = child.await.unwrap();
+        // Dropping the caller is what is under test: abort it rather than cancel it.
+        running.abort();
+        assert_gone(child.pid.get()).await;
+        assert!(!scratch.0.join("started").exists());
+    })
+    .await;
 }
 
 // The paused clock moves only when the test advances it: the held child keeps tokio from
@@ -145,22 +146,26 @@ async fn registration_is_covered_by_the_deadline() {
     command.cwd = scratch.0.clone();
     command.timeout = Duration::from_secs(60);
     let (registered, pid) = oneshot::channel();
-    let running = support::spawn(process::run(
+    let cancellation = CancellationToken::new();
+    let work = process::run(
         command,
-        CancellationToken::new(),
+        cancellation.clone(),
         |child: ChildIdentity| async move {
             registered.send(child.pid).unwrap();
             std::future::pending().await
         },
-    ));
-    let pid = pid.await.unwrap();
-    tokio::time::advance(Duration::from_secs(60)).await;
-    assert!(matches!(
-        running.await.unwrap(),
-        Err(process::Error::Timeout)
-    ));
-    assert!(!scratch.0.join("started").exists());
-    assert_gone(pid.get()).await;
+    );
+    support::scoped(cancellation, work, async |running| {
+        let pid = pid.await.unwrap();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(matches!(
+            running.await.unwrap(),
+            Err(process::Error::Timeout)
+        ));
+        assert!(!scratch.0.join("started").exists());
+        assert_gone(pid.get()).await;
+    })
+    .await;
 }
 
 #[tokio::test]

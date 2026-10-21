@@ -245,11 +245,12 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
         script.timeout_ms = Field::Value(duration);
         fingerprint.script = Field::Value(script);
         artifact.fingerprint = Field::Value(fingerprint);
-        snapshot.0.as_mut().unwrap().artifacts =
+        std::sync::Arc::make_mut(snapshot.0.as_mut().unwrap()).artifacts =
             Field::Value(BTreeMap::from([("app".parse().unwrap(), artifact)]));
         assert!(serde_json::to_value(&snapshot).is_err());
         run.definitions = snapshot;
-        assert!(receipts.save_run(&run).await.is_err());
+        // Saving the Run writes only its state: its definitions were written with it.
+        receipts.save_run(&run).await.unwrap();
         let saved = crate::store::read_run(&state, "run-definition")
             .await
             .unwrap();

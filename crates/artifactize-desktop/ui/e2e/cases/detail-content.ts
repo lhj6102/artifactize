@@ -6,6 +6,7 @@ import { aside, detail, graphShown, openArtifact, openTab, summary } from "../gr
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { subdued } from "../rendering.ts";
+import { listed, showRun } from "../pane.ts";
 
 export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-LOG E-MON-DETAIL-BACK
@@ -18,12 +19,8 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { data: { runs } }) => {
       const selectRun = async (id: string) => {
-        await browser.$('[aria-label="Runs"]').waitForExist({ timeout: 15000 });
-        const index = await browser.execute((id) => [...document.querySelectorAll<HTMLElement>('[aria-label="Runs"] [role="option"]')]
-          .find((row) => row.querySelector(".id")?.textContent?.split(/\s/)[0] === id)?.dataset.index ?? null, id);
-        assert.notEqual(index, null, "the requested fixture Run is in the Runs pane");
-        await browser.$(`[aria-label="Runs"] [data-index="${index}"]`).click();
-        await browser.waitUntil(() => browser.$('section.panel[aria-label="Run ' + id + '"]').isExisting(), { timeout: 15000, timeoutMsg: `Run ${id} selected` });
+        await listed(browser, "repo  master");
+        await showRun(browser, "repo  master", id);
       };
       await selectRun(runs[1]);
       await graphShown(browser, `a:${LONG_NAME}`);
@@ -114,16 +111,31 @@ export const scenarios: Scenario[] = [
       assert.ok(views[0].weight > views[1].weight && views[0].colour !== views[1].colour, "the selected Summary choice is darker and bold");
       assert.ok(views.every((view) => view.radius === 0 && (view.fill === "rgba(0, 0, 0, 0)" || view.fill === "transparent")), "view choices are plain text rather than chips");
       await aside(browser).$('[aria-label="Views"]').$('button=Agent log').click();
-      await browser.waitUntil(async () => (await aside(browser).getText()).includes("Receipt review complete."), { timeout: 15000, timeoutMsg: "the actual saved Agent answer in its transcript" });
+      // The Summary also quotes the answer: wait for the selected Agent log's own transcript.
+      await browser.waitUntil(() => browser.execute(() => {
+        const dock = document.querySelector('aside[aria-label="Detail"]');
+        const selected = dock?.querySelector('[aria-label="Views"] [role="tab"][aria-selected="true"]')?.textContent?.trim();
+        return selected === "Agent log" && !!dock?.querySelector(".transcript")?.textContent?.includes("Receipt review complete.");
+      }), { timeout: 15000, timeoutMsg: "the actual saved Agent answer in the selected Agent log's transcript" });
       const transcript = () => browser.execute(() => {
         const pane = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .transcript')!;
         const content = pane.closest<HTMLElement>(".content")!;
-        return { top: content.scrollTop, own: !!pane.querySelector(".track .thumb"), text: pane.innerText };
+        const window = pane.querySelector<HTMLElement>('[role="log"][aria-label="Agent transcript"]')!;
+        return { top: content.scrollTop, own: !!pane.querySelector(".track .thumb"), text: pane.innerText,
+          // A loading or failed read shows a status line instead of rows.
+          status: window.querySelector(":scope > p.status")?.textContent?.trim() ?? null,
+          rows: window.querySelectorAll(":scope > .row").length,
+          // Where the shown rows sit in the whole transcript, as its scrollbar draws it.
+          at: pane.querySelector<HTMLElement>(".track .thumb")?.style.top ?? null };
       });
       const bottom = await transcript();
       assert.ok(bottom.own, "the transcript has its own scrolling box");
       await aside(browser).$("button*=Top").click();
-      await browser.waitUntil(async () => (await transcript()).text !== bottom.text, { timeout: 15000, timeoutMsg: "the Agent log scrolled independently to its beginning" });
+      assert.notEqual(bottom.at, "0%", "the Agent log opened away from its beginning");
+      await browser.waitUntil(async () => {
+        const shown = await transcript();
+        return shown.status === null && shown.rows > 0 && shown.at === "0%";
+      }, { timeout: 15000, timeoutMsg: `the Agent log scrolled independently to its beginning: ${JSON.stringify(await transcript())}` });
       assert.equal((await transcript()).top, bottom.top, "the surrounding Detail did not scroll");
       assert.equal((await containment()).width, before.width, "long transcript lines do not expand the chosen Detail width");
       assert.ok((await containment()).bounded);
@@ -140,15 +152,16 @@ export const scenarios: Scenario[] = [
         return { own: getComputedStyle(pane).overflowY, long: pane.scrollHeight > pane.clientHeight };
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
-      // While the old eval's log is still open, a different Artifact replaces it with its
-      // own Artifact tab. No stale Summary or log is allowed to survive the switch.
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the runtime log's Detail closed back to the graph");
+      // An eval-free Artifact's Detail holds only its own Artifact chip: no eval chip, no "/",
+      // and no Summary or log left from the Artifact shown before.
       await graphShown(browser, "a:basis");
       const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
       assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);
       assert.equal(basis.path, "basis", "an eval-free Artifact has no trailing slash");
       assert.ok(basis.tabs[0].selected && basis.evals.length === 0);
-      assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log was replaced");
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the replacement Detail closed back to the graph");
+      assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log is gone");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the basis Detail closed back to the graph");
       // The other saved Run actually executed the Agent, rather than reusing its result.
       await selectRun(runs[0]);
       await graphShown(browser, `a:${LONG_NAME}`);

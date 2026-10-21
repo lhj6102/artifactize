@@ -31,16 +31,41 @@ use serde_json::{Value, json};
 pub mod declaration;
 pub mod os;
 pub mod runs;
+pub mod schema;
 pub mod tool_sessions;
 
-/// A fixture task is joined on success and cancelled on assertion failure or timeout,
-/// never detached by dropping its handle. The process runner then owns child teardown.
-pub fn spawn<F>(future: F) -> tokio_util::task::AbortOnDropHandle<F::Output>
+/// Run `work`, which observes `cancellation`, while `check` watches it through its handle.
+/// Whether `check` returns or fails an assertion or deadline, unfinished work is then
+/// cancelled and awaited, and with it the process runner's supervisor, which kills and reaps
+/// its children: the caller's temporary files outlive them all.
+pub async fn scoped<W, R>(
+    cancellation: tokio_util::sync::CancellationToken,
+    work: W,
+    check: impl AsyncFnOnce(&mut tokio::task::JoinHandle<W::Output>) -> R,
+) -> R
 where
-    F: std::future::Future + Send + 'static,
-    F::Output: Send + 'static,
+    W: std::future::Future + Send + 'static,
+    W::Output: Send + 'static,
 {
-    tokio_util::task::AbortOnDropHandle::new(tokio::spawn(future))
+    use std::{panic, task::Poll};
+    let mut running = tokio::spawn(work);
+    // Every crate's tests share this module, so it catches a failed check with std alone.
+    let checked = {
+        let mut check = Box::pin(check(&mut running));
+        std::future::poll_fn(|context| {
+            match panic::catch_unwind(panic::AssertUnwindSafe(|| check.as_mut().poll(context))) {
+                Ok(Poll::Pending) => Poll::Pending,
+                Ok(Poll::Ready(value)) => Poll::Ready(Ok(value)),
+                Err(failure) => Poll::Ready(Err(failure)),
+            }
+        })
+        .await
+    };
+    if !running.is_finished() {
+        cancellation.cancel();
+        let _ = running.await;
+    }
+    checked.unwrap_or_else(|failure| panic::resume_unwind(failure))
 }
 
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the

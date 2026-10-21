@@ -120,6 +120,25 @@ pub async fn status(
     options: &VerifyOptions,
     cancellation: CancellationToken,
 ) -> Result<StatusView, String> {
+    scan(repo, state_dir, selection, options, cancellation)
+        .await
+        .map(|(view, _)| view)
+}
+
+/// [`status`], with the completed results it found to reuse, by eval.
+pub(crate) async fn scan(
+    repo: &Path,
+    state_dir: Option<&Path>,
+    selection: &Selection,
+    options: &VerifyOptions,
+    cancellation: CancellationToken,
+) -> Result<
+    (
+        StatusView,
+        BTreeMap<crate::config::EvalId, store::Execution>,
+    ),
+    String,
+> {
     let parallelism = super::fingerprint_parallelism(options)?;
     let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
     let config = select_profiles(
@@ -213,6 +232,13 @@ pub async fn status(
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
+    let reused = cached
+        .iter()
+        .filter_map(|(id, claim)| match claim {
+            Claim::Reuse(execution) => Some((id.clone(), (**execution).clone())),
+            _ => None,
+        })
+        .collect();
     view::assemble(
         &config,
         &graph,
@@ -231,6 +257,7 @@ pub async fn status(
             unreadable,
         },
     )
+    .map(|view| (view, reused))
 }
 
 impl Counts {

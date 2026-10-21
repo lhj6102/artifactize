@@ -173,15 +173,17 @@ error when the `.artf` loads, naming the key path and what is allowed instead.
 | `{ type = "boolean" }` | true / false (and – when optional) |
 | `{ enum = ["a", "b"] }`, only strings, `type = "string"` optional | A choice |
 | `{ const = … }` | Nothing: the value is filled in |
-| `{ type = "array", items = { type = "string" } }`, items optionally with `minLength`, `maxLength` | A list of text boxes, with `+ Add` and ✕ per item |
-| `{ type = "array", items = { type = "object", properties = … } }` whose properties are the scalars above | Repeated groups of those fields, with `+ Add` for a group and ✕ per group |
+| `{ type = "array", items = { type = "string" } }`, items optionally with `minLength`, `maxLength` | A list of text boxes |
+| `{ type = "array", items = { type = "object", properties = … } }` whose properties are the scalars above | Repeated groups of those fields |
 
 Arrays take `minItems` and `maxItems`. The result object and each group's object
 take `type = "object"`, `properties`, `required` and `additionalProperties`; every
 name in `required` must be a declared property. Any schema may add `title`,
 `description` and `$comment`; a property's `description` shows as its hint. A
 required field is marked `*`; an empty optional field says *Optional* and is left
-out of the result, as are empty list items and groups with nothing entered.
+out of the result, as are empty list items and groups with nothing entered. The
+desktop app adds and removes items and groups with `+ Add` and ✕ buttons; the
+terminal UI uses keys, as its [Review form](../tui/index.md) describes.
 Patterns, formats, nested objects, lists inside groups, `$ref` and combinators
 such as `anyOf` are refused: a person could not enter them. Agent schemas keep the
 full validator.
@@ -427,7 +429,7 @@ are checked when the command is prepared. There are no interpreter-specific
 flags, wrappers or entry-file rules.
 
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
-file/directory paths. They must exist without symlink traversal on every call;
+file/directory paths of up to 1024 UTF-16 code units each. They must exist without symlink traversal on every call;
 their contents are never hashed. Commands share the runtime environment, cancellation,
 bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
 1–2,147,483,647). Private output and temporary directories are removed after
@@ -462,6 +464,8 @@ closure, not the referenced Artifacts' eval instructions.
 ids; `Scope::resolve_input` additionally requires existing files/directories
 without symlink traversal. Logical paths reject absolute paths, traversal, empty
 components, backslashes, colons, ASCII controls and lengths above 4096 UTF-16 code units.
+Declared paths (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`)
+are shorter: up to 1024 units each.
 
 Before preparing a runtime command, call `scope::resolve_argv` with the admitted
 scope. Explicit `{name}`, `{name}/path` and `--flag={name}/path` operands resolve to

@@ -16,12 +16,14 @@ scenes need. Judge whether running the \
 script captures each scene below from the real desktop app at 1920×1080, with real data made \
 through the real CLI and nothing mocked:
 
-A. The Monitor (J-MON-CATALOG, J-GRAPH-COLOURS): Scope and Runs on the left, and a Run graph \
-whose Artifacts show mixed verdicts: GREEN, RED, blocked and waiting for a person.
-B. An Artifact's Detail (J-MON-DETAIL, J-MON-NEIGHBOURS) floating over the graph on its \
+A. The app's one screen (J-PANE, J-BRANCH-RUNS, J-WAITING, J-MAIN-RUN, J-GRAPH-COLOURS): the \
+left pane with the example's branch, its Run chips and the waiting sign-off, and the Run's \
+graph in the main area, whose Artifacts show mixed verdicts: GREEN, RED, blocked and waiting \
+for a person.
+B. An Artifact's Detail (J-DETAIL, J-DETAIL-NEIGHBOURS) floating over the graph on its \
 Artifact tab: the Artifact between its neighbours, and its evals with their verdicts.
-C. A claimed Human review (J-HUMAN-LAYOUT, J-HUMAN-LOG): its instruction, Tools, a Tool log \
-run and the GREEN form.
+C. A claimed Human review opened from the left pane (J-MAIN-REVIEW, J-HUMAN-LAYOUT, \
+J-HUMAN-LOG): its instruction, Tools, a Tool log run and the GREEN form.
 
 Check that each scene's selectors and actions reach the state the journey describes, that the \
 script waits for that state rather than a fixed delay alone before capturing, and that it \

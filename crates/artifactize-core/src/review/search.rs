@@ -205,7 +205,7 @@ fn scan(text: &str) -> (Vec<Word>, bool) {
 }
 
 /// Words of `text` and whether each began quoted.
-fn words(text: &str) -> Vec<(String, bool)> {
+pub(crate) fn words(text: &str) -> Vec<(String, bool)> {
     scan(text)
         .0
         .into_iter()
@@ -375,7 +375,7 @@ impl Query {
 }
 
 /// `key:value`, quoted when the value has spaces or quotes.
-fn quote(key: &str, value: &str) -> String {
+pub(crate) fn quote(key: &str, value: &str) -> String {
     if value
         .chars()
         .any(|character| character.is_whitespace() || character == '"')
@@ -397,7 +397,7 @@ pub struct Completion {
 
 /// `text` split before the term still being typed, as the parser reads words: a space inside
 /// quotes (`repo:"my r`) stays in the term; after a finished word the term is empty.
-fn last_term(text: &str) -> (&str, &str) {
+pub(crate) fn last_term(text: &str) -> (&str, &str) {
     match scan(text) {
         (words, true) => text.split_at(words.last().map_or(0, |word| word.start)),
         (_, false) => (text, ""),

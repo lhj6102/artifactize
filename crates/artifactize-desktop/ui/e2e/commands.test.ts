@@ -32,3 +32,9 @@ it("a completed failed query cannot reuse rows left by a successful query", () =
   assert.equal(completed(failed, before), false);
   assert.equal(completed({ ...failed, queryFailure: null }, before), true);
 });
+
+it("needs no search for the starting query until one is typed", () => {
+  const start: Checkpoint = { query: "sort:recent", activity: { revision: 1, pending: 0, commands: {}, search: null } };
+  assert.equal(completed(start), true);
+  assert.equal(completed({ ...start, query: "branch:x" }, start), false, "a typed query waits for its own search");
+});

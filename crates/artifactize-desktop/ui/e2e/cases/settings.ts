@@ -1,10 +1,12 @@
 // Settings through the real app and CLI: environment-key presence without values,
 // and a remote store's HTTP identity, persisted sign-in, status, dry run and logout.
 import assert from "node:assert/strict";
-import { createOutside, environment, remoteStatus, type Fixture } from "../fixture.ts";
-import { typeText } from "../keys.ts";
+import { create, createOutside, environment, remoteStatus, signoff, type Fixture } from "../fixture.ts";
+import { press, typeText } from "../keys.ts";
+import { graphShown } from "../graph-view.ts";
+import { mainTitle, openWaiting } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativePath, readText, serveLoopbackHttp, writeText } from "../platform.ts";
+import { nativePath, primaryModifier, readText, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
 const TOKEN = "azt_e2esettingstoken0123456789abcdef";
@@ -21,6 +23,35 @@ function settingsEnvironment(fixture: Fixture): NodeJS.ProcessEnv {
 }
 
 export const scenarios: Scenario[] = [
+  // UX journey: J-SETTINGS; UX edges: E-SCREEN-SETTINGS E-SETTINGS-BACK
+  scenario<null>(
+    "settings-back",
+    "shows Settings in the Main area by Ctrl+, or its button, and leaves it by Esc, the button again or a choice in the Pane",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: null };
+    },
+    async (browser, { fixture }) => {
+      await graphShown(browser, "a:release");
+      const before = await mainTitle(browser);
+      assert.match(before, /^Run /);
+      const button = () => browser.$("button=Settings");
+      const shows = (title: string) => async () => (await mainTitle(browser)) === title;
+      const settings = async () => (await shows("Settings")()) && (await button().getAttribute("aria-pressed")) === "true";
+      await press(browser, [primaryModifier, ","], settings, "Settings by Ctrl+,");
+      await press(browser, ["Escape"], shows(before), "the Run again after Esc");
+      await graphShown(browser, "a:release");
+      assert.equal(await button().getAttribute("aria-pressed"), "false");
+      await button().click();
+      await browser.waitUntil(settings, { timeout: 15000, timeoutMsg: "Settings by its button" });
+      await button().click();
+      await browser.waitUntil(shows(before), { timeout: 15000, timeoutMsg: "the Run again after the button" });
+      await press(browser, [primaryModifier, ","], settings, "Settings by Ctrl+, again");
+      await openWaiting(browser, signoff(fixture).id);
+      await browser.waitUntil(shows("Review"), { timeout: 15000, timeoutMsg: "the review chosen in the Pane" });
+      assert.equal(await button().getAttribute("aria-pressed"), "false", "choosing in the Pane left Settings");
+    },
+  ),
   // UX edges: E-SET-KEYS
   scenario(
     "settings-keys",

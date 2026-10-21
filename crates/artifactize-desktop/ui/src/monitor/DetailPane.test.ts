@@ -5,7 +5,7 @@ import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import type { DetailView, TreeNode } from "../ipc/client";
+import type { DetailView, Source, TreeNode } from "../ipc/client";
 import DetailPane from "./DetailPane.svelte";
 
 beforeAll(() => {
@@ -51,29 +51,34 @@ const tree: TreeNode[] = [
   { ...row("a:docs", "artifact", "docs", "✓", "green"), upstream: [{ node: "a:app", complete: false }] },
 ];
 
+const RUN: Source = { kind: "run", run: "run-a" };
+/** The backend's row of `node` in `rows`, as `detail_row` answers. */
+const rowOf = (args: unknown, rows = tree) => rows.find((each) => each.id === (args as { node: string }).node) ?? null;
+
 const view = (node: string, title: string): DetailView => ({
-  run: "run-a", node, target: node.startsWith("e:") ? "eval" : "artifact", title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
+  source: RUN, plan: null, node, target: node.startsWith("e:") ? "eval" : "artifact", title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
   mark: null, sections: [], evidence: null, running: false, card: null,
 });
 
 function setup(tab: string | null = null) {
   const read: string[] = [];
   mockIPC((command, args) => {
-    if (command === "run_graph") {
-      return {
-        run: "run-a",
+    if (command === "detail_row") return rowOf(args);
+    if (command === "neighbours") {
+      // The backend cut two more Artifacts that use `app`.
+      return { moreUses: 0, moreUsedBy: 2, shape: {
         nodes: [
-          { id: "a:core", name: "core", light: "green" },
-          { id: "a:app", name: "app", light: "red" },
-          { id: "a:docs", name: "docs", light: "green" },
-          { id: "a:far", name: "far", light: "green" },
+          { id: "a:core", name: "core", light: "green", note: null },
+          { id: "a:app", name: "app", light: "red", note: null },
+          { id: "a:docs", name: "docs", light: "green", note: null },
+          { id: "a:far", name: "far", light: "green", note: null },
         ],
         edges: [
           { source: "a:core", target: "a:app", light: "green" },
           { source: "a:app", target: "a:docs", light: "red" },
           { source: "a:docs", target: "a:far", light: "green" },
         ],
-      };
+      } };
     }
     if (command !== "detail") return null;
     const { node } = args as { node: string };
@@ -83,11 +88,12 @@ function setup(tab: string | null = null) {
   const ontab = vi.fn();
   const onopen = vi.fn();
   const onback = vi.fn();
+  const ongone = vi.fn();
   const shown = renderHosted(DetailPane, {
-    run: "run-a", node: "a:app", tab, tree, focused: false, active: true,
-    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab, onopen, onback,
+    source: RUN, revision: 1, branch: null, node: "a:app", tab, focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab, onopen, onback, ongone,
   });
-  return { ...shown, read, ontab, onopen, onback };
+  return { ...shown, read, ontab, onopen, onback, ongone };
 }
 
 it("shows the Artifact tab first with its evals' verdicts, and switches to an eval's tab from the list or the tabs", async () => {
@@ -139,6 +145,7 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
   } as unknown as typeof ResizeObserver;
   const opened: string[] = [];
   mockIPC((command, args) => {
+    if (command === "detail_row") return rowOf(args);
     if (command === "detail") {
       return {
         ...view("e:app/test", "app/test · Review"), profile: "agent", request: "run-a-7",
@@ -152,8 +159,8 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
     return null;
   }, { shouldMockEvents: true });
   renderHosted(DetailPane, {
-    run: "run-a", node: "a:app", tab: "e:app/test", tree, focused: false, active: true,
-    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
+    source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/test", focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
   const views = within(await screen.findByRole("tablist", { name: "Views" })).getAllByRole("tab");
   expect(views.map((item) => [item.textContent, item.getAttribute("aria-selected")])).toEqual([["Summary", "true"], ["Agent log", "false"]]);
@@ -169,10 +176,13 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
 });
 
 it("shows only the Artifact's chip, without a `/`, for an Artifact without evals", async () => {
-  mockIPC((command) => (command === "detail" ? view("a:lone", "Artifact lone") : null));
+  mockIPC((command, args) => {
+    if (command === "detail_row") return rowOf(args, [row("a:lone", "artifact", "lone", "✓", "green")]);
+    return command === "detail" ? view("a:lone", "Artifact lone") : null;
+  });
   renderHosted(DetailPane, {
-    run: "run-a", node: "a:lone", tab: null, tree: [row("a:lone", "artifact", "lone", "✓", "green")], focused: false, active: true,
-    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
+    source: RUN, revision: 1, branch: null, node: "a:lone", tab: null, focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
   await screen.findByRole("heading", { name: "Artifact lone" });
   const strip = screen.getByRole("tablist", { name: "Tabs of lone" });
@@ -189,6 +199,7 @@ it("draws the Artifact between the Artifacts its evals use and those that use it
   expect(node("a:core")).not.toBeNull();
   expect(node("a:docs")).not.toBeNull();
   expect(node("a:far")).toBeNull();
+  expect(screen.getByText("And 2 more that use it, not shown.")).toBeTruthy();
   await fireEvent.click(node("a:docs")!);
   expect(onopen).toHaveBeenCalledWith("a:docs");
   await fireEvent.click(node("a:app")!);
@@ -196,8 +207,10 @@ it("draws the Artifact between the Artifacts its evals use and those that use it
 });
 
 it("folds an eval Summary's technical facts under Debug, which t shows and hides", async () => {
-  mockIPC((command) =>
-    command === "detail"
+  mockIPC((command, args) =>
+    command === "detail_row"
+      ? rowOf(args)
+      : command === "detail"
       ? {
           ...view("e:app/lint", "app/lint · Check"),
           sections: [{ name: "request", title: "Request", fields: [{ key: "Status", value: "GREEN" }, { key: "Request", value: "run-a-3" }], waits: [] }],
@@ -206,8 +219,8 @@ it("folds an eval Summary's technical facts under Debug, which t shows and hides
       : null,
   );
   renderHosted(DetailPane, {
-    run: "run-a", node: "a:app", tab: "e:app/lint", tree, focused: false, active: true,
-    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(),
+    source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/lint", focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
   const heading = await screen.findByRole("heading", { name: "app/lint · Check" });
   const debug = await screen.findByRole("button", { name: /Debug/ });
@@ -218,4 +231,17 @@ it("folds an eval Summary's technical facts under Debug, which t shows and hides
   expect(screen.getByRole("button", { name: /Debug/ }).getAttribute("aria-expanded")).toBe("true");
   await fireEvent.keyDown(heading, { key: "t" });
   await waitFor(() => expect(screen.queryByText("run-a-3")).toBeNull());
+});
+
+it("lets go of a Detail whose node the Run no longer has", async () => {
+  mockIPC((command, args) => {
+    if (command === "detail_row") return rowOf(args, []);
+    return command === "detail" ? view("a:app", "Artifact app") : null;
+  });
+  const ongone = vi.fn();
+  renderHosted(DetailPane, {
+    source: RUN, revision: 1, branch: null, node: "a:app", tab: null, focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone,
+  });
+  await waitFor(() => expect(ongone).toHaveBeenCalledOnce());
 });

@@ -6,7 +6,7 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 8),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 9),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
@@ -14,7 +14,7 @@ with the canonical repository path recorded on each Run. The state home is
 The **Microsoft Store package** uses Windows' default AppData virtualization, with
 no Flexible Virtualization exclusions. New state under AppData is package-private:
 the Store version keeps its own Runs, sign-in and cache instead of sharing them
-with winget, zip or Cargo installs. Windows removes that private state on uninstall.
+with zip or Cargo installs. Windows removes that private state on uninstall.
 The path above is the app's logical view, not necessarily its physical disk location.
 The [Windows packaging smoke test](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
 measured both `state.sqlite` and `review-store.sqlite` under
@@ -55,16 +55,22 @@ ancestor. Keep state and credentials outside such workspaces explicitly; do not
 rely on sidecar detection where directory listing is unavailable.
 
 The state keeps what was reviewed, with which verdict, and how it was executed, in
-four tables:
+five tables:
 
 | Table | One row per | Columns besides the saved JSON in `data` |
 |---|---|---|
-| `runs` | Run | `id`, `repo`, `status`, nullable `request_key` |
-| `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, and `claimed_by` and `claimed_at`, the Human claim of a waiting request |
-| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), `profile_identity` (the effective profile of a keyed claim), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
+| `runs` | Run | `id`, `repo`, `status`, nullable `request_key`, `revision` |
+| `run_definitions` | Run with definitions | `run_id` |
+| `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, `claimed_by` and `claimed_at` (the Human claim of a waiting request), `revision` |
+| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), `profile_identity` (the effective profile of a keyed claim), the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used`, and `revision` |
 | `state_meta` | named value of the state | `name`, `value` |
 
-A Run has one request per eval and per ordinal.
+A Run's `data` is its changing state: status, control, validation and evidence. Its
+definitions (the Artifacts, evals and relations it was started with) are fixed for
+the Run's life and live in `run_definitions`, written once with the Run; saving the Run
+again never rewrites them. A trigger raises `revision` on every update of a `runs`,
+`requests` or `executions` row, so a reader learns what changed by comparing numbers
+instead of reading records. A Run has one request per eval and per ordinal.
 One execution per (reuse key, effective evaluation profile) can be
 active (RUNNING or WAITING_HUMAN) at a time; a forced (`--force`) execution bypasses this claim and
 never holds its key's active slot. `state_meta` holds the state's stable
@@ -78,7 +84,10 @@ opening write transaction; the version is read again under that lock. Schema 6 u
 to 7 by adding nullable `runs.request_key` and a partial unique index on `(repo, request_key)`
 where the key is not NULL. Existing Runs keep NULL keys. Schema 7 upgrades to 8 by
 adding `executions.profile_identity`, filling it from saved profiles and replacing
-the active-key uniqueness index with `(key, profile_identity)`. Run/request/execution IDs, cache,
+the active-key uniqueness index with `(key, profile_identity)`. Schema 8 upgrades to 9 by
+moving each Run's definitions out of its record into `run_definitions` (a record that does
+not read keeps its text) and adding the `revision` columns, their triggers and the indexes
+that read them. Run/request/execution IDs, cache,
 state identity and Human approvals survive; repeated opens do not remigrate. Existing-state
 readers and `doctor` use the same preflight without creating an absent database. Migration
 requires write access; a failed transaction rolls back rather than bypassing version checks.
@@ -92,7 +101,7 @@ Dead-worker recovery keeps committed evidence, cleans only identity-checked owne
 and releases dead slots. It records OWNER_DIED instead of replaying work; unconfirmed
 cleanup retains its journal records.
 
-**Downgrade boundary:** Binaries that only support schema 6 or 7 cannot open a schema-8
+**Downgrade boundary:** Binaries that only support schemas 6 to 8 cannot open a schema-9
 state after upgrade; their version guards refuse it. Unknown/newer versions and schemas 1–5 remain unsupported;
 commands exit 2 and `doctor` reports a hard error (exit 1). The older-schema message is:
 
@@ -276,7 +285,9 @@ Each Agent review's conversation is saved under the state, for
 | `maxBytes` | 1 GiB | The store's size that starts a collection; at least 1 |
 | `targetBytes` | 768 MiB when `maxBytes` is greater than 768 MiB; otherwise `(maxBytes / 4) * 3`, dividing first with integer division | The size a collection brings the store down to; an explicit value overrides the default and must be lower than `maxBytes` |
 
-A collection runs at the end of every `verify` Run and in `prune`. When the
+A collection runs once a `verify` Run has scheduled and settled its evals, and in
+`prune`; a Run that fails earlier, while preparing, scheduling or saving, skips it, and
+`prune` collects on request. When the
 conversation files take more than `maxBytes`, it deletes the sessions written longest
 ago, one at a time, until they take `targetBytes` or less, so each collection frees a
 fixed amount rather than one session at a time. It never deletes the session of a
@@ -379,20 +390,16 @@ the original review ends.
 
 ### Local readers
 
-Monitor and Review use read-only state queries and cached Git discovery, rather
-than rediscovering declarations or fingerprints on every refresh. Local readers
-share a temporary hub inside the first subscriber process: an owner-only Unix
-socket or Windows named pipe, not a permanent daemon. Registration is acknowledged
-before the initial snapshot. Readers reconnect and resync after hub exit or a
-bounded hint-queue overflow; writers never elect a hub.
-
-If IPC is unsafe or unavailable, five-second authoritative reconciliation replaces
-it without an insecure transport fallback. A persistent read-only SQLite
-`data_version` connection and file-identity probe detect missed commits and database
-replacement. Clocks and spinners redraw cached data. Session hints wake only the
-selected transcript reader; a five-second file probe also catches missed appends
-or removal. Rendering does no file I/O, and input takes priority over history work.
-This is local coordination, not remote team-store push delivery.
+Monitor and Review only read the state; they never rediscover declarations or
+fingerprints to refresh. The one exception is opening a waiting Human review's
+Detail: it reads the current declarations to show that review's tool commands,
+without claiming the review or running anything. They follow changes as they happen: the first open reader
+hosts a temporary owner-only local channel (no daemon) on which writers announce which
+Runs they changed, and readers read only those again, the Run you have open included.
+Without the channel, or when it misses something, a check every five seconds catches
+up, and a replaced database is read again from the start. Opening a reader reads only
+the list of Runs and the Run you open, so even a very large Run is quick to follow.
+This is local coordination, not push delivery from a team store.
 
 The Run worker separately reconciles dead execution owners and backend slots and
 optional remote results, without a Human wait deadline. Explicit Human actions use

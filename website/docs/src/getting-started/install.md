@@ -10,8 +10,7 @@ silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum, and 
 notarized by Apple, and a Linux AppImage and `.deb` for x86_64; the Windows zip
 carries the app beside the commands. Stable releases are also published on
 [crates.io](https://crates.io/crates/artifactize), Homebrew and the
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D). winget
-distribution is in preparation and is not available yet. It is open source under the
+[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D). It is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 Before v1, the Linux build gates a release; the macOS and Windows archives and the
@@ -53,7 +52,7 @@ Start with the default for your OS, or choose an alternative below:
 |---|---|---|
 | Linux | [Install script](#linux) | [`.deb` or AppImage](#desktop-app), [Cargo binaries](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
 | macOS | [Homebrew](#macos) | [Install script](#macos), [disk image](#desktop-app), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
-| Windows | [Microsoft Store](#windows) | [PowerShell install script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms); [winget](#windows) is in preparation, not available yet |
+| Windows | [Microsoft Store](#windows) | [PowerShell install script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
 
 The defaults install the desktop app too, except Homebrew, which installs it as a
 separate cask. Cargo and a source build install the commands only.
@@ -134,7 +133,7 @@ Start menu entries: **Artifactize** opens the [desktop app](#desktop-app), and
 PowerShell, then waits for Enter when it owns the console alone; terminal launches
 and redirected input/output never pause. The Store package uses Windows' default
 AppData virtualization: the app and the command keep their own package-private state
-rather than sharing Runs, sign-in and cache with winget, zip or Cargo installs.
+rather than sharing Runs, sign-in and cache with zip or Cargo installs.
 Windows removes that private state when you uninstall the Store app. See
 [State](../features/others/state.md#state) for the Windows overlay caveat.
 
@@ -160,16 +159,9 @@ replacing anything: your previous `artifactize` and `artifactize-tools` stay ins
 and runnable, and `Path` is left unchanged. Do not bypass your application-control
 policy; install from the Microsoft Store instead.
 
-**winget (in preparation — not available yet).** `lhj6102.Artifactize` has not been
-accepted into [winget](https://learn.microsoft.com/windows/package-manager/winget/).
-Use the Microsoft Store now. After the package is published, the intended command is:
-
-```powershell
-winget install lhj6102.Artifactize
-```
-
-That package installs both commands and the desktop app from the release zip and
-follows stable releases.
+**winget** is not available yet: `lhj6102.Artifactize` has not been accepted into
+[winget](https://learn.microsoft.com/windows/package-manager/winget/). Use the
+Microsoft Store or the install script.
 
 **WSL.** Inside WSL 2, artifactize is the Linux build: install it in the distribution
 with the [Linux](#linux) instructions. It is separate from a Windows install and keeps
@@ -215,8 +207,8 @@ placeholder version `0.0.0-dev`.
 
 ### Desktop app
 
-The [desktop app](../desktop/index.md) runs Monitor, Review and Graph in a window. It
-shows the Runs that `artifactize verify` starts, so the commands come with it: the
+The [desktop app](../desktop/index.md) shows every live branch with its Runs and what it
+would run now, and the Human reviews waiting, in one window. It shows the Runs that `artifactize verify` starts, so the commands come with it: the
 Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` put
 `artifactize` on `PATH`. From the disk image or an AppImage run on its own, the app
 sets up the commands on first launch (below). TUI and MCP already come with the ordinary
@@ -238,7 +230,7 @@ open **Artifactize** from your applications menu or the Start menu.
 The app checks standard terminal command locations and its inherited `PATH` in the
 background, without running shell startup files. On macOS this includes the system's
 `/etc/paths` and `/etc/paths.d` entries, which new login terminals use. An existing
-command from Homebrew, an install script, `.deb`, winget or the Store is left alone;
+command from Homebrew, an install script, `.deb` or the Store is left alone;
 there is no setting to choose. Otherwise:
 
 - **macOS:** the app writes its absolute `Contents/MacOS` directory to
@@ -284,28 +276,9 @@ CLI, not the Store app's private state.
 ### Plugin for Claude Code and Codex
 
 The [plugin](../agent-plugin/plugin.md) adds the Hey Arti skill and the
-artifactize MCP server to Claude Code or Codex. It runs the `artifactize` program,
-so install that first with one of the channels above. This repository is the
-plugin's marketplace, a catalog the assistant reads to find the plugin.
-
-In a Claude Code session, add the marketplace, then install the plugin from it:
-
-```text
-/plugin marketplace add lhj6102/artifactize
-/plugin install artifactize@artifactize
-```
-
-From a shell, `claude plugin marketplace add lhj6102/artifactize` and
-`claude plugin install artifactize@artifactize` do the same.
-
-For Codex, in a shell:
-
-```sh
-codex plugin marketplace add lhj6102/artifactize
-codex plugin add artifactize@artifactize
-```
-
-Or run `/plugins` in Codex CLI and pick the `artifactize` marketplace.
+artifactize MCP server to Claude Code or Codex. Install the `artifactize` program
+first with one of the channels above, then follow the
+[plugin page](../agent-plugin/plugin.md#add-the-plugin-to-your-assistant).
 
 ## Update
 
@@ -315,26 +288,21 @@ Or run `/plugins` in Codex CLI and pick the `artifactize` marketplace.
 | Homebrew | `brew upgrade artifactize`; the desktop app with `brew upgrade --cask artifactize` |
 | Microsoft Store | Automatic; or **Library → Get updates** in the Store app |
 | Disk image, `.deb` or AppImage | Install the newer file from the release the same way |
-| winget (not available yet) | After publication: `winget upgrade lhj6102.Artifactize` |
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`; from a checkout, `git pull` and repeat `cargo install --path` |
 
 The install scripts and Cargo get a release as soon as it is published. Homebrew
 and the Microsoft Store follow stable releases only; a Store update can lag while
-Microsoft reviews it. The prepared winget channel targets stable releases only; its
-first publication is still pending. Updating keeps your state.
+Microsoft reviews it. Updating keeps your state.
 
-The [plugin](#plugin-for-claude-code-and-codex) follows this repository's `main`
-branch, which holds released versions. Update it with
-`/plugin marketplace update artifactize` in Claude Code (or turn on auto-update
-for the marketplace in `/plugin`), or `codex plugin marketplace upgrade artifactize`
-in Codex.
+The [plugin page](../agent-plugin/plugin.md#updates) shows how to update the
+plugin.
 
 ### Upgrading from 0.11
 
-State schemas 6 and 7 are upgraded additively to 8 on first use. Existing Runs, cache records
-and Human approvals are preserved. An older binary limited to schema 6 or 7 cannot open the upgraded
-state; keep a backup before switching versions.
+State schemas 6 to 8 are upgraded additively to the current schema 9 on first use. Existing
+Runs, cache records and Human approvals are preserved. An older binary limited to schemas 6 to 8
+cannot open the upgraded state; keep a backup before switching versions.
 
 `artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
 Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal
@@ -358,7 +326,7 @@ you want templates and commit its `.artf` output. See [Declarations (.artf)](../
 
 The original 0.9 transition introduced state schema 6 and required replacing
 pre-schema-6 state. Current versions preserve existing schema-6 or schema-7 state
-by upgrading it automatically to schema 8, including Runs, cache records and Human
+by upgrading it automatically to schema 9, including Runs, cache records and Human
 approvals. Only schemas 1–5 require a new state: they are refused with exit 2, and
 `artifactize doctor` reports a hard error and exits 1. For those older states, set
 `ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new directory, or move the old one away.
@@ -424,8 +392,8 @@ and asks for a pasted redirect instead. On another machine, use the same fallbac
 Paste the full URL starting `http://localhost:1455/auth/callback?code=` into the
 terminal, or the desktop sign-in's paste field. Find it in the browser's address bar
 after the failed load, or in DevTools → Network if the page keeps loading.
-`logout codex` revokes and deletes
-artifactize's tokens. To use the tokens of an existing Codex sign-in instead, set
+`logout codex` deletes artifactize's tokens
+and asks the server to revoke them; it warns when the revocation is not confirmed. To use the tokens of an existing Codex sign-in instead, set
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`; artifactize only reads that file.
 See [Codex](../features/agent.md#codex).
 
@@ -489,7 +457,6 @@ Open a new terminal after removing a command's path entry.
 On Windows:
 
 ```powershell
-winget uninstall lhj6102.Artifactize                       # future winget install, after publication
 Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\artifactize"   # install.ps1
 Remove-Item "$([Environment]::GetFolderPath('Programs'))\Artifactize.lnk"   # its Start menu shortcut
 ```

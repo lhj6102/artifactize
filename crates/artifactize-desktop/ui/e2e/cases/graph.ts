@@ -1,16 +1,44 @@
-// The monitor's Run graph in the real app on CLI-made state: release waits for its Human,
+// A Run's graph in the Main area, in the real app on CLI-made state: release waits for its Human,
 // ship waits for release, docs is GREEN. The graph lights them and follows a submission made by
 // another process live without moving any node while release's Detail stays open; a click on an
-// Artifact opens its Detail with a tab per eval, every Artifact stays clickable beside the Detail,
+// Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, requests, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
-import { aside, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
+import { aside, camera, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
+import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, showRun } from "../pane.ts";
+
+/** A fixture whose one Run ended: the branch's newest entry is its Current, so its Run is chosen. */
+function ended(fixture: ReturnType<typeof createChain>) {
+  const [run] = savedRuns(fixture);
+  return { fixture, args: ["--repo", fixture.repo], data: { run: run.id } };
+}
+
+async function shownRun(browser: WebdriverIO.Browser, run: string) {
+  await listed(browser, "repo  master");
+  await showRun(browser, "repo  master", run);
+}
+
+/** Arrow keys on the focused Artifact `id` are no keys of the graph's: its camera stays, the
+ * Artifact stays where it was drawn, and the keyboard stays on it. */
+async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Promise<void> {
+  const at = () => browser.execute((want) => [...document.querySelectorAll(`.svelte-flow__node[data-id="${want}"]`)]
+    .find((node) => !node.closest('aside[aria-label="Detail"]'))?.getBoundingClientRect().toJSON(), id);
+  const [before, where] = [await camera(browser), await at()];
+  // Each key on its own, once the page has rendered it: a move one key undoes cannot hide.
+  for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+    await press(browser, [key], () => true, `${key} reached the page`);
+    await afterRender(browser);
+    assert.equal(await camera(browser), before, `${key} moved no camera`);
+    assert.deepEqual(await at(), where, `${key} moved no Artifact`);
+    assert.equal(await focusedNode(browser), id, `the keyboard stays on the Artifact after ${key}`);
+  }
+}
 
 export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-RECOLOUR E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-BACK
@@ -41,8 +69,9 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"], "release's own chip, then its one eval's");
       assert.equal(opened.path, "release / signoff", "the chips read as a path");
       assert.equal(opened.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
-      assert.ok(opened.tabs[0].icon, "release's chip draws the Artifact icon before its name");
-      assert.equal(opened.tabs[1].tone, "tone-human", "the sign-off's tab shows it waiting for a Human");
+      await browser.waitUntil(async () => (await detail(browser))?.tabs[0]?.icon === true,
+        { timeout: 15000, timeoutMsg: "release's chip draws the Artifact icon before its name" });
+      assert.equal(opened.tabs[1].glyph, "?", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
       assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
 
@@ -68,7 +97,7 @@ export const scenarios: Scenario[] = [
       for (const node of ["a:release", "a:ship", "a:docs"]) {
         assert.equal(after.nodes[node].at, before.nodes[node].at, `${node} kept its place`);
       }
-      await browser.waitUntil(async () => (await detail(browser))?.tabs[1]?.tone === "tone-green",
+      await browser.waitUntil(async () => (await detail(browser))?.tabs[1]?.glyph === "✓",
         { timeout: 15000, timeoutMsg: "the open Detail's sign-off tab turned GREEN" });
       assert.equal((await detail(browser))?.title, "Artifact release", "a live update keeps the open Detail on release");
 
@@ -83,25 +112,22 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
+  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
   scenario<Record<string, never>>(
     "graph-click-detail",
-    "opens an Artifact's Detail on a click or Enter, keeps every Artifact clickable beside it, switches it on another click, closes it on the background, then steps back to Runs",
+    "opens an Artifact's Detail on a click or Enter over the graph's right side with the graph visible beside it, switches it on a click on another Artifact, closes it on the background, then steps back to the Pane",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      // A 1440×872 window: the Detail at its default width docks where the graph's right-most
-      // Artifact is drawn while no Detail is open.
+      // A 1440×872 window, which the Detail at its default width leaves room beside.
       await browser.setWindowSize(1440, 872);
       await afterRender(browser);
       await graphShown(browser, "a:release");
-      const runs = () => browser.$('[role="listbox"][aria-label="Runs"]');
-      const pane = () => browser.$('section.panel[aria-label^="Run run-"]');
-      await browser.waitUntil(() => runs().isFocused(), { timeout: 15000, timeoutMsg: "the initial Runs pane focused" });
-      // Enter steps from Runs into the graph's pane.
-      await press(browser, ["Enter"], () => pane().isFocused(), "the graph's pane focused");
+      await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane's entries focused at launch" });
+      // Enter steps from the Pane into the Main area.
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
       /** Each Artifact's right edge in the window, and the open Detail's left edge (null without one). */
       const placed = () => browser.execute(() => ({
         nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
@@ -124,15 +150,18 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact release", "Enter on release opened its Detail again");
 
-      // The Detail takes the place where another Artifact was drawn without it; every Artifact
-      // stays visible and takes the pointer beside the Detail.
+      // The Detail floats over the graph's right side with a gap, docked where another Artifact
+      // was drawn without it, and the graph stays visible on its left.
+      assert.ok((await detail(browser))?.docked, "the Detail docks over the graph's right side with a gap");
       const edge = (await placed()).detail!;
       const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
       assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
-      for (const id of Object.keys(whole)) await graphShown(browser, id);
-      // A click on it switches the Detail to that Artifact, and a click on the graph's
-      // background closes it. Esc then steps back to Runs.
-      await openArtifact(browser, under[0], `Artifact ${under[0].slice(2)}`);
+      const beside = await placed();
+      const exposed = Object.keys(beside.nodes).filter((id) => id !== "a:release" && beside.nodes[id] < beside.detail!);
+      assert.ok(exposed.length > 0, `another Artifact stays visible beside the Detail: ${JSON.stringify(beside)}`);
+      // A click on an Artifact shown beside it switches the Detail to that Artifact, and a click
+      // on the graph's background closes it. Esc then steps back to the Pane.
+      await openArtifact(browser, exposed[0], `Artifact ${exposed[0].slice(2)}`);
       const canvas = await browser.execute(() => {
         const box = document.querySelector(".graph .canvas")!.getBoundingClientRect();
         const nodes = [...document.querySelectorAll(".svelte-flow__node")].map((node) => node.getBoundingClientRect());
@@ -144,19 +173,23 @@ export const scenarios: Scenario[] = [
       });
       await browser.action("pointer").move({ x: canvas.x, y: canvas.y }).down().up().perform();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the background click closed the Detail" });
-      await press(browser, ["Escape"], () => runs().isFocused(), "back to Runs");
+      await press(browser, ["Escape"], () => entriesFocused(browser), "back to the Pane");
+      assert.equal((await branch(browser, "repo  master"))?.selected, true, "the same branch stays selected");
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
+  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-GRAPH-TAB E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "graph-keyboard-artifacts",
-    "Tabs from the graph pane to every Artifact and opens the corresponding Detail with Enter, without clicking a node",
-    async () => ({ fixture: await create(), data: {} }),
+    "Tabs from the Main area to every Artifact of the Run's graph, opening nothing, and opens the corresponding Detail with Enter, without clicking a node",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
     async (browser) => {
       await graphShown(browser, "a:release");
-      await browser.waitUntil(() => browser.$('[aria-label="Runs"]').isFocused(), { timeout: 15000, timeoutMsg: "Runs initially has the keyboard" });
-      await press(browser, ["Enter"], () => browser.$('section.panel[aria-label^="Run run-"]').isFocused(), "the graph pane reached by keyboard");
+      await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area reached by keyboard");
       const expected = new Map([["a:release", "release"], ["a:ship", "ship"], ["a:docs", "docs"]]);
       const visited = new Set<string>();
       // A bound on traversing this small fixture's controls, not a claimed tab order.
@@ -167,12 +200,43 @@ export const scenarios: Scenario[] = [
         if (!id || visited.has(id)) continue;
         const name = expected.get(id);
         assert.ok(name, `Tab reached the expected Artifact ${id}`);
+        assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
+        if (visited.size === 0) await arrowsMoveNothing(browser, id);
         await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail`);
         assert.equal((await detail(browser))?.tabs[0]?.name, name);
         visited.add(id);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the keyboard-opened Detail closes");
       }
       assert.deepEqual([...visited].sort(), [...expected.keys()].sort(), "every Artifact is reachable with Tab and Enter alone");
+    },
+  ),
+
+  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-GRAPH-TAB E-CURRENT-EVALS E-CURRENT-CLOSE
+  scenario<Record<string, never>>(
+    "graph-keyboard-current",
+    "Tabs from the Main area to an Artifact of a branch's Current, opening nothing, and opens its Detail with Enter and closes it with Esc, without clicking a node",
+    async () => {
+      // Its Runs ended, so the branch's newest entry, shown at launch, is its Current.
+      const fixture = createChain(3);
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const node = (id: string) => `section[aria-label="Current"] .svelte-flow__node[data-id="${id}"]`;
+      await browser.$(node("a:n002")).waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn" });
+      await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area reached by keyboard");
+      let reached: string | null = null;
+      // A bound on traversing this small fixture's controls, not a claimed tab order.
+      for (let attempt = 0; attempt < 40 && reached === null; attempt += 1) {
+        await tab(browser);
+        reached = await browser.execute(() => document.activeElement?.closest('section[aria-label="Current"] .svelte-flow__node')?.getAttribute("data-id") ?? null);
+      }
+      assert.ok(reached && /^a:n00[0-2]$/.test(reached), `Tab reached an Artifact of the Current: ${reached}`);
+      assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
+      await arrowsMoveNothing(browser, reached!);
+      const name = reached!.slice(2);
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail over the Current`);
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Current's Detail closes");
     },
   ),
 
@@ -186,7 +250,7 @@ export const scenarios: Scenario[] = [
     },
     async (browser) => {
       await graphShown(browser, "a:release");
-      const run = await browser.execute(() => document.querySelector('[aria-label="Runs"] [aria-selected="true"] .id')?.textContent?.split(/\s/)[0] ?? "");
+      const run = (await branch(browser, "repo  master"))?.chips.find((chip) => chip.filled)?.id ?? "";
       assert.match(run, /^run-/);
       await browser.$("button.headline").click();
       await browser.waitUntil(async () => (await detail(browser))?.title === `Run ${run}`,
@@ -200,16 +264,123 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX journey: J-GRAPH-CAMERA; UX edges: E-GRAPH-FIRST E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
+  scenario<{ request: string }>(
+    "graph-camera-stays",
+    "shows the whole graph first, then leaves its camera to the person: the Detail and a new result never move it, Zoom Out and Fit View do",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: { request: signoff(fixture).id } };
+    },
+    async (browser, { fixture, data: { request } }) => {
+      await browser.setWindowSize(1440, 872);
+      await afterRender(browser);
+      await graphShown(browser, "a:release");
+      /** The shown graph's camera, and whether every Artifact is inside its canvas. */
+      const view = () => browser.execute(() => {
+        const ofGraph = (element: Element) => !element.closest('aside[aria-label="Detail"]');
+        const viewport = [...document.querySelectorAll<HTMLElement>(".svelte-flow__viewport")].find(ofGraph)!;
+        const canvas = [...document.querySelectorAll(".canvas")].find(ofGraph)!.getBoundingClientRect();
+        const nodes = [...document.querySelectorAll(".svelte-flow__node")].filter(ofGraph).map((node) => node.getBoundingClientRect());
+        return {
+          transform: viewport.style.transform,
+          whole: nodes.every((box) => box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom),
+        };
+      });
+      /** The camera once it holds still over a painted frame. */
+      const settled = async () => {
+        let shown = await view();
+        await browser.waitUntil(async () => {
+          const before = shown.transform;
+          await afterRender(browser);
+          shown = await view();
+          return before === shown.transform;
+        }, { timeout: 15000, timeoutMsg: "the camera held still" });
+        return shown;
+      };
+      const first = await settled();
+      assert.ok(first.whole, "the graph shows whole when it first appears");
+      const title = await mainTitle(browser);
+
+      // Opening a Detail, switching it to a neighbour and closing it leave the camera.
+      await openArtifact(browser, "a:release", "Artifact release");
+      assert.equal((await settled()).transform, first.transform, "opening the Detail moved nothing");
+      await aside(browser).$('.svelte-flow__node[data-id="a:ship"]').click();
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "the Detail switched to ship" });
+      assert.equal((await settled()).transform, first.transform, "switching the Detail moved nothing");
+      await aside(browser).$("button*=Close").click();
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
+      assert.equal((await settled()).transform, first.transform, "closing the Detail moved nothing");
+
+      // The person zooms out (a small graph first fits at the largest zoom); a new result then
+      // relights the graph in place, under their camera, not a fit of its own.
+      await browser.$(".graph .svelte-flow__controls-zoomout").click();
+      const zoomed = await settled();
+      assert.notEqual(zoomed.transform, first.transform, "Zoom Out moved the camera");
+      signOff(fixture, request);
+      await browser.waitUntil(() => browser.$('.graph .svelte-flow__node[data-id="a:release"]').getAttribute("data-light").then((light) => light === "green"),
+        { timeout: 30000, timeoutMsg: "release relit GREEN" });
+      assert.equal(await mainTitle(browser), title, "the same Run's graph stays shown");
+      assert.equal((await settled()).transform, zoomed.transform, "a new result kept the person's camera");
+      // The Run ends with nothing left needing attention: the lines above the graph go and the
+      // canvas grows, and the camera still stays. The canvas keeps that size from here on.
+      await browser.waitUntil(() => browser.execute(() => document.querySelector(".run .attention") === null),
+        { timeout: 30000, timeoutMsg: "the Run ended with nothing needing attention" });
+      assert.equal((await settled()).transform, zoomed.transform, "the Run's end kept the person's camera");
+
+      // Opening the Detail and switching it keep their camera.
+      await openArtifact(browser, "a:release", "Artifact release");
+      assert.equal((await settled()).transform, zoomed.transform, "opening the Detail kept the person's camera");
+      await aside(browser).$('.svelte-flow__node[data-id="a:ship"]').click();
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "the Detail switched to ship" });
+      assert.equal((await settled()).transform, zoomed.transform, "the person's camera stays");
+      // Widening the Detail by its edge keeps it too.
+      const edge = await aside(browser).$('[role="separator"][aria-label="Detail width"]');
+      const width = async () => (await aside(browser).getSize()).width;
+      const narrow = await width();
+      await browser.action("pointer", { id: "edge" }).move({ origin: edge, x: 0, y: 0 }).down().perform(true);
+      try {
+        const pointer = browser.action("pointer", { id: "edge" });
+        for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x: -20, y: 0 });
+        await pointer.up().perform();
+      } finally { await browser.releaseActions(); }
+      await browser.waitUntil(async () => (await width()) > narrow + 60, { timeout: 15000, timeoutMsg: "the dragged Detail widened" });
+      assert.equal((await settled()).transform, zoomed.transform, "resizing the Detail moved nothing");
+
+      // Fit View, the person's own, shows the whole graph in its whole canvas: the Detail floats
+      // over it and takes no part, so the camera is the graph's first one again.
+      await browser.$(".graph .svelte-flow__controls-fitview").click();
+      const fitted = await settled();
+      assert.ok(fitted.whole, `Fit View shows every Artifact inside the canvas: ${JSON.stringify(fitted)}`);
+      await aside(browser).$("button*=Close").click();
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
+      assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");
+      await browser.$(".graph .svelte-flow__controls-fitview").click();
+      assert.equal((await settled()).transform, fitted.transform, "Fit View without the Detail fits as with it open");
+
+      // A chip whose graph is not shown yet draws it whole: the Current, then the Run again.
+      const run = (await branch(browser, "repo  master"))!.chips.find((chip) => chip.id !== "current")!.id;
+      await chooseChip(browser, "repo  master", "current");
+      await browser.waitUntil(async () => (await mainTitle(browser)).startsWith("Current"), { timeout: 15000, timeoutMsg: "the Current shown" });
+      await graphShown(browser, "a:release");
+      assert.ok((await settled()).whole, "the Current's graph first shows whole");
+      await chooseChip(browser, "repo  master", run);
+      await browser.waitUntil(async () => (await mainTitle(browser)) === title, { timeout: 15000, timeoutMsg: "the Run shown again" });
+      await graphShown(browser, "a:release");
+      assert.ok((await settled()).whole, "the Run's graph first shows whole again");
+    },
+  ),
+
   // UX edges: E-GRAPH-BEYOND
-  scenario<Record<string, never>>(
+  scenario<{ run: string }>(
     "graph-chain-culling",
     "draws the Artifacts the camera brings into view when zooming over a chain too large to draw at once",
     async () => {
       // Even a wide desktop needs a scale below 5% to fit this chain in the split canvas.
-      const fixture = createChain(125);
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
+      return ended(createChain(125));
     },
-    async (browser) => {
+    async (browser, { data: { run } }) => {
+      await shownRun(browser, run);
       const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
       /** The chain's Artifacts drawn now and wholly inside the canvas. */
       const visible = () => browser.execute(() => {
@@ -239,18 +410,18 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-BACK
-  scenario<Record<string, never>>(
+  scenario<{ run: string }>(
     "graph-eval-tabs",
     "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, and another from the tabs",
     async () => {
-      const fixture = createEvals(["alpha", "beta", "gamma"]);
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
+      return ended(createEvals(["alpha", "beta", "gamma"]));
     },
-    async (browser, { fixture }) => {
+    async (browser, { fixture, data: { run } }) => {
+      await shownRun(browser, run);
       await graphShown(browser, "a:app");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");
-      assert.ok(opened.tabs.slice(1).every((tab) => tab.tone === "tone-green" && tab.glyph !== ""), "each eval's tab shows its GREEN glyph in GREEN");
+      assert.ok(opened.tabs.slice(1).every((tab) => tab.glyph === "✓"), "each eval's tab shows its GREEN glyph");
       assert.deepEqual(opened.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's own evals");
       assert.ok(opened.evals.every((row) => /GREEN/.test(row.status)), "with their verdicts");
       // A click on an eval of the list shows its tab: its own status, instruction and result.

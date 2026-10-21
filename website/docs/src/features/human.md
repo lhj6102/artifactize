@@ -139,12 +139,8 @@ the Agent description rules, including `{artifactName}`.
 edit = { description = "Open {artifactName} in VS Code.", kind = "launch", command = "code", args = ["{artifactPath}"] }
 ```
 
-What a tool prints shows live in the reviewer's **Tool log** while the review is
-open: each run's start line, its stdout and stderr (stderr in red) line by line,
-and its end line. A launch tool returns at once, and its program's output keeps
-arriving under the same run until it exits. A tool can therefore print what the
-person did in it, such as the choices made or a measured value, for the reviewer to
-copy from the log into the result. Nothing in the log is saved.
+What a tool prints shows live in the reviewer's [**Tool log**](tools/human.md#tool-log)
+while the review is open, for the reviewer to copy into the result.
 
 Placeholders, executable resolution and the `launch` and `output` kinds are in the
 [reference](tools/human.md#human-tools).

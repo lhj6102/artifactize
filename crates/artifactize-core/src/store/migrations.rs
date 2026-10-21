@@ -28,6 +28,17 @@ pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
                     CREATE UNIQUE INDEX active_key ON executions(key,profile_identity) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');")?;
                 version += 1;
             }
+            8 => {
+                // Definitions move to their own row; a record that does not read keeps its text.
+                transaction.execute_batch("CREATE TABLE run_definitions(run_id TEXT PRIMARY KEY REFERENCES runs(id), data TEXT NOT NULL);
+                    INSERT INTO run_definitions(run_id,data) SELECT id,json_extract(data,'$.definitions') FROM runs WHERE json_valid(data) AND json_type(data,'$.definitions')='object';
+                    UPDATE runs SET data=json_remove(data,'$.definitions') WHERE id IN (SELECT run_id FROM run_definitions);
+                    ALTER TABLE runs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE requests ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE executions ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;")?;
+                transaction.execute_batch(super::receipts::REVISIONS)?;
+                version += 1;
+            }
             version => return Err(Error::Invalid(super::schema_error(version))),
         }
         transaction.pragma_update(None, "user_version", version)?;

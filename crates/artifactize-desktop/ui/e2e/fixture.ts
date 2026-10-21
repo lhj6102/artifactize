@@ -13,7 +13,7 @@ import {
   type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
-export { createdRoots, releaseFixtures } from "./build-fixtures.ts";
+export { createdRoots, releaseFixtures, settleFixtures } from "./build-fixtures.ts";
 export { slowTool } from "./process-fixtures.ts";
 
 /** The declared immutable candidates inherited from the owning suite or tool session. */
@@ -62,7 +62,7 @@ instruction = ${JSON.stringify(signoff.instruction)}
 [evals.signoff.pass_schema]
 type = "object"
 properties.approved = { const = true }
-properties.comment = { type = "string", description = "What you checked." }
+properties.comment = { type = "string", minLength = 1, description = "What you checked." }
 ${signoff.scalars ? `properties.score = { type = "number" }
 properties.note = { type = "string" }
 properties.confirmed = { type = "boolean" }
@@ -219,37 +219,6 @@ instruction = ${JSON.stringify(`Review ${title}.`)}
 `);
 }
 
-/** Three otherwise comparable Human records: ignoring any tested filter leaves
- * extra rows. Expected identities come from the submitted Run, never from search. */
-export async function addSearchExamples(fixture: Fixture): Promise<{
-  baseQuery: string; allIds: string[];
-  tag: { term: string; id: string }; status: { term: string; id: string }; text: { term: string; id: string };
-}> {
-  const repo = nativePath(fixture.root, "search-examples");
-  humanExample(repo, "amber", "check", "AmberOnly example", ["search:target"]);
-  humanExample(repo, "blue", "check", "Blue example", ["search:other"]);
-  humanExample(repo, "cyan", "check", "Cyan example", ["search:other"]);
-  git(repo, "init", "-q", "--initial-branch=master", repo);
-  const target = { ...fixture, repo };
-  const run = await verifyWaiting(target);
-  const saved = requests(target).filter((request) => request.runId === run);
-  const named = (evalId: string) => {
-    const request = saved.find((request) => request.evalId === evalId);
-    if (!request) throw new Error(`missing search example ${evalId}`);
-    return request.id;
-  };
-  const red = named("blue/check");
-  for (const args of [["request", "claim", red, "--reviewer", "alice"],
-    ["request", "submit", red, "--reviewer", "alice", "--verdict", "RED", "--fields", "{}"]]) {
-    if (artifactize(target, ...args) !== 0) throw new Error(`cannot prepare RED search example: ${args.join(" ")}`);
-  }
-  return {
-    baseQuery: "kind:human repo:search-examples", allIds: saved.map((request) => request.id),
-    tag: { term: "tag:search:target", id: named("amber/check") },
-    status: { term: "status:red", id: red }, text: { term: "amber/check", id: named("amber/check") },
-  };
-}
-
 function deferredHuman(fixture: Fixture): string {
   const submitted = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
     "verify", "--all", "--defer-human", "--wait", "--json"], { env: environment(fixture) });
@@ -342,42 +311,142 @@ export function createChain(count: number): Fixture {
   });
 }
 
-/** Two given chronological Run batches, with independently ordered request identities. */
-export function createPagedRequests(): { fixture: Fixture; expected: string[] } {
-  const fixture = createChain(100);
-  return prepareFixture(() => {
-    const older = requests(fixture);
-    const completed = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
-      "verify", "--wait", "--artifacts", "n000,n001,n002", "--json"], { env: environment(fixture) });
-    if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
-    const newer = (JSON.parse(completed.stdout) as { requests: Saved[] }).requests;
-    // --wait observes terminal publication, not worker exit. Join every writer before
-    // installing the controlled chronology, so finalization cannot overwrite its inputs.
-    settleRuns(cli(), fixture.repo, fixture.state);
-    // This is fixture setup, not an observation: explicit times make the two batches
-    // genuinely older/newer without depending on clock resolution or elapsed time.
-    updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
-      for (const [batch, created] of [[older, "2000-01-01T00:00:00.000000000Z"],
-        [newer, "2000-01-02T00:00:00.000000000Z"]] as const) {
-        db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, batch[0].runId);
-        for (const request of batch) db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
+/**
+ * Give the saved Runs `runs` and their requests explicit creation times, oldest first, a minute
+ * apart and ending a minute ago: their order never depends on the clock's resolution or on how
+ * fast the writers ran. A Run still waiting keeps them: its later writes read the record first.
+ */
+export function orderRuns(fixture: Fixture, runs: readonly string[]): void {
+  const saved = requests(fixture);
+  const now = Date.now();
+  updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
+    runs.forEach((id, index) => {
+      // The saved form: nanoseconds, UTC.
+      const created = new Date(now - (runs.length - index) * 60_000).toISOString().replace(/\.(\d{3})Z$/, ".$1000000Z");
+      if (db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, id).changes !== 1) {
+        throw new Error(`Run ${id} was not dated`);
+      }
+      for (const request of saved.filter((request) => request.runId === id)) {
+        db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, request.id);
       }
     });
-    const identity = (batch: Saved[], count: number) => Array.from({ length: count }, (_, index) => {
-      const evalId = `n${String(index).padStart(3, "0")}/check`;
-      const request = batch.find((request) => request.evalId === evalId);
-      if (!request) throw new Error(`missing fixture request ${evalId}`);
-      return request.id;
-    });
-    return { fixture, expected: [...identity(newer, 3), ...identity(older, 100)] };
+  });
+}
+
+/**
+ * A one-Artifact repository verified GREEN `count` times in a row, with no Run in progress: a
+ * branch whose chip row holds more Runs than it first shows. Returns the Runs, oldest first.
+ */
+export function createHistory(count: number): { fixture: Fixture; runs: string[] } {
+  const fixture = createChain(1);
+  return prepareFixture(() => {
+    const runs = savedRuns(fixture).map((run) => run.id);
+    while (runs.length < count) {
+      const completed = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json"],
+        { env: environment(fixture) });
+      if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+      runs.push((JSON.parse(completed.stdout) as { id: string }).id);
+    }
+    // Join every writer before the app reads the Runs, so none of them is still in progress.
+    settleRuns(cli(), fixture.repo, fixture.state);
+    orderRuns(fixture, runs);
+    return { fixture, runs };
   }, fixture.root);
 }
 
 /**
+ * One branch `shared` verified from two folders by two callers: first in the worktree `first`
+ * by a person, then, once that worktree was removed, in the worktree `second` by an agent
+ * session (its retry-safe attempt key, as an agent's `verify_start` saves it). With the
+ * repository's own Run on `master` before them; returns the Runs, oldest first.
+ */
+export function createSharedBranch(): { fixture: Fixture; master: string; shared: string[] } {
+  const fixture = createChain(1);
+  return prepareFixture(() => {
+    const [master] = savedRuns(fixture).map((run) => run.id);
+    git(fixture.repo, "-C", fixture.repo, "add", ".");
+    git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Fixture inputs");
+    const verify = (repo: NativePath, ...args: string[]) => {
+      const completed = runProgram(cli(), ["--repo", repo, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json", ...args],
+        { env: environment(fixture) });
+      if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+      return (JSON.parse(completed.stdout) as { id: string }).id;
+    };
+    const first = nativePath(fixture.root, "first");
+    git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "shared", first);
+    const byPerson = verify(first);
+    settleRuns(cli(), first, fixture.state);
+    git(fixture.repo, "-C", fixture.repo, "worktree", "remove", "--force", first);
+    const second = nativePath(fixture.root, "second");
+    git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", second, "shared");
+    const byAgent = verify(second, "--request-key", "agent-session.e2e-1");
+    settleRuns(cli(), second, fixture.state);
+    orderRuns(fixture, [master, byPerson, byAgent]);
+    return { fixture, master, shared: [byPerson, byAgent] };
+  }, fixture.root);
+}
+
+/** A folder `name` outside Git beside the fixture's repository, in the same state, that is itself
+ * an Artifact `plain` verified GREEN; returns its path and its Run. */
+export function addFolder(fixture: Fixture, name: string): { folder: NativePath; run: string } {
+  const folder = nativePath(fixture.root, name);
+  writeText(nativePath(makeDirectory(folder), "index.artf"), `name = "plain"
+
+[evals.check]
+title = "Check plain"
+profile = ${runtimeProfile()}
+
+[evals.check.payload]
+instruction = """
+Check the plain folder."""
+`);
+  const completed = runProgram(cli(), ["--repo", folder, "--state-dir", fixture.state, "verify", "--all", "--wait", "--json"], { env: environment(fixture) });
+  // Its Run ended with the wait; settling here would also cancel the state's waiting Runs.
+  if (completed.status !== 0) throw new Error(completed.stderr || completed.stdout);
+  return { folder, run: (JSON.parse(completed.stdout) as { id: string }).id };
+}
+
+/** Change release's notes: its sign-off's inputs change, so the next verify asks a person again. */
+export function changeNotes(fixture: Fixture, text: string): void {
+  writeText(nativePath(fixture.repo, "release", "notes.md"), text);
+}
+
+/** Sign the waiting request `id` off GREEN with `fields` as bob through the CLI, as another process. */
+export function signOff(fixture: Fixture, id: string, fields = '{"approved":true,"comment":"ok"}', reviewer = "bob"): void {
+  for (const args of [["request", "claim", id, "--reviewer", reviewer],
+    ["request", "submit", id, "--reviewer", reviewer, "--verdict", "GREEN", "--fields", fields]]) {
+    if (artifactize(fixture, ...args) !== 0) throw new Error(`cannot sign off ${id}: ${args.join(" ")}`);
+  }
+}
+
+/** The status Run `run` ends with, observed by the CLI once it has ended. */
+export function ended(fixture: Fixture, run: string): string {
+  const shown = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", run, "--wait", "--json"], { env: environment(fixture) });
+  if (![0, 1, 2, 4, 5].includes(shown.status)) throw new Error(shown.stderr || `cannot observe Run ${run}`);
+  return (JSON.parse(shown.stdout) as { status: string }).status;
+}
+
+/** A repository `name` beside the fixture's, in the same state, whose `count` Artifacts each
+ * wait for a person's sign-off; returns their requests. */
+export async function addWaiting(fixture: Fixture, name: string, count: number): Promise<string[]> {
+  const repo = nativePath(fixture.root, name);
+  for (let index = 0; index < count; index += 1) {
+    humanExample(repo, `gate${String(index).padStart(2, "0")}`, "signoff", `Gate ${index} approval`);
+  }
+  git(repo, "init", "-q", "--initial-branch=master", repo);
+  const target = { ...fixture, repo };
+  const run = await verifyWaiting(target);
+  return requests(target).filter((request) => request.runId === run).map((request) => request.id);
+}
+
+/** A saved Run's selection as written, and as a version that no longer reads it would see it. */
+const [readableSelection, unreadableSelection] = ['"selection":{"kind":"all"}', '"selection":{"kind":"dependency"}'];
+
+/**
  * One GREEN Artifact `n000` verified four times. The three older Runs are rewritten as Runs saved
- * with a profile kind this version no longer reads (as before `dependency` was removed), so they
- * cannot be read; the newest stays readable. `restore` writes them back as they were saved, so
- * teardown settles every Run through the public CLI.
+ * with a selection kind this version does not read, so the list of Runs cannot read them; the
+ * newest stays readable. `restore` writes them back as they were saved, so teardown settles every
+ * Run through the public CLI.
  */
 export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture; readable: string; unreadable: string[]; restore: () => void } {
   const fixture = createChain(1);
@@ -411,10 +480,26 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
         }
       });
     });
-    const [current, removed] = ['"kind":"runtime"', '"kind":"dependency"'];
-    rewrite(current, removed);
-    return { fixture, readable: runs[3], unreadable, restore: () => rewrite(removed, current) };
+    rewrite(readableSelection, unreadableSelection);
+    return {
+      fixture, readable: runs[3], unreadable,
+      restore: () => {
+        rewrite(unreadableSelection, readableSelection);
+        // The readable Run too, if a case spoiled it.
+        if (!allUnreadable) updateDatabase(database, (db) => db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3").run(unreadableSelection, readableSelection, runs[3]));
+      },
+    };
   }, fixture.root);
+}
+
+/** Make `run` of a fixture from {@link createUnreadableRuns} unreadable too, as a write by
+ * another version would; that fixture's restore undoes it. */
+export function spoilRun(fixture: Fixture, run: string): void {
+  updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
+    if (db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run(readableSelection, unreadableSelection, run).changes !== 1) {
+      throw new Error(`Run ${run} was not rewritten`);
+    }
+  });
 }
 
 /**
@@ -501,6 +586,41 @@ export function createEvals(names: string[]): Fixture {
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
     if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    return fixture;
+  });
+}
+
+/**
+ * A repository verified once, its Run ended RED: `red` fails, `down` runs after it and so is
+ * blocked, and `app`'s three evals passed. Afterwards two of `app`'s instructions changed, so
+ * a Current would run those two and reuse the third.
+ */
+export function createMixed(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    const check = (name: string, operation: Operation, instruction: string, title = `Check ${name}`) => `
+[evals.${name}]
+title = "${title}"
+profile = ${runtimeProfile(operation)}
+
+[evals.${name}.payload]
+instruction = """
+${instruction}"""
+`;
+    writeText(nativePath(makeDirectory(nativePath(repo, "red")), "index.artf"), `name = "red"\n${check("check", "fail", "Fail.")}`);
+    writeText(nativePath(makeDirectory(nativePath(repo, "down")), "index.artf"), `name = "down"\n${check("check", "pass", "Run after {red}.")}`);
+    // alpha's title is wider than the Detail: its row wraps the title, never its status.
+    const title = "Alpha follows every rule of the frontend checklist the desktop UI keeps, from its state owners to its effects";
+    const app = (changed: boolean) => `name = "app"\n${check("alpha", "pass", "Check alpha.", title)}${
+      check("beta", "pass", changed ? "Check beta again." : "Check beta.")}${check("gamma", "pass", changed ? "Check gamma again." : "Check gamma.")}`;
+    writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), app(false));
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 1) throw new Error(`verify exited ${status}, expected 1 (RED)`);
+    settleRuns(cli(), repo, state);
+    writeText(nativePath(repo, "app", "index.artf"), app(true));
     return fixture;
   });
 }

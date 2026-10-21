@@ -4,7 +4,10 @@ This walkthrough reuses [examples/runtime-relations](https://github.com/lhj6102/
 Alice and Bob each have a checkout and their own state directory. CI has a third
 checkout. One `artifactize server` holds the shared verdicts. You can run every
 step on one computer. Each "machine" is just a `--state-dir`, and `USER` sets
-the producer name.
+the producer name. The commands are for a POSIX shell (Linux, macOS or WSL) opened
+at the root of an artifactize checkout
+([`git clone https://github.com/lhj6102/artifactize`](https://github.com/lhj6102/artifactize)),
+which holds `examples/`.
 
 ```sh
 export WALK=$(mktemp -d)            # outside any Git checkout
@@ -130,10 +133,12 @@ CI is configured through the environment only. It uses the read-only `ci` token
 from step 1, here supplied as the `CI_TOKEN` secret variable. Configure that value
 through your CI's secret settings, never in a committed file. `--reuse-only
 agent,human` ensures Agent reviews and Human sign-offs come only from the store
-or cache. For the local demonstration, first copy `WALK` into this terminal too:
+or cache. For the local demonstration, first copy `WALK` into this terminal too, and
+paste the token that `server token add ci` printed in step 1 as `CI_TOKEN`:
 
 ```sh
 export WALK='/path/from/setup'
+export CI_TOKEN='token-printed-for-ci'
 cp -r "$WALK/bob" "$WALK/ci" && cd "$WALK/ci"
 ARTIFACTIZE_STATE_HOME="$WALK/state-ci" \
 ARTIFACTIZE_REMOTE=http://127.0.0.1:8417/ \

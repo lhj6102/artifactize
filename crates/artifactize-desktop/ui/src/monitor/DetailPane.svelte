@@ -1,27 +1,32 @@
 <script lang="ts">
-  // The Detail of an Artifact or of the Run, floating over the graph. An Artifact's Detail has
-  // tabs, a chip choice that reads as a path: `[Artifact icon] {name} / [eval] [eval] …`. The Artifact's
-  // own lists its evals with their verdicts; then comes one per eval. An eval's tab shows its Summary or its log (an Agent's transcript, a runtime's
-  // saved output), or the shared Human Detail. Its width is the Detail's: everything in it wraps
-  // or scrolls in its own box.
+  // The Detail of an Artifact or of the Run, floating over the graph of a Run or a Current. An
+  // Artifact's Detail has tabs, a chip choice that reads as a path: `[Artifact icon] {name} /
+  // [eval] [eval] …`. The Artifact's own draws it between its neighbours, lists its evals with
+  // their verdicts (on a Current whether each would run or be reused), then its own Human tools
+  // and their Tool log; then comes one tab per eval. An eval's tab shows its Summary or its log
+  // (an Agent's transcript, a runtime's saved output), or in a Run the shared Human Detail. Its
+  // width is the Detail's: everything in it wraps or scrolls in its own box.
+  import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, message, type TreeNode } from "../ipc/client";
-  import { getAppState } from "../shell/app.svelte";
+  import { call, useIpc, message, type BranchView, type Source } from "../ipc/client";
   import type { Review } from "../review/review.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
+  import { keyOf } from "./monitor-state.svelte";
   import Panel from "../shell/Panel.svelte";
   import RecordDetail from "./RecordDetail.svelte";
   import Neighbours from "./Neighbours.svelte";
+  import ArtifactTools from "./ArtifactTools.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
   import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let {
-    run,
+    source,
+    revision,
+    branch,
     node,
     tab,
-    tree,
     focused,
     active,
     review,
@@ -31,16 +36,20 @@
     ontab,
     onopen,
     onback,
+    ongone,
   }: {
-    run: string;
+    /** The Run or Current the Detail is of. */
+    source: Source;
+    /** The snapshot's or scan's revision: the Detail reads again when it grows. */
+    revision: number;
+    /** The branch shown: an Artifact's tools run in its worktree. */
+    branch: BranchView | null;
     /** The Artifact (or the Run) the Detail is of. */
     node: string;
     /** The eval whose tab is shown, or `null` for the Artifact's own. */
     tab: string | null;
-    /** The Run's tree: an Artifact's evals and their verdicts come from there. */
-    tree: TreeNode[];
     focused: boolean;
-    /** The Monitor is the shown screen; only then its review offers palette commands. */
+    /** The Main area shows this Detail; only then its review offers palette commands. */
     active: boolean;
     review: (id: string) => Review | undefined;
     /** Open the Review of a request: called as its Detail arrives. */
@@ -52,13 +61,17 @@
     /** Open another Artifact's Detail: a neighbour in the Artifact tab. */
     onopen: (node: string) => void;
     onback: () => void;
+    /** The Run no longer has the node: the Detail has nothing left to show. */
+    ongone: () => void;
   } = $props();
   const commands = useIpc();
   const d = new DetailPaneState();
   setDetailPaneState(d);
-  const { browse } = getAppState();
+  const key = $derived(keyOf(source));
 
-  const row = $derived(tree.find((top) => top.id === node) ?? null);
+  /** The node's row of the Run's or Current's tree: an Artifact's evals and their verdicts come
+   * from there. */
+  const row = $derived(d.row?.source === key && d.row.view.id === node ? d.row.view : null);
   const evals = $derived(row?.kind === "artifact" ? row.children : []);
   const tabbed = $derived(row?.kind === "artifact");
   /** The node whose Detail is read: the shown eval, else the Artifact or the Run. */
@@ -76,11 +89,22 @@
     d.folds = { node: target, technical, pending, log, debug, ...change };
   }
 
-  /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
+  /** Read again for every new snapshot or scan; the Detail and the node's row come from the
+   * backend's copy. */
   const read: Attachment<HTMLElement> = () => {
-    void browse.revision;
-    const [at, wanted] = [run, target];
+    void revision;
+    const [at, wanted, of] = [source, target, node];
     let current = true;
+    call(commands.detailRow(at, of)).then(
+      (view) => {
+        if (!current) return;
+        if (view) d.row = { source: keyOf(at), view };
+        else ongone();
+      },
+      (failure) => {
+        if (current) d.error = message(failure);
+      },
+    );
     call(commands.detail(at, wanted)).then(
       (view) => {
         if (current) {
@@ -100,7 +124,7 @@
   };
 
   /** Only this node's Detail: another node's, still held while this one is read, is not. */
-  const detail = $derived(d.detail?.run === run && d.detail.node === target ? d.detail : null);
+  const detail = $derived(d.detail && keyOf(d.detail.source) === key && d.detail.node === target ? d.detail : null);
   const human = $derived(detail?.profile === "human" && detail.request !== null);
   /** An Artifact's or an eval's Summary keeps its technical facts under Debug; a Run's
    * sections keep theirs under Technical. */
@@ -112,6 +136,14 @@
     const reviewing = human && detail?.request ? review(detail.request) : undefined;
     return reviewing !== undefined && (reviewing.busy !== null || reviewing.editing);
   });
+
+  /** An eval chosen from the Artifact tab's list: the list goes with that tab, so the keyboard
+   * moves to the chosen eval's chip rather than out of the Detail. */
+  async function showEval(id: string) {
+    ontab(id);
+    await tick();
+    element?.querySelector<HTMLElement>(`[role="tab"][data-tab="${CSS.escape(id)}"]`)?.focus();
+  }
 
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
@@ -150,11 +182,11 @@
     {/if}
     <div class="content" class:listing={tabbed && tab === null} role={tabbed ? "tabpanel" : undefined}>
       {#if tabbed && row && tab === null}
-        <Neighbours {run} {node} {onopen} />
+        <Neighbours {source} {revision} {node} {onopen} />
         <ul class="evals" aria-label="Evals of {row.name}">
           {#each evals as item (item.id)}
             <li>
-              <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => ontab(item.id)}>
+              <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => void showEval(item.id)}>
                 <span class="glyph {tone(item.tone)}">{item.glyph}</span>
                 <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
                 <span class="status">
@@ -167,6 +199,9 @@
             <li class="muted none">No evals.</li>
           {/each}
         </ul>
+        {#if branch}
+          {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
+        {/if}
       {/if}
       {#if d.error}
         <p class="error">{d.error}</p>
@@ -254,9 +289,11 @@
     margin: 0 0 10px;
     padding: 0;
   }
+  /* The name and status take their words first, never cut inside one; the title takes what is
+     left and wraps there. */
   .eval {
     display: grid;
-    grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr) auto;
+    grid-template-columns: 16px minmax(0, auto) auto minmax(0, 1fr);
     gap: 8px;
     width: 100%;
     margin: 0;
@@ -271,8 +308,11 @@
   .eval:hover {
     background: var(--surface-2);
   }
-  .eval .name,
-  .eval .status {
+  .eval .name {
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+  .eval .right {
     min-width: 0;
     overflow-wrap: anywhere;
   }

@@ -21,6 +21,11 @@ const STATUS: Record<Status, Tone> = {
   BASIS: "muted",
 };
 
+/** The theme colour of a status, as a CSS value, for what a tone class cannot reach (a tint). */
+export function toneColour(status: Status): string {
+  return `var(--${STATUS[status]})`;
+}
+
 /** The theme class of a status, or of a tone. */
 export function tone(value: Status | Tone | null | undefined): string {
   if (!value) return "";

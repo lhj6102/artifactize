@@ -30,8 +30,8 @@ eval depends on changes its fingerprint. To narrow a folder's inputs:
 fingerprint = { files = ["src"], ignore = ["*.log"] }
 ```
 
-- `files`: 1–64 unique owner-relative paths, default `["."]` (the owner's own
-  files). Each must exist and stay inside the Artifact: paths into child Artifacts
+- `files`: 1–64 unique owner-relative paths of up to 1024 UTF-16 code units each,
+  default `["."]` (the owner's own files). Each must exist and stay inside the Artifact: paths into child Artifacts
   are rejected. Directory walks skip child Artifact folders and every
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
   not silently skipped. A directory whose name ends in `.artf` is an invalid

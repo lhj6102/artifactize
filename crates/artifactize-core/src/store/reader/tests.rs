@@ -56,13 +56,8 @@ fn read(
         .snapshot(state, |db, cache, state| {
             cache.catalog(db, state)?;
             let page = cache.page(db, state, None, limit, 0, Some(id))?;
-            let audit = page
-                .iter()
-                .find(|run| &run.id == id)
-                .unwrap()
-                .unreadable
-                .clone();
-            let selected = cache.selected(db, state, id, Some(audit), false)?;
+            assert!(page.iter().any(|run| &run.id == id));
+            let selected = cache.selected(db, state, id, false)?;
             cache.identity(db)?;
             Ok(selected)
         })
@@ -360,13 +355,21 @@ async fn one_snapshot_preserves_known_requests_and_missing_duplicate_definitions
         true
     );
     assert!(views[1].definition.is_none());
-    for definitions in [
+    for (n, definitions) in [
         Value::Null,
         json!({}),
         json!({"artifacts":null,"evals":null}),
-    ] {
-        saved.definitions = serde_json::from_value(definitions).unwrap();
-        receipts.save_run(&saved).await.unwrap();
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = format!("run-{}", n + 2);
+        saved = run(&id, &repo, &state, definitions);
+        let good = request(&id, "app", "GREEN", &repo);
+        receipts
+            .create_run(&saved, std::slice::from_ref(&good))
+            .await
+            .unwrap();
         assert!(
             store::read_request(&state, &good.id)
                 .await
@@ -388,7 +391,7 @@ async fn snapshot_keeps_old_evidence_while_a_wal_writer_commits_and_then_reconci
             let writer = Connection::open(path).unwrap();
             writer.execute("UPDATE requests SET status='QUEUED',data=json_set(data,'$.status','QUEUED','$.result',NULL) WHERE id='run-0-a0'", []).unwrap();
         }).join().unwrap();
-        let selected = cache.selected(db, &state, &id, None, false)?.unwrap();
+        let selected = cache.selected(db, &state, &id, false)?.unwrap();
         assert_eq!(before, "GREEN");
         assert_eq!(selected.1[0].request.status(), crate::types::RequestStatus::Green);
         Ok(())
@@ -573,7 +576,7 @@ async fn failed_snapshot_cannot_suppress_the_next_accepted_changed_view() {
     )
     .unwrap();
     let failed = reader.snapshot(&state, |db, cache, state| -> Result<(), Error> {
-        assert!(cache.selected(db, state, &id, None, false)?.is_some());
+        assert!(cache.selected(db, state, &id, false)?.is_some());
         Err(Error::Invalid("snapshot rejected after reading".into()))
     });
     assert!(failed.is_err());
@@ -626,4 +629,32 @@ async fn pinned_newer_run_preserves_visible_created_time_and_rowid_tie_order() {
         ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
         ["run-4", "run-2", "run-1"]
     );
+}
+#[tokio::test]
+async fn a_run_saved_again_keeps_its_definitions_as_saved_with_the_run() {
+    // A long Run saves its state on every execution it starts. Its definitions, the largest part
+    // of it, were written once with the Run: no save rewrites them, and the reader that opened
+    // the Run decodes them once and shares them with every later snapshot.
+    let (_root, _repo, state, receipts) = fixture(2, 1).await;
+    let mut reader = Reader::default();
+    let id = "run-0".parse().unwrap();
+    let first = read(&mut reader, &state, &id, 2).unwrap().0;
+    let mut saved = first.run.clone();
+    saved.jobs = Some(7);
+    saved.definitions =
+        serde_json::from_value(json!({"artifacts":{"web":{"path":"web"}},"evals":[]})).unwrap();
+    receipts.save_run(&saved).await.unwrap();
+    let second = read(&mut reader, &state, &id, 2).unwrap().0;
+    assert_eq!(second.run.jobs, Some(7));
+    assert!(second.run.definitions.shared(&first.run.definitions));
+    let fresh = store::read_run(&state, "run-0").await.unwrap();
+    let artifacts = fresh
+        .run
+        .definitions
+        .graph()
+        .unwrap()
+        .artifacts
+        .value()
+        .unwrap();
+    assert!(artifacts.contains_key("app") && !artifacts.contains_key("web"));
 }

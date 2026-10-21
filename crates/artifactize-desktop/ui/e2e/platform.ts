@@ -273,6 +273,13 @@ export function isolatedEnvironment(root: NativePath, drop: (name: string) => bo
     for (const key of Object.keys(environment)) if (key.toUpperCase() === name) delete environment[key];
     environment[name] = makeDirectory(nativePath(root, directory), { private: true });
   }
+  // WebView2 finds its default storage through the Windows known folders, which ignore the
+  // variables above; this variable takes precedence over the folder the app passes, so the
+  // web storage of each fixture, kept across its own relaunch, is private to it.
+  if (WINDOWS) {
+    for (const key of Object.keys(environment)) if (key.toUpperCase() === "WEBVIEW2_USER_DATA_FOLDER") delete environment[key];
+    environment.WEBVIEW2_USER_DATA_FOLDER = makeDirectory(nativePath(root, "webview"), { private: true });
+  }
   for (const key of Object.keys(environment)) {
     if (["HOMEDRIVE", "HOMEPATH", "USER", "USERNAME", "LOGNAME"].includes(key.toUpperCase())) delete environment[key];
   }

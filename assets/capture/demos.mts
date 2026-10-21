@@ -8,14 +8,16 @@
 //
 // The demos (assets/demos/):
 //   A. review-loop.gif — an example shaped like this repository (core, cli, tui, mcp, docs,
-//      site, release) goes through four Runs of real `verify`, recorded from the Monitor and
-//      played back fast. Each eval is a runtime check that fails while its Artifact's code.txt
+//      site, release) goes through four Runs of real `verify`, recorded from the app with its
+//      branch expanded in the Pane, each new Run shown from its timeline in the Main area, and played back
+//      fast. Each eval is a runtime check that fails while its Artifact's code.txt
 //      contains BUG; between Runs this script removes the BUG it just saw, as an AI would fix
 //      the code. Try 1 fails mcp and site; try 2 reuses the rest at once and fails docs partway;
 //      try 3 fails release near the end; try 4 passes to the end and is SATISFIED. An overlay
 //      names the try and the speed.
 //   B. graph-growth.gif — this repository's own Artifact graph, release by release from the
-//      history of main, in the graph view, with the release in its top-left corner. One blank
+//      history of main, in the app opened by `graph --repo` on the branch's Current, with the
+//      release in the graph's top-left corner. One blank
 //      step says 0.1.0–0.6.0 had no Artifacts yet; the graph starts at 0.7.0 and ends at the
 //      current main. examples/ is left out. Declarations the current app no longer reads
 //      are converted once to the current format: 0.7–0.8's artifactize.json, and dependency
@@ -142,6 +144,19 @@ type Frame = { file: string; at: number };
 /** A stretch of the GIF: its frames, how much faster than recorded they play, the caption
  * for its whole length, and how long its last frame stays. */
 type Segment = { frames: Frame[]; speed: number; caption: string; hold: number };
+/** A demo's segments, and where its captions go: the graph's top-left corner, in window pixels. */
+type Recording = { segments: Segment[]; at: { x: number; y: number } };
+
+/** Inside the top-left corner of the element `selector` names, as drawn now, below the graph's
+ * legend and clear of the lines above it: a caption box reaches 18 px past its text. */
+async function corner(browser: WebdriverIO.Browser, selector: string): Promise<{ x: number; y: number }> {
+  const box = await browser.execute((query) => {
+    const rect = document.querySelector(query)?.getBoundingClientRect();
+    return rect ? { x: rect.left, y: rect.top } : null;
+  }, selector);
+  if (!box) throw new Error(`${selector} is not drawn`);
+  return { x: Math.round(box.x + 28), y: Math.round(box.y + 72) };
+}
 
 /** Take frames until `done` resolves and the app shows the final state `final` waits for,
  * then one more, so that final state is the recording's last frame. */
@@ -284,7 +299,7 @@ payload.instruction = "Run the ${id} of {${artifact.name}}${uses ? ` with ${uses
   }
 }
 
-async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Segment[]> {
+async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
   const root = join(candidate.root, "fixtures", "fixture-review-loop");
   // The build's cleanup settles the Runs of fixture roots laid out as root/repo and root/state.
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
@@ -292,25 +307,32 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   loopProject(root, fixture.repo);
   e2e.git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
   const env = e2e.environment(fixture);
-  const browser = await launch(service, candidate.app, ["--state-dir", fixture.state, "--reviewer", "alice"], env);
+  // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
+  const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
   const segments: Segment[] = [];
+  // The graph's top-left corner, below however many attention lines a Run's headline has.
+  let at = { x: 0, y: 0 };
+  /** The Main area while it shows the Run `id`. */
+  const MAIN = 'section.panel[aria-label="Main area"]';
   try {
-    const first = '[aria-label="Runs"] [data-index="0"]';
-    /** The Run `id`'s panel shows its own graph, not the one drawn before it was opened: a
+    const chip = (id: string) => `[aria-label="Branches"] button[data-chip="${id}"]`;
+    /** The Main area shows the Run `id`'s own graph, not the one drawn before it was opened: a
      * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
-    const opened = (id: string) => browser.execute((id, edges) => {
-      const canvas = document.querySelector(`[aria-label="Run ${id}"] .svelte-flow`);
+    const opened = (id: string) => browser.execute((id, main, edges) => {
+      const panel = document.querySelector(main);
+      const canvas = panel?.querySelector(":scope > header h2")?.textContent?.trim() === `Run ${id}` ? panel?.querySelector(".run .svelte-flow") : null;
       const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
       const box = node?.getBoundingClientRect();
       const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
       return !!canvas && (canvas !== before?.canvas || before.run === `Run ${id}`) && !!box && box.width > 0
         && canvas.querySelectorAll(".svelte-flow__edge").length === edges
         && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
-    }, id, EDGES());
+    }, id, MAIN, EDGES());
     /** The Run `id` ended and its graph is drawn and lit as it ended: every Artifact settled,
      * exactly `fails` red, and every edge drawn. */
-    const ended = (id: string, fails: string[]) => browser.execute((id, fails, count, edges) => {
-      const panel = document.querySelector(`[aria-label="Run ${id}"]`);
+    const ended = (id: string, fails: string[]) => browser.execute((id, main, fails, count, edges) => {
+      const shown = document.querySelector(main);
+      const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === `Run ${id}` ? shown?.querySelector(".run") : null;
       // Every edge drawn as a visible line, not only present in the page.
       const lines = [...(panel?.querySelectorAll<SVGPathElement>(".svelte-flow__edge path.svelte-flow__edge-path") ?? [])].filter((line) => {
         const box = line.getBoundingClientRect();
@@ -321,22 +343,22 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       return (panel?.querySelector(".headline")?.textContent ?? "").includes("at Run end") && lights.length === count
         && lights.every(([, light]) => light !== "waiting" && light !== "active")
         && lights.filter(([, light]) => light === "red").map(([node]) => node.slice(2)).sort().join() === [...fails].sort().join();
-    }, id, fails, LOOP.length, EDGES());
+    }, id, MAIN, fails, LOOP.length, EDGES());
     for (const [index, fails] of FAILS.entries()) {
       const frames = join(work, `loop-${index + 1}`);
       mkdirSync(frames);
       const started = run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], { env: { ...env } });
       const id = (JSON.parse(started) as { run: string }).run;
-      // Open the new Run as soon as the Monitor lists it first, then record it until it ends.
-      await browser.waitUntil(() => browser.$(first).getText().then((text) => text.includes(id), () => false),
-        { timeout: WAIT, timeoutMsg: `the Monitor lists ${id}` });
-      await browser.execute(() => {
-        const canvas = document.querySelector(".svelte-flow");
-        const run = canvas?.closest("[aria-label^='Run ']")?.getAttribute("aria-label") ?? null;
+      // Show the new Run as soon as it starts the branch's timeline, then record it until it ends.
+      await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's timeline starts with ${id}` });
+      await browser.execute((main) => {
+        const shown = document.querySelector(main);
+        const canvas = shown?.querySelector(".run .svelte-flow") ?? null;
+        const run = canvas ? shown?.querySelector(":scope > header h2")?.textContent?.trim() ?? null : null;
         (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before = { canvas, run };
-      });
-      await browser.$(first).click();
-      await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Monitor draws ${id}'s graph` });
+      }, MAIN);
+      await browser.$(chip(id)).click();
+      await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Main area draws ${id}'s graph` });
       // `run show --wait` exits with the Run's outcome: 0 when it is satisfied.
       const settled = new Promise<{ code: number | null; text: string }>((done, failed) => {
         const watcher = spawn(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", id, "--wait", "--json"], { env });
@@ -346,6 +368,8 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         watcher.once("close", (code) => done({ code, text }));
       });
       segments.push({ frames: await record(browser, frames, settled, () => ended(id, fails)), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
+      const area = await corner(browser, `${MAIN} .run .area`);
+      at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
       const { code, text } = await settled;
       const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string }[] };
       const red = [...new Set(view.requests.filter((request) => request.status === "RED").map((request) => request.evalId.split("/")[0]))].sort();
@@ -362,7 +386,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   } finally {
     await service.cleanupWdioSession(browser);
   }
-  return segments;
+  return { segments, at };
 }
 
 /** The release tags of `main`, oldest first: vX.Y.Z without a pre-release part. */
@@ -428,7 +452,7 @@ function checkout(ref: string, tree: string): void {
   }
 }
 
-async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Segment[]> {
+async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
   const root = join(candidate.root, "fixtures", "fixture-graph-growth");
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   // The remote's main when this checkout has one: a local main is often behind it.
@@ -447,22 +471,40 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
   checkout(steps[0].ref, fixture.repo);
   const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
+  let at = { x: 0, y: 0 };
   try {
     for (const [index, step] of steps.entries()) {
       if (index > 0) {
         checkout(step.ref, fixture.repo);
         await browser.$("button=Refresh").click();
       }
-      await browser.waitUntil(() => browser.execute(() => !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
-        && document.querySelectorAll(".current .svelte-flow__node").length > 0), { timeout: WAIT, timeoutMsg: `${step.caption}'s graph is drawn` });
+      // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
+      // edge for every relation between two of them, as the Current draws them. The graph drawn
+      // is this release's only once its nodes and edges are exactly these, never the previous one's.
+      const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
+        { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string }[] };
+      const names = new Set(Object.keys(graph.artifacts));
+      const expected = [
+        [...names].map((name) => `a:${name}`).sort().join(" "),
+        [...new Set(graph.relations.filter(({ source, target }) => source !== target && names.has(source) && names.has(target))
+          .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
+      ].join("\n");
+      await browser.waitUntil(() => browser.execute((expected) => {
+        const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
+        return !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
+          && `${ids(".current .svelte-flow__node")}\n${ids(".current .svelte-flow__edge")}` === expected;
+      }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: every node drawn inside the canvas, every edge drawn as a visible
-      // line, and nothing (nodes, edges, camera) changing over 300 ms.
-      const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean]>((inside, done) => {
+      // Complete and still: exactly this release's nodes and edges, every node drawn inside the
+      // canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
+      // over 300 ms.
+      const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {
           const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
+          const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
+          if (`${ids(".current .svelte-flow__node")}\n${ids(".current .svelte-flow__edge")}` !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
             const box = line.getBoundingClientRect();
@@ -477,12 +519,13 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         };
         const before = shown();
         setTimeout(() => done(before !== null && before === shown()), 300);
-      }, inside), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is drawn${inside ? " in view" : ""}` });
+      }, inside, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is drawn${inside ? " in view" : ""}` });
       // Refresh keeps the camera: once the grown graph is drawn, fit it into view the way a
       // person would.
       await drawn(false);
       await browser.$(".current .svelte-flow__controls-fitview").click();
       await drawn(true);
+      at = await corner(browser, ".current .canvas");
       const file = join(frames, `${step.caption}.png`);
       writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
       segments.push({ frames: [{ file, at: 0 }], speed: 1, caption: step.caption, hold: GIF.step });
@@ -490,7 +533,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   } finally {
     await service.cleanupWdioSession(browser);
   }
-  return segments;
+  return { segments, at };
 }
 
 /** Record every demo into `output`, building and keeping frames in `work`. */
@@ -507,9 +550,9 @@ async function capture(output: string, work: string): Promise<void> {
     const loop = await reviewLoop(service, e2e, candidate, frames);
     const growth = await graphGrowth(service, e2e, candidate, frames);
     mkdirSync(output, { recursive: true });
-    // Each caption sits inside the graph's canvas, clear of the app's own header lines.
-    const gifs = [[DEMOS[0], loop, { x: 490, y: 190 }], [DEMOS[1], growth, { x: 28, y: 180 }]] as const;
-    for (const [name, segments, at] of gifs) {
+    // Each caption sits inside the graph's canvas, clear of the Pane and the app's own header lines.
+    const gifs = [[DEMOS[0], loop], [DEMOS[1], growth]] as const;
+    for (const [name, { segments, at }] of gifs) {
       // Write beside the old GIF and replace it whole, so a failed encode keeps the last one.
       const gif = join(output, name);
       encode(segments, `${gif}.new.gif`, work, at);

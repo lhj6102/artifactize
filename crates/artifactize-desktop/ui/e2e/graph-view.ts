@@ -1,5 +1,5 @@
-// The Monitor's Run graph as a person sees it: the Artifact that has the keyboard, and the Detail
-// a click opens over the graph's right side with its tabs. Every reading is read-only; a timeout
+// A Run's or a Current's graph in the Main area as a person sees it: the Artifact that has the
+// keyboard, and the Detail a click opens over the graph's right side with its tabs. Every reading is read-only; a timeout
 // reports what the window showed instead.
 
 /** The Artifact node with keyboard focus (`a:<name>`), or null. */
@@ -7,15 +7,39 @@ export function focusedNode(browser: WebdriverIO.Browser): Promise<string | null
   return browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
 }
 
-/** Wait until the live graph draws a visible, hit-testable node `id`, not a retained element. */
+/** Wait until the live graph draws a visible, hit-testable node `id`, not a retained element.
+ * A timeout says what stood in the way: no node, an empty box, or what covers its centre. */
 export async function graphShown(browser: WebdriverIO.Browser, id: string, timeout = 15000): Promise<void> {
-  await browser.waitUntil(() => browser.execute((want) => {
-    const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
-    const box = node?.getBoundingClientRect();
-    if (!node || !box || box.width <= 0 || box.height <= 0) return false;
-    const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return target?.closest(".svelte-flow__node") === node;
-  }, id), { timeout, timeoutMsg: `the Run graph draws ${id}` });
+  let last = "";
+  await browser.waitUntil(async () => {
+    last = await browser.execute((want) => {
+      const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
+      const box = node?.getBoundingClientRect();
+      if (!node || !box) return "no node";
+      const at = [box.left, box.top, box.width, box.height].map(Math.round).join(",");
+      if (box.width <= 0 || box.height <= 0) return `an empty box at ${at}`;
+      const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      if (target?.closest(".svelte-flow__node") === node) return "";
+      const cover = target?.closest("[aria-label]") ?? target;
+      return `its box ${at} in a ${innerWidth}×${innerHeight} window is covered at its centre by ${cover?.tagName ?? "nothing"} ${cover?.getAttribute("aria-label") ?? cover?.className ?? ""}`;
+    }, id);
+    return last === "";
+  }, { timeout, timeoutMsg: `the graph draws ${id}` }).catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
+}
+
+/** The camera (translation and scale) of the Main area's graph, read once it holds still over a
+ * painted frame: a zoom control animates it. */
+export async function camera(browser: WebdriverIO.Browser): Promise<string> {
+  const read = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>(".svelte-flow__viewport")]
+    .find((viewport) => !viewport.closest('aside[aria-label="Detail"]'))?.style.transform ?? "");
+  let shown = await read();
+  await browser.waitUntil(async () => {
+    const before = shown;
+    await browser.execute(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    shown = await read();
+    return before === shown;
+  }, { timeout: 15000, timeoutMsg: "the graph's camera held still" });
+  return shown;
 }
 
 /** The node selector of the Artifact `id`. */
@@ -28,7 +52,7 @@ export const evalAt = (id: string) => `aside[aria-label="Detail"] button[data-ev
 
 /** A chip as read: its visible text without the glyph, what a screen reader names it, its verdict
  * glyph and colour, whether an icon is drawn in it, and whether it is the chosen one. */
-export type Tab = { name: string; label: string; glyph: string; tone: string; colour: string; painted: boolean; icon: boolean; selected: boolean };
+export type Tab = { name: string; label: string; glyph: string; colour: string; painted: boolean; icon: boolean; selected: boolean };
 export type Detail = {
   /** The Detail's heading: the shown node's title, or "Human review". */
   title: string;
@@ -38,19 +62,18 @@ export type Detail = {
   path: string;
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
-  /** Whether the Detail lies within the graph's area, right of Scope and Runs, with a gap
-   * from the area's right edge. */
+  /** Whether the Detail lies within the Main area, right of the Pane, with a gap from the
+   * area's right edge. */
   docked: boolean;
 };
 
-/** The open Detail of the Monitor, or null while none is open. */
+/** The open Detail, or null while none is open. */
 export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
   return browser.execute(() => {
     const aside = document.querySelector<HTMLElement>('.stage aside[aria-label="Detail"]');
     if (!aside) return null;
     const stage = aside.closest<HTMLElement>(".stage")!.getBoundingClientRect();
     const box = aside.getBoundingClientRect();
-    const tone = (element: Element | null) => [...(element?.classList ?? [])].find((name) => name.startsWith("tone-")) ?? "";
     return {
       title: aside.querySelector("h2")?.textContent?.trim() ?? "",
       tabs: [...aside.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => {
@@ -63,7 +86,6 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
           label: tab.getAttribute("aria-label") ?? name,
           icon: !!icon && icon.complete && icon.naturalWidth > 0 && !!drawn && drawn.width > 0 && drawn.height > 0,
           glyph: glyph?.textContent?.trim() ?? "",
-          tone: tone(glyph),
           colour: glyph ? getComputedStyle(glyph).color : "",
           painted: !!glyph && glyph.getBoundingClientRect().width > 0 && glyph.getBoundingClientRect().height > 0
             && getComputedStyle(glyph).visibility === "visible" && Number(getComputedStyle(glyph).opacity) > 0,

@@ -12,12 +12,8 @@ including the [machine prerequisites of a Human sign-off](artifact.md#human-sign
 
 ## Verify and Runs
 
-`verify` requires exactly one selector: positional `ARTIFACT` or qualified
-`ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`,
-`--artifacts-file PATH`, or `--all`. Eval IDs are qualified (`green/check`).
-Selection preserves first occurrences and removes duplicates. Artifacts expand
-to their evals in ID order; selection order defines saved requests, not dispatch.
-An Artifact selector asks to run that piece's checks; an individual eval selector
+`verify` takes exactly one [selector](../cli/index.md#command-reference): Artifacts,
+qualified evals (`green/check`), or `--all`. An Artifact selector asks to run that piece's checks; an individual eval selector
 asks to run just that check. The Run still needs valid results for every piece
 those checks rely on, following their links as far as needed. This linked group is
 the **dependency closure**; its required results are **final obligations**, even
@@ -73,8 +69,8 @@ A submission unblocks dependents in that same Run. There is no Human wait deadli
 or `verify --timeout-ms`; all eval kinds share the settlement rule. The optional
 modes below change execution order or defer sign-offs, not Human authority.
 
-Watching exits 0 for GREEN/SATISFIED, 1 for RED, 2 for ERROR/cancelled, 4 for
-INCOMPLETE, or 5 for SIGNOFFS_PENDING. Interrupting observation exits 130.
+Watching exits with the Run's outcome; the [CLI reference](../cli/index.md#command-reference)
+lists the codes.
 
 Final validation needs actual GREEN evidence or explicit `basis = true` across
 all required scope; a basis never waives its dependencies. RED blocks downstream
@@ -85,12 +81,9 @@ covers removed legacy gate-bypass settings. `--reuse-only KINDS`
 (for example `agent,human` in CI) only reuses results for those kinds; missing
 reusable evidence is not executed and leaves INCOMPLETE. See [CLI](../cli/index.md#reuse-only).
 
-`--request-key K` is a caller attempt identity: 1–128 ASCII letters/digits/`._:-`.
-The same canonical repository/key returns the same Run, even after completion or
-checkout changes; the first selection and options remain authoritative. Omit it
-or choose a different key for a new Run. Eval-result reuse is independent of this
-submission identity. Retain the key when retrying a lost answer, not for a new
-attempt after fixes.
+A [`--request-key`](../cli/index.md#submission-and-watching) names a caller's attempt:
+repeating it returns the same Run, so keep it to retry a lost answer and use a new one
+after fixes. Eval-result reuse does not depend on it.
 
 ### Speculation and deferred sign-offs
 
@@ -169,15 +162,10 @@ sibling eval in the same Run), and `remote` for a record from the [remote review
 `run show`, `request show` and `request list --json`
 carry `source` too.
 
-`verify --wait --json` prints full saved results, including payloads, argv, stdout/stderr and
-runtime details; there is no compact projection or `--full` flag. `run show RUN_ID`
-always prints full saved JSON and exits 0 on a successful read, regardless of the
-saved verdict; `--wait` instead exits with the Run outcome code once it finishes.
-It never discovers declarations or runs code, and does not need `--repo`. Each Run
-saves its selection, effective policy, requested profile option, and resolved
-Artifact/eval definitions for the selected dependency closure, including tags,
-schemas, tool views and graph relations. These are recorded with the initial request
-rows, not reconstructed from current declarations.
+`verify --wait --json` and `run show RUN_ID` print the full saved Run. `run show` never
+discovers declarations or runs code. Each Run saves its selection, policy, profile option
+and the resolved definitions of its dependency closure with its first requests, so it
+never depends on the current declarations.
 
 A partial Run can use saved evidence for an eval without creating a request for
 it, such as an upstream eval outside the execution selection. The Run records
@@ -187,11 +175,9 @@ those verdicts in `evidence`, a map from qualified eval IDs to saved states:
 {"evidence": {"code-style/approved": "GREEN"}}
 ```
 
-`run show RUN_ID --json` and `verify --wait --json` flatten the saved Run's fields into
-the output object: `evidence` is a top-level field, not nested under `run`, and
-is omitted when empty. It is the evidence this Run used, not a lookup of the
-latest result. Saved definitions, `evidence` and the Run's request states let the
-monitor judge gates without reading current declarations or recomputing fingerprints.
+It is the evidence this Run used, not the latest result; its JSON shape is in the
+[CLI reference](../cli/index.md#saved-run-evidence-and-terminal-views). Saved definitions,
+`evidence` and request states let the monitor judge gates without the current declarations.
 
 `run list [--repo-only | --all]` lists saved Runs newest first as a text table, or
 as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
@@ -311,7 +297,8 @@ command is hidden from help; it prints `graph moved to "artifactize config graph
 `config graph` remains the configuration inspector. For review, declare the
 [built-in `graph` tools](tools/builtin.md#current-project-graph) on
 any Artifact: the Agent sees the extracted current graph as a tree; the Human
-opens it in the existing desktop graph viewer, without requiring a saved Run.
+opens the desktop app on the branch's [Current](../desktop/index.md#current),
+without requiring a saved Run.
 The optional root [`.artf` graph Artifact](declarations.md#graph-artifact)
 has ordinary evals and appears in Runs and status like any other Artifact. Only
 its fingerprint algorithm is different; there is no graph-specific verification

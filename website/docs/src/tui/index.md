@@ -89,7 +89,8 @@ The monitor and standalone `review` use **one Human review component**. Opening
 or previewing a request claims nothing. The instruction comes first, below one
 line of status, claim and waiting time. `t` shows or hides Technical: request,
 Run, repository, full claim details, shared execution, creation time and GREEN/RED
-owner schemas. For a follower, the destination request and repository stay visible.
+owner schemas. A waiting follower opens its original request; press `t` to see that
+request's ID and repository.
 
 Before claim, the instruction fills the body and tools appear on one line. After
 claim, it folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds
@@ -144,11 +145,9 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. A nonzero exit is a tool error, not a verdict.
-- **Tool log.** Under the tools, every run of this review: `▶ HH:MM:SS · operation
-  · Artifact` (UTC), then what it prints, line by line as it arrives, stderr in red,
-  then its end line, `■ exit CODE` (or `launched`, `done`, `cancelled`,
-  `timed out`, `error: …`). A launched program's output keeps arriving under its
-  own run until the program exits. The log wraps and follows its newest line;
+- **Tool log.** Under the tools, every run of this review, as the
+  [Tool log](../features/tools/human.md#tool-log) describes, its start times in UTC.
+  The log wraps and follows its newest line;
   PgUp with Tools focused scrolls back and holds the view while lines arrive, and
   PgDn back to the bottom follows again. With mouse capture off (F2), the terminal
   selects and copies its text. Standalone Review clears the log when another request

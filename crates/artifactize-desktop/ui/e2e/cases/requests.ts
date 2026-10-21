@@ -1,14 +1,12 @@
-// The Review screen's keys in the real app: opening the selected request, opening it with the
-// Tools focused, switching the verdict being edited, and paging through more requests than one
-// page holds.
+// A Human review in the real app, opened in the Main area at launch or in a Run's Detail:
+// switching the verdict being edited, a claim held elsewhere, and Korean composed through the
+// engine before a GREEN submission.
 import assert from "node:assert/strict";
-import { isDeepStrictEqual } from "node:util";
-import { artifactize, create, createPagedRequests, signoff } from "../fixture.ts";
+import { artifactize, create, signoff } from "../fixture.ts";
 import { fill, press } from "../keys.ts";
-import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { reviewing } from "../human-review.ts";
-
+import { mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, primaryModifier } from "../platform.ts";
 import { graphShown, openArtifact, openTab } from "../graph-view.ts";
@@ -24,8 +22,7 @@ async function prepareReview() {
 
 function opening(browser: WebdriverIO.Browser, requestId: string) {
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
-  const listed = () => browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
-  const gone = async () => !(await human().isExisting());
+  /** The review open in the Main area, unclaimed. */
   const exists = () => browser.execute((id) => {
     const opened = document.querySelector('[aria-label="Human review"][tabindex="0"]');
     return opened?.querySelector("h3")?.textContent?.trim() === "release/signoff · A person approves the release"
@@ -33,13 +30,7 @@ function opening(browser: WebdriverIO.Browser, requestId: string) {
       && opened.querySelector(".stage")?.textContent?.trim() === "CLAIM"
       && (opened.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `);
   }, requestId);
-  return { human, listed, gone, exists };
-}
-
-function paging(browser: WebdriverIO.Browser) {
-  const count = () => browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
-  const title = () => browser.execute(() => document.body.innerText);
-  return { count, title };
+  return { human, exists };
 }
 
 function claim(browser: WebdriverIO.Browser) {
@@ -56,43 +47,14 @@ function submission(browser: WebdriverIO.Browser) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-REVIEW-OPEN
-  scenario<Record<string, never>>(
-    "requests-open",
-    "opens the selected Human review with Enter and leaves it with Esc",
-    async () => prepareReview(),
-    async (browser, { fixture }) => {
-      const { listed, gone, exists } = opening(browser, signoff(fixture).id);
-      await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
-      await waitFor(browser, () => browser.$('[aria-label="Requests"]').isFocused(), "focus on the list");
-      await press(browser, ["Enter"], exists, "the Human review");
-      await press(browser, ["Escape"], gone, "back on the list");
-    },
-  ),
-  // UX edges: E-REVIEW-OPEN-TOOLS
-  scenario<Record<string, never>>(
-    "requests-tools",
-    "opens it with the Tools focused from the palette",
-    async () => prepareReview(),
-    async (browser, { fixture }) => {
-      const { listed, gone, exists } = opening(browser, signoff(fixture).id);
-      await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
-      await press(browser, [primaryModifier, "k"], () => browser.$('[aria-label="Command palette"][data-state="open"]').isExisting(), "the palette");
-      await choosePaletteCommand(browser, "Tools focused", "Open the selected request with Tools focused");
-      await press(browser, ["Enter"], exists, "the Human review");
-      await waitFor(browser, () => browser.$('section[aria-label="Tools"]').isFocused(), "focus on the Tools");
-      await press(browser, ["Escape"], gone, "back on the list");
-    },
-  ),
-  // UX edges: E-HUMAN-SWITCH
+  // UX journey: J-HUMAN-RED; UX edge: E-HUMAN-SWITCH
   scenario<Record<string, never>>(
     "requests-verdict-switch",
     "switches between the GREEN and the RED form while editing",
     async () => prepareReview(),
     async (browser, { fixture }) => {
-      const { human, listed, exists } = opening(browser, signoff(fixture).id);
-      await waitFor(browser, async () => (await listed()) === 1, "the waiting sign-off");
-      await press(browser, ["Enter"], exists, "the Human review");
+      const { human, exists } = opening(browser, signoff(fixture).id);
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Review" && await exists(), "the waiting review open at launch");
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
       await human().click();
       await press(browser, ["c"], async () => (await browser.execute(() => document.body.innerText)).includes("claimed by you") && await reviewing(browser), "claimed");
@@ -112,48 +74,22 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");
       await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
       assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
+      // Whatever the idempotent Ctrl+R did after its handler, the RED draft outlived it.
+      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form again");
+      assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
     },
   ),
-  // UX edges: E-REVIEW-PAGE
-  scenario<{ expected: string[] }>(
-    "requests-paging",
-    "pages to older requests with PgDn and back to newer ones with PgUp",
-    async () => {
-      // More requests than the 100 a page holds.
-      const { fixture, expected } = createPagedRequests();
-      return { fixture, args: ["review"], data: { expected } };
-    },
-    async (browser, { data }) => {
-      const { count, title } = paging(browser);
-      const { expected } = data;
-      await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
-      // Every request, not only the waiting Human reviews: Esc clears the query.
-      await browser.$('[aria-label="Search requests"]').click();
-      await press(browser, ["Escape"], async () => (await browser.$('[aria-label="Search requests"]').getValue()) === "", "the query cleared");
-      await press(browser, ["Enter"], () => browser.$('[aria-label="Requests"]').isFocused(), "focus on the list");
-      const identities = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Requests"] [role="option"] .mono')].map((cell) => cell.innerText));
-      const page = async (number: number, ids: string[]) =>
-        (await count()) === ids.length && new RegExp(`page ${number}`).test(await title()) && isDeepStrictEqual(await identities(), ids);
-      await waitFor(browser, () => page(1, expected.slice(0, 100)), "the first page's exact identities");
-      assert.deepEqual(await identities(), expected.slice(0, 100), "the newest batch precedes the older batch");
-      await press(browser, ["PageDown"], () => page(2, expected.slice(100)), "the older page's exact identities");
-      assert.deepEqual(await identities(), expected.slice(100), "older request identities and order");
-      await press(browser, ["PageUp"], () => page(1, expected.slice(0, 100)), "the newer page's exact identities");
-      assert.deepEqual(await identities(), expected.slice(0, 100), "paging back restores the identical newer order");
-    },
-  ),
-  // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE
+  // UX journey: J-HUMAN-CLAIM; UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE E-HUMAN-CLAIM
   scenario<Record<string, never>>(
     "requests-claim-elsewhere",
     "refuses a claim here while it is held, and offers it again once released",
     async () => prepareReview(),
     async (browser, { fixture }) => {
       const { text, human } = claim(browser);
-      await waitFor(browser, async () => (await browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length)) === 1, "the sign-off");
       const id = signoff(fixture).id;
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Review" && await human().isExisting(), "the waiting review open at launch");
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => (await text()).includes("claimed by bob"), "bob's claim shown");
-      await press(browser, ["Enter"], () => human().isExisting(), "the Human review");
       // Taken: the review says who holds it and offers no Claim button.
       await waitFor(browser, async () => (await human().getText()).includes("Claimed by bob. Read-only until released.")
         && !(await human().$("button*=Claim").isExisting()), "bob's claim shown as read-only");
@@ -173,11 +109,14 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await human().$(".meta").getText()).includes("claimed by you (alice)"), "this review displays the new claim");
     },
   ),
-  // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
+  // UX journeys: J-HUMAN-TEXT J-HUMAN-GREEN; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
   scenario<Record<string, never>>(
     "requests-green-composition",
     "claims, composes Korean through the engine and guards page shortcuts before submitting GREEN",
-    async () => ({ fixture: await create(), data: {} }),
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
     async (browser, { fixture }) => {
       const { text, human } = submission(browser);
       await graphShown(browser, "a:release");

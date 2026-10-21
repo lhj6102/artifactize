@@ -21,6 +21,7 @@ fn input(state: &Path, repo: &Path, shown: Option<&Snapshot>, full: bool) -> Inp
         },
         full,
         displayed: shown.and_then(|shown| shown.selected_id.clone()),
+        changed: Default::default(),
         runs: shown.map(|shown| shown.runs.clone()),
     }
 }
@@ -133,7 +134,7 @@ async fn full_refresh_rereads_git_metadata() {
                     .any(|row| row.scope == after_scope)
             );
         }
-        loader.reset();
+        loader.rescan();
         shown = loader
             .load(input(&state, &repo, Some(&shown), true))
             .unwrap();
@@ -166,7 +167,7 @@ async fn full_refresh_rereads_git_metadata() {
         crate::test_os::git(&repo, &["branch", "-m", "after-retry"]);
         let broken = base.join("not-a-state-directory");
         std::fs::write(&broken, "not a directory").unwrap();
-        loader.reset();
+        loader.rescan();
         assert!(
             loader
                 .load(input(&broken, &repo, Some(&shown), true))
@@ -188,6 +189,9 @@ async fn full_refresh_rereads_git_metadata() {
 
 fn run(path: &Path) -> CatalogRun {
     CatalogRun {
+        id: "run-1".parse().unwrap(),
+        created_at: crate::types::Timestamp::now(),
+        completed_at: None,
         repo_path: path.to_path_buf(),
         repository: Identity::default(),
         status: RunStatus::Green,

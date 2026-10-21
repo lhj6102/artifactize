@@ -6,21 +6,18 @@ import { afterEach, expect, it } from "vitest";
 import { tick } from "svelte";
 import type { CommandActivity } from "./activity";
 import ActivityHost from "./ActivityHost.svelte";
+import { browseView } from "../monitor/fixtures";
 
-const results = { generation: 1, rows: [], next: null, error: null, waiting: false };
+const results = browseView(1);
 
+/** Pane searches wait for the test to answer them; any other browse answers at once. */
 function backend() {
   const pending: { query: string; resolve: (value: unknown) => void; reject: (error: unknown) => void }[] = [];
   mockIPC((name, args) => {
-    if (name === "review_search") {
-      return new Promise((resolve, reject) => pending.push({ query: (args as { query: string }).query, resolve, reject }));
-    }
-    if (name === "browse") return {
-      scope: { kind: "all" }, scopeLabel: "all repositories", scopes: [], badge: [], runs: [],
-      selectedRun: null, older: false, newer: false, run: null, error: null,
-      refreshed: true, replaced: false, revision: 1,
-    };
-    throw new Error(`Unexpected command: ${name}`);
+    if (name !== "browse") throw new Error(`Unexpected command: ${name}`);
+    const query = (args as { navigate: { query: string | null } }).navigate.query;
+    if (query === null) return browseView(1);
+    return new Promise((resolve, reject) => pending.push({ query, resolve, reject }));
   });
   return pending;
 }
@@ -36,30 +33,30 @@ it("reacts through shared context to dispatch, reverse completion and failure wi
   const view = render(ActivityHost, { label: "A", query: "public query" });
   await waitFor(() => expect(pending).toHaveLength(2));
   expect(shown("A first")).toEqual(shown("A second"));
-  expect(shown("A first").commands.reviewSearch).toEqual({ started: 2, completed: 0, pending: 2 });
+  expect(shown("A first").commands.browse).toEqual({ started: 2, completed: 0, failed: 0, pending: 2 });
   const before = window.artifactizeCommands;
   expect(before.search).toEqual({ query: "public query", sequence: 2, completed: false });
   expect(Object.getOwnPropertyDescriptor(window, "artifactizeCommands")?.set).toBeUndefined();
   expect(Object.isFrozen(before)).toBe(true);
-  expect(Object.isFrozen(before.commands.reviewSearch)).toBe(true);
+  expect(Object.isFrozen(before.commands.browse)).toBe(true);
   expect(Object.isFrozen(before.search)).toBe(true);
 
   pending[1].reject({ kind: "missing", message: "Native search failed" });
-  await waitFor(() => expect(shown("A first").commands.reviewSearch.completed).toBe(1));
+  await waitFor(() => expect(shown("A first").commands.browse.completed).toBe(1));
   expect(shown("A second").search?.completed).toBe(true);
   await waitFor(() => expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toEqual(["Native search failed", "Native search failed"]));
   pending[0].resolve(results);
   await waitFor(() => expect(shown("A first").pending).toBe(0));
   expect(shown("A first")).toEqual(shown("A second"));
-  expect(window.artifactizeCommands.commands.reviewSearch).toEqual({ started: 2, completed: 2, pending: 0 });
-  expect(before.commands.reviewSearch.pending).toBe(2);
+  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 2, failed: 0, pending: 0 });
+  expect(before.commands.browse.pending).toBe(2);
   expect(before.search?.completed).toBe(false);
   expect(pending).toHaveLength(2);
   expect(JSON.stringify(window.artifactizeCommands)).not.toContain("Native search failed");
 
   // A helper created by AppState and a component captured from context update the same owner.
   await fireEvent.click(screen.getByRole("button", { name: "A first browse" }));
-  await waitFor(() => expect(shown("A second").commands.browse).toEqual({ started: 1, completed: 1, pending: 0 }));
+  await waitFor(() => expect(shown("A second").commands.browse).toEqual({ started: 3, completed: 3, failed: 0, pending: 0 }));
   expect(window.artifactizeCommands.revision).toBe(6);
   view.unmount();
   expect(Object.hasOwn(window, "artifactizeCommands")).toBe(false);
@@ -76,11 +73,11 @@ it("keeps roots and captured async commands isolated when an older root unmounts
   await waitFor(() => expect(pending).toHaveLength(4));
   const bProjection = window.artifactizeCommands;
   expect(bProjection.search?.query).toBe("B");
-  expect(bProjection.commands.reviewSearch.started).toBe(2);
+  expect(bProjection.commands.browse.started).toBe(2);
 
   // A's captured client must still dispatch to A after B becomes the current root.
   await fireEvent.click(screen.getByRole("button", { name: "A first search" }));
-  await waitFor(() => expect(shown("A second").commands.reviewSearch.started).toBe(3));
+  await waitFor(() => expect(shown("A second").commands.browse.started).toBe(3));
   expect(shown("B first")).toEqual(bProjection);
   expect(window.artifactizeCommands).toBe(bProjection);
   expect(pending.map((entry) => entry.query)).toEqual(["A", "A", "B", "B", "A"]);
@@ -101,14 +98,14 @@ it("keeps roots and captured async commands isolated when an older root unmounts
   pending[3].resolve(results);
   pending[2].resolve(results);
   await waitFor(() => expect(shown("B second").pending).toBe(0));
-  expect(window.artifactizeCommands.commands.reviewSearch).toEqual({ started: 2, completed: 2, pending: 0 });
+  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 2, failed: 0, pending: 0 });
   expect(window.artifactizeCommands.search).toEqual({ query: "B", sequence: 2, completed: true });
   b.unmount();
   expect(Object.hasOwn(window, "artifactizeCommands")).toBe(false);
 
   const c = render(ActivityHost, { label: "C", query: "C" });
   await waitFor(() => expect(pending).toHaveLength(7));
-  expect(window.artifactizeCommands.commands.reviewSearch).toEqual({ started: 2, completed: 0, pending: 2 });
+  expect(window.artifactizeCommands.commands.browse).toEqual({ started: 2, completed: 0, failed: 0, pending: 2 });
   expect(window.artifactizeCommands.search).toEqual({ query: "C", sequence: 2, completed: false });
   pending[5].resolve(results);
   pending[6].resolve(results);

@@ -1,9 +1,12 @@
 # Desktop
 
 The desktop app is a window onto the same machine-wide state as the CLI and TUI.
-Browse Runs, inspect evidence and handle Human sign-offs without a second review
-engine or a separate evidence store. Every release ships it beside the commands; see
-[Desktop app](../getting-started/install.md#desktop-app) to install it.
+It is the artifactize app of this machine, not of one repository: one screen shows
+every live branch of every project with Runs here and every Human review waiting for
+a person. Browse Runs, see what each branch would run now, inspect evidence and handle
+Human sign-offs without a second review engine or a separate evidence store. A change
+made in the app or with the CLI shows in the other. Every release ships it beside the
+commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the
 [installation guide](../getting-started/install.md#desktop-app).
@@ -13,106 +16,213 @@ For first-launch command setup, PATH details, updates and cleanup, see the
 ```sh
 artifactize-desktop
 artifactize-desktop monitor --repo PATH
-artifactize-desktop review [REQUEST_ID] [--repo PATH | --all] [--reviewer NAME]
+artifactize-desktop review [REQUEST_ID]
 artifactize-desktop graph --repo PATH
 ```
 
-The default is Monitor on **ALL** repositories in this state, regardless of the
-current directory. `--repo` chooses an initial repository; it conflicts with
-`--all`, the default. `--state-dir PATH` chooses a state directory; otherwise the
-app uses the shared state home. `--reviewer NAME` sets the cooperative claim name
-(normally the user name). `review REQUEST_ID` opens a saved request; `graph`
-requires `--repo` and reads current declarations. Invalid arguments exit 2.
+Without arguments the app opens with nothing chosen, whatever the current directory.
+`--repo PATH` selects and expands the branch of that folder and shows its newest entry; `--all`, the
+default, selects none, and every branch is listed either way. `review` opens the
+newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
+`--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
+state directory; otherwise the app uses the shared state home. `--reviewer NAME`
+sets the cooperative claim name (normally the user name). Invalid arguments exit 2.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
-Ctrl+1 opens Monitor, Ctrl+2 Review and Ctrl+, Settings. While Human reviews
-wait, the **Review** button shows how many beside its name: the requests Review's
-starting search `kind:human status:waiting_human` lists (of `--repo` when given),
-updated as reviews are requested and settled. Ctrl+K, F1 or the palette
-button opens a searchable command palette; Enter runs a command and Esc closes it.
-`?` shows this screen's keys. Ctrl+R or F5 refreshes Monitor, or reloads current
-Graph declarations when Graph is open; it does not reload Review or Settings.
-Drag the dividers to resize panes. The app follows the system's light or dark
-appearance.
+Ctrl+K, F1 or the **Commands** button opens a searchable command palette; Enter runs a
+command and Esc closes it. Ctrl+, or the **Settings** button shows
+[Settings](#settings) in the Main area. Ctrl+O opens a request by ID. `?` lists the
+keys of what has focus. Ctrl+R or F5 reloads the state from disk, scans the branches
+again and, on a Current, scans its worktree again. While a Human review has the
+keyboard and runs nothing, Ctrl+R is its RED command instead, with or without its
+form open: it opens or switches to RED once claimed, and says the review must be
+claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
+The app follows the system's light or dark appearance.
 
-## Monitor
+Hovering only highlights; information opens on a click.
 
-Navigate **Scope → Runs → Run graph** with Enter or → to move deeper and Esc to
-return; ← also returns from Runs. Arrow keys or `j`/`k` select Scope and Runs rows,
-and `r` refreshes Monitor from Scope, Runs or the Run graph (a Human review's `r`
-opens its RED form instead). Scope remains navigable
-back to ALL even after an initial `--repo` selection. Worktrees without Runs can
-be folded into a group: Space or a click reveals or hides them. Runs appear
-newest first. Move past the list's first or last row to load newer or older
-pages, or use its newer/older arrow buttons.
+## Pane
 
-Scope lists ALL, then each Git repository, whose row covers every worktree that
-shares its Git directory, with its worktrees below it; a folder outside Git is a
-workspace row of its own. Selecting a row shows the Runs of that scope.
+The window is one screen: the **Pane** on the left, the **Main area** beside it.
+The Pane is one column: a search field at the top, the branches below it, and the
+reviews waiting for a person at the bottom. Drag the divider between the Pane and
+the Main area to resize them; the split stays as dragged whatever the Main area shows.
 
-**Attention counters** read `!N ✗N ◐N ?N`: requests in ERROR and RED, Runs still
-running, and sign-offs waiting for a person, deferred ones included even after
-their Run ended. The window header always shows the totals of the whole catalog,
-every repository (the ALL row), whatever scope, Run or page is selected; each
-Scope row shows its own totals, and each Run row its own request counts.
-Followers of one Human execution count as one waiting sign-off.
+### Branches
 
-Selecting a Run updates its graph while Runs keeps the keyboard; Enter moves the
-keyboard into the graph. The graph area stays in place and says when no Run is
-selected, it is loading, it failed or it is empty. A problem, such as Runs on the
-page that cannot be read, shows as one line in the Run pane's header that a click
-unfolds. New Runs, claims and submissions made elsewhere appear without a manual
-reload. After a failed read, what was last read stays on screen and can be stale,
-so refresh the Monitor (Ctrl+R) or the Review list once its cause is fixed.
-Run-end validation
-stays historical: a later Human submission can change the current request display
-without rewriting the old verdict. Damaged records are
+A branch is a line of work in a Git repository. A worktree is a folder where one
+branch is checked out; a repository can have several, each on its own branch, or
+detached: on a commit rather than a branch. Each entry reads as its project and
+branch, such as `artifactize / feat/x`: a worktree that exists now with the branch it
+has checked out (a detached one by its folder's name), or a folder outside Git that
+exists now and holds its declarations.
+Its projects are those with Runs on this machine, and the one the app was started for
+with `--repo` or `graph --repo`, listed even before its first Run. A worktree or folder that was
+removed, or one Git no longer lists, is not shown; worktrees added or removed appear
+or go within seconds, without a reload. Who ran a Run, an agent session or a person,
+makes no entry of its own: a branch's Runs are that project's Runs on that branch,
+from whichever folder they ran in.
+
+A folded branch shows its newest Run under its name: a dot in its status colour,
+its status and how long ago it ran (a running one, its time so far). Click a branch
+to expand it and show its newest entry; the chevron before its name expands or folds
+it without showing anything. Expanded, its timeline lists its Runs newest first, each
+with its status, age and Run ID. While a Run is in progress it comes first; otherwise
+the **Current** does, the worktree as it is now. **Older runs** at the end brings
+older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
+of branches can be expanded; the one the app was started for starts expanded.
+
+The ☆ at the end of a branch's name stars it: starred branches are listed first,
+each group in the search's order, and stay starred the next time you open the app.
+Click the ★ again to take the star away.
+
+↑/↓ or `j`/`k` move through the branches, the timelines of expanded ones and then
+the waiting reviews, showing each branch's newest entry or the entry reached. →
+expands the selected branch or enters its timeline; ← steps back out or folds it. ↓
+past a timeline's oldest entry brings older Runs. Enter moves into the Main area, and
+Esc there, with no Detail open, returns to the Pane.
+
+### Search
+
+`/` or Ctrl+F focuses the search, whose starting query is `sort:recent`. Free text
+and `key:value` terms must all match, and they narrow the branches and the waiting
+reviews alike. A plain word matches part of a project, a branch or a waiting review's
+eval, ignoring case; `repo:` and `branch:` match part of that one field.
+`sort:recent` puts the branch with the most recent Run first and branches without
+Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
+and values: ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
+mouse. Enter without an open suggestion returns to the list. Esc closes suggestions,
+then puts back `sort:recent`, then returns to the list.
+
+### Waiting reviews
+
+The bottom of the Pane lists the waiting Human reviews of every repository on this
+machine, those of removed branches included, newest at the top, each with its eval,
+its project and branch, how long it waits and who claimed it. With none waiting it
+is a thin bar reading **Waiting (0)**; each waiting review adds a row and the area
+grows upward like a stack, up to half of the Pane's height, beyond which the list
+scrolls. A click or Enter on one opens the [review](#human-reviews) in the Main area.
+Followers of one Human execution wait as one review: opening a follower opens the
+original review.
+
+New Runs, results, claims and submissions made elsewhere, and worktrees added or
+removed, appear without a manual reload.
+
+## Main area
+
+The Main area shows what was chosen in the Pane: a Run, a branch's Current, a
+review, a request opened by ID, or Settings. With nothing chosen, while loading, on
+an error or with an empty graph, the graph's place stays and says so. A problem
+reading this machine's records, such as other Runs that cannot be read, shows as one
+line in the Main area's header without moving or hiding the graph; a click on it shows
+it in full. After such a failed read, what was last read stays on screen and can be
+stale, so refresh (Ctrl+R) once its cause is fixed. The chosen Run itself turning
+unreadable, or its graph failing to load, is different: a message takes the graph's
+place, and you choose another. Damaged records are
 [marked unreadable](../features/others/state.md#unreadable-records), not treated
 as successful evidence.
 
-Hovering only highlights; information opens on a click.
+### Run
+
+A Run chosen in the Pane fills the Main area with the graph of its Artifacts and their verdicts,
+under the Run's headline and what needs attention. Node and relation colours show
+review states (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked)
+and recolour in place as results arrive. Inspect dependencies through the graph's
+input-to-consumer relations and **Waits for** under an Artifact's or eval's
+**Debug**. Run-end validation stays historical: a later Human submission can change
+the current request display without rewriting the old verdict. Click the Run's
+headline, or use the palette command **Open the Run's Detail**, for the Run's own
+Detail: saved validation and unmet obligations, request counts, waiting work,
+timing, budgets, executed/reused work and usage. There `t` toggles Technical and `w`
+or the pending-evals control reveals the unfinished checks behind an upstream wait.
+
+### Current
+
+A branch's **Current** scans its worktree as it is now, as
+[`artifactize status`](../features/run.md#status-and-static-graph) does, and draws
+the graph of its current declarations without needing a Run. Each Artifact is coloured
+reused (every eval's result would be reused without evaluation), would run, waiting or
+blocked; like a Run's Artifact, its node shows only its name, and its accessible name
+says which, with how many of its evals would run. Its header says when it was scanned. It scans again
+when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends.
+Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
+relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
+and `artifactize-desktop graph --repo PATH` open the app on this view; opening it
+approves nothing.
+
+### Graphs
+
+Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
+Artifacts and Enter on one does what a click does; they have no other keys of their
+own. Above 500 Artifacts in view, the boxes described below take only clicks.
+Drag the graph background to pan; wheel, pinch or a background double-click zooms
+the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
+These gestures move the camera, not the divider or the Detail. A graph shows whole
+when it first appears; from then on only you move
+its camera. Opening, switching, resizing or closing the Detail, a new result or scan
+and a new layout never zoom or pan it; **Fit View** shows the whole graph again in
+the whole canvas, the same whether the Detail floats over it or not.
+
+Every graph is laid out at once, upstream on the left. An Artifact that a great many
+others use (such as one criteria file every review reads) stands in its own column on
+the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
+pannable, zoomable minimap helps navigate the graph, and above **80 Artifacts** only
+elements in view are rendered: panning or zooming draws those it brings into view.
+A graph of **more than 500 Artifacts** draws its edges on a canvas below the
+Artifacts and has no minimap. While more than 500 Artifacts are in view, they are
+painted as boxes in their lights, and a click on one opens its Detail; zoom in until
+fewer are in view to see them as named nodes that Tab and Enter reach again. A new snapshot or scan relights a
+graph in place, and lays it out again only when its Artifacts or edges change, keeping
+the graph shown until the new layout is ready. An Artifact's Detail draws at most 16
+neighbours on each side, failing ones first, and counts the rest.
 
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it. It hides no Artifact: a whole graph refits
-beside it whenever it opens, closes or changes width, and after you zoom or pan
-the camera keeps your zoom and only brings the opened Artifact beside it. Clicking
-another Artifact switches the Detail to it; clicking the graph's background,
-**Close** or Esc closes it. On a
-Human review's Detail all three step back the same way: they cancel active work
-first, then leave the form, and only then close the Detail. Click
-the Run's headline, or use the palette command **Open the Run's Detail**, for the
-Run's own Detail: saved validation and unmet obligations, request counts, waiting
-work, timing, budgets, executed/reused work and usage. Drag the Detail's left edge
-to resize it; it keeps that width, also in the next launch.
+with the graph still visible behind it, never beside the Pane. It leaves the camera
+where it is: pan to bring an Artifact under it into view.
+Clicking another Artifact switches
+the Detail to it; clicking the graph's
+background, **Close** or Esc closes it. On a Human review's Detail all three step
+back the same way: they cancel active work first, then leave the form, and only then
+close the Detail. Drag the Detail's left edge to resize it, between a readable column
+and leaving some graph visible; it keeps that width, also in the next launch.
 
-An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`:
-the Artifact's own chip, then one per eval with its verdict's glyph and colour.
+An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`: the
+Artifact's own chip, then one per eval with its verdict's glyph and colour, on a
+Current whether it would run or be reused.
 
-The Artifact's chip shows it between its neighbours, drawn with the Run graph's
-nodes and edges: the Artifacts its evals use on the left, the Artifacts whose evals
-use it on the right. The drawing holds still; a click on a neighbour opens that
-neighbour's Detail. Below it are its evals with their verdicts (click one to show
-its chip) and its path; every other fact, what it waits for included, folds under
+The Artifact's chip shows it between its neighbours, drawn with the graph's nodes and
+edges: the Artifacts its evals use on the left, the Artifacts whose evals use it on
+the right. The drawing holds still; a click on a neighbour opens that neighbour's
+Detail. Below it are its evals with their verdicts (click one to show its chip), its
+**Tools**, and its path; every other fact, what it waits for included, folds under
 **Debug**.
+
+The **Tools** are the [Human tools](../features/tools/human.md) the Artifact
+declares, as `▶ operation` buttons with their own **Tool log**, like a review's
+(below). A click runs one at once in the branch's worktree as it is now, whichever
+Run is shown, with no claim, and records nothing as a review's evidence. While one
+runs, the Artifact's other tool buttons wait and a **Cancel** button beside its name
+stops it; closing the Detail does not stop it, and its output keeps arriving in the
+Artifact's Tool log, shown when the Detail opens again. Its runs stay in that Tool
+log while the app runs. The graph's nodes carry no tool buttons.
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
 result, with findings as numbered items headed by their `item` and `where`; then
 **Execution options**, **Execution metadata** and **Fingerprint** when it has them.
-Other facts fold under **Debug**, which `t` shows or hides on an Artifact's or a
-non-Human eval's Summary. An eval with a log switches
-below the chips between its Summary, shown first, and its log, a plain-text choice
-whose chosen view is bold and higher-contrast: an Agent eval's **Agent log** (its conversation,
-with its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr,
-not a live log stream). Missing or remote conversations explain why they are
-unavailable on this machine. A Human eval's chip holds its review and sign-off, with
-the controls described below. An eval outside the Run's selection, such as one a
-partial `verify` left out, has no request in that Run: its chip shows its sections
-read-only, with no Summary of a result, no Human controls and no Tool log. A Run's Detail keeps its sections, where `t` toggles
-Technical and `w` or the pending-evals control reveals the unfinished checks behind
-an upstream wait.
+On a Current it shows whether the eval would run or be reused and why, and the result
+it would reuse. Other facts fold under **Debug**, which `t` shows or hides on an
+Artifact's or a non-Human eval's Summary. An eval with a log switches below the chips
+between its Summary, shown first, and its log, a plain-text choice whose chosen view
+is bold and higher-contrast: an Agent eval's **Agent log** (its conversation, with
+its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr, not a
+live log stream). Missing or remote conversations explain why they are unavailable on
+this machine. A Human eval's chip in a Run holds its review and sign-off, with the
+controls described below. An eval outside the Run's selection, such as one a partial
+`verify` left out, has no request in that Run: its chip shows its sections read-only,
+with no Summary of a result, no Human controls and no Tool log.
 
 Agent logs update live. In a focused Agent log, ↑/↓ or `j`/`k` moves by row,
 PgUp/PgDn by page, Home/End or **Top/Bottom** goes to either end, and the mouse wheel
@@ -120,74 +230,26 @@ scrolls. Moving up pauses following; return to Bottom to follow new messages.
 Space or Enter toggles the visible grouped content; clicking a group header also
 expands or folds it. Only public reasoning summaries are shown, not hidden reasoning.
 
-### Run graph
+### Requests by ID
 
-Monitor always displays the selected Run as an Artifact graph; there is no
-Run-tree mode. Node and relation colors show review states and update as results
-arrive. Inspect dependencies through the graph's input-to-consumer relations and
-**Waits for** under an Artifact's or eval's **Debug**. The graph takes the pointer: Tab reaches its
-Artifacts and Enter on one opens its Detail, as a click does; it has no other
-keys of its own.
+Ctrl+O, or the palette's **Open a request by ID**, opens a saved request of any
+repository in the Main area: a waiting Human review actionable, as from the Pane, and
+any other request read-only. A read-only request with a log switches between its
+Summary and its Agent or Runtime log, as an eval's chip does, and `t` shows or hides
+its **Debug** facts; **Close** returns to the Pane. It follows its request's changes
+made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 
-Drag the graph background to pan; wheel, pinch or a background double-click
-zooms the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its
-viewport. These gestures move the camera, not the pane dividers or the Detail.
-Above 40
-nodes, a pannable, zoomable minimap helps navigate the graph. Runs with **more
-than 300 Artifacts** ask before layout: choose **Lay out all** to display the
-whole graph. Above **80 Artifacts**, only elements in view are rendered: panning or
-zooming draws those it brings into view. Smaller graphs render every element.
-Layout is not an incrementally loaded neighborhood, and there is no tree fallback.
+## Human reviews
 
-`artifactize-desktop graph --repo PATH` opens the **current** Artifact Graph
-without needing a Run or showing saved verdicts. A click on an Artifact shows its
-evals over the graph's right side; Esc, **Close** or a click on the background
-closes them. Expand **Structure and evaluation
-criteria** for the full tree, criteria and labeled relations. Refresh or Ctrl+R/F5
-reloads declarations. A Human `graph` tool opens this viewer; opening it approves
-nothing.
+A waiting review opened from the Pane, or by ID, fills the Main area as a Human
+review, its eval and Artifact above it. Choosing a branch or a timeline entry leaves it without
+closing it: an open form keeps its draft and running review work goes on. Esc,
+after cancelling running work and leaving the form, returns to the Pane.
 
-## Review
-
-Review starts with waiting Human requests across all repositories in this state.
-A selected request previews read-only. Arrow keys or `j`/`k` select request rows,
-and Enter or → opens the selected request; Esc or ← returns from a read-only Detail
-to the list. Other eval kinds and
-settled requests remain read-only. The context menu or palette can open a Human
-request with Tools focused; Ctrl+O opens a request by ID. PgDn/PgUp pages older
-and newer requests. Waiting followers open the original review, not another sign-off.
-One click selects a request; clicking an already-selected request opens it, as
-does a double-click. Clicking its preview also opens Detail. A read-only request
-with a log switches between its Summary and its Agent or Runtime log, as an
-eval's chip does in Monitor, and `t` shows or hides its **Debug** facts.
-
-`/` edits search from the Review request list. Ctrl+F focuses search from an
-open request Detail too, including while a Human form is open or review work is
-running. Clicking the Requests pane or switching screens also leaves the Detail
-without closing it: an open form keeps its draft and running review work goes on.
-Free text and `key:value` terms must all match:
-`repo`, `eval`, `request`, `reviewer`, `tag`, `kind`, `status` and `is`. A plain
-word matches part of the repository, eval, request ID or claimant, ignoring case;
-`repo:`, `eval:`, `request:`, `reviewer:` and `tag:` match part of that one field
-the same way, so `eval:sign` finds `release/signoff`. `kind:` and `status:` take
-the eval kind and request status; `is:mine`, `is:claimed` and `is:unclaimed`
-filter Human claims. Quote a value with spaces (`repo:"/work/my repo"`); the
-[terminal review](../tui/index.md#review) uses the same search, term by term. Suggestions complete
-keys and values. ↑/↓ selects a suggestion (↓ can also open suggestions); Tab or
-Enter accepts it, and a click accepts it with the mouse. Enter without an open
-suggestion returns focus to the list. Esc closes suggestions, then clears the
-search, then returns to the list. An empty search includes all request kinds,
-not just waiting Human reviews. An explicit `--repo` supplies the initial repository search term. Use
-`r` in the Review list, or **Refresh the list** in the palette, to reload that list.
-The palette's **Show waiting Human reviews** restores the launch search,
-including the initial repository restriction when the app was started with `--repo`.
-
-### Human sign-offs
-
-Opening or previewing a review claims nothing. Press `c` to claim and `u` to
-release. Another person's claim prevents your actions. Claims are cooperative
-reviewer locks, not authenticated accounts; only the claimant can run tools or
-submit. See [Human](../features/human.md) for shared lifecycle and deferred sign-offs.
+Opening a review claims nothing. Press `c` to claim and `u` to release. Another
+person's claim prevents your actions. Claims are cooperative reviewer locks, not
+authenticated accounts; only the claimant can run tools or submit. See
+[Human](../features/human.md) for shared lifecycle and deferred sign-offs.
 
 A Human review reads top to bottom as its instruction, the **Tools** to use, their
 **Tool log**, and the **Result** to write. The instruction is shown in full within
@@ -198,20 +260,18 @@ moves to Tools; Ctrl+U releases your claim even while editing.
 Tools are grouped under the Artifact that declares them, the reviewed one first.
 Each is a `▶ operation` button with its description, and the reason when it cannot
 run. **A click, or Enter or Space on the focused button, runs it immediately**; Tab
-moves between them. Opened with Tools focused (from the Review list's context menu or
-palette), the Tools take the keyboard. A launch tool opens its application and
-returns at once; a failing tool says so without a verdict. The saved definition must
-still match before an action runs.
+moves between them. A launch tool opens its application and returns at once; a
+failing tool says so without a verdict. The saved definition must still match before
+an action runs.
 
-The Tool log shows every run of this review as it happens: `▶ HH:MM:SS · operation ·
-Artifact` in local time, then each line the tool prints to stdout, or in red to
-stderr, then its end line, such as `■ exit 0`, `■ launched`, `■ done`,
-`■ cancelled` or `■ error: …`. A launched application's output keeps arriving
-under its own run until it exits, even while you write the result. The log wraps,
+The [Tool log](../features/tools/human.md#tool-log) shows every run of this review
+as it happens, its start times in local time. The log wraps,
 scrolls on its own and follows the newest line; scroll up to read and it stays,
 scroll back to the bottom and it follows again. Its text is ordinary selectable
 text, so copy what a tool printed into the result. It lasts while the app runs and
-is cleared by a submission; nothing is saved.
+is cleared when you submit in this window; a submission made with the CLI or in
+another window ends the editing here but leaves this window's log shown. Nothing is
+saved.
 
 After claiming, `g` opens GREEN and `r` RED, each a form built from the eval's
 schema ([the shapes it may use](../features/declarations.md#human-result-schemas)):
@@ -225,13 +285,14 @@ does not submit; Ctrl+S or activating the **Submit** button submits, including
 Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
 composition, including Korean, belongs to the text field and never fires shortcuts.
-Esc cancels active work, then leaves the form, then leaves Detail.
+Esc cancels active work, then leaves the form, then leaves the review.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
-GREEN and RED keep separate drafts. Monitor and Review share the same request's
-review state, Tool log included, within this app session, rather than creating
-independent forms. This holds while the state stays the same: when the app finds its
-state database replaced, it closes open Details, forgets cached reviews, drafts and
-Tool logs, and cancels running Human tool and submit jobs.
+GREEN and RED keep separate drafts. A review opened from the Pane and the same
+request's chip in a Run's Detail share one review state, Tool log included, within
+this app session, rather than creating independent forms. This holds while the state
+stays the same: when the app finds its state database replaced, it closes open
+Details, forgets cached reviews, drafts and Tool logs, and cancels running Human tool
+and submit jobs.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.
@@ -240,7 +301,7 @@ The verdict is already recorded; retry publication with Settings' **Push results
 
 ### Leave and quit
 
-`q` quits outside a text field, except while the keyboard is in a Human Detail that
+`q` quits outside a text field, except while the keyboard is in a Human review that
 is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
 such as after closing Commands, `q` starts quitting even while that review stays
 open. Closing the window also starts quitting. If
@@ -253,9 +314,11 @@ window opened is not.
 
 ## Settings
 
-Settings reloads account/store information when shown. Reopen it or use the
-palette's **Refresh settings** command to reload it; Ctrl+R/F5 is Monitor/Graph
-refresh, not a settings reload.
+Settings shows in the Main area; the **Settings** button again or Ctrl+, again
+returns to what the Main area showed, and so does Esc outside a text field or a choice
+list (in one, Esc stays with the field). Choosing a branch, chip or review in the Pane
+instead shows that choice. It reloads account/store information
+when shown. Reopen it or use the palette's **Refresh settings** command to reload it.
 
 - **API keys:** reports whether OpenAI and Anthropic key environment variables
   are set, never their values. Set them in the app's launch environment.

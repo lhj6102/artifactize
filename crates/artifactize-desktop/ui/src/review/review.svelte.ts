@@ -96,7 +96,7 @@ class ReviewState {
   /** Every tool run of this review, oldest first: kept while the review is open. */
   log = $state.raw<LogEntry[]>([]);
   busy = $state<Busy | null>(null);
-  notice = $state<Notice | null>(null);
+  notice = $state.raw<Notice | null>(null);
   form = $state<FormDraft | null>(null);
   readonly drafts = new SvelteMap<Verdict, Draft>();
   choice = 0;

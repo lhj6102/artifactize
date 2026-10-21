@@ -134,32 +134,22 @@ Both exit 2 for a reference to another machine or state, a session the GC remove
 that was not saved, a request that is still running (`send`), and a failed follow-up.
 
 Commands opening an existing state apply supported additive schema upgrades with write
-access. Schemas 6 and 7 upgrade to 8 (6 → 7 → 8 or 7 → 8) while preserving Runs,
-cache and Human approvals; schemas 1–5 and versions above 8 are refused ([State](../features/others/state.md#state)).
+access. Schemas 6 to 8 upgrade to 9 (6 → 7 → 8 → 9, each step additive) while preserving Runs,
+cache and Human approvals; schemas 1–5 and versions above 9 are refused ([State](../features/others/state.md#state)).
 `doctor` reports an incompatible schema as a hard error and exits 1.
 
 ## Submission and watching
 
-**Breaking change:** plain `verify` is submit-only. Scripts/CI requiring the old validation
-exit codes must add `--wait`. Its JSON is `{"run":"run-…","state":"preparing"}`
-(the state may already have advanced); only `verify --wait --json` renders the full final
-saved Run. `--wait` has no Human timeout and all eval kinds follow Run settlement.
-In strict default mode, a pending Human request keeps the Run RUNNING; submitting
-its sign-off resumes dependent evals in that same Run.
-
-`--request-key KEY` accepts 1–128 ASCII letters/digits/`._:-`. Repeating a key for the same
-canonical repository returns its original Run without changing the accepted scope/options
-or re-executing it, even after checkout changes. Omitting the key always creates a new Run.
+Plain `verify` submits, prints the Run ID and exits 0 on acceptance; add `--wait` where
+a script needs the outcome's exit code. A repeated `--request-key` returns its original
+Run. [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel) owns the
+details.
 
 ```sh
 artifactize verify --all --request-key build-42
 artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
-
-Cancellation acknowledges intent; inspect the Run for its eventual outcome after cleanup.
-Repeated cancellation and cancellation after completion are safe. Only explicit cancel
-stops execution; terminal closure and watcher interruption stop observation only.
 
 ## Verify modes
 
@@ -245,7 +235,7 @@ leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
 error. There are no reservations, refunds, admission pools or restart ledger.
 
-Human waiting and cancellation follow [Submission and watching](#submission-and-watching);
+Human waiting and cancellation follow [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel);
 the [Human guide](../features/human.md) covers claims, tools and sign-offs.
 
 Selection files must be regular files no larger than 4 MiB, containing a JSON

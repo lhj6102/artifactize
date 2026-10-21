@@ -9,16 +9,6 @@ pub(crate) mod log;
 
 pub use form::{Draft, FormView, Verdict};
 
-/// The state's origin right now, noted as the generation every Human view belongs to.
-pub(crate) async fn current(app: &App) -> Result<u32, Failure> {
-    let state = app.launch.state.clone();
-    let origin = crate::failure::joined(
-        tokio::task::spawn_blocking(move || monitor::Origin::read(&state)).await,
-    )?
-    .map_err(Failure::Read)?;
-    Ok(app.observe(origin))
-}
-
 use crate::ids::{JobId, RequestKey};
 use crate::{App, Failure, detail::Field, status::Mark};
 use artifactize_core::{
@@ -55,8 +45,9 @@ pub struct Reviews {
     /// Claims this app took and has neither submitted nor released.
     taken: Mutex<BTreeSet<RequestId>>,
     log: review::log::Sink,
-    /// The Tool log of each review a run logged to, until it is submitted.
-    logs: Mutex<BTreeMap<RequestId, review::log::ToolLog>>,
+    /// The Tool log of each review a run logged to, until it is submitted, and of each
+    /// Artifact whose tool ran without a review, while the app runs.
+    logs: Mutex<BTreeMap<review::log::Key, review::log::ToolLog>>,
     /// The Tool log's receiving end, until the app starts forwarding it.
     events: Mutex<Option<review::log::Events>>,
 }
@@ -82,20 +73,22 @@ impl Reviews {
         self.events.lock().expect("events lock").take()
     }
 
-    /// Take `events` into each review's Tool log; answer the logs they changed.
-    pub(crate) fn logged(&self, events: Vec<review::log::Event>) -> Vec<log::RequestLog> {
+    /// The sink every tool run of this app logs to.
+    pub(crate) fn log(&self) -> &review::log::Sink {
+        &self.log
+    }
+
+    /// Take `events` into each Tool log; answer the logs they changed.
+    pub(crate) fn logged(&self, events: Vec<review::log::Event>) -> Vec<log::KeyedLog> {
         let mut logs = self.logs.lock().expect("logs lock");
         let mut changed = BTreeSet::new();
         for event in events {
-            changed.insert(event.request.clone());
-            logs.entry(event.request.clone()).or_default().apply(event);
+            changed.insert(event.key.clone());
+            logs.entry(event.key.clone()).or_default().apply(event);
         }
         changed
             .into_iter()
-            .map(|request| {
-                let log = &logs[&request];
-                log::request_log(request.into(), log)
-            })
+            .map(|key| log::keyed_log(&key, &logs[&key]))
             .collect()
     }
 
@@ -114,7 +107,7 @@ impl Reviews {
         }
     }
 
-    fn start(&self, job: JobId) -> CancellationToken {
+    pub(crate) fn start(&self, job: JobId) -> CancellationToken {
         let token = CancellationToken::new();
         self.jobs
             .lock()
@@ -123,12 +116,12 @@ impl Reviews {
         token
     }
 
-    fn end(&self, job: JobId) {
+    pub(crate) fn end(&self, job: JobId) {
         self.jobs.lock().expect("jobs lock").remove(&job);
     }
 
-    /// Freshen the cached views of requests a search just read, so their Preview shows the
-    /// claims and states the list shows.
+    /// Freshen the cached views of requests the waiting stack just read, so a review opened
+    /// from it shows the claims and states the stack shows.
     pub(crate) fn remember(&self, views: impl IntoIterator<Item = RequestView>) {
         let mut cached = self.views.lock().expect("views lock");
         for view in views {
@@ -237,7 +230,7 @@ pub struct Acted {
     pub view: Option<HumanView>,
 }
 
-fn kind(kind: HumanToolKind) -> ToolKind {
+pub(crate) fn kind(kind: HumanToolKind) -> ToolKind {
     match kind {
         HumanToolKind::Launch => ToolKind::Launch,
         HumanToolKind::Output => ToolKind::Output,
@@ -612,7 +605,11 @@ pub async fn human_submit(
     };
     app.human.took(&id, false);
     // A submitted review's log ends here; what a launched program still prints is dropped.
-    app.human.logs.lock().expect("logs lock").remove(&id);
+    app.human
+        .logs
+        .lock()
+        .expect("logs lock")
+        .remove(&review::log::Key::from(&id));
     let Acted { notice, view } = acted(&app, &id, outcome).await?;
     Ok(Submitted {
         settled,

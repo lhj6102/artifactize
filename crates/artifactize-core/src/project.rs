@@ -3,6 +3,7 @@
 pub mod selection;
 
 mod status;
+pub(crate) use status::scan;
 pub use status::{
     ArtifactCondition, ArtifactState, Counts, EvalCondition, EvalState, StatusView, VerifyAction,
     status,

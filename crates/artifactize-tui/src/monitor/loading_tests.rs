@@ -190,7 +190,7 @@ async fn page_edges_remain_bounded_and_the_selected_run_is_pinned_without_prefix
     }
 }
 #[tokio::test]
-async fn unrelated_writes_keep_the_selected_tree_and_detail_and_resync_forces_a_new_baseline() {
+async fn unrelated_writes_and_a_resync_keep_the_selected_tree_and_detail() {
     let (_root, receipts, mut monitor) = fixture(2).await;
     monitor.refresh().await;
     monitor.open_detail().await;
@@ -216,11 +216,12 @@ async fn unrelated_writes_keep_the_selected_tree_and_detail_and_resync_forces_a_
         monitor.detail.as_ref().unwrap().detail.field("Path"),
         detail.as_deref()
     );
+    // A resync reads by the same queries: the Run they show unchanged is not sent again.
     let job = monitor.start_refresh(true, true).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
     assert!(
-        completed.result.as_ref().unwrap().selected.is_some(),
-        "an explicit resync sends a fresh selected Run baseline"
+        completed.result.as_ref().unwrap().selected.is_none(),
+        "a resync sends no unchanged selected Run data again"
     );
     assert!(monitor.finish_refresh(completed).await);
     assert_eq!(

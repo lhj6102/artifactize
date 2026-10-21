@@ -7,12 +7,13 @@
 // and drives the app the way a person would. Nothing is mocked and no model is called.
 //
 // The scenes (assets/screenshots/):
-//   A. monitor.png — the Monitor: Scope and Runs on the left and a Run graph with mixed
-//      verdicts (GREEN, RED, blocked, waiting for a person).
+//   A. monitor.png — the app's one screen: the Pane with the example's branch expanded to its Runs
+//      and the waiting sign-off, and the Run's graph in the Main area with mixed verdicts
+//      (GREEN, RED, blocked, waiting for a person).
 //   B. detail.png  — an Artifact's Detail over the graph on its Artifact tab: the Artifact
 //      between its neighbours, and its evals with their verdicts.
-//   C. review.png  — a claimed Human review: its instruction, Tools, a Tool log run and the
-//      GREEN form.
+//   C. review.png  — a claimed Human review opened from the Pane's waiting reviews: its
+//      instruction, Tools, a Tool log run and the GREEN form.
 //
 // Modes:
 //   (none)    capture into assets/screenshots/.
@@ -184,7 +185,8 @@ async function capture(output: string, work: string): Promise<void> {
     for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
     Object.assign(process.env, env);
     const capabilities = service.createTauriCapabilities(candidate.app, {
-      appArgs: ["--state-dir", fixture.state, "--reviewer", "alice"],
+      // Started on the example's branch: the Pane selects it.
+      appArgs: ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"],
       driverProvider: "embedded",
       startTimeout: WAIT,
       commandTimeout: WAIT,
@@ -205,10 +207,17 @@ async function capture(output: string, work: string): Promise<void> {
       writeFileSync(join(output, name), Buffer.from(await app.takeScreenshot(), "base64"));
     };
 
-    // A. The Monitor with the Run selected and its graph drawn.
-    await app.$('[aria-label="Runs"] [role="option"]').waitForExist({ timeout: WAIT });
-    await app.$('[aria-label="Runs"] [role="option"]').click();
+    // A. The branch's Run shown from its timeline, its graph drawn, and the sign-off in the
+    // Waiting stack. The launched branch opens expanded: its Current first, since the Run ended,
+    // then its one Run.
+    const MAIN = 'section.panel[aria-label="Main area"]';
+    const runChip = '[aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])';
+    await app.$(runChip).waitForExist({ timeout: WAIT });
+    await app.$(runChip).click();
+    await app.waitUntil(() => app.execute((main) => /^Run /.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),
+      { timeout: WAIT, timeoutMsg: "the Main area shows the Run" });
     await graphShown(app, "a:release", WAIT);
+    await app.$('[aria-label="Waiting reviews"] [role="option"]').waitForExist({ timeout: WAIT, timeoutMsg: "the sign-off waits in the Pane" });
     // core → cli, core → release and cli → docs.
     await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
       { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges" });
@@ -237,13 +246,11 @@ async function capture(output: string, work: string): Promise<void> {
     }), { timeout: WAIT, timeoutMsg: "cli's Neighbours show core, cli and docs and their edges" });
     await shot("detail.png");
 
-    // C. The release sign-off in Review: claimed, its notes tool run, the GREEN form open.
-    // Review opens on its default search, kind:human status:waiting_human, which includes the
-    // deferred sign-off that verify --defer-human left (core's review/search.rs says so).
-    await app.keys(["Control", "2"]);
-    await app.$('[aria-label="Requests"] [role="option"]').waitForExist({ timeout: WAIT });
-    await app.$('[aria-label="Requests"] [role="option"]').click();
-    await app.keys("Enter");
+    // C. The release sign-off opened from the Pane's waiting reviews, which list the deferred
+    // sign-off that verify --defer-human left: claimed, its notes tool run, the GREEN form open.
+    await app.$('[aria-label="Waiting reviews"] [role="option"]').click();
+    await app.waitUntil(() => app.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === "Review", MAIN),
+      { timeout: WAIT, timeoutMsg: "the Main area shows the review" });
     await app.waitUntil(() => claimable(app), { timeout: WAIT, timeoutMsg: "the sign-off can be claimed" });
     await app.$("button=Claim to review").click();
     await app.waitUntil(() => reviewing(app), { timeout: WAIT, timeoutMsg: "the sign-off is claimed" });

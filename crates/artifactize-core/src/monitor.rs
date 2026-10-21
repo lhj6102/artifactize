@@ -2,6 +2,7 @@
 pub mod catalog;
 pub mod evidence;
 pub mod fold;
+pub mod live;
 pub mod loader;
 pub mod model;
 pub mod session;

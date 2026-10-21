@@ -142,7 +142,6 @@ fn window(fixture: &Fixture, mode: Mode) -> Window {
         repo: Some(fixture.repo.clone()),
         reviewer: "alice".parse().unwrap(),
         request: None,
-        search: artifactize_core::review::search::DEFAULT.into(),
     };
     let app = artifactize_desktop::app(mock_builder(), launch)
         // This command-only fixture does not need the live event subscription. Do not start
@@ -173,8 +172,36 @@ fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Re
     .map(|body| body.deserialize::<Value>().unwrap())
 }
 
-const STILL: fn() -> Value =
-    || json!({"scope": null, "run": null, "paging": null, "full": true, "resync": false});
+const STILL: fn() -> Value = || json!({"run": null, "close": false, "query": null, "older": null, "full": true, "resync": false});
+
+/// Show Run `run` in the Main area.
+fn open_run(run: &str) -> Value {
+    json!({"run": run, "close": false, "query": null, "older": null, "full": false, "resync": false})
+}
+
+/// Star `branch`, or take its star away.
+fn star(branch: &Value, on: bool) -> Value {
+    json!({"run": null, "close": false, "query": null, "older": null, "star": {"branch": branch, "on": on}, "full": false, "resync": false})
+}
+
+/// Read the state afresh with the pane's search `query`.
+fn search(query: &str) -> Value {
+    json!({"run": null, "close": false, "query": query, "older": null, "full": true, "resync": false})
+}
+
+/// The waiting Human reviews the Pane lists, read afresh.
+fn waiting(window: &WebviewWindow<MockRuntime>) -> Value {
+    invoke(window, "browse", json!({"navigate": STILL()})).unwrap()["waiting"].clone()
+}
+
+/// The fixture's one branch as the Pane lists it.
+fn branch(window: &WebviewWindow<MockRuntime>) -> Value {
+    let view = invoke(window, "browse", json!({"navigate": STILL()})).unwrap();
+    let [branch] = view["branches"].as_array().unwrap().as_slice() else {
+        panic!("one branch: {view}");
+    };
+    branch["key"].clone()
+}
 
 fn saved(fixture: &Fixture, eval: &str) -> artifactize_core::store::RequestView {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -195,66 +222,96 @@ fn saved(fixture: &Fixture, eval: &str) -> artifactize_core::store::RequestView 
     })
 }
 
-fn tree_names(view: &Value) -> Vec<String> {
-    view["run"]["tree"]
-        .as_array()
-        .unwrap()
-        .iter()
+/// The shown Run's tree row `node` with its children, as the Detail reads it.
+fn row(window: &WebviewWindow<MockRuntime>, run: &str, node: &str) -> Value {
+    invoke(
+        window,
+        "detail_row",
+        json!({"source": {"kind": "run", "run": run}, "node": node}),
+    )
+    .unwrap()
+}
+
+/// The names of the shown Run's tree: its Run row, then each Artifact in the graph's order with
+/// its evals.
+fn tree_names(window: &WebviewWindow<MockRuntime>, view: &Value) -> Vec<String> {
+    let run = view["run"]["id"].as_str().unwrap();
+    let graph = invoke(
+        window,
+        "graph",
+        json!({"source": {"kind": "run", "run": run}, "known": null}),
+    )
+    .unwrap();
+    let artifacts = graph["update"]["nodes"].as_array().unwrap().clone();
+    std::iter::once(row(window, run, view["run"]["node"].as_str().unwrap()))
+        .chain(
+            artifacts
+                .iter()
+                .map(|node| row(window, run, node["id"].as_str().unwrap())),
+        )
         .flat_map(|node| {
-            std::iter::once(node["name"].as_str().unwrap().to_owned()).chain(
-                node["children"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|child| child["name"].as_str().unwrap().to_owned()),
-            )
+            let children: Vec<_> = node["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|child| child["name"].as_str().unwrap().to_owned())
+                .collect();
+            std::iter::once(node["name"].as_str().unwrap().to_owned()).chain(children)
         })
         .collect()
 }
 
 #[test]
-fn browse_reads_the_catalog_runs_and_tree_and_detail_reads_the_snapshot() {
+fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
     let view = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
 
-    // The repository starts selected from --repo; the catalog still lists ALL.
-    let labels: Vec<_> = view["scopes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["label"].as_str().unwrap().to_owned())
-        .collect();
-    assert_eq!(labels[..2], ["ALL", "repo"]);
-    assert!(labels[2].ends_with(" · repo"), "{labels:?}");
-    assert_eq!(view["runs"].as_array().unwrap().len(), 1);
+    // One live branch: the project's checked-out branch, the one --repo names.
+    let identity = artifactize_core::repository::identify(&fixture.repo);
+    let [branch] = view["branches"].as_array().unwrap().as_slice() else {
+        panic!("one branch: {view}");
+    };
+    assert_eq!(branch["project"], "repo");
+    assert_eq!(branch["name"], identity.branch.unwrap());
+    assert_eq!(view["launch"], branch["key"]);
+    // Its timeline holds the Run in progress, the Human waiting: no Current yet.
+    let [chip] = branch["chips"].as_array().unwrap().as_slice() else {
+        panic!("one chip: {branch}");
+    };
+    assert_eq!(chip["kind"], "run");
+    assert_eq!(chip["running"], json!(true));
+    assert_eq!(chip["status"], "Running");
+    // A running Run's age is its time so far, not a time ago.
+    assert!(!chip["age"].as_str().unwrap().ends_with(" ago"), "{chip}");
+    assert_eq!(view["run"], Value::Null, "nothing chosen yet");
+    // The waiting stack lists the sign-off with its project and branch.
+    assert_eq!(view["waiting"][0]["eval"], "release/signoff");
+    assert_eq!(view["waiting"][0]["project"], "repo");
+    assert_eq!(view["waiting"][0]["branch"], branch["name"]);
+
+    let run = chip["id"].as_str().unwrap().to_owned();
+    let view = invoke(&window, "browse", json!({"navigate": open_run(&run)})).unwrap();
     assert_eq!(
-        tree_names(&view),
+        tree_names(&window, &view),
         ["Run", "release", "signoff", "ship", "check"]
     );
-    let signoff = &view["run"]["tree"][1]["children"][0];
+    let shown = view["run"]["id"].as_str().unwrap();
+    let signoff = &row(&window, shown, "a:release")["children"][0];
     assert_eq!(signoff["urgent"], json!(true));
     assert_eq!(signoff["text"][0]["text"], "Human sign-off · unclaimed");
     // ship waits for release: its eval marks release as an unmet upstream Artifact.
-    let check = &view["run"]["tree"][2]["children"][0];
+    let check = &row(&window, shown, "a:ship")["children"][0];
     assert_eq!(
         check["upstream"],
         json!([{"node": "a:release", "complete": false}])
     );
 
-    // Selecting ALL keeps the Run; the Detail comes from the shown snapshot.
-    let all = invoke(
-        &window,
-        "browse",
-        json!({"navigate": {"scope": {"kind": "all"}, "run": null, "paging": null, "full": false, "resync": false}}),
-    )
-    .unwrap();
-    assert_eq!(all["scopeLabel"], "all repositories");
-    let run = all["selectedRun"].as_str().unwrap();
+    // The Detail comes from the shown snapshot.
     let detail = invoke(
         &window,
         "detail",
-        json!({"run": run, "node": "e:release/signoff"}),
+        json!({"source": {"kind": "run", "run": run}, "node": "e:release/signoff"}),
     )
     .unwrap();
     assert_eq!(detail["profile"], "human");
@@ -274,9 +331,48 @@ fn browse_reads_the_catalog_runs_and_tree_and_detail_reads_the_snapshot() {
     let missing = invoke(
         &window,
         "detail",
-        json!({"run": "run-gone", "node": "e:release/signoff"}),
+        json!({"source": {"kind": "run", "run": "run-gone"}, "node": "e:release/signoff"}),
     );
     assert_eq!(missing.unwrap_err()["kind"], "missing");
+}
+
+#[test]
+fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Monitor);
+    let shown = |query: &str| {
+        let view = invoke(&window, "browse", json!({"navigate": search(query)})).unwrap();
+        (
+            view["branches"].as_array().unwrap().len(),
+            view["waiting"].as_array().unwrap().len(),
+            view["query"].clone(),
+        )
+    };
+    let (branches, waiting, query) = shown(artifactize_core::monitor::live::DEFAULT);
+    assert_eq!((branches, waiting), (1, 1));
+    assert_eq!(query, json!({"text": "sort:recent", "error": null}));
+    assert_eq!(shown("repo:rep").0, 1);
+    // Free text also finds a waiting review by its eval; the branch stays only by its own name.
+    let (branches, waiting, _) = shown("signoff");
+    assert_eq!((branches, waiting), (0, 1));
+    assert_eq!(shown("repo:elsewhere").0 + shown("repo:elsewhere").1, 0);
+    // An invalid search lists nothing and says why.
+    let (branches, waiting, query) = shown("sort:size");
+    assert_eq!((branches, waiting), (0, 0));
+    assert!(
+        query["error"].as_str().unwrap().contains("sort:size"),
+        "{query}"
+    );
+    let completion = invoke(
+        &window,
+        "pane_complete",
+        json!({"query": "sort:recent repo:"}),
+    )
+    .unwrap();
+    assert_eq!(
+        completion,
+        json!({"keep": "sort:recent ", "candidates": ["repo:repo"]})
+    );
 }
 
 #[test]
@@ -284,19 +380,10 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
     let id = saved(&fixture, "release/signoff").request.id.to_string();
-    let waiting = invoke(
-        &window,
-        "review_search",
-        json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": true}),
-    )
-    .unwrap();
-    assert_eq!(waiting["rows"][0]["id"], id);
-    assert_eq!(waiting["rows"][0]["claim"], "-");
-    // The screen switch counts what the review list's starting search finds.
-    assert_eq!(
-        invoke(&window, "review_waiting", json!({})).unwrap(),
-        json!(1)
-    );
+    let listed = waiting(&window);
+    assert_eq!(listed[0]["id"], id);
+    assert_eq!(listed[0]["claim"], "-");
+    assert_eq!(listed.as_array().unwrap().len(), 1);
 
     let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(open["stage"], "claim");
@@ -405,37 +492,25 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         invoke(&window, "human_taken", json!({})).unwrap(),
         json!([])
     );
-    let waiting = invoke(
-        &window,
-        "review_search",
-        json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": true}),
-    )
-    .unwrap();
-    assert_eq!(waiting["rows"], json!([]));
-    assert_eq!(
-        invoke(&window, "review_waiting", json!({})).unwrap(),
-        json!(0)
-    );
+    // The submitted review stops waiting: the stack is empty.
+    assert_eq!(waiting(&window), json!([]));
 }
 
 #[test]
 fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
-    let waiting = |reload: bool| {
-        invoke(
-            &window,
-            "review_search",
-            json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": reload}),
-        )
-        .unwrap()
-    };
     let old = saved(&fixture, "release/signoff").request.id.to_string();
-    assert_eq!(waiting(true)["generation"], 0);
-    invoke(&window, "human_open", json!({"id": old, "reload": true})).unwrap();
+    let generation = |id: &str| {
+        invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap()["generation"]
+            .clone()
+    };
+    waiting(&window);
+    assert_eq!(generation(&old), 0);
     invoke(&window, "human_claim", json!({"id": old, "job": 1})).unwrap();
     // An ordinary refresh keeps the generation, the claim taken here and the cached view.
-    assert_eq!(waiting(true)["generation"], 0);
+    waiting(&window);
+    assert_eq!(generation(&old), 0);
     assert_eq!(
         invoke(&window, "human_taken", json!({})).unwrap(),
         json!([old])
@@ -445,16 +520,17 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     fixture._root.release().unwrap();
     fs::remove_dir_all(&fixture.state).unwrap();
     verify(&fixture.repo, &fixture.state);
-    let replaced = waiting(true);
-    assert_eq!(replaced["generation"], 1);
-    assert_ne!(replaced["rows"][0]["id"], old);
+    let replaced = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
+    assert_eq!(replaced["replaced"], json!(true));
+    let new = replaced["waiting"][0]["id"].as_str().unwrap().to_owned();
+    assert_ne!(new, old);
     assert_eq!(
         invoke(&window, "human_taken", json!({})).unwrap(),
         json!([])
     );
     // The old request's view is gone with its state, not redrawn as still actionable.
     assert!(invoke(&window, "human_open", json!({"id": old, "reload": false})).is_err());
-    assert_eq!(waiting(true)["generation"], 1);
+    assert_eq!(generation(&new), 1);
 }
 
 #[test]
@@ -553,15 +629,7 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
     let id = saved(&fixture, "release/signoff").request.id.to_string();
-    let waiting = || {
-        invoke(
-            &window,
-            "review_search",
-            json!({"query": artifactize_core::review::search::DEFAULT, "start": 0, "reload": true}),
-        )
-        .unwrap()
-    };
-    assert_eq!(waiting()["generation"], 0);
+    waiting(&window);
     let backup = fixture._root.path().join("backup");
     back_up(&fixture.state, &backup);
     invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
@@ -580,10 +648,10 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
         identity,
         "the restored database keeps the state's identity"
     );
-    let restored = waiting();
-    assert_eq!(restored["generation"], 1);
-    assert_eq!(restored["rows"][0]["id"], id);
-    assert_eq!(restored["rows"][0]["claim"], "-");
+    let restored = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
+    assert_eq!(restored["replaced"], json!(true));
+    assert_eq!(restored["waiting"][0]["id"], id);
+    assert_eq!(restored["waiting"][0]["claim"], "-");
     assert_eq!(
         invoke(&window, "human_taken", json!({})).unwrap(),
         json!([])
@@ -759,54 +827,21 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
 }
 
 #[test]
-fn the_review_search_lists_any_request_and_opens_a_read_only_detail() {
+fn a_request_opened_by_id_that_is_not_a_human_review_opens_a_read_only_detail() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
-    let search = |query: &str| {
-        invoke(
-            &window,
-            "review_search",
-            json!({"query": query, "start": 0, "reload": true}),
-        )
-        .unwrap()
-    };
-    // The default lists the waiting Human sign-off only.
-    let waiting = search(artifactize_core::review::search::DEFAULT);
-    assert_eq!(waiting["waiting"], json!(true));
-    let evals: Vec<_> = waiting["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["eval"].clone())
-        .collect();
-    assert_eq!(evals, [json!("release/signoff")]);
-    // Any kind and status: the runtime Eval that waits for the sign-off.
-    let dependency = search("kind:runtime eval:ship/check");
-    assert_eq!(dependency["waiting"], json!(false));
-    assert_eq!(dependency["rows"][0]["eval"], "ship/check");
-    assert_eq!(dependency["rows"][0]["kind"], "runtime");
-    let id = dependency["rows"][0]["id"].as_str().unwrap().to_owned();
-    let detail = invoke(&window, "review_detail", json!({"id": id})).unwrap();
+    // The runtime Eval that waits for the sign-off.
+    let id = saved(&fixture, "ship/check").request.id.to_string();
+    let detail = invoke(&window, "request_detail", json!({"id": id})).unwrap();
     assert_eq!(detail["profile"], "runtime");
+    assert_eq!(detail["request"], id);
     assert_eq!(detail["sections"][0]["name"], "outcome");
-    // An invalid query lists nothing and says why.
-    let invalid = search("kind:robot");
-    assert_eq!(invalid["rows"], json!([]));
-    assert!(invalid["error"].as_str().unwrap().contains("Unknown kind"));
-    // Completion offers values from the requests the terms before the last one find.
-    let completion = invoke(
-        &window,
-        "review_complete",
-        json!({"query": "kind:runtime eval:ship/check eval:"}),
-    )
-    .unwrap();
-    assert_eq!(completion["candidates"], json!(["eval:ship/check"]));
-    let completion = invoke(&window, "review_complete", json!({"query": "kind:hu"})).unwrap();
-    assert_eq!(completion["candidates"], json!(["kind:human"]));
+    let missing = invoke(&window, "request_detail", json!({"id": "run-gone-1"}));
+    assert_eq!(missing.unwrap_err()["kind"], "read");
 }
 
 #[test]
-fn an_agent_request_found_by_the_search_opens_read_only_with_its_session() {
+fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
     let fixture = fixture();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -814,14 +849,7 @@ fn an_agent_request_found_by_the_search_opens_read_only_with_its_session() {
         .unwrap();
     let id = runtime.block_on(agent_request(&fixture, "fixture-session", 3));
     let window = window(&fixture, Mode::Review);
-    let found = invoke(
-        &window,
-        "review_search",
-        json!({"query": "kind:agent", "start": 0, "reload": true}),
-    )
-    .unwrap();
-    assert_eq!(found["rows"][0]["id"], id);
-    let detail = invoke(&window, "review_detail", json!({"id": id})).unwrap();
+    let detail = invoke(&window, "request_detail", json!({"id": id})).unwrap();
     assert_eq!(detail["profile"], "agent");
     assert_eq!(detail["request"], id);
     let opened = invoke(
@@ -835,27 +863,93 @@ fn an_agent_request_found_by_the_search_opens_read_only_with_its_session() {
 }
 
 #[test]
+fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Monitor);
+    let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
+    assert_eq!(view["branches"][0]["starred"], json!(false));
+    let branch = view["branches"][0]["key"].clone();
+    let starred = invoke(&monitor, "browse", json!({"navigate": star(&branch, true)})).unwrap();
+    assert_eq!(starred["branches"][0]["starred"], json!(true), "{starred}");
+    // Kept in the state directory, where another monitor of this user reads it.
+    assert_eq!(
+        artifactize_core::monitor::live::starred(Some(&fixture.state))
+            .unwrap()
+            .len(),
+        1
+    );
+    let unstarred = invoke(
+        &monitor,
+        "browse",
+        json!({"navigate": star(&branch, false)}),
+    )
+    .unwrap();
+    assert_eq!(unstarred["branches"][0]["starred"], json!(false));
+    assert!(
+        artifactize_core::monitor::live::starred(Some(&fixture.state))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);
     let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
-    let run = view["selectedRun"].as_str().unwrap().to_owned();
-    let graph = |window: &WebviewWindow<MockRuntime>| {
-        invoke(window, "run_graph", json!({"run": run})).unwrap()
+    let run = view["branches"][0]["chips"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    invoke(&monitor, "browse", json!({"navigate": open_run(&run)})).unwrap();
+    let source = json!({"kind": "run", "run": run});
+    let graph = |window: &WebviewWindow<MockRuntime>, known: Value| {
+        invoke(window, "graph", json!({"source": source, "known": known})).unwrap()
     };
     // Release waits for its Human; the downstream runtime Eval waits for release.
     // The edge shows its input Artifact’s active light.
-    let before = graph(&monitor);
+    let read = graph(&monitor, Value::Null);
+    assert_eq!(read["source"], source);
+    assert_eq!(read["update"]["kind"], "shape");
+    let before = &read["update"];
     assert_eq!(
         before["nodes"],
         json!([
-            {"id": "a:release", "name": "release", "light": "active"},
-            {"id": "a:ship", "name": "ship", "light": "waiting"},
+            {"id": "a:release", "name": "release", "light": "active", "note": null},
+            {"id": "a:ship", "name": "ship", "light": "waiting", "note": null},
         ])
     );
     assert_eq!(
         before["edges"],
         json!([{"source": "a:release", "target": "a:ship", "light": "active"}])
+    );
+    // An Artifact between its neighbours: ship uses release, which nothing else uses.
+    assert_eq!(
+        invoke(
+            &monitor,
+            "neighbours",
+            json!({"source": source, "node": "a:ship"})
+        )
+        .unwrap(),
+        json!({
+            "shape": {
+                "nodes": before["nodes"],
+                "edges": before["edges"],
+            },
+            "moreUses": 0,
+            "moreUsedBy": 0,
+        })
+    );
+    // An Artifact the Run lacks has no row and no neighbours.
+    assert_eq!(row(&monitor, &run, "a:gone"), Value::Null);
+    assert_eq!(
+        invoke(
+            &monitor,
+            "neighbours",
+            json!({"source": source, "node": "a:gone"})
+        )
+        .unwrap()["shape"],
+        json!({"nodes": [], "edges": []})
     );
 
     let id = saved(&fixture, "release/signoff").request.id.to_string();
@@ -893,16 +987,33 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
             artifactize_core::types::RunStatus::Green
         );
     });
-    invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
-    let after = graph(&monitor);
-    assert_eq!(after["nodes"][0]["light"], "green");
+    let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
+    // The Run ended: the timeline starts with the Current, then the Run with its final status.
+    let chips = &view["branches"][0]["chips"];
+    assert_eq!(chips[0], json!({"kind": "current"}));
+    assert_eq!(chips[1]["running"], json!(false));
+    assert_eq!(chips[1]["status"], "GREEN", "{view}");
+    assert!(
+        chips[1]["age"].as_str().unwrap().ends_with(" ago"),
+        "{view}"
+    );
+    // The shape the caller holds comes back as its lights alone, in its order.
+    let after = graph(&monitor, read["shape"].clone());
+    assert_eq!(after["shape"], read["shape"]);
     assert_eq!(
-        after["nodes"][1]["light"], "green",
+        after["update"],
+        json!({"kind": "lights", "nodes": ["green", "green"], "edges": ["green"]}),
         "the downstream runtime Eval completes"
     );
-    assert_eq!(after["edges"][0]["light"], "green");
+    // A caller holding another shape gets this one whole.
+    let other = graph(&monitor, json!(read["shape"].as_u64().unwrap() + 1));
+    assert_eq!(other["update"]["kind"], "shape");
     // Another Run than the shown one is refused.
-    let missing = invoke(&monitor, "run_graph", json!({"run": "run-gone"}));
+    let missing = invoke(
+        &monitor,
+        "graph",
+        json!({"source": {"kind": "run", "run": "run-gone"}, "known": null}),
+    );
     assert_eq!(missing.unwrap_err()["kind"], "missing");
 }
 
@@ -932,8 +1043,18 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
     let fixture = fixture_with(&[("broken", &broken), ("after", &after)]);
     let monitor = window(&fixture, Mode::Monitor);
     let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
-    let run = view["selectedRun"].as_str().unwrap().to_owned();
-    let graph = invoke(&monitor, "run_graph", json!({"run": run})).unwrap();
+    let run = view["branches"][0]["chips"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    invoke(&monitor, "browse", json!({"navigate": open_run(&run)})).unwrap();
+    let graph = invoke(
+        &monitor,
+        "graph",
+        json!({"source": {"kind": "run", "run": run}, "known": null}),
+    )
+    .unwrap();
+    let graph = &graph["update"];
     let light = |id: &str| {
         graph["nodes"]
             .as_array()
@@ -958,7 +1079,7 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
 }
 
 #[test]
-fn graph_view_projects_the_same_structure_as_the_fingerprint_and_agent_tool() {
+fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     let root = os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -983,36 +1104,159 @@ fn graph_view_projects_the_same_structure_as_the_fingerprint_and_agent_tool() {
         state,
     };
     let viewer = window(&fixture, Mode::Graph);
+    // The folder the app was started for is listed before its first Run, ending with Current.
+    let view = invoke(&viewer, "browse", json!({"navigate": STILL()})).unwrap();
+    let branch = view["launch"].clone();
+    assert_eq!(view["branches"][0]["key"], branch);
+    assert_eq!(view["branches"][0]["chips"], json!([{"kind": "current"}]));
+
     let structure = artifactize_core::graph_structure::read(&fixture.repo).unwrap();
-    let view = invoke(&viewer, "current_graph", json!({})).unwrap();
-    assert_eq!(view["fingerprint"], structure.fingerprint().as_str());
-    assert_eq!(view["structure"], structure.tree());
+    let scanned = invoke(&viewer, "current_scan", json!({"branch": branch})).unwrap();
+    assert_eq!(scanned["fingerprint"], structure.fingerprint().as_str());
+    assert_eq!(scanned["structure"], structure.tree());
+    assert_eq!(scanned["tree"][1]["children"][0]["name"], "review");
     assert_eq!(
-        view["graph"]["nodes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|node| node["name"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["app", "graph"]
+        scanned["tree"][1]["children"][0]["text"][0]["text"],
+        "would run"
+    );
+    // Never verified: the Human eval would run; the Artifact without evals is reused.
+    let source = json!({"kind": "current", "branch": branch});
+    let graph = invoke(&viewer, "graph", json!({"source": source, "known": null})).unwrap();
+    // A Current comes whole on every read, its shape named.
+    assert_eq!(graph["update"]["kind"], "shape");
+    assert!(graph["shape"].as_u64().is_some(), "{graph}");
+    let graph = &graph["update"];
+    assert_eq!(
+        graph["nodes"],
+        json!([
+            {"id": "a:app", "name": "app", "light": "reused", "note": "reused"},
+            {"id": "a:graph", "name": "graph", "light": "run", "note": "would run (1 eval)"},
+        ])
     );
     assert_eq!(
-        view["graph"]["edges"],
-        json!([{"source":"a:app", "target":"a:graph", "light":"waiting"}])
+        graph["edges"],
+        json!([{"source": "a:app", "target": "a:graph", "light": "reused"}])
     );
-    assert_eq!(view["tree"][1]["children"][0]["name"], "Review the graph");
-    // There was never a verification or saved Run. Refresh reads the changed declaration.
+    // graph between its neighbours: it uses app, which nothing else uses.
+    assert_eq!(
+        invoke(
+            &viewer,
+            "neighbours",
+            json!({"source": source, "node": "a:graph"})
+        )
+        .unwrap(),
+        json!({
+            "shape": {"nodes": graph["nodes"], "edges": graph["edges"]},
+            "moreUses": 0,
+            "moreUsedBy": 0,
+        })
+    );
+    // Its row, with its eval, as the Detail's chips show them; none for an Artifact it lacks.
+    let row = invoke(
+        &viewer,
+        "detail_row",
+        json!({"source": source, "node": "a:graph"}),
+    )
+    .unwrap();
+    assert_eq!(row["children"][0]["name"], "review");
+    assert_eq!(
+        invoke(
+            &viewer,
+            "detail_row",
+            json!({"source": source, "node": "a:gone"})
+        )
+        .unwrap(),
+        Value::Null
+    );
+    let detail = invoke(
+        &viewer,
+        "detail",
+        json!({"source": source, "node": "e:graph/review"}),
+    )
+    .unwrap();
+    assert_eq!(detail["plan"]["text"], "would run");
+    assert_eq!(detail["card"]["instruction"], "Review {app}.");
+    assert_eq!(detail["card"]["result"], Value::Null, "nothing to reuse");
+    assert_eq!(detail["profile"], "human");
+    // Nothing was verified or recorded.
+    assert!(
+        !fixture
+            .state
+            .join(artifactize_core::store::DATABASE)
+            .exists()
+    );
+
+    // Scanning again reads the changed declaration.
     fs::write(
         fixture.repo.join("index.artf"),
         "name = 'app'\nbasis = true\n",
     )
     .unwrap();
-    let refreshed = invoke(&viewer, "current_graph", json!({})).unwrap();
-    assert_ne!(refreshed["fingerprint"], view["fingerprint"]);
+    let again = invoke(&viewer, "current_scan", json!({"branch": branch})).unwrap();
+    assert_ne!(again["fingerprint"], scanned["fingerprint"]);
+    assert!(again["revision"].as_u64() > scanned["revision"].as_u64());
     assert_eq!(
-        refreshed["structure"],
+        again["structure"],
         artifactize_core::graph_structure::read(&fixture.repo)
             .unwrap()
             .tree()
+    );
+    // A branch the Pane does not list has no Current.
+    let elsewhere = json!({"kind": "folder", "path": "/nowhere"});
+    let missing = invoke(&viewer, "current_scan", json!({"branch": elsewhere}));
+    assert_eq!(missing.unwrap_err()["kind"], "missing");
+}
+
+#[test]
+fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Monitor);
+    let branch = branch(&window);
+    let tools = invoke(
+        &window,
+        "artifact_tools",
+        json!({"branch": branch, "artifact": "release"}),
+    )
+    .unwrap();
+    assert_eq!(tools[0]["name"], "notes_release");
+    assert_eq!(tools[0]["operation"], "notes");
+    assert_eq!(tools[0]["action"], "prints release/notes.md");
+    // ship declares none of its own.
+    assert_eq!(
+        invoke(
+            &window,
+            "artifact_tools",
+            json!({"branch": branch, "artifact": "ship"}),
+        )
+        .unwrap(),
+        json!([])
+    );
+    let ran = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({"branch": branch, "artifact": "release", "tool": "notes_release", "job": 1}),
+    )
+    .unwrap();
+    assert_eq!(
+        ran,
+        json!({"text": "notes_release finished.", "error": false})
+    );
+    // Nobody claimed the waiting review, and nothing was recorded on it.
+    let saved = saved(&fixture, "release/signoff");
+    assert!(saved.claim.is_none());
+    assert_eq!(
+        saved.request.status(),
+        artifactize_core::types::RequestStatus::WaitingHuman
+    );
+    // Another Artifact's tool is not this one's to run.
+    let refused = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({"branch": branch, "artifact": "ship", "tool": "notes_release", "job": 2}),
+    )
+    .unwrap();
+    assert_eq!(
+        refused,
+        json!({"text": "notes_release did not run.", "error": true})
     );
 }

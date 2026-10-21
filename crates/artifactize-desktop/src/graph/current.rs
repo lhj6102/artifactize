@@ -1,132 +1,348 @@
-//! Current declaration structure, not a historical Run or a state database snapshot.
-use super::{GraphEdge, GraphNode, Light};
+//! A branch's Current: its worktree as it is now, scanned by the library's
+//! [`live::scan`] as `artifactize status` does. The last scan of each branch is kept for its
+//! graph and Details; scanning a branch again cancels its scan still running.
+use super::{GraphEdge, GraphNode, Shape, Source, node_id};
 use crate::{
     App, Failure,
-    browse::{NodeKind, TreeNode},
+    browse::{BranchKey, NodeKind, Segment, TreeNode},
+    detail::{
+        CardView, DetailTarget, DetailView, Field, PlanLine, Profile, SectionName, SectionView,
+    },
     status::{Tone, Weight},
 };
-use artifactize_core::{
-    graph_structure::{self, Structure},
-    monitor::NodeId,
+use artifactize_core::monitor::{
+    NodeId,
+    live::{self, Current, CurrentArtifact, CurrentEval, Place},
 };
 use serde::Serialize;
 use specta::Type;
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Serialize, Type)]
-pub struct Shape {
-    pub nodes: Vec<GraphNode>,
-    pub edges: Vec<GraphEdge>,
+/// A branch's last scan, its number among this app's scans, and the shape of its graph.
+#[derive(Clone)]
+pub struct Shown {
+    pub current: Arc<Current>,
+    pub revision: crate::ids::ScanId,
+    /// Stays while a scan finds the same Artifacts and edges, whatever their plans.
+    pub shape: crate::ids::ShapeKey,
 }
 
-#[derive(Debug, Serialize, Type)]
-pub struct CurrentGraph {
+/// The last scan of each branch, and the scans running.
+#[derive(Default)]
+pub struct Currents {
+    shown: Mutex<BTreeMap<Place, Shown>>,
+    running: Mutex<BTreeMap<Place, (crate::ids::ScanId, CancellationToken)>>,
+    scans: std::sync::atomic::AtomicU32,
+    /// The last graph shape handed out.
+    shapes: Mutex<crate::ids::ShapeKey>,
+}
+
+impl Currents {
+    pub fn shown(&self, place: &Place) -> Result<Shown, Failure> {
+        self.shown
+            .lock()
+            .expect("currents lock")
+            .get(place)
+            .cloned()
+            .ok_or_else(|| {
+                Failure::Missing("This Current is not scanned yet; choose it again.".into())
+            })
+    }
+
+    /// Start a scan of `place`, cancelling the one still running.
+    fn start(&self, place: &Place) -> (crate::ids::ScanId, CancellationToken) {
+        let scan = crate::ids::ScanId::allocate(&self.scans);
+        let token = CancellationToken::new();
+        if let Some((_, old)) = self
+            .running
+            .lock()
+            .expect("scans lock")
+            .insert(place.clone(), (scan, token.clone()))
+        {
+            old.cancel();
+        }
+        (scan, token)
+    }
+
+    /// Scan `scan` of `place` ended: keep what it found unless a newer scan started.
+    fn end(&self, place: &Place, scan: crate::ids::ScanId, found: Option<Current>) -> bool {
+        let mut running = self.running.lock().expect("scans lock");
+        if running.get(place).is_none_or(|(at, _)| *at != scan) {
+            return false;
+        }
+        running.remove(place);
+        if let Some(current) = found {
+            let mut shown = self.shown.lock().expect("currents lock");
+            let shape = match shown.get(place) {
+                Some(before) if same_shape(&before.current, &current) => before.shape,
+                _ => self.shapes.lock().expect("shapes lock").next(),
+            };
+            shown.insert(
+                place.clone(),
+                Shown {
+                    current: Arc::new(current),
+                    revision: scan,
+                    shape,
+                },
+            );
+        }
+        true
+    }
+
+    /// Forget every scan of a replaced state and cancel those running.
+    pub fn reset(&self) {
+        for (_, token) in self.running.lock().expect("scans lock").values() {
+            token.cancel();
+        }
+        self.shown.lock().expect("currents lock").clear();
+    }
+}
+
+/// A branch's Current as the Main area shows it.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentView {
+    pub branch: BranchKey,
+    /// When it was scanned, at milliseconds since the Unix epoch.
+    pub scanned_at: f64,
     pub fingerprint: crate::ids::FingerprintKey,
-    pub graph: Shape,
-    pub tree: Vec<TreeNode>,
-    /// Complete, canonical structural data rendered as text: criteria and relation labels
-    /// remain inspectable even when several relations share one graph edge.
+    /// Every Artifact, eval criterion and labeled relation as text.
     pub structure: String,
+    /// Each Artifact with its evals, as the Detail's chips and lists show them.
+    pub tree: Vec<TreeNode>,
+    /// Grows with each scan: the graph and an open Detail read again when it does.
+    pub revision: crate::ids::ScanId,
 }
 
-fn row(
-    id: NodeId,
-    kind: NodeKind,
-    name: String,
-    right: String,
-    children: Vec<TreeNode>,
-) -> TreeNode {
+fn segment(text: String, tone: Tone) -> Vec<Segment> {
+    vec![Segment {
+        text,
+        tone: Some(tone),
+    }]
+}
+
+fn eval_row(eval: &CurrentEval) -> TreeNode {
+    let tone: Tone = eval.plan.tone().into();
     TreeNode {
-        id: id.into(),
-        kind,
-        name,
-        right,
-        children,
-        glyph: "·".into(),
-        tone: Tone::Muted,
+        id: NodeId::eval(eval.id.clone()).into(),
+        kind: NodeKind::Eval,
+        glyph: eval.plan.glyph().into(),
+        tone,
         weight: Weight::Normal,
+        name: eval.name.clone(),
         marks: String::new(),
-        text: Vec::new(),
+        text: segment(eval.plan.word().into(), tone),
+        right: eval.title.clone(),
         changed: false,
         done: false,
         attention: false,
         urgent: false,
         upstream: Vec::new(),
+        children: Vec::new(),
     }
 }
 
-pub(super) fn project(structure: &Structure) -> CurrentGraph {
-    let id = |name: &artifactize_core::types::ArtifactName| -> crate::ids::NodeKey {
-        NodeId::artifact(name.clone()).into()
-    };
-    let nodes = structure
-        .artifacts
-        .keys()
-        .map(|name| GraphNode {
-            id: id(name),
-            name: name.to_string(),
-            light: Light::Waiting,
-        })
-        .collect();
-    let pairs: BTreeSet<_> = structure
-        .relations
-        .iter()
-        .map(|edge| (&edge.source, &edge.target))
-        .collect();
-    let edges = pairs
-        .into_iter()
-        .map(|(source, target)| GraphEdge {
-            source: id(source),
-            target: id(target),
-            light: Light::Waiting,
-        })
-        .collect();
-    let tree = structure
+fn artifact_row(artifact: &CurrentArtifact) -> TreeNode {
+    let tone: Tone = artifact.plan.tone().into();
+    TreeNode {
+        id: node_id(&artifact.name),
+        kind: NodeKind::Artifact,
+        glyph: artifact.plan.glyph().into(),
+        tone,
+        weight: Weight::Normal,
+        name: artifact.name.to_string(),
+        marks: String::new(),
+        text: segment(artifact.text(), tone),
+        right: String::new(),
+        changed: false,
+        done: false,
+        attention: false,
+        urgent: false,
+        upstream: Vec::new(),
+        children: artifact.evals.iter().map(eval_row).collect(),
+    }
+}
+
+/// The row of the Artifact `node` of `current`, with its evals.
+pub(crate) fn row(current: &Current, node: &NodeId) -> Option<TreeNode> {
+    current
         .artifacts
         .iter()
-        .map(|(name, artifact)| {
-            let evals = structure
-                .evals
+        .find(|artifact| node_id(&artifact.name).inner() == node)
+        .map(artifact_row)
+}
+
+fn view(branch: BranchKey, shown: &Shown) -> CurrentView {
+    let current = &shown.current;
+    CurrentView {
+        branch,
+        scanned_at: (current.scanned_at.unix_timestamp_nanos() / 1_000_000) as f64,
+        fingerprint: current.fingerprint.clone().into(),
+        structure: current.structure.clone(),
+        tree: current.artifacts.iter().map(artifact_row).collect(),
+        revision: shown.revision,
+    }
+}
+
+/// The same Artifacts and edges in the same order, whatever they would do.
+fn same_shape(before: &Current, after: &Current) -> bool {
+    before
+        .artifacts
+        .iter()
+        .map(|artifact| &artifact.name)
+        .eq(after.artifacts.iter().map(|artifact| &artifact.name))
+        && before
+            .edges
+            .iter()
+            .map(|edge| (&edge.from, &edge.to))
+            .eq(after.edges.iter().map(|edge| (&edge.from, &edge.to)))
+}
+
+/// The graph of `current`, every Artifact lit and noted by what verify would do.
+pub(crate) fn shape(current: &Current) -> Shape {
+    Shape {
+        nodes: current
+            .artifacts
+            .iter()
+            .map(|artifact| GraphNode {
+                id: node_id(&artifact.name),
+                name: artifact.name.to_string(),
+                light: artifact.plan.into(),
+                note: Some(artifact.text()),
+            })
+            .collect(),
+        edges: current
+            .edges
+            .iter()
+            .map(|edge| GraphEdge {
+                source: node_id(&edge.from),
+                target: node_id(&edge.to),
+                light: edge.plan.into(),
+            })
+            .collect(),
+    }
+}
+
+fn plan_line(plan: live::Plan, text: String, reason: &str) -> PlanLine {
+    PlanLine {
+        glyph: plan.glyph().into(),
+        text,
+        tone: plan.tone().into(),
+        reason: reason.to_owned(),
+    }
+}
+
+fn section(name: SectionName, title: &str, fields: Vec<Field>) -> Option<SectionView> {
+    (!fields.is_empty()).then(|| SectionView {
+        name,
+        title: title.into(),
+        fields,
+        waits: Vec::new(),
+    })
+}
+
+fn field(key: &str, value: impl Into<String>) -> Field {
+    Field {
+        key: key.into(),
+        value: value.into(),
+    }
+}
+
+/// The Detail of `node` of `current`: an Artifact's or an eval's.
+pub(crate) fn detail(
+    current: &Current,
+    source: Source,
+    node: &NodeId,
+) -> Result<DetailView, Failure> {
+    let missing = || Failure::Missing(format!("{node} is not in this Current."));
+    let target = artifactize_core::monitor::Target::from(node);
+    let (target, title, plan, sections, card, profile) = match &target {
+        artifactize_core::monitor::Target::Artifact(name) => {
+            let artifact = current
+                .artifacts
                 .iter()
-                .filter(|(_, eval)| &eval.target == name)
-                .map(|(id, eval)| {
-                    row(
-                        NodeId::eval(id.clone()),
-                        NodeKind::Eval,
-                        eval.title.clone(),
-                        id.to_string(),
-                        Vec::new(),
-                    )
-                })
-                .collect();
-            row(
-                NodeId::artifact(name.clone()),
-                NodeKind::Artifact,
-                name.to_string(),
-                format!("{:?}", artifact.kind),
-                evals,
+                .find(|artifact| &artifact.name == name)
+                .ok_or_else(missing)?;
+            let fields = vec![
+                field("Path", artifactize_tools::files::path_text(&artifact.path)),
+                field("Kind", format!("{:?}", artifact.kind).to_lowercase()),
+                field("State", artifact.state.to_string()),
+                field("Reason", artifact.reason.clone()),
+            ];
+            (
+                DetailTarget::Artifact,
+                format!("Artifact {name}"),
+                plan_line(artifact.plan, artifact.text(), &artifact.reason),
+                section(SectionName::What, "What", fields),
+                None,
+                None,
             )
-        })
-        .collect();
-    CurrentGraph {
-        fingerprint: structure.fingerprint().into(),
-        graph: Shape { nodes, edges },
-        tree,
-        structure: structure.tree(),
-    }
+        }
+        artifactize_core::monitor::Target::Eval(id) => {
+            let eval = current
+                .artifacts
+                .iter()
+                .flat_map(|artifact| &artifact.evals)
+                .find(|eval| &eval.id == id)
+                .ok_or_else(missing)?;
+            let fields = eval
+                .facts
+                .iter()
+                .map(|(key, value)| field(key, value.clone()))
+                .collect();
+            (
+                DetailTarget::Eval,
+                format!("{} · {}", eval.id, eval.title),
+                plan_line(eval.plan, eval.plan.word().into(), &eval.reason),
+                section(SectionName::Technical, "Technical", fields),
+                Some(CardView::from(eval.card.clone())),
+                Some(Profile::from(eval.kind)),
+            )
+        }
+        artifactize_core::monitor::Target::Run => return Err(missing()),
+    };
+    Ok(DetailView {
+        source,
+        node: node.clone().into(),
+        target,
+        summary: format!("{} · {}", plan.text, plan.reason),
+        title,
+        request: None,
+        profile,
+        mark: None,
+        plan: Some(plan),
+        sections: sections.into_iter().collect(),
+        evidence: None,
+        card,
+        running: false,
+    })
 }
 
+/// Scan `branch`'s worktree as it is now. Scanning it again cancels this scan, which then
+/// answers with the newer one's view once that one ends.
 #[tauri::command]
 #[specta::specta]
-pub async fn current_graph(app: tauri::State<'_, App>) -> Result<CurrentGraph, Failure> {
-    let repo = app
-        .launch
-        .repo
-        .clone()
-        .ok_or_else(|| Failure::Read("Current graph requires --repo PATH.".into()))?;
-    let structure = crate::failure::joined(
-        tokio::task::spawn_blocking(move || graph_structure::read(&repo)).await,
-    )?
-    .map_err(Failure::Read)?;
-    Ok(project(&structure))
+pub async fn current_scan(
+    app: tauri::State<'_, App>,
+    branch: BranchKey,
+) -> Result<CurrentView, Failure> {
+    let place = branch.to_place();
+    let listed = app.browse.branch(&place)?;
+    let (scan, token) = app.currents.start(&place);
+    let found = live::scan(&listed.workspace, &app.launch.state, token).await;
+    match found {
+        Ok(current) => {
+            app.currents.end(&place, scan, Some(current));
+        }
+        Err(error) => {
+            if app.currents.end(&place, scan, None) {
+                return Err(Failure::Read(error));
+            }
+        }
+    }
+    Ok(view(branch, &app.currents.shown(&place)?))
 }

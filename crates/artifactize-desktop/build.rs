@@ -4,10 +4,13 @@ mod input_build;
 
 fn main() {
     #[cfg(feature = "e2e")]
-    input_build::compile();
+    if let Err(error) = input_build::compile() {
+        eprintln!("error: {error}");
+        std::process::exit(1);
+    }
     // Tauri embeds ui/dist when this crate compiles, and asks for a rebuild only when a file it
     // embedded changes: a dist built after a build that saw it half-written (or without a new
-    // asset, such as the layout worker) would stay out of the app. Watching the whole directory
+    // asset, such as a new code chunk) would stay out of the app. Watching the whole directory
     // rebuilds on any added, removed or changed file.
     println!("cargo:rerun-if-changed=ui/dist");
     windowless_release();

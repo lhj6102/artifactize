@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use serde::Serialize;
 
@@ -19,10 +19,11 @@ pub struct RequestView {
     pub definition: Option<RequestDefinition>,
 }
 
+/// The saved definitions of a request's eval and Artifact, shared by every view of the Run.
 #[derive(Debug, Clone, Serialize)]
 pub struct RequestDefinition {
-    pub eval: super::definitions::Eval,
-    pub artifact: super::definitions::Artifact,
+    pub eval: Arc<super::definitions::Eval>,
+    pub artifact: Arc<super::definitions::Artifact>,
 }
 
 #[derive(Default)]
@@ -262,11 +263,12 @@ async fn read_with_repo(
                 session,
                 statuses,
                 slice,
+                ids: None,
             };
             let rows = rows(&transaction, &filter)?;
             let ids: std::collections::BTreeSet<_> = rows.iter().map(|row| &row.run).collect();
             let mut statement = transaction.prepare(
-                "SELECT id,repo,data FROM runs WHERE id IN (SELECT value FROM json_each(?))",
+                "SELECT r.id,r.repo,r.data,d.data FROM runs r LEFT JOIN run_definitions d ON d.run_id=r.id WHERE r.id IN (SELECT value FROM json_each(?))",
             )?;
             let runs = statement
                 .query_map([serde_json::to_string(&ids)?], |row| {
@@ -274,14 +276,19 @@ async fn read_with_repo(
                         row.get::<_, crate::types::RunId>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
                     ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             let mut indexes = std::collections::BTreeMap::new();
             let mut repos = Vec::new();
-            for (id, repo, data) in runs {
-                let Some(run) = super::unreadable::evidence::<super::Run>("run", &data) else {
-                    continue;
+            for (id, repo, state, definitions) in runs {
+                let run = match super::run_record::whole(&id, &state, definitions.as_deref()) {
+                    Ok(run) => run,
+                    Err(unreadable) => {
+                        super::unreadable::skipped(&unreadable);
+                        continue;
+                    }
                 };
                 repos.push(std::path::PathBuf::from(repo));
                 indexes.insert(id, (DefinitionIndex::new(&run), run.repo_path));
@@ -315,14 +322,15 @@ pub(super) struct Query {
     pub session: Option<crate::types::SessionId>,
     pub statuses: Vec<crate::types::RequestStatus>,
     pub slice: Option<(u64, u32)>,
+    /// Only these requests.
+    pub ids: Option<Vec<crate::types::RequestId>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(super) struct Row {
     pub id: crate::types::RequestId,
     pub run: crate::types::RunId,
     pub eval: crate::types::EvalId,
-    pub ordinal: i64,
     pub data: String,
     pub execution: Option<String>,
     pub execution_id: Option<crate::types::ExecutionId>,
@@ -353,6 +361,10 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
     if filter.waiting {
         predicates.push("q.status IN ('WAITING_HUMAN','DEFERRED')".into());
     }
+    if let Some(ids) = &filter.ids {
+        predicates.push("q.id IN (SELECT value FROM json_each(?))".into());
+        values.push(serde_json::to_string(ids)?.into());
+    }
     if !filter.statuses.is_empty() {
         let marks = vec!["?"; filter.statuses.len()].join(",");
         predicates.push(format!("q.status IN ({marks})"));
@@ -382,7 +394,7 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
         "r.rowid DESC,q.ordinal"
     };
     let mut statement = db.prepare_cached(&format!(
-        "SELECT q.id,q.run_id,q.data,e.data,h.id,h.claimed_by,h.claimed_at,q.eval_id,q.ordinal,e.id
+        "SELECT q.id,q.run_id,q.data,e.data,h.id,h.claimed_by,h.claimed_at,q.eval_id,e.id
         FROM requests q JOIN runs r ON r.id=q.run_id
         LEFT JOIN executions e ON e.id=q.execution_id
         LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
@@ -397,10 +409,9 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
                 id: row.get(0)?,
                 run: row.get(1)?,
                 eval: row.get(7)?,
-                ordinal: row.get(8)?,
                 data: row.get(2)?,
                 execution: row.get(3)?,
-                execution_id: row.get(9)?,
+                execution_id: row.get(8)?,
                 claim: id
                     .zip(reviewer)
                     .zip(at)
@@ -413,15 +424,18 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
 /// Saved definitions are decoded/indexed once per Run, never once per request. First duplicate
 /// Eval wins, matching SQLite's former json_each lookup; missing/null definitions remain absent.
 pub(super) struct DefinitionIndex {
-    artifacts: std::collections::BTreeMap<crate::types::ArtifactName, super::definitions::Artifact>,
-    evals: std::collections::BTreeMap<crate::types::EvalId, super::definitions::Eval>,
+    artifacts:
+        std::collections::BTreeMap<crate::types::ArtifactName, Arc<super::definitions::Artifact>>,
+    evals: std::collections::BTreeMap<crate::types::EvalId, Arc<super::definitions::Eval>>,
 }
 impl DefinitionIndex {
     pub fn new(run: &super::Run) -> Self {
         let mut evals = std::collections::BTreeMap::new();
         if let Some(graph) = run.definitions.graph() {
             for eval in graph.evals() {
-                evals.entry(eval.id.clone()).or_insert_with(|| eval.clone());
+                evals
+                    .entry(eval.id.clone())
+                    .or_insert_with(|| Arc::new(eval.clone()));
             }
         }
         Self {
@@ -431,7 +445,7 @@ impl DefinitionIndex {
                 .map(|graph| {
                     graph
                         .artifacts()
-                        .map(|(id, artifact)| (id.clone(), artifact.clone()))
+                        .map(|(id, artifact)| (id.clone(), Arc::new(artifact.clone())))
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -448,21 +462,24 @@ impl Row {
             .and_then(|data| super::unreadable::evidence("execution", data));
         Some(self.with_evidence(index, request, execution))
     }
-    pub fn view_cached(
-        &self,
-        index: &DefinitionIndex,
-        audit: &mut super::unreadable::Audit,
-    ) -> Option<RequestView> {
-        let request = audit
-            .take_request(&self.id, &self.data)
-            .or_else(|| super::unreadable::evidence("request", &self.data))?;
-        let execution = self.execution.as_deref().and_then(|data| {
-            self.execution_id
-                .as_ref()
-                .and_then(|id| audit.take_execution(id, data))
-                .or_else(|| super::unreadable::evidence("execution", data))
-        });
-        Some(self.with_evidence(index, request, execution))
+    /// The request's view and why any of its records do not read. A request that does not read
+    /// has no view; an execution that does not read leaves the view without it.
+    pub fn read(&self, index: &DefinitionIndex) -> (Option<RequestView>, Vec<super::Unreadable>) {
+        let mut unreadable = Vec::new();
+        let execution = self
+            .execution
+            .as_deref()
+            .zip(self.execution_id.as_ref())
+            .and_then(|(data, id)| {
+                super::unreadable::decode("execution", id, data)
+                    .map_err(|record| unreadable.push(record))
+                    .ok()
+            });
+        let view = super::unreadable::decode::<Request>("request", &self.id, &self.data)
+            .map_err(|record| unreadable.push(record))
+            .ok()
+            .map(|request| self.with_evidence(index, request, execution));
+        (view, unreadable)
     }
     fn with_evidence(
         &self,
@@ -503,7 +520,7 @@ pub async fn read_run_requests(
             let mut reader = super::reader::Reader::default();
             reader
                 .snapshot(&state, |db, cache, state| {
-                    cache.selected(db, state, &id, None, true)
+                    cache.selected(db, state, &id, true)
                 })?
                 .ok_or_else(|| "Run not found.".into())
         })

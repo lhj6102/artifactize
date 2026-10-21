@@ -128,6 +128,12 @@ describe("Settings", () => {
     expect(calls.some((call) => call.cmd === "codex_login_cancel")).toBe(true);
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
     await screen.findByText("Codex sign-in was cancelled.");
+    // The message shows before the status refresh and the busy reset finish: retry only once
+    // the prompt closed and signing in again is offered.
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Sign in again" }).hasAttribute("disabled")).toBe(false);
+    });
     state = { state: "file", path: "/home/a/.codex/auth.json", expiry: { state: "usable", expiresAt: null } };
     await fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));

@@ -22,13 +22,25 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
     let executor = matches!(cli.command, Some(Command::VerifyExecution { .. }));
     match cli.command {
         Some(Command::Mcp) => {
-            let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-            let runs = artifactize_core::runs::Context::new(
-                &repo,
-                context.state_dir.as_deref(),
-                &std::env::current_exe().map_err(|e| e.to_string())?,
-            )?;
-            artifactize_mcp::serve(runs).await?;
+            let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+            // Without --repo each call's `project`, the client's roots or the working
+            // directory name the project, as a plugin's server starts in the plugin's folder.
+            let repo = context
+                .repo
+                .map(|repo| {
+                    artifactize_core::runs::Context::new(
+                        &repo,
+                        context.state_dir.as_deref(),
+                        &executable,
+                    )
+                })
+                .transpose()?;
+            let launch = artifactize_mcp::Launch {
+                repo,
+                state: context.state_dir,
+                executable,
+            };
+            artifactize_mcp::serve(launch).await?;
             Ok(0)
         }
         None => {

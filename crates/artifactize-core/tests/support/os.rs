@@ -474,6 +474,127 @@ pub fn waiting_program(directory: &Path) -> String {
     ))
 }
 
+/// A program in `directory` that runs the steps its arguments spell, in order, in its working
+/// directory, and then exits 0: `pid FILE` appends its process id as a line, `env FILE NAME`
+/// appends the variable NAME's value as a line, `append FILE TEXT` appends a line, `write FILE
+/// TEXT` replaces a file's contents, `touch FILE` creates a file, `remove FILE` removes one,
+/// `count DIRECTORY PREFIX FILE` appends how many entries of DIRECTORY start with PREFIX,
+/// `wait FILE` waits until a file exists, `needs FILE TEXT` prints TEXT and exits 0 unless the
+/// file exists, `print TEXT` prints, `eprint TEXT` prints to stderr, `cat FILE` prints a file's bytes,
+/// `hold FILE` starts a child that blocks until it is killed, appends the child's process id
+/// and waits for it, `equals A B` exits 1 unless A is B, `exit CODE` exits, and `from FILE`
+/// runs the steps FILE holds, one argument per line, followed by the rest. Test fixtures run
+/// it with literal argument vectors, the same on every system, instead of a shell script.
+pub fn steps_program(directory: &Path) -> String {
+    path_text(&compiled_program(
+        directory,
+        "steps",
+        r#"use std::io::Write;
+fn line(path: &str, text: &str) {
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+    writeln!(file, "{text}").unwrap();
+}
+fn next(steps: &mut std::vec::IntoIter<String>) -> String {
+    steps.next().expect("the step's argument")
+}
+fn run(steps: Vec<String>) {
+    let mut steps = steps.into_iter();
+    while let Some(step) = steps.next() {
+        match step.as_str() {
+            "pid" => line(&next(&mut steps), &std::process::id().to_string()),
+            "env" => {
+                let path = next(&mut steps);
+                line(&path, &std::env::var(next(&mut steps)).unwrap());
+            }
+            "append" => {
+                let path = next(&mut steps);
+                line(&path, &next(&mut steps));
+            }
+            "write" => {
+                let path = next(&mut steps);
+                std::fs::write(path, next(&mut steps)).unwrap();
+            }
+            "touch" => {
+                std::fs::OpenOptions::new().create(true).append(true).open(next(&mut steps)).unwrap();
+            }
+            "remove" => std::fs::remove_file(next(&mut steps)).unwrap(),
+            "count" => {
+                let directory = next(&mut steps);
+                let prefix = next(&mut steps);
+                let count = std::fs::read_dir(directory)
+                    .unwrap()
+                    .filter(|entry| entry.as_ref().unwrap().file_name().to_string_lossy().starts_with(&prefix))
+                    .count();
+                line(&next(&mut steps), &count.to_string());
+            }
+            "wait" => {
+                let path = next(&mut steps);
+                while !std::path::Path::new(&path).exists() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+            "needs" => {
+                let path = next(&mut steps);
+                let text = next(&mut steps);
+                if !std::path::Path::new(&path).exists() {
+                    print!("{text}");
+                    std::io::stdout().flush().unwrap();
+                    std::process::exit(0);
+                }
+            }
+            "print" => {
+                print!("{}", next(&mut steps));
+                std::io::stdout().flush().unwrap();
+            }
+            "eprint" => eprint!("{}", next(&mut steps)),
+            "cat" => {
+                let mut out = std::io::stdout();
+                out.write_all(&std::fs::read(next(&mut steps)).unwrap()).unwrap();
+                out.flush().unwrap();
+            }
+            "hold" => {
+                let path = next(&mut steps);
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                    .arg("block")
+                    .spawn()
+                    .unwrap();
+                line(&path, &child.id().to_string());
+                child.wait().unwrap();
+            }
+            "block" => loop {
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            },
+            "equals" => {
+                if next(&mut steps) != next(&mut steps) {
+                    std::process::exit(1);
+                }
+            }
+            "exit" => std::process::exit(next(&mut steps).parse().unwrap()),
+            "from" => {
+                let file = std::fs::read_to_string(next(&mut steps)).unwrap();
+                let mut steps: Vec<String> = file.lines().map(str::to_owned).chain(steps).collect();
+                steps.retain(|step| !step.is_empty());
+                return run(steps);
+            }
+            other => panic!("unknown step {other}"),
+        }
+    }
+}
+fn main() {
+    run(std::env::args().skip(1).collect());
+}
+"#,
+    ))
+}
+
+/// The [`steps_program`], built once for this test process.
+pub fn steps() -> String {
+    static PROGRAM: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PROGRAM
+        .get_or_init(|| steps_program(fixture::directory()))
+        .clone()
+}
+
 /// A program in `directory` that exits 1 while the file named by its first argument exists, and
 /// 0 once it is gone.
 pub fn fails_while_present_program(directory: &Path) -> String {
@@ -1202,20 +1323,58 @@ fn privileged(created: std::io::Result<()>) -> Option<()> {
 /// A junction (mount point) to an existing directory, which needs no privilege.
 #[cfg(windows)]
 pub fn junction(target: &Path, link: &Path) {
-    // mklink reads a `/` as the start of a switch, and wants plain absolute paths.
-    let native = |path: &Path| {
-        let path = std::path::absolute(path).unwrap();
-        let path = path.to_str().unwrap().replace('/', r"\");
-        path.strip_prefix(r"\\?\")
-            .map_or(path.clone(), str::to_owned)
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+    use windows_sys::Win32::{
+        Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT},
+        System::{
+            IO::DeviceIoControl, Ioctl::FSCTL_SET_REPARSE_POINT,
+            SystemServices::IO_REPARSE_TAG_MOUNT_POINT,
+        },
     };
-    let output = Command::new("cmd")
-        .args(["/d", "/c", "mklink", "/J"])
-        .arg(native(link))
-        .arg(native(target))
-        .output()
+    // A mount point names its target as a plain absolute path, `\??\`-prefixed for the
+    // object manager and bare for people.
+    let target = std::path::absolute(target).unwrap();
+    let target = target.to_str().unwrap().replace('/', r"\");
+    let target = target.strip_prefix(r"\\?\").unwrap_or(&target);
+    let wide = |text: &str| text.encode_utf16().collect::<Vec<u16>>();
+    let substitute = wide(&format!(r"\??\{target}"));
+    let print = wide(target);
+    let bytes = |units: &[u16]| u16::try_from(units.len() * 2).unwrap();
+    // REPARSE_DATA_BUFFER's MountPointReparseBuffer: four name offsets and lengths, then both
+    // names, each NUL-terminated.
+    let mut names = Vec::new();
+    for name in [&substitute, &print] {
+        names.extend(name.iter().chain([&0]).flat_map(|unit| unit.to_le_bytes()));
+    }
+    let mut buffer = Vec::new();
+    buffer.extend(IO_REPARSE_TAG_MOUNT_POINT.to_le_bytes());
+    buffer.extend(u16::try_from(8 + names.len()).unwrap().to_le_bytes());
+    buffer.extend(0u16.to_le_bytes());
+    for field in [0, bytes(&substitute), bytes(&substitute) + 2, bytes(&print)] {
+        buffer.extend(field.to_le_bytes());
+    }
+    buffer.extend(names);
+    fs::create_dir(link).unwrap();
+    let dir = fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(link)
         .unwrap();
-    assert!(output.status.success(), "{output:?}");
+    let mut returned = 0;
+    // SAFETY: an open directory handle, a buffer of the length given, and no output buffer.
+    let set = unsafe {
+        DeviceIoControl(
+            dir.as_raw_handle(),
+            FSCTL_SET_REPARSE_POINT,
+            buffer.as_ptr().cast(),
+            u32::try_from(buffer.len()).unwrap(),
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_ne!(set, 0, "{}", std::io::Error::last_os_error());
 }
 
 /// Also let everyone read `path`: an extra allow ACE on Windows, mode 0644 on Unix.
@@ -2938,11 +3097,12 @@ pub fn self_test(name: &str) -> tokio::process::Command {
 }
 
 /// Windows process fixture that emits a marker when admitted, or exits with a given code.
+/// Both are this library test binary's own probes, given literal arguments; no shell runs.
 #[cfg(windows)]
 pub fn windows_marker(directory: &Path) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("cmd");
+    let mut command = self_test("platform::windows::process::tests::marker_probe");
     command
-        .args(["/d", "/c", "type nul > marker"])
+        .env("ARTIFACTIZE_MARKER_PROBE", "1")
         .current_dir(directory)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null());
@@ -2951,10 +3111,8 @@ pub fn windows_marker(directory: &Path) -> tokio::process::Command {
 
 #[cfg(windows)]
 pub fn windows_exit(code: u32) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("cmd");
-    command
-        .args(["/d", "/c", &format!("exit /b {code}")])
-        .kill_on_drop(true);
+    let mut command = self_test("platform::windows::process::exit_tests::exit_probe");
+    command.env("ARTIFACTIZE_EXIT_PROBE", code.to_string());
     command
 }
 

@@ -1,4 +1,4 @@
-// The monitor snapshot against a mocked command boundary: clock redraws and reads that answer
+// The Pane's snapshot against a mocked command boundary: clock redraws and reads that answer
 // out of order never roll the shown snapshot back, and a newer snapshot always advances the
 // revision Detail reads by.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -6,24 +6,7 @@ import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import { events, onStateChanged, type BrowseView, type Navigate } from "../ipc/client";
 import { Browse } from "./browse.svelte";
-
-function view(revision: number): BrowseView {
-  return {
-    scope: { kind: "all" },
-    scopeLabel: "all repositories",
-    scopes: [],
-    badge: [],
-    runs: [],
-    selectedRun: null,
-    older: false,
-    newer: false,
-    run: null,
-    error: null,
-    refreshed: true,
-    replaced: false,
-    revision,
-  };
-}
+import { browseView as view } from "./fixtures";
 
 type Answer = (revision: number) => void;
 
@@ -41,7 +24,7 @@ function backend() {
 afterEach(() => clearMocks());
 
 describe("Browse", () => {
-  it("keeps ordinary state hints incremental and coalesces a manual refresh without losing its reset", async () => {
+  it("keeps ordinary state hints incremental and coalesces a resync hint without losing its reset", async () => {
     const pending: { navigate: Navigate; answer: () => void }[] = [];
     mockIPC((cmd, args) => {
       if (cmd !== "browse") throw new Error(`Unexpected command: ${cmd}`);
@@ -57,7 +40,7 @@ describe("Browse", () => {
       await waitFor(() => expect(pending).toHaveLength(1));
       expect(pending[0].navigate).toMatchObject({ full: true, resync: false });
 
-      browse.refresh();
+      browse.refresh(true);
       await events.stateChanged.emit({ resync: false });
       expect(pending).toHaveLength(1);
       pending[0].answer();
