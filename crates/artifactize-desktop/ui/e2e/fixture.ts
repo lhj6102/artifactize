@@ -439,6 +439,9 @@ export async function addWaiting(fixture: Fixture, name: string, count: number):
   return requests(target).filter((request) => request.runId === run).map((request) => request.id);
 }
 
+/** A saved Run's selection as written, and as a version that no longer reads it would see it. */
+const [readableSelection, unreadableSelection] = ['"selection":{"kind":"all"}', '"selection":{"kind":"dependency"}'];
+
 /**
  * One GREEN Artifact `n000` verified four times. The three older Runs are rewritten as Runs saved
  * with a selection kind this version does not read, so the list of Runs cannot read them; the
@@ -477,14 +480,13 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
         }
       });
     });
-    const [current, removed] = ['"selection":{"kind":"all"}', '"selection":{"kind":"dependency"}'];
-    rewrite(current, removed);
+    rewrite(readableSelection, unreadableSelection);
     return {
       fixture, readable: runs[3], unreadable,
       restore: () => {
-        rewrite(removed, current);
+        rewrite(unreadableSelection, readableSelection);
         // The readable Run too, if a case spoiled it.
-        if (!allUnreadable) updateDatabase(database, (db) => db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3").run(removed, current, runs[3]));
+        if (!allUnreadable) updateDatabase(database, (db) => db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3").run(unreadableSelection, readableSelection, runs[3]));
       },
     };
   }, fixture.root);
@@ -494,7 +496,7 @@ export function createUnreadableRuns(allUnreadable = false): { fixture: Fixture;
  * another version would; that fixture's restore undoes it. */
 export function spoilRun(fixture: Fixture, run: string): void {
   updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
-    if (db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run('"kind":"runtime"', '"kind":"dependency"', run).changes !== 1) {
+    if (db.prepare("UPDATE runs SET data=replace(data,?1,?2) WHERE id=?3 AND instr(data,?1)>0").run(readableSelection, unreadableSelection, run).changes !== 1) {
       throw new Error(`Run ${run} was not rewritten`);
     }
   });

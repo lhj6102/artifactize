@@ -294,6 +294,8 @@ Summarize {docs}."""
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
       const before = { scans: await scans(), scanned: await scanned(browser), drawn: await drawn(), look: await graphAppearance(browser) };
       assert.match(before.scanned, /^Scanned at \d/);
+      // That scan completed by this second; the new one is told apart by starting after it.
+      const shown = Math.floor(Date.now() / 1000);
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row ends with it; signed off, the
       // Run ends and the Current is scanned again by itself.
@@ -302,7 +304,9 @@ Summarize {docs}."""
       assert.equal(await mainTitle(browser), "Current · repo  master", "the Current stays shown");
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request);
-      // The scan the Run's end starts happens after this moment, read from the clock, not waited on.
+      // The scan the Run's end starts happens after this moment, a second later than the scan
+      // shown before, so the window below cannot hold that scan's time.
+      await waitFor(browser, async () => Math.floor(Date.now() / 1000) > shown, "a second after the previous scan");
       const signed = Math.floor(Date.now() / 1000);
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
