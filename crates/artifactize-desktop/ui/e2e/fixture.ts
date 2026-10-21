@@ -419,6 +419,13 @@ export function signOff(fixture: Fixture, id: string, fields = '{"approved":true
   }
 }
 
+/** The status Run `run` ends with, observed by the CLI once it has ended. */
+export function ended(fixture: Fixture, run: string): string {
+  const shown = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", run, "--wait", "--json"], { env: environment(fixture) });
+  if (![0, 1, 2, 4, 5].includes(shown.status)) throw new Error(shown.stderr || `cannot observe Run ${run}`);
+  return (JSON.parse(shown.stdout) as { status: string }).status;
+}
+
 /** A repository `name` beside the fixture's, in the same state, whose `count` Artifacts each
  * wait for a person's sign-off; returns their requests. */
 export async function addWaiting(fixture: Fixture, name: string, count: number): Promise<string[]> {

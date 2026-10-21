@@ -4,7 +4,7 @@
 // branch without being closed.
 import assert from "node:assert/strict";
 import {
-  addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, orderRuns, requests, signOff, signoff,
+  addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, ended, orderRuns, requests, signOff, signoff,
   verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
@@ -117,6 +117,7 @@ export const scenarios: Scenario[] = [
       const fixture = await create();
       const first = signoff(fixture);
       signOff(fixture, first.id);
+      assert.equal(ended(fixture, first.runId), "GREEN", "the first Run ended GREEN");
       return { fixture, data: { first: first.runId } };
     },
     async (browser, { fixture, data: { first } }) => {

@@ -3,7 +3,7 @@
 // and its own Human tools, the structure text, and the scans a Refresh, a choice and the end
 // of a Run start.
 import assert from "node:assert/strict";
-import { changeNotes, create, createEvals, createGraph, createMixed, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
+import { changeNotes, create, createEvals, createGraph, createMixed, ended, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
 import { checkpoint } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -255,6 +255,8 @@ Summarize {docs}."""
       const fixture = await create();
       const first = signoff(fixture);
       signOff(fixture, first.id, '{"approved":true,"comment":"Checked notes 7f3a against the tag."}');
+      // The signed-off Run has ended before the app starts: the branch opens on its Current.
+      assert.equal(ended(fixture, first.runId), "GREEN", "the first Run ended GREEN");
       return { fixture, args: ["--repo", fixture.repo], data: { first: first.runId } };
     },
     async (browser, { fixture }) => {
