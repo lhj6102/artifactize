@@ -2938,11 +2938,12 @@ pub fn self_test(name: &str) -> tokio::process::Command {
 }
 
 /// Windows process fixture that emits a marker when admitted, or exits with a given code.
+/// Both are this library test binary's own probes, given literal arguments; no shell runs.
 #[cfg(windows)]
 pub fn windows_marker(directory: &Path) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("cmd");
+    let mut command = self_test("platform::windows::process::tests::marker_probe");
     command
-        .args(["/d", "/c", "type nul > marker"])
+        .env("ARTIFACTIZE_MARKER_PROBE", "1")
         .current_dir(directory)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null());
@@ -2951,10 +2952,8 @@ pub fn windows_marker(directory: &Path) -> tokio::process::Command {
 
 #[cfg(windows)]
 pub fn windows_exit(code: u32) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("cmd");
-    command
-        .args(["/d", "/c", &format!("exit /b {code}")])
-        .kill_on_drop(true);
+    let mut command = self_test("platform::windows::process::exit_tests::exit_probe");
+    command.env("ARTIFACTIZE_EXIT_PROBE", code.to_string());
     command
 }
 
