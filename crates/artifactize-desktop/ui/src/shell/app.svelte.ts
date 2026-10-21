@@ -1,7 +1,7 @@
 // The window's own facts, each with one owner: the launch the backend reported, a failure to
 // start, the Pane's and Main area's state and the dialogs. Shared with createContext.
 import { createContext } from "svelte";
-import { commands as bindings, type BranchKey, type KeyedLog, type LaunchView } from "../ipc/client";
+import { commands as bindings, type KeyedLog, type LaunchView } from "../ipc/client";
 import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
 import { Current } from "../monitor/current.svelte";
@@ -54,9 +54,9 @@ export class AppState {
   }
 
   /** The tools of Artifact `artifact` in the worktree `workspace` of `branch`. */
-  artifactTools(branch: BranchKey, workspace: string, artifact: string): ArtifactTools {
+  artifactTools(workspace: string, artifact: string): ArtifactTools {
     const key = toolsKey(workspace, artifact);
-    return this.tools[key] ?? (this.tools[key] = new ArtifactTools(branch, artifact, this.jobs, this.ipc));
+    return this.tools[key] ?? (this.tools[key] = new ArtifactTools(artifact, this.jobs, this.ipc));
   }
 
   /** Each Tool log goes to its review or Artifact; one nobody opened drops it. */

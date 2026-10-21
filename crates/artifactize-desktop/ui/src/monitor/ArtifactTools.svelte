@@ -17,11 +17,12 @@
     workspace: string;
     artifact: string;
   } = $props();
-  // The Detail keys this component by worktree and Artifact: its tools stay one owner's.
+  // The Detail keys this component by worktree and Artifact: its tools stay one owner's. Each
+  // call names the branch checked out in that worktree now.
   // svelte-ignore state_referenced_locally
-  const tools = getAppState().artifactTools(branch, workspace, artifact);
+  const tools = getAppState().artifactTools(workspace, artifact);
 
-  onMount(() => void tools.load());
+  onMount(() => void tools.load(branch));
 
   const declared = $derived(tools.tools ?? []);
 </script>
@@ -37,7 +38,7 @@
   {:else}
     {#each declared as tool (tool.name)}
       <div class="tool">
-        <button class="button small" disabled={tools.busy !== null} onclick={() => void tools.run(tool)}>▶ {tool.operation}</button>
+        <button class="button small" disabled={tools.busy !== null} onclick={() => void tools.run(branch, tool)}>▶ {tool.operation}</button>
         <span class="description">{tool.description}</span>
         {#if tool.error}<span class="reason">{tool.error}</span>{/if}
       </div>
