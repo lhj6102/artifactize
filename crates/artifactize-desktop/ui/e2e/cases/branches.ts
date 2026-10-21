@@ -44,6 +44,13 @@ function row(browser: WebdriverIO.Browser) {
 /** Hold the mouse on the row at its right end, drag it left to the window's edge, bringing older
  * Runs in from the right, and release it; again, until `until` holds. A person's hand does the
  * same strokes. */
+/** The starred branches saved in `state`, or null before the first star. The file is replaced
+ * whole, never written in place. */
+function kept(state: NativePath): unknown[] | null {
+  const file = nativePath(state, "starred-branches.json");
+  return exists(file) ? JSON.parse(readText(file)) as unknown[] : null;
+}
+
 async function drag(browser: WebdriverIO.Browser, until: () => Promise<boolean>) {
   // A stroke spans about the Pane's width, so a long row takes many.
   const STROKES = 16;
@@ -190,7 +197,7 @@ export const scenarios: Scenario[] = [
       const starred = (await branch(browser, last))!;
       assert.ok(starred.starred && starred.star === "★", `its star is on: ${JSON.stringify(starred)}`);
       // Kept in the state directory, for the next monitor of this user.
-      assert.equal((JSON.parse(readText(nativePath(fixture.state, "starred-branches.json"))) as unknown[]).length, 1);
+      await waitFor(browser, async () => kept(fixture.state)?.length === 1, "the star saved");
     },
     // The next monitor lists it first, starred; taken away, it is listed with the others again.
     async (browser, { fixture }) => {
@@ -204,7 +211,7 @@ export const scenarios: Scenario[] = [
       const after = [...shown.slice(1).map((entry) => entry.name), starred];
       await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(after), `listed with the others: ${JSON.stringify(await names())}`);
       assert.equal((await branch(browser, starred))?.starred, false);
-      assert.deepEqual(JSON.parse(readText(nativePath(fixture.state, "starred-branches.json"))), []);
+      await waitFor(browser, async () => kept(fixture.state)?.length === 0, "the star's removal saved");
     },
   ),
 
