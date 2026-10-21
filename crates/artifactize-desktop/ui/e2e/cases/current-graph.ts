@@ -300,7 +300,13 @@ Summarize {docs}."""
       assert.match(result, /comment.*Checked notes 7f3a against the tag\./s, `the reused comment: ${result}`);
       assert.match(result, /approved.*true/s, `the reused approval: ${result}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
-      const reusedLook = await graphAppearance(browser);
+      // The look once every Artifact and the relation are painted reused, not a frame before
+      // the relation is drawn.
+      let reusedLook = await graphAppearance(browser);
+      await browser.waitUntil(async () => currentHasColours(reusedLook = await graphAppearance(browser),
+        { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
+      { timeout: 15000, timeoutMsg: "every Artifact and the relation painted reused" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(reusedLook)}`); });
       // The notes change on disk; the Current shows it only once its chip is chosen again.
       changeNotes(fixture, "# Release notes\n- A second release.\n");
       assert.deepEqual((await drawn()).nodes, allReused, "no scan without a choice, a Refresh or a Run's end");
@@ -309,13 +315,14 @@ Summarize {docs}."""
       assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
       /** Scans the app has completed, from its read-only command activity. */
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
-      const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look: await graphAppearance(browser) };
+      // Its look once release and its relation are painted would run, and ship waiting.
+      let look = await graphAppearance(browser);
+      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "waiting" }, { "a:release>a:ship": "run" }),
+        { timeout: 15000, timeoutMsg: "would run and waiting painted in their legend colours" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
+      const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look };
       assert.ok(before.at, "the header names the scan before the Run");
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
-      assert.ok(currentHasColours(reusedLook, { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
-        `reused in the legend's reused colour: ${JSON.stringify(reusedLook)}`);
-      assert.ok(currentHasColours(before.look, { "a:release": "run", "a:ship": "waiting" }, { "a:release>a:ship": "run" }),
-        `would run and waiting in their legend colours: ${JSON.stringify(before.look)}`);
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);
