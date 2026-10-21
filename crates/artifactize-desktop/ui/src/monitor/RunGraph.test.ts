@@ -1,7 +1,7 @@
 import { renderHosted as render } from "../test-host";
 // The Run graph against a mocked command boundary and layout: nodes take their lights, a click
 // (or Enter on a focused node) on an Artifact asks for its Detail and one on the background
-// closes it, and a new snapshot recolours in place.
+// closes it, a new snapshot recolours in place, and a new shape replaces the graph once laid out.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -81,7 +81,7 @@ function serve(served: (run: string) => Shape) {
 
 function setup(served: () => Shape) {
   serve(served);
-  layout.mockImplementation((laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
+  layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
   const onopen = vi.fn();
   const onclose = vi.fn();
   const view = render(RunGraph, { run: "run-a", revision: 1, onopen, onclose });
@@ -140,6 +140,43 @@ describe("RunGraph", () => {
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the graph shown while a new shape lays out, and lays out each shape once whatever snapshots arrive", async () => {
+    const docs = { id: "a:docs", name: "docs", light: "waiting" as const };
+    const grown = (release: Shape["nodes"][number]["light"]): Shape => ({ ...graph(release), nodes: [...graph(release).nodes, docs] });
+    let served = graph("active");
+    const { rerender } = setup(() => served);
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("active"));
+    // The grown shape's layout finishes only when the test says so.
+    let finish!: () => void;
+    const finished = new Promise<void>((done) => (finish = done));
+    layout.mockImplementation(async (laid: Shape) => {
+      await finished;
+      return new Map(laid.nodes.map((each, index) => [each.id, { x: index * 240, y: 0 }]));
+    });
+
+    served = grown("green");
+    await rerender({ revision: 2 });
+    await waitFor(() => expect(layout).toHaveBeenCalledTimes(2));
+    // Another snapshot of the grown shape arrives while it lays out.
+    served = grown("red");
+    await rerender({ revision: 3 });
+    await waitFor(() => expect(asked).toHaveLength(3));
+    // Nothing shown can change before the layout finishes: the graph before stays, lit as it was.
+    expect(screen.queryByText("Laying out…")).toBeNull();
+    expect(node("a:release")?.dataset.light).toBe("active");
+    expect(node("a:docs")).toBeNull();
+
+    finish();
+    await waitFor(() => expect(node("a:docs")).not.toBeNull());
+    expect(node("a:release")?.dataset.light).toBe("red");
+    expect(layout).toHaveBeenCalledTimes(2);
+    // Later lights of the grown shape relight it without laying it out again.
+    served = grown("green");
+    await rerender({ revision: 4 });
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
+    expect(layout).toHaveBeenCalledTimes(2);
+  });
+
   it("never lets an older read of another Run replace the Run shown now", async () => {
     // Run A answers at once; Run B's answer waits until the test releases it.
     let release!: () => void;
@@ -157,7 +194,7 @@ describe("RunGraph", () => {
       }
       return answer(run, lightA, known);
     });
-    layout.mockImplementation((laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
+    layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
     const { rerender } = render(RunGraph, { run: "run-a", revision: 1, onopen: vi.fn(), onclose: vi.fn() });
     await waitFor(() => expect(node("a:release")).not.toBeNull());
     await rerender({ run: "run-b", revision: 2 });

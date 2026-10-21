@@ -28,7 +28,7 @@ vi.mock("@xyflow/svelte", async (original) => {
 });
 vi.mock("./layout", () => ({
   NODE: { width: 168, height: 44 },
-  layout: () => new Map(Object.entries(PLACED).map(([name, at]) => [`a:${name}`, at])),
+  layout: async () => new Map(Object.entries(PLACED).map(([name, at]) => [`a:${name}`, at])),
 }));
 
 /** A box as getBoundingClientRect gives it. */
