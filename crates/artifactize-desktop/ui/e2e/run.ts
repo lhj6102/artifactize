@@ -3,6 +3,7 @@ import { inspect } from "node:util";
 import { assertAppsStopped } from "./observation.ts";
 import { checkIntegrity } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
+import { settleFixtures } from "./build-fixtures.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
   nativeCrashReports, nodeProgram, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
@@ -62,8 +63,14 @@ async function batch(): Promise<void> {
       await configuration.releasePrepared();
       writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
     } else {
-      // Only an app confirmed stopped no longer uses its inputs: unconfirmed, nothing is released.
-      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+      // Only an app confirmed stopped no longer uses its inputs: unconfirmed, its files stay,
+      // but the fixture Runs are still cancelled and joined.
+      try {
+        assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
+      } catch (error) {
+        try { settleFixtures(); } catch (settling) { failures.push(settling); }
+        throw error;
+      }
       await configuration.releasePrepared();
     }
   } catch (error) { failures.push(error); }

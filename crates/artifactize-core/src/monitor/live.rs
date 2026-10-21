@@ -35,7 +35,7 @@ use std::{
 pub enum Head {
     Branch(String),
     /// A detached worktree, known by its folder.
-    Detached(PathBuf),
+    Detached(#[serde(with = "crate::platform::path_serde")] PathBuf),
 }
 
 /// Where a branch lives: a Git repository's checked-out branch, by the repository's common
@@ -43,8 +43,12 @@ pub enum Head {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Place {
-    Git { common: PathBuf, head: Head },
-    Folder(PathBuf),
+    Git {
+        #[serde(with = "crate::platform::path_serde")]
+        common: PathBuf,
+        head: Head,
+    },
+    Folder(#[serde(with = "crate::platform::path_serde")] PathBuf),
 }
 
 /// One Run of a branch as its chip shows it.

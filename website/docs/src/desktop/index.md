@@ -50,9 +50,12 @@ the Main area to resize them; the split stays as dragged whatever the Main area 
 
 ### Branches
 
-Each branch reads as its project and branch, such as `artifactize  feat/x`: a Git
-worktree that exists now with the branch it has checked out (a detached one by its
-folder's name), or a folder outside Git that exists now and holds its declarations.
+A branch is a line of work in a Git repository. A worktree is a folder where one
+branch is checked out; a repository can have several, each on its own branch, or
+detached: on a commit rather than a branch. Each entry reads as its project and
+branch, such as `artifactize  feat/x`: a worktree that exists now with the branch it
+has checked out (a detached one by its folder's name), or a folder outside Git that
+exists now and holds its declarations.
 Its projects are those with Runs on this machine, and the one the app was started for
 with `--repo` or `graph --repo`, listed even before its first Run. A worktree or folder that was
 removed, or one Git no longer lists, is not shown; worktrees added or removed appear
@@ -147,29 +150,20 @@ approves nothing.
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does; they have no other keys of their
-own. While more than 500 Artifacts are in view they are painted boxes that only a
-click opens; zoom in until fewer are in view for Tab and Enter to reach them.
-Drag the graph background to pan; wheel, pinch or a background double-click zooms
-the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
-These gestures move the camera, not the divider or the Detail. A graph shows whole
-when it first appears; from then on only you move
-its camera. Opening, switching, resizing or closing the Detail, a new result or scan
-and a new layout never zoom or pan it; **Fit View** shows the whole graph again,
-beside the Detail when one is open.
+own. Drag the background to pan; wheel, pinch or a background double-click zooms.
+**Zoom In**, **Zoom Out** and **Fit View** do the same from buttons. A graph shows
+whole when it first appears; from then on only you move it. Opening, switching,
+resizing or closing the Detail, a new result or scan and a new layout never zoom or
+pan it; **Fit View** shows the whole graph again, beside the Detail when one is open.
 
-Every graph is laid out whole at once, upstream on the left. A graph of up to
-**1,000 Artifacts** gets a roomy layout (ELK) that widens the space where many edges
-pass; a larger one gets a quicker, more compact layout. An Artifact that a great many
+Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
-the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
-pannable, zoomable minimap helps navigate the graph, and above **80 Artifacts** only
-elements in view are rendered: panning or zooming draws those it brings into view.
-A graph of **more than 500 Artifacts** draws its edges on a canvas below the
-Artifacts and has no minimap. While more than 500 Artifacts are in view, they are
-painted as boxes in their lights, and a click on one opens its Detail; zoom in until
-fewer are in view to see them as named nodes again. A new snapshot or scan relights a
-graph in place, and lays it out again only when its Artifacts or edges change, keeping
-the graph shown until the new layout is ready. An Artifact's Detail draws at most 16
+the left. Above 40 Artifacts a minimap helps you find your way, except on a graph of
+more than 500. While more than 500 Artifacts are in view, they show as coloured boxes
+without names: a click opens one, but Tab and Enter cannot reach them; zoom in until
+fewer are in view to see named Artifacts again. A new result or scan recolours the
+graph in place, and changed Artifacts or relations lay it out again, the old graph
+staying shown until the new one is ready. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
 
 ### Detail

@@ -191,10 +191,19 @@ export const scenarios: Scenario[] = [
       assert.ok(starred.starred && starred.star === "★", `its star is on: ${JSON.stringify(starred)}`);
       // Kept in the state directory, for the next monitor of this user.
       assert.equal((JSON.parse(readText(nativePath(fixture.state, "starred-branches.json"))) as unknown[]).length, 1);
-      // Taken away, it is listed with the others again.
-      await browser.$(`button[aria-label=${JSON.stringify(`Star ${last}`)}]`).click();
-      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(before), `listed as before: ${JSON.stringify(await names())}`);
-      assert.equal((await branch(browser, last))?.starred, false);
+    },
+    // The next monitor lists it first, starred; taken away, it is listed with the others again.
+    async (browser, { fixture }) => {
+      const names = async () => (await branches(browser)).map((entry) => entry.name);
+      await waitFor(browser, async () => (await names()).length === 3, "the three worktrees listed again");
+      const shown = await branches(browser);
+      assert.deepEqual(shown.map((entry) => [entry.star, entry.starred]), [["★", true], ["☆", false], ["☆", false]], `the star kept: ${JSON.stringify(shown)}`);
+      const starred = shown[0].name;
+      await browser.$(`button[aria-label=${JSON.stringify(`Star ${starred}`)}]`).click();
+      // It was the last of the search's order before it was starred.
+      const after = [...shown.slice(1).map((entry) => entry.name), starred];
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(after), `listed with the others: ${JSON.stringify(await names())}`);
+      assert.equal((await branch(browser, starred))?.starred, false);
       assert.deepEqual(JSON.parse(readText(nativePath(fixture.state, "starred-branches.json"))), []);
     },
   ),

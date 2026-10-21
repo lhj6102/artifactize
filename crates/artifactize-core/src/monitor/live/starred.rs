@@ -11,9 +11,10 @@ const FILE: &str = "starred-branches.json";
 pub fn starred(state: Option<&Path>) -> Result<BTreeSet<Place>, String> {
     let path = crate::store::state_dir(state)?.join(FILE);
     match std::fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display())),
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map_err(|e| format!("{}: {e}", crate::platform::path_text(&path))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
-        Err(e) => Err(format!("{}: {e}", path.display())),
+        Err(e) => Err(format!("{}: {e}", crate::platform::path_text(&path))),
     }
 }
 
