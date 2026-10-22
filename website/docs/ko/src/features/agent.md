@@ -133,7 +133,7 @@ Ctrl-C는 `verify --wait`의 지켜보기만 멈출 뿐, 지켜보던 Agent 리�
 `BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 자리가 날 때까지
 대기하던 리뷰([백엔드 수용량](others/state.md#backend-capacity))도 같은 방식으로 대기를
 멈추며, 멈춘 백엔드의 요청은 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
-재사용할 수 있는 결과는 여전히 재사용하며, 다른 백엔드는 그대로 진행합니다. Run은 멈춘 백엔드를
+재사용할 수 있는 결과는 계속 재사용하며, 다른 백엔드는 그대로 진행합니다. Run은 멈춘 백엔드를
 `stoppedBackends`(`verify --wait --json`과 `run show`)에 남기고, `verify`는 이렇게 출력합니다.
 
 ```text
@@ -246,7 +246,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   쿼리, 프래그먼트가 없어야 합니다. 그 밖의 값이면 연결하기 전에 리뷰, `models`, `doctor`가 그
   변수 이름을 알려 주며 실패합니다. 빈 값은 설정하지 않은 것으로 간주합니다. `anthropic`은 끝에 `/v1`이
   붙어도 됩니다.
-- API 키 변수는 여전히 필요하고 가짜에 그대로 전달되므로 아무 값이나 넣어 두세요. `codex`는
+- API 키 변수는 이때도 필요하고 가짜에 그대로 전달되므로 아무 값이나 넣어 두세요. `codex`는
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 `{"tokens":{"access_token":"dummy","account_id":"test"}}`
   같은 파일로 지정하세요.
 - 그 밖에는 바뀌는 것이 없습니다. 요청 본문과 스트리밍, 재시도, 예산, 도구 호출, 수정 요청,

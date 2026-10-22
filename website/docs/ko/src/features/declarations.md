@@ -21,7 +21,7 @@ artifactize config check
 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
 
 예전 프로필을 쓰면 설정을 해석하는 단계에서
-`unknown variant `dependency`, expected one of `agent`, `human`, `Runtime`` 오류가 납니다.
+`unknown variant `dependency`, expected one of `agent`, `human`, `runtime`` 오류가 납니다.
 지원하는 프로필에 `depends_on` 필드가 있으면 알 수 없는 필드 오류입니다. 이는 리뷰 판정이
 아니라 설정 오류이므로, verify하기 전에 선언을 옮기세요.
 
@@ -186,7 +186,7 @@ Agent 스키마에는 검사기가 지원하는 기능을 모두 쓸 수 있습�
 ## 그래프 Artifact {#graph-artifact}
 
 저장소 루트에 이름 없는 `.artf`를 두면 프로젝트 전체의 Artifact Graph를 선언합니다.
-`index.artf`는 여전히 루트 폴더를, `<filename>.artf`는 여전히 옆 파일을 선언합니다. 다른
+이때도 `index.artf`는 루트 폴더를, `<filename>.artf`는 옆 파일을 선언합니다. 다른
 디렉터리에 이름 없는 `.artf`가 있으면 선언 오류입니다. 루트 `.artf`는 `index.artf`처럼
 `.artfignore` 패턴이 그 파일 이름을 가리켜도 읽습니다. 그래프 Artifact는 하나만 둘 수
 있습니다.

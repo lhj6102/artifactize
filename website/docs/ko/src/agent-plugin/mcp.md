@@ -114,7 +114,7 @@ Run에는 `jobs` 필드가 없습니다.
 잠정적인 진행을 허용하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
 돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
 이는 완전한 승인이 아닙니다(CLI 지켜보기는 5로 종료). `gate = "blocking"`을 직접 지정한
-Human eval은 여전히 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
+Human eval은 이때도 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기 상태는 오류가 아니라 정상입니다.
 `verify_wait`는 Runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로

@@ -117,7 +117,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 
 모든 eval은 입력의 판정과 상관없이 그 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
 효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval이 늦어지고,
-입력 리뷰가 RED면 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 증거가
+입력 리뷰가 RED면 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 상위 리뷰를 포함해 필요한 증거가
 모두 있어야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
@@ -137,7 +137,7 @@ eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들
 순환으로 묶인 대상을 참조하는 eval도 순환 밖 입력의 검사 결과가 나올 때까지 대기합니다. `cli`의 eval이
 `core`도 참조한다면, `core/tests`가 RED일 때 `cli/tests`가 막히고, `cli`를 참조하는
 `docs/matches-cli`도 막힙니다. 이 Artifact들의 eval 중 순환으로 묶인 대상도, 입력도, 자식도
-참조하지 않는 eval은 이들 때문에 늦어지지 않지만, Run이 GREEN으로 끝나려면 여전히 이들의 결과가
+참조하지 않는 eval은 이들 때문에 늦어지지 않지만, Run이 GREEN으로 끝나려면 이들의 결과가
 모두 필요합니다. 다른 곳에서 `docs`를
 참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만

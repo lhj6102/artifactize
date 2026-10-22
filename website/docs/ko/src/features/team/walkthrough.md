@@ -70,7 +70,7 @@ Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0,
 기록을 게시했습니다. 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프입니다.
 요약에는 캡처한 stdout/stderr, 별도의 호출 감사 기록,
 로컬 저장소 출처가 빠졌습니다. 선언된 Runtime 명령과 인자는
-프로필의 일부로 여전히 공유되었으며, 그 인자 안의 경로와 민감한 리터럴은
+프로필의 일부로 공유되었으며, 그 인자 안의 경로와 민감한 리터럴은
 가려지지 않습니다.
 
 ## 3. Bob이 Alice의 판정 재사용하기 {#3-bob-reuses-alices-verdicts}
@@ -164,8 +164,8 @@ Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0,
 ## Human 승인 {#human-sign-offs}
 
 Human 판정은 기본적으로 artifactsum을 통해 재사용되며, `fingerprint = false`면 재사용되지 않습니다. 다음은
-Human 승인이 있는 파일 하나짜리 프로젝트와, Bob을 위한 그 사본입니다. `WALK`가 여전히 공유 디렉터리를
-가리키는 Alice의 터미널로 돌아가세요.
+Human 승인이 있는 파일 하나짜리 프로젝트와, Bob을 위한 그 사본입니다. `WALK`가 아직 공유 디렉터리를
+가리키고 있는 Alice의 터미널로 돌아가세요.
 
 ```sh
 mkdir "$WALK/brand" && cd "$WALK/brand"
@@ -181,7 +181,7 @@ TOML
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 
-Alice의 `verify --wait`는 요청을 기록할 Run을 제출한 뒤, 포그라운드에서 진행 상황을 보여 주며 Run이 끝날 때까지 기다립니다. 두 번째 터미널에서 같은 디렉터리와 같은
+Alice의 `verify --wait`는 요청을 기록할 Run을 제출한 뒤, 포그라운드에서 진행 상황을 보여 주며 Run이 끝날 때까지 대기합니다. 두 번째 터미널에서 같은 디렉터리와 같은
 `ARTIFACTIZE_STATE_HOME`으로 Alice는 요청을 맡고
 승인합니다. Alice의 토큰에는 `human` 범위가 있으므로 `request submit`이
 승인을 게시하고, Alice의 `verify --wait`는 GREEN으로 끝납니다.

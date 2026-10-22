@@ -27,7 +27,7 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 끝날 수 없습니다. `verify --eval code/tests --recursive`는 `code/style`과 `plan/signoff` 같은
 묶음의 다른 검사도 선택해서, 실행하거나 결과를 재사용할 수 있게 합니다. 검사를 더 선택한다고
 승인이 자동으로 생기지는 않습니다. `--recursive`가 없어도 `code/style`과 그 입력에 필요한
-리뷰는 여전히 통과해야 하므로, 이전 Run이나 캐시에 유효한 결과가 있어야 Run이 GREEN으로 끝납니다.
+리뷰는 통과해야 하므로, 이전 Run이나 캐시에 유효한 결과가 있어야 Run이 GREEN으로 끝납니다.
 
 
 READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본 상한이 없습니다**. 머신이 감당하기
@@ -197,7 +197,7 @@ fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하지 
 생길 수 있습니다. `config graph`와 `config check`는 완전히 정적이며 프로젝트 코드를 실행하지
 않습니다.
 
-eval마다 나오는 동작은 `verify`가 그 eval을 실행할지, 결과를 재사용할지, 기다릴지, 막힐지를 나타냅니다.
+eval마다 나오는 동작은 `verify`에서 그 eval이 실행되는지, 결과를 재사용하는지, 대기하는지, 막히는지를 나타냅니다.
 
 | 동작 | 언제 | 사유 예 |
 |---|---|---|
@@ -214,8 +214,8 @@ status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스�
 `wait` 동작으로 보입니다. 저장된 실행 기록 중에서는 정규화한 현재 저장소 경로에 해당하는 기록만 읽습니다. eval마다 있을 수
 있는 `last: {runId, verdict, fingerprint?}`는 지난 기록이지 현재 증거가 아닙니다. 누가 만든
 결과인지 전부 보려면 `run show RUN_ID`를 쓰세요. 재사용 키가 없는 GREEN이나 RED는 그 결과를 만든 Run의
-요건만 충족하므로, 이후 status에서는 재사용이 아니라 STALE로 나옵니다. basis만 있는 범위도 충족될 수
-있지만, 의존성이 채워지지 않은 basis는 INCOMPLETE입니다.
+요건만 충족하므로, 이후 status에서는 재사용이 아니라 STALE로 나옵니다. basis Artifact만으로 이루어진 범위도 검증 요건을
+충족할 수 있지만, basis Artifact가 의존하는 Artifact의 요건이 충족되지 않으면 INCOMPLETE입니다.
 
 재사용 키가 있는 eval에 현재 캐시 결과가 없으면, `status`는 같은 기준으로 낸 마지막 GREEN이나
 RED 결과 이후 무엇이 바뀌었는지 설명하고 `changes: {sinceRunId, files?, dependencies?,
