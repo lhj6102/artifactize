@@ -94,8 +94,8 @@ Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
-Bob의 체크아웃은 Artifact 이름, kind, 내용이 같으므로 fingerprint,
-eval 정의 해시, 따라서 재사용 키가 일치합니다. 경로는 상관없습니다. `status`는 Bob의 상태를 바꾸지 않고
+Bob의 체크아웃은 Artifact 이름, kind, 내용이 같아 fingerprint와
+eval 정의 해시가 같고, 따라서 재사용 키도 일치합니다. 경로는 상관없습니다. `status`는 Bob의 상태를 바꾸지 않고
 저장소에 물었으며, 저장소는 이 조회를 사용으로 셉니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
 `artifactize cache list`가 저장소를 출처로 하는 그 기록을 보여 줍니다. 이후의
 `verify`는 저장소가 없어도 그 기록을 로컬에서 재사용합니다.

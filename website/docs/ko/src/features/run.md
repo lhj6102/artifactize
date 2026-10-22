@@ -15,7 +15,7 @@ fingerprint 스크립트는 실행할 수 있습니다.
 `verify`는 [선택자](../cli/index.md#command-reference)를 정확히 하나 받습니다. Artifact,
 eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact의 검사를 실행해
 달라는 뜻이고, eval 선택자는 그 검사 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 검사가 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
-**의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 의무**(최종 검증 요건)입니다. 이번 Run에서 실행해 달라고 하지
+**의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 검증 요건**입니다. 이번 Run에서 실행해 달라고 하지
 않았더라도 마찬가지입니다.
 
 `--recursive`는 선택한 Artifact의 다른 검사를 포함해 그 묶음의 모든 검사를 설정 순서대로
@@ -228,7 +228,7 @@ fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `na
 강제한 eval이면 설명이 나오지 않습니다. 강제하지 않은 READY Runtime/Agent eval에 키가 없으면,
 실행 사유에 `fingerprint = false`를 선언한 대상이나 의존성이 나옵니다. READY인 Human eval은 키가
 없어도 "Record a request awaiting a Human claim and submission"이라고 나옵니다. 막혔거나
-기다리는 eval은 그 게이트나 대기 상태를 설명합니다.
+대기 중인 eval에는 실행을 막는 게이트나 대기 사유가 표시됩니다.
 
 기다리는 eval의 `blockedBy`에는 결과가 아직 없는 eval의 ID가, BLOCKED인 eval의 `blockedBy`에는 사유와 마찬가지로 실행을 막은 RED eval의 ID가 나옵니다. Detail은 이 게이트를 입력 Artifact별로 `Waits for`
 아래에 묶어 보여 주며, `w`를 누르면 대기 중인 eval이 나옵니다.

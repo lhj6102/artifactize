@@ -141,7 +141,7 @@ eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들
 모두 필요합니다. 다른 곳에서 `docs`를
 참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
-예외입니다. 무엇이 기다리고 어떤 추측 실행 작업을 취소할지도 이 게이트로 정해집니다.
+예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
 
 BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval이
 나오며, 아직 실행 중이었을 뿐인 eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 ERROR도

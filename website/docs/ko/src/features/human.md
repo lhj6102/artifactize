@@ -1,6 +1,6 @@
 # Human 리뷰 {#human-reviews}
 
-Human eval은 사람에게 GREEN이나 RED 승인을 요청합니다. 리뷰어는 대기 중인 요청을 claim하고,
+Human eval은 사람에게 리뷰를 요청하고 GREEN이나 RED 판정을 받습니다. 리뷰어는 대기 중인 요청을 claim하고,
 선언한 Human 도구를 실행하고, `artifactize request` 명령이나 `artifactize review` 터미널 UI로
 판정을 제출합니다.
 

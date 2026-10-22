@@ -292,8 +292,8 @@ payload.instruction = "Run the end-to-end suite."
 `use-computer`는 모든 하위 태그와 충돌하고, `use-computer:db`는 `use-computer:db:users`와
 충돌하지만 `use-computer:browser`나 `use-computer:database`와는 충돌하지 않습니다. 같은 화면을
 조작하는 두 eval처럼 함께 실행하면 안 되는 eval에는 같은 태그나 상위·하위 관계의 태그를 주세요.
-태그를 다른 eval이 잡고 있으면 그 eval은 잡고 있는 쪽을 밝힌 채 `QUEUED`로 표시되고(아래 참고),
-태그가 풀리면 시작합니다. 태그는 우선순위나 순서를 정하지 않으며, 서로의 태그를 기다리다
+다른 eval이 충돌하는 태그를 쓰고 있으면, 실행할 eval은 태그를 쓰고 있는 eval의 이름과 함께 `QUEUED`로
+표시되고(아래 참고), 태그가 풀리면 시작합니다. 태그는 우선순위나 순서를 정하지 않으며, 서로의 태그를 기다리다
 교착 상태에 빠지는 일은 없습니다.
 
 태그는 한 Run 안에서만이 아니라 같은 상태를 쓰는 모든 Run, 워크트리, `verify`에 적용됩니다.

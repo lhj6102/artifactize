@@ -6,7 +6,7 @@
 돌려주므로, 나중에 한 리뷰(예: 강제 재리뷰)가 있으면 모든 팀원이 이전 판정 대신 그 판정을
 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
 
-**서버.** 작은 호스트에서 자기 상태 디렉터리를 두고 저장소를 실행하세요.
+**서버.** 소규모 서버에 별도의 상태 디렉터리를 두고 리뷰 저장소를 실행하세요.
 
 ```sh
 artifactize --state-dir /srv/artifactize server token add alice-laptop --scopes read,publish,human
@@ -117,7 +117,7 @@ artifactize remote status
 **신뢰.**
 
 - 서버는 인증된 `publisher`, 즉 토큰 이름을 찍습니다. `producer`와
-  Human `reviewer`는 게시하는 머신이 주장하는 값입니다.
+  Human `reviewer`는 게시하는 머신이 보고한 값입니다.
 - `publish` 토큰이 있으면 어떤 키에 대해서든 어떤 판정이든 주장할 수 있습니다. 신뢰할 수 없는 CI(포크
   풀 리퀘스트)에는 `read`만 주고, `human`은 승인하는 사람에게만 주세요. 토큰이
   유출되거나 오용되면 `server token revoke NAME --purge`로 그 토큰이 게시한
