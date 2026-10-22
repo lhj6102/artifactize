@@ -1,6 +1,6 @@
 # The English artifactize docs, served at https://artifactize.dev/docs/.
 # Built by website/build.sh with the mdBook version pinned there and the
-# shared theme in ../theme/; the Korean translation lives in ../kr/.
+# shared theme in ../theme/; the Korean translation lives in ../ko/.
 [book]
 title = "Artifactize docs"
 description = "The AI-native collaboration layer for one-of-a-kind teammates and their agents: Artifacts with their own evals, and every review reused while it still holds."

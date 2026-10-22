@@ -21,7 +21,7 @@ assets/readme/. Check these criteria:
 - K-SAME-TARGETS: Badges, commands, code blocks and their order are the same; code-block
   comments may be translated. Every link and image reaches the same target as in the root
   README: repository files through paths relative to assets/readme/, and documentation
-  pages through the same page under https://artifactize.dev/docs/kr/. The only addition is
+  pages through the same page under https://artifactize.dev/docs/ko/. The only addition is
   a badge linking back to the English README, matching the root README's badge for this
   translation.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to

@@ -1,4 +1,4 @@
-# The Korean artifactize docs, served at https://artifactize.dev/docs/kr/.
+# The Korean artifactize docs, served at https://artifactize.dev/docs/ko/.
 # A translation of ../en/ with the same chapter paths; built by website/build.sh
 # with the shared theme in ../theme/.
 [book]
@@ -12,7 +12,7 @@ src = "src"
 create-missing = false
 
 [output.html]
-site-url = "/docs/kr/"
+site-url = "/docs/ko/"
 default-theme = "navy"
 preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/lhj6102/artifactize"

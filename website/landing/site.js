@@ -3,6 +3,25 @@
 // recordings. The promo pauses while it is off screen and never autoplays under
 // reduced motion.
 
+// The words this script writes, in the page's language (<html lang>); English otherwise.
+var WORDS = {
+  en: {
+    useDark: 'Use the dark theme',
+    useLight: 'Use the light theme',
+    copy: 'Copy',
+    copied: 'Copied',
+    pressToCopy: function (keys) { return 'Press ' + keys + ' to copy'; },
+  },
+  ko: {
+    useDark: '다크 테마 사용',
+    useLight: '라이트 테마 사용',
+    copy: '복사',
+    copied: '복사됨',
+    pressToCopy: function (keys) { return keys + '를 눌러 복사하세요'; },
+  },
+};
+var TEXT = WORDS[document.documentElement.lang] || WORDS.en;
+
 // Theme toggle: dark (the docs' "navy") or light. It writes the docs'
 // localStorage key, so the choice carries across the site.
 (function () {
@@ -11,7 +30,7 @@
   var root = document.documentElement;
   function sync() {
     var light = root.getAttribute('data-theme') === 'light';
-    button.setAttribute('aria-label', light ? 'Use the dark theme' : 'Use the light theme');
+    button.setAttribute('aria-label', light ? TEXT.useDark : TEXT.useLight);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', light ? '#FFFFFF' : '#090B0F');
   }
@@ -182,7 +201,7 @@
       status.textContent = '';
       setTimeout(function () { status.textContent = message; }, 50);
       timer = setTimeout(function () {
-        button.textContent = 'Copy';
+        button.textContent = TEXT.copy;
         button.removeAttribute('data-state');
         status.textContent = '';
       }, ms);
@@ -196,7 +215,7 @@
         selection.removeAllRanges();
         selection.addRange(range);
       }
-      show('Press ' + keys + ' to copy', 'select', 4000);
+      show(TEXT.pressToCopy(keys), 'select', 4000);
     }
 
     button.addEventListener('click', function () {
@@ -205,10 +224,11 @@
         return;
       }
       navigator.clipboard.writeText(text).then(function () {
-        show('Copied', 'copied', 2000);
+        show(TEXT.copied, 'copied', 2000);
       }, selectCommand);
     });
     // The class makes room for the button.
+    button.textContent = TEXT.copy;
     panel.classList.add('copyable');
     button.hidden = false;
   });

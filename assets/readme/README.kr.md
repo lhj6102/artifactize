@@ -80,16 +80,16 @@ brew install lhj6102/tap/artifactize
 winget install 9PB6W4LL165D --source msstore
 ```
 
-[전체 설치 안내](https://artifactize.dev/docs/kr/getting-started/install.html)에서
+[전체 설치 안내](https://artifactize.dev/docs/ko/getting-started/install.html)에서
 다른 방법(PowerShell 설치 스크립트, AppImage, Cargo, 소스에서 빌드)과
 사전 요구 사항, 업데이트, 제거 방법을 설명합니다.
 
 설치를 마쳤다면
-[5분 빠른 시작](https://artifactize.dev/docs/kr/getting-started/guide.html)을 따라 해 보세요.
+[5분 빠른 시작](https://artifactize.dev/docs/ko/getting-started/guide.html)을 따라 해 보세요.
 예제 프로젝트를 쓰므로 AI 계정이나 제공자 접근 키(API 키)가 필요 없습니다.
-[Hey Arti](https://artifactize.dev/docs/kr/agent-plugin/hey-arti.html)를 쓰면 코딩
+[Hey Arti](https://artifactize.dev/docs/ko/agent-plugin/hey-arti.html)를 쓰면 코딩
 어시스턴트에게 평소 말투로 이런 검사를 설정하고 실행해 달라고 요청할 수 있습니다.
-[플러그인](https://artifactize.dev/docs/kr/agent-plugin/plugin.html) 하나만 설치하면 Claude Code와
+[플러그인](https://artifactize.dev/docs/ko/agent-plugin/plugin.html) 하나만 설치하면 Claude Code와
 Codex가 이 안내와 Artifactize의 도구를 함께 갖추게 됩니다.
 
 ```text
@@ -101,7 +101,7 @@ codex plugin add artifactize@artifactize
 
 ## 더 알아보기
 
-- [문서](https://artifactize.dev/docs/kr/): 개념, 가이드, 예제, 명령 레퍼런스.
+- [문서](https://artifactize.dev/docs/ko/): 개념, 가이드, 예제, 명령 레퍼런스.
 - [Discord 커뮤니티](https://discord.gg/VswgKkPkS9): 질문, 아이디어, 도움.
 - [소스와 라이선스](../../LICENSE): Apache License 2.0으로 공개된 오픈 소스입니다.
 

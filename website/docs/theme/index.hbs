@@ -166,8 +166,8 @@
                         {{/if}}
                     </div>
 
-                    {{!-- artifactize: wordmark linking to the landing page --}}
-                    <a class="az-brand" href="/" aria-label="Artifactize home">
+                    {{!-- artifactize: wordmark linking to the landing page in the book's language --}}
+                    <a class="az-brand" href="{{#if (eq language "ko")}}/ko/{{else}}/{{/if}}" aria-label="{{#if (eq language "ko")}}Artifactize 홈{{else}}Artifactize home{{/if}}">
                         <img class="az-mark" src="/media/artifactize-icon-mark.svg" width="27" height="24" alt="" aria-hidden="true">
                         <span class="az-word">Artifactize</span>
                         <span class="az-tag">docs</span>
@@ -180,21 +180,21 @@
                         {{#if (eq language "ko")}}
                         <a id="az-lang" class="az-link" href="/docs/" hreflang="en" lang="en">English</a>
                         {{else}}
-                        <a id="az-lang" class="az-link" href="/docs/kr/" hreflang="ko" lang="ko">한국어</a>
+                        <a id="az-lang" class="az-link" href="/docs/ko/" hreflang="ko" lang="ko">한국어</a>
                         {{/if}}
                         <script>
                             (function () {
-                                // Both books share chapter paths and heading ids: /docs/<path> and /docs/kr/<path>.
+                                // Both books share chapter paths and heading ids: /docs/<path> and /docs/ko/<path>.
                                 const link = document.getElementById('az-lang');
-                                const page = location.pathname.match(/^\/docs\/(kr\/)?(.*)$/);
+                                const page = location.pathname.match(/^\/docs\/(ko\/)?(.*)$/);
                                 if (page) {
-                                    link.href = (page[1] ? '/docs/' : '/docs/kr/') + page[2];
+                                    link.href = (page[1] ? '/docs/' : '/docs/ko/') + page[2];
                                     link.addEventListener('click', function () { link.hash = location.hash; });
                                 }
                             })();
                         </script>
-                        {{!-- artifactize: links to the landing page and GitHub --}}
-                        <a class="az-link" href="/">{{#if (eq language "ko")}}홈{{else}}Home{{/if}}</a>
+                        {{!-- artifactize: links to the landing page in the book's language and GitHub --}}
+                        <a class="az-link" href="{{#if (eq language "ko")}}/ko/{{else}}/{{/if}}">{{#if (eq language "ko")}}홈{{else}}Home{{/if}}</a>
                         {{#if print_enable}}
                         <a href="{{ path_to_root }}print.html" title="Print this book" aria-label="Print this book">
                             {{fa "solid" "print" "print-button"}}

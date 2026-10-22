@@ -246,13 +246,42 @@ pre {
   display: block;
 }
 
+.only-sm {
+  display: none;
+}
+
 @media (max-width: 760px) {
   .hide-sm {
     display: none;
   }
+
+  .only-sm {
+    display: inline;
+  }
+
+  /* Room for the language switch beside Docs and the icons. */
+  .top-nav {
+    gap: 0;
+  }
+
+  .top-nav .nav-lang {
+    padding-inline: 8px;
+  }
 }
 
 /* ---------- Shared type ---------- */
+
+/* Korean breaks lines between words, not inside them. */
+:root:lang(ko) body {
+  word-break: keep-all;
+}
+
+/* The mono face has no Hangul: Korean labels use the sans face, unspaced. */
+:root:lang(ko) .kicker,
+:root:lang(ko) .audience h2 {
+  font-family: var(--sans);
+  letter-spacing: 0;
+}
 
 h1,
 h2,

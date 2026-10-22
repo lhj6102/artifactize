@@ -155,7 +155,7 @@ CLI 대응 명령과 같은 핵심 작업과 JSON 투영을 호출하며, MCP는
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 
 `session_show.reference`는 저장된 세션 참조, 요청 ID, 세션
-ID를 받으며, CLI와 같은 만든 사람/상태 확인을 합니다. 없는 캐시 기록은
+ID를 받으며, CLI와 같은 `producer`(리뷰를 실행한 `user@host`)/상태 확인을 합니다. 없는 캐시 기록은
 CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. 정적
 `tools_check`는 프로젝트 도구를 호출하거나 세션을 시작하지 않습니다. `status`는
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된

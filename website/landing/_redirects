@@ -1,0 +1,4 @@
+# Redirects for Cloudflare Workers static assets.
+# The Korean docs moved from /docs/kr/ to /docs/ko/, next to the Korean landing page at /ko/.
+/docs/kr /docs/ko/ 301
+/docs/kr/* /docs/ko/:splat 301
