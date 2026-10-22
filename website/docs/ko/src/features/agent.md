@@ -68,7 +68,7 @@ profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", ma
 
 `max_tool_calls`는 도구를 실행하기 전에 호출 시도를 세며, 성공한 호출뿐 아니라 모르는 도구,
 잘못된 호출, 실패한 호출도 포함합니다. 둘 중 하나라도 넘으면 `PROVIDER_BUDGET_EXCEEDED`로
-작업을 멈춥니다. 수정 요청도 원래 리뷰 마감 시간과 예산 안에서 하며, 예산을 새로 받지 않습니다.
+작업을 멈춥니다. 수정 요청도 원래 리뷰 제한 시간과 예산 안에서 하며, 예산을 새로 받지 않습니다.
 
 ## Agent 도구 {#agent-tools}
 
@@ -82,8 +82,8 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 출력의 JSON 형태는 [로컬 진단과 유지보수](../cli/maintenance.md#doctor-models-and-prune)에
 있습니다.
 
-Agent 리뷰는 모델의 답변을 만들어지는 대로 스트리밍합니다. 리뷰 마감 시간 하나(기본 240초)가
-모든 턴, 재시도, 도구에 적용됩니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
+Agent 리뷰는 모델의 답변을 만들어지는 대로 스트리밍합니다. 리뷰 전체의 제한 시간은
+기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
 ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.
 
@@ -110,9 +110,9 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로 리뷰의 뒤�
 |---|---|---|
 | `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부됨: HTTP 401/403, API 키 없음, Codex 로그인 없음, 만료된 인증 파일 | 안 함. 백엔드를 멈춤 |
 | `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 안 함. 백엔드를 멈춤 |
-| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나 `Retry-After`가 마감 시간에 도달함 | 함 |
+| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나 `Retry-After`가 제한 시간에 도달함 | 함 |
 | `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림. 요청한 재시도 대기가 너무 길어도 이 분류를 유지 | 출력 전이면 함 |
-| `TIMEOUT` | 리뷰의 `timeout_ms` 마감 시간 | 안 함 |
+| `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 안 함 |
 | `CANCELLED` | Run을 직접 취소함(`run cancel` 또는 MCP `verify_cancel`) | 안 함 |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘음 | 안 함 |
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없음 | 안 함 |

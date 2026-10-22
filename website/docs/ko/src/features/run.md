@@ -61,7 +61,7 @@ Run은 접수될 때의 선언을 그대로 씁니다. 준비하는 동안 선�
 취소하세요). 접수된 Run의 대상이 바뀌지는 않습니다.
 
 엄격 모드에서는 다른 리뷰와 마찬가지로 WAITING_HUMAN 요청도 처리가 끝나야 Run이 완료됩니다. 승인을 제출하면 같은 Run
-안에서 그 승인에 의존하는 eval이 진행됩니다. Human 대기 마감 시간이나 `verify --timeout-ms`는
+안에서 그 승인에 의존하는 eval이 진행됩니다. Human 대기 제한 시간이나 `verify --timeout-ms`는
 없으며, 모든 eval 종류가 같은 확정 규칙을 따릅니다. 아래 선택 모드는 실행 순서를 바꾸거나 승인을
 미룰 뿐, Human의 결정 권한을 바꾸지 않습니다.
 
@@ -145,8 +145,8 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 요
 "source": {"runId": "run-Ksl1Qr", "requestId": "run-Ksl1Qr-3", "kind": "cache"}
 ```
 
-`kind`는 재사용 키의 완료된 기록이면 `cache`, 요청이 기다린 그 키의 실행 중인 작업(다른
-`verify`나 같은 Run의 형제 eval)이면 `joined`,
+`kind`는 재사용 키의 완료된 기록이면 `cache`, 같은 키로 실행 중인 작업(다른
+`verify`나 같은 Run의 형제 eval)이 끝나기를 대기한 뒤 그 결과를 썼으면 `joined`,
 [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)의 기록이면 `remote`입니다.
 `run show`, `request show`, `request list --json`에도 `source`가 있습니다.
 
@@ -186,7 +186,7 @@ artifactize --repo PROJECT config check --json
 보여 줍니다. `evalDefHash`, 대상의 `fingerprint`, `fingerprints`(eval이 의존하는 각
 Artifact와 현재 fingerprint, 없으면 null), 이를 합친 `key`(fingerprint를 끈 경우 null)이며,
 `verify`가 Run의 키로 쓸 값과 같습니다. 동작 개수는 실행에 포함된 eval만 셉니다. 종료 코드
-0은 현재 검증이 충족됐다는 뜻이고, 1은 의무가 남았다는 뜻이며, 입력이나 상태가 잘못되면 2입니다.
+0은 현재 검증 요건을 모두 충족했다는 뜻이고, 1은 아직 충족하지 못한 요건이 남았다는 뜻이며, 입력이나 상태가 잘못되면 2입니다.
 
 status는 선택한 범위의 실행 가능한 eval에 필요한 fingerprint를 verify와 같은 격리, 검사,
 `--fingerprint-jobs` 한도로 준비합니다. fingerprint가 실패하면 2로 종료하며, 예전에 저장한

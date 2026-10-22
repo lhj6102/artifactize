@@ -80,7 +80,7 @@ codex mcp get artifactize
 | `verify_status` | `run` | 저장된 상태, 개수, 경과 초, `next_check` |
 | `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 도달할 때까지 대기. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
 | `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 따라감. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 호출이 끝나면 간단한 상태 요약을 반환함 |
-| `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 발견 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
+| `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 지적 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
 | `verify_cancel` | `run` | 명시적 취소 확인. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
 
 `scope`는 `kind` 필드로 선택 유형을 구분하는 공용 Selection JSON 객체입니다.
@@ -199,7 +199,7 @@ Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전
 - `{"kind":"eval_result","data":...}`: 저장된 요청/eval 상태 하나와 간결한
   요약. 재사용된 결과와 잠정 결과를 포함하며, **Run 판정이 아닙니다**.
 - `{"kind":"outcome","data":...}`: `verify_result`의 스키마를 쓰는 최종 Run 검증.
-  남은 발견 사항은 그 `next_cursor`를 따라 `verify_result`로 읽으세요.
+  남은 지적 사항은 그 `next_cursor`를 따라 `verify_result`로 읽으세요.
 
 연결할 때마다 기준 상태와 이미 완료된 eval을 다시 보내므로, 필요하면
 연결 사이에서 요청 ID와 상태로 중복을 제거하세요. 호출이 제한 시간에 도달해 반환될 때

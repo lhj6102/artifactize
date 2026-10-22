@@ -27,7 +27,7 @@ artifactize config check
 
 ## 선언 검사 {#declaration-validation}
 
-`index.artf`는 자기가 들어 있는 폴더를 선언합니다. `<filename>.artf`는 이름이 확장자까지
+`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 이름이 확장자까지
 정확히 `<filename>`인 옆 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
 저장소 루트의 이름 없는 `.artf`는 소스 파일 없이 [그래프 Artifact](#graph-artifact)를
 선언합니다.
@@ -179,8 +179,8 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 Agent 스키마는 검사기 기능을 모두 씁니다.
 
 스키마는 8 MiB까지입니다. Agent의 최종 응답 원문은 1 MiB까지이고, 정규화한 결과는 UTF-16 코드
-단위 256000개까지입니다. 잘못된 최종 응답에는 제한된 수정 요청을 한 번 할 뿐, 필드를 알리지 않고
-지우지는 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
+단위 256000개까지입니다. 최종 응답이 잘못되면 정해진 범위에서 한 번 수정을 요청할 뿐, 알림 없이
+필드를 지우지는 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
 제한하며, 검사 오류를 알릴 뿐 요청을 확정하지 않습니다.
 
 ## 그래프 Artifact {#graph-artifact}
