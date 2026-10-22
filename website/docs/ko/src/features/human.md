@@ -5,7 +5,7 @@ Human eval은 사람에게 리뷰를 요청하고 GREEN이나 RED 판정을 받�
 판정을 제출합니다.
 
 Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이고 의존성 게이트도 충족됐을
-때만 준비됩니다. 사람은 기계 검사 eval을 이미 통과한 것만 승인합니다. 그 기계 검사 eval 중
+때만 준비됩니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인합니다. 그 자동 검사 eval 중
 하나라도 RED나 ERROR면 Human eval은 BLOCKED가 되고 사유에 그 eval이 나옵니다. 같은 Artifact의
 다른 Human eval은 이 조건에 들어가지 않습니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
@@ -59,10 +59,10 @@ Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면
 
 ## 미룬 승인 {#deferred-sign-offs}
 
-사람의 승인을 나중에 받더라도 기계 검사를 먼저 진행하려면 `verify --defer-human`을 고르세요. 머신 설정이
-아니라 요청마다 정하며, 기본으로 꺼져 있습니다. 승인 대기 중에도 기계 검사는 계속 실행되고,
-같은 Artifact의 기계 검사 eval이 GREEN이 되면 다른 작업의 완료 여부와 관계없이 승인을
-요청합니다. 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요. `--speculate`로 기계 검사
+사람의 승인을 나중에 받더라도 자동 검사를 먼저 진행하려면 `verify --defer-human`을 고르세요. 머신 설정이
+아니라 요청마다 정하며, 기본으로 꺼져 있습니다. 승인 대기 중에도 자동 검사는 계속 실행되고,
+같은 Artifact의 자동 검사 eval이 GREEN이 되면 다른 작업의 완료 여부와 관계없이 승인을
+요청합니다. 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요. `--speculate`로 자동 검사
 작업을 따로 빠르게 할 수 있습니다.
 
 미룬 승인에는 DEFERRED 표시가 붙지만, 리뷰어가 처리하는 방법은 일반 승인과 같습니다. `review`, monitor, 데스크톱,

@@ -150,9 +150,9 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 | 모드 | 실행과 확정 방식 |
 |---|---|
 | 둘 다 없음 | 의존성의 GREEN 결과가 나올 때까지 대기. Run은 사람의 승인이 제출될 때까지 대기 |
-| `--defer-human` | 기계 검사 게이트가 정해질 때까지 대기. 미룰 수 있는 승인은 건너뛰고 잠정 결과로 진행 |
+| `--defer-human` | 자동 검사 게이트가 정해질 때까지 대기. 미룰 수 있는 승인은 건너뛰고 잠정 결과로 진행 |
 | `--speculate` | 게이트가 정해지기 전에 요청한 종류를 모두 시작. 사람의 승인은 제출될 때까지 대기 |
-| 둘 다 | 기계 리뷰는 미리 시작하고, 미룰 수 있는 승인은 그 승인의 선행 조건을 충족하면 요청 |
+| 둘 다 | 자동 리뷰는 미리 시작하고, 미룰 수 있는 승인은 그 승인의 선행 조건을 충족하면 요청 |
 
 어느 모드에서든 Human eval은 같은 Artifact의 Human이 아닌 eval이 모두 GREEN이 된 뒤에만
 요청되며, 그중 하나라도 RED나 ERROR면 BLOCKED가 됩니다. `--speculate`에서는 새로 준비된 작업을
@@ -204,7 +204,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류했던 Run이 실패해서 리뷰를 다시
 실행해야 하는 Run은 그 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로
-끝납니다. 시작하지 못한 요청 없이 딱 한도만큼 쓴 것은 오류가 아닙니다.
+끝납니다. 모든 요청을 시작했다면 실행 횟수가 한도에 정확히 도달해도 오류가 아닙니다.
 
 Human 대기와 취소는 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)를
 따릅니다. 담당 지정, 도구, 승인은 [Human 가이드](../features/human.md)에서 다룹니다.
@@ -380,7 +380,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`는 Artifact나 eval
 하나 또는 여러 개를 범위로 같은 정의를 보여 줍니다. 실제로 무엇을 실행하고 재사용할지는
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,
-입력에서 소비자로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
+입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
 payload, 스키마, 도구 뷰), 태그, 자식·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
 Artifact 묶음인 강하게 연결된 컴포넌트(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
 `kind`(`file`, `folder`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와

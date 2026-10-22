@@ -204,8 +204,8 @@ cargo install artifactize@<version> artifactize-tools@<version> --locked   # a p
 ### 소스에서 빌드 (모든 플랫폼) {#build-from-source-all-platforms}
 
 소스에서 빌드하려면 저장소를 복제한 뒤 그 디렉터리에서 다음 명령으로 설치하세요. 복제한 저장소의 `rust-toolchain.toml`에 따라
-Rust 안정 버전이 쓰입니다. 예제 프로젝트와 [빠른 시작](guide.md)도
-체크아웃을 씁니다.
+Rust 안정 버전이 쓰입니다. 예제 프로젝트와 [빠른 시작](guide.md)을
+따라 하려면 복제한 저장소가 필요합니다.
 
 ```sh
 git clone https://github.com/lhj6102/artifactize

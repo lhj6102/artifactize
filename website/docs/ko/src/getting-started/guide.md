@@ -38,7 +38,7 @@ PowerShell에서는 첫 줄을
 `config check`는 프로젝트 프로그램을 실행하지 않고 선언을 검증합니다.
 `status`는 검사 두 개가 실행되고, 세 번째 검사는 그 결과가 나올 때까지 대기한다고 예측합니다.
 프로젝트에 필요한 검사가 아직 모두 통과하지 않았으므로 종료 코드는 1입니다. `config graph`는
-조각들과 그 입력 관계를 보여 줍니다. 이제 세 검사를 모두 실행하고
+Artifact들과 그 입력 관계를 보여 줍니다. 이제 세 검사를 모두 실행하고
 결과를 기다리세요.
 
 ```sh
@@ -143,7 +143,7 @@ review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 �
 Enter(또는 클릭)는 도구 하나를 바로 실행합니다. `g`/`r`은 GREEN/RED 입력 칸을 열고, Ctrl-S는
 제출합니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 Run은 artifactize가 관리하며 Human 결과도 다른 결과와 똑같이 받아 처리하므로, Human 결과가 제출되면
-의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 그냥 `verify`는 제출하고 바로 돌아옵니다. `verify --wait`는 포그라운드에서 Run이 끝나기를 기다리며, 앞선 기계 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
+의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 그냥 `verify`는 제출하고 바로 돌아옵니다. `verify --wait`는 포그라운드에서 Run이 끝나기를 기다리며, 앞선 자동 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
 
 실제 Agent 리뷰를 하려면 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣은 다음
 `artifactize verify --eval spec/review --wait`를 실행하세요. 다른 백엔드를 쓰려면 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.

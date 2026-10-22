@@ -114,7 +114,7 @@ Run에는 `jobs` 필드가 없습니다.
 잠정적인 진행을 허용하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
 돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
 이는 완전한 승인이 아닙니다(CLI 지켜보기는 5로 종료). `gate = "blocking"`을 직접 지정한
-Human eval은 여전히 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 이후의 승인이 기계 작업을 다시 실행하지는 않습니다.
+Human eval은 여전히 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 이후의 승인이 자동 검사을 다시 실행하지는 않습니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 기다리는 것은 오류가 아니라 정상적인 상태입니다.
 `verify_wait`는 runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로
@@ -238,7 +238,7 @@ Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았�
 `artifactize prune`이 무엇을 남기는지는
 [runtime 실행 레퍼런스](../features/declarations.md#runtime-execution)에 있습니다.
 
-`config_graph`는 훅을 호출하지 않고 정적 정의, eval, 순환 상대, 입력→소비자
+`config_graph`는 훅을 호출하지 않고 정적 정의, eval, 순환 상대, 입력 → 사용처
 관계를 찾습니다. Artifact나 eval을 고르면 그 대상의 의존성 범위가 나오며,
 `impact:true`를 더하면 영향을 받을 수 있는 하위 Artifact와 각각에 필요한 입력도
 포함됩니다. 이는 구조상 영향을 받을 수 있는 대상을 넓게 포함한

@@ -186,7 +186,7 @@ artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그�
 `producer`는 리뷰를 실행한 `user@host`이고, `state`는 그 상태 데이터베이스의 고정 ID입니다.
 결과를 재사용한 요청은 그 결과를 만든 리뷰를 가리킵니다. [팀 리뷰 저장소](team/index.md)는
 Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) 함께 보내므로, 팀원의 판정을 보면
-그 대화가 누구의 상태에 있는지 알 수 있습니다.
+그 대화가 어느 팀원의 상태 디렉터리에 저장되어 있는지 알 수 있습니다.
 
 저장된 대화는 `session show`로 읽고, `session show --summary`로 집계하고, `session send`로
 이어서 질문합니다. [Agent 세션](../cli/index.md#agent-sessions)을 보세요.

@@ -7,7 +7,7 @@ fingerprint 스크립트는 실행할 수 있습니다.
 ## eval 실행 게이트 {#eval-execution-gates}
 
 `verify`는 eval마다 그 eval의 [실행 게이트](artifact.md#eval-dependencies)에 따라 실행 시점을
-정하며, 여기에는 [Human 승인의 기계 검사 선행 조건](artifact.md#human-sign-offs)도 포함됩니다.
+정하며, 여기에는 [Human 승인의 자동 검사 선행 조건](artifact.md#human-sign-offs)도 포함됩니다.
 `status`는 eval을 실행하지 않고 이 게이트를 보여 줍니다.
 
 ## Verify와 Run {#verify-and-runs}
@@ -94,13 +94,13 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [팀 리뷰 저장소](../cli/review-store.md)에 공유합니다.
 
 승인 미루기는 대기 중인 Human 게이트를 지나서 실행을 계속하게 합니다. 미룰 수 있는 승인 요청은
-그 승인의 선행 조건, 즉 같은 Artifact의 다른 기계 검사 eval이 GREEN이 되고 이를 막는 게이트가 없다는
-조건을 충족하는 즉시 보냅니다. 그때 다른 기계 검사 작업이 아직 실행 중일 수 있으니, 최종 상태를
+그 승인의 선행 조건, 즉 같은 Artifact의 다른 자동 검사 eval이 GREEN이 되고 이를 막는 게이트가 없다는
+조건을 충족하는 즉시 보냅니다. 그때 다른 자동 검사 작업이 아직 실행 중일 수 있으니, 최종 상태를
 리뷰하려면 그 작업이 끝날 때까지 기다리세요. 요청은 DEFERRED, 그에 의존하는 결과는 PROVISIONAL로 표시됩니다. 둘 다 실제 승인이
 아닙니다. `gate = "blocking"`은 엄격한 Human 게이트를 유지합니다. 나머지 검증 요건을 모두 충족하면
 Run은 SIGNOFFS_PENDING(종료 코드 5)으로 끝나며, 이는 **승인만 남았다**는 뜻입니다. 그 승인이
 제출되기를 기다리지는 않습니다. 나중에 제출하면 요청이 바뀔 뿐, 지난 Run의 판정은 바뀌지
-않습니다. 새 verify는 바뀌지 않은 잠정 기계 검사 결과를 재사용합니다. 승인이 GREEN이면
+않습니다. 새 verify는 바뀌지 않은 잠정 자동 검사 결과를 재사용합니다. 승인이 GREEN이면
 SATISFIED가 될 수 있고, RED면 그에 의존하는 eval을 막습니다. `--reuse-only agent,human`은 대기
 중인 승인을 GREEN으로 치지 않으므로 CI에 그대로 쓸 수 있습니다.
 
@@ -138,7 +138,7 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 `summary.reused`, Run 수준의 `usage: {spent, saved}`로 들어 있고, `summary.usage`는
 `usage.spent`와 같습니다.
 
-JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 요청이 직접 실행했거나 아직 결과가
+JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그 요청에서 리뷰를 직접 실행했거나 아직 결과가
 없으면 null이고, 캐시, 합류, 원격 재사용이면 결과를 만든 실행의 요청을 가리킵니다.
 
 ```json

@@ -24,7 +24,7 @@
 
 | 내장 도구 | 인자 | 결과 |
 |---|---|---|
-| `graph` | 고정 선언 `args = []`. 호출 `{}` | 이름 기준의 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 소비자 관계 |
+| `graph` | 고정 선언 `args = []`. 호출 `{}` | 이름 기준의 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
 | `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄(기본 1, 최대 9007199254740991), limit 기본 80, 최대 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
 | `list` | `{path?, offset?, limit?}`. offset은 0부터 셈(기본 0, 최대 9007199254740991), limit 기본값이자 최대 200 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
 | `glob` | `{pattern, path?}`. `path`는 디렉터리여야 함 | 검색한 `path`, 정렬된 논리적 `files` 최대 200개, `truncated` |
@@ -130,7 +130,7 @@ Agent 리뷰가 시작되면 artifactize는 eval 도구의 각 실행 경로에 
 `type`, `mimeType`, 그리고 `data`나 `path` 중 정확히 하나만 받습니다. 결과나 블록에 다른 필드가
 있으면 리뷰어에게 넘기는 메타데이터가 아니라 잘못된 출력 오류입니다. 종료 코드 0으로 직접 알리는
 오류는 `{"isError":true,"content":[{"type":"text","text":"Choose a smaller range."}]}`처럼 비어
-있지 않은 텍스트 블록이 정확히 하나여야 하며, 리뷰어에게 그대로 전달됩니다. 0이 아닌 종료,
+있지 않은 텍스트 블록이 정확히 하나여야 하며, 리뷰어에게 그대로 전달됩니다. 0이 아닌 종료 코드,
 비정상 종료, 잘못되거나 잘린 JSON, 프로세스 실패는 일반 오류가 되며, stderr는 전달하지
 않습니다. 관찰 기록은 따로 남기지 않습니다.
 
