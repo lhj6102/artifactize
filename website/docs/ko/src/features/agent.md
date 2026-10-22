@@ -215,7 +215,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   로그인하라고 알립니다.
 - **이미 있는 Codex 로그인 쓰기.** `ARTIFACTIZE_CODEX_AUTH_FILE`을 예를 들어
   `~/.codex/auth.json`(1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로
-  쓰이지 않습니다)으로 설정하면, artifactize는 자기 토큰 대신 매 턴 그 파일의
+  쓰이지 않습니다)으로 설정하면, artifactize는 자신이 가진 토큰 대신 매 턴 그 파일의
   `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 그 파일을 쓰거나 복사하거나
   갱신하지는 않습니다. 토큰 만료까지 남은 시간이 1분 이하이면 리뷰는 `codex login` 등으로 Codex에 다시
   로그인하라는 메시지와 함께 실패합니다. `logout codex`는 그 파일을 건드리지 않습니다.
@@ -224,8 +224,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   [프롬프트 캐싱](#prompt-caching), 사용량은 `openai`와 같습니다.
 - **오류.** 사용량 한도는 `QUOTA`이며, 요금제와 초기화 시각을 알려 주고 그 Run에서 `codex`를
   멈춥니다. 단순한 HTTP 429는 `RATE_LIMIT`이며 재시도합니다. HTTP 401과 403은
-  `AUTHENTICATION`이며 다시 로그인하는 방법을 알려 줍니다. 갱신하는 동안 토큰 엔드포인트에
-  닿지 못하거나 엔드포인트가 실패하면 `TRANSIENT`입니다.
+  `AUTHENTICATION`이며 다시 로그인하는 방법을 알려 줍니다. 토큰을 갱신할 때 토큰 엔드포인트에
+  연결하지 못하거나 오류 응답을 받으면 `TRANSIENT`로 분류합니다.
 
 - **모델.** `models codex`는 Codex 모델 선택기가 내 계정에 보여 주는 모델을 서버가 준 순서대로
   나열합니다. 프로필에는 목록에 있든 없든 내 계정이 쓸 수 있는 모델이면 무엇이든 쓸 수 있습니다.

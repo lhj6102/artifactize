@@ -102,7 +102,7 @@ argv가 아닌 stdin에서 읽습니다. 처음 8192바이트까지만 읽고 �
 여부를 출력하고, 이어서 주체와 범위 또는 저장소가 돌려준 오류를 출력합니다. 토큰 인증에 성공하면 0, 실패하면 1로 종료합니다. JSON은
 `{"configured":true,"url":…,"share":…,"tokenSource":…,"reachable":BOOL,"principal":…,"scopes":[…],"error":…}`
 형태입니다. 로그인한 상태가 아니면 `principal`과 `scopes`가 null이고, 로그인한 상태면
-`error`가 null입니다. 토큰이 거부되면 `reachable: true`에 오류가 함께 나오고, 저장소에 닿지
+`error`가 null입니다. 토큰이 거부되면 `reachable: true`에 오류가 함께 나오고, 저장소에 연결하지
 못하면 `reachable: false`입니다. 설정된 저장소가 없으면 `No remote review store is
 configured.`(JSON은 `{"configured":false}`)를 출력하고 1로 종료합니다. 요청은 연결 2초,
 전체 5초 시간 제한을 쓰고 리디렉션은 따라가지 않습니다. `remote logout`은 저장된 토큰과
@@ -131,14 +131,14 @@ ERROR(`SUPERSEDED`)로 끝냅니다. 텍스트 출력에는 결과의 출처가 
 게시하고, 공유 수준이 `full`이면 전체 기록을 게시합니다. 게시에 실패해도 로컬 결과는 남고 실패가
 보고됩니다. `request submit`은 Human 승인을 게시합니다. `--speculate` Run은 스케줄링이 끝난 뒤에,
 끝까지 유효한 결과만 게시합니다([추측 실행](../features/run.md#speculation-and-deferred-sign-offs)).
-토큰은 자기 [권한 범위](#review-store-server) 안에서만 동작합니다. `read`가 없으면 아무것도
+토큰은 부여된 [권한 범위](#review-store-server) 안에서만 동작합니다. `read`가 없으면 아무것도
 조회하지 않고, `publish`가 없으면 아무것도 게시하지 않으므로 읽기 전용 CI 토큰은 재사용만 하며,
 `human`이 없으면 Human 승인은 경고와 함께 로컬에만 남습니다. 재사용 키가 없는 eval은 아무것도
 게시하지 않으며, [`--force`](../features/fingerprint.md#completed-result-reuse) 결과는 게시되어 가장
 최근 기록이 됩니다. `status`도 읽기 전용 조회로 같은 비교를 하므로 `reuse` 예측에 더 새로운 원격
 결과가 반영되며, `status --force`는 원격 호출을 하지 않습니다.
 
-`remote push`는 키마다 이 머신이 만든 가장 최근 GREEN/RED 기록을 보냅니다. 저장소에 닿지
+`remote push`는 키마다 이 머신이 만든 가장 최근 GREEN/RED 기록을 보냅니다. 저장소에 연결하지
 못했을 때, `remote login` 전에, 또는 `ARTIFACTIZE_REMOTE=off`로 만든 결과가 대상입니다.
 미러한 기록은 보내지 않습니다. `read`가 있는 토큰이면 먼저 각 키에 대해 저장소의 최신 기록을
 조회하고, 이미 최신인 기록은 다시 보내지 않습니다. 저장소는 각 실행을 한 번만 보관하므로 이미

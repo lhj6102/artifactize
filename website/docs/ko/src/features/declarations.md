@@ -54,7 +54,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 |---|---|
 | `name` | 필수. Artifact 이름 |
 | `tags` | 선택. 비어 있지 않고 ASCII 제어 문자가 없는 고유한 문자열 최대 64개의 목록 |
-| `basis` | 선택. 불리언. `true`면 eval 없는 입력으로 선언하며, 자기 리뷰 의무는 없애지만 의존성의 의무는 없애지 않음 |
+| `basis` | 선택. 불리언. `true`면 eval 없는 입력으로 선언하며, 그 Artifact의 리뷰 의무는 없애지만 의존성의 의무는 없애지 않음 |
 | `fingerprint` | 생략하면 artifactsum. `false`면 재사용 안 함. 그 밖에는 artifactsum이나 스크립트 테이블 |
 | `views.agent_tools`, `views.human_tools` | 선택. 선언한 도구의 맵 |
 | `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령. `command`와 `args`는 필수, `execution_paths`는 선택. 다른 필드는 없음 |
@@ -179,8 +179,8 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 Agent 스키마는 검사기 기능을 모두 씁니다.
 
 스키마는 8 MiB까지입니다. Agent의 최종 응답 원문은 1 MiB까지이고, 정규화한 결과는 UTF-16 코드
-단위 256000개까지입니다. 잘못된 최종 응답에는 제한된 수정 요청을 한 번 할 뿐, 필드를 몰래
-지우지 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
+단위 256000개까지입니다. 잘못된 최종 응답에는 제한된 수정 요청을 한 번 할 뿐, 필드를 알리지 않고
+지우지는 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
 제한하며, 검사 오류를 알릴 뿐 요청을 확정하지 않습니다.
 
 ## 그래프 Artifact {#graph-artifact}
@@ -395,7 +395,7 @@ runtime 인자, fingerprint 스크립트, 도구 인자는 `{name}`, `{name}/pat
 fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽을 수 있게 될 뿐입니다. 도구
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
-남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 자기 대상과 참조한 Artifact를
+남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
 자식까지 읽을 수 있습니다. 참조한 Artifact의 eval 지시문은 리뷰에 더해지지 않습니다. 프로젝트
 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 

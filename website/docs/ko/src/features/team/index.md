@@ -2,7 +2,7 @@
 
 여러 머신과 CI는 공유 리뷰 저장소 하나,
 `artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))를 통해 서로의 판정을 재사용할 수 있습니다. 각 머신은
-자기 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
+각자 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
 돌려주므로, 나중에 한 리뷰(예: 강제 재리뷰)가 있으면 모든 팀원이 이전 판정 대신 그 판정을
 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
 
@@ -80,7 +80,7 @@ artifactize remote status
 
 그때부터:
 
-- `verify`는 저장소의 결과를 재사용하고 자기 GREEN/RED 결과를 게시합니다.
+- `verify`는 저장소의 결과를 재사용하고 새로 만든 GREEN/RED 결과를 게시합니다.
 - `status`는 원격 재사용을 예측합니다.
 - `request submit`은 Human 승인을 게시합니다.
 - `remote push`는 저장소에 연결할 수 없던 동안 만든 결과를 보냅니다.

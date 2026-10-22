@@ -339,8 +339,8 @@ Review도 같은 Human Detail을 씁니다. 요청은 직접 맡아야 하며, �
 
 0.5.0은 `chatgpt`와 `claude` Agent 백엔드를 `login chatgpt`,
 `logout chatgpt`, 내부 `mcp` 명령과 함께 제거하고, ChatGPT 요금제
-사용자를 위한 `codex`를 추가합니다. `config check`는 제거된 백엔드를 아직 선언한
-eval이나 프로필 변형마다 대체할 것을 알려 줍니다. artifactize는 이전 릴리스가 저장한 ChatGPT
+사용자를 위한 `codex`를 추가합니다. `config check`는 제거된 백엔드를 아직 쓰는
+eval이나 프로필 변형을 찾아 대신 쓸 백엔드를 안내합니다. artifactize는 이전 릴리스가 저장한 ChatGPT
 토큰을 더 이상 쓰지 않습니다. ChatGPT 설정에서 artifactize 연결을 끊은 다음
 상태 디렉터리에서 `auth/chatgpt.json`, `auth/chatgpt-registration.json`, `auth/chatgpt.lock`을
 삭제하세요.
@@ -470,8 +470,8 @@ Artifactize를 마우스 오른쪽 버튼으로 클릭해 제거하세요. `inst
 `artifactize doctor`가 첫 줄에 출력하는 상태 디렉터리를 삭제하세요.
 
 제거해도 프로젝트 파일, 내보낸 파일, `--state-dir`이나 환경 변수 재정의로
-AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. eval의 명령이 쓴 파일도 AppData 안의 것까지 남으니,
-더 필요 없다면 따로 지우세요. 가상화되지 않은 기존
+AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. eval의 명령이 만든 파일은 AppData 안에 있더라도 남으니,
+더 이상 필요하지 않으면 따로 지우세요. 가상화되지 않은 기존
 AppData 파일도 Store 패키지의 정리 대상이 아닙니다.
 [Windows 동작과 오버레이 주의 사항](../features/others/state.md#state)을 보세요.
 

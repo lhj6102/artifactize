@@ -115,7 +115,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 `app` 스타일 eval은 지시문에서 테스트 코드 리뷰를 참조하지 않았다면, 그 리뷰가 끝나지 않아도
 실행할 수 있습니다.
 
-모든 eval은 입력의 판정과 상관없이 자기 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
+모든 eval은 입력의 판정과 상관없이 그 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
 효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval이 늦어지고,
 입력 리뷰가 RED면 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 증거가
 모두 있어야 합니다.
@@ -150,7 +150,7 @@ BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실�
 
 ### Human 승인 {#human-sign-offs}
 
-Human eval은 의존성 게이트에 더해, 자기 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
+Human eval은 의존성 게이트에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
 시작합니다. 사람은 기계 검사 eval을 이미 통과한 것만 승인합니다. 그전까지는 기다립니다. 그
 기계 검사 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
 `Sibling machine eval RED: spec/review`처럼 그 eval이 나옵니다. 같은 Artifact의 다른 Human

@@ -31,7 +31,7 @@
 | `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`. 기본은 대소문자 구분, maxResults 기본값이자 최대 200 | 검색한 `path`, `matches: [{path, line, text}]`(일치하는 줄마다 하나, 경로 다음 줄 번호 순), `truncated` |
 
 `read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 자식 폴더를
-거쳐 닿은 Artifact를 가리킵니다. 예를 들어 app이 `spec`으로 선언된 자식 폴더 `rules`를 가지고
+거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app이 `spec`으로 선언된 자식 폴더 `rules`를 가지고
 있을 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 소유
 정보 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`를
 돌려줍니다. `path`는 실제 머신 경로가 아니라 요청한 논리적 경로 그대로입니다. list의 최상위
@@ -182,7 +182,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 계속 실행되어야 하는 보조 프로그램에는 [도구 세션](#tool-sessions)을 쓰세요.
 명령은 샌드박스가 아니라 신뢰하는 읽기 전용 프로그램입니다.
 
-Agent eval은 자기 범위에 있는 모든 Artifact의 Agent 도구를 `coverage_spec`처럼
+Agent eval은 그 eval의 범위에 있는 모든 Artifact의 Agent 도구를 `coverage_spec`처럼
 `<name>_<artifactId>` 이름으로 봅니다. 두 도구가 같은 이름이 되면 `config check`는 통과하지만
 리뷰는 `PREPARATION_FAILED`로 실패하며, `artifactize tools check`가 이를 알려 줍니다. 이름이
 겹치지 않을 때까지 도구나 Artifact의 이름을 바꾸세요. Human 도구는
@@ -226,7 +226,7 @@ Artifact에 있는 세션을 가리켜야 하며, 내장 도구와 Human 도구�
 다른 명령과 마찬가지로 실제 홈 디렉터리를 포함한 작성자의 환경에서 실행됩니다. 호출마다 여전히 별도의 출력·임시
 디렉터리를 받습니다. 동시에 진행하는 리뷰는 같은 Artifact라도 서로 다른 세션 디렉터리와 환경을
 씁니다. 포트나 디스플레이는 OS의 표준 방식(예: 포트 0이나 자동으로 고른 디스플레이)으로
-고르세요. 데스크톱 하네스는 자기 헤드리스 디스플레이를 직접 시작합니다. Agent는 인스턴스 ID를
+고르세요. 데스크톱 하네스는 헤드리스 디스플레이를 직접 시작합니다. Agent는 인스턴스 ID를
 보지 못하고 start나 stop을 부를 수 없습니다.
 
 실행 경로는 이전과 마찬가지로 리뷰를 시작할 때 고정합니다. 도구 세션은 Agent가 그 세션에 묶인 도구를

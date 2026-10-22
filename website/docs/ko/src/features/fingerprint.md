@@ -8,14 +8,14 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 
 ## Fingerprint {#fingerprints}
 
-폴더와 파일 Artifact는 기본으로 **artifactsum**을 씁니다. `fingerprint`를 생략하면 자기 파일을
+폴더와 파일 Artifact는 기본으로 **artifactsum**을 씁니다. `fingerprint`를 생략하면 그 Artifact의 파일을
 해시하고, 스크립트를 고를 수도 있습니다. 루트 그래프 Artifact는 항상
 [구조 기반 그래프 fingerprint](#graph-fingerprint)를 쓰며, `fingerprint`를 선언해 그 값을
 바꾸거나 끌 수 없습니다. 폴더와 파일 Artifact에서 아래 형식들은 도구 선언이나 다른 Artifact의
 값을 더하지 않습니다. 의존성은 [재사용 키](#the-reuse-key)를 통해 들어갑니다.
 
 - 생략하면 artifactsum을 씁니다. 그 Artifact의 입력 경로와 내용을 SHA-256으로 해시한 값에
-  `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 자기 파일을,
+  `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 그 안의 파일을,
   파일 Artifact는 대상 파일 하나를 해시합니다.
 - `fingerprint = { script = { command = "hash", args = [] } }`는 명령의 출력을
   fingerprint로 씁니다. 스스로는 아무것도 해시하지 않으므로, 다시 리뷰해야 할 입력과 스크립트
@@ -24,7 +24,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 
 ## Artifactsum {#artifactsum}
 
-Artifact는 자기 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint가 바뀌면 다시
+Artifact는 그 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint가 바뀌면 다시
 리뷰합니다. 폴더의 입력을 좁히려면 다음처럼 씁니다.
 
 ```toml
@@ -51,7 +51,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 `fingerprint = {}`, `files = ["."]`, `ignore`(`[]`라도)를 거부합니다. 기본값을 쓰려면 필드를
 생략하고, 파일 말고 더 많은 것을 포함해야 하면 스크립트를 쓰세요.
 
-예전 `dependencies` fingerprint 옵션은 거부합니다. fingerprint는 자기 Artifact만 포함합니다.
+예전 `dependencies` fingerprint 옵션은 거부합니다. fingerprint는 그 Artifact만 포함합니다.
 탐색 제한은 [레퍼런스](declarations.md#artifactsum)에, 스크립트 형식은
 [fingerprint 스크립트](declarations.md#fingerprint-scripts)에 있습니다.
 
@@ -101,7 +101,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 키에 기록이 여러 개 있으면 GREEN이든 RED이든 완료 시각이 가장 늦은 것을 재사용합니다. 그래서
 기준과 입력이 같다면 서로 다른 프로필의 결과도 서로 재사용됩니다. 선언된 프로필로 요청한
 리뷰에 `--profile fast` 같은 Agent 변형으로 만든 결과를 재사용할 수 있고, 그 반대도 됩니다.
-명령이나 인자가 다른 runtime 변형은 자기 키를 가지며, 다른 입력을 가리킬 수도 있습니다.
+명령이나 인자가 다른 runtime 변형은 별도의 키를 가지며, 다른 입력을 가리킬 수도 있습니다.
 
 기록에는 결과를 만든 프로필과 출처가 남습니다. 감사 필드와 출처 종류 목록은
 [Run 결과 레퍼런스](run.md#verify-and-runs)에 있습니다.

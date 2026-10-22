@@ -43,7 +43,7 @@ artifactize --state-dir "$WALK/server" server token add ci --scopes read
 artifactize --state-dir "$WALK/server" server run      # Listening on http://127.0.0.1:8417/
 ```
 
-`server run`은 자기 터미널에서 계속 실행해 두세요. 이 워크스루는 같은 컴퓨터의
+`server run`은 별도 터미널에서 계속 실행해 두세요. 이 워크스루는 같은 컴퓨터의
 프로그램만 연결합니다. 서로 다른 컴퓨터라면 먼저
 [안전한 연결 설정](index.md#connect-teammates-securely)을 따르세요.
 

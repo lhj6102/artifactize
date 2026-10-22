@@ -152,11 +152,11 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 | 둘 다 없음 | 의존성의 GREEN 증거를 기다림. Run은 사람의 승인을 기다림 |
 | `--defer-human` | 기계 검사 게이트를 기다림. 미룰 수 있는 승인은 건너뛰고 잠정 결과로 진행 |
 | `--speculate` | 게이트가 정해지기 전에 요청한 종류를 모두 시작. 사람의 승인은 기다림 |
-| 둘 다 | 기계 리뷰는 미리 시작하고, 미룰 수 있는 승인은 자기 선행 조건을 충족하면 요청 |
+| 둘 다 | 기계 리뷰는 미리 시작하고, 미룰 수 있는 승인은 그 승인의 선행 조건을 충족하면 요청 |
 
 어느 모드에서든 Human eval은 같은 Artifact의 Human이 아닌 eval이 모두 GREEN이 된 뒤에만
-요청되며, 그중 하나라도 RED나 ERROR면 BLOCKED가 됩니다. `--speculate`에서는 새로 준비된 작업이
-`--jobs`나 백엔드 자리를 비우려고 실행 중인 추측 실행 리뷰를 중단시킬 수 있습니다. 그 리뷰는 나중에
+요청되며, 그중 하나라도 RED나 ERROR면 BLOCKED가 됩니다. `--speculate`에서는 새로 준비된 작업을
+실행할 `--jobs`나 백엔드 자리가 모자라면 artifactize가 실행 중인 추측 실행 리뷰를 중단할 수 있습니다. 그 리뷰는 나중에
 다시 시작하며 `--max-executions`를 한 번 더 씁니다. 이 모드들은 실행 순서를 바꿀 뿐 승인 여부를
 바꾸지 않습니다. `verify --wait`는 평소와 같은 결과 종료 코드를 씁니다. 0 GREEN,
 1 RED, 2 ERROR, 4 INCOMPLETE, 5 SIGNOFFS_PENDING입니다.
@@ -174,7 +174,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 의존성에는 적용되지 않습니다. 실행 범위를 넓히거나 게이트를 건너뛰지도 않습니다. Run은 결정된
 정책과 요청마다 force 여부를 기록합니다. 강제로 실행하는 eval은 캐시 결과를 읽지 않고,
 실행 중인 작업에도 합류하지 않습니다. `--force`로 새로 실행한 eval의 결과가 GREEN이나 RED면 그 키의 가장 최근 기록으로 추가되고, 리뷰
-저장소가 설정되어 있으면 게시되어 이후 Run이 재사용합니다. 의존성은 여전히 자기 로컬 기록을
+저장소가 설정되어 있으면 게시되어 이후 Run이 재사용합니다. 의존성은 여전히 로컬 기록을
 재사용할 수 있지만, `--force`로 실행한 Run은 저장소에서 아무것도 읽지 않습니다. 추측 실행과 승인 미루기도
 최종 요구 사항을 면제하지 않습니다.
 
@@ -202,7 +202,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 횟수를 쓰지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
 실패해도 그 시작은 쓴 것으로 치고 모델을 부르지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류했던 Run이 실패해서 리뷰를 다시
-실행해야 하는 Run은 자기 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
+실행해야 하는 Run은 그 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로
 끝납니다. 시작하지 못한 요청 없이 딱 한도만큼 쓴 것은 오류가 아닙니다.
 
@@ -281,7 +281,7 @@ status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검
 | `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL` | eval 중 하나가 `PROVISIONAL` |
 | `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없음(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE` |
 | `UNREVIEWED` | 리뷰한 적이 없음 | 리뷰한 eval이 없거나 eval이 없음 |
-| `INCOMPLETE` | — | 자기 eval은 `PASS`이지만 의존하는 Artifact가 충족되지 않음 |
+| `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact가 충족되지 않음 |
 | `BASIS` | — | 의존성이 충족된 basis Artifact |
 
 Artifact는 eval이 가진 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
@@ -376,7 +376,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 ## Config graph {#config-graph}
 
 `config graph [ARTIFACT]`는 기본으로 프로젝트 전체를 보여 주고, ARTIFACT를 주면 순환으로
-묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 그 결과를 쓰는 하위 Artifact와 각 Artifact가 쓰는 입력도 포함합니다. 이는 구조상 닿을 수 있는 범위를 넉넉하게
+묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 그 결과를 쓰는 하위 Artifact와 각 Artifact가 쓰는 입력도 포함합니다. 이는 구조상 영향이 미칠 수 있는 범위를 넉넉하게
 잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`는 Artifact나 eval
 하나 또는 여러 개를 범위로 같은 정의를 보여 줍니다. 실제로 무엇을 실행하고 재사용할지는
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,

@@ -10,7 +10,7 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 다른 Human eval은 이 조건에 들어가지 않습니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
-검사가 준비되면 artifactize는 사람의 결정을 대기 중인 작업인 **WAITING_HUMAN 요청**을
+검사가 준비되면 artifactize는 사람의 결정을 기다리는 작업을 **WAITING_HUMAN 요청**으로
 저장합니다. 사람을 기다리는 동안에는 Run의 `--jobs` 실행 자리도, `--max-executions` 예산도
 쓰지 않으며, 그 예산이 0이어도 마찬가지입니다. 기본 모드에서는 Human 승인이 제출될 때까지 시간
 제한 없이 Run이 대기하며, 승인이 제출되면 그 승인에 의존하는 검사가 같은 Run 안에서 이어서 실행됩니다. 터미널을
