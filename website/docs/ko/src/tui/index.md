@@ -227,9 +227,9 @@ Scope에서는 Full + Preview를, Detail에서는 Tree Compact + Detail Full을 
 좁아도 단계를 숨기지 않으므로 아주 작은 터미널에서는 초점이 있는 창이 보이지 않을 수 있습니다.
 공간이 더 필요하면 터미널을 넓히세요.
 
-- **Scope.** Git 클론은 공통 Git 디렉터리로 묶입니다. `ALL`은
-  상태 전체를 고르며, 각 저장소 행은 별도의 저장소 ALL 행 없이
-  그 모든 워크트리를 고릅니다. Run이 없는 워크트리는 `+N without Runs (Space)`로 접히며,
+- **Scope.** Git 클론은 공통 Git 디렉터리로 묶입니다. `ALL`을
+  고르면 상태 전체가 선택되고, 저장소 행을 고르면 그 저장소의 워크트리가 모두 선택됩니다.
+  저장소마다 ALL 행을 따로 두지는 않습니다. Run이 없는 워크트리는 `+N without Runs (Space)`로 접히며,
   Space로 보이거나 숨깁니다. 선택한 범위는 계속 보입니다. Git이 아닌 경로와 삭제된
   경로도 계속 나열됩니다. Run은 `repoPath` 작업 공간과 함께 선택적인 `commonDir`, `worktreePath`, `branch`를
   기록합니다.

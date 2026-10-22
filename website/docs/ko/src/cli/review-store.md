@@ -41,7 +41,7 @@ Human 승인도 게시)입니다. 신뢰할 수 없는 CI에는 `read`만 주세
 `rm KEY`는 그 키의 기록을 모두 지우고 `{"removed":true}`(없었으면 false)를 출력합니다.
 
 저장소에 기록을 쓰는 것은 `artifactize` 클라이언트뿐입니다. `verify`, `request submit`,
-`remote push`가 게시하고, `verify`와 `status`가 조회합니다. 서버는 아래 경로로 응답하므로
+`remote push`가 게시하고, `verify`와 `status`가 조회합니다. 서버는 아래 경로로 들어오는 요청을 처리하므로,
 프록시나 방화벽 규칙을 정할 때 참고하세요. 모든 경로는 `Authorization: Bearer TOKEN`을 받고
 JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰이 없거나 모르는 토큰이거나
 폐기된 토큰이면 401, 범위가 모자라면 403입니다.

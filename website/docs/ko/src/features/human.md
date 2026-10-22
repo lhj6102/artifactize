@@ -51,7 +51,7 @@ artifactize review [REQUEST_ID]
 있습니다.
 
 [Run 종료 코드](../cli/index.md#command-reference)로 지켜보기 중단, 직접 취소, 충족되지 않은 최종 검증 요건을
-구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하지 않고 결과를 대기하지도 않습니다. CI에서는
+구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하지 않으며 결과가 나올 때까지 대기하지도 않습니다. CI에서는
 Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면 [실행되지 않습니다](../cli/index.md#reuse-only).
 
 `request list`와 `request show`의 필드, Run 요약은 [레퍼런스](tools/human.md#in-a-review)에

@@ -5,8 +5,8 @@ CI 작업은 러너 머신에서 여러 명령을 차례로 실행하며,
 개발자의 Agent/Human 승인 결과를 재사용할 뿐 그 결정을 직접 내려서는 안 됩니다.
 
 CI 단계로 `artifactize verify --all --wait --reuse-only agent,human`을 실행하세요. 테스트는 실행하되 리뷰 결과는 캐시나 팀 저장소에서 재사용하므로, CI에서는 모델을 호출하거나 사람의 승인을 요청한 채 대기하지 않습니다.
-선택된 모든 eval이 GREEN일 때만 0으로 종료하므로, RED(1), ERROR(2), INCOMPLETE(4)는
-작업을 실패시킵니다. 모든 종료 코드는 [명령 레퍼런스](../../cli/index.md#command-reference)에 있습니다. Agent 리뷰나
+선택한 모든 eval이 GREEN이면 종료 코드는 0이며, RED(1), ERROR(2), INCOMPLETE(4)이면
+CI 작업은 실패로 처리됩니다. 모든 종료 코드는 [명령 레퍼런스](../../cli/index.md#command-reference)에 있습니다. Agent 리뷰나
 Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않고](../../cli/index.md#reuse-only) Run이 INCOMPLETE로 남으므로,
 개발자가 `verify`로 현재 재사용 키에 맞는 결과를 만든 뒤에야 CI가 통과합니다. Artifactsum이
 기본으로 재사용을 켜 두며, 대상이나 의존성의 `fingerprint = false`는 재사용을 끕니다.
@@ -45,7 +45,7 @@ PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙�
 - 읽기 토큰으로는 결과를 재사용할 수 있지만 게시할 수는 없습니다.
 - 리뷰 저장소에 연결할 수 없어도 검증을 멈추지 않습니다. `verify`는 한 번 경고하고 로컬 캐시로 계속합니다.
   그러면 저장소에만 있는 리뷰는 재사용되지 않으므로 Run은 INCOMPLETE가 됩니다.
-- 거부된 토큰, TLS 실패, 잘못된 설정은 작업을 실패시키므로(종료 코드 2),
+- 토큰이 거부되거나, TLS 연결에 실패하거나, 설정이 잘못되면 작업이 실패하므로(종료 코드 2),
   잘못된 설정이 오류 없이 무시되는 일은 없습니다.
 - `ARTIFACTIZE_REMOTE=off`는 명령 하나에 대해 저장소를 끕니다. 그래도 읽을 수 없는
   `remote.json`이 있으면 명령이 실패하니, 먼저 고치거나 지우세요.
