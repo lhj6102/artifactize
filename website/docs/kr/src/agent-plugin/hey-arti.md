@@ -1,6 +1,6 @@
 # Hey Arti: 프로젝트의 리뷰 구성하기 {#hey-arti-shape-a-projects-reviews}
 
-**Arti는 artifactize의 Forward Deployed Engineer입니다.** 코딩 어시스턴트에게 Arti를 주면
+**Arti는 artifactize의 현장 배치 엔지니어(Forward Deployed Engineer)입니다.** 코딩 어시스턴트에게 Arti를 주면
 프로젝트를 파악하고, 리뷰가 의미 있고 재사용될 수 있도록
 프로젝트를 Artifact와 eval로 구성하는 방법을 추천합니다. Arti는 좋은 웨이터처럼 일합니다.
 메뉴와 어떤 조합이 잘 맞는지 알고, 추천하기 전에 먼저 듣고, 주문을 확인하고,

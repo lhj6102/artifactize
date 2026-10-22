@@ -51,7 +51,7 @@ artifactize review [REQUEST_ID]
 
 claim, unclaim, tool, submit은 리뷰어 기본값으로 `$USER`를 씁니다. `--reviewer NAME`으로
 각 동작에 같은 명시적 리뷰어를 고를 수 있습니다. 리뷰어 이름은 인증된 계정이 아니라 로컬
-협조용 잠금입니다. 요청을 맡은 사람만 도구를 실행하고,
+협업용 잠금입니다. 요청을 맡은 사람만 도구를 실행하고,
 제출하거나 맡기를 풀 수 있습니다. `request claim`은 맡은 내용을, `request unclaim`은
 풀린 내용을 출력합니다. 다른 사람이 맡은 요청이나 더 이상 기다리지 않는 요청을 풀려고 하면
 2로 종료합니다. 도구 이름은 `<operation>_<artifactId>`이며 자유 인자를 받지 않습니다.
