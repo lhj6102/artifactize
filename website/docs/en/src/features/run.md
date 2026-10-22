@@ -94,9 +94,8 @@ The same request key keeps its original choices.
 Speculation starts requested runtime, Agent and Human evals before unresolved
 gates, within `--jobs`, backend capacity and `--max-executions` limits. A Human eval
 is never requested before every other non-Human eval of its Artifact is GREEN. Ready work
-goes first; speculative work runs only on capacity that ready work does not need. A
-review that is started again, for example after its speculation was cancelled, counts
-again against `--max-executions`. An upstream RED or ERROR immediately cancels
+goes first: when it needs capacity a speculative review holds, that review is interrupted
+and started again later, and each start counts against `--max-executions`. An upstream RED or ERROR immediately cancels
 only the work it makes invalid, the evals that depend on it outside their own
 Artifact and cycle, and marks it BLOCKED without a reusable cancelled result.
 GREEN keeps results already produced for the same files. Results are shared with the

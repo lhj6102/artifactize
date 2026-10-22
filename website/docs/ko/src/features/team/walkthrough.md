@@ -129,8 +129,7 @@ Human 승인은 건너뜁니다.
 ## 5. CI가 둘 다 재사용하기 {#5-ci-reuses-both}
 
 CI는 환경 변수로만 설정합니다. 1단계의 읽기 전용 `ci` 토큰을 쓰며,
-여기서는 `CI_TOKEN` 비밀 변수로 제공합니다. 그 값은 커밋한 파일이 아니라
-CI의 비밀 설정으로 구성하세요. `--reuse-only
+여기서는 `CI_TOKEN` 변수로 전달합니다. 토큰은 커밋한 파일이 아니라 CI 시크릿으로 등록하세요. `--reuse-only
 agent,human`은 Agent 리뷰와 Human 승인이 저장소나 캐시에서만 오도록 보장합니다.
 로컬 시연에서는 먼저 이 터미널에도 `WALK`를 복사하고,
 1단계에서 `server token add ci`가 출력한 토큰을 `CI_TOKEN`으로 붙여 넣으세요.

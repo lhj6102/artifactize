@@ -298,7 +298,7 @@ artifactize MCP 서버를 추가합니다. 먼저 위 채널 중 하나로 `arti
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`. 체크아웃에서는 `git pull` 후 `cargo install --path`를 반복하세요 |
 
-설치 스크립트와 Cargo는 릴리스가 게시되는 즉시 받습니다. Homebrew와
+설치 스크립트나 Cargo를 쓰면 릴리스가 게시되는 즉시 그 버전을 설치할 수 있습니다. Homebrew와
 Microsoft Store는 안정 릴리스만 따라가며, Microsoft가 검토하는 동안 Store 업데이트가
 늦어질 수 있습니다. 업데이트해도 상태는 유지됩니다.
 
@@ -408,7 +408,7 @@ artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 
 `doctor`는 어떤 provider도 호출하지 않고 Run도 만들지 않습니다. 모든 백엔드가 선택 사항이므로
 키나 로그인이 없으면 경고로 처리합니다. 쓸 수 없는 상태나 잘못된 설정 같은
-치명적 오류가 있을 때만 1로 종료합니다.
+심각한 오류가 있을 때만 1로 종료합니다.
 
 ## 정리와 제거 {#cleanup-and-uninstall}
 

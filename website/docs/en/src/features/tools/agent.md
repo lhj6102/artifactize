@@ -234,7 +234,10 @@ protocol = "json"
 `execution_paths`. They use the usual executable lookup, scoped argv and JSON
 stdin envelope, with `args: {}`. They do not take `description`, `protocol`,
 `timeout_ms` or concurrency options. A command tool's `session` must name a
-session in its own Artifact; built-in and Human tools do not accept it.
+session in its own Artifact; built-in and Human tools do not accept it. Like tool names,
+the `<session>_<artifact>` names of the sessions an eval can use must be unique: a
+collision passes `config check` but fails the review with `PREPARATION_FAILED`, so rename
+the session or the Artifact.
 
 The harness implements this start contract:
 

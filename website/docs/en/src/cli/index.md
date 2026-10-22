@@ -158,11 +158,13 @@ with the same `--request-key` retains the first request's modes.
 | Neither | Wait for dependency GREEN evidence; the owned Run waits for people |
 | `--defer-human` | Wait for machine gates; run past deferrable sign-offs provisionally |
 | `--speculate` | Start all requested kinds before unresolved gates; wait for people |
-| Both | Start machine reviews speculatively; ask for deferrable sign-offs last |
+| Both | Start machine reviews speculatively; ask for deferrable sign-offs once their own prerequisites pass |
 
 In every mode, a Human eval is asked only once every other non-Human eval of its
 own Artifact is GREEN, and is BLOCKED when one of them is RED or ERROR.
-These modes change execution order, not approval. `verify --wait` uses the
+With `--speculate`, newly ready work can interrupt a running speculative review to free
+`--jobs` or backend capacity; that review starts again later and uses another
+`--max-executions` start. These modes change execution order, not approval. `verify --wait` uses the
 ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5
 SIGNOFFS_PENDING. [Execution modes](../features/run.md#speculation-and-deferred-sign-offs)
 explains scheduling, cancellation, provisional results, strict Human gates and

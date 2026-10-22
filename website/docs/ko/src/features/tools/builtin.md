@@ -152,8 +152,8 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 내장 도구의 이름과 `args`를 포함한 도구 선언은 [재사용 키](../fingerprint.md#the-reuse-key)에
 들어가지 않습니다. 도구는 Artifact를 보는 방법일 뿐이기 때문입니다. 도구를 바꿔도 이전 판정을
 재사용하며, 내장 도구의 동작을 바꾼 새 artifactize 릴리스도 마찬가지입니다. 도구가 읽는 파일이
-바뀔 때 다시 리뷰하려면 그 파일을 fingerprint에 포함하세요. 기본 artifactsum은 Artifact 자신의
-파일을 포함합니다.
+바뀔 때 다시 리뷰하려면 그 파일을 fingerprint에 포함하세요. 기본 artifactsum 계산에는 그 Artifact에
+속한 파일이 들어갑니다.
 
 ## `artifactize-tools` CLI {#artifactize-tools-cli}
 

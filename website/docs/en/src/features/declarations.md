@@ -1,7 +1,7 @@
 # Declarations (.artf)
 
-Write an `index.artf` next to the folder (or a `NAME.artf` next to the file) you want
-to review, then check it:
+Write an `index.artf` inside the folder you want to review (or a `NAME.artf` beside the
+file), then check it:
 
 ```sh
 artifactize config check

@@ -59,7 +59,7 @@ artifactize review [REQUEST_ID]
 
 ## 미룬 승인 {#deferred-sign-offs}
 
-사람이 실행 하나하나를 이끌지 않고 승인만 하려면 `verify --defer-human`을 고르세요. 머신 설정이
+사람의 승인을 나중에 받더라도 기계 검사를 먼저 진행하려면 `verify --defer-human`을 고르세요. 머신 설정이
 아니라 요청마다 정하며, 기본으로 꺼져 있습니다. 승인 대기 중에도 기계 검사는 계속 실행되고,
 같은 Artifact의 기계 검사 eval이 GREEN이 되면 다른 작업의 완료 여부와 관계없이 승인을
 요청합니다. 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요. `--speculate`로 기계 검사

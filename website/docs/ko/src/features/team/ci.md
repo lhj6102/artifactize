@@ -4,8 +4,7 @@
 CI 작업은 러너 머신에서 실행되는 명령의 연속이며,
 개발자의 Agent/Human 승인을 재사용해야지 그 결정을 직접 내려서는 안 됩니다.
 
-CI 단계로 `artifactize verify --all --wait --reuse-only agent,human`을 실행하세요. 테스트는 실행되고, 리뷰는 캐시나
-팀 저장소에서 와야 하므로 CI는 결코 모델을 호출하거나 사람의 승인을 받으려 멈추지 않습니다.
+CI 단계로 `artifactize verify --all --wait --reuse-only agent,human`을 실행하세요. 테스트는 실행하되 리뷰 결과는 캐시나 팀 저장소에서 재사용하므로, CI에서는 모델을 호출하거나 사람의 승인을 요청한 채 대기하지 않습니다.
 선택된 모든 eval이 GREEN일 때만 0으로 종료하므로, RED(1), ERROR(2), INCOMPLETE(4)는
 작업을 실패시킵니다. 모든 종료 코드는 [명령 레퍼런스](../../cli/index.md#command-reference)에 있습니다. 재사용할 것이 없는
 Agent 리뷰나 Human 승인은 [실행되지 않고](../../cli/index.md#reuse-only) Run을 INCOMPLETE로 남기므로, CI는
