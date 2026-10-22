@@ -272,7 +272,7 @@ eval마다 **행 하나**가 있습니다. Artifact 행은 지금 보이는 eval
 경로와 태그는 Detail의 Technical 섹션에 있습니다. basis Artifact는 행 하나입니다.
 `◇ engine  basis`. 별도의 관계 행이나 늘 켜져 있는 의존성 목록은 없습니다.
 
-Artifact 완료는 eval 행의 색뿐 아니라 상위 게이트도 따집니다.
+Artifact의 완료 여부는 eval의 상태와 상위 게이트의 충족 여부를 함께 보고 정합니다.
 eval의 GREEN 결과를 재사용할 수 있어도, 그 Artifact는 통과 0개(예를 들어 `0/1`)로
 **done, but waits for X**나 **done, but blocked by X**를 보여 줄 수 있습니다.
 따라서 eval 행이 모두 GREEN이어도, 그 Artifact를 입력으로 쓰는 eval을 실행할 준비가 끝났다고 볼 수는 없습니다.
@@ -303,9 +303,8 @@ Run의 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)도
 하위 eval이 READY이거나 실행 중일 수 있으며, 이후의 상위 RED/ERROR가
 그 추측 실행 작업을 막거나 취소합니다. `--defer-human`에서는 승인이
 **DEFERRED**로 나오고 의존하는 작업은 승인된 것이 아니라 **PROVISIONAL**일 수 있습니다. 끝난
-**SIGNOFFS_PENDING** Run은 그 승인만 남았다는 뜻입니다. 그 승인의 이후 제출은
-과거의 Run 종료 시 판정이 아니라 현재 요청을 바꾸며, 엄격한 Human 게이트는
-여전히 엄격합니다.
+**SIGNOFFS_PENDING** Run은 그 승인만 남았다는 뜻입니다. 나중에 승인을 제출해도 Run 종료 때 기록한 판정은 바뀌지 않고 현재 요청에만 반영되며, 엄격한 Human
+게이트의 승인 조건도 그대로입니다.
 
 eval이 무엇을 기다리는지는 [eval 의존성](../features/artifact.md#eval-dependencies)을 따릅니다.
 행은 그 게이트를 충족되지 않은 Artifact 최대 둘로 묶고, 그다음 `+N`을 붙이며, 각
@@ -315,7 +314,7 @@ Artifact의 완료 상태를 함께 보여 줍니다. 기다리는 대상이 모
 이름순으로 정렬됩니다.
 
 모두 done인 Artifact는 자동으로 접힙니다. 다른 Artifact는 직접 접지 않는 한
-펼쳐진 채로 있으며, 새로 고침은 사용자의 선택을 존중합니다. 새 Run은 진행 중이거나
+펼쳐진 채로 있으며, 새로 고쳐도 사용자가 펼치거나 접어 둔 상태는 그대로입니다. 새 Run은 진행 중이거나
 실패한 첫 eval을 고릅니다. `h`는 접고, `l`은 펼치고, Space는 선택한 트리 행을 접거나 펼칩니다.
 
 선택한 eval의 상위 Artifact 행에는 `↑`가 붙습니다. 충족되지 않았으면 밝게,

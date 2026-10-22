@@ -1,13 +1,14 @@
 # 내장 도구 {#built-in-tools}
 
 artifactize에는 Linux, macOS, Windows에서 똑같이 동작하는 도구가 들어 있습니다. 다른 점은
-디스크에 있는 경로 표기를 확인하는 방식뿐입니다([경로](../others/platforms.md#paths) 참고).
+디스크에 있는 경로 표기를 확인하는 방식([경로](../others/platforms.md#paths) 참고)과, Windows의
+junction과 그 밖의 reparse point를 심볼릭 링크처럼 거부한다는 점뿐입니다.
 스크립트를 쓰거나 `cat`, `xdg-open` 같은 OS 프로그램을 부르는 대신 `builtin`에 이름을 적어
-선언하세요. 시스템의 여는 프로그램(Linux에서는 `xdg-open`)을 쓰는 `open`과, 요청한 프로그램을
+선언하세요. 파일이나 URL을 기본 애플리케이션으로 여는 OS 명령(Linux에서는 `xdg-open`)을 쓰는 `open`과, 요청한 프로그램을
 실행하는 `help`를 빼면 따로 설치할 것이 없으며, [`artifactize-tools`](#artifactize-tools-cli)
 명령도 필요 없습니다. 그 명령과 `artifactize tools`는 스크립트와 runtime eval에 파일 시스템과
-프로그램 도구를 제공합니다. 프로젝트를 아는 `graph` 도구는 artifactize에서 리뷰 도구로 선언할
-때만 쓸 수 있고, 독립 실행형 도구 CLI에는 없습니다.
+프로그램 도구를 제공합니다. 현재 프로젝트의 구조를 보여 주는 `graph` 도구는 artifactize의 리뷰 도구로
+선언해야 쓸 수 있으며, 독립 실행형 도구 CLI에는 없습니다.
 
 ```toml
 [views.agent_tools]
@@ -180,7 +181,14 @@ list/glob/grep의 기본값입니다. 절대 경로 대상, `..`, 심볼릭 링�
 제목이 정확히 같아야 하고, `read`와 `section`의 출력이 64 KiB를 넘으면 잘렸다는 표시로 끝나며,
 `help`의 출력이 64 KiB를 넘으면 `Help output exceeds 64 KiB.`와 종료 코드 1로 실패합니다).
 `list`, `glob`, `grep`은 [Agent 도구](agent.md#agent-tools)의 JSON 결과를 그 패턴 문법과 한도대로
-출력합니다. 명령줄에서 `help`는 터미널 환경에서 `ARTIFACTIZE_*` 변수를 모두 뺀 환경으로, 별도의
+출력합니다. 현재 디렉터리는 선언된 Artifact가 아니므로 `artifactId`는 `"cwd"`입니다. `notes.md`만
+있는 폴더에서 `artifactize-tools list .`를 실행하면 다음이 출력됩니다.
+
+```json
+{"artifactId":"cwd","path":"","entries":[{"kind":"file","name":"notes.md","path":"notes.md"}],"totalEntries":1,"truncated":false,"nextOffset":null}
+```
+
+ 명령줄에서 `help`는 터미널 환경에서 `ARTIFACTIZE_*` 변수를 모두 뺀 환경으로, 별도의
 임시·출력 디렉터리 없이 프로그램을 실행합니다. 도구 오류는 stderr로 가고 종료 코드는 1이며,
 잘못된 사용은 종료 코드 2입니다. `artifactize tools --help`(또는 `artifactize-tools --help`)는
 도구 목록을, `artifactize tools SUBCOMMAND --help`는 도구 하나의 설명을 보여 줍니다.

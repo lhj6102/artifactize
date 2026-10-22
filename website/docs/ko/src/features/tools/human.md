@@ -32,7 +32,7 @@ Human 도구는 리뷰어가 리뷰하는 동안 실행할 수 있는 것입니�
 - `launch`는 프로그램을 시작하고, 시작되자마자 돌아옵니다. 편집기나 뷰어를 열 때 씁니다.
   리뷰 중에는 프로그램이 끝날 때까지 출력이 Tool log에 나옵니다. 프로그램은 리뷰를 닫거나
   artifactize가 종료된 뒤에도 계속 실행되며, `timeout_ms`는 적용되지 않으니 리뷰어가 직접
-  닫습니다. `request tool`과 `tool check`는 그 출력을 보여 주지 않습니다. 프로그램을 시작했다고
+  닫습니다. `request tool`과 `artifactize tools check`는 그 출력을 보여 주지 않습니다. 프로그램을 시작했다고
   판정이 내려지지는 않습니다.
 
 ## Tool log {#tool-log}

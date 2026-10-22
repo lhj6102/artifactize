@@ -95,8 +95,9 @@ The same request key keeps its original choices.
 Speculation starts requested runtime, Agent and Human evals before unresolved
 gates, within `--jobs`, backend capacity and `--max-executions` limits. A Human eval
 is never requested before every other non-Human eval of its Artifact is GREEN. Ready work
-has priority; speculative work uses spare capacity and yields first. Redispatch
-consumes another executor start. An upstream RED or ERROR immediately cancels
+goes first; speculative work runs only on capacity that ready work does not need. A
+review that is started again, for example after its speculation was cancelled, counts
+again against `--max-executions`. An upstream RED or ERROR immediately cancels
 only the work it makes invalid, the evals that depend on it outside their own
 Artifact and cycle, and marks it BLOCKED without a reusable cancelled result.
 GREEN keeps results already produced for the same files. Results are shared with the
@@ -104,8 +105,9 @@ GREEN keeps results already produced for the same files. Results are shared with
 that survived it.
 
 Deferral allows execution past pending Human gates. A deferrable sign-off's
-request is issued as late as possible: once its Artifact's other machine evals are
-GREEN and no gate holds it. Requests show DEFERRED, dependent results PROVISIONAL.
+request is issued as soon as its own prerequisites pass: its Artifact's other machine
+evals are GREEN and no gate holds it. Other machine work may still be running then; to
+review the final state, wait until it has finished. Requests show DEFERRED, dependent results PROVISIONAL.
 Neither state is actual approval. `gate = "blocking"` retains the strict Human
 gate. When all other obligations pass, the Run ends SIGNOFFS_PENDING (exit 5),
 meaning **only sign-offs remain**; it does not wait for those submissions.

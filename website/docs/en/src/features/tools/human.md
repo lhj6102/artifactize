@@ -36,7 +36,7 @@ A command tool runs in one of two modes:
 - `launch` starts the program and returns as soon as it has started, for example to
   open an editor or a viewer. In a review its output appears in the Tool log until it
   exits. The program keeps running after the review closes or artifactize exits, and
-  `timeout_ms` does not apply: the reviewer closes it. `request tool` and `tool check`
+  `timeout_ms` does not apply: the reviewer closes it. `request tool` and `artifactize tools check`
   do not show its output. Starting a program is not a verdict.
 
 ## Tool log

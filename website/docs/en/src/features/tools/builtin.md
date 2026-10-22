@@ -2,7 +2,8 @@
 
 artifactize comes with tools that behave the same on Linux, macOS and Windows,
 except for how a path's spelling on disk is checked (see
-[Paths](../others/platforms.md#paths)). Declare one by name with `builtin` instead of
+[Paths](../others/platforms.md#paths)) and that Windows junctions and other reparse points
+are refused like symbolic links. Declare one by name with `builtin` instead of
 writing a script or calling an OS program such as `cat` or `xdg-open`. They need nothing
 else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command, except
 `open`, which uses the system's opener (`xdg-open` on Linux), and `help`, which runs the
@@ -202,7 +203,14 @@ and only `http://` or `https://`.
 `section` output past 64 KiB ends with a truncation marker, while `help` output over 64 KiB
 fails with `Help output exceeds 64 KiB.` and exit 1); `list`, `glob` and `grep` print the
 JSON result of the [Agent tools](agent.md#agent-tools), with their pattern
-syntax and limits. From the command line, `help` runs the
+syntax and limits. The current directory is not a declared Artifact, so `artifactId` is
+`"cwd"`; `artifactize-tools list .` in a folder holding only `notes.md` prints:
+
+```json
+{"artifactId":"cwd","path":"","entries":[{"kind":"file","name":"notes.md","path":"notes.md"}],"totalEntries":1,"truncated":false,"nextOffset":null}
+```
+
+ From the command line, `help` runs the
 program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
 with no private temporary or output directory. A tool error goes to stderr with exit
 1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and

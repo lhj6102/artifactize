@@ -215,7 +215,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `~/.codex/auth.json`(1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로
   쓰이지 않습니다)으로 설정하면, artifactize는 자기 토큰 대신 매 턴 그 파일의
   `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 그 파일을 쓰거나 복사하거나
-  갱신하지는 않습니다. 토큰이 1분 이하로 남으면 리뷰는 `codex login` 등으로 Codex에 다시
+  갱신하지는 않습니다. 토큰 만료까지 남은 시간이 1분 이하이면 리뷰는 `codex login` 등으로 Codex에 다시
   로그인하라는 메시지와 함께 실패합니다. `logout codex`는 그 파일을 건드리지 않습니다.
 - **요청.** provider는 대화를 보관하지 않습니다. 선언한 `reasoning`은 `max`를 포함해 그대로
   보내며, reasoning 요약은 Monitor에 나옵니다. 재시도, 예산, 도구 결과,

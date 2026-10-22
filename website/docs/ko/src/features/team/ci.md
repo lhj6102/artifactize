@@ -19,8 +19,7 @@ Agent 리뷰나 Human 승인은 [실행되지 않고](../../cli/index.md#reuse-o
 PROVISIONAL 기계 결과는 승인이 아닙니다. CI의
 `--reuse-only agent,human` 게이트를 유지하세요. 빠진 승인은 실행되지 않고
 INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 없습니다.
-사람이 GREEN을 제출하면 CI는 바뀌지 않은 기계 증거와
-승인을 재사용합니다. RED는 의존하는 eval을 막습니다. 그냥 verify가 접수된 것을 CI 성공으로 취급하지 마세요.
+사람이 GREEN을 제출하면 CI는 바뀌지 않은 자동 검사 결과와 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. 그냥 verify가 접수된 것을 CI 성공으로 취급하지 마세요.
 
 ## 팀 저장소의 판정 재사용하기 {#reuse-verdicts-from-the-team-store}
 

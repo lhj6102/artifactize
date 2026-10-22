@@ -64,10 +64,12 @@ The [reference](tools/human.md#in-a-review) has the `request list` and
 
 ## Deferred sign-offs
 
-Choose `verify --defer-human` for a workflow where a person reviews the final
-state rather than steering each execution. It is per request, not a machine
-setting, and defaults off. `--speculate` can independently speed machine work;
-combining it with deferral still asks for deferrable sign-offs last.
+Choose `verify --defer-human` when people should sign off without steering each
+execution. It is per request, not a machine setting, and defaults off. Machine work
+continues past pending sign-offs, and a sign-off is requested as soon as its own
+Artifact's machine evals are GREEN, possibly while other work still runs; wait for
+that work to finish if you want to review the final state. `--speculate` can
+independently speed machine work.
 
 For a reviewer, a deferred sign-off is an ordinary one marked DEFERRED: it is
 listed with WAITING_HUMAN requests in `review`, monitor, desktop and request

@@ -50,7 +50,9 @@ or `.`/`..` components. The lone `.` is accepted as
 a file Artifact's virtual root for list/glob/grep; other dot components are
 rejected. A tool reaches only the Artifacts in its own eval's scope, never those of
 other evals. Files are opened read-only, symbolic links are never followed, and special
-files cannot be read. `list` can report `symlink`/`other` entries, but searches skip them.
+files cannot be read. `list` can report `symlink`/`other` entries, but searches skip them. On Windows,
+junctions and other reparse points count as links: they are refused as targets, and
+`list` reports a junction as `symlink` and other reparse points as `other`.
 A file Artifact exposes only its target file, not unrelated siblings in its
 working directory. `list` with no path or `path: "."` lists that virtual root's
 target file. Read the target by its filename; file paths remain relative to the
@@ -60,11 +62,12 @@ Every call validates admitted file targets before invoking a built-in or command
 tool, even when reuse is disabled. A missing, non-regular or symlink-replaced
 target returns an error without running the command.
 
-Read returns at most 64 KiB of **complete original line bytes**, preserving LF,
-CRLF and a UTF-8 BOM in each line's `text`. Only requested lines are decoded;
+Read returns at most 64 KiB of **complete original lines**, keeping each line's ending
+in its `text`, whether `\n` or Windows `\r\n`, and a UTF-8 byte-order mark (an
+invisible marker some editors put at the start of a file). Only requested lines are decoded;
 invalid UTF-8/NUL is an error, as is an oversized first requested line. An empty
-file returns zero lines and `totalLines: 0`; a page past EOF returns zero lines
-with the actual nonzero total. Concatenating returned `text` values reproduces
+file returns zero lines and `totalLines: 0`; a page past the end of the file
+returns zero lines with the actual nonzero total. Concatenating returned `text` values reproduces
 the source range without added line-number prefixes.
 
 The `glob` built-in requires a directory `path`; it selects matching filenames

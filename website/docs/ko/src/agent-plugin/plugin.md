@@ -64,4 +64,4 @@ Claude Code에서는 `/plugin marketplace update artifactize`로 업데이트하
 다른 호스트나 직접 관리하는 설정에서는 서버를 직접 등록하고
 ([MCP 설정](mcp.md#register-the-mcp-server)), [Hey Arti](hey-arti.md)에 설명된 대로 어시스턴트에
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)를
-주세요. 한 호스트에 플러그인과 같은 서버의 수동 등록을 둘 다 설치하지 마세요.
+주세요. 한 호스트에서는 플러그인 설치와 같은 서버의 수동 등록 중 한 가지만 쓰세요.

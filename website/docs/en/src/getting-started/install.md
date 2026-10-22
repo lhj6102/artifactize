@@ -236,9 +236,7 @@ launch (below).
 
 Install it from the [downloads](#download-the-app). Each release also attaches an
 AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage
-executable and run it; it needs glibc 2.35 or later. First launch copies the commands
-to a stable per-user directory and links them in `~/.local/bin`, without
-administrator rights.
+executable and run it; it needs glibc 2.35 or later.
 
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.

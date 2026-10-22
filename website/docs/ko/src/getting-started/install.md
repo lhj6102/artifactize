@@ -233,9 +233,7 @@ cargo install --path crates/artifactize-tools --locked
 
 [내려받기](#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
 `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부됩니다. AppImage에
-실행 권한을 주고 실행하세요. glibc 2.35 이상이 필요합니다. 첫 실행 때 명령을
-사용자별 고정 디렉터리에 복사하고 `~/.local/bin`에 링크하며,
-관리자 권한은 필요 없습니다.
+실행 권한을 주고 실행하세요. glibc 2.35 이상이 필요합니다.
 
 각 파일 옆에는 `.sha256` 체크섬이 있습니다. 앱은 `artifactize-desktop`으로 실행하거나
 응용 프로그램 메뉴 또는 시작 메뉴에서 **Artifactize**를 여세요.
