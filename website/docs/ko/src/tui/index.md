@@ -283,8 +283,8 @@ RED처럼 막는 대신 재시도를 요청합니다. 끝난 Run에도
 열린 Human 요청이 있을 수 있습니다. 이 보기 상태는 저장된 요청 상태를 설명할 뿐,
 JSON의 상태 이름을 바꾸지는 않습니다.
 
-Run의 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)도
-그 표시를 설명합니다. `--speculate`에서는 상위 판단이 아직 남아 있는 동안
+이 표시가 뜻하는 바는 Run의
+[실행 모드](../features/run.md#speculation-and-deferred-sign-offs)에 따라서도 달라집니다. `--speculate`에서는 상위 판단이 아직 남아 있는 동안
 하위 eval이 READY이거나 실행 중일 수 있으며, 이후의 상위 RED/ERROR가
 그 추측 실행 작업을 막거나 취소합니다. `--defer-human`에서는 승인이
 **DEFERRED**로 나오고 의존하는 작업은 승인된 것이 아니라 **PROVISIONAL**일 수 있습니다. 끝난

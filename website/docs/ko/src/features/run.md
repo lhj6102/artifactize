@@ -69,7 +69,7 @@ Run이 끝나면 지켜보는 명령도 그 Run의 결과에 맞는 종료 코�
 있습니다.
 
 최종 검증에는 필요한 범위 전체에서 실제 GREEN 증거나 직접 선언한 `basis = true`가 필요합니다.
-basis여도 그 의존성은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 기다립니다. 선택한 리뷰가 GREEN이어도 의무가 남아 있으면 INCOMPLETE이며, 남은 의무를 텍스트와
+basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 기다립니다. 선택한 리뷰가 GREEN이어도 의무가 남아 있으면 INCOMPLETE이며, 남은 의무를 텍스트와
 JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)에 있습니다.
 `--reuse-only KINDS`(CI에서는 예를 들어 `agent,human`)는 그 종류의 결과를 재사용만 합니다.
