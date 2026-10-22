@@ -7,7 +7,7 @@
 // zh becomes graph-example.en.png, graph-example.ko.png and graph-example.zh.png. The README and
 // the landing page use those images, never the HTML.
 //
-// Rendering uses headless Google Chrome (or Chromium; CHROME names another binary) through the
+// Linux only, like the other capture scripts. Rendering uses headless Google Chrome (or Chromium; CHROME names another binary) through the
 // DevTools protocol, with no packages to install. A small local server serves this folder and
 // the landing page's brand fonts at /fonts/, as the landing page does. The page sets
 // data-ready once its fonts are loaded; the picture is taken then, at twice the figure's size.
@@ -85,13 +85,15 @@ class Page {
   }
 }
 
-/** Start headless Chrome on a profile of its own and connect to its first page. */
+/** Start headless Chrome on a profile of its own and connect to its first page. Chrome puts its
+ * singleton socket in TMPDIR, whose path must fit a Unix socket address; a deeper one, such as
+ * a verify Run's private temporary folder, makes it exit at once, so it then gets /tmp. */
 async function chrome(profile: string): Promise<{ browser: ChildProcess; page: Page; socket: WebSocket }> {
   const browser = spawn(chromeBinary(), [
     "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`,
     "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--hide-scrollbars",
     "--force-color-profile=srgb", "--font-render-hinting=none", "about:blank",
-  ], { stdio: ["ignore", "ignore", "pipe"] });
+  ], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, TMPDIR: tmpdir().length > 60 ? "/tmp" : tmpdir() } });
   // Chrome prints its DevTools address on stderr once it listens.
   const address = await new Promise<string>((done, fail) => {
     let output = "";

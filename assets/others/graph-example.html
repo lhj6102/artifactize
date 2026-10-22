@@ -99,6 +99,7 @@
     margin: 0;
     color: var(--dim);
     font-size: 17px;
+    word-break: keep-all;
   }
 
   /* ---------- The graph ---------- */
@@ -250,9 +251,9 @@
         <use href="#check" x="922" y="518"/>
         <text x="950" y="526" data-t="explainsUsage"></text>
 
-        <path class="line" d="M1022 268 C 1000 214 1030 186 1060 186 C 1090 186 1120 214 1098 268"/>
-        <use href="#check" x="1060" y="186"/>
-        <text x="1060" y="154" text-anchor="middle" data-t="readable"></text>
+        <path class="line" d="M987 268 C 965 214 995 186 1025 186 C 1055 186 1085 214 1063 268"/>
+        <use href="#check" x="1025" y="186"/>
+        <text x="1025" y="154" text-anchor="middle" data-t="readable"></text>
 
         <path class="line" d="M570 614 C 530 610 506 640 506 676 C 506 716 560 730 596 682"/>
         <use href="#check" x="508" y="682"/>
@@ -270,7 +271,7 @@
     <div class="person" style="left:36px;top:250px"><div class="face"><svg><use href="#i-person"/></svg></div><span data-t="person"></span></div>
     <div class="node" style="left:262px;top:236px;width:180px"><svg><use href="#i-idea"/></svg><div><b data-t="problem"></b><small>PROBLEM.md</small></div></div>
     <div class="node" style="left:650px;top:236px;width:172px"><svg><use href="#i-file"/></svg><div><b data-t="spec"></b><small>SPEC.md</small></div></div>
-    <div class="node" style="left:974px;top:268px;width:172px"><svg><use href="#i-file"/></svg><div><b data-t="docs"></b><small>docs/</small></div></div>
+    <div class="node" style="left:900px;top:268px;width:250px"><svg><use href="#i-file"/></svg><div><b data-t="docs"></b><small>docs/</small></div></div>
     <div class="node" style="left:570px;top:596px;width:160px"><svg><use href="#i-code"/></svg><div><b data-t="code"></b><small>code/</small></div></div>
   </section>
 
@@ -287,36 +288,36 @@
   // The figure's text in each language. A line break in a label starts a new line.
   const TEXT = {
     en: {
-      repository: "Repository",
-      note: ".artf files declare Artifacts and their checks",
+      repository: "Project files",
+      note: ".artf files declare each Artifact (a file or folder to review) and its checks",
       title: "Example Artifact Graph",
       person: "Person",
       problem: "Problem",
-      spec: "Spec",
+      spec: "Design",
       code: "Code",
-      docs: "Docs",
+      docs: "Documentation",
       reviewProblem: "Problem review",
       solvesProblem: "Does the design solve the problem?",
       testsRequirements: "Do the tests check\nthe requirements?",
       explainsUsage: "Are features and usage\nexplained correctly?",
-      readable: "Are the docs easy to read?",
+      readable: "Is it easy to read?",
       codingRules: "Follows the coding rules",
       runsTests: "Runs the test command",
       legendRuntime: "Command check",
       legendAgent: "AI agent review",
       legendHuman: "Person's review",
-      legendSelf: "Checks only itself",
+      legendSelf: "Reads only its own Artifact",
       legendLines: "Lines show which Artifact a check reads",
     },
     ko: {
-      repository: "레포지토리 구조",
-      note: ".artf에 대상과 평가 기준 정의",
+      repository: "프로젝트 파일",
+      note: ".artf에 Artifact(검토할 파일·폴더)와 평가 기준 정의",
       title: "Artifactize 검증 그래프 예시",
       person: "사람",
-      problem: "Problem",
-      spec: "Spec",
-      code: "Code",
-      docs: "Docs",
+      problem: "문제",
+      spec: "설계",
+      code: "코드",
+      docs: "문서",
       reviewProblem: "문제 정의 검토",
       solvesProblem: "문제를 해결하는 설계인가?",
       testsRequirements: "테스트가 요구사항을\n검증하는가?",
@@ -327,18 +328,18 @@
       legendRuntime: "실행 검증",
       legendAgent: "Agent 평가",
       legendHuman: "사람 검토",
-      legendSelf: "자체 평가",
-      legendLines: "연결선은 평가 관계를 나타냅니다",
+      legendSelf: "자기 Artifact만 읽는 평가",
+      legendLines: "연결선은 평가가 읽는 Artifact를 나타냅니다",
     },
     zh: {
-      repository: "仓库结构",
-      note: "在 .artf 中定义对象和评估标准",
+      repository: "项目文件",
+      note: "在 .artf 中定义 Artifact（要审查的文件或文件夹）及其评估标准",
       title: "Artifactize 验证图示例",
       person: "人",
-      problem: "Problem",
-      spec: "Spec",
-      code: "Code",
-      docs: "Docs",
+      problem: "问题",
+      spec: "设计",
+      code: "代码",
+      docs: "文档",
       reviewProblem: "审查问题定义",
       solvesProblem: "设计是否解决了问题？",
       testsRequirements: "测试是否验证了需求？",
@@ -349,8 +350,8 @@
       legendRuntime: "执行验证",
       legendAgent: "Agent 评估",
       legendHuman: "人工审查",
-      legendSelf: "自我评估",
-      legendLines: "连线表示评估关系",
+      legendSelf: "只读取自身 Artifact 的评估",
+      legendLines: "连线表示评估读取的 Artifact",
     },
   };
 

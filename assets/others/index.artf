@@ -22,8 +22,9 @@ shows an example project's files on the left and the Artifact Graph their declar
 on the right. Read graph-example.html and view every image. Using {docs}, judge:
 - Accuracy: the files declare the Artifacts the way the docs describe (.artf beside a file, \
 index.artf for a folder); each check is the kind its legend says (a command, an AI agent or a \
-person); each line joins the Artifact a check belongs to with the Artifact the check reads, and \
-a check that reads only its own Artifact loops back to it. Nothing contradicts the docs.
+person); each line joins the Artifact a check belongs to with the Artifact the check reads, a \
+check that reads only its own Artifact loops back to it, and a person's review is a dotted line \
+from the person who signs off to the Artifact they review. Nothing contradicts the docs.
 - Plain language: the English text follows W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING of \
 {writer-introduction}.
 - Languages: the Korean and Chinese images say what the English one says, in natural wording, \
