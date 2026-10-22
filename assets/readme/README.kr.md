@@ -15,6 +15,11 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 - 프로젝트가 커져도 코드, 문서, 이미지, 실행 중인 애플리케이션이 서로 어긋나지 않기를 바라는 사람.
 
 <p align="center">
+  <img src="../others/graph-example.en.png" width="800"
+       alt="Artifact Graph 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각자의 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
+</p>
+
+<p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
     <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/promo.gif" width="640"
          alt="Artifactize가 프로젝트를 검사하고 이전 리뷰를 다시 사용하는 실제 터미널 녹화.">
