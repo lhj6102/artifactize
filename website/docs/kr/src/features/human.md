@@ -90,7 +90,7 @@ Human 권한을 확인합니다. 막힌 승인은 결코 사람에게 제시되�
 그 재사용에는 fingerprint가 필요하므로 `fingerprint = false`면 재사용되지 않습니다.
 
 같은 작업 트리에서 같은 eval에 대한 더 새 요청이 오면, 재사용 키가 다른 이전
-DEFERRED 승인은 은퇴하고 Review에서 사라집니다. 은퇴, 합류,
+DEFERRED 승인은 만료되어 Review에서 사라집니다. 만료, 합류,
 Run이 끝난 뒤의 승인 제출은 [Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
 
 거부되면 상당한 하위 작업이 헛수고가 되는 승인이라면,

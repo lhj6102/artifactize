@@ -1,6 +1,7 @@
 [![CI](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml/badge.svg)](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/artifactize.svg)](https://crates.io/crates/artifactize)
 [![License](https://img.shields.io/github/license/lhj6102/artifactize)](../../LICENSE)
+[![README in Korean](https://img.shields.io/badge/README-%ED%95%9C%EA%B5%AD%EC%96%B4-blue)](README.kr.md)
 [![README in English](https://img.shields.io/badge/README-English-blue)](../../README.md)
 
 # Artifact 그래프 위에서 함께 만드세요.

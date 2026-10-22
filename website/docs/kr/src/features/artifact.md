@@ -113,7 +113,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 모든 증거가 있어야 합니다.
 
 막히는 것은 언제나 Eval이지 Artifact가 아닙니다. Eval의 실행 관문은
-그 Eval이 참조하는 Artifact들의 실제 Eval과, 그 Artifact의 표시된 가장 가까운 자식들입니다. RED
+그 Eval이 참조하는 Artifact들의 실제 Eval과, 그 Eval이 속한 Artifact의 표시된 가장 가까운 자식들의 실제 Eval입니다. RED
 또는 BLOCKED인 관문은 차례로 그 Eval을 막으므로, 막힘은 이 Eval 관문을 따라 전파됩니다.
 자식의 RED Eval은 부모의 모든 Eval을 막습니다. Eval이 없는 중간 Artifact는
 실행 관문을 제공하지 않습니다. 그 Artifact를 참조해도 그 Artifact의 입력이나 자식에 실행이

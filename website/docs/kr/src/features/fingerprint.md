@@ -153,7 +153,7 @@ Human 승인을 포함해 모든 실행형 eval을 한 번씩 리뷰하며, 이�
 루트 [`.artf` graph Artifact](declarations.md#graph-artifact)는
 프로젝트 전체의 현재 선언을 이름 기준으로 한 번 정규 추출해 계산한
 `graph:<sha256>`을 씁니다. 객체와 관계는 정렬되며, 자식
-폴더 위치와 저장소 경로는 정체성이 아닙니다. 추출에는 다음이 포함됩니다.
+폴더 위치와 저장소 경로는 식별 기준이 아닙니다. 추출에는 다음이 포함됩니다.
 
 - Artifact 이름과 kind, `basis`, fingerprint 범위: artifactsum `files`와
   `ignore`, 스크립트 `command`, `args`, `files`, 또는 `fingerprint = false`.
