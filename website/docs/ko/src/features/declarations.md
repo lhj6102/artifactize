@@ -54,7 +54,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 |---|---|
 | `name` | 필수. Artifact 이름 |
 | `tags` | 선택. 비어 있지 않고 ASCII 제어 문자가 없는 고유한 문자열 최대 64개의 목록 |
-| `basis` | 선택. 불리언. `true`면 eval 없는 입력으로 선언하며, 그 Artifact의 리뷰 의무는 없애지만 의존성의 의무는 없애지 않음 |
+| `basis` | 선택. 불리언. `true`면 eval 없는 입력으로 선언하며, 그 Artifact의 리뷰 요건은 없애지만 의존성의 리뷰 요건은 없애지 않음 |
 | `fingerprint` | 생략하면 artifactsum. `false`면 재사용 안 함. 그 밖에는 artifactsum이나 스크립트 테이블 |
 | `views.agent_tools`, `views.human_tools` | 선택. 선언한 도구의 맵 |
 | `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령. `command`와 `args`는 필수, `execution_paths`는 선택. 다른 필드는 없음 |
@@ -327,7 +327,7 @@ payload.instruction = "Approve the delivery before dependent work proceeds."
 ## eval 의존성 {#eval-dependencies}
 
 Artifact 참조는 `payload.instruction`과 runtime `profile.args`에 `{input}`이나
-`{input}/path`로 씁니다. 의무, 자식 Artifact, 순환, 스케줄링, Human 선행 조건은
+`{input}/path`로 씁니다. 최종 검증 요건, 자식 Artifact, 순환, 스케줄링, Human 선행 조건은
 [eval 의존성](artifact.md#eval-dependencies)에 있습니다.
 
 ## Artifactsum {#artifactsum}

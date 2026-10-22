@@ -160,8 +160,8 @@ CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. �
 ### 세부 페이지 {#detail-pages}
 
 세부 페이지에는 텍스트 항목이 최대 하나 들어 있으며, 구조화된 답과
-이전 형식의 텍스트 사본을 포함한 전체 크기가 64 KiB 미만입니다. 항목은 잘라 낸 미리 보기나 두 번째 결과 스키마가 아니라
-**정확한 CLI JSON**의 UTF-8 조각입니다.
+이전 형식의 텍스트 사본을 포함한 전체 크기가 64 KiB 미만입니다. 각 항목은 잘라 낸 미리 보기나 별도 형식의 결과가 아니라
+**CLI가 출력하는 JSON 원문**을 UTF-8 텍스트로 나눈 조각입니다.
 
 ```json
 {"encoding":"json","entries":[{"offset":0,"text":"{\"ok\":true,\"artifacts\":3,\"evals\":4}"}],"next_cursor":null}

@@ -37,7 +37,7 @@ Rust 툴체인은 `cargo install`에만 필요합니다.
 
 OS를 고르고 한 채널로만 설치하세요. 어떤 방법으로 설치하든 `artifactize`가 설치되며, 그
 [내장 도구](../features/tools/builtin.md#artifactize-tools-cli)는 `artifactize tools`로 쓸 수
-있습니다. Store를 뺀 나머지 채널은 이 도구를 `artifactize-tools` 명령으로도 추가합니다.
+있습니다. Store 이외의 방법으로 설치하면 이 도구가 `artifactize-tools` 명령으로도 함께 설치됩니다.
 
 먼저 OS에 맞는 앱을 내려받으세요. 명령줄이 더 편하거나
 앱이 시스템에 맞지 않는다면 다른 방법을 고르세요.
@@ -57,7 +57,7 @@ cask도 앱을 함께 설치합니다. Homebrew formula, Cargo, 소스 빌드는
 **macOS.**
 [Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg)를 내려받아
 열고 **Artifactize**를 응용 프로그램 폴더로 끌어다 놓은 뒤 앱을 한 번 여세요.
-명령이 없다면 관리자 권한 확인 창을 승인해 새 터미널에서 `artifactize`를 쓸 수 있게 하세요
+명령을 찾을 수 없다면 관리자 권한 요청을 승인한 뒤 새 터미널에서 `artifactize`를 쓰세요
 ([자세히](#desktop-app)). Apple의 공증을 받은 이 디스크 이미지 하나로
 macOS 11 이상의 Apple 실리콘 Mac과 Intel Mac을 모두 지원합니다.
 

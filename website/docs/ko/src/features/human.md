@@ -25,7 +25,7 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 
 승인은 [리뷰한 입력](fingerprint.md)이 그대로면 기본으로 재사용합니다. 나중의 `verify`는 제출된
 결과를 재사용하고 그 결과를 쓰는 eval을 리뷰할 수 있습니다. 대상이나 포함한 의존성에
-`fingerprint = false`가 있으면 승인은 현재 Run만 확정하고, 다음 Run은 새 Human 결정을
+`fingerprint = false`가 있으면 승인은 현재 Run에만 적용되고, 다음 Run은 새 Human 결정을
 요청합니다. Run의 검증은 그 시점에 있는 결과로 정해지며, 나중에 승인을 제출해도 지난 Run에 기록된 판정은
 바뀌지 않습니다.
 
@@ -50,7 +50,7 @@ artifactize review [REQUEST_ID]
 이 명령들의 옵션, 출력, 종료 코드는 모두 [Human 요청](../cli/index.md#human-requests)에
 있습니다.
 
-[Run 종료 코드](../cli/index.md#command-reference)로 지켜보기 중단, 직접 취소, 빠진 리뷰 의무를
+[Run 종료 코드](../cli/index.md#command-reference)로 지켜보기 중단, 직접 취소, 충족되지 않은 최종 검증 요건을
 구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하지 않고 결과를 대기하지도 않습니다. CI에서는
 Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면 [실행되지 않습니다](../cli/index.md#reuse-only).
 
