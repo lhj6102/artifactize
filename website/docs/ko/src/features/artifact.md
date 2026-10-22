@@ -82,8 +82,8 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 파일 Artifact는 기본으로 대상 파일 하나만 해시합니다. 작업 디렉터리는 그 파일이 들어 있는
 폴더이지만, 내장 도구는 상관없는 옆 파일이 아니라 그 파일과 허용된 범위만 봅니다. 사이드카를
-둔다고 둘러싼 폴더의 자식이 되지는 않으며, 그 폴더는 여전히 대상 파일을 자기 파일의 일부로
-해시합니다. 반면 `index.artf`로 선언한 폴더는 그 위에서 가장 가까운 Artifact 폴더의 자식입니다.
+추가해도 그 파일 Artifact가 상위 폴더 Artifact의 자식이 되지는 않으며, 상위 폴더의 해시에는 대상
+파일이 계속 들어갑니다. 반면 `index.artf`로 선언한 폴더는 그 위에서 가장 가까운 Artifact 폴더의 자식입니다.
 이름 짓기, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
 [파일 Artifact 레퍼런스](declarations.md#file-artifacts)에 있습니다.
 

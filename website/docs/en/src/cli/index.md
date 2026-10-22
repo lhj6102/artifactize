@@ -412,8 +412,8 @@ definitions (profiles, payloads, schemas and tool views), tags,
 child/instruction/argv relation metadata, cycle markers and
 dependency-first strongly connected components (SCCs): groups of Artifacts that
 mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
-workspace-relative target `path`. Status also shows file kinds/paths; the monitor
-uses `[file]` on tree rows and keeps the target path in Detail.
+workspace-relative target `path`. Status also shows file kinds and paths; [Monitor](../tui/index.md#monitor)
+shows them on screen.
 Component IDs refer to the full graph and may be
 noncontiguous in a selected projection. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output

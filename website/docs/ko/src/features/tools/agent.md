@@ -121,10 +121,10 @@ Agent 리뷰가 시작되면 artifactize는 eval 도구의 각 실행 경로에 
 `PREPARATION_FAILED`로 리뷰가 실패합니다. 이 해시는 기록일 뿐
 [재사용 키](../fingerprint.md#the-reuse-key)에 들어가지 않습니다. 바이너리가 바뀔 때 다시
 리뷰하려면 fingerprint에 그 바이너리를 포함하세요.
-성공한 stdout은 내용 블록 1–32개를 담은 JSON 객체 하나입니다.
+명령이 성공하면 stdout에 내용 블록 1–32개를 담은 JSON 객체 하나를 출력해야 합니다.
 `{"content":[{"type":"text","text":"..."},{"type":"json","data":{}}]}`.
 이미지 블록은 [아래](#image-results)에서 설명합니다. 텍스트는 블록당 최대 64 KiB, 압축한 JSON
-데이터는 블록당 최대 512 KiB, 정리한 결과 전체는 최대 8 MiB입니다. 두 프로세스 출력은 각각
+데이터는 블록당 최대 512 KiB, 정리한 결과 전체는 최대 8 MiB입니다. stdout과 stderr는 각각
 16 MiB까지입니다. 결과 객체는 `content`와 선택 항목인 불리언 `isError`만 받습니다. 각 블록에도
 정해진 필드 외의 필드를 넣을 수 없습니다. 텍스트 블록은 `type`과 `text`만, JSON 블록은 `type`과 `data`만, 이미지 블록은
 `type`, `mimeType`, 그리고 `data`나 `path` 중 정확히 하나만 받습니다. 결과나 블록에 다른 필드가

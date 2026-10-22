@@ -218,8 +218,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 `kind = "graph"`를 쓰고 선언 경로는 `.artf`입니다.
 
 `fingerprint`는 `false`나 빈 테이블이라도 선언하지 마세요. fingerprint는 항상 현재 추출한
-그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`는 자기 리뷰 의무가
-없음을 명시하며 eval을 가질 수 없고, 채워지지 않은 의존성을 대신 채우지도 않습니다.
+그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`로 선언한 Artifact에는 eval을 둘 수 없고 그 Artifact의 리뷰도 필요 없지만, 의존하는 Artifact에 필요한 리뷰까지 면제되지는 않습니다.
 `basis = true`가 없고 eval도 없는 그래프는 eval 없는 다른 Artifact처럼 UNREVIEWED로 남습니다.
 소스 파일은 만들지도 필요로 하지도 않습니다. 일반 Artifact의 순환도 허용하며, 그래프
 fingerprint는 그래프 Artifact 자신의 선언도 포함합니다.
@@ -264,7 +263,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 - Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못됨: 판정 대신 ERROR/INPUT_CHANGED입니다.
 - Human 리뷰 중에 없거나 잘못됨: 도구와 제출이 실패하고 요청은 계속 남아 있으니, 파일을 되돌려
   놓고 다시 시도하세요.
-- 내용이 바뀜: fingerprint로만 알아챌 수 있으므로 `fingerprint = false`면 파일을 고쳐도 모릅니다.
+- 내용이 바뀜: 파일 내용의 변경은 fingerprint로 확인하므로, `fingerprint = false`면 내용이 바뀌어도 감지하지 못합니다.
   그 밖에는 Runtime이나 Agent 리뷰, 또는 승인이 ERROR/INPUT_CHANGED로 끝납니다.
 - 없거나 잘못된 대상에 대한 도구 호출은 도구를 실행하지 않고 오류를 돌려줍니다.
 
@@ -381,7 +380,7 @@ Artifact는 자식까지 포함해 스크립트의 범위에 들어오지만 그
 파일, 정리 실패는 동작 오류로 준비를 멈추며, eval을 시작하지 않고 캐시 없는 리뷰로 넘어가지도
 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
 
-runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED를 받아들이기 전에 포함한 fingerprint를 다시
+runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면
 ERROR를 기록합니다. force를 줘도 준비와 재확인은 건너뛰지 않습니다. `fingerprint = false`인
 Artifact는 준비할 fingerprint가 없으며, 키 없는 eval은 fingerprint 값 재확인을 건너뜁니다. 파일
@@ -441,4 +440,4 @@ Run의 `output` 폴더를 지우지만 이 스트림 캡처는 남깁니다. 캡
 Agent [도구 세션](tools/agent.md#tool-sessions)이나 Human [launch 도구](tools/human.md#running)를
 쓰세요. 명령은 신뢰하는 로컬
 코드이며 **샌드박스가 아닙니다**. 내 계정이 할 수 있는 일은 무엇이든 할 수 있고, 리뷰하는
-입력을 바꾸면 안 되며, 일부러 명령에서 떨어져 나간 프로그램은 계속 실행될 수 있습니다.
+입력을 바꾸면 안 되며, 부모 프로세스와 일부러 분리해 따로 실행되는 프로그램은 계속 실행될 수 있습니다.

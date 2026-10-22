@@ -228,8 +228,7 @@ fingerprint가 바뀐 자식과 이름으로 참조한 Artifact를 `name`, `+nam
 없어도 "Record a request awaiting a Human claim and submission"이라고 나옵니다. 막혔거나
 기다리는 eval은 그 게이트나 대기 상태를 설명합니다.
 
-기다리는 Eval의 `blockedBy`는 아직 채워지지 않은 Eval ID를, BLOCKED인 Eval은 사유와 마찬가지로
-막힘의 뿌리가 된 RED Eval을 가리킵니다. Detail은 이 게이트를 입력 Artifact별로 `Waits for`
+기다리는 eval의 `blockedBy`에는 결과가 아직 없는 eval의 ID가, BLOCKED인 eval의 `blockedBy`에는 사유와 마찬가지로 실행을 막은 RED eval의 ID가 나옵니다. Detail은 이 게이트를 입력 Artifact별로 `Waits for`
 아래에 묶어 보여 주며, `w`를 누르면 대기 중인 Eval이 나옵니다.
 
 나중에 Human이 승인을 제출하면 기다리던 Run이 확정될 수 있습니다. `run show`는 저장된 검증과

@@ -90,8 +90,9 @@ artifactize remote logout
 
 A client is configured only through the state directory and the environment,
 never `.artf` declarations, so a cloned repository cannot redirect a token. `remote
-login URL` reads one token line from stdin (never argv), without the surrounding
-whitespace; a token over 4096 bytes is refused. It attempts to hide
+login URL` reads one token line from stdin (never argv): at most the first 8192 bytes are read,
+and bytes beyond that are ignored, then the surrounding whitespace is dropped. Whitespace
+before the token counts toward those 8192 bytes, and a token over 4096 bytes is refused. It attempts to hide
 terminal input; on Windows, if that fails, it warns that the token will be visible
 and continues reading. Non-terminal stdin is read without changing terminal echo.
 It verifies the token with `GET /v1/whoami`, then stores it in
@@ -129,22 +130,24 @@ source:
 ```
 
 The producer (`user@host`) and the Human reviewer are what the publishing machine
-recorded; the publisher is the server-authenticated token name. An Agent result's
-`producer` also carries `session`, the reference to its
-[saved conversation](../features/agent.md#saved-conversations) on the producing
-machine; the conversation itself is never published. Older clients work with
-the same store without upgrading. A reused remote result's request shows the reference, and `session show`
-on it names the machine and state where the conversation lives. When a GREEN or RED result with a reuse key is saved locally, verify publishes its
-summary record, or the full record with share `full`. If publishing fails, the local
-result stays and the failure is reported. A `--speculate` Run holds that automatic publication until its scheduling
-finishes, even while Human reviews are still pending; it then publishes only the
-results that survived, after blocked work has been withdrawn from reuse. `request submit` publishes Human sign-offs. The token's scopes
-decide what happens: without `read` nothing is looked up, without `publish` nothing is
-published (so a read-only CI token only reuses), and without `human` sign-offs stay local
-with a warning. Evals without a reuse key publish nothing. `--force` never reads from the
-store, but its result is published and becomes the latest. `status` makes the same comparison with a read-only lookup,
-without mirroring, so its `reuse` prediction includes newer remote results;
-`status --force` makes no remote call.
+recorded; the publisher is the server-authenticated token name. An Agent result also
+carries a reference to its [saved conversation](../features/agent.md#saved-conversations)
+on the producing machine; the conversation itself is never published, and `session show`
+on the reused request names the machine and state where it lives. Older clients work with
+the same store without upgrading.
+
+**What is published.** When a GREEN or RED result with a reuse key is saved locally,
+verify publishes its summary record, or the full record with share `full`; if publishing
+fails, the local result stays and the failure is reported. `request submit` publishes
+Human sign-offs. A `--speculate` Run publishes only after its scheduling finishes, and only
+the results that survived ([speculation](../features/run.md#speculation-and-deferred-sign-offs)).
+A token works within its [scopes](#review-store-server): without `read` it looks nothing
+up, without `publish` it publishes nothing, so a read-only CI token only reuses, and
+without `human` sign-offs stay local with a warning. Evals without a reuse key publish
+nothing, and a [`--force`](../features/fingerprint.md#completed-result-reuse) result is
+published and becomes the latest. `status` makes the same comparison with a read-only
+lookup, so its `reuse` prediction includes newer remote results; `status --force` makes no
+remote call.
 
 `remote push` sends, for each key, the latest GREEN/RED record this machine
 produced: results produced while the store was unreachable, before `remote login`
