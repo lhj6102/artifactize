@@ -33,7 +33,7 @@ artifactize models codex
 실패하며, artifactize가 다른 모델로 바꾸거나 강도를 낮추지 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 runtime eval과 똑같이 입력을 기다리고 결과를 재사용하며, 리뷰가 끝날 때 입력을
+Agent eval도 runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필이 만든
 결과도 재사용하며, 그 기록에 어느 쪽이 만들었는지 나옵니다.
@@ -84,8 +84,8 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 
 Agent 리뷰는 모델의 답변을 만들어지는 대로 스트리밍합니다. 리뷰 마감 시간 하나(기본 240초)가
 모든 턴, 재시도, 도구에 적용됩니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
-ERROR입니다. 재시도는 아래 설명대로 artifactize가 처리합니다. API 설정과 재생 방식은
-[provider 전송 레퍼런스](others/state.md#provider-transport)에 있습니다.
+ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
+제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 

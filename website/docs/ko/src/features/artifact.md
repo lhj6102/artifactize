@@ -14,7 +14,8 @@ payload.instruction = "Check that every link in the docs resolves."
 ```
 
 그다음 `artifactize config check`를 실행하면 `Folder configuration is valid.`가 나오거나,
-오류가 있으면 그 파일, 줄, 열이 나옵니다. artifactize는 이 선언들을 읽어 의존성 그래프 하나로
+오류가 나옵니다. 선언 안의 실수라면 그 파일, 줄, 열이, 대상 파일이 없는 것 같은 문제라면 그
+경로가 나옵니다. artifactize는 이 선언들을 읽어 의존성 그래프 하나로
 만듭니다.
 
 ## Artifact Graph {#artifact-graph}
@@ -31,7 +32,7 @@ eval이 참조하는 것으로 칩니다. [Eval 의존성](#eval-dependencies)�
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
 관계를 포함합니다. 프로젝트의 리뷰 구조를 사람이 리뷰할 때 쓰세요. 문법은
 [선언](declarations.md#graph-artifact)에 있고, [graph 도구](tools/builtin.md#current-project-graph)는
-에이전트에게 현재 구조 전체를 보여 주거나 사람을 위해 데스크톱에서 엽니다.
+Agent에게는 현재 프로젝트 구조를 텍스트로 보여 주고, 사람에게는 데스크톱 그래프 뷰어를 엽니다.
 
 ## 폴더 설정 {#folder-configuration}
 
@@ -133,8 +134,11 @@ eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들
 `docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은 따로 실행되며, 순환 밖에서 이들을
 쓰는 eval이 진행하려면 둘 다 통과해야 합니다.
 
-순환 밖의 입력은 여전히 순환 전체의 게이트가 됩니다. `cli`의 eval이 `core`도 참조한다면,
-`core/tests`가 RED일 때 `cli/tests`와 `docs/matches-cli`가 모두 막힙니다. 다른 곳에서 `docs`를
+순환으로 묶인 대상을 참조하는 eval은 그 순환 밖의 입력을 여전히 기다립니다. `cli`의 eval이
+`core`도 참조한다면, `core/tests`가 RED일 때 `cli/tests`가 막히고, `cli`를 참조하는
+`docs/matches-cli`도 막힙니다. 이 Artifact들의 eval 중 순환으로 묶인 대상도, 입력도, 자식도
+참조하지 않는 eval은 이들 때문에 늦어지지 않지만, Run이 GREEN으로 끝나려면 여전히 이들의 결과가
+모두 필요합니다. 다른 곳에서 `docs`를
 참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 무엇이 기다리고 어떤 추측 실행 작업을 취소할지도 이 게이트로 정해집니다.

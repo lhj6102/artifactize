@@ -7,8 +7,9 @@ to review, then check it:
 artifactize config check
 ```
 
-It prints `Folder configuration is valid.`, or the error with its file, line and
-column, and exits 2 on an error. This page has the exact rules for declarations, folder
+It prints `Folder configuration is valid.`, or the error and exits 2: a mistake inside
+a declaration names its file, line and column, while a problem found on disk, such as a
+missing target file, names only the path. This page has the exact rules for declarations, folder
 and file Artifacts, fingerprints, references and how commands run;
 [Artifacts and evals](artifact.md) introduces them.
 

@@ -1,14 +1,9 @@
 # 내장 도구 {#built-in-tools}
 
-artifactize에는 Linux, macOS, Windows에서 똑같이 동작하는 도구가 들어 있습니다. 다른 점은
-디스크에 있는 경로 표기를 확인하는 방식([경로](../others/platforms.md#paths) 참고)과, Windows의
-junction과 그 밖의 reparse point를 심볼릭 링크처럼 거부한다는 점뿐입니다.
 스크립트를 쓰거나 `cat`, `xdg-open` 같은 OS 프로그램을 부르는 대신 `builtin`에 이름을 적어
-선언하세요. 파일이나 URL을 기본 애플리케이션으로 여는 OS 명령(Linux에서는 `xdg-open`)을 쓰는 `open`과, 요청한 프로그램을
-실행하는 `help`를 빼면 따로 설치할 것이 없으며, [`artifactize-tools`](#artifactize-tools-cli)
-명령도 필요 없습니다. 그 명령과 `artifactize tools`는 스크립트와 runtime eval에 파일 시스템과
-프로그램 도구를 제공합니다. 현재 프로젝트의 구조를 보여 주는 `graph` 도구는 artifactize의 리뷰 도구로
-선언해야 쓸 수 있으며, 독립 실행형 도구 CLI에는 없습니다.
+리뷰어에게 준비된 도구를 주세요. `[views.agent_tools]` 아래에 `read = { builtin = "read" }`를
+적으면 Agent가 그 Artifact의 파일을 무엇이든 읽을 수 있고, `args`를 주면 정해진 파일이나 섹션
+하나를 보여 줍니다. 다른 형태는 다음과 같습니다.
 
 ```toml
 [views.agent_tools]
@@ -28,6 +23,15 @@ docs = { builtin = "open", args = ["https://artifactize.dev/docs/"] }
 notes = { builtin = "read", args = ["notes.md"] }                 # kind = "output"
 summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
 ```
+
+내장 도구는 Linux, macOS, Windows에서 똑같이 동작합니다. 다른 점은 디스크에 있는 경로 표기를
+확인하는 방식([경로](../others/platforms.md#paths) 참고)과, Windows의 junction과 그 밖의 reparse
+point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 URL을 기본 애플리케이션으로 여는 OS
+명령(Linux에서는 `xdg-open`)을 쓰는 `open`과, 요청한 프로그램을 실행하는 `help`를 빼면 따로
+설치할 것이 없으며, [`artifactize-tools`](#artifactize-tools-cli) 명령도 필요 없습니다. 그 명령과
+`artifactize tools`는 스크립트와 runtime eval에 파일 시스템과 프로그램 도구를 제공합니다. 현재
+프로젝트의 구조를 보여 주는 `graph` 도구는 artifactize의 리뷰 도구로 선언해야 쓸 수 있으며, 독립
+실행형 도구 CLI에는 없습니다.
 
 내장 도구 선언은 `builtin`, `args`(모델 입력을 받는 Agent 도구에서는 선택), 선택 항목인
 `description`을 받으며, 도구마다 기본 설명이 있습니다. Human 내장 도구는 `kind`도 적을 수
@@ -110,7 +114,7 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 보여 줍니다.
 
 - **Agent:** 모델 입력이 없습니다(`{}`만). 소스 파일은 읽지 않고 선언만 읽습니다. Artifact와
-  그 eval을 이름 기준으로 순환에도 안전하게 담은 트리, 추출한 정의와 평가 기준 전체, 그래프
+  그 eval을 순환 참조가 있어도 끝없이 반복되지 않도록 이름 기준으로 담은 트리, 추출한 정의와 평가 기준 전체, 그래프
   fingerprint, 입력에서 소비자로 가는 이름 붙은 화살표를 출력합니다.
 - **Human:** `kind = "launch"`. 평소처럼 애플리케이션을 떼어 실행하는 방식으로
   `artifactize-desktop graph --repo PATH`를 시작합니다. `artifactize-desktop`이 설치되어 있고

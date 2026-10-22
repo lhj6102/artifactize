@@ -1,7 +1,7 @@
 # Runtime {#runtime}
 
-Runtime eval은 일반 프로그램을 실행합니다. 테스트, 린터, 렌더러처럼 같은 입력에 늘 같은 답을 내는
-명령으로 판정할 수 있는 검사에 쓰세요. 모델이나 API 키는 필요 없습니다.
+테스트, 린터, 렌더러처럼 종료 상태만으로 답이 정해지는 일반 프로그램을 실행하려면 Runtime eval을
+선언하세요. 모델이나 API 키는 필요 없습니다. `library` 폴더라면 다음과 같습니다.
 
 ```toml
 name = "library"
@@ -11,6 +11,9 @@ title = "The library tests pass"
 profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"], timeout_ms = 240000 }
 payload.instruction = "Run the tests of {library}."
 ```
+
+`artifactize verify library/tests --wait`는 거기서 `cargo test --locked`를 실행하고, 종료 코드가
+0이면 `library/tests [run-…]: GREEN`을, 그렇지 않으면 RED를 출력합니다.
 
 `command`와 `args`는 따로 씁니다. `args`의 항목은 하나씩 그대로 프로그램의 인자가 되며, 셸이
 따옴표, 파이프, `*`를 해석하지 않습니다. 작업 디렉터리는 Artifact 폴더이고, 파일 Artifact라면

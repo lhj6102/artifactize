@@ -88,9 +88,9 @@ across calls. Saved Agent conversations below are separate from tool sessions.
 
 Agent reviews stream the model's answer as it is produced. One review deadline
 (default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
-responses are ERROR, even if they contain a JSON verdict. Artifactize handles
-retries as described below; the [provider transport reference](others/state.md#provider-transport)
-covers API settings and replay behavior.
+responses are ERROR, even if they contain a JSON verdict. An Anthropic answer is also
+capped at 16384 output tokens per turn, apart from the review's `max_tokens`. Artifactize
+handles retries as described below.
 
 ### Retries and error codes
 

@@ -13,7 +13,8 @@ payload.instruction = "Check that every link in the docs resolves."
 ```
 
 Then run `artifactize config check`; it prints `Folder configuration is valid.` or the
-error with its file, line and column. artifactize reads these declarations into one
+error: with its file, line and column for a mistake inside a declaration, or with the
+path for a problem such as a missing target file. artifactize reads these declarations into one
 dependency graph.
 
 ## Artifact Graph
@@ -141,8 +142,11 @@ references `docs`, a RED `cli/tests` does not block `docs/matches-cli` or replac
 verdict. Both run independently and must pass before consumers outside the cycle can
 proceed.
 
-Inputs from outside the cycle still gate all of it: if `cli`'s eval also references
-`core`, a RED `core/tests` blocks both `cli/tests` and `docs/matches-cli`. An eval
+An eval that references a cycle peer still waits for that cycle's outside inputs: if
+`cli`'s eval also references `core`, a RED `core/tests` blocks `cli/tests` and also
+`docs/matches-cli`, which references `cli`. An eval of these Artifacts that references
+no cycle peer, input or child is not held back by them, though the Run still needs all of
+their results to finish GREEN. An eval
 elsewhere that references `docs` waits for every eval of `docs` and `cli`. An Eval's
 own Artifact is likewise not a gate for it, apart from the
 [Human sibling prerequisite](#human-sign-offs). These gates also decide what waits and

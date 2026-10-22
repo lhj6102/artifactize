@@ -1,16 +1,9 @@
 # Built-in tools
 
-artifactize comes with tools that behave the same on Linux, macOS and Windows,
-except for how a path's spelling on disk is checked (see
-[Paths](../others/platforms.md#paths)) and that Windows junctions and other reparse points
-are refused like symbolic links. Declare one by name with `builtin` instead of
-writing a script or calling an OS program such as `cat` or `xdg-open`. They need nothing
-else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command, except
-`open`, which uses the system's opener (`xdg-open` on Linux), and `help`, which runs the
-program it asks;
-that command and `artifactize tools` offer the filesystem/program tools to scripts
-and runtime evals. The project-aware `graph` tool is available only as a declared
-review tool in artifactize, not in the standalone tools CLI.
+Give a reviewer a ready-made tool by naming it with `builtin`, instead of writing a
+script or calling an OS program such as `cat` or `xdg-open`. With
+`read = { builtin = "read" }` under `[views.agent_tools]`, an Agent can read any file of
+the Artifact; with `args`, a tool shows one fixed file or section. More forms:
 
 ```toml
 [views.agent_tools]
@@ -30,6 +23,15 @@ docs = { builtin = "open", args = ["https://artifactize.dev/docs/"] }
 notes = { builtin = "read", args = ["notes.md"] }                 # kind = "output"
 summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
 ```
+
+Built-in tools behave the same on Linux, macOS and Windows, except for how a path's
+spelling on disk is checked (see [Paths](../others/platforms.md#paths)) and that Windows
+junctions and other reparse points are refused like symbolic links. They need nothing
+else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command, except
+`open`, which uses the system's opener (`xdg-open` on Linux), and `help`, which runs the
+program it asks; that command and `artifactize tools` offer the filesystem/program tools
+to scripts and runtime evals. The project-aware `graph` tool is available only as a
+declared review tool in artifactize, not in the standalone tools CLI.
 
 A built-in declaration takes `builtin`, `args` (optional for the Agent tools that
 take model input) and an optional `description`; each tool has a default description. A Human built-in may also name its `kind`, which must

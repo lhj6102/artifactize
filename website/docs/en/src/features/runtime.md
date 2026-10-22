@@ -1,8 +1,8 @@
 # Runtime
 
-A Runtime eval runs an ordinary program. Use it for checks whose answer is already
-decided by a test, linter, renderer or other deterministic command. No model or API
-key is needed.
+Declare a Runtime eval to run an ordinary program, such as a test, linter or renderer,
+whose exit status already decides the answer. No model or API key is needed. In a
+`library` folder:
 
 ```toml
 name = "library"
@@ -12,6 +12,9 @@ title = "The library tests pass"
 profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"], timeout_ms = 240000 }
 payload.instruction = "Run the tests of {library}."
 ```
+
+`artifactize verify library/tests --wait` runs `cargo test --locked` there and prints
+`library/tests [run-…]: GREEN` when it exits 0, or RED otherwise.
 
 `command` and `args` are separate: each `args` entry reaches the program as one
 argument, and no shell interprets quotes, pipes or `*`. The working directory is the Artifact folder, or the containing
