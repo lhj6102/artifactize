@@ -261,7 +261,7 @@ macOS와 x86_64 Linux의 `install.sh`, macOS의 Homebrew cask도 앱을 설치�
 이미 설치된 명령은 그대로 둡니다.
 고를 설정은 없습니다. 그 밖의 경우:
 
-- **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 자신의 절대 경로 `Contents/MacOS` 디렉터리를
+- **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 앱의 절대 경로 `Contents/MacOS` 디렉터리를
   `/etc/paths.d/artifactize`에 씁니다. 그다음 새
   터미널을 열고 `artifactize --version`을 실행하세요. 두 명령 모두
   설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 옮겼다면

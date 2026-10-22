@@ -13,7 +13,7 @@ fingerprint는 Artifact의 리뷰가 무엇에 의존하는지 나타냅니다. 
 형식은 도구 선언이나 다른 Artifact의 값을 추가하지 않습니다. 의존성은
 [재사용 키](#the-reuse-key)를 통해 들어갑니다.
 
-- 생략하면 artifactsum을 씁니다. `artifactsum:` 뒤에 Artifact 자신의
+- 생략하면 artifactsum을 씁니다. `artifactsum:` 뒤에 Artifact의
   입력 경로와 바이트에 대한 SHA-256이 붙습니다. 폴더에서는 `fingerprint = {}`도 됩니다. 폴더는 자기 파일을 해시하고,
   파일 Artifact는 자기 대상 파일 하나를 해시합니다.
 - `fingerprint = { script = { command = "hash", args = [] } }`는 명령의
@@ -31,7 +31,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 ```
 
 - `files`: 각각 UTF-16 코드 단위 1024개 이하인 소유자 기준 상대 경로 1–64개(고유),
-  기본값 `["."]`(소유자 자신의 파일). 각 경로는 존재해야 하고 Artifact 안에 있어야 합니다. 자식 Artifact로 들어가는 경로는
+  기본값 `["."]`(소유자의 파일). 각 경로는 존재해야 하고 Artifact 안에 있어야 합니다. 자식 Artifact로 들어가는 경로는
   거부됩니다. 디렉터리 탐색은 자식 Artifact 폴더와 모든
   `*.artf` 선언을 건너뜁니다. 명시적인 `.artf` 파일 입력은 조용히 건너뛰지 않고
   `config check`에서 실패합니다. 이름이 `.artf`로 끝나는 디렉터리는 잘못된
@@ -40,8 +40,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   자동으로 자식 관계를 만들지 않습니다.
 - `ignore`: 소유자 기준 상대인 `.gitignore` 스타일 glob 최대 64개이며,
   부정은 쓸 수 없습니다. 내장 무시 항목 `.git`,
-  `__pycache__/`, `*.pyc`, `target/`, `node_modules/`처럼 언제나 제외합니다. `.gitignore` 파일은
-  git 의미론으로 더 많이 제외합니다. 저장소 루트(`--repo`)부터
+  `__pycache__/`, `*.pyc`, `target/`, `node_modules/`처럼 언제나 제외합니다. `.gitignore` 파일이 있으면
+  Git의 무시 규칙에 따라 파일을 더 제외합니다. 저장소 루트(`--repo`)부터
   Artifact와 탐색하는 디렉터리까지의 모든 `.gitignore`가 적용됩니다. 패턴은
   그 `.gitignore`가 있는 폴더를 기준으로 하고, `!` 부정 패턴도 쓸 수 있으며, 하위 폴더의 파일이 상위 폴더의 파일을
   덮어씁니다. 이름으로 명시한, 선언이 아닌 `files`는 결코 무시되지 않습니다.

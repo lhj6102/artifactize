@@ -42,7 +42,7 @@ list의 최상위 `artifactId`도 마찬가지로 선언한 Artifact를 가리�
 
 경로는 도구를 선언한 Artifact(그 자식 포함) 기준의 상대 논리적 경로이며,
 경로를 생략하면 그 루트를 뜻합니다. 다른 Artifact의 파일은 그
-Artifact 자신의 도구로 읽으며, eval이 그 Artifact를 참조하면 그 도구가 받아들여집니다. 도구는 결코
+Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면 그 도구가 받아들여집니다. 도구는 결코
 절대 경로, 경로 탈출 구성 요소, 심볼릭 링크를 받지 않습니다. 논리적 경로는 최대
 UTF-16 코드 단위 4096개이며, ASCII 제어 문자, 백슬래시, 콜론, 빈
 구성 요소나 `.`/`..` 구성 요소를 거부합니다. 단독 `.`은
@@ -196,7 +196,7 @@ JSON 프로토콜 argv는 기존의 범위 지정 Artifact 참조를 쓸 수 있
 eval에 받아들여진 범위 밖의 Artifact를 추가할 수는 없습니다. plain argv는 자기
 스키마 속성 자리 표시자만 씁니다. 명령 자체에는 결코 값을 끼워 넣지 않습니다.
 명령 호출은 소유자의 작업 디렉터리(파일 Artifact라면 들어 있는 폴더)를
-cwd로, 작성자 자신의 환경(
+cwd로, 작성자의 환경(
 [runtime 환경](../declarations.md#runtime-execution-library): 실제 홈, 호출자의
 `ARTIFACTIZE_*` 변수 없음)을 전용 외부 TMP/출력과 함께 쓰며, 기본 마감 시간은 120000 ms(1–2147483647)이고,
 프로세스 그룹 단위로 취소/정리합니다. 호출별 디렉터리는 성공,
@@ -234,13 +234,13 @@ protocol = "json"
 
 `start`와 `stop`에는 `command`와 `args`가 필요하며, 유일한 선택 필드는
 `execution_paths`입니다. 평소의 실행 파일 찾기, 범위 지정 argv, JSON
-stdin 봉투를 `args: {}`로 씁니다. `description`, `protocol`,
+stdin JSON을 `args: {}`로 씁니다. `description`, `protocol`,
 `timeout_ms`, 동시 실행 옵션은 받지 않습니다. 명령 도구의 `session`은
 자기 Artifact 안의 세션을 가리켜야 하며, 내장 도구와 Human 도구는 이를 받지 않습니다.
 
 하네스는 다음 시작 계약을 구현합니다.
 
-- stdin에서 평소의 JSON 봉투를 읽습니다. `ARTIFACTIZE_SESSION_DIR`은 artifactize가
+- stdin에서 평소와 같은 JSON 객체를 읽습니다. `ARTIFACTIZE_SESSION_DIR`은 artifactize가
   제공하는 전용 디렉터리이며, 묶인 도구와 stop이 공유할 상태에 쓰세요.
 - 준비되면 stdout에 줄바꿈으로 끝나는 줄 하나를 출력합니다. 그 내용은 무시됩니다.
 - 세션 내내 시작 프로세스를 계속 실행해 두세요. 그 프로세스가 종료하면 세션이 끝납니다.
@@ -262,7 +262,7 @@ Agent가 그 세션에 묶인 도구를 처음 호출할 때만 시작하며, �
 프로세스를 띄우지 못하거나 준비 완료 전에 종료하면 `PREPARATION_FAILED`가 아니라
 그 도구 호출의 오류로 Agent에 돌아갑니다. 같은 세션에 대한 이후 호출은
 다시 시작하지 않고 같은 시작 오류를 돌려줍니다. 준비 완료에는 따로 고정된 한도가 없습니다. start는
-리뷰가 시간 초과되거나 취소될 때까지, 프로세스가 살아 있는 동안 준비할 수 있습니다.
+리뷰가 시간 초과되거나 취소될 때까지, 프로세스가 실행 중인 동안 준비할 수 있습니다.
 준비 완료 뒤 stdout과 stderr는 읽어 버립니다.
 
 리뷰 중에 시작 프로세스가 종료하면 artifactize는 남은
@@ -285,7 +285,7 @@ Agent 루프 뒤, 입력 재검증, fingerprint
 Job 자손을 기다리며, 별도의 내부 30초 종료 한도를 가집니다.
 
 정리는 리뷰를 요청한 프로그램에 의존하지 않습니다. 그 호출자가
-비동기 런타임을 종료해도 artifactize 자신의 백그라운드 실행기가 여전히 stop과
+비동기 런타임을 종료해도 artifactize의 백그라운드 실행기가 여전히 stop과
 정리를 실행합니다. artifactize 프로세스 자체가 죽으면 stop을 실행할 수 없으므로,
 다음 도구 세션이 먼저 정리합니다. 각 세션 디렉터리에는 그것을 소유한
 프로세스와, 정리가 아직 진행 중이라는 표시인 **임대(lease)** 가 기록됩니다.
@@ -318,7 +318,7 @@ start/stop 실행 경로 고정은 원격 기록을 포함해 결과의 기존 `
 `registry.sessions(state, selected_tool_or_none, cancellation)`로 지연 세션을 등록하고,
 `registry.with_sessions(&sessions)`로 붙인 다음, 호출을 마친 뒤 놓고
 `sessions.close().await`를 기다립니다. 가드를 버려도 정리가 시작됩니다.
-세션 명령은 여전히 **신뢰하는 것이지 샌드박스가 아닙니다**. 명령은
+세션 명령은 여전히 **신뢰하는 코드로 실행되며, 샌드박스로 격리되지 않습니다**. 명령은
 워크스페이스를 고치거나 자손을 일부러 분리해 정리를 피할 수 있습니다.
 
 ## 도구 진단 {#tool-diagnostics}
@@ -341,7 +341,7 @@ Agent/Human eval 하나를 고르며 `--artifact`나
 `--artifact`와 `--audience` 둘 다가 필요합니다. `--artifact`에서는 짧은 작업 이름이나
 게시된 이름을 받아들이며, 범위는 그 Artifact와 그 자식입니다.
 eval에서는 그 eval이 게시하는 이름(`<tool>_<artifact>`)으로 도구를 지정하세요. 도구는
-그 eval 자신의 범위에서 실행되므로, 피연산자가 다른 Artifact를 가리키는 도구는
+그 eval의 범위에서 실행되므로, 피연산자가 다른 Artifact를 가리키는 도구는
 그 eval의 리뷰에서처럼 실행됩니다.
 `--args`는 Agent 실행에만 쓸 수 있습니다. Human 스키마는 빈
 객체만 받고 Human 명령은 자유 인자를 받지 않습니다. 확인은 결코 Run,

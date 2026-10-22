@@ -83,7 +83,7 @@ profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", ma
 
 위의 [Agent 리뷰](#agent-reviews)에서 Agent 프로필, 백엔드,
 `reasoning`을 보여 줍니다. `models` 출력은
-[로컬 진단과 유지 보수](others/state.md#doctor-models-and-prune)에 설명된 JSON 봉투를 씁니다.
+[로컬 진단과 유지 보수](others/state.md#doctor-models-and-prune)에 설명된 JSON 형식을 씁니다.
 
 Agent 리뷰는 모델의 답을 만들어지는 대로 스트리밍합니다. 리뷰 마감 시간 하나
 (기본 240초)가 모든 턴, 재시도, 도구를 포함합니다. 잘리거나 불완전한

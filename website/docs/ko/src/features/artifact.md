@@ -34,7 +34,7 @@ eval은 로컬 ID를 키로 하는 테이블입니다. `usage` Artifact의 `[eva
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
 Runtime eval은 종료 코드가 판정입니다(0이면 GREEN). Agent나 Human은
-소유자 필드와 함께 GREEN 또는 RED를 돌려줍니다. 의존성은 각 eval 자신의 참조와
+소유자 필드와 함께 GREEN 또는 RED를 돌려줍니다. 의존성은 각 eval의 참조와
 그 Artifact의 자식에서 나옵니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의 `guide` Artifact입니다. 이 예제의 README는 자식,
@@ -120,7 +120,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 묶이지 않습니다. 그것들은 여전히 최종 승인 의무에 속하므로,
 그것을 쓰는 eval은 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
 
-eval 자신의 Artifact와 의존성 순환에 함께 있는 eval들은
+eval의 Artifact와 의존성 순환에 함께 있는 eval들은
 [Human 형제 선행 조건](#human-sign-offs)을 빼면 이 관문에서 제외됩니다. 순환은
 eval 참조와 자식을 따라갑니다. 부모를 직접 또는 참조 사슬을 거쳐 참조하는 자식은
 부모와 같은 순환에 있습니다. 같은 순환의 상대를 참조하면 그 순환의 외부 관문이 따라오고,
@@ -145,13 +145,13 @@ GREEN일 때만 시작합니다. 사람은 기계 eval이 이미 통과한 것�
 그 전에는 Human eval을 시작하지 않습니다. 그 기계 eval 중 하나가 RED나
 ERROR이면 Human eval은 시작하지 않고 BLOCKED가 되며, 그 이유에 해당 eval의 이름이 나옵니다. 예를 들어
 `Sibling machine eval RED: spec/review`처럼 나옵니다. 같은 Artifact의 다른 Human eval은
-이 조건에 들어가지 않으므로, 두 승인이 서로를 기다리는 일은 없습니다.
+이 조건에 들어가지 않으므로, 두 승인이 서로 상대가 끝나기를 기다리며 멈추는 일은 없습니다.
 이 규칙은 그냥 `verify`에서도, `--speculate`나 `--defer-human`을 써도 같습니다.
 추측 실행 Run에서도 그 기계 eval이 GREEN이 되기 전에는 사람에게 묻지 않습니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}
 
-`fingerprint`를 생략하면 Artifact 자신의 파일에 대한 내장 해시인 **artifactsum**이
+`fingerprint`를 생략하면 Artifact의 파일에 대한 내장 해시인 **artifactsum**이
 쓰입니다. `fingerprint = false`는 재사용을 끄며, 스크립트로 다른 값을 정의할 수도 있습니다.
 [Fingerprint](fingerprint.md)에서 형식, 포함되는 입력, GREEN/RED
 결과 재사용을 설명합니다.

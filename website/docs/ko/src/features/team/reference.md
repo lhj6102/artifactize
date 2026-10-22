@@ -47,7 +47,7 @@ API는 `Authorization: Bearer TOKEN`을 받고 JSON으로 답합니다(실패하
 | `{"keys":[KEY,...]}`(최대 1000개)를 담은 `POST /v1/lookup` | `read` | `{"entries":[record,...]}`: 찾은 각 키의 가장 최근 기록 |
 | 기록을 담은 `PUT /v1/entries/{key}` | `publish`(Human 기록이면 + `human`) | 201 `{"created":true}`, 또는 저장소에 이미 그 키의 이 실행이 있으면 200 `{"created":false}` |
 
-서버는 기록의 봉투(스키마 2, 경로의 키, GREEN/RED
+서버는 기록의 형식(스키마 2, 경로의 키, GREEN/RED
 판정, 프로필 kind, 실행 ID, RFC 3339 `completedAt`)와 크기를 확인합니다.
 요약은 256 KiB, `execution`을 담은 전체 기록은 16 MiB입니다. 서버는
 `publisher`(토큰 이름)와 `publishedAt`(서버 시계)을 찍으며, 클라이언트가 준 값은
@@ -162,7 +162,7 @@ stderr에 이유와 함께 `skipped`가 됩니다. `--dry-run`은 아무것도 �
 없는 것은 로컬에서 리뷰합니다. 401/403, TLS 실패, 그 밖의 오류 응답, 잘못된
 설정, 그리고 본문을 읽거나 디코딩할 수 없는 성공 응답(본문
 시간 초과 포함)은 오류로 처리되어 진행을 멈춥니다. 401/403에는 저장소가 토큰을 거부했다는
-artifactize 자신의 메시지가 붙고, 다른 4xx 응답에는 저장소가 보낸 경우 저장소 자신의 오류 메시지가
+artifactize의 메시지가 붙고, 다른 4xx 응답에는 저장소가 보낸 경우 저장소의 오류 메시지가
 붙습니다. 검증은 Run 접수를 영속적으로 기록한 뒤 원격 증거를 조회합니다.
 조회에 실패하면 Run이 없는 것이 아니라 ERROR Run이 남습니다. 제출만 하는
 `verify`는 접수되면 0으로 종료하고, `verify --wait`는 그 ERROR를 보고 2로 종료합니다.

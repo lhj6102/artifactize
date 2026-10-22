@@ -29,12 +29,12 @@ eval은 소유자 스키마 대신 명령의 종료 상태를 씁니다. 이름 
 실제 입력만 선언하세요. eval의 관찰 범위는 자기 대상과
 명시적인 지시문/Runtime 피연산자 참조에서 시작해, 그런 Artifact마다 그 자식을
 재귀적으로 받아들입니다. 참조된
-Artifact 자신의 eval 지시문을 따라가 의존성을 더 늘리지는 않습니다. 받아들여진 모든 Artifact는
+Artifact의 eval 지시문을 따라가 의존성을 더 늘리지는 않습니다. 받아들여진 모든 Artifact는
 도구를 제공할 수 있습니다. 도구 피연산자 자체로는 새 입력이 추가되지 않습니다.
 
 관찰할 수 있는 범위는 [재사용 키](fingerprint.md#the-reuse-key)보다 넓습니다.
 재사용 키는 대상, 그 직접 자식, 이 eval의 명시적인
-입력을 포함할 뿐, 재귀적으로 닿을 수 있는 모든 관찰 대상을 포함하지는 않습니다. 실행 관문은 이 eval 자신의 참조와 대상의 자식을 따르며, 형제 eval의 참조는 따르지 않습니다.
+입력을 포함할 뿐, 재귀적으로 닿을 수 있는 모든 관찰 대상을 포함하지는 않습니다. 실행 관문은 이 eval의 참조와 대상의 자식을 따르며, 형제 eval의 참조는 따르지 않습니다.
 자기 Artifact와, 그것과 순환을 이루는 Artifact는 결코 관문이 되지 않습니다. RED인 형제나 순환 상대가 이 eval을 막지는 않습니다. 다만 [Human eval](artifact.md#human-sign-offs)은 자기 Artifact의 기계 eval을 기다립니다. 선언은 [Artifact](artifact.md)를 보세요.
 
 `artifactize verify library/tests --wait`는 eval 하나에 대한 [Run](run.md)을 시작합니다.

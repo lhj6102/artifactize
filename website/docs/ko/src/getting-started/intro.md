@@ -11,8 +11,8 @@ Artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되
   그 부분이 바뀔 때 관련 없는 작업이 아니라 필요한 리뷰만 다시 실행됩니다.
 - 입력이 그대로라면 리뷰를 재사용하세요. **fingerprint**가 그 입력을 식별하며,
   `artifactize status`는 무엇을 다시 리뷰해야 하는지 보여 줍니다.
-- 팀 리뷰 저장소를 통해 팀원과 CI에 결과를 공유하세요. Monitor로 진행 상황을
-  지켜보고, Review로 사람이 대기 중인 승인을 차례로 처리할 수 있습니다.
+- 팀 리뷰 저장소를 통해 팀원과 CI에 결과를 공유하세요. Monitor에서 진행 상황을
+  확인하고, Review에서 승인 대기 중인 요청을 차례로 처리할 수 있습니다.
 
 Linux, macOS, Windows에서 실행됩니다. [설치](/docs/ko/getting-started/install.html)부터 시작한 뒤
 [가이드](/docs/ko/getting-started/guide.html)를 따라 첫 GREEN 결과를 얻고, 모델이나 API 키 없이

@@ -6,7 +6,7 @@
 
 ## Eval 실행 관문 {#eval-execution-gates}
 
-`verify`는 각 eval을 그 eval 자신의 [실행 관문](artifact.md#eval-dependencies)에 따라 스케줄하며,
+`verify`는 각 eval을 그 eval의 [실행 관문](artifact.md#eval-dependencies)에 따라 스케줄하며,
 [Human 승인의 기계 선행 조건](artifact.md#human-sign-offs)도 포함합니다.
 `status`는 eval을 실행하지 않고 그 관문을 보여 줍니다.
 
@@ -52,7 +52,7 @@ ERROR/CANCELLED를 기록합니다. 이 Run이 다른 Run에서 합류한 실행
 미룬 승인을 포함해 아직 기다리던 승인도 ERROR로 끝나며, 다른 Run이 그 승인에
 합류한 요청도 마찬가지입니다. 다음 `verify`가 다시 요청합니다. 이는 Run이 실행 중일 때만 적용됩니다.
 이미 SIGNOFFS_PENDING으로 끝난 Run은 완료된 것이므로, 취소해도 아무것도 바뀌지 않고 그
-미룬 승인은 계속 기다립니다. 죽은 작업자는 ERROR/OWNER_DIED로 정리되며,
+미룬 승인은 계속 기다립니다. 비정상 종료된 작업자는 ERROR/OWNER_DIED로 정리되며,
 중단된 작업은 자동으로 다시 실행되지 않습니다.
 
 접수할 때 선택된 범위에 대해 해석된 정의를 저장합니다. 실행 전에
@@ -135,7 +135,7 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 ```
 
 `executed`는 ERROR 결과와 기록한 Human
-요청을 포함해 Run 자신의 실행을 세고, `reused`는 캐시, 합류, 원격 결과를 셉니다. 다른 프로필이 만든 재사용 결과
+요청을 포함해 Run의 실행을 세고, `reused`는 캐시, 합류, 원격 결과를 셉니다. 다른 프로필이 만든 재사용 결과
 (다른 모델, 제한, 그 밖의 설정. 모두 재사용 키에 들어가지 않음)는 그 줄에 `profile NAME`을 덧붙이며,
 그러면 요약은 `; N produced by another profile`로 끝납니다(JSON에서는 `summary.reused.otherProfile`).
 설정이 동일한 변형에서 온 결과에는 표시가 붙지 않으며, 저장된
@@ -154,7 +154,7 @@ JSON에서 각 요청의 `source`는 그 결과가 어디서 왔는지 말해 �
 ```
 
 `kind`는 재사용 키의 완료된 기록이면 `cache`, 요청이 기다린
-그 키의 살아 있는 실행이면(다른 `verify`에서, 또는 같은 Run의
+그 키로 진행 중인 실행이면(다른 `verify`에서, 또는 같은 Run의
 형제 eval) `joined`, [원격 리뷰 저장소](team/reference.md#remote-review-store-client)의 기록이면 `remote`입니다.
 `run show`, `request show`, `request list --json`도
 `source`를 담습니다.
@@ -231,7 +231,7 @@ eval의 현재 재사용 키에 대한 완료된 기록이 있으면 PASS 또는
 상태는 관문(WAIT_DEPENDENCY 또는 BLOCKED)을 보여 주고 이유가 그 관문을 가리킵니다.
 캐시된 결과가 없는 eval은 관문이 GREEN이 되어야만 실행됩니다. RED 의존성 뒤에서는 `blocked`로,
 의존성이 캐시된 결과로 GREEN이면 `execute`로 보입니다. 의존성의 결과가 직접 또는 더
-상위에서, verify가 실행한 뒤에야(또는 살아 있는 실행이 끝난 뒤에야) 생긴다면 `wait`로 보입니다.
+상위에서, verify가 실행한 뒤에야(또는 진행 중인 실행이 끝난 뒤에야) 생긴다면 `wait`로 보입니다.
 이것이 예측의 한계입니다. status는 `wait` eval이
 실행될지 말할 수 없습니다. 텍스트는 예를 들어 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝나므로, 병합된
 체크아웃에서 status를 실행하면 verify가 그곳에서 무엇을 다시 리뷰할지 실행하지 않고도 알 수 있습니다. force는 여전히
@@ -247,7 +247,7 @@ basis만 있는 범위는 충족될 수 있습니다. 충족되지 않은 의존
 현재 키를 같은 eval과 eval 정의 해시에 대한(이 상태의 어느 저장소에서든)
 가장 새 캐시된 GREEN/RED 기록과 비교해,
 `changes: {sinceRunId, files?, dependencies?, summary}`를 보고합니다. 텍스트에서는 `Fingerprint changed since Run RUN_ID: ...` 줄로 나오며, 예를 들어 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`입니다. `files`는
-대상 자신의 파일을 `path`(바뀜), `+path`(추가됨), `-path`(제거됨)로
+대상의 파일을 `path`(바뀜), `+path`(추가됨), `-path`(제거됨)로
 나열하고, `dependencies`는 fingerprint가 바뀐 자식과 이름으로 가리킨 Artifact를
 `name`, `+name`, `-name`으로 나열합니다. 스크립트
 fingerprint나 파일 맵이 빠진 매니페스트는 대상에 대해 `fingerprint changed`나

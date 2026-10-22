@@ -14,10 +14,10 @@ Runtime eval, fingerprint 스크립트, 명령 Agent 도구, 명령 Human 도구
 파일을 읽고, 검색하고, 여는 데는 [내장 도구](../tools/builtin.md)가
 외부 프로그램 없이 어디서나 동작합니다.
 
-Runtime eval, fingerprint 스크립트, 명령 Agent 도구는 작성자 자신의 환경에서도
-실행됩니다. `artifactize`가 자기 환경 전체(각 OS의 홈과 캐시 변수, Windows에서는
-시스템 변수까지)를 넘겨주므로, 버전 관리자 뒤에 있는 툴체인도
-터미널에서처럼 찾아집니다. `ARTIFACTIZE_*` 변수만 빠지고, 실행마다
+Runtime eval, fingerprint 스크립트, 명령 Agent 도구는 작성자의 환경에서도
+실행됩니다. `artifactize`가 받은 환경 변수 전체(각 OS의 홈과 캐시 변수, Windows에서는
+시스템 변수까지)를 그대로 넘겨주므로, 버전 관리자로 설치한 툴체인도
+터미널에서와 같은 방식으로 찾을 수 있습니다. `ARTIFACTIZE_*` 변수만 빠지고, 실행마다
 전용 `TMPDIR`(`TMP`와 `TEMP`도)를 받습니다.
 [runtime 환경](../declarations.md#runtime-execution-library)을 보세요. 명령 Human 도구는
 `ARTIFACTIZE_*` 변수를 포함한 리뷰어의 환경 전체를 물려받으며,
@@ -26,7 +26,7 @@ Runtime eval, fingerprint 스크립트, 명령 Agent 도구는 작성자 자신�
 Linux에서 AppImage로(직접 또는 `install.sh`의
 실행 파일을 통해) 시작한 데스크톱 앱은, 번들에 든 라이브러리를 불러오도록
 번들의 디렉터리를 `PATH`, `LD_LIBRARY_PATH` 같은 목록의 앞에 두고
-번들 자신의 변수와 함께 실행됩니다. 앱이 시작하는 모든 프로그램은 앱이 시작될 때의 환경을 받습니다.
+번들의 변수와 함께 실행됩니다. 앱이 시작하는 모든 프로그램은 앱이 시작될 때의 환경을 받습니다.
 그 항목과 변수는 빠지므로, 시스템 프로그램은 자기 라이브러리를 불러옵니다.
 
 ## 프로그램 찾기 {#program-lookup}

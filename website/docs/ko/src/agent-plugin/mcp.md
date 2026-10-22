@@ -87,7 +87,7 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 | `verify_result` | `run`, 선택적으로 `cursor` | `runs::result`: 판정과 간결한 발견 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
 | `verify_cancel` | `run` | `runs::cancel`: 명시적 취소 확인. 정리 여부는 확정을 지켜보세요 |
 
-`scope`는 `kind`로 태그가 붙은 공용 Selection JSON 봉투입니다.
+`scope`는 `kind` 필드로 선택 유형을 구분하는 공용 Selection JSON 객체입니다.
 
 ```json
 {"kind":"all"}
@@ -98,7 +98,7 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 `{"kind":"artifacts","artifactIds":["library","consumer"]}`,
 `{"kind":"evals","evalIds":["library/tests","consumer/review"]}`입니다.
 배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 평소의 CLI 의존성/재사용 기본값이 적용되며,
-전송 방식별 스케줄링이나 수명 주기 설정은 없습니다. 이 봉투는
+전송 방식별 스케줄링이나 수명 주기 설정은 없습니다. 이 객체는
 CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
 ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
 
@@ -202,7 +202,7 @@ Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전
 `verify_start`로 제출하고 Run ID를 보관한 다음, `_meta`에 표준
 도구 호출 메타데이터 `{"progressToken":"your-observer"}`를 넣어 `verify_watch`를 호출하세요.
 이 호출이 대기하는 동안 artifactize는 공유 상태 변경을 구독하고
-`notifications/progress`를 보냅니다. 알림의 `message`는 JSON 봉투입니다.
+`notifications/progress`를 보냅니다. 알림의 `message`는 JSON 객체입니다.
 
 - `{"kind":"update","data":...}`: 간결한 실시간 상태/개수. **승인이 아닙니다**.
 - `{"kind":"eval_result","data":...}`: 저장된 요청/eval 상태 하나와 간결한

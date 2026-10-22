@@ -158,7 +158,7 @@ URL을 받습니다. `help`는 자리 표시자 없이 리터럴 프로그램이
 [재사용 키](../fingerprint.md#the-reuse-key)에 들어가지 않습니다. 도구는
 Artifact를 보는 방법이기 때문입니다. 도구를 바꿔도 이전 판정을 재사용하며, 내장 도구의 동작을 바꾸는
 새 artifactize 릴리스도 마찬가지입니다. 도구가 읽는 파일이 바뀔 때 다시 리뷰하려면
-그 파일을 fingerprint에 포함하세요. 기본 artifactsum은 Artifact 자신의 파일을 포함합니다.
+그 파일을 fingerprint에 포함하세요. 기본 artifactsum은 Artifact의 파일을 포함합니다.
 
 ## `artifactize-tools` CLI {#artifactize-tools-cli}
 
