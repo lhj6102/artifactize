@@ -17,9 +17,8 @@ the default application on Windows, and `xdg-open` on Linux and WSL, which must 
 installed.
 
 Commands run in your own environment, as described in
-[Runtime execution](../declarations.md#runtime-execution). What differs by OS: the private
-temporary folder is `TMPDIR` on Linux and macOS and also `TMP` and `TEMP` on Windows, and
-on Windows the system variables are passed on too.
+[Runtime execution](../declarations.md#runtime-execution). What differs by OS: on Windows
+the system variables are passed on too.
 
 On Linux, programs the desktop app starts from its AppImage get the environment the app
 was started with, minus the settings the AppImage adds. A variable you had set that the
@@ -91,9 +90,8 @@ accepts `xdg-open`'s exit status 4. `login codex` also prints its sign-in URL fo
 ## Desktop console launches
 
 On Windows, launching `artifactize` without arguments from Start or Explorer shows
-help plus a terminal hint and waits for Enter if this process is the console's
-only attached process and both stdin and stdout are consoles. It never pauses
-with arguments, from an existing terminal, or with redirected input/output. Linux
+help plus a terminal hint and waits for Enter, so the window does not close at once. It
+never pauses with arguments, in a terminal you opened, or in a script. Linux
 and macOS retain the ordinary no-argument help and immediate exit.
 
 The Microsoft Store package has two visible entries, **Artifactize** for the desktop

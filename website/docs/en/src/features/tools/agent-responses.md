@@ -14,10 +14,9 @@ fields that verdict's schema allows, side by side. Follow-up answers from
 `session send` are plain text.
 
 Artifactize validates the answer against the owner schema itself, so every JSON Schema
-keyword you declare is enforced, even those a provider cannot constrain. An invalid final
-answer gets one more turn, without tools and within the same deadline, that names the
-error and up to five failing paths with their messages (each at most 200 characters), as a
-Human submission's error does:
+keyword you declare is enforced, even those a provider cannot constrain. If the answer
+does not match, the Agent is told what was wrong and gets one more chance. The saved
+conversation shows that message:
 
 ```text
 Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema
@@ -25,7 +24,9 @@ Your final response did not match the required schema: schema_mismatch: result m
 Return only one JSON object matching the schema.
 ```
 
-If that answer is still invalid, the review is ERROR, and the saved error keeps only the
-error code, never the model's output. `max_tokens` and `max_tool_calls` are counted by
+If that answer is still invalid, the review ends ERROR with `INVALID_RESULT`. Read what
+the Agent answered with [`session show`](../../cli/index.md#agent-sessions), make the schema
+and the instruction agree (for example, say in the instruction what each field must
+contain), then verify again. `max_tokens` and `max_tool_calls` are counted by
 artifactize, which stops further tool calls when a budget runs out; they are not sent to
 the provider.

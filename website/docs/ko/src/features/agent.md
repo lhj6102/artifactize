@@ -57,7 +57,9 @@ Agent 프로필은 `max_tokens`와 `max_tool_calls`로 리뷰의 한도를 정�
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", max_tokens = 100000, max_tool_calls = 100 }
 ```
 
-두 예산 모두 선택 항목이며 1부터 9007199254740991까지의 정수를 받습니다. 생략하면 그 예산은
+모델 서비스는 읽고 쓰는 텍스트를 **토큰**이라는 작은 단어 조각 단위로 셉니다. 로그인이나 리뷰
+저장소의 토큰과는 상관없습니다. 두 예산 모두 선택 항목이며 1부터 9007199254740991까지의 정수를
+받습니다. 생략하면 그 예산은
 무제한입니다. 이는 provider의 생성 매개변수가 아니라 클라이언트 쪽 리뷰 예산입니다.
 `max_tokens`는 성공한 응답마다 보고된 `total_tokens`(보고된 캐시 읽기·쓰기 포함)를 모든 턴과
 수정 요청 턴에 걸쳐 더합니다. 합계가 보고되지 않으면 0으로 셉니다. 확인은 응답을 받은 뒤에
@@ -138,10 +140,8 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 다음 Run에서는 그 백엔드를 다시 쓸 수 있습니다.
 
-eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 실행됩니다. 명령 도구는 작성자의
-[환경](declarations.md#runtime-execution)에서 호출마다 별도의 출력·임시 디렉터리를 받아
-실행됩니다. 내장 도구는 호출별 디렉터리를 받지 않으며, `help`는 `ARTIFACTIZE_*` 변수를 뺀 내
-환경에서 프로그램을 실행합니다. 도구 결과는 하나의 텍스트로 합치지 않고 텍스트, JSON, 검사를 거친 base64 이미지 블록 형식 그대로 둡니다. PNG/JPEG/WebP 결과는 모든 백엔드에
+eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 실행됩니다. 각 도구가 무엇을 받고
+돌려주는지는 [Agent 도구](tools/agent.md#agent-tools)에 있습니다. PNG/JPEG/WebP 결과는 모든 백엔드에
 보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는
 성공했을 때와 ERROR일 때 모두 저장하며, 캐시가 적중하면 그 시도는 `reusedUsage`로 옮겨지고
 쓴 것으로 세지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나

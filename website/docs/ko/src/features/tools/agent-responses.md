@@ -13,9 +13,8 @@ Agent는 먼저 도구를 호출할 수 있고, 그다음 provider의 구조화�
 나란히 담은 객체 하나입니다. `session send`의 follow-up 답변은 일반 텍스트입니다.
 
 artifactize가 직접 답을 소유자 스키마로 검사하므로, provider가 제한하지 못하는 키워드를
-포함해 선언한 JSON Schema 키워드가 모두 적용됩니다. 최종 답이 잘못되면 같은 마감 시간 안에서
-도구 없이 한 턴을 더 주며, 그 턴에는 Human 제출 오류처럼 오류와 함께 실패한 경로를 최대 다섯 개,
-각각의 메시지(최대 200자)와 함께 알려 줍니다.
+포함해 선언한 JSON Schema 키워드가 모두 적용됩니다. 답이 스키마에 맞지 않으면 Agent에게 무엇이
+잘못됐는지 알리고 한 번 더 기회를 줍니다. 저장된 대화에 그 메시지가 나옵니다.
 
 ```text
 Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema
@@ -23,6 +22,8 @@ Your final response did not match the required schema: schema_mismatch: result m
 Return only one JSON object matching the schema.
 ```
 
-그 답도 잘못되면 리뷰는 ERROR이며, 저장되는 오류에는 모델 출력은 남기지 않고 오류 코드만
-남습니다. `max_tokens`와 `max_tool_calls`는 artifactize가 세며, 예산을 다 쓰면 더 이상 도구
+그 답도 잘못되면 리뷰는 `INVALID_RESULT`와 함께 ERROR로 끝납니다.
+[`session show`](../../cli/index.md#agent-sessions)로 Agent가 무엇을 답했는지 읽고, 스키마와
+지시문이 서로 맞도록 고친 다음(예를 들어 각 필드에 무엇이 들어가야 하는지 지시문에 적기) 다시
+verify하세요. `max_tokens`와 `max_tool_calls`는 artifactize가 세며, 예산을 다 쓰면 더 이상 도구
 호출을 하지 않게 합니다. 이 값들은 provider에게 보내지 않습니다.

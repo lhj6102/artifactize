@@ -28,8 +28,7 @@ INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 �
 체크아웃하고 러너에서 `artifactize`를 쓸 수 있게 한 다음
 ([설치](../../getting-started/install.md) 참조), 기존 `.github/workflows/NAME.yml` 파일의
 `jobs.YOUR_JOB.steps` 아래에 넣으세요. 이번이 처음이라면 GitHub의
-[워크플로 가이드](https://docs.github.com/en/actions/writing-workflows/quickstart)가
-그 주변의 워크플로와 작업을 만드는 방법을 설명합니다.
+[워크플로 가이드](https://docs.github.com/en/actions/writing-workflows/quickstart)에서 이 단계를 담을 워크플로와 작업을 만드는 방법을 확인하세요.
 
 저장소 관리자에게 **read** 범위만 있는 토큰을 요청하세요. GitHub
 저장소에서 **Settings → Secrets and variables → Actions**를 열고,
@@ -57,6 +56,5 @@ INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 �
 
 ## 모델 없이 Agent eval 테스트하기 {#test-agent-evals-without-a-model}
 
-CI 작업은 루프백에서 시작한 가짜 provider를 상대로, 버려도 되는 상태 디렉터리와
-꺼진 저장소로 Agent eval을 실행할 수 있습니다.
+CI 작업은 루프백에서 시작한 가짜 provider를 상대로, 버려도 되는 상태 디렉터리를 쓰고 리뷰 저장소 연동을 끈 채로 Agent eval을 실행할 수 있습니다.
 [가짜 provider로 테스트하기](../agent.md#test-against-a-fake-provider)를 보세요.

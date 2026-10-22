@@ -154,7 +154,7 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 요
 범위의 결정된 정의를 함께 저장하므로, 현재 선언에 기대지 않습니다.
 
 일부만 실행하는 Run은 실행 선택 밖에 있는 상위 eval처럼, 요청을 만들지 않고 저장된 증거를 쓸
-수 있습니다. Run은 그 판정을 eval ID에서 저장된 상태로 가는 맵인 `evidence`에 기록합니다.
+수 있습니다. Run은 eval ID를 키로, 저장된 상태를 값으로 하는 `evidence` 맵에 그 판정을 기록합니다.
 
 ```json
 {"evidence": {"code-style/approved": "GREEN"}}
@@ -198,7 +198,7 @@ fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하지 
 생길 수 있습니다. `config graph`와 `config check`는 완전히 정적이며 프로젝트 코드를 실행하지
 않습니다.
 
-eval마다 동작은 `verify`가 그 eval을 어떻게 할지 알려 줍니다.
+eval마다 나오는 동작은 `verify`가 그 eval을 실행할지, 결과를 재사용할지, 기다릴지, 막힐지를 나타냅니다.
 
 | 동작 | 언제 | 사유 예 |
 |---|---|---|
@@ -245,7 +245,7 @@ SATISFIED**를 유지하며, 흐린 `*`는 그 뒤로 상태가 바뀐 행을 �
 
 ### 현재 그래프 리뷰 도구 {#current-graph-review-tools}
 
-`config graph`는 계속 설정을 살펴보는 도구입니다. 리뷰에 쓰려면 아무 Artifact에나
+`config graph`는 설정을 확인하는 도구입니다. 리뷰에 쓰려면 아무 Artifact에나
 [내장 `graph` 도구](tools/builtin.md#current-project-graph)를 선언하세요. Agent는 추출한 현재
 그래프를 트리로 보고, Human은 저장된 Run 없이도 데스크톱 앱에서 그 브랜치의
 [Current](../desktop/index.md#current)를 엽니다. 루트에 선택적으로 두는

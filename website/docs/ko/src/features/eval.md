@@ -36,8 +36,7 @@ eval이 읽을 수 있는 범위는 [재사용 키](fingerprint.md#the-reuse-key
 넓습니다. 키는 대상, 그 직접 자식, 이름으로 가리킨 입력만 포함하므로, `app/ui`의 자식 안쪽이
 바뀌었다는 것만으로 `app/review`를 다시 리뷰하지는 않습니다. 실행 게이트는 형제 eval의 참조가
 아니라 이 eval 자신의 참조와 대상의 자식을 따라갑니다. 자기 Artifact와 순환으로 묶인
-Artifact는 게이트가 되지 않으므로, 형제나 순환으로 묶인 대상이 RED여도 막히지 않습니다. 다만
-[Human eval](artifact.md#human-sign-offs)은 자기 Artifact의 기계 검사 eval을 기다립니다. 선언
+Artifact는 게이트가 되지 않으므로, 형제나 순환으로 묶인 대상이 RED여도 막히지 않습니다. 다만 [Human eval](artifact.md#human-sign-offs)은 같은 Artifact의 기계 검사 eval이 모두 GREEN이 된 뒤에 시작합니다. 선언
 방법은 [Artifact](artifact.md)를 보세요.
 
 `artifactize verify library/tests --wait`는 eval 하나로 [Run](run.md)을 시작합니다. 먼저

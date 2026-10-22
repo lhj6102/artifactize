@@ -67,7 +67,7 @@ payload.instruction = "Check that every bold term in {intro} and {usage} is defi
 ## 파일 Artifact {#file-artifacts}
 
 일반 파일 `hero.png` 옆에 사이드카 `hero.png.artf`를 두면 그 파일을 Artifact로 선언합니다.
-같은 스키마를 쓰며, 전체에서 하나뿐인 자기 `name`이 필요합니다.
+폴더 Artifact와 같은 스키마를 쓰며, 프로젝트 전체에서 겹치지 않는 `name`을 지정해야 합니다.
 
 ```toml
 # hero.png.artf
@@ -94,7 +94,7 @@ runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키�
 Eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 쓰임을 확인하는 eval이 `{name}`으로
 가리키면 됩니다. 그 밖에는 의존성을 더하는 것이 없습니다.
 
-자식은 eval이 적지 않는 유일한 연결입니다. 폴더 Artifact의 파일에는 자식 폴더가 포함되므로,
+자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact의 파일에는 자식 폴더가 포함되므로,
 자식은 부모의 모든 eval이 참조한 것과 똑같이 칩니다. 부모의 eval은 저마다 가장 가까운 표시된
 자식의 eval에 의존합니다.
 

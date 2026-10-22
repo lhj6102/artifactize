@@ -16,8 +16,7 @@ Runtime eval, fingerprint 스크립트, 명령 Agent 도구, 명령 Human 도구
 `xdg-open`이며, `xdg-open`은 설치되어 있어야 합니다.
 
 명령은 [Runtime 실행](../declarations.md#runtime-execution)에서 설명한 대로 내 환경에서
-실행됩니다. OS마다 다른 점은 이렇습니다. 별도의 임시 폴더는 Linux와 macOS에서 `TMPDIR`이고,
-Windows에서는 `TMP`와 `TEMP`도 함께 지정합니다. Windows에서는 시스템 변수도 전달합니다.
+실행됩니다. OS마다 다른 점은 Windows에서는 시스템 변수도 전달한다는 것입니다.
 
 Linux에서 데스크톱 앱이 AppImage로 시작한 프로그램은 앱이 시작될 때의 환경에서 AppImage가 더한
 설정을 뺀 환경을 받습니다. 직접 설정해 둔 변수를 AppImage가 덮어썼다면(`GTK_THEME` 등) 원래
@@ -85,10 +84,9 @@ WSL은 Linux처럼 동작합니다. `wslview`나 Windows 프로그램으로 대�
 
 ## 데스크톱에서 콘솔 실행 {#desktop-console-launches}
 
-Windows에서 시작 메뉴나 탐색기로 인자 없이 `artifactize`를 실행하면,
-이 프로세스가 콘솔에 연결된 유일한 프로세스이고 stdin과 stdout이 모두 콘솔일 때
-도움말과 터미널 안내를 보여 준 뒤 Enter를 기다립니다. 인자가 있거나,
-기존 터미널에서 실행했거나, 입출력을 리디렉션했으면 결코 멈추지 않습니다. Linux와
+Windows에서 시작 메뉴나 탐색기로 인자 없이 `artifactize`를 실행하면, 창이 바로 닫히지 않도록
+도움말과 터미널 안내를 보여 준 뒤 Enter를 기다립니다. 인자가 있거나, 직접 연 터미널이나
+스크립트에서 실행하면 멈추지 않습니다. Linux와
 macOS는 평소처럼 인자 없이 도움말을 보여 주고 바로 종료합니다.
 
 Microsoft Store 패키지에는 보이는 항목이 두 개 있습니다. 데스크톱

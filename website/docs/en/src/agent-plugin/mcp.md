@@ -1,7 +1,10 @@
 # MCP stdio server
 
-`artifactize mcp` serves the verification and non-interactive inspection tools in
-the **same binary** as the CLI. Register it in the coding host, starting from the
+**MCP (Model Context Protocol)** connects your coding assistant to artifactize's
+tools, so it can inspect the project and start or observe reviews. `artifactize mcp`
+serves the verification and non-interactive inspection tools from the **same binary** as
+the CLI over **stdio**: the host launches `artifactize mcp` and exchanges messages through
+that program's standard input and output, rather than connecting to a network port. Register it in the coding host, starting from the
 project directory; see [registration below](#register-the-mcp-server).
 `--state-dir PATH` selects the state. Run/request/session reads stay bound to the
 call's project; cache records are reusable across repositories in the state.
@@ -30,10 +33,7 @@ diagnostics go to stderr. There is no network port or extra token. A bounded
 
 ## Register the MCP server
 
-**MCP (Model Context Protocol)** connects your coding assistant to artifactize's
-tools, so it can inspect the project and start or observe reviews. **Stdio** means
-the host launches `artifactize mcp` and exchanges messages through that program's
-standard input and output, rather than connecting to a network port.
+
 
 Complete the [installation setup](../getting-started/install.md), then launch
 the coding host from **your project directory**.

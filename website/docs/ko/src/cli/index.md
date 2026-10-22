@@ -277,8 +277,8 @@ status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검
 | `RED` | 현재 재사용 키에 맞는 RED 결과가 있음 | eval 중 하나가 `RED` |
 | `BLOCKED` | 게이트가 RED | eval 중 하나가 `BLOCKED` |
 | `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 기다리는 중 |
-| `WAITING_HUMAN` | Human 요청이 사람을 기다림 | — |
-| `DEFERRED` | 미룬 승인이 사람을 기다림 | eval 중 하나가 `DEFERRED` |
+| `WAITING_HUMAN` | 사람의 처리가 필요한 Human 요청이 있음 | — |
+| `DEFERRED` | 사람의 처리가 필요한 미룬 승인 요청이 있음 | eval 중 하나가 `DEFERRED` |
 | `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL` | eval 중 하나가 `PROVISIONAL` |
 | `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없음(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE` |
 | `UNREVIEWED` | 리뷰한 적이 없음 | 리뷰한 eval이 없거나 eval이 없음 |

@@ -356,7 +356,7 @@ Artifact 참조는 `payload.instruction`과 runtime `profile.args`에 `{input}`�
 eval을 실행하기 전에 `verify`는 선택한 eval에 필요한 의존성 범위의 fingerprint를 계산하며,
 eval을 선택하지 않은 의존성도 포함합니다. 동시에 몇 개를 계산할지는
 [`--fingerprint-jobs`](../cli/index.md#runtime-cli)로 정합니다. 실패하면 이름 순서로 처음 실패한
-Artifact를 알리고 나머지는 멈춥니다. 스크립트마다 별도의 출력 폴더를 받습니다.
+Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도의 출력 폴더를 줍니다.
 
 스크립트 출력은 그대로 Artifact의 fingerprint가 되며, 그 Artifact의 모든 eval에 같은 값이
 쓰이고 요청마다 저장됩니다. 이 값이 기준, 의존성과 어떻게 합쳐지는지는

@@ -59,7 +59,9 @@ An Agent profile can bound its review with `max_tokens` and `max_tool_calls`:
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", max_tokens = 100000, max_tool_calls = 100 }
 ```
 
-Each optional budget accepts an integer from 1 through 9007199254740991.
+A model service measures the text it reads and writes in **tokens**, small pieces of
+words; they have nothing to do with sign-in or review store tokens. Each optional budget
+accepts an integer from 1 through 9007199254740991.
 Omission leaves that budget unlimited. These are client-side review budgets,
 not provider generation parameters. `max_tokens` adds each successful response's
 reported `total_tokens`, including reported cache reads/writes, across every
@@ -146,11 +148,8 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 The next Run admits the backend again.
 
-Only tools from the eval's scope are exposed, and they run sequentially. Command
-tools run in the author's [environment](declarations.md#runtime-execution),
-each call with its own private output and temporary directories. Built-in tools get no per-call directories; `help` runs its program in your environment
-without the `ARTIFACTIZE_*` variables. Tool results keep text, JSON and validated base64 image blocks rather than flattening
-structured data. PNG/JPEG/WebP results are sent to every backend; a model without image
+Only tools from the eval's scope are exposed, and they run one at a time;
+[Agent tools](tools/agent.md#agent-tools) says what each receives and returns. PNG/JPEG/WebP results are sent to every backend; a model without image
 support fails with the provider's error. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
 the attempts move to `reusedUsage`, never counted as spent. Counters
 are provider-reported (including reported zero), not inferred totals or costs.

@@ -190,18 +190,22 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
 
-Outside a form or work, `q` quits from Detail too. In either UI, Ctrl-C
-requests cancellation of any active Human lifecycle job: claim, tool, submission
-(including publication) or release. It stays in the UI while that job is busy;
-once no job is busy, Ctrl-C invokes quitting, including from a form.
-Standalone
-`review` lists claims
-this session took without submitting: `k` (or `n`, `q`) keeps them and quits, `u` (or
-`r`, `y`) releases them and quits, and Esc stays. Here `r` releases rather than refreshes. If a release fails, Review stays open, shows the error and
-keeps the claims that failed; press `u` to try again or `k` to quit keeping them. Ctrl-C again at this standalone quit prompt exits while
-keeping outstanding claims. The quit prompt sets a form aside without dropping its
-draft. Monitor keeps claims on exit; release with `u` first if you want to give
-one back. Esc never quits either UI.
+Outside a form or work, `q` quits from Detail too. Ctrl-C first cancels a busy claim,
+tool, submission or release; once nothing is busy, it quits, also from a form. Esc
+never quits.
+
+When standalone `review` quits while this session holds claims it has not submitted,
+it asks what to do with them:
+
+| Key | Action |
+|---|---|
+| `k`, `n` or `q` | Keep the claims and quit |
+| `u`, `r` or `y` | Release the claims and quit (here `r` releases rather than refreshes) |
+| Esc | Stay |
+| Ctrl-C | Quit, keeping the claims |
+
+If a release fails, Review stays open with the error and keeps those claims. Monitor
+keeps claims when it quits; release one with `u` first to give it back.
 
 After a standalone submission the list returns. A page emptied by reviews goes
 back to the nearest earlier page that still lists requests; `review` exits only

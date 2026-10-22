@@ -1,7 +1,10 @@
 # MCP stdio 서버 {#mcp-stdio-server}
 
-`artifactize mcp`는 CLI와 **같은 바이너리**로 검증 도구와 비대화형 확인 도구를
-제공합니다. 프로젝트 디렉터리에서 시작해 코딩 호스트에 등록하세요.
+**MCP(Model Context Protocol)**는 코딩 어시스턴트를 artifactize의 도구에 연결해, 어시스턴트가
+프로젝트를 살펴보고 리뷰를 시작하거나 지켜볼 수 있게 합니다. `artifactize mcp`는 CLI와 **같은
+바이너리**로 검증 도구와 비대화형 확인 도구를 **stdio**로 제공합니다. 호스트는 네트워크 포트에
+연결하는 대신 `artifactize mcp`를 실행하고, 그 프로그램의 표준 입력과 출력으로 메시지를
+주고받습니다. 프로젝트 디렉터리에서 시작해 코딩 호스트에 등록하세요.
 [아래의 등록 방법](#register-the-mcp-server)을 보세요.
 `--state-dir PATH`는 상태를 고릅니다. Run/요청/세션 읽기는 호출의 프로젝트에
 묶이며, 캐시 기록은 상태 안의 여러 저장소에 걸쳐 재사용될 수 있습니다.
@@ -29,10 +32,7 @@
 
 ## MCP 서버 등록하기 {#register-the-mcp-server}
 
-**MCP(Model Context Protocol)** 는 코딩 어시스턴트를 artifactize의
-도구에 연결해, 어시스턴트가 프로젝트를 살펴보고 리뷰를 시작하거나 지켜볼 수 있게 합니다. **Stdio**는
-호스트가 네트워크 포트에 연결하는 대신 `artifactize mcp`를 실행하고, 그 프로그램의
-표준 입력과 출력으로 메시지를 주고받는다는 뜻입니다.
+
 
 [설치 설정](../getting-started/install.md)을 마친 다음, **프로젝트 디렉터리**에서
 코딩 호스트를 실행하세요.
@@ -80,7 +80,7 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 
 | 도구 | 인자 | 답 |
 | --- | --- | --- |
-| `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | Run을 제출. 승인이 아니라 간결한 Run 관찰 |
+| `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | Run을 제출. Run 상태 요약이며 승인 결과가 아님 |
 | `verify_status` | `run` | 저장된 상태, 개수, 경과 초, `next_check` |
 | `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 닿을 때까지 기다림. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
 | `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 따라감. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 반환할 때 간결한 관찰 |
