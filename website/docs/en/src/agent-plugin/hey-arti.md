@@ -10,12 +10,9 @@ and it never approves anything in a person's place. (The name comes from
 
 Its instruction guide, called a **skill**, is
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md),
-in the plugin's `agent-plugin/skills/` folder. There is one body, not separate instructions per
-host. It is short on purpose: these docs are its **source of truth**. It maps each
-concept to the page that owns it and has Arti read a page before explaining or
-writing what it is unsure of; when a page and the skill disagree, the page wins.
-Then come how Arti treats you as its client, its work processes by situation, and
-the best practices and examples it draws from.
+and comes with the [plugin](plugin.md). It points Arti to these docs and has it read a
+page before it explains or writes something it is unsure of; when a page and the skill
+disagree, the page wins.
 
 ## Get the skill
 

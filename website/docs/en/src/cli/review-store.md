@@ -1,7 +1,7 @@
 # Review store server and client
 
 The exact behavior of `artifactize server` and of the client side of the shared
-review store. The [Team review store](index.md) guide shows
+review store. The [Team review store](../features/team/index.md) guide shows
 how to set one up.
 
 ## Review store server
@@ -17,7 +17,7 @@ artifactize server rm KEY
 
 `artifactize server` keeps a [shared remote review store](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)
 in its own `review-store.sqlite` under `--state-dir`, separate from `state.sqlite`.
-It keeps every record of each [reuse key](../fingerprint.md#the-reuse-key) and
+It keeps every record of each [reuse key](../features/fingerprint.md#the-reuse-key) and
 answers a lookup with the latest one by completion time, GREEN or RED, whoever
 published it and in whatever order records arrived. `server run` serves plain HTTP
 on loopback by default (it warns when bound elsewhere) and stops on Ctrl-C/SIGTERM;
@@ -26,7 +26,7 @@ loopback. Token commands work on the same file while the server runs, and take
 effect immediately.
 
 Token names are bounded ASCII display labels, not secrets; the
-[CLI identity rules](../../cli/index.md#identity-arguments) give the syntax and
+[CLI identity rules](index.md#identity-arguments) give the syntax and
 pre-store validation.
 
 `token add` prints a random bearer token once; the store keeps only its SHA-256.
@@ -47,14 +47,10 @@ failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
 | `POST /v1/lookup` with `{"keys":[KEY,...]}` (at most 1000) | `read` | `{"entries":[record,...]}`: the latest record of each found key |
 | `PUT /v1/entries/{key}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the store already holds this execution of the key |
 
-The server checks a record's envelope (schema 2, the path's key, a GREEN/RED
-verdict, a profile kind, an execution ID and an RFC 3339 `completedAt`) and size:
-256 KiB for a summary, 16 MiB for a full record carrying `execution`. It stamps
-`publisher` (the token name) and `publishedAt` (server clock), replacing any client
-values. Clients check that a record's key matches its `evalDefHash` and
-`fingerprints` and additive `artifactKinds` before they use it. The kind map
-covers exactly the fingerprint names for new keys. Changing or dropping it
-cannot satisfy a kind-aware key. Lookups update the last use of the record they
+The server refuses a malformed record and limits its size to 256 KiB for a summary
+and 16 MiB for a full record. It sets `publisher` (the token name) and `publishedAt`
+(its own clock). Clients use a record only if it matches the key they asked for, so a
+store cannot make a client reuse a result for different criteria or inputs. Lookups update the last use of the record they
 return; inserts evict least-recently-used records above 100,000 records or 4 GiB.
 
 **Upgrading.** A schema 1 or 2 `review-store.sqlite` (artifactize 0.3 or 0.4) is
@@ -103,19 +99,13 @@ follow redirects. `remote logout` deletes the stored token and `remote.json`; th
 server keeps the token valid until `server token revoke`. Tokens are never printed
 or logged.
 
-With a store configured, `verify` reads and writes through it. Before the Run claims
-anything, it looks up every key once in `POST /v1/lookup` batches of at most 1000
-keys, including keys that already have local records. More than 1000 keys require
-multiple requests. It reuses whichever record completed last:
-the key's latest local record or the store's latest. A store record that completed
-after the local latest (or with no local record at all) is appended to the local
-history as a self-contained `remote-<executionId>` execution with an `origin`, and
-reused like a local record, so `run show`, `cache`, GC, the monitor and the Run
-summary count it as reuse. A key that still has no result is looked up again just
-before a local claim and during the artifactize-owned worker's Human-wait
-reconciliation, at most once per second. A remote result for a key that waits for
-a Human settles the waiting requests; their never-reviewed waiting execution
-becomes ERROR (`SUPERSEDED`). Text output names the source:
+With a store configured, `verify` looks up every review before running it and reuses
+whichever result completed last, the local one or the store's. A store result is copied
+into the local state with its `origin`, so `run show`, `cache` and the monitor show it as
+reuse. While a review is still missing, or waits for a person, verify keeps checking the
+store about once a second: a sign-off someone published elsewhere completes the waiting
+request, whose own pending sign-off ends as ERROR (`SUPERSEDED`). Text output names the
+source:
 
 ```text
   app/check [run-Hq2b9X-1]: GREEN (reused from remote: alice@laptop, run-x05qFq)
@@ -125,7 +115,7 @@ becomes ERROR (`SUPERSEDED`). Text output names the source:
 The producer (`user@host`) and the Human reviewer are what the publishing machine
 recorded; the publisher is the server-authenticated token name. An Agent result's
 `producer` also carries `session`, the reference to its
-[saved conversation](../agent.md#saved-conversations) on the producing
+[saved conversation](../features/agent.md#saved-conversations) on the producing
 machine; the conversation itself is never published. Older clients ignore the field,
 and the server stores records as they are, so the protocol and record `schema` (2) are
 unchanged. A reused remote result's request shows the reference, and `session show`

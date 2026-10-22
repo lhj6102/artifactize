@@ -183,8 +183,8 @@ with the graph still visible behind it, never beside the Pane. It leaves the cam
 where it is: pan to bring an Artifact under it into view.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
-background, **Close** or Esc closes it. On a Human review's Detail all three step
-back the same way: they cancel active work first, then leave the form, and only then
+background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only
+when you are not editing or running something; the others step back the same way: they cancel active work first, then leave the form, and only then
 close the Detail. Drag the Detail's left edge to resize it, between a readable column
 and leaving some graph visible; it keeps that width, also in the next launch.
 
@@ -342,8 +342,8 @@ when shown. Reopen it or use the palette's **Refresh settings** command to reloa
   and arguments, and Agent execution-path metadata. Those declarations can contain
   paths or sensitive literals: Summary is not secret redaction. Choose according
   to the team's privacy needs. Signing out removes local configuration, **not the server
-  token**; a store administrator must [revoke it](../features/team/reference.md#review-store-server).
-  See [sharing and push behavior](../features/team/reference.md#remote-review-store-client).
+  token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
+  See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
 
 Settings uses the same accounts and store operations as the CLI; credentials do
 not belong in `.artf`.

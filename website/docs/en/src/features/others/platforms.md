@@ -23,11 +23,8 @@ private `TMPDIR` (`TMP` and `TEMP` as well) of its own. See the
 inherit the reviewer's complete environment, `ARTIFACTIZE_*` variables included, and get no
 private temporary or output directories ([Human tools](../tools/human.md)).
 
-On Linux, the desktop app started from its AppImage (directly or through `install.sh`'s
-launcher) runs with the bundle's directories first in `PATH`, `LD_LIBRARY_PATH` and
-similar lists, and with variables of the bundle's own, so that it loads its bundled
-libraries. Every program the app starts gets the environment the app was started with:
-those entries and variables are left out, and system programs load their own libraries.
+On Linux, programs the desktop app starts from its AppImage get the environment the app
+was started with, as if you had started them yourself.
 
 ## Program lookup
 

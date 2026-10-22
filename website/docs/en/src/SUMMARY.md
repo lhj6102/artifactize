@@ -25,7 +25,6 @@
 - [Working as a team](features/team/index.md)
   - [Walkthrough: two machines and CI](features/team/walkthrough.md)
   - [CI](features/team/ci.md)
-  - [Review store reference](features/team/reference.md)
 - [Others](features/others/index.md)
   - [State, cache and limits](features/others/state.md)
   - [Operating systems](features/others/platforms.md)
@@ -44,6 +43,8 @@
 # CLI
 
 - [CLI](cli/index.md)
+  - [Review store server and client](cli/review-store.md)
+  - [Cache and maintenance](cli/maintenance.md)
 
 # TUI
 

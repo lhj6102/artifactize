@@ -133,10 +133,9 @@ changed; `--json` prints `{"reference","sessionId","requestId","send","filesChan
 Both exit 2 for a reference to another machine or state, a session the GC removed, one
 that was not saved, a request that is still running (`send`), and a failed follow-up.
 
-Commands opening an existing state apply supported additive schema upgrades with write
-access. Schemas 6 to 8 upgrade to 9 (6 → 7 → 8 → 9, each step additive) while preserving Runs,
-cache and Human approvals; schemas 1–5 and versions above 9 are refused ([State](../features/others/state.md#state)).
-`doctor` reports an incompatible schema as a hard error and exits 1.
+Every command that opens an older state upgrades it as described in
+[State](../features/others/state.md#state); a state it cannot open exits 2, and `doctor`
+reports it as a hard error and exits 1.
 
 ## Submission and watching
 
@@ -180,8 +179,9 @@ artifactize --repo path/to/project verify --all --wait
 artifactize run show RUN_ID
 ```
 
-`verify --wait` prints each eval's outcome as it settles and exits with the Run's
-[exit code](#command-reference); `run show` prints the saved Run again later. The
+`verify --wait` names the Run on stderr, waits for it to end, then prints each eval's
+outcome and exits with the Run's [exit code](#command-reference); add `--watch` to see
+each eval as it settles; `run show` prints the saved Run again later. The
 [runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
 blocked evals side by side.
 
@@ -198,9 +198,8 @@ published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
 Speculation and deferral never waive final requirements.
 
-[In-flight sharing](../features/others/state.md#state) explains when concurrent
-Runs join the same execution, and how profile identity, takeover and `--force`
-affect that automatic sharing.
+[Runs share work](../features/others/state.md#state) explains when concurrent Runs
+join the same review and how `--force` changes that.
 
 There is no default eval-concurrency cap: every READY eval starts as soon as it is
 ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it
@@ -227,8 +226,8 @@ joined waiters
 consume none. Failures in initial executor preparation consume no start. Agent
 `execution_paths` pinning happens after a start is charged: a pinning failure still
 consumes that start and records ERROR/PREPARATION_FAILED without calling the model.
-Zero permits reuse, joining and Human reviews; a budgeted waiter replacing a failed/dead owner uses
-its own Run's remaining budget. Exhaustion never interrupts running evals, but
+Zero permits reuse, joining and Human reviews; a Run that has to run a review again
+because the Run it joined failed uses its own remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
 error.
@@ -266,7 +265,7 @@ variant with identical settings shows no marker and is identified by its saved
 
 `verify --reuse-only KINDS` takes a comma-separated list of `runtime`, `agent`
 and `human`. An Eval of a listed kind may only reuse a result: a completed record of its
-reuse key in the local cache, or in the [review store](../features/team/reference.md) when one is
+reuse key in the local cache, or in the [review store](review-store.md) when one is
 configured. When there is none, the eval is not executed: no executor start, no
 provider call, no Human request, and no waiting, not even for a live execution of
 the key. A forced eval reads no cached result, so `--force` on a listed kind never
@@ -350,3 +349,33 @@ markers in invocation roots; it supplies no raw-log retention policy. Missing or
 older/remote audit-only evidence is labeled explicitly. See the shared
 [runtime retention reference](../features/declarations.md#runtime-execution). See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
 for the shared evidence/event schemas and client delivery limits.
+
+## Tool diagnostics
+
+```sh
+artifactize tools check                         # every Agent/Human eval's scope
+artifactize tools check app/review              # same as --eval app/review
+artifactize tools check --artifact app --audience agent
+artifactize tools check --execute --artifact app --audience agent --tool read --args '{"path":"README.md"}'
+artifactize tools check --execute --artifact app --audience human --tool inspect
+artifactize tools check --execute --eval app/review --tool coverage_app --args '{}'
+```
+
+`tools check` discovers and validates declarations, resolves executable availability,
+scoped argv operands and declared execution paths, and prints JSON scopes, schemas
+and per-tool readiness checks. It is static by default: no owner process, fingerprint
+script, database or output directory is created. A positional selector or `--eval`
+selects one Agent/Human eval and cannot be combined with `--artifact` or
+`--audience`. Explicit execution requires `--tool` and either an eval selector or
+both `--artifact` and `--audience`. With `--artifact`, the short operation name or
+its published name is accepted, and the scope is that Artifact and its children.
+With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
+in the eval's own scope, so a tool whose operands name another Artifact runs as it
+would in that eval's review.
+`--args` is valid only for Agent execution; Human schemas admit only an empty
+object and Human commands take no free arguments. A check never creates a Run,
+verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
+execution); Human calls use the reviewer's real environment. Exit codes are
+0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
+invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are
+JSON even without `--json`.

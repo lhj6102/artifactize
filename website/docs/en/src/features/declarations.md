@@ -375,9 +375,8 @@ folder, `fingerprint = {}` does the same. A file Artifact's explicit artifactsum
 form must list its target filename. `fingerprint = false` disables reuse;
 `fingerprint = true` is rejected.
 
-The value is `artifactsum:` plus the SHA-256 over each input file's owner-relative
-path and the SHA-256 of its bytes, in path order. It covers only the Artifact's own
-files: a dependency's change reaches an eval through the dependency's fingerprint
+The value changes when a covered file's name or content changes. It covers only the
+Artifact's own files: a dependency's change reaches an eval through the dependency's fingerprint
 in the [reuse key](fingerprint.md#the-reuse-key). Folder walks
 exclude child Artifact folders and every `*.artf` file. Explicitly listing a
 `.artf` file in `fingerprint.files` fails `config check`, even if the file does not
@@ -392,11 +391,9 @@ itself ignored as content, so it must be a regular file, not a symlink, and at m
 1 MiB. Nothing is followed out of the owner, and a walk stops with an error
 after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
 rechecks. Files a review writes into ignored paths, such as Python's `__pycache__`,
-therefore never cause `INPUT_CHANGED`. Artifactsum records a manifest with the
-execution: per-file digests (16 hex digits) and the inputs digest. A file map that
-would exceed 64 KiB is dropped from the manifest but still covered by the
-fingerprint. `status` diffs this manifest against the current one, and the key's
-recorded `fingerprints` against current dependency fingerprints.
+therefore never cause `INPUT_CHANGED`. Each result remembers which files it covered, so `status` can tell you which files
+changed since then (`path`, `+path`, `-path`) and which dependency changed; a very large
+folder may show only that something changed.
 
 ## Fingerprint scripts
 
@@ -461,9 +458,9 @@ absolute path when the command runs. In instructions and runtime arguments a ref
 makes the eval depend on that Artifact; in a fingerprint script it only lets the script
 read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
 doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
-never builds a command line from a string. An eval may read its target and the Artifacts it
-references, with their children, but not the instructions of the referenced Artifacts'
-evals.
+never builds a command line from a string. An eval may read its target and the Artifacts it references, with
+their children. The instructions of the referenced Artifacts' evals are not added to its
+review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
 
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare
@@ -497,7 +494,7 @@ version has to read that version.
 The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 ms. The
 result keeps the first 128 KiB of stdout and of stderr, with a flag when it was cut, and
 the exit status and duration. Text is read as UTF-8 (invalid bytes replaced), with
-terminal color codes and control characters other than tab, LF and CR removed. The full
+terminal color codes and ASCII control characters other than tab, LF and CR removed (DEL is kept). The full
 streams stay in the Run's output, where `request logs` and MCP `request_logs` read their
 end, a range or matching lines. Once a capture is deleted, only the saved first 128 KiB
 remains. `artifactize prune` removes the Run's `output` folder but keeps these stream

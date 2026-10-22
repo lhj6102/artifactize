@@ -113,11 +113,11 @@ checksum and refuses a mismatch. It runs both new binaries before replacing anyt
 then installs them to `~/.local/bin`. It uses `curl` or `wget`, never `sudo`, and
 never edits your shell startup files: if `~/.local/bin` is not on `PATH`, it prints
 the line to add. It also warns about another `artifactize` or `artifactize-tools` on
-`PATH` that would run instead. On x86_64 Linux with glibc it also installs the
-[desktop app](#desktop-app) from the same release, checked the same way: it unpacks
-the AppImage once into `~/.local/share/artifactize/desktop` (no FUSE needed), adds an
-`artifactize-desktop` launcher beside the commands and an **Artifactize** menu entry.
-On aarch64 or musl systems such as Alpine it installs the commands only. Two
+`PATH` that would run instead. On most x86_64 Linux distributions (Ubuntu, Debian, Fedora and others) it also
+installs the [desktop app](#desktop-app) from the same release, checked the same way,
+into `~/.local/share/artifactize/desktop`, with an `artifactize-desktop` launcher beside
+the commands and an **Artifactize** menu entry. On ARM Linux and on Alpine it installs
+the commands only. Two
 environment variables change what it does; a
 prerelease installs only when `ARTIFACTIZE_VERSION` names it:
 

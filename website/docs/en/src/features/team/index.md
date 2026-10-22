@@ -33,7 +33,7 @@ project checkout (`/srv/backups` in this example). `-readonly` prevents a mistyp
 source path from silently creating a new empty source database.
 
 Upgrade the server and its clients together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
-Human sign-offs included, needs one new review. See [Review store server](reference.md#review-store-server) for
+Human sign-offs included, needs one new review. See [Review store server](../../cli/review-store.md#review-store-server) for
 the full reference.
 
 ## Connect teammates securely
@@ -86,7 +86,7 @@ From then on:
 - `request submit` publishes Human sign-offs;
 - `remote push` sends results produced while the store was unreachable.
 
-See [Remote review store client](reference.md#remote-review-store-client) for the full reference.
+See [Remote review store client](../../cli/review-store.md#remote-review-store-client) for the full reference.
 
 **CI.** Configure CI through the environment only; see [CI](ci.md).
 

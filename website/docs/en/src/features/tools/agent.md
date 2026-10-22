@@ -65,7 +65,9 @@ with the actual nonzero total. Concatenating returned `text` values reproduces
 the source range without added line-number prefixes.
 
 The `glob` built-in requires a directory `path`; it selects matching filenames
-without inspecting contents, including binary filenames. `grep` accepts a file
+without inspecting contents, including the names of binary files. A file or folder name
+that is not valid UTF-8 fails the whole `list`, `glob` or `grep` call, even when it would
+not match: narrow the path or rename the entry. `grep` accepts a file
 or directory and skips binary (NUL) or invalid-UTF-8 contents in their entirety.
 Its optional `glob` argument is a filename filter, not a call to the `glob` tool.
 
@@ -176,7 +178,7 @@ and NUL bytes fail before spawn. `{{` and `}}` escape literal braces. Substituti
 is single-pass: values containing braces, quotes, spaces, `$()` or semicolons
 remain one literal argv element, never shell code. Plain tools receive empty
 stdin. Their stdout becomes one text block, read as UTF-8 (invalid bytes replaced) with
-terminal color codes and control characters other than tab, LF and CR removed, capped at 64 KiB
+terminal color codes and ASCII control characters other than tab, LF and CR removed (DEL is kept), capped at 64 KiB
 with an explicit truncation marker; nonzero exit marks that bounded stdout as a
 tool error. Stderr is not included. Commands such as `rg` that exit nonzero for
 no matches need an owner wrapper if that should count as successful empty output.
@@ -259,8 +261,7 @@ However the review ends (verdict, error, timeout or cancellation), every session
 started is stopped after the Agent finishes and before the result is checked and saved.
 Running bound calls are cancelled first, then stop runs, with up to 30 seconds before
 artifactize ends the session's programs itself. The session folder is removed once they
-have ended, even when stop fails or hangs. If artifactize itself is killed, stop cannot
-run; the next tool session first cleans up what was left. A cleanup failure is reported
+have ended, even when stop fails or hangs. If artifactize itself is killed, stop cannot run. A cleanup failure is reported
 instead of a successful result, and while an earlier session could not be cleaned up, a
 new one is refused. A reused or joined result starts nothing.
 
@@ -274,32 +275,5 @@ that calls no bound tools starts nothing.
 Session commands are **trusted, not sandboxed**: they can change the workspace, and a
 program that deliberately detaches from them may keep running.
 
-## Tool diagnostics
-
-```sh
-artifactize tools check                         # every Agent/Human eval's scope
-artifactize tools check app/review              # same as --eval app/review
-artifactize tools check --artifact app --audience agent
-artifactize tools check --execute --artifact app --audience agent --tool read --args '{"path":"README.md"}'
-artifactize tools check --execute --artifact app --audience human --tool inspect
-artifactize tools check --execute --eval app/review --tool coverage_app --args '{}'
-```
-
-`tools check` discovers and validates declarations, resolves executable availability,
-scoped argv operands and declared execution paths, and prints JSON scopes, schemas
-and per-tool readiness checks. It is static by default: no owner process, fingerprint
-script, database or output directory is created. A positional selector or `--eval`
-selects one Agent/Human eval and cannot be combined with `--artifact` or
-`--audience`. Explicit execution requires `--tool` and either an eval selector or
-both `--artifact` and `--audience`. With `--artifact`, the short operation name or
-its published name is accepted, and the scope is that Artifact and its children.
-With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
-in the eval's own scope, so a tool whose operands name another Artifact runs as it
-would in that eval's review.
-`--args` is valid only for Agent execution; Human schemas admit only an empty
-object and Human commands take no free arguments. A check never creates a Run,
-verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
-execution); Human calls use the reviewer's real environment. Exit codes are
-0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
-invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are
-JSON even without `--json`.
+Check tool declarations and run a tool by hand with
+[`tools check`](../../cli/index.md#tool-diagnostics).

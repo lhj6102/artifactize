@@ -44,10 +44,11 @@ search for it literally (`"type:style"`):
 Claims exist only on waiting Human requests, so `is:` matches nothing else. An unknown key
 or value is an error that names the choices, and lists nothing.
 
-`/` edits the search; the list follows as you type. Tab completes the last term: a key, or
+`/` edits the search; the list follows as you type. Typing adds to the end and
+Backspace removes the last character; the cursor keys do not move within the search. Tab completes the last term: a key, or
 after a key a value of the requests the rest of the search finds (repository folders, evals,
 requests, claimants, tags), or a kind, status or `is:` value; the footer names the
-candidates. Enter keeps the
+candidates. Enter or ↓ keeps the
 search, Esc restores the one before editing, and Ctrl-U clears it. Empty search
 includes every request kind, not just the initial waiting Humans. A page lists 100 requests;
 PgDn shows older ones and PgUp newer.
@@ -132,7 +133,8 @@ While a Human lifecycle job is busy, ordinary PgUp/PgDn scroll the Tool log
 regardless of the focused area. Normal editing and focus switching pause until
 the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
-- **Claim.** The reviewer defaults to `$USER` unless selected with `--reviewer`.
+- **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
+  `--reviewer NAME`, while Monitor always uses the default.
   Tool and verdict actions never claim implicitly. A request claimed by someone
   else, or no longer waiting, is read-only; leaving Detail keeps your claim.
 - **Tools.** ↑/↓ selects; `j`/`k` also selects while not editing. Running a tool
@@ -201,7 +203,9 @@ one back. Esc never quits either UI.
 
 After a standalone submission the list returns. A page emptied by reviews goes
 back to the nearest earlier page that still lists requests; `review` exits only
-when no request matches the search any more. Monitor keeps the completed result open in Detail.
+when no request matches the search any more. That exit does not ask about claims this
+session still holds outside the search: they stay claimed, so release them first with
+`u` if you narrowed the search. Monitor keeps the completed result open in Detail.
 
 ## Monitor
 

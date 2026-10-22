@@ -1,7 +1,9 @@
 # Agent responses
 
-How an Agent's final answer becomes a result. For setup and everyday use, see
-[Agent evals and backends](../agent.md).
+Declare what a GREEN or RED result holds with `pass_schema` and `fail_schema`
+([owner schemas](../declarations.md#owner-result-schemas)). This page says what the Agent
+must return, how artifactize checks it, and what you see in `run show` when it fails. For
+setup and everyday use, see [Agent evals and backends](../agent.md).
 
 ## Final output and validation
 

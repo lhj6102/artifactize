@@ -83,7 +83,7 @@ across calls. Saved Agent conversations below are separate from tool sessions.
 
 [Agent reviews](#agent-reviews) above shows the Agent profile, the backends and
 `reasoning`. `models` output uses the JSON envelope described under
-[Local diagnostics and maintenance](others/state.md#doctor-models-and-prune).
+[Local diagnostics and maintenance](../cli/maintenance.md#doctor-models-and-prune).
 
 Agent reviews stream the model's answer as it is produced. One review deadline
 (default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
@@ -93,11 +93,9 @@ covers API settings and replay behavior.
 
 ### Retries and error codes
 
-Every request replays the whole conversation (no server-side state), so any turn can
-be retried. A turn is retried, up to three attempts in all, when an attempt fails
-with a rate limit or a transient error before it produced any output or reported any
-usage. A retry waits as long as the provider asks with `retry-after-ms` or
-`Retry-After` (seconds or an HTTP date), else 250 ms and then 500 ms. When the
+A turn is retried, up to three attempts in all, when it fails with a rate limit or a
+temporary error before it produced any output or used any tokens. A retry waits as long
+as the provider asks, else 250 ms and then 500 ms. When the
 provider asks for a wait that reaches or exceeds the review's deadline, the review
 fails at once with the original `RATE_LIMIT` or `TRANSIENT` classification. A failure after output or usage is never retried, so nothing
 is paid for twice. Each attempt is saved in `usage` with its counters, `error` and
@@ -151,9 +149,8 @@ The next Run admits the backend again.
 
 Only tools from the eval's scope are exposed, and they run sequentially. Command
 tools run in the author's [environment](declarations.md#runtime-execution),
-each call with its own private output and temporary directories. Built-in tools run
-inside artifactize and get no per-call directories; `help` runs its program in the
-environment artifactize itself was given. Tool results keep text, JSON and validated base64 image blocks rather than flattening
+each call with its own private output and temporary directories. Built-in tools get no per-call directories; `help` runs its program in your environment
+without the `ARTIFACTIZE_*` variables. Tool results keep text, JSON and validated base64 image blocks rather than flattening
 structured data. PNG/JPEG/WebP results are sent to every backend; a model without image
 support fails with the provider's error. A repeated provider call ID fails the call. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
 the attempts move to `reusedUsage`, never counted as spent. Counters
@@ -180,9 +177,8 @@ like continuing a chat. The recorded verdict never changes.
 It holds the system prompt and instructions, every turn's messages, each tool call
 with its arguments and full result and whether it failed, the repair turn (the prompt
 that asked for it and the answer it replaced), each provider attempt with its token
-counters, and the encrypted reasoning items (Responses
-`reasoning.encrypted_content`, Anthropic thinking signatures) needed to replay the
-conversation exactly. It also records the backend, model, reasoning, provider
+counters, and the provider's encrypted reasoning, which
+only the provider can read and which lets a follow-up continue the conversation. It also records the backend, model, reasoning, provider
 parameters, budgets and tool definitions, the [`sessionId`](#prompt-caching), and the
 Run and request ids. Every backend is saved, `anthropic` included. The session is the
 only record of a review's tool calls: the request keeps its verdict, result and usage.

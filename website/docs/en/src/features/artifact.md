@@ -113,8 +113,9 @@ reviews delay the consumer Eval; RED input reviews block it. `--speculate` lets
 work start before unresolved input gates, without approving missing requirements.
 Final GREEN still requires all required evidence, including upstream reviews.
 
-An Eval is blocked, never an Artifact. Its execution gates are the actual Evals
-of its referenced Artifacts and its Artifact's nearest marked children. A RED
+Gates apply to each Eval; an Artifact shows BLOCKED when one of its Evals is. An
+Eval's execution gates are the Evals of its referenced Artifacts and of its Artifact's
+nearest child Artifacts. A RED
 or BLOCKED gate blocks it in turn, so blocking propagates along these Eval gates.
 A RED Eval of a child blocks every Eval of its parent. An intermediate Artifact
 with no Evals supplies no execution gates: referring to it does not gate execution

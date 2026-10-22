@@ -33,11 +33,10 @@ can run or reuse results. Selecting more checks never supplies approval itself.
 
 
 Every READY eval starts as soon as ready, with **no default concurrency cap**.
-Use `--jobs N` (minimum 1) only when concurrency causes trouble. Scheduling prefers
-unblockable work and the longest remaining dependency path; selection/configuration
-order breaks ties. New READY work starts after each result, not after a whole
-batch. Fingerprint-claim waiters count against an explicit jobs cap; cache hits do
-not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
+Use `--jobs N` (minimum 1) only when concurrency causes trouble. New READY work
+starts after each result, not after a whole batch; work that waits for something shows
+as QUEUED with its reason. A request joining another Run's review counts against an
+explicit `--jobs`; a cache hit does not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
 QUEUED can mean awaiting admission, a backend slot, a joined execution, or an
 explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
 
@@ -54,14 +53,12 @@ this Run joined from another Run. Its sign-offs still waiting, deferred ones
 included, end as ERROR too, and so do the requests other Runs joined to them; the
 next `verify` asks again. This applies only while the Run is running: a Run that
 already ended SIGNOFFS_PENDING is finished, so cancelling it changes nothing and its
-deferred sign-offs keep waiting. Dead workers reconcile as ERROR/OWNER_DIED;
-interrupted work is not replayed automatically.
+deferred sign-offs keep waiting. Work whose process died ends as ERROR/OWNER_DIED and is not run again by itself;
+verify again.
 
-Acceptance saves the resolved definitions for the selected scope. Before execution,
-Artifactize checks those definitions twice: before preparing fingerprints, and
-again after fingerprint and remote-evidence preparation, at the scheduling boundary.
-If relevant declarations changed since acceptance, the Run ends **ERROR/INPUT_CHANGED**
-instead of silently executing different criteria or profiles. Finish editing the
+A Run keeps the declarations it was accepted with. If you change them before its evals
+start, the Run ends **ERROR/INPUT_CHANGED** instead of running different criteria or
+profiles. Finish editing the
 declarations and submit a new Run; the accepted Run is not retargeted.
 
 In strict mode, the Run waits for WAITING_HUMAN requests like other reviews.
@@ -99,7 +96,7 @@ consumes another executor start. An upstream RED or ERROR immediately cancels
 only the work it makes invalid, the evals that depend on it outside their own
 Artifact and cycle, and marks it BLOCKED without a reusable cancelled result.
 GREEN keeps results already produced for the same files. Results are shared with the
-[team review store](team/reference.md) only after scheduling finishes, and only those
+[team review store](../cli/review-store.md) only after scheduling finishes, and only those
 that survived it.
 
 Deferral allows execution past pending Human gates. A deferrable sign-off's
@@ -127,7 +124,7 @@ Run/result readers expose SIGNOFFS_PENDING as terminal and not satisfied.
 
 Text output prints one line per request and marks a result taken from another
 request's execution (a fingerprint hit, or a joined execution) with its source Run
-(results from a [remote review store](team/reference.md#remote-review-store-client) also name their
+(results from a [remote review store](../cli/review-store.md#remote-review-store-client) also name their
 producer or Human reviewer):
 
 ```text
@@ -158,7 +155,7 @@ whose execution produced the result for cache, joined and remote reuse:
 
 `kind` is `cache` for a completed record of the reuse key, `joined` for a
 live execution of the key that the request waited for (in another `verify`, or a
-sibling eval in the same Run), and `remote` for a record from the [remote review store](team/reference.md#remote-review-store-client).
+sibling eval in the same Run), and `remote` for a record from the [remote review store](../cli/review-store.md#remote-review-store-client).
 `run show`, `request show` and `request list --json`
 carry `source` too.
 

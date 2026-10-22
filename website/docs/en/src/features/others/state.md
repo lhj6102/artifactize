@@ -26,19 +26,21 @@ data apart.
 
 The state keeps every Run with its requests, verdicts, how each eval ran and the
 definitions it started with. Read them with `run list`, `run show`, `request list`,
-`request show` and [`cache list`](#cache-inspection); how an Agent review went, its
+`request show` and [`cache list`](../../cli/maintenance.md#cache-inspection); how an Agent review went, its
 conversation and tool calls, is in its [saved session](#agent-sessions).
 
 **Upgrades.** A state written by artifactize with schema 6, 7 or 8 is upgraded to the
 current schema 9 the first time a command opens it. Runs, IDs, cached results and Human
 sign-offs are kept. The upgrade needs write access and is one way: an older binary that
 only knows schemas 6 to 8 refuses the upgraded state, so back up the state folder first if
-you may go back. A state from schemas 1 to 5, or from a newer artifactize, is refused
-(exit 2) with:
+you may go back. A state from schemas 1 to 5 is refused (exit 2) with:
 
 ```text
 This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). Only schema 6 and later supported versions can be upgraded.
 ```
+
+A state written by a newer artifactize is refused with `Unsupported state schema
+version: N; a newer artifactize wrote it.`: update artifactize to open it.
 
 A new 0.9 state reviews every executable eval once, Human sign-offs included,
 and then reuses as before. Reuse-key v2 matches no earlier records, including
@@ -64,8 +66,8 @@ same state. When two Runs, from other worktrees or processes too, need the same 
 with the same profile at the same time, the second joins the first instead of running it
 again; its request waits for that execution and uses no execution start or backend slot.
 The joined request gets the same GREEN, RED or ERROR; an ERROR is not kept for later Runs.
-If the first Runtime or Agent execution is cancelled or its process dies, one waiting Run
-starts it again and the others join that one. A Human sign-off is not restarted: when its
+If the first Runtime or Agent review is cancelled or fails to finish, a waiting Run runs
+it itself and the others join that one. A Human sign-off is not restarted: when its
 Run is cancelled or stops, the sign-off and every request waiting on it end as ERROR, and
 a new `verify` asks again. Cancelling a waiting Run does not cancel the first one.
 `--force` always runs its own execution. Running reviews are not shared through a remote
@@ -81,35 +83,6 @@ commands that read evidence print an `Unreadable ...` line on stderr. Missing co
 not mean those reviews passed: keep the state for diagnosis and verify again when you
 need fresh evidence. `doctor` checks that the state opens and has a supported schema; it
 does not repair records.
-
-## Cache inspection
-
-```sh
-artifactize cache list [--history] [--json]
-artifactize cache show KEY [--history]
-artifactize cache rm KEY
-```
-
-These commands use the shared state or `--state-dir PATH` and need no repository. Each
-reuse key keeps every completed GREEN/RED record, and the latest is the one `verify`
-reuses. `list` shows the latest record of each key: key, eval, verdict, completion time,
-producer, repository (or the remote store it came from), how many records the key holds,
-their size and last use. Its JSON also has the eval definition hash, the target's
-fingerprint and the profile variant. `--history` lists every record, latest first.
-
-`show` prints the key's latest record as JSON: result, the actual `profile`, `options`
-(backend, model, reasoning, limits and variant), `fingerprints` of each Artifact the key
-covers, `artifactKinds` (each covered name with `folder`, `file` or `graph`), usage and
-`producer` (`user@host` and artifactize version, plus the `reviewer` of a Human result).
-Records from a [shared remote review store](../team/reference.md) carry an `origin`
-(store, publisher, publication time). A missing key prints `null` and exits 4;
-`--history` prints all records as an array. Reading changes nothing.
-
-`rm` stops every record of the key from being reused and prints `{"removed":true}`
-(false if absent); saved Runs keep their results. It refuses a key that is being reviewed
-right now. Keys come from `cache list` or from a request's `key` in `verify --wait --json`
-and `run show`. How keys are built and what a hit returns is in
-[Completed result reuse](../fingerprint.md#completed-result-reuse).
 
 ## Cache limits
 
@@ -238,62 +211,6 @@ result stays and the failure is shown.
 
 ## Local diagnostics and maintenance
 
-```sh
-artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
-artifactize models openai|anthropic|codex [--json]
-artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
-```
-
-`prune` works on the selected state's Runs across repositories, not only the current one.
-It removes the output of Runs that ended **GREEN, RED, ERROR or INCOMPLETE** and have
-nothing still running. SIGNOFFS_PENDING Runs are **always skipped**, even after their
-sign-offs are submitted, and so are unfinished Runs. `--older-than` compares the Run's
-end time, as a whole number of `s`, `m`, `h`, `d` or `w`; without it every eligible Run is
-pruned. `--dry-run` returns `wouldRemove` without deleting; a real prune returns
-`removed`; both include `skippedRuns`. `prune` also cleans the
-[Agent session store](#agent-sessions) down to its size bounds, whatever `--older-than`
-says: `removedSessions` lists what it deleted, and `--dry-run` lists
-`wouldRemoveSessions`. A dry run does not know which sessions a running `session send`
-uses, so the real prune can delete fewer.
-
-### Doctor, models and prune
-
-`doctor` calls no provider and creates no Run, verdict, cache entry or sign-in. It
-reports the state directory, checks that it is writable and outside a workspace, and
-checks that the state database has a supported schema, upgrading it
-[if needed](#state); an unsupported schema is a hard error that shows its `schema` and
-the `supported` one. `--repo` also runs the checks of `config check`. Further checks:
-
-- `limits`: the [backend capacity](#backend-capacity); an invalid `limits.json` is a hard
-  error.
-- `sessions`: the [Agent session store](#agent-sessions): how many sessions and bytes,
-  `maxBytes`, `targetBytes`, `enabled`, its `directory` and the state's `stateId`.
-- API keys: reported as present or absent, never checked or printed; a missing key is a
-  warning, since you need only the backends you use. A
-  [test endpoint](../agent.md#test-against-a-fake-provider) is a warning that names it as
-  `testEndpoint`; an invalid one is a hard error.
-- `codex`: the sign-in, read without refreshing or going online. No sign-in is a warning;
-  a stored sign-in passes even when its access token expired (the next use refreshes it);
-  an expired `ARTIFACTIZE_CODEX_AUTH_FILE` token is a warning. A `$STATE/auth`
-  [inside a repository](#state) is a warning, with the refusal message in `refused`, until a
-  sign-in is stored there, then a hard error. Details name the `source` (`stored`, `file`
-  or `none`), `expiresAt`, `expired` and any test endpoints.
-- The remote review store, also offline: its URL, share level and token source. A missing
-  token is a warning; an invalid configuration (including plain HTTP to a non-loopback
-  host) or an unsafe token file is a hard error.
-
-Exit is 0 without hard errors, 1 with hard errors, and 2 for invocation errors.
-
-`models openai` and `models anthropic` list the models the API key can use; `models codex`
-lists those of the signed-in [Codex](../agent.md#codex) account. A test endpoint replaces
-the provider here too, and there is no fallback to another account or backend. Text lists
-tab-separated slug/name pairs; JSON is
-`{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`, in the
-provider's order.
-
-`prune` removes only the output folders inside `state/runs/<run-id>`: runtime `output`
-(and `tmp`, `home` and `cache` left by older versions) and leftover tool output. Run
-records, results, reuse records and unknown files stay, and `run show` and `request show`
-still work. It refuses symbolic links and anything that looks like a project (a `.git` or
-an Artifact declaration), also on `--dry-run`. Do not run it while another program is
-changing those folders.
+`cache list`, `cache show` and `cache rm` inspect and remove reusable results, and
+`doctor`, `models` and `prune` check this machine's setup and clean up finished Runs; see
+[Cache and maintenance](../../cli/maintenance.md).

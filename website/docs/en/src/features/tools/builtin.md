@@ -3,8 +3,10 @@
 artifactize comes with tools that behave the same on Linux, macOS and Windows,
 except for how a path's spelling on disk is checked (see
 [Paths](../others/platforms.md#paths)). Declare one by name with `builtin` instead of
-writing a script or calling an OS program such as `cat` or `xdg-open`. They need
-nothing else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command;
+writing a script or calling an OS program such as `cat` or `xdg-open`. They need nothing
+else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command, except
+`open`, which uses the system's opener (`xdg-open` on Linux), and `help`, which runs the
+program it asks;
 that command and `artifactize tools` offer the filesystem/program tools to scripts
 and runtime evals. The project-aware `graph` tool is available only as a declared
 review tool in artifactize, not in the standalone tools CLI.
@@ -68,7 +70,9 @@ block; fixed `read`, `section` and `help` return text blocks:
   When no heading matches, the error lists the headings the file has. The heading
   the model passes must be 1–4096 characters, and a declared heading may not be blank.
   The file may be up to 8 MiB; the printed section, up to 64 KiB.
-- **`help`** runs `program subcommand... --help` and prints its output. The program is
+- **`help`** runs `program subcommand... --help` and prints its stdout followed by its
+  stderr, read as UTF-8 with terminal color codes and ASCII control characters other than
+  tab, LF and CR removed (DEL is kept). The program is
   a literal program or path. Bare names use `PATH` (with `PATHEXT` on Windows).
   Unlike scoped command-tool executables, help uses ordinary program lookup:
   absolute paths, parent-relative paths and executable symlinks are accepted.

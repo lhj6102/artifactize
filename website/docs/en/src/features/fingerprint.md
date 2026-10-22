@@ -107,7 +107,7 @@ use their respective execution, gate or wait reasons.
 ## Completed result reuse
 
 A GREEN or RED result whose inputs were unchanged at the end of its review is kept
-for its key ([cache inspection](others/state.md#cache-inspection)). Errors and
+for its key ([cache inspection](../cli/maintenance.md#cache-inspection)). Errors and
 cancellations are never kept. When a key holds more than one record,
 the most recent by completion time is reused, GREEN or RED. Results from different
 profiles therefore reuse each other: a review that `--profile fast` produced
@@ -129,7 +129,7 @@ selection can supply cached evidence without running. Results remain readable
 after the source repository is deleted; external paths embedded in result text
 are not made portable.
 
-With a [team review store](team/reference.md#remote-review-store-client),
+With a [team review store](../cli/review-store.md#remote-review-store-client),
 `verify` also asks the store for every key and reuses whichever record completed
 last, the local latest or the store's latest; a store that cannot be reached leaves
 the local latest.
@@ -151,14 +151,12 @@ eval once, Human sign-offs included; later Runs reuse normally.
 ## Graph fingerprint
 
 The root [`.artf` graph Artifact](declarations.md#graph-artifact)
-uses `graph:<sha256>`, computed from one canonical, name-based extraction of the
-whole project's current declarations. Objects and relations are sorted; child
-folder locations and repository paths are not identities. Extraction includes:
+uses `graph:<sha256>`, which changes when the project's structure or criteria change,
+not when files move or their content changes. It covers:
 
 - Artifact names and kinds, `basis`, and fingerprint coverage: artifactsum `files`
   and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
-  The graph Artifact has a graph-coverage marker, not its own recursively embedded
-  digest.
+  
 - Input → consumer relations: child ownership (names, not child folder paths),
   instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
