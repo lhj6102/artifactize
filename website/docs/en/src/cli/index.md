@@ -140,6 +140,13 @@ artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
 
+`verify --wait` names the Run on stderr, waits for it to end, then prints each eval's
+outcome and exits with the Run's [exit code](#command-reference). Up to 64 KiB of the
+Run's own diagnostics and any Run error also go to stderr, with `--json` too. The
+[runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
+blocked evals side by side.
+
+
 ## Verify modes
 
 `--speculate` and `--defer-human` are independent per-request switches, both off
@@ -163,11 +170,6 @@ later sign-off reuse.
 
 ## Runtime CLI
 
-`verify --wait` names the Run on stderr, waits for it to end, then prints each eval's
-outcome and exits with the Run's [exit code](#command-reference). Up to 64 KiB of the
-Run's own diagnostics and any Run error also go to stderr, with `--json` too. The
-[runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
-blocked evals side by side.
 
 [Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 

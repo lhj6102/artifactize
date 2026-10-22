@@ -191,27 +191,6 @@ an error even if it already contains a verdict. Anthropic answers are capped at 
 output tokens per turn, apart from the review's own budget. Retries are described in
 [retries and error codes](../agent.md#retries-and-error-codes).
 
-### Transcript reader
-
-Monitor Detail shows a review's messages, public reasoning summaries and collapsed tool
-activity, not raw messages or private reasoning. Streaming text is replaced by the final
-text, and output that stopped early is labeled. The reader follows new messages until you
-scroll away; resizing keeps your place. Tool activity shows names, targets and states, not
-full arguments or successful output; `session show --json` has everything. Long
-conversations open quickly and can be scrolled to the start. A session that is missing on
-this machine, was never saved or lives in a remote store is reported as such, and later
-`session send` answers stay readable after the review ends.
-
-### Local readers
-
-Monitor and Review update on their own when a Run changes, within five seconds at the
-latest. A waiting Human review's Detail shows the tool commands of the declarations as they
-were when you first opened it, without claiming the review or running anything; a refresh
-or reopening keeps them. Each tool run checks the review's declarations again, and the
-commands shown are updated after one. A follower opens its
-original request. If publishing to a team store fails after a local submission, the local
-result stays and the failure is shown.
-
 ## Local diagnostics and maintenance
 
 `cache list`, `cache show` and `cache rm` inspect and remove reusable results, and

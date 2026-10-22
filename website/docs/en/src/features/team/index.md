@@ -129,4 +129,4 @@ that `pass_schema` and `fail_schema` allow.
   from the store.
 - Only `$STATE/remote.json` and the environment configure the store, never
   `.artf` declarations, so a cloned repository cannot send your token elsewhere.
-  Tokens are stored 0600, bound to the store they were issued for, and never printed.
+  Tokens are stored in a file only your account can read and write, bound to the store they were issued for, and never printed.

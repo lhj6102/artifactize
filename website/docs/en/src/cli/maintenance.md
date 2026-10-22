@@ -1,7 +1,10 @@
 # Cache and maintenance
 
-Commands that inspect and remove reusable results, check this machine's setup and
-clean up finished Runs. [State, cache and limits](../features/others/state.md) explains
+Run `artifactize prune --older-than 30d --dry-run` to list the finished Runs older than
+30 days whose output would be removed (`wouldRemove`), then again without `--dry-run` to
+remove it.
+This page covers that and the other commands that inspect and remove reusable results and
+check this machine's setup. [State, cache and limits](../features/others/state.md) explains
 what they work on.
 
 ## Cache inspection

@@ -151,7 +151,7 @@ tools run in the author's [environment](declarations.md#runtime-execution),
 each call with its own private output and temporary directories. Built-in tools get no per-call directories; `help` runs its program in your environment
 without the `ARTIFACTIZE_*` variables. Tool results keep text, JSON and validated base64 image blocks rather than flattening
 structured data. PNG/JPEG/WebP results are sent to every backend; a model without image
-support fails with the provider's error. A repeated provider call ID fails the call. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
+support fails with the provider's error. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
 the attempts move to `reusedUsage`, never counted as spent. Counters
 are provider-reported (including reported zero), not inferred totals or costs.
 Anthropic `inputTokens` is its native uncached input; cache read/write counters are

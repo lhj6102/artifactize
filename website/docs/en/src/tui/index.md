@@ -47,8 +47,11 @@ or value is an error that names the choices, and lists nothing.
 `/` edits the search; the list follows as you type. Typing adds to the end and
 Backspace removes the last character; the cursor keys do not move within the search. Tab completes the last term: a key, or
 after a key a value of the requests the rest of the search finds (repository folders, evals,
-requests, claimants, tags), or a kind, status or `is:` value; the footer names the
-candidates. Enter or ↓ keeps the
+requests, claimants, tags), or a kind, status or `is:` value. With one candidate Tab inserts
+it; with several it adds only what they share and does not cycle, and the footer names up to
+six of them (then `+N`), so type more to choose. Pasted text is added to the end as one
+line, with control characters turned into spaces. Changing or completing the search returns
+to its first page. Enter or ↓ keeps the
 search, Esc restores the one before editing, and Ctrl-U clears it. Empty search
 includes every request kind, not just the initial waiting Humans. A page lists 100 requests;
 PgDn shows older ones and PgUp newer.
@@ -193,9 +196,10 @@ Outside a form or work, `q` quits from Detail too. In either UI, Ctrl-C
 requests cancellation of any active Human lifecycle job: claim, tool, submission
 (including publication) or release. It stays in the UI while that job is busy;
 once no job is busy, Ctrl-C invokes quitting, including from a form.
-Standalone `review` lists claims
-this session took without submitting: `k` keeps them and quits, `u` releases them
-and quits, and Esc stays. If a release fails, Review stays open, shows the error and
+Standalone
+`review` lists claims
+this session took without submitting: `k` (or `n`, `q`) keeps them and quits, `u` (or
+`r`, `y`) releases them and quits, and Esc stays. Here `r` releases rather than refreshes. If a release fails, Review stays open, shows the error and
 keeps the claims that failed; press `u` to try again or `k` to quit keeping them. Ctrl-C again at this standalone quit prompt exits while
 keeping outstanding claims. The quit prompt sets a form aside without dropping its
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
@@ -387,9 +391,9 @@ Detail depends on the eval kind:
   standalone Review. Only public reasoning summaries appear,
   when the provider supplies them; private reasoning stays hidden. Missing or
   remote conversations explain why they cannot be shown here. Use `session show
-  --json` for the complete saved record. See the
-  [transcript reader reference](../features/others/state.md#transcript-reader)
-  for streaming and long conversations.
+  --json` for the complete saved record. Streaming text is replaced by the final text, and output that stopped early is
+  labeled. Resizing keeps your place, and long conversations open quickly and can be
+  scrolled to the start. Later `session send` answers stay readable after the review ends.
 - **Runtime:** saved stdout/stderr, exit code and capture truncation beside the
   sections when Detail has at least 90 inner-content columns (92 including its
   outer borders); in a narrower pane the evidence stacks below. Running,
@@ -403,9 +407,12 @@ Detail depends on the eval kind:
 Browsing is read-only. If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
-settings are restored on exit. See the
-[local reader reference](../features/others/state.md#local-readers) for how
-the screens refresh.
+settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
+latest. A waiting Human review's Detail shows the tool commands of the declarations as they
+were when you first opened it, without claiming the review or running anything; a refresh
+or reopening keeps them. Each tool run checks the review's declarations again, and the
+commands shown are updated after one. A follower opens its
+original request.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims

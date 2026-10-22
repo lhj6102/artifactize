@@ -9,6 +9,7 @@ name = "docs"
 [evals.links]
 title = "Links resolve"
 profile = { kind = "runtime", command = "python3", args = ["check_links.py"] }
+payload.instruction = "Check that every link in the docs resolves."
 ```
 
 Then run `artifactize config check`; it prints `Folder configuration is valid.` or the
