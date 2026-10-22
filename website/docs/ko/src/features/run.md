@@ -83,7 +83,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 ### 추측 실행과 미룬 승인 {#speculation-and-deferred-sign-offs}
 
 [요청별 verify 모드](../cli/index.md#verify-modes)인 `--speculate`와 `--defer-human`은
-기본으로 꺼져 있고 Run의 `modes`에 저장됩니다. 같은 요청 키는 처음 선택을 그대로 씁니다.
+기본으로 꺼져 있고 Run의 `modes`에 저장됩니다. 같은 요청 키로 다시 제출하면 처음 선택한 모드를 그대로 씁니다.
 
 추측 실행은 요청한 runtime, Agent, Human eval을 게이트가 정해지기 전에 `--jobs`, 백엔드 수용량,
 `--max-executions` 한도 안에서 시작합니다. Human eval은 같은 Artifact의 Human이 아닌 다른 eval이

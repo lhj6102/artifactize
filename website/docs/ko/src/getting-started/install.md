@@ -1,6 +1,6 @@
 # artifactize 설치 {#install-artifactize}
 
-아래 표에서 OS를 고르고 한 채널로 설치한 다음, 새 터미널을 열고 `artifactize --version`을
+아래 표에서 OS를 고르고 한 가지 방법으로 설치한 다음, 새 터미널을 열고 `artifactize --version`을
 실행하세요. `artifactize 0.15.0`처럼 설치된 버전이 출력됩니다.
 
 artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE)으로
@@ -27,8 +27,8 @@ python3 --version
 grep --help
 ```
 
-Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라도 명령을 찾을 수 없다면
-그 도구를 설치하거나 그 디렉터리를 `PATH`에 추가한 뒤 계속하세요.
+Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라도 명령을 찾을 수 없다는 오류가
+나오면, 그 도구를 설치하거나 도구가 설치된 디렉터리를 `PATH`에 추가한 뒤 계속하세요.
 
 Rust 툴체인은 `cargo install`에만 필요합니다.
 [rustup](https://rustup.rs)으로 받은 최신 안정 Rust와 C 컴파일러가 필요합니다(SQLite를 소스에서 빌드합니다).

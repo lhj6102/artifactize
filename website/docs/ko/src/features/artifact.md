@@ -99,7 +99,7 @@ eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 쓰�
 자식은 부모의 모든 eval이 참조한 것과 똑같이 칩니다. 부모의 각 eval은 Artifact로 선언된 가장
 가까운 하위 폴더의 eval에 의존합니다.
 
-예를 들어 애플리케이션 E2E 실행은 애플리케이션에 속합니다.
+예를 들어 애플리케이션의 E2E 테스트를 실행하는 eval은 애플리케이션 Artifact에 선언합니다.
 
 ```toml
 name = "app"
