@@ -1,0 +1,264 @@
+# MCP stdio 서버 {#mcp-stdio-server}
+
+`artifactize mcp`는 CLI와 **같은 바이너리**로 검증 도구와 비대화형 확인 도구를
+제공합니다. 프로젝트 디렉터리에서 시작해 코딩 호스트에 등록하세요.
+[아래의 등록 방법](#register-the-mcp-server)을 보세요.
+`--state-dir PATH`는 상태를 고릅니다. Run/요청/세션 읽기는 호출의 프로젝트에
+묶이며, 캐시 기록은 상태 안의 여러 저장소에 걸쳐 재사용될 수 있습니다.
+
+## 어느 프로젝트인가 {#which-project}
+
+각 도구 호출은 프로젝트 하나를 다루며, 다음 중 첫 번째입니다.
+
+1. 모든 도구가 받는, 절대 경로 폴더인 호출의 `project` 인자
+2. 서버를 시작할 때 준 `--repo PATH`
+3. 호스트의 첫 로컬 [MCP root](https://modelcontextprotocol.io/specification/2025-06-18/client/roots).
+   첫 호출 때 물으며(답을 최대 10초 기다림), 호스트의 root가 바뀐 뒤 다시 묻습니다.
+4. root가 없는 호스트라면 서버가 시작한 디렉터리. 단, 그것이 서버를 시작한
+   플러그인의 폴더라면 제외합니다.
+
+결국 프로젝트가 없는 호출은 `project`가 필요하다고 답합니다. root가 있는 호스트가
+제때 답하지 않거나 로컬 폴더를 지정하지 않은 경우, 또는 서버가 플러그인의
+폴더에 있는 경우입니다.
+
+현재의 MCP 호스트와 이전 호스트 모두에서 동작합니다. 호스트는
+프로그램의 입력과 출력으로만 서버와 대화합니다. stdout은 프로토콜 메시지를 나르고,
+진단은 stderr로 갑니다. 네트워크 포트나 추가 토큰은 없습니다. 한도가 정해진
+`verify_watch` 호출은 표준 MCP 진행 알림도 보낼 수 있습니다. 자세한 내용은
+[프로토콜 버전](#protocol-versions)을 보세요.
+
+## MCP 서버 등록하기 {#register-the-mcp-server}
+
+**MCP(Model Context Protocol)** 는 코딩 어시스턴트를 artifactize의
+도구에 연결해, 어시스턴트가 프로젝트를 살펴보고 리뷰를 시작하거나 지켜볼 수 있게 합니다. **Stdio**는
+호스트가 네트워크 포트에 연결하는 대신 `artifactize mcp`를 실행하고, 그 프로그램의
+표준 입력과 출력으로 메시지를 주고받는다는 뜻입니다.
+
+[설치 설정](../getting-started/install.md)을 마친 다음, **프로젝트 디렉터리**에서
+코딩 호스트를 실행하세요.
+stdio 서버는 CLI와 같은 바이너리와 공유 상태를 씁니다. 이는
+HTTP 리뷰 저장소(`artifactize server`)가 아니며, 포트, 토큰 인자,
+호스트 시간 제한 변경이 필요 없습니다.
+
+Claude Code와 Codex에서는 [플러그인](plugin.md)이 Hey Arti 스킬과 함께
+이 서버를 등록합니다. 아래 명령은 수동 등록입니다. 이 명령은
+호스트를 명시적으로 설정하며, artifactize가 호스트 설정을 대신
+설치하거나 바꾸지는 않습니다. 호스트의 평소 신뢰/승인 절차를 따르세요.
+
+### Claude Code {#claude-code}
+
+프로젝트 디렉터리에서:
+
+```sh
+claude mcp add --transport stdio --scope project artifactize -- artifactize mcp
+claude mcp get artifactize
+```
+
+프로젝트 등록은 호스트의 프로젝트 `.mcp.json`을 만듭니다. 이를 공유한다면
+자격 증명과 머신별 경로를 넣지 마세요. 이 프로젝트에서 Claude Code를 시작/재시작하고,
+MCP 보기에서 서버가 연결되었는지 확인한 뒤, 아래의 검증 도구와 확인 도구가
+나열되는지 확인하세요.
+
+### Codex CLI {#codex-cli}
+
+stdio 명령을 등록한 다음, 프로젝트 디렉터리에서 Codex를 시작하세요.
+
+```sh
+codex mcp add artifactize -- artifactize mcp
+codex mcp get artifactize
+```
+
+Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명령도
+의도한 프로젝트 디렉터리에서 시작해야 합니다. 호스트가 프로젝트에서
+실행될 수 없다면, 스킬 디렉터리를 가리키지 말고
+`artifactize --repo PATH mcp`로 프로젝트별 명령을 등록하세요.
+평소의 호스트 권한/인증은 그대로 적용되며, 우회 플래그는 필요 없습니다.
+
+등록은 도구를 제공할 뿐, [Hey Arti 스킬](hey-arti.md)은 제공하지 않습니다.
+
+## 검증 도구 {#verification-tools}
+
+| 도구 | 인자 | 핵심 작업 / 답 |
+| --- | --- | --- |
+| `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | `runs::start`로 제출. 승인이 아니라 간결한 Run 관찰 |
+| `verify_status` | `run` | `runs::status`: 저장된 상태, 개수, 경과 초, `next_check` |
+| `verify_wait` | `run`, 선택적으로 `seconds` | `runs::wait`: Run 종료 또는 한도까지. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
+| `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 변경이 있을 때 동작하는 `runs::watch`, 최대 30초. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 반환할 때 간결한 관찰 |
+| `verify_result` | `run`, 선택적으로 `cursor` | `runs::result`: 판정과 간결한 발견 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
+| `verify_cancel` | `run` | `runs::cancel`: 명시적 취소 확인. 정리 여부는 확정을 지켜보세요 |
+
+`scope`는 `kind`로 태그가 붙은 공용 Selection JSON 봉투입니다.
+
+```json
+{"kind":"all"}
+```
+
+다른 형식은 `{"kind":"artifact","artifactId":"library"}`,
+`{"kind":"eval","evalId":"library/tests"}`,
+`{"kind":"artifacts","artifactIds":["library","consumer"]}`,
+`{"kind":"evals","evalIds":["library/tests","consumer/review"]}`입니다.
+배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 평소의 CLI 의존성/재사용 기본값이 적용되며,
+전송 방식별 스케줄링이나 수명 주기 설정은 없습니다. 이 봉투는
+CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
+ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
+
+`request_key`는 ASCII 문자/숫자/`._:-` 1–128개입니다. 같은 저장소 + 같은 키는
+편집이나 완료 뒤에도 같은 시도를 돌려줍니다. 새 시도에는
+새 키를 쓰거나 키를 쓰지 마세요. 키를 생략하면 언제나 새 Run을 만들며, 평소의
+eval 결과 재사용은 유지됩니다.
+
+동시 실행은 기본으로 무제한입니다. READY eval은 모두 시작할 수 있으며,
+`limits.json`의 백엔드 제한만 따릅니다. 선택적인 양의 정수 `jobs`는 CLI `--jobs`와 같은
+Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 추가하세요. 무제한이면 Run은
+`jobs`를 생략하며, 예전에 저장된 숫자 상한도 계속 읽을 수 있습니다.
+
+두 모드 인자는 기본값이 false이며 공용 `RunModes`로 그대로 전달됩니다.
+`speculate`는 상위 판단 전에 요청된 하위 작업을 핵심 스케줄링 한도 안에서
+시작하며, 상위의 RED/ERROR는 그 때문에 무효가 되는 작업만 취소합니다. `defer_human`은
+잠정적인 진행을 허용하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
+돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
+이는 완전한 승인이 아닙니다(CLI 지켜보기는 5로 종료). 명시적인 `gate = "blocking"`은
+여전히 막습니다. `DEFERRED`와 `PROVISIONAL` 요청 상태는 핵심에서 그대로 전달되며,
+MCP가 다시 해석하지 않습니다. 이후의 승인이 기계 작업을 다시 실행하지는 않습니다.
+
+실행 중인 답은 2 KiB보다 작습니다. 기다리는 것은 오류가 아니라 평범한 상태입니다.
+`verify_wait`는 runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로
+일찍 돌아오지 **않습니다**. `next_check`는 관찰 조언이지, 빠르게 폴링하거나
+모델 맥락을 데워 두라는 요청이 아닙니다.
+
+Run은 Artifactize가 소유합니다. 요청을 버리거나, MCP 연결을 닫거나,
+지켜보기를 멈추거나, 에이전트 턴을 끝내도 Run은 결코 취소되지 않습니다. 취소하는 것은 `verify_cancel`뿐입니다.
+RED/INCOMPLETE/ERROR/취소됨은 잘못된 도구 호출이 아니라 저장된 Run 결과입니다.
+Human 판단은 사람에게 있으며, MCP는 그것을 맡거나, 놓거나, 제출할 수 없습니다.
+
+## 확인 도구 {#inspection-tools}
+
+모든 확인 도구는 아래 나열한 인자와 함께 선택적인 세부 `cursor`를 받습니다.
+CLI 대응 명령과 같은 핵심 작업과 JSON 투영을 호출하며, MCP는
+크기가 제한되고 손실 없는 전송 페이지만 더합니다.
+
+| 도구 | 인자(필수라고 표시한 것 외에는 선택) | CLI 대응 명령 |
+| --- | --- | --- |
+| `status` | `scope`(기본 all) | `status --all` 또는 선택한 status |
+| `config_check` | 없음 | `config check` |
+| `config_graph` | `scope`(기본 all), `impact`(false) | `config graph [ARTIFACT] [--impact]`. MCP는 eval/여러 개 선택도 받음 |
+| `request_logs` | **`id`**, `stream`(`stdout`/`stderr`/`both`), `tail`, `start`, `end`, `search` | 해당 플래그를 쓴 `request logs ID` |
+| `run_list` | `limit`(0–20, 기본 20), `offset` | 이 저장소에 대한 `run list --limit 20 --offset N` |
+| `run_show` | **`run`** | `run show RUN` |
+| `request_list` | `run` | 이 저장소로 제한된 `request list [--run RUN]` |
+| `request_show` | **`id`** | `request show ID` |
+| `session_show` | **`reference`**, `summary`(기본 false) | `session show REF [--summary]` |
+| `tools_check` | `eval`, 또는 `artifact`/`audience`/`tool` | 정적 `tools check`. `audience`는 `agent` 또는 `human` |
+| `doctor` | 없음 | `doctor` |
+| `models` | **`provider`**(`openai`, `anthropic`, `codex`) | `models PROVIDER` |
+| `remote_status` | 없음 | `remote status` |
+| `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
+
+`session_show.reference`는 저장된 세션 참조, 요청 ID, 세션
+ID를 받으며, CLI와 같은 만든 사람/상태 확인을 합니다. 없는 캐시 기록은
+CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. 정적
+`tools_check`는 프로젝트 도구를 호출하거나 세션을 시작하지 않습니다. `status`는
+신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
+명령은 OS 샌드박스가 아닙니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며 결코
+자격 증명을 돌려주지 않습니다. `models`, `doctor`, `remote_status`는 백엔드
+준비 상태를 확인할 수 있습니다. Codex 모델 목록 조회는 CLI와 마찬가지로 artifactize가 소유한 토큰을 갱신하거나,
+갱신이 최종 거부되면 저장된 로그인을 제거할 수 있습니다.
+
+### 세부 페이지 {#detail-pages}
+
+세부 페이지에는 텍스트 항목이 최대 하나 들어 있으며, 구조화된 답과
+예전 텍스트 사본을 포함해 64 KiB보다 작습니다. 항목은 잘라 낸 미리 보기나 두 번째 결과 스키마가 아니라
+**정확한 CLI JSON**의 UTF-8 조각입니다.
+
+```json
+{"encoding":"json","entries":[{"offset":0,"text":"{\"ok\":true,\"artifacts\":3,\"evals\":4}"}],"next_cursor":null}
+```
+
+`next_cursor`가 null이 될 때까지 `entries[].text`를 순서대로 이어 붙인 다음,
+이어 붙인 텍스트를 JSON으로 파싱하세요. 직렬화는 압축되어 있으며, CLI의 보기 좋게 출력하는 공백은
+보존되지 않습니다. 이전 페이지의 `cursor`를 더해 **같은 도구를 같은 인자로** 다시 호출하세요.
+offset은 UTF-8 바이트 오프셋입니다. `run_list.offset`은
+다음 Run 기록 묶음을 고르며, 한 묶음의 JSON을 이어 가는 cursor와는 다릅니다.
+`verify_result`는 대신 구조화된 `findings` 배열을 페이지 단위로 넘깁니다.
+
+cursor는 도구, 인자, 현재 저장된 투영을 식별합니다. 경과 시간 필드는
+첫 페이지의 관찰 시계를 쓰므로, Run이 사람을 기다리는 동안 시계가 움직였다는 것만으로
+이어 읽기가 만료되지는 않습니다. 다른 호출의 cursor나
+오래된 cursor는 거부되며, 증거가 바뀌었다면 그 확인을 다시 시작하세요. 전송 계층이 소유하는
+스냅숏이나 백그라운드 구독은 저장되지 않습니다. 도구 작업 실패는
+크기가 제한된 `{code,message}` 내용과 함께 MCP `isError:true`를 씁니다(기존 핵심
+작업 오류는 `operation_failed` 아래에 메시지를 유지). 불완전한 페이지를 전체 결과처럼 보이게 하려고
+세부 내용을 자르지는 않습니다.
+
+## 일부러 빼놓은 것 {#deliberately-absent}
+
+자격 증명 로그인/로그아웃, Human 맡기/제출/놓기, prune, 캐시 제거,
+원격 푸시, 대화형 monitor/review, 저장소 서버, 프로젝트 도구 실행,
+Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전히 CLI와 평소의 Human 리뷰 인터페이스입니다.
+
+
+## 스트리밍과 집중 진단 {#streaming-and-focused-diagnosis}
+
+`verify_start`로 제출하고 Run ID를 보관한 다음, `_meta`에 표준
+도구 호출 메타데이터 `{"progressToken":"your-observer"}`를 넣어 `verify_watch`를 호출하세요.
+이 호출이 대기하는 동안 artifactize는 공유 상태 변경을 구독하고
+`notifications/progress`를 보냅니다. 알림의 `message`는 JSON 봉투입니다.
+
+- `{"kind":"update","data":...}`: 간결한 실시간 상태/개수. **승인이 아닙니다**.
+- `{"kind":"eval_result","data":...}`: 저장된 요청/eval 상태 하나와 간결한
+  요약. 재사용된 결과와 잠정 결과를 포함하며, **Run 판정이 아닙니다**.
+- `{"kind":"outcome","data":...}`: `verify_result`의 스키마를 쓰는 최종 Run 검증.
+  남은 발견 사항은 그 `next_cursor`를 따라 `verify_result`로 읽으세요.
+
+연결할 때마다 기준 상태와 이미 완료된 eval을 다시 보내므로, 필요하면
+연결 사이에서 요청 ID와 상태로 중복을 제거하세요. 한도에 닿아 돌아온 종료
+관찰이 있다고 해서 클라이언트가 outcome 알림을 받았다는 보장은 없습니다.
+권위 있는 최종 검증에는 `verify_result`를 쓰세요. 진행 토큰이 없으면
+같은 호출이 기다리기만 하고 알림은 보내지 않습니다. 진행 알림을 쓰지 않는 클라이언트에서는
+`verify_wait`를 쓰세요. 빠른 폴링은 필요 없습니다.
+구독은 호출(30초 한도), 클라이언트 취소, 연결
+종료와 함께 끝나며, 이후의 호출은 저장된 Run에 다시 연결합니다(Run을 누가 소유하는지는
+[검증 도구](#verification-tools)를 보세요). 잃어버리거나 합쳐진 무효화는 완전한 이벤트 이력을
+지어내지 않고 저장된 상태에서 조정합니다.
+
+진행 알림은 **클라이언트/에이전트 호스트**가 보여 주거나 자기 작업
+대기열/대화로 보내야 합니다. MCP 알림 자체는 모델 턴을 만들거나,
+추론 캐시를 살려 두거나, 호출/연결이 끝난 뒤에 전달되지 않습니다. Artifactize는
+임의의 호스트에 메시지를 끼워 넣을 수 없습니다. 셸을 쓸 수 있는 호스트에서는
+`artifactize verify --all --watch`나 `artifactize run watch RUN`이 종료될 때까지
+같은 JSON 줄 이벤트를 스트리밍하며, 호스트는 그 프로세스를 감독하고 출력을
+보낼 수 있습니다. 이는 구현된 전송 방식일 뿐, 모든 코딩 호스트가
+실시간 대화 전달을 지원한다는 주장이 아닙니다.
+
+실패한 발견 사항에서는 `run_show`의 감사 기록 전체가 아니라
+그 `request` ID로 `request_logs`를 쓰세요. `stream`의 기본값은 both입니다. 범위가 없으면 일치하는 마지막 50
+줄을 돌려주며, `tail`은 일치하는 줄 1–200개를 고릅니다. `start`/`end`는 1부터 세는
+원래 줄 번호이며 양 끝을 포함하고, `tail`과 함께 쓸 수 없습니다. `search`는 대소문자를 구분하는
+리터럴이며(UTF-8 1–2048바이트), tail 선택 전에 적용됩니다. 앞으로 읽는 조회는
+200줄과 스트림별 바이트 예산으로 제한되며, `next_start`는 같은 stream/search/end로
+조회를 이어 갑니다. 원본이 2048바이트보다 긴 줄은 크기가 제한된 앞/끝 텍스트와 함께
+명시적으로 `clipped`가 되며, 로컬의 전체 바이트는 디스크에 남습니다. 검색은
+잘린 줄의 보이는 앞/끝 너머에서도 일치할 수 있습니다. 결과는 바이트 단위 내보내기가 아니라
+정리된 UTF-8 진단 텍스트입니다. 평소의 세부 페이지 나누기가 여전히 크기 제한된 답을 감쌉니다.
+
+각 스트림의 `evidence`는 `complete`(끝부분을 포함한 전체 로컬 캡처),
+`partial`(실행 중이거나 중단된 캡처처럼 확인된 EOF가 없음), `saved_audit`
+(오래되었거나 원격이거나 정리된 로컬 캡처. 처음 128 KiB만 있을 수 있음), `missing`,
+또는 `not_runtime`(대신 요청/세션 증거를 쓰세요) 중 하나입니다. 비어 있는 것은 없는 것이 아닙니다.
+재사용된 요청은 원래의 로컬 생산자를 따라가며, 원격 기록은
+로컬에 로그가 보존되어 있다고 약속하지 않습니다. 원본 캡처를 얼마나 오래 보관하는지와
+`artifactize prune`이 무엇을 남기는지는
+[runtime 실행 레퍼런스](../features/declarations.md#runtime-execution-library)에 있습니다.
+
+`config_graph`는 훅을 호출하지 않고 정적 정의, eval, 순환 상대, 입력→소비자
+관계를 찾습니다. Artifact/eval을 고르면 그 필요 범위가 나오며,
+`impact:true`를 더하면 닿을 수 있는 하위 소비자와 그 필요 입력이
+포함됩니다. 이는 보수적인 구조적 도달 범위이지, 포함된
+모든 eval의 재사용 키가 바뀌었다는 증명이 아닙니다. 실제 재사용 결정은 `status`로 확인하세요.
+
+## 프로토콜 버전 {#protocol-versions}
+
+서버는 고정된 rmcp 전송을 씁니다. 탐색과 요청별 메타데이터를 갖춘 2026-07-28 MCP
+수명 주기를 지원하며, `initialize`와 `notifications/initialized`로 시작하는
+이전 클라이언트도 지원합니다. Tasks 확장은 제공하지 않으며,
+전송 계층이 소유하는 지속 구독도 없습니다.

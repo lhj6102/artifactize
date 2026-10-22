@@ -1,0 +1,21 @@
+# 예제 {#examples}
+
+[설치](install.md)에 나온 대로 바이너리를 설치한 뒤 예제 프로젝트를
+실행해 보세요. 각 README에 정확한 명령이 적혀 있습니다.
+
+- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): 부모/자식 폴더에 걸친
+  Runtime eval, 지시문과 argv 안의 `{artifact}` 참조,
+  basis Artifact, RED가 될 수 있는 검사, 내장 artifactsum을 통한 재사용을 보여 주며,
+  `status`가 무엇이 바뀌었는지 설명합니다.
+- [Agent tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools): 내장
+  `read`, `grep`, `view_image`, `section` 도구와 선언한 `json` 도구를 쓰는 Agent eval,
+  통과/실패 스키마, 백엔드와 모델 선택, 그리고 내장 `open`, `read` 도구를 쓰는
+  Human 승인을 보여 줍니다.
+- [Posts](https://github.com/lhj6102/artifactize/tree/main/examples/posts): Markdown 파일
+  Artifact 세 개, 글마다 하나씩 둔 사이드카 선언, 참조된 basis Artifact 안의 공용 스타일 검사기,
+  글별 단어 수 제한, 서로 독립적인 artifactsum 재사용을 보여 줍니다.
+  글 하나를 바꾸면 eval 하나만 리뷰되고, 공용 검사기나 규칙을 바꾸면 세 개 모두 리뷰됩니다.
+- [Eval 의존성](../features/artifact.md#eval-dependencies):
+  Eval별 입력과 의존성을 먼저 실행하는 스케줄링.
+- [팀 워크스루](../features/team/walkthrough.md): 두 머신과 CI가 하나의
+  `artifactize server`를 통해 서로의 판정을 재사용합니다.

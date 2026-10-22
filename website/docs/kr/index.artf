@@ -29,8 +29,10 @@ Check these criteria:
   GREEN, RED, screen and button names) may stay in English.
 - K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
   samples are unchanged; only comments inside code blocks may be translated. Every link
-  reaches the same target, and every heading carries its English heading's anchor as an
-  explicit {#id} so that links and the language switch land on the same section.
+  reaches the same target, except that a link to an English documentation page
+  (/docs/...) reaches the same page of the Korean documentation (/docs/kr/...). Every
+  heading carries its English heading's anchor as an explicit {#id} so that links and
+  the language switch land on the same section.
 Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
 Artifact-relative. Judge only the translation; the English documentation is reviewed
 elsewhere.
@@ -86,8 +88,10 @@ Check these criteria:
   GREEN, RED, screen and button names) may stay in English.
 - K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
   samples are unchanged; only comments inside code blocks may be translated. Every link
-  reaches the same target, and every heading carries its English heading's anchor as an
-  explicit {#id} so that links and the language switch land on the same section.
+  reaches the same target, except that a link to an English documentation page
+  (/docs/...) reaches the same page of the Korean documentation (/docs/kr/...). Every
+  heading carries its English heading's anchor as an explicit {#id} so that links and
+  the language switch land on the same section.
 Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
 Artifact-relative. Judge only the translation; the English documentation is reviewed
 elsewhere.
@@ -143,8 +147,10 @@ Check these criteria:
   GREEN, RED, screen and button names) may stay in English.
 - K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
   samples are unchanged; only comments inside code blocks may be translated. Every link
-  reaches the same target, and every heading carries its English heading's anchor as an
-  explicit {#id} so that links and the language switch land on the same section.
+  reaches the same target, except that a link to an English documentation page
+  (/docs/...) reaches the same page of the Korean documentation (/docs/kr/...). Every
+  heading carries its English heading's anchor as an explicit {#id} so that links and
+  the language switch land on the same section.
 Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
 Artifact-relative. Judge only the translation; the English documentation is reviewed
 elsewhere.
