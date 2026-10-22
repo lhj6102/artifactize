@@ -3,8 +3,8 @@
 이 워크스루는 [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)를 다시 씁니다.
 Alice와 Bob에게는 각자 체크아웃과 자기 상태 디렉터리가 있습니다. CI에는 세 번째
 체크아웃이 있습니다. `artifactize server` 하나가 공유 판정을 보관합니다. 모든
-단계를 컴퓨터 한 대에서 실행할 수 있습니다. 각 "머신"은 `--state-dir`일 뿐이며, `USER`가
-만든 사람 이름을 정합니다. 명령은 `examples/`가 들어 있는 artifactize 체크아웃
+단계를 컴퓨터 한 대에서 실행할 수 있습니다. 이 실습에서는 `--state-dir`로 상태 디렉터리를
+달리 지정해 각 "머신"을 구분하고, `USER`로 결과를 만든 사람의 이름을 정합니다. 명령은 `examples/`가 들어 있는 artifactize 체크아웃
 ([`git clone https://github.com/lhj6102/artifactize`](https://github.com/lhj6102/artifactize))의
 루트에서 연 POSIX 셸(Linux, macOS, WSL)용입니다.
 

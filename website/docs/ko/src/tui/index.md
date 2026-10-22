@@ -13,8 +13,8 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 
 저장된 요청을 검색하고 대기 중인 Human 요청을 리뷰하는 터미널 UI이며,
 `request`와 같은 단계를 거칩니다. 맡고, 도구를 실행하고, 맡기를 해제하고, 제출하며, 제출을
-`request submit`과 똑같이 원격 리뷰 저장소에 게시합니다. 작업 옆의 두 번째 터미널이나 tmux 창에서
-실행하세요.
+`request submit`과 똑같이 원격 리뷰 저장소에 게시합니다. 작업 중인 터미널과 별도로 터미널이나 tmux 창을
+하나 더 열어 실행하세요.
 
 ID가 없으면 상태 안의 모든 저장소에서 검색이 찾은 요청을
 가장 새 Run부터 eval, 요청, 상태, 맡은 사람, 경과 시간, 저장소와 함께 나열하며, Enter로
@@ -141,7 +141,7 @@ Human 수명 주기 작업이 진행 중인 동안에는, 초점이 있는 영�
   eval 선언(도구 포함)이 바뀌었으면 동작을 거부합니다.
   기록된 리뷰 정의의 명령만 실행하며, 그 뒤에 바뀐 명령은 실행하지 않습니다.
   도구가 실행되는 동안 열린 양식은 열린 채로 있습니다. `launch` 도구는
-  "launched"를 보고하고 UI는 계속됩니다. `output` 도구는 스피너와 함께 실행되며, Esc나
+  프로그램을 시작한 뒤 "launched"를 표시하며, UI에서 작업을 계속할 수 있습니다. `output` 도구는 스피너와 함께 실행되며, Esc나
   Ctrl-C로 취소합니다. 0이 아닌 종료는 판정이 아니라 도구 오류입니다.
 - **Tool log.** 도구 아래에 이 리뷰의 모든 실행이
   [Tool log](../features/tools/human.md#tool-log)에 설명된 대로, 시작 시각을 UTC로 표시해 나옵니다.
@@ -213,7 +213,7 @@ monitor는 이 상태의 모든 저장소를 목록으로 보여 줍니다. 그�
 워크트리를 고르며, `--all`도 여전히 받습니다. 위치 인자 경로는 `--repo`와 함께 쓸 수 없고,
 `--all`은 둘 다와 함께 쓸 수 없습니다. 이는 처음 선택만 정하며, 이동하면 여전히
 ALL과 모든 저장소/워크트리에 닿습니다.
-이동은 **Scope → Runs → Run tree → Detail** 순으로 파고듭니다.
+**Scope → Runs → Run tree → Detail** 순서로 이동하며 세부 내용을 확인합니다.
 
 ### 반응형 창 {#reactive-panes}
 
@@ -262,7 +262,7 @@ Artifact의 완료 여부는 eval의 상태와 상위 게이트의 충족 여부
 eval의 GREEN 결과를 재사용할 수 있어도, 그 Artifact는 통과 0개(예를 들어 `0/1`)로
 **done, but waits for X**나 **done, but blocked by X**를 보여 줄 수 있습니다.
 따라서 eval 행이 모두 GREEN이어도, 그 Artifact를 입력으로 쓰는 eval을 실행할 준비가 끝났다고 볼 수는 없습니다.
-그 Artifact에 필요한 상위 증거도 충족되어야 합니다.
+그 Artifact가 의존하는 상위 Artifact의 검증 요건도 충족되어야 합니다.
 
 부분 Run은 **이 Run에 요청이 없는** eval에 대해 저장된 증거를 쓸 수
 있습니다. 그 행에는 `GREEN · saved result, not in this Run`(또는 저장된 RED)이 나옵니다.

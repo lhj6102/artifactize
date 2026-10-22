@@ -21,7 +21,7 @@ payload.instruction = "Check that every link in the docs resolves."
 ## Artifact Graph {#artifact-graph}
 
 **Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. `{spec}` 같은 참조는 그
-Artifact를 eval의 입력으로 들이며, 그 fingerprint가 바뀌면 키에 그 Artifact를 포함한 리뷰만
+Artifact를 eval의 입력으로 지정하며, 그 fingerprint가 바뀌면 재사용 키에 그 Artifact를 포함한 리뷰만
 무효가 됩니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는 이유만으로 모든
 Artifact가 모든 검사의 의존성이 되지는 않습니다.
 
@@ -125,8 +125,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로,
 막힘은 이 eval 게이트를 따라 퍼집니다. 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
 없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
-실행을 막지는 않습니다. 다만 그것들은 여전히 최종 승인 의무에 속하므로, 그 Artifact를 쓰는
-eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
+실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
+쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
 
 eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들은 **순환**을 이룹니다. 부모를
 참조하는 자식도 부모와 순환을 이룹니다. 순환 안의 eval은 서로의 게이트가 되지 않습니다. 예를 들어
@@ -143,7 +143,7 @@ eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 무엇이 기다리고 어떤 추측 실행 작업을 취소할지도 이 게이트로 정해집니다.
 
-BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 막힘의 뿌리가 된 RED eval이
+BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval이
 나오며, 아직 실행 중이었을 뿐인 eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 ERROR도
 막으며 `Dependency ERROR: …`로 나옵니다. `blockedBy`에도 같은 eval이 나오고, 확정된 Run에는
 그 eval이 모두 나옵니다.

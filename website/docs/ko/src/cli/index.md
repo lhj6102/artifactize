@@ -395,7 +395,7 @@ ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄
 claim, unclaim, tool, submit은 리뷰어를 기본으로 `$USER`에서 가져오고, 없으면 Linux와
 macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 없으면 `--reviewer NAME`을
 주세요. `--reviewer NAME`으로 동작마다 같은 리뷰어를 직접 지정할 수도 있습니다. 리뷰어 이름은
-인증된 계정이 아니라 서로 약속해서 쓰는 로컬 잠금입니다. claim한 사람만 도구를 실행하고,
+계정 인증이 아니라, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 담당자를 표시하는 로컬 잠금입니다. claim한 사람만 도구를 실행하고,
 제출하고, claim을 풀 수 있습니다. `request claim`은 claim을, `request unclaim`은 풀어 준
 claim을 출력합니다. 다른 사람이 잡고 있는 요청이나 더는 기다리지 않는 요청의 claim을 풀려고
 하면 2로 종료합니다. 도구 이름은 `<operation>_<artifactId>`이며 자유 인자를 받지 않습니다.

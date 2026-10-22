@@ -6,9 +6,9 @@ CI 작업은 러너 머신에서 실행되는 명령의 연속이며,
 
 CI 단계로 `artifactize verify --all --wait --reuse-only agent,human`을 실행하세요. 테스트는 실행하되 리뷰 결과는 캐시나 팀 저장소에서 재사용하므로, CI에서는 모델을 호출하거나 사람의 승인을 요청한 채 대기하지 않습니다.
 선택된 모든 eval이 GREEN일 때만 0으로 종료하므로, RED(1), ERROR(2), INCOMPLETE(4)는
-작업을 실패시킵니다. 모든 종료 코드는 [명령 레퍼런스](../../cli/index.md#command-reference)에 있습니다. 재사용할 것이 없는
-Agent 리뷰나 Human 승인은 [실행되지 않고](../../cli/index.md#reuse-only) Run을 INCOMPLETE로 남기므로, CI는
-개발자의 `verify`가 현재 키에 대해 그것을 만든 뒤에야 통과합니다. Artifactsum이
+작업을 실패시킵니다. 모든 종료 코드는 [명령 레퍼런스](../../cli/index.md#command-reference)에 있습니다. Agent 리뷰나
+Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않고](../../cli/index.md#reuse-only) Run이 INCOMPLETE로 남으므로,
+개발자가 `verify`로 현재 재사용 키에 맞는 결과를 만든 뒤에야 CI가 통과합니다. Artifactsum이
 기본으로 재사용을 켜 두며, 대상이나 의존성의 `fingerprint = false`는 재사용을 끕니다.
 
 ## 미룬 작업을 병합 게이트에서 빼기 {#keep-deferred-work-out-of-the-merge-gate}
