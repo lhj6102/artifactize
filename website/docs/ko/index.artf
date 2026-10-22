@@ -1,4 +1,4 @@
-name = "docs-kr"
+name = "docs-ko"
 fingerprint = { files = ["src"] }
 
 [views.agent_tools]
@@ -13,7 +13,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.translates-guide.payload]
 instruction = """
-Review the Korean documentation {docs-kr} as a translation of the English documentation
+Review the Korean documentation {docs-ko} as a translation of the English documentation
 {docs}. Both are mdBook sources with the same chapter paths under src/. The area of this
 review is src/SUMMARY.md, src/getting-started/, and the chapters directly in src/features/ (artifact, declarations, eval, agent, human, runtime, fingerprint and run); compare each of its English files with the Korean file at the same path.
 Check these criteria:
@@ -30,12 +30,12 @@ Check these criteria:
 - K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
   samples are unchanged; only comments inside code blocks may be translated. Every link
   reaches the same target, except that a link to an English documentation page
-  (/docs/...) reaches the same page of the Korean documentation (/docs/kr/...). Every
+  (/docs/...) reaches the same page of the Korean documentation (/docs/ko/...). Every
   heading of a chapter page carries its English heading's anchor as an explicit {#id}
   so that links and the language switch land on the same section. The part titles in
   src/SUMMARY.md are not page headings and have no anchor in either book; mdBook would
   show an {#id} there literally.
-Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
+Use the list, glob, grep and read tools of {docs} and {docs-ko}. Tool paths are
 Artifact-relative. Judge only the translation; the English documentation is reviewed
 elsewhere.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
@@ -74,7 +74,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.translates-features.payload]
 instruction = """
-Review the Korean documentation {docs-kr} as a translation of the English documentation
+Review the Korean documentation {docs-ko} as a translation of the English documentation
 {docs}. Both are mdBook sources with the same chapter paths under src/. The area of this
 review is src/features/tools/, src/features/team/ and src/features/others/; compare each of its English files with the Korean file at the same path.
 Check these criteria:
@@ -91,12 +91,12 @@ Check these criteria:
 - K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
   samples are unchanged; only comments inside code blocks may be translated. Every link
   reaches the same target, except that a link to an English documentation page
-  (/docs/...) reaches the same page of the Korean documentation (/docs/kr/...). Every
+  (/docs/...) reaches the same page of the Korean documentation (/docs/ko/...). Every
   heading of a chapter page carries its English heading's anchor as an explicit {#id}
   so that links and the language switch land on the same section. The part titles in
   src/SUMMARY.md are not page headings and have no anchor in either book; mdBook would
   show an {#id} there literally.
-Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
+Use the list, glob, grep and read tools of {docs} and {docs-ko}. Tool paths are
 Artifact-relative. Judge only the translation; the English documentation is reviewed
 elsewhere.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
@@ -135,7 +135,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.translates-endpoints.payload]
 instruction = """
-Review the Korean documentation {docs-kr} as a translation of the English documentation
+Review the Korean documentation {docs-ko} as a translation of the English documentation
 {docs}. Both are mdBook sources with the same chapter paths under src/. The area of this
 review is src/desktop/, src/agent-plugin/, src/cli/ and src/tui/; compare each of its English files with the Korean file at the same path.
 Check these criteria:
@@ -152,12 +152,12 @@ Check these criteria:
 - K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
   samples are unchanged; only comments inside code blocks may be translated. Every link
   reaches the same target, except that a link to an English documentation page
-  (/docs/...) reaches the same page of the Korean documentation (/docs/kr/...). Every
+  (/docs/...) reaches the same page of the Korean documentation (/docs/ko/...). Every
   heading of a chapter page carries its English heading's anchor as an explicit {#id}
   so that links and the language switch land on the same section. The part titles in
   src/SUMMARY.md are not page headings and have no anchor in either book; mdBook would
   show an {#id} there literally.
-Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
+Use the list, glob, grep and read tools of {docs} and {docs-ko}. Tool paths are
 Artifact-relative. Judge only the translation; the English documentation is reviewed
 elsewhere.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to

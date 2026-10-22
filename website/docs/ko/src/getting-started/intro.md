@@ -14,18 +14,18 @@ Artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되
 - 팀 리뷰 저장소를 통해 팀원과 CI에 결과를 공유하세요. Monitor로 진행 상황을
   지켜보고, Review로 사람이 대기 중인 승인을 차례로 처리할 수 있습니다.
 
-Linux, macOS, Windows에서 실행됩니다. [설치](/docs/kr/getting-started/install.html)부터 시작한 뒤
-[가이드](/docs/kr/getting-started/guide.html)를 따라 첫 GREEN 결과를 얻고, 모델이나 API 키 없이
+Linux, macOS, Windows에서 실행됩니다. [설치](/docs/ko/getting-started/install.html)부터 시작한 뒤
+[가이드](/docs/ko/getting-started/guide.html)를 따라 첫 GREEN 결과를 얻고, 모델이나 API 키 없이
 그 결과를 재사용해 보세요.
 
 ## 다음으로 볼 곳 {#where-to-go-next}
 
-- **[기능](/docs/kr/features/artifact.html):** Artifact와 그 그래프, eval,
+- **[기능](/docs/ko/features/artifact.html):** Artifact와 그 그래프, eval,
   fingerprint, Run, 도구, 팀 공유. 이 기능들은 모든 인터페이스에서 같은
   라이브러리를 통해 동작합니다.
-- **[데스크톱](/docs/kr/desktop/index.html):** 창에서 Run을 살펴보고 Human 리뷰를 처리합니다.
-- **[에이전트 플러그인](/docs/kr/agent-plugin/hey-arti.html):** Arti에게 이식 가능한 스킬을 주고
-  [MCP](/docs/kr/agent-plugin/mcp.html)로 코딩 호스트를 연결합니다.
-- **[CLI](/docs/kr/cli/index.html):** 명령 문법, 출력, 종료 코드.
-- **[TUI](/docs/kr/tui/index.html):** 터미널에서 쓰는 Monitor와 Review.
+- **[데스크톱](/docs/ko/desktop/index.html):** 창에서 Run을 살펴보고 Human 리뷰를 처리합니다.
+- **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** Arti에게 이식 가능한 스킬을 주고
+  [MCP](/docs/ko/agent-plugin/mcp.html)로 코딩 호스트를 연결합니다.
+- **[CLI](/docs/ko/cli/index.html):** 명령 문법, 출력, 종료 코드.
+- **[TUI](/docs/ko/tui/index.html):** 터미널에서 쓰는 Monitor와 Review.
 - **[소스](https://github.com/lhj6102/artifactize):** Apache 2.0으로 공개된 오픈 소스.
