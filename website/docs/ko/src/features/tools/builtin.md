@@ -117,8 +117,8 @@ JPEG, WebP이며, 지원하지 않는 시그니처, GIF/BMP, 애니메이션 PNG
 - **Agent:** 모델 입력 없음(`{}`만). 이름 기준이며 순환에 안전한
   Artifact와 그 eval의 트리, 추출된 정의/평가 기준 전체,
   그래프 fingerprint, 그리고 입력에서 소비자로 가는 라벨 붙은 화살표를 출력합니다.
-- **Human:** `kind = "launch"`. 평범한 분리형 애플리케이션 넘기기로
-  `artifactize-desktop graph --repo PATH`를 시작합니다. `artifactize-desktop`이
+- **Human:** `kind = "launch"`. 앱을 여는 일반적인 방식대로
+  `artifactize-desktop graph --repo PATH`를 분리된 별도 프로세스로 시작합니다. `artifactize-desktop`이
   설치되어 있고 프로그램 검색 경로로 찾을 수 있어야 합니다. 앱은 그
   브랜치의 [Current](../../desktop/index.md#current)에서 열립니다. Run과 같은 그래프 렌더러와
   키보드/확대 조작을 쓰지만, Run 판정 대신 현재 선언과
