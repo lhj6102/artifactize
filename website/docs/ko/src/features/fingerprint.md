@@ -141,8 +141,8 @@ v2는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 �
 - Artifact 이름과 종류, `basis`, fingerprint 범위: artifactsum의 `files`와 `ignore`, 스크립트의
   `command`, `args`, `files`, 또는 `fingerprint = false`.
   
-- 입력에서 소비자로 가는 관계: 자식 소유(자식 폴더 경로가 아니라 이름), 지시문 참조, runtime argv
-  참조(eval ID, argv 위치, 논리적 접미 경로 포함)와 그 입력 대상.
+- 입력 Artifact와 그것을 쓰는 쪽 사이의 관계: 부모·자식 관계(자식 폴더 경로가 아니라 이름), 지시문 참조,
+  runtime argv 참조(eval ID, argv 위치, 논리적 접미 경로 포함)와 그 입력 대상.
 - eval ID, 소유 Artifact, 제목, 선택 항목 `gate`, 평가 기준: 기본 프로필 종류, 지시문과 소유자
   맥락을 포함한 `payload` 전체, `pass_schema`, `fail_schema`, runtime `command`/`args`.
 

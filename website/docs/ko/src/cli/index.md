@@ -110,8 +110,8 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 
 `server token add NAME`과 `server token revoke NAME`은 글자, 숫자, `-`, `_`, `.`로 이뤄진
 1–64자의 ASCII를 받습니다. 빈 이름, 공백, 슬래시, ASCII가 아닌 글자, 너무 긴 이름은
-**토큰 저장소를 열기 전에** 거부하고 2로 종료합니다. 이 이름은 bearer 비밀값이 아니라 표시용
-이름입니다.
+**토큰 저장소를 열기 전에** 거부하고 2로 종료합니다. 이 이름은 표시용이며, 인증에 쓰는
+비밀 토큰이 아닙니다.
 
 `session show`와 `session send`는 Agent 리뷰의
 [저장된 대화](../features/agent.md#saved-conversations)를 읽고 이어 갑니다. 인자, 출력, 오류는
