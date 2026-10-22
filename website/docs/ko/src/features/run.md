@@ -72,8 +72,7 @@ Run은 접수될 때의 선언을 그대로 씁니다. 준비하는 동안 선�
 있습니다.
 
 최종 검증에는 필요한 범위 전체에서 실제 GREEN 증거나 직접 선언한 `basis = true`가 필요합니다.
-basis여도 그 의존성은 면제되지 않습니다. RED는 하위 작업을 막고, 없는 증거나 동작 오류는
-기다립니다. 선택한 리뷰가 GREEN이어도 의무가 남아 있으면 INCOMPLETE이며, 남은 의무를 텍스트와
+basis여도 그 의존성은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 기다립니다. 선택한 리뷰가 GREEN이어도 의무가 남아 있으면 INCOMPLETE이며, 남은 의무를 텍스트와
 JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)에 있습니다.
 `--reuse-only KINDS`(CI에서는 예를 들어 `agent,human`)는 그 종류의 결과를 재사용만 합니다.
@@ -91,8 +90,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 
 추측 실행은 요청한 runtime, Agent, Human eval을 게이트가 정해지기 전에 `--jobs`, 백엔드 수용량,
 `--max-executions` 한도 안에서 시작합니다. Human eval은 같은 Artifact의 Human이 아닌 다른 eval이
-모두 GREEN이 되기 전에는 절대 요청하지 않습니다. 준비된 작업이 우선이고, 추측 작업은 남는 자리를
-쓰며 먼저 양보합니다. 다시 실행하면 실행 시작 횟수를 한 번 더 씁니다. 상위 eval이 RED나 ERROR가
+모두 GREEN이 되기 전에는 절대 요청하지 않습니다. 준비된 작업에 실행 자리를 먼저 주고, 추측 실행 작업은 남는 자리에서 실행하다가 필요하면 먼저 멈춥니다. 다시 실행하면 실행 시작 횟수를 한 번 더 씁니다. 상위 eval이 RED나 ERROR가
 되면 그 결과로 무효가 된 작업, 즉 그 eval에 의존하는 eval 중 자기 Artifact와 순환 밖에 있는 것만
 바로 취소하고, 재사용할 수 있는 취소 결과를 남기지 않은 채 BLOCKED로 표시합니다. GREEN이면 같은
 파일로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
@@ -183,7 +181,7 @@ artifactize --repo PROJECT config check --json
 ```
 
 `status`는 `verify`와 같은 선택자 중 하나를 받으며 기본은 `--all`이고, 같은 `--profile`,
-`--recursive`, `--force` 정책 옵션을 받습니다. 현재 Artifact와 eval의 상태, 채워지지 않은 최종
+`--recursive`, `--force` 정책 옵션을 받습니다. 현재 Artifact와 eval의 [상태](../cli/index.md#status-states), 채워지지 않은 최종
 의무, `execute` / `reuse` / `wait` / `blocked` 동작을 알려 줍니다. 필요한 범위의 eval은 모두
 나오며, `selected`와 `included`로 직접 선택한 것과 실행에 포함된 것(재귀로 들어온 의존성)을
 구분합니다. JSON에서는 eval마다 [재사용 키](fingerprint.md#the-reuse-key)를 이루는 값도

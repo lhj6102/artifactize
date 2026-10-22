@@ -265,6 +265,30 @@ status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검
 `blockedBy`로 Eval ID가 들어갑니다. 태그, 파일 종류, 경로는 graph와 status 출력에 나오고,
 [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다.
 
+### status 상태 {#status-states}
+
+`status`는 Artifact와 eval마다 상태를 출력합니다. 상태는 저장된 판정이 아니라 지금의 파일과
+선언을 기준으로 합니다. 재사용 키가 여전히 맞는 저장된 GREEN은 `PASS`로 나오고, 동작은
+`verify`가 다음에 무엇을 할지 알려 줍니다.
+
+| 상태 | eval | Artifact |
+|---|---|---|
+| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족됨 | eval이 모두 `PASS`이고 의존하는 Artifact도 충족됨 |
+| `RED` | 현재 재사용 키에 맞는 RED 결과가 있음 | eval 중 하나가 `RED` |
+| `BLOCKED` | 게이트가 RED | eval 중 하나가 `BLOCKED` |
+| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 기다리는 중 |
+| `WAITING_HUMAN` | Human 요청이 사람을 기다림 | — |
+| `DEFERRED` | 미룬 승인이 사람을 기다림 | eval 중 하나가 `DEFERRED` |
+| `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL` | eval 중 하나가 `PROVISIONAL` |
+| `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없음(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE` |
+| `UNREVIEWED` | 리뷰한 적이 없음 | 리뷰한 eval이 없거나 eval이 없음 |
+| `INCOMPLETE` | — | 자기 eval은 `PASS`이지만 의존하는 Artifact가 충족되지 않음 |
+| `BASIS` | — | 의존성이 충족된 basis Artifact |
+
+Artifact는 eval이 가진 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+`STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에 쓰며,
+`status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
+
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
 
 `run show RUN_ID --json`과 `verify --wait --json`은 비어 있지 않을 때 최상위에 `evidence`를

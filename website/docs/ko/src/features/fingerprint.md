@@ -91,9 +91,8 @@ ID와 제목, 태그, 저장소 경로, 쓰지 않은 프로필 변형, 도구 �
 생략하면 폴더와 파일 Artifact(그 종류의 basis Artifact 포함)는 artifactsum을 쓰고, 그래프
 Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 파일 Artifact가
 `fingerprint = false`를 선언하면 그 eval은 재사용하지 않아서, `verify`할 때마다 다시
-리뷰합니다. 강제하지 않은 READY Runtime/Agent eval이라면 `status`가 실행 사유에서 fingerprint를
-끈 대상이나 의존성을 알려 줍니다. READY인 Human eval은 claim과 제출을 기다리는 요청이라는 사유를
-보여 주고, 강제했거나 막혔거나 기다리는 eval은 각각 실행, 게이트, 대기 사유를 보여 줍니다.
+리뷰합니다. `status`는 eval마다 상태와 동작의 이유를 알려 줍니다.
+[status 상태](../cli/index.md#status-states)를 보세요.
 
 ## 완료된 결과 재사용 {#completed-result-reuse}
 

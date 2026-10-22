@@ -112,12 +112,8 @@ A built-in shows an action on a logical target instead: for example, opening
 `notes.md`, printing a Markdown section, or listing a directory, not a shell
 command line.
 
-The way to the tools is always on screen: the footer lists the keys of the
-focused area (for example `Tab tools, Enter run`, or `↑↓ tool · Enter run · Tab
-fields` with Tools focused), the Tools pane title names its key (`Tools (1) · Tab`,
-`Shift-Tab` while a form field takes Tab), and before a claim the one-line tools
-summary says `Tab or click: tools`. A click on a tool row focuses the Tools pane
-and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
+The footer always lists the keys of the focused area. With the mouse, a click on a
+tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` runs it.
 
 | Key | Human Detail action |
 |---|---|
@@ -411,8 +407,9 @@ Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
 latest. A waiting Human review's Detail shows the tool commands of the declarations as they
-were when you first opened it, without claiming the review or running anything; a refresh
-or reopening keeps them. Each tool run checks the review's declarations again, and the
+were when you first opened it, without claiming the review or running anything. A refresh
+keeps them; reopening the review keeps them in Monitor, and in standalone Review until you
+open another Human request there, after which they are worked out again. Each tool run checks the review's declarations again, and the
 commands shown are updated after one. A follower opens its
 original request.
 

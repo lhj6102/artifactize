@@ -389,11 +389,8 @@ folder may show only that something changed.
 
 Before executing evals, `verify` computes fingerprints in their selected required
 dependency closure, including dependencies whose evals are not selected.
-Up to `--fingerprint-jobs N`
-fingerprints are computed at once (default: the number of CPUs), in `status` as in
-`verify`, both before the evals and when Runtime and Agent reviews end. A Human tool
-run or submission checks its fingerprints separately, as many at once as there are
-CPUs, whatever the Run's `--fingerprint-jobs`. A failure reports the first failing
+How many are computed at once is set by
+[`--fingerprint-jobs`](../cli/index.md#runtime-cli). A failure reports the first failing
 Artifact in name order and stops the rest. Each script gets its own private output
 folder.
 
@@ -452,8 +449,10 @@ review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare
 (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`) are limited to 1024.
-`config check` checks the names and syntax; whether a referenced file exists, and that no
-symbolic link is followed, is checked when the command is prepared.
+`config check` checks the names and syntax of the profile each eval declares; references
+that appear only in a `profile_variants` entry are checked when that variant is selected, so
+run `status SELECTOR --profile NAME` before relying on a variant. Whether a referenced file
+exists, and that no symbolic link is followed, is checked when the command is prepared.
 
 ## Runtime execution
 

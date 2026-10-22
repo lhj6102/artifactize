@@ -33,8 +33,8 @@ artifactize models codex
 실패하며, artifactize가 다른 모델로 바꾸거나 강도를 낮추지 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 runtime eval과 똑같이 의존성 게이트, 재사용 키 점유, 재사용, 마지막
-fingerprint 재확인을 거칩니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
+Agent eval도 runtime eval과 똑같이 입력을 기다리고 결과를 재사용하며, 리뷰가 끝날 때 입력을
+다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필이 만든
 결과도 재사용하며, 그 기록에 어느 쪽이 만들었는지 나옵니다.
 
@@ -136,13 +136,12 @@ Ctrl-C는 `verify --wait`의 지켜보기만 멈출 뿐, 지켜보던 Agent 리�
 Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not started.
 ```
 
-다음 Run에서는 그 백엔드를 다시 받습니다.
+다음 Run에서는 그 백엔드를 다시 쓸 수 있습니다.
 
 eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 실행됩니다. 명령 도구는 작성자의
 [환경](declarations.md#runtime-execution)에서 호출마다 별도의 출력·임시 디렉터리를 받아
 실행됩니다. 내장 도구는 호출별 디렉터리를 받지 않으며, `help`는 `ARTIFACTIZE_*` 변수를 뺀 내
-환경에서 프로그램을 실행합니다. 도구 결과는 구조화된 데이터를 평평하게 만들지 않고 텍스트,
-JSON, 검사를 거친 base64 이미지 블록으로 유지합니다. PNG/JPEG/WebP 결과는 모든 백엔드에
+환경에서 프로그램을 실행합니다. 도구 결과는 하나의 텍스트로 합치지 않고 텍스트, JSON, 검사를 거친 base64 이미지 블록 형식 그대로 둡니다. PNG/JPEG/WebP 결과는 모든 백엔드에
 보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는
 성공했을 때와 ERROR일 때 모두 저장하며, 캐시가 적중하면 그 시도는 `reusedUsage`로 옮겨지고
 쓴 것으로 세지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나

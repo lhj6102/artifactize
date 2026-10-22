@@ -72,9 +72,8 @@ JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰
 
 0.9부터는 재사용 키 v2를 쓰므로, 스크립트 fingerprint 결과와 Human 승인을 포함해 0.9 이전
 기록은 하나도 재사용하지 않습니다. 기존 저장소 기록은 새 키에 맞지 않으므로 클라이언트는 한
-번 리뷰하고 새 기록을 게시합니다. 이는 로컬 상태 업그레이드와는 별개입니다. 스키마 1–5는
-새 상태로 바꿔야 하고, 기존 스키마 6~8은 Run, 캐시 기록, Human 승인을 그대로 둔 채 스키마
-9로 자동 업그레이드됩니다.
+번 리뷰하고 새 기록을 게시합니다. 로컬 상태는 따로 업그레이드됩니다.
+[상태](../features/others/state.md#state)를 보세요.
 
 ## 원격 리뷰 저장소 클라이언트 {#remote-review-store-client}
 
@@ -100,8 +99,7 @@ argv가 아닌 stdin에서 읽고 앞뒤 공백을 지웁니다. 4096바이트�
 `ARTIFACTIZE_REMOTE`(URL 또는 `off`), `ARTIFACTIZE_REMOTE_TOKEN`(CI용),
 `ARTIFACTIZE_REMOTE_SHARE`(`summary` 또는 `full`)는 `remote.json`과 저장된 토큰보다
 우선합니다. `remote status`는 URL, 공유 수준, 토큰 출처(`env`, `file`, `none`), 접속 가능
-여부를 출력하고, 이어서 주체와 범위 또는 저장소가 돌려준 오류를 출력합니다. 저장소가 토큰을
-받아들이면 0, 아니면 1로 종료합니다. JSON은
+여부를 출력하고, 이어서 주체와 범위 또는 저장소가 돌려준 오류를 출력합니다. 토큰 인증에 성공하면 0, 실패하면 1로 종료합니다. JSON은
 `{"configured":true,"url":…,"share":…,"tokenSource":…,"reachable":BOOL,"principal":…,"scopes":[…],"error":…}`
 형태입니다. 로그인한 상태가 아니면 `principal`과 `scopes`가 null이고, 로그인한 상태면
 `error`가 null입니다. 토큰이 거부되면 `reachable: true`에 오류가 함께 나오고, 저장소에 닿지

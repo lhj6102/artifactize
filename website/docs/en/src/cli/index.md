@@ -283,6 +283,30 @@ Status uses `execute`, `reuse`, `wait` and `blocked` actions. Requests, validati
 and status carry `blockedBy` qualified Eval IDs. Tags, file kinds and paths appear
 in graph and status output; [Monitor](../tui/index.md#monitor) shows them on screen.
 
+### Status states
+
+`status` prints a state for each Artifact and eval. A state describes the current
+files and declarations, not a saved verdict: a saved GREEN whose reuse key still matches
+shows as `PASS`, and the action says what `verify` would do next.
+
+| State | Eval | Artifact |
+|---|---|---|
+| `PASS` | a GREEN result matches its current reuse key and its gates are met | its evals are `PASS` and the Artifacts it depends on are satisfied |
+| `RED` | a RED result matches its current reuse key | one of its evals is `RED` |
+| `BLOCKED` | a gate is RED | one of its evals is `BLOCKED` |
+| `WAIT_DEPENDENCY` | a gate has no current result yet | one of its evals is waiting |
+| `WAITING_HUMAN` | a Human request waits for a person | — |
+| `DEFERRED` | a deferred sign-off waits for a person | one of its evals is `DEFERRED` |
+| `PROVISIONAL` | GREEN, but a gate is still `DEFERRED` or `PROVISIONAL` | one of its evals is `PROVISIONAL` |
+| `STALE` | it was reviewed before, but no result matches its current reuse key (an earlier error, a keyless result or `--force` included) | one of its evals is `STALE` |
+| `UNREVIEWED` | it was never reviewed | none of its evals was reviewed, or it has no evals |
+| `INCOMPLETE` | — | its own evals are `PASS`, but an Artifact it depends on is not satisfied |
+| `BASIS` | — | a basis Artifact whose dependencies are satisfied |
+
+An Artifact shows the first of `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`,
+`PROVISIONAL`, `STALE` and `UNREVIEWED` that one of its evals has. `ERROR` belongs to Run
+output; `status` reports an eval whose last attempt failed as `STALE`.
+
 ## Saved Run evidence and terminal views
 
 `run show RUN_ID --json` and `verify --wait --json` include top-level `evidence` when

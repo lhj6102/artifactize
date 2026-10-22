@@ -1,7 +1,7 @@
 # Eval {#eval}
 
-**eval**은 Artifact에 대한 검사 하나입니다. 바뀌지 않는 로컬 ID, 무엇이 통과인지 말하는 제목,
-누가 또는 무엇이 리뷰할지 정하는 프로필을 주세요. 예를 들어 `library` Artifact의
+**eval**은 Artifact에 대한 검사 하나입니다. 바뀌지 않는 로컬 ID, 통과 조건을 나타내는 제목,
+리뷰 주체를 정하는 프로필을 설정하세요. 예를 들어 `library` Artifact의
 `[evals.tests]`는 전체 ID가 `library/tests`입니다.
 
 실행하는 세 종류는 같은 수명 주기와 재사용 규칙을 따릅니다.

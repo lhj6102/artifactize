@@ -198,7 +198,7 @@ artifactize --repo PROJECT config check --json
 
 `status` accepts the same exclusive selectors as `verify`, defaulting to
 `--all`, and the same `--profile`, `--recursive` and `--force` policy
-options. It reports current Artifact/eval states, unmet final obligations, and
+options. It reports current Artifact/eval [states](../cli/index.md#status-states), unmet final obligations, and
 `execute` / `reuse` / `wait` / `blocked` actions. All evals
 in the required closure are shown; `selected` and `included` distinguish explicit
 selection from included execution (recursive dependencies).

@@ -312,8 +312,7 @@ mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fin
 ## Human 게이트 정책 {#human-gate-policy}
 
 `gate = "blocking"`은 프로필이나 전역 설정이 아니라 eval에 다는 선택 필드입니다.
-`verify --defer-human`에서도 Human eval의 게이트를 대기 상태로 유지합니다. 생략하면 기본
-Run에서는 평소처럼 엄격하게 동작하고, 요청이 원할 때만 미룰 수 있습니다. runtime이나 Agent
+`verify --defer-human`에서도 Human eval의 게이트를 대기 상태로 유지합니다. 생략하면 기본 Run에서는 승인 게이트를 엄격하게 적용하고, 요청에서 승인 미루기를 지정한 경우에만 승인을 미룰 수 있습니다. runtime이나 Agent
 eval에서는 아무 효과도 없습니다. 미룰 수 있는 것은 Human 승인뿐입니다. 게이트 정책은
 스케줄링만 바꾸며, 판단 정의나 재사용 키는 바꾸지 않습니다.
 
@@ -346,17 +345,15 @@ Artifact 참조는 `payload.instruction`과 runtime `profile.args`에 `{input}`�
 심볼릭 링크가 아닌 일반 파일이어야 하고 1 MiB 이하여야 합니다. 소유 범위 밖으로는 따라가지
 않으며, 항목 10,000개나 1 GiB를 넘으면 오류와 함께 탐색을 멈춥니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 Python의 `__pycache__`처럼 리뷰가 ignore된 경로에 쓴
-파일은 `INPUT_CHANGED`를 일으키지 않습니다. 결과마다 어떤 파일을 포함했는지 기억하므로,
+파일은 `INPUT_CHANGED`를 일으키지 않습니다. 결과마다 포함한 파일 목록을 저장하므로,
 `status`가 그 뒤로 바뀐 파일(`path`, `+path`, `-path`)과 바뀐 의존성을 알려 줄 수 있습니다.
 아주 큰 폴더는 무언가 바뀌었다는 것만 보여 줄 수도 있습니다.
 
 ## Fingerprint 스크립트 {#fingerprint-scripts}
 
 eval을 실행하기 전에 `verify`는 선택한 eval에 필요한 의존성 범위의 fingerprint를 계산하며,
-eval을 선택하지 않은 의존성도 포함합니다. fingerprint는 동시에 `--fingerprint-jobs N`개까지
-(기본값은 CPU 수) 계산하며, `verify`처럼 `status`에서도 마찬가지이고, eval 전과 Runtime·Agent
-리뷰가 끝날 때 모두 적용됩니다. Human 도구 실행이나 제출은 Run의 `--fingerprint-jobs`와
-상관없이 CPU 수만큼 따로 fingerprint를 확인합니다. 실패하면 이름 순서로 처음 실패한
+eval을 선택하지 않은 의존성도 포함합니다. 동시에 몇 개를 계산할지는
+[`--fingerprint-jobs`](../cli/index.md#runtime-cli)로 정합니다. 실패하면 이름 순서로 처음 실패한
 Artifact를 알리고 나머지는 멈춥니다. 스크립트마다 별도의 출력 폴더를 받습니다.
 
 스크립트 출력은 그대로 Artifact의 fingerprint가 되며, 그 Artifact의 모든 eval에 같은 값이
@@ -407,9 +404,10 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를
 담거나, 4096자를 넘을 수 없습니다. 직접 선언하는 경로(`fingerprint.files`,
-`fingerprint.script.files`, `execution_paths`)는 1024자까지입니다. `config check`는 이름과
-문법을 확인하고, 참조한 파일이 있는지와 심볼릭 링크를 따라가지 않는지는 명령을 준비할 때
-확인합니다.
+`fingerprint.script.files`, `execution_paths`)는 1024자까지입니다. `config check`는 eval마다
+선언한 프로필의 이름과 문법을 확인합니다. `profile_variants` 항목에만 나오는 참조는 그 변형을
+고를 때 확인하므로, 변형을 쓰기 전에 `status SELECTOR --profile NAME`을 실행하세요. 참조한 파일이
+있는지와 심볼릭 링크를 따라가지 않는지는 명령을 준비할 때 확인합니다.
 
 ## Runtime 실행 {#runtime-execution}
 

@@ -6,7 +6,7 @@
 artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE)으로
 공개된 오픈 소스입니다.
 
-릴리스에 아직 내 시스템용 내려받기가 없다면 Cargo로 설치하거나
+사용 중인 시스템에 맞는 설치 파일이 릴리스에 아직 없다면 Cargo로 설치하거나
 [소스에서 빌드](#build-from-source-all-platforms)하세요.
 
 ## 사전 요구 사항 {#prerequisites}

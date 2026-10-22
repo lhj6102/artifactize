@@ -81,8 +81,8 @@ summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
 - **`open`**(Human 전용)은 파일, 폴더, `http://`/`https://` URL 하나를 데스크톱의 기본
   애플리케이션으로 엽니다. Linux와 WSL에서는 `xdg-open`, macOS에서는 `open`, Windows에서는
   Windows 셸(ShellExecute)을 씁니다. 대상은 셸을 거치지 않고 인자 하나로 넘깁니다. `file:`이나
-  `mailto:` 같은 다른 URL 스킴은 거부합니다. 결과에는 애플리케이션을 시작했다는 것만 기록되며,
-  애플리케이션은 리뷰어의 것이고 계속 실행됩니다. Linux, WSL, macOS에서는 여는 프로그램 자체가
+  `mailto:` 같은 다른 URL 스킴은 거부합니다. 결과에는 애플리케이션을 시작했다는 사실만 기록되며,
+  실행된 애플리케이션은 리뷰어가 직접 관리하고 계속 실행됩니다. Linux, WSL, macOS에서는 여는 프로그램 자체가
   3초 안에 성공으로 끝나야 하며, 여는 프로그램이 없거나, 시간이 초과되거나, 0이 아닌 코드로
   끝나면 도구 오류입니다. WSL에서는 `xdg-open`의 종료 상태 4도 성공으로 칩니다. `explorer.exe`를
   통해 파일을 여는데, `explorer.exe`는 파일을 연 뒤에도 실패를 보고하기 때문입니다. 이 확인 시간

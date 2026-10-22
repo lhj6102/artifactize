@@ -99,10 +99,8 @@ have a fingerprint. Omission supplies artifactsum for folder and file Artifacts,
 including basis Artifacts of those kinds; graph Artifacts always supply their
 structural graph fingerprint. If a folder or file Artifact declares
 `fingerprint = false`, the eval has no reuse: every `verify` reviews it
-again. For an unforced READY Runtime/Agent eval, `status` names the disabled target
-or dependency in its execution reason. A READY Human eval instead gives the
-request-awaiting-claim-and-submission reason; forced, blocked and waiting evals
-use their respective execution, gate or wait reasons.
+again. `status` explains each eval's state and action; see
+[Status states](../cli/index.md#status-states).
 
 ## Completed result reuse
 

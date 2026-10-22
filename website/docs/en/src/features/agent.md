@@ -33,8 +33,8 @@ are a declaration error and are never changed into another value. A model that d
 the requested setting fails at the provider; artifactize does not substitute a
 model or lower effort. If the response reports a model ID, it must match exactly.
 
-Agent evals share runtime evals' dependency gates, reuse-key claims, reuse and final
-fingerprint recheck. The backend, model, reasoning and limits are execution
+Agent evals wait for their inputs and reuse results the same way runtime evals do, and
+their inputs are checked again when the review ends. The backend, model, reasoning and limits are execution
 options, not part of the reuse key: a result another model or profile produced for
 the same eval, Artifact kinds and fingerprints is reused, and its record shows which one it was.
 
