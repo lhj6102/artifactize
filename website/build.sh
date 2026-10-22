@@ -27,12 +27,18 @@ cp "$PWD/../assets/demos/review-loop.gif" "$PWD/../assets/demos/graph-growth.gif
 # The hero's example graph is rendered from assets/others/graph-example.html.
 cp "$PWD/../assets/others/graph-example.en.png" dist/media/
 
-# Inject the same favicons into an isolated mdBook source, never docs/theme/.
-# mdBook fingerprints the copies and rewrites links in every generated page.
+# Each language is its own book sharing docs/theme/: English at /docs/, Korean
+# at /docs/kr/. Inject the same favicons into an isolated copy of the theme,
+# never docs/theme/. mdBook fingerprints the copies and rewrites links in every
+# generated page. English builds first because mdBook empties its destination.
 book=$(mktemp -d)
 trap 'rm -rf "$book"' EXIT
-cp -R docs/. "$book/"
-cp "$brand"/favicon.{svg,png} "$book/theme/"
-"$MDBOOK" build "$book" --dest-dir "$PWD/dist/docs"
+for lang in en kr; do
+    cp -R "docs/$lang" "$book/$lang"
+    cp -R docs/theme "$book/$lang/theme"
+    cp "$brand"/favicon.{svg,png} "$book/$lang/theme/"
+done
+"$MDBOOK" build "$book/en" --dest-dir "$PWD/dist/docs"
+"$MDBOOK" build "$book/kr" --dest-dir "$PWD/dist/docs/kr"
 python3 check-links.py dist
 echo "built $(find dist -type f | wc -l) files into website/dist"

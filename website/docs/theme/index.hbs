@@ -155,9 +155,9 @@
                             {{fa "solid" "paintbrush"}}
                         </button>
                         <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
-                            {{!-- artifactize: the brand themes; "navy" is the dark default --}}
-                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Dark</button></li>
-                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            {{!-- artifactize: the brand themes, labeled in the book's language; "navy" is the dark default --}}
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">{{#if (eq language "ko")}}다크{{else}}Dark{{/if}}</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">{{#if (eq language "ko")}}라이트{{else}}Light{{/if}}</button></li>
                         </ul>
                         {{#if search_enabled}}
                         <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
@@ -176,8 +176,25 @@
                     <div class="menu-title" aria-hidden="true"></div>
 
                     <div class="right-buttons">
+                        {{!-- artifactize: the same chapter in the other language; the script below keeps the reader's page --}}
+                        {{#if (eq language "ko")}}
+                        <a id="az-lang" class="az-link" href="/docs/" hreflang="en" lang="en">English</a>
+                        {{else}}
+                        <a id="az-lang" class="az-link" href="/docs/kr/" hreflang="ko" lang="ko">한국어</a>
+                        {{/if}}
+                        <script>
+                            (function () {
+                                // Both books share chapter paths and heading ids: /docs/<path> and /docs/kr/<path>.
+                                const link = document.getElementById('az-lang');
+                                const page = location.pathname.match(/^\/docs\/(kr\/)?(.*)$/);
+                                if (page) {
+                                    link.href = (page[1] ? '/docs/' : '/docs/kr/') + page[2];
+                                    link.addEventListener('click', function () { link.hash = location.hash; });
+                                }
+                            })();
+                        </script>
                         {{!-- artifactize: links to the landing page and GitHub --}}
-                        <a class="az-link" href="/">Home</a>
+                        <a class="az-link" href="/">{{#if (eq language "ko")}}홈{{else}}Home{{/if}}</a>
                         {{#if print_enable}}
                         <a href="{{ path_to_root }}print.html" title="Print this book" aria-label="Print this book">
                             {{fa "solid" "print" "print-button"}}
@@ -201,7 +218,7 @@
                 <div id="mdbook-search-wrapper" class="hidden">
                     <form id="mdbook-searchbar-outer" class="searchbar-outer">
                         <div class="search-wrapper">
-                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="{{#if (eq language "ko")}}문서 검색 ...{{else}}Search this book ...{{/if}}" aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
                             <div class="spinner-wrapper">
                                 {{fa "solid" "spinner" "fa-spin"}}
                             </div>
@@ -230,17 +247,17 @@
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
-                        {{!-- artifactize: previous/next cards with chapter titles --}}
+                        {{!-- artifactize: previous/next cards with chapter titles, labeled in the book's language --}}
                         {{#if previous}}
                             <a rel="prev" href="{{ path_to_root }}{{previous.link}}" class="az-pager az-prev" aria-keyshortcuts="Left">
-                                <span class="az-pager-dir">{{fa "solid" "angle-left"}} Previous</span>
+                                <span class="az-pager-dir">{{fa "solid" "angle-left"}} {{#if (eq language "ko")}}이전{{else}}Previous{{/if}}</span>
                                 <span class="az-pager-title">{{previous.title}}</span>
                             </a>
                         {{/if}}
 
                         {{#if next}}
                             <a rel="next prefetch" href="{{ path_to_root }}{{next.link}}" class="az-pager az-next" aria-keyshortcuts="Right">
-                                <span class="az-pager-dir">Next {{fa "solid" "angle-right"}}</span>
+                                <span class="az-pager-dir">{{#if (eq language "ko")}}다음{{else}}Next{{/if}} {{fa "solid" "angle-right"}}</span>
                                 <span class="az-pager-title">{{next.title}}</span>
                             </a>
                         {{/if}}

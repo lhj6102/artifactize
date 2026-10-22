@@ -1,0 +1,26 @@
+# The Korean artifactize docs, served at https://artifactize.dev/docs/kr/.
+# A translation of ../en/ with the same chapter paths; built by website/build.sh
+# with the shared theme in ../theme/.
+[book]
+title = "Artifactize 문서"
+description = "개성 있는 팀원과 그들의 에이전트를 위한 AI 네이티브 협업 계층: 각자의 eval을 가진 Artifact, 그리고 여전히 유효한 동안 다시 쓰이는 모든 리뷰."
+authors = ["Hyukjin LIM"]
+language = "ko"
+src = "src"
+
+[build]
+create-missing = false
+
+[output.html]
+site-url = "/docs/kr/"
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/lhj6102/artifactize"
+no-section-label = true
+additional-css = ["theme/artifactize.css"]
+
+[output.html.print]
+enable = true
+
+[output.html.search]
+enable = true
