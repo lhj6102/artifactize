@@ -77,5 +77,6 @@ rig-core = { version = "=0.43.0", default-features = false, features = ["test-ut
 tokio = { version = "1", features = ["test-util"] }
 
 [target.'cfg(windows)'.dev-dependencies]
-# Tests make junctions through FSCTL_SET_REPARSE_POINT rather than a shell's mklink.
-windows-sys = { version = "0.61", features = ["Win32_System_Ioctl"] }
+# Tests make junctions through FSCTL_SET_REPARSE_POINT rather than a shell's mklink, and
+# ask whether a probe's console window is visible.
+windows-sys = { version = "0.61", features = ["Win32_System_Ioctl", "Win32_UI_WindowsAndMessaging"] }

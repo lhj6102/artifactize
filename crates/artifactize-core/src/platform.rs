@@ -36,11 +36,11 @@ use windows as os;
 pub(crate) use os::{
     CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, HOME_VARIABLE, PrivateTempDir,
     STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, create_private_dir, create_private_dir_all,
-    exit_signal, file_identity, home_directory, host_name, ipc, is_owner_only, is_private_dir,
-    is_private_file, kill_saved_group, kill_saved_session, path_from_bytes, private_options,
-    private_tempdir_in, process_start_time, remove_abandoned_directory, resolve_system_aliases,
-    restrict_file, running_process_start_time, spawn_detached, spawn_gated, spawn_run,
-    spawn_watched, sync_dir, transient_file_access,
+    exit_signal, file_identity, hide_console_window, home_directory, host_name, ipc, is_owner_only,
+    is_private_dir, is_private_file, kill_saved_group, kill_saved_session, path_from_bytes,
+    private_options, private_tempdir_in, process_start_time, remove_abandoned_directory,
+    resolve_system_aliases, restrict_file, running_process_start_time, spawn_detached, spawn_gated,
+    spawn_run, spawn_watched, sync_dir, transient_file_access,
 };
 pub use os::{HiddenInput, VISIBLE_INPUT_FALLBACK, stop_requested};
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
