@@ -9,7 +9,7 @@ Windows(x64)에서 실행됩니다. WSL 2에서는 Linux 빌드가 실행됩니�
 
 Runtime eval, fingerprint 스크립트, 명령 Agent 도구, 명령 Human 도구는 모든 OS에서
 `command`와 `args`를 인자 목록 하나로 실행합니다. 셸도 없고, OS마다 다른 선언도 없습니다.
-프로젝트에는 리뷰하는 곳에 있는 명령을 선언하세요. `python3`나 `grep`을 실행하는 eval이라면 모든
+리뷰어의 실행 환경에서 쓸 수 있는 명령을 프로젝트에 선언하세요. `python3`나 `grep`을 실행하는 eval이라면 모든
 리뷰어의 `PATH`에 그 명령이 있어야 합니다. 파일을 읽고 검색하는 데는
 [내장 도구](../tools/builtin.md)가 외부 프로그램 없이 어디서나 동작합니다. `open`은 시스템의
 여는 프로그램을 씁니다. macOS에서는 `open`, Windows에서는 기본 애플리케이션, Linux와 WSL에서는

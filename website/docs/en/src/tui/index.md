@@ -185,7 +185,7 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   button is an exception: when idle it returns directly to the tree with the form
   retained; while busy it cancels the work first. Esc closes
   one thing at a time: cancel a job, then stop editing with its
-  draft kept, then leave Detail. The same verdict reopens the draft. Within the same state identity, refresh and
+  draft kept, then leave Detail. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
@@ -425,7 +425,6 @@ A single saved Run that cannot be read, or contradicts itself, is different: Mon
 lists it with its own error, without a **read failed** notice, and does not open its
 tree. The other Runs stay available.
 
-Draft retention applies only within the same state identity. If Monitor detects
-that a replacement state database has a different identity, it cancels active
-Human work, closes Detail and clears cached reviews and in-memory drafts before
-showing the replacement state. Do not expect the old state's draft to carry over.
+If the state directory is replaced while Monitor is open, for example by restoring a
+backup, Monitor cancels Human work in progress, closes Detail and discards unsaved
+drafts; they do not carry over to the replacement state.

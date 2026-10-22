@@ -150,7 +150,11 @@ supplies `verdict`. For example, the `summary` schema above accepts
 A Human supplies just `{"summary":"All requirements are covered."}` as their form
 fields, with GREEN selected separately.
 
-The result envelope is deliberately narrower than a general JSON Schema:
+These schemas are JSON Schema: rules for which fields a result may have and which
+values they take. The schema of the whole result object, the **result envelope**, allows
+less than general JSON Schema does, including for references (`$ref`, which points to
+another schema) and composition (`allOf`, `anyOf`, `oneOf` and `not`, which combine
+schemas):
 
 - `type`, when present, must be `"object"`. `additionalProperties`, when present,
   must be `false`; artifactize forces both object type and closed properties in

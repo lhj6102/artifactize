@@ -16,8 +16,7 @@ artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/
 - 예제 프로젝트는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 씁니다.
   두 명령 모두 터미널에서 쓸 수 있어야 합니다. 프로젝트는 선언된
   명령을 모든 OS에서 적힌 그대로 실행합니다. [운영체제](../features/others/platforms.md)를 보세요.
-- 선택 사항으로, 쓰려는 Agent 백엔드마다 하나씩: `OPENAI_API_KEY`,
-  `ANTHROPIC_API_KEY`, 또는 Codex가 포함된 ChatGPT 요금제. Runtime eval과 Human eval에는
+- Agent eval을 쓰려면 백엔드마다 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Codex가 포함된 ChatGPT 요금제 중 필요한 것을 준비하세요(선택 사항). Runtime eval과 Human eval에는
   아무것도 필요 없습니다.
 
 `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.

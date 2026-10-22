@@ -21,8 +21,7 @@ from that page.
 
 ## Add the plugin to your assistant
 
-These steps add the plugin to your assistant; they do not install the `artifactize`
-program, which the [installation page](../getting-started/install.md) covers.
+
 
 In a Claude Code session, add the marketplace, then add the plugin from it:
 

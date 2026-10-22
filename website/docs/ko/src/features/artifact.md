@@ -24,7 +24,7 @@ Artifact를 eval의 입력으로 들이며, 그 fingerprint가 바뀌면 키에 
 무효가 됩니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는 이유만으로 모든
 Artifact가 모든 검사의 의존성이 되지는 않습니다.
 
-실행 게이트는 eval마다 자기 참조로 정해집니다. 자식 폴더는 부모 내용의 일부이므로 부모의 모든
+실행 게이트는 eval마다 그 eval이 참조하는 Artifact에 따라 정해집니다. 자식 폴더는 부모 내용의 일부이므로 부모의 모든
 eval이 참조하는 것으로 칩니다. [Eval 의존성](#eval-dependencies)을 보세요.
 
 그래프 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
@@ -152,7 +152,7 @@ Human Eval은 의존성 게이트에 더해, 자기 Artifact의 Human이 아닌 
 시작합니다. 사람은 기계 검사 Eval을 이미 통과한 것만 승인합니다. 그전까지는 기다립니다. 그
 기계 검사 Eval 중 하나라도 RED나 ERROR면 Human Eval은 시작하지 않고 BLOCKED가 되며, 사유에
 `Sibling machine eval RED: spec/review`처럼 그 Eval이 나옵니다. 같은 Artifact의 다른 Human
-Eval은 이 조건에 들어가지 않으므로 두 승인이 서로 기다리는 일은 없습니다. 옵션 없는 `verify`,
+Eval에는 이 조건을 적용하지 않으므로, 두 승인 요청이 서로의 완료를 기다리는 일은 없습니다. 옵션 없는 `verify`,
 `--speculate`, `--defer-human` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 기계 검사 Eval이
 GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 

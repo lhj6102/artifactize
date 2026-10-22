@@ -71,7 +71,7 @@ artifactize review [REQUEST_ID]
 [추측 실행과 미룬 승인](run.md#speculation-and-deferred-sign-offs)에 있습니다. 이 재사용에는
 fingerprint가 필요하므로 `fingerprint = false`면 재사용하지 않습니다.
 
-같은 작업 트리에서 같은 eval에 더 새로운 요청이 오면, 재사용 키가 다른 이전 DEFERRED 승인은
+같은 워크트리에서 같은 eval에 더 새로운 요청이 오면, 재사용 키가 다른 이전 DEFERRED 승인은
 끝나고 Review에서 사라집니다. 이렇게 끝나는 규칙, 합류, Run이 끝난 뒤의 승인 제출은
 [Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
 

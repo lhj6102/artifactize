@@ -114,7 +114,7 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 - **Human:** `kind = "launch"`. 평소처럼 애플리케이션을 떼어 실행하는 방식으로
   `artifactize-desktop graph --repo PATH`를 시작합니다. `artifactize-desktop`이 설치되어 있고
   프로그램 검색 경로에서 찾을 수 있어야 합니다. 앱은 그 브랜치의
-  [Current](../../desktop/index.md#current)로 열리며, 작업 트리의 파일을 읽어 무엇을
+  [Current](../../desktop/index.md#current)로 열리며, 워크트리의 파일을 읽어 무엇을
   재사용하거나 실행할지 미리 보여 줍니다. Run과 같은 그래프 렌더러와 키보드/확대 동작을 쓰지만,
   Run 판정 대신 현재 선언과 함께 각 Artifact를 재사용할지 실행할지 표시합니다.
   **Structure and evaluation criteria**를 펼치면 Agent가 보는 것과 같은 전체 텍스트 트리가
@@ -188,4 +188,4 @@ list/glob/grep의 기본값입니다. 절대 경로 대상, `..`, 심볼릭 링�
 실행해서 그 프로그램의 도움말을 출력합니다.
 
 Artifact 범위가 없으면 `list`는 항목의 첫 페이지만 돌려주고 offset이나 limit을 받지 않습니다.
-더 긴 폴더에는 `glob`이나 직접 만든 명령을 쓰세요.
+항목이 더 많은 폴더에는 `glob`이나 직접 만든 명령을 쓰세요.

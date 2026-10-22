@@ -261,7 +261,6 @@ included eval's reuse key changed. Use `status` to inspect actual reuse decision
 
 ## Protocol versions
 
-The server supports the 2026-07-28 MCP lifecycle, with discovery and per-request
-metadata, and older clients that start with `initialize` and
-`notifications/initialized`. It offers no Tasks extension, and no subscription outlives
-its call.
+The server works with MCP clients of version 2026-07-28 and with older ones. It does
+not offer the MCP Tasks extension, and progress notifications last only as long as the
+call that asked for them.

@@ -20,8 +20,7 @@
 
 ## 어시스턴트에 플러그인 추가하기 {#add-the-plugin-to-your-assistant}
 
-이 단계는 어시스턴트에 플러그인을 추가할 뿐, `artifactize`
-프로그램을 설치하지는 않습니다. 프로그램 설치는 [설치 페이지](../getting-started/install.md)에서 다룹니다.
+
 
 Claude Code 세션에서 마켓플레이스를 추가한 다음, 그곳에서 플러그인을 추가하세요.
 

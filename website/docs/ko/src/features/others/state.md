@@ -46,7 +46,7 @@ wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 맞지 않습니다. [0.9로 업그레이드](../fingerprint.md#upgrading-to-09)를 보세요.
 
 **토큰은 저장소 밖에 둡니다.** Codex 로그인 정보와 리뷰 저장소 토큰을 담는 `$STATE/auth`가
-git 작업 트리, artifactize 작업 공간, `--repo` 안에 있으면, gitignore된 폴더라도 거부합니다.
+git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면, gitignore된 폴더라도 거부합니다.
 그러면 `login codex`와 `remote login`은 로그인하기 전에 두 폴더를 모두 밝히며 실패합니다.
 
 ```text
@@ -59,7 +59,7 @@ Codex sign-in storage /work/project/.state/auth is inside the git work tree /wor
 알립니다.
 
 **Run끼리 작업을 나눕니다.** 재사용 키가 있는 완료된 결과는 같은 상태의 모든 Run이
-재사용합니다. 다른 작업 트리나 프로세스를 포함해 두 Run이 같은 프로필로 같은 리뷰를 동시에
+재사용합니다. 다른 워크트리나 프로세스를 포함해 두 Run이 같은 프로필로 같은 리뷰를 동시에
 필요로 하면, 두 번째 Run은 다시 실행하지 않고 첫 번째 실행에 합류합니다. 합류한 요청은 그 실행을
 기다리며 실행 시작 횟수나 백엔드 자리를 쓰지 않습니다. 합류한 요청도 같은 GREEN, RED, ERROR를
 받으며, ERROR는 이후 Run을 위해 남겨 두지 않습니다. 첫 번째 Runtime이나 Agent 리뷰가
@@ -94,7 +94,7 @@ Run이 아직 필요로 하는 기록은 남기므로 잠시 한도를 넘을 �
 ## 백엔드 수용량 {#backend-capacity}
 
 `verify`는 `--jobs N`을 주지 않으면 READY인 eval을 모두 한꺼번에 실행하며, `--jobs N`도 그
-Run만 제한합니다. 한 머신에서 여러 Run(작업 트리, CI 작업, 팀원의 실행)이 돌면 한 백엔드에
+Run만 제한합니다. 한 머신에서 여러 Run(워크트리, CI 작업, 팀원의 실행)이 돌면 한 백엔드에
 그 사용량 제한이나 구독이 허용하는 것보다 많은 Agent 리뷰를 보낼 수 있습니다.
 `$STATE/limits.json`은 그 상태를 쓰는 모든 `verify`를 통틀어 백엔드마다 동시에 진행하는 Agent
 리뷰 수를 제한합니다.

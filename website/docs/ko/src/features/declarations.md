@@ -136,7 +136,10 @@ Agent와 Human 결과에는 `verdict`와 소유자가 정한 필드가 들어 �
 covered."}`를 받습니다. Human은 GREEN을 따로 고르고, 양식 필드로
 `{"summary":"All requirements are covered."}`만 입력합니다.
 
-결과를 감싸는 형식은 일부러 일반 JSON Schema보다 좁게 정했습니다.
+이 스키마는 JSON Schema입니다. 결과에 어떤 필드가 있을 수 있고 어떤 값을 받는지 정하는
+규칙입니다. 결과 객체 전체의 스키마인 **결과 envelope**은 일반 JSON Schema보다 허용하는 것이
+적으며, 참조(다른 스키마를 가리키는 `$ref`)와 조합(여러 스키마를 합치는 `allOf`, `anyOf`,
+`oneOf`, `not`)에도 제한이 있습니다.
 
 - `type`이 있으면 `"object"`여야 합니다. `additionalProperties`가 있으면 `false`여야
   합니다. 생략해도 최종 형식에서 artifactize가 객체 타입과 닫힌 속성을 강제합니다.
@@ -236,8 +239,7 @@ fingerprint는 그래프 Artifact 자신의 선언도 포함합니다.
 이름이 `index`인 파일에는 사이드카를 둘 수 없습니다. `.artf` 파일은 선언이며 대상이 되지
 않습니다.
 
-파일 Artifact는 들어 있는 폴더 Artifact와 자식 관계나 의존 관계를 맺지 않습니다. 하위 폴더의
-`index.artf` 선언에는 가장 가까운 폴더가 소유한다는 규칙이 그대로 적용됩니다. 폴더의
+파일 Artifact는 들어 있는 폴더 Artifact와 자식 관계나 의존 관계를 맺지 않습니다. 하위 폴더에 `index.artf`로 선언한 Artifact는 그대로 가장 가까운 상위 폴더 Artifact의 자식이 됩니다. 폴더의
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
 들어 있는 폴더가 runtime 명령, 도구, fingerprint 스크립트의 작업 디렉터리이므로, 상대 경로
@@ -298,7 +300,7 @@ payload.instruction = "Run the end-to-end suite."
 태그가 풀리면 시작합니다. 태그는 우선순위나 순서를 정하지 않으며, 서로의 태그를 기다리다
 교착 상태에 빠지는 일은 없습니다.
 
-태그는 한 Run 안에서만이 아니라 같은 상태를 쓰는 모든 Run, 작업 트리, `verify`에 적용됩니다.
+태그는 한 Run 안에서만이 아니라 같은 상태를 쓰는 모든 Run, 워크트리, `verify`에 적용됩니다.
 `--state-dir`이 다르면 태그도 따로입니다. 기다리는 요청은 `QUEUED`로 남고, `blockedReason`에
 태그를 잡고 있는 eval과 Run이 나옵니다. 기다리는 동안에는 실행 예산, 백엔드 자리, 작업 자리를
 쓰지 않으며, `timeout_ms`는 eval이 시작할 때부터 셉니다. 태그는 eval이 끝나거나 취소되면

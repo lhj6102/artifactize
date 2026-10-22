@@ -289,12 +289,10 @@ Schema errors identify the failing path and leave the form correctable. Input-me
 composition, including Korean, belongs to the text field and never fires shortcuts.
 Esc cancels active work, then leaves the form, then leaves the review.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
-GREEN and RED keep separate drafts. A review opened from the Pane and the same
-request's chip in a Run's Detail share one review state, Tool log included, within
-this app session, rather than creating independent forms. This holds while the state
-stays the same: when the app finds its state database replaced, it closes open
-Details, forgets cached reviews, drafts and Tool logs, and cancels running Human tool
-and submit jobs.
+GREEN and RED keep separate drafts. Opening the same request from the Pane or from
+its chip in a Run's Detail shows the same draft and Tool log. If the state directory is
+replaced, for example by restoring a backup, open reviews close, running Human tools and
+submissions are cancelled, and unsaved drafts and Tool logs are discarded.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.
