@@ -11,8 +11,8 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 폴더와 파일 Artifact는 기본으로 **artifactsum**을 씁니다. `fingerprint`를 생략하면 그 Artifact의 파일을
 해시하고, 스크립트를 고를 수도 있습니다. 루트 그래프 Artifact는 항상
 [구조 기반 그래프 fingerprint](#graph-fingerprint)를 쓰며, `fingerprint`를 선언해 그 값을
-바꾸거나 끌 수 없습니다. 폴더와 파일 Artifact에서 아래 형식들은 도구 선언이나 다른 Artifact의
-값을 더하지 않습니다. 의존성은 [재사용 키](#the-reuse-key)를 통해 들어갑니다.
+바꾸거나 끌 수 없습니다. 아래 방식으로 계산한 폴더·파일 Artifact의 fingerprint에는 도구 선언이나 다른 Artifact의
+값이 들어가지 않습니다. 의존성은 [재사용 키](#the-reuse-key)를 통해 들어갑니다.
 
 - 생략하면 artifactsum을 씁니다. 그 Artifact의 입력 경로와 내용을 SHA-256으로 해시한 값에
   `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 그 안의 파일을,
@@ -107,8 +107,8 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 [Run 결과 레퍼런스](run.md#verify-and-runs)에 있습니다.
 
 재사용하기 전에 artifactize는 포함한 파일 대상을 다시 확인합니다. 대상은 심볼릭 링크를 거치지
-않는 일반 파일로 존재해야 합니다. `fingerprint = false`는 재사용을 끌 뿐, 이 파일 대상 안전
-확인을 끄지는 않습니다. 대상은 fingerprint 준비와 재확인, eval 시작과 끝, 도구 호출 때마다
+않는 일반 파일로 존재해야 합니다. `fingerprint = false`로 재사용을 꺼도 대상 파일이 안전한지
+확인하는 절차는 그대로 진행됩니다. 대상은 fingerprint 준비와 재확인, eval 시작과 끝, 도구 호출 때마다
 확인합니다.
 
 캐시가 적중하면 eval을 실행하지 않고, 요청한 프로필이나 스키마로 다시 검사하지도 않고 원래
