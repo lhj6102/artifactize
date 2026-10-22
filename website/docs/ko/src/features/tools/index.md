@@ -31,7 +31,7 @@ eval은 실제로 참조하는 Artifact의 도구를 봅니다. 도구 이름은
 
 ## 직접 도구 Artifact 만들기 {#build-your-own-tool-artifact}
 
-재사용할 도구는 그 구현 옆에 두고 Artifact 선언을 붙이세요.
+재사용할 도구는 구현 파일이 있는 폴더에 Artifact 선언을 추가하세요.
 예를 들어 `tools/checker/index.artf`는 Python 프로그램 `inspect.py`와 그 옆의 `tests/` 폴더를 가진
 `checker` Artifact를 선언할 수 있습니다.
 

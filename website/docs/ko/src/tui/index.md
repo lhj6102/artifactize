@@ -130,7 +130,7 @@ Human 요청을 맡거나 놓고, 도구를 실행하거나 결과를 제출하�
 스크롤합니다. 일반 편집과 초점 전환은 작업이 끝날 때까지
 멈추며, Ctrl-PgUp/PgDn은 여전히 지시문을 스크롤합니다.
 
-- **맡기.** 리뷰어는 내 사용자 이름(`$USER`)입니다. 단독 `review`는 `--reviewer NAME`도 받고,
+- **맡기.** 요청을 맡는 리뷰어는 내 사용자 이름(`$USER`)입니다. 단독 `review`는 `--reviewer NAME`도 받고,
   Monitor는 항상 기본값을 씁니다.
   도구를 실행하거나 판정을 제출해도 요청을 저절로 맡지는 않습니다. 다른 사람이 맡았거나 승인 대기가 끝난 요청은 읽기 전용이며, Detail을 떠나도 내가 맡은 상태는 그대로입니다.
 - **도구.** ↑/↓로 고르며, 편집 중이 아닐 때는 `j`/`k`로도 고릅니다. 도구 실행에는
@@ -292,8 +292,8 @@ Run의 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)도
 게이트의 승인 조건도 그대로입니다.
 
 eval의 대기 조건은 [eval 의존성](../features/artifact.md#eval-dependencies) 규칙에 따라 정해집니다.
-행은 그 게이트를 충족되지 않은 Artifact 최대 둘로 묶고, 그다음 `+N`을 붙이며, 각
-Artifact의 완료 상태를 함께 보여 줍니다. 대기 중인 대상도 모두 다른 작업 때문에 실행이 보류된 상태라면 그 원인도 한 단계 더 보여 줍니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
+각 행은 게이트를 Artifact별로 묶어, 아직 검증 요건을 충족하지 못한 Artifact를 최대 두 개까지
+완료 상태와 함께 보여 주고, 나머지 개수는 `+N`으로 표시합니다. 대기 중인 대상도 모두 다른 작업 때문에 실행이 보류된 상태라면 그 원인도 한 단계 더 보여 줍니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
 순환 안의 Artifact는 `↻ peer` 표시를 공유합니다.
 그래프가 허용하는 한 상위가 먼저 오며, Artifact 순환 상대와 eval은
 이름순으로 정렬됩니다.

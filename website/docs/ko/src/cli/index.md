@@ -197,7 +197,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. 준비된 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작
-한 번으로 칩니다. Human 대기, claim, 도구 실행은 시작 횟수를 쓰지 않습니다. fingerprint 준비와
+한 번으로 칩니다. Human 대기, 맡기, 도구 실행은 시작 횟수를 쓰지 않습니다. fingerprint 준비와
 재확인, 캐시 적중, 합류해서 대기 중인 요청도 쓰지 않습니다. 실행기 준비 초기에 실패하면 시작
 횟수를 쓰지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
 실패해도 그 시작은 쓴 것으로 치고 모델을 부르지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
@@ -207,7 +207,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 끝납니다. 시작하지 못한 요청 없이 딱 한도만큼 쓴 것은 오류가 아닙니다.
 
 Human 대기와 취소는 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)를
-따릅니다. claim, 도구, 승인은 [Human 가이드](../features/human.md)에서 다룹니다.
+따릅니다. 맡기, 도구, 승인은 [Human 가이드](../features/human.md)에서 다룹니다.
 
 선택 파일은 4 MiB 이하의 일반 파일이어야 하며, JSON 문자열 배열이나 한 줄에 앞뒤 공백을 뺀 ID
 하나씩을 담습니다(UTF-8 BOM과 CRLF도 됩니다). 중복을 빼기 전 기준으로 ID가 1–100000개여야
@@ -392,12 +392,12 @@ ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄
 
 ## Human 요청 {#human-requests}
 
-claim, unclaim, tool, submit은 리뷰어를 기본으로 `$USER`에서 가져오고, 없으면 Linux와
+`claim`, `unclaim`, `tool`, `submit`은 리뷰어를 기본으로 `$USER`에서 가져오고, 없으면 Linux와
 macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 없으면 `--reviewer NAME`을
 주세요. `--reviewer NAME`으로 동작마다 같은 리뷰어를 직접 지정할 수도 있습니다. 리뷰어 이름은
-계정 인증이 아니라 담당자를 구분하는 데 쓰이며, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 로컬 잠금을 겁니다. claim한 사람만 도구를 실행하고,
-제출하고, claim을 풀 수 있습니다. `request claim`은 claim을, `request unclaim`은 풀어 준
-claim을 출력합니다. 다른 리뷰어가 맡았거나 더 이상 대기 중이 아닌 요청의 claim을 해제하려
+계정 인증이 아니라 담당자를 구분하는 데 쓰이며, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 로컬 잠금을 겁니다. 요청을 맡은 사람만 도구를 실행하고,
+제출하고, 맡기를 해제할 수 있습니다. `request claim`은 맡기 정보를, `request unclaim`은 해제한
+맡기 정보를 출력합니다. 다른 리뷰어가 맡았거나 더 이상 대기 중이 아닌 요청의 맡기를 해제하려
 하면 종료 코드 2로 끝납니다. 도구 이름은 `<operation>_<artifactId>`이며 자유 인자를 받지 않습니다.
 텍스트 출력은 캡처한 텍스트나 실행 알림을 보여 주고, `--json`은 도구 결과를 출력합니다. 도구가
 실패하면 2로 종료하며 판정을 만들어 내지 않습니다.

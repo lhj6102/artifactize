@@ -6,8 +6,8 @@
 artifactize config check
 ```
 
-`Folder configuration is valid.`가 출력되거나, 오류를 출력하고 2로 종료합니다. 선언 내용의
-오류에는 파일 이름과 줄·열 번호가, 대상 파일이 없는 것처럼 디스크에서 찾은 문제에는 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
+`Folder configuration is valid.`가 출력되거나, 오류를 출력하고 2로 종료합니다. 선언 내용에
+오류가 있으면 파일 이름과 줄·열 번호가 나오고, 대상 파일이 없는 것처럼 디스크에 문제가 있으면 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
 정확한 규칙이 있습니다. 개념 소개는 [Artifact와 eval](artifact.md)에 있습니다.
 
 ## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
@@ -20,8 +20,8 @@ artifactize config check
 자식 폴더는 부모의 모든 eval이 참조하는 것으로 칩니다. 그 밖의 Artifact의 리뷰가 먼저
 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
 
-예전 프로필은 설정 해석 단계에서
-`unknown variant `dependency`, expected one of `agent`, `human`, `runtime``로 실패합니다.
+예전 프로필을 쓰면 설정을 해석하는 단계에서
+`unknown variant `dependency`, expected one of `agent`, `human`, `runtime`` 오류가 납니다.
 지원하는 프로필에 `depends_on` 필드가 있으면 알 수 없는 필드 오류입니다. 이는 리뷰 판정이
 아니라 설정 오류이므로, verify하기 전에 선언을 옮기세요.
 
@@ -228,8 +228,7 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
 ## 파일 Artifact {#file-artifacts}
 
-`hero.png.artf`는 같은 폴더의 일반 파일 `hero.png`를 선언합니다. `name`은 필수이고, 둘러싼
-폴더 Artifact와 상관없이 정합니다. 없는 대상, 디렉터리, 심볼릭 링크, 특수 파일은 대상이 될 수
+`hero.png.artf`는 같은 폴더의 일반 파일 `hero.png`를 선언합니다. `name`은 필수이며, 파일이 들어 있는 폴더의 Artifact 이름과 별개로 정합니다. 없는 대상, 디렉터리, 심볼릭 링크, 특수 파일은 대상이 될 수
 없습니다. 범위가 정해진 도구 경로로 나타낼 수 없으므로 이름에 `:`가 든 대상 파일은 선언을 찾을
 때 거부합니다. `.artf` 선언 자체도 일반 파일이어야 합니다. 심볼릭 링크, 특수 파일,
 `bundle.artf` 같은 디렉터리는 선언 찾기에서 실패합니다. `index.artf`는 항상 폴더를 선언하므로

@@ -105,8 +105,8 @@ SATISFIED가 될 수 있고, RED면 그에 의존하는 eval을 막습니다. `-
 중인 승인을 GREEN으로 치지 않으므로 CI에 그대로 쓸 수 있습니다.
 
 같은 워크트리에서 더 새로운 Run이 같은 eval에 Human 요청을 보내면, 재사용 키가 다른 이전
-DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED로 끝납니다. claim한 승인도
-마찬가지입니다. 이런 승인은 Review에서 사라지고 다시 claim할 수 없습니다. 같은 키라면 기존
+DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED로 끝납니다. 누군가 맡은 승인도
+마찬가지입니다. 이런 승인은 Review에서 사라지고 다시 맡을 수 없습니다. 같은 키라면 기존
 리뷰에 그대로 합류합니다. 다른 워크트리의 원래 승인과 아직 WAITING_HUMAN인 원래 승인은 건드리지
 않습니다. 이렇게 끝나기 전까지는 미룬 승인을 그 Run이 끝난 뒤에도 제출할 수 있으며, 제출할 때
 fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`)로 끝나니 새

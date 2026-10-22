@@ -79,8 +79,7 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
   프로그램은 그 폴더에서 빈 stdin으로 실행되며, 별도의 출력·임시 디렉터리를 받지 않습니다.
   Agent용 `help`는 작성자의 환경을 쓰되, `ARTIFACTIZE_*` 변수는 대소문자를 가리지 않고 모두 뺍니다. Human용 `help`는 `ARTIFACTIZE_REMOTE_TOKEN` 같은 자격 증명과 `ARTIFACTIZE_*`
   변수를 포함한 리뷰어의 전체 환경에서 실행됩니다. 10초 안에 끝나고, 종료 코드 0이어야 하며, stdout과
-  stderr를 합쳐 최대 64 KiB까지 출력해야 합니다. 0이 아닌 코드로 끝나면 stdout 없이 종료 상태와
-  프로그램의 stderr를 그대로 담아 도구가 실패합니다. 실제 프로그램을 실행하므로 신뢰하는
+  stderr를 합쳐 최대 64 KiB까지 출력해야 합니다. 종료 코드가 0이 아니면 stdout 대신 종료 상태와 프로그램의 stderr를 그대로 담은 오류를 돌려줍니다. 실제 프로그램을 실행하므로 신뢰하는
   프로그램만 적으세요.
 - **`open`**(Human 전용)은 파일, 폴더, `http://`/`https://` URL 하나를 데스크톱의 기본
   애플리케이션으로 엽니다. Linux와 WSL에서는 `xdg-open`, macOS에서는 `open`, Windows에서는

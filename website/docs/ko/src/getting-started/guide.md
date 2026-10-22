@@ -137,7 +137,7 @@ artifactize run show RUN_ID
 ```
 
 `claim`, `tool`, `submit`은 `--reviewer NAME`을 넘기지 않으면 내 사용자 이름(`$USER`)을 리뷰어로
-씁니다. `request unclaim REQUEST_ID`는 claim을 해제합니다. `artifactize
+씁니다. `request unclaim REQUEST_ID`는 맡기를 해제합니다. `artifactize
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
 지시문을 미리 보여 줍니다. Enter는 Detail을 열고, `c`는 명시적으로 요청을 맡으며, Tab은 도구로 초점을 옮기고
 Enter(또는 클릭)는 도구 하나를 바로 실행합니다. `g`/`r`은 GREEN/RED 입력 칸을 열고, Ctrl-S는
