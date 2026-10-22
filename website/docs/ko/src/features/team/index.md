@@ -129,3 +129,5 @@ artifactize remote status
 - 저장소는 `.artf` 선언이 아니라 `$STATE/remote.json`과 환경 변수로만 설정되므로,
   복제한 저장소가 토큰을 다른 곳으로 보낼 수 없습니다.
   토큰은 내 계정만 읽고 쓸 수 있는 파일에 저장되고, 발급받은 저장소에서만 쓰이며, 출력되지 않습니다.
+- 저장소의 오류 메시지에 토큰의 일부가 들어 있으면 그 메시지는 `[withheld: it contained part of the credential sent]`로
+  바뀝니다.

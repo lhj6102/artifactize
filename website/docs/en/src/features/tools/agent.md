@@ -207,8 +207,9 @@ running. Commands are trusted
 read-only programs, not sandboxed.
 
 An Agent eval sees the Agent tools of every Artifact in its scope, each named
-`<name>_<artifactId>`, such as `coverage_spec`; two tools that would get the same name
-are a declaration error. Human tools are never offered to an Agent.
+`<name>_<artifactId>`, such as `coverage_spec`; two tools that would get the same name pass
+`config check` but fail the review with `PREPARATION_FAILED`, and `artifactize tools check`
+reports them; rename a tool or an Artifact until the names are unique. Human tools are never offered to an Agent.
 
 ## Tool sessions
 

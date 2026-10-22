@@ -128,6 +128,10 @@ A failed Agent review records one of these `errorCode` values:
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
 
+If a provider's error message repeats part of the credential artifactize sent, the
+message is replaced by `[withheld: it contained part of the credential sent]` wherever it is shown or saved.
+Owner fields and command output are not masked this way.
+
 Ctrl-C interrupts a `verify --wait` watcher, not the Agent reviews it observes;
 the Run continues. Explicit cancellation requests stop the Run's owned work.
 
@@ -203,9 +207,8 @@ ask it a follow-up with `session send`; see [Agent sessions](../cli/index.md#age
 
 ## Codex
 
-`codex` reviews with the Codex models of a ChatGPT plan, such as `gpt-6-luna` and
-`gpt-6.1-sol`, through the Codex Responses endpoint
-(`https://chatgpt.com/backend-api/codex/responses`).
+`codex` reviews with the Codex models of your ChatGPT plan, such as `gpt-6-luna` and
+`gpt-6.1-sol`.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser

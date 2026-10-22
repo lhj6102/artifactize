@@ -182,13 +182,6 @@ the model answers in plain text, may use the tools, and the recorded verdict nev
 Questions, answers and tool calls are added to the same conversation, one question at a
 time, each with fresh profile budgets. A running review cannot be asked yet.
 
-### Provider transport
-
-One review deadline covers every turn, retry and tool call. A response that ends early is
-an error even if it already contains a verdict. Anthropic answers are capped at 16384
-output tokens per turn, apart from the review's own budget. Retries are described in
-[retries and error codes](../agent.md#retries-and-error-codes).
-
 ## Local diagnostics and maintenance
 
 `cache list`, `cache show` and `cache rm` inspect and remove reusable results, and

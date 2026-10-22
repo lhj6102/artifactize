@@ -131,8 +131,7 @@ artifactize --version
 
 `lhj6102/tap` Homebrew tap의 formula는 Mac의 CPU에 맞는 두 명령을 설치하고
 안정 릴리스를 따라갑니다. 데스크톱 앱은 같은 tap의 cask입니다. cask는
-앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로
-앱과 두 명령을 모두 얻습니다(formula가 설치되어 있다면 먼저 제거하세요.
+앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로 앱과 두 CLI 명령을 모두 설치할 수 있습니다(formula가 설치되어 있다면 먼저 제거하세요.
 cask가 formula를 대신합니다).
 
 ```sh
@@ -222,8 +221,8 @@ cargo install --path crates/artifactize --locked
 cargo install --path crates/artifactize-tools --locked
 ```
 
-릴리스는 태그에서 버전을 가져오므로, 체크아웃에서 빌드하면
-임시 버전 `0.0.0-dev`를 보고합니다.
+릴리스 버전은 태그에서 가져오며, 체크아웃에서 빌드하면 임시 버전 `0.0.0-dev`가
+출력됩니다.
 
 ### 데스크톱 앱 {#desktop-app}
 

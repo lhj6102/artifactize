@@ -121,6 +121,10 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로 리뷰의 뒤�
 | `AGENT_ERROR` | 그 밖의 모든 경우. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구 | 안 함 |
 | `BACKEND_STOPPED` | 시작하지 않음: 그 Run에서 그 백엔드로 새 리뷰를 보내지 않음 | — |
 
+provider의 오류 메시지에 artifactize가 보낸 자격 증명의 일부가 들어 있으면, 그 메시지는 보여
+주거나 저장하는 모든 곳에서 `[withheld: it contained part of the credential sent]`로 바뀝니다. 소유자 필드와
+명령 출력은 이렇게 가리지 않습니다.
+
 Ctrl-C는 `verify --wait`의 지켜보기만 멈출 뿐, 지켜보던 Agent 리뷰는 멈추지 않으며 Run은
 계속됩니다. 직접 취소를 요청해야 Run의 작업이 멈춥니다.
 
@@ -190,8 +194,7 @@ Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) �
 
 ## Codex {#codex}
 
-`codex`는 ChatGPT 요금제의 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰하며, Codex
-Responses 엔드포인트(`https://chatgpt.com/backend-api/codex/responses`)를 씁니다.
+`codex`는 내 ChatGPT 요금제의 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser

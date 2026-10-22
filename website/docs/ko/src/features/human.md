@@ -129,7 +129,7 @@ edit = { description = "Open {artifactName} in VS Code.", kind = "launch", comma
 리뷰어는 eval의 `pass_schema`(GREEN)나 `fail_schema`(RED)로 만든 양식에 결과를 입력합니다.
 텍스트, 숫자, true/false, 선택지, 텍스트 목록, 필드를 반복하는 그룹이 있으며, 상수는 미리
 채워집니다. Human eval의 스키마에는 이런 형태만 쓸 수 있습니다.
-[선언 레퍼런스](declarations.md#human-result-schemas)에 그 목록과 각각이 어떻게 보이는지
-있습니다.
+[선언 레퍼런스](declarations.md#human-result-schemas)에 지원하는 형태의 목록과 화면 표시 방식이
+정리되어 있습니다.
 
 대화형 리뷰는 [TUI](../tui/index.md)나 [데스크톱](../desktop/index.md)에서 하세요.

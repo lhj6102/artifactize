@@ -183,7 +183,9 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 명령은 샌드박스가 아니라 신뢰하는 읽기 전용 프로그램입니다.
 
 Agent eval은 자기 범위에 있는 모든 Artifact의 Agent 도구를 `coverage_spec`처럼
-`<name>_<artifactId>` 이름으로 봅니다. 두 도구가 같은 이름이 되면 선언 오류입니다. Human 도구는
+`<name>_<artifactId>` 이름으로 봅니다. 두 도구가 같은 이름이 되면 `config check`는 통과하지만
+리뷰는 `PREPARATION_FAILED`로 실패하며, `artifactize tools check`가 이를 알려 줍니다. 이름이
+겹치지 않을 때까지 도구나 Artifact의 이름을 바꾸세요. Human 도구는
 Agent에게 주지 않습니다.
 
 ## 도구 세션 {#tool-sessions}

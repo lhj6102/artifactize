@@ -14,7 +14,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 바꾸거나 끌 수 없습니다. 폴더와 파일 Artifact에서 아래 형식들은 도구 선언이나 다른 Artifact의
 값을 더하지 않습니다. 의존성은 [재사용 키](#the-reuse-key)를 통해 들어갑니다.
 
-- 생략하면 artifactsum을 씁니다. Artifact 자신의 입력 경로와 내용을 SHA-256으로 해시한 값에
+- 생략하면 artifactsum을 씁니다. 그 Artifact의 입력 경로와 내용을 SHA-256으로 해시한 값에
   `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 자기 파일을,
   파일 Artifact는 대상 파일 하나를 해시합니다.
 - `fingerprint = { script = { command = "hash", args = [] } }`는 명령의 출력을

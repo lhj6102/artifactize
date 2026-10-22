@@ -130,3 +130,5 @@ that `pass_schema` and `fail_schema` allow.
 - Only `$STATE/remote.json` and the environment configure the store, never
   `.artf` declarations, so a cloned repository cannot send your token elsewhere.
   Tokens are stored in a file only your account can read and write, bound to the store they were issued for, and never printed.
+- If the store's error message repeats part of the token, it is replaced by
+  `[withheld: it contained part of the credential sent]`.

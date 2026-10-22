@@ -170,12 +170,6 @@ follow-up입니다. 모델은 일반 텍스트로 답하고, 도구를 쓸 수 �
 질문, 답변, 도구 호출은 같은 대화에 이어서 쌓이며, 질문은 한 번에 하나씩 처리하고 질문마다
 프로필 예산을 새로 받습니다. 아직 실행 중인 리뷰에는 질문할 수 없습니다.
 
-### provider 전송 {#provider-transport}
-
-리뷰 마감 시간 하나가 모든 턴, 재시도, 도구 호출에 적용됩니다. 응답이 중간에 끝나면 이미 판정이
-들어 있더라도 오류입니다. Anthropic 응답은 리뷰 자체 예산과 별개로 턴마다 출력 토큰 16384개로
-제한됩니다. 재시도는 [재시도와 오류 코드](../agent.md#retries-and-error-codes)에 있습니다.
-
 ## 로컬 진단과 유지보수 {#local-diagnostics-and-maintenance}
 
 `cache list`, `cache show`, `cache rm`은 재사용할 결과를 살펴보고 지우며, `doctor`,
