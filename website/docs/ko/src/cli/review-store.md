@@ -113,8 +113,8 @@ configured.`(JSON은 `{"configured":false}`)를 출력하고 1로 종료합니�
 결과 중 더 나중에 완료된 쪽을 재사용합니다. 저장소 결과는 `origin`과 함께 로컬 상태로
 복사되므로 `run show`, `cache`, monitor에 재사용으로 나옵니다. 아직 결과가 없거나 사람의
 승인을 기다리는 리뷰가 있으면 verify는 약 1초마다 저장소를 다시 확인합니다. 다른 곳에서
-누군가 게시한 승인이 들어오면 기다리던 요청이 그 승인으로 완료되고, 그 요청에서 기다리던 승인은
-ERROR(`SUPERSEDED`)로 끝납니다. 텍스트 출력에는 결과의 출처가 나옵니다.
+누군가 게시한 승인이 들어오면 대기 중인 요청을 그 승인으로 완료하고, 그 요청의 승인 요청은
+ERROR(`SUPERSEDED`)로 끝냅니다. 텍스트 출력에는 결과의 출처가 나옵니다.
 
 ```text
   app/check [run-Hq2b9X-1]: GREEN (reused from remote: alice@laptop, run-x05qFq)

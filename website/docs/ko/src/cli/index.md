@@ -524,8 +524,8 @@ follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 
 다른 머신이나 다른 상태의 참조를 주면 그 대화가 어디 있는지 알려 주며 실패합니다. 예를 들면
 `Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
 5d0e…`입니다. 오래된 저장 대화를 자동으로 정리하면서 지운 세션은 `was removed by the session
-GC`를, 저장된 적이 없는 세션은 `was not saved`를 알립니다. `session show`와 `session send`는
-이런 경우와, 아직 실행 중인 요청(`send`), 실패한 follow-up에 2로 종료합니다.
+GC`를, 저장된 적이 없는 세션은 `was not saved`를 알립니다. 이런 경우, 아직 실행 중인 요청에
+`session send`를 쓴 경우, follow-up이 실패한 경우에 `session show`와 `session send`는 종료 코드 2로 끝납니다.
 
 **보관.** 저장소가 크기 한도를 넘으면 오래된 대화부터 지웁니다. 한도와 바꾸는 방법은
 [Agent 세션](../features/others/state.md#agent-sessions)에 있습니다.

@@ -92,8 +92,8 @@ payload.instruction = "Review the release before dependent work proceeds."
 
 ## Human 도구 {#human-tools}
 
-리뷰어가 쓸 도구는 `views.human_tools` 아래에 도구마다 이름을 붙여 적으세요. 리뷰어가
-실행하며, 자유 인자는 받지 않습니다. [내장 도구](tools/builtin.md)는 Linux, macOS, Windows에서
+리뷰어가 쓸 도구는 `views.human_tools` 아래에 도구마다 이름을 붙여 적으세요. 도구는
+리뷰어가 실행하며, 실행할 때 임의의 인자를 덧붙일 수는 없습니다. [내장 도구](tools/builtin.md)는 Linux, macOS, Windows에서
 똑같이 동작합니다. `open`은 파일, 폴더, `http(s)` URL을 데스크톱의 기본 애플리케이션으로 열고,
 `graph`는 현재 프로젝트 그래프 뷰어를 실행합니다. `read`, `list`, `section`, `help`는 터미널에
 텍스트를 출력합니다.

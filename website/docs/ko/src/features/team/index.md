@@ -122,8 +122,8 @@ artifactize remote status
   풀 리퀘스트)에는 `read`만 주고, `human`은 승인하는 사람에게만 주세요. 토큰이
   유출되거나 오용되면 `server token revoke NAME --purge`로 그 토큰이 게시한
   항목도 삭제합니다.
-- `verify --force`는 저장소에서 아무것도 읽지 않으므로 의심스러운 기록을 우회하고,
-  새 결과를 게시해 그것이 저장소의 최신 기록이 됩니다.
+- `verify --force`는 저장소에서 아무것도 읽지 않으므로 의심스러운 기록을 우회하며,
+  새로 리뷰해 게시한 결과가 저장소의 최신 기록이 됩니다.
   `cache rm`은 로컬 키의 기록을 지우고, `server rm`은 저장소에서 키의 기록을
   제거합니다.
 - 저장소는 `.artf` 선언이 아니라 `$STATE/remote.json`과 환경 변수로만 설정되므로,

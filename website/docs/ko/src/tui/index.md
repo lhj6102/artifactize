@@ -12,7 +12,7 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 ```
 
 저장된 요청을 검색하고 대기 중인 Human 요청을 리뷰하는 터미널 UI이며,
-`request`와 같은 단계를 거칩니다. 맡고, 도구를 실행하고, 맡기를 해제하고, 제출하며, 제출을
+`request`와 같은 단계를 거칩니다. 맡고, 도구를 실행하고, 맡기를 해제하고, 제출하며, 제출한 결과를
 `request submit`과 똑같이 원격 리뷰 저장소에 게시합니다. 작업 중인 터미널과 별도로 터미널이나 tmux 창을
 하나 더 열어 실행하세요.
 
@@ -254,7 +254,7 @@ Scope 배지와 머리말은 `!N ✗N ◐N ?N` 주의 카운터를 공유합니�
 ### Artifact와 eval {#artifacts-and-evals}
 
 eval마다 **행 하나**가 있습니다. Artifact 행은 지금 보이는 eval 행을
-`passed/total`과 가장 급한 상태로 요약합니다. `[file]`은 파일 Artifact를 표시하며, 그 대상
+`passed/total`과 표시 우선순위가 가장 높은 상태로 요약합니다. `[file]`은 파일 Artifact를 표시하며, 그 대상
 경로와 태그는 Detail의 Technical 섹션에 있습니다. basis Artifact는 행 하나입니다.
 `◇ engine  basis`. 별도의 관계 행이나 늘 켜져 있는 의존성 목록은 없습니다.
 

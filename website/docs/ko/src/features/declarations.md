@@ -6,8 +6,8 @@
 artifactize config check
 ```
 
-`Folder configuration is valid.`가 출력되거나, 오류를 출력하고 2로 종료합니다. 선언 안의
-실수라면 그 파일, 줄, 열이, 대상 파일이 없는 것처럼 디스크에서 찾은 문제라면 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
+`Folder configuration is valid.`가 출력되거나, 오류를 출력하고 2로 종료합니다. 선언 내용의
+오류에는 파일 이름과 줄·열 번호가, 대상 파일이 없는 것처럼 디스크에서 찾은 문제에는 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
 정확한 규칙이 있습니다. 개념 소개는 [Artifact와 eval](artifact.md)에 있습니다.
 
 ## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
@@ -211,8 +211,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 ```
 
 이름 있는 일반 Artifact이므로 runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
-`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본으로 주어지는 eval도, 자식을 소유하는 관계도,
-다른 Artifact와의 관계도 없습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
+`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이 없고, 자식 Artifact를 갖지 않으며,
+다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
 명령은 저장소 루트에서 실행되며, 그래프를 선언한다고 그 폴더의 소유자가 되지는 않습니다. 범위는
 `kind = "graph"`를 쓰고 선언 경로는 `.artf`입니다.
 

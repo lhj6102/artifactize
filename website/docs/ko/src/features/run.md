@@ -1,7 +1,7 @@
 # 평가 Run {#evaluation-run}
 
 `verify`는 선택한 eval을 리뷰하고 Run을 기록합니다. `status`는 eval을 실행하지 않고, 다음
-`verify`가 무엇을 실행하고, 재사용하고, 기다리고, 막을지 예측합니다. `status`도 선언된
+`verify`에서 각 eval이 실행, 결과 재사용, 대기, 차단 중 어느 쪽이 될지 예측합니다. `status`도 선언된
 fingerprint 스크립트는 실행할 수 있습니다.
 
 ## eval 실행 게이트 {#eval-execution-gates}
@@ -26,8 +26,8 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 예를 들어 `code/tests`가 `plan`에 의존하고, `plan`에는 사람의 승인 `plan/signoff`가 필요하다고 가정합니다. `verify --eval code/tests`는 테스트를 선택하지만, 그 승인이 아직 유효하지 않으면 GREEN으로
 끝날 수 없습니다. `verify --eval code/tests --recursive`는 `code/style`과 `plan/signoff` 같은
 묶음의 다른 검사도 선택해서, 실행하거나 결과를 재사용할 수 있게 합니다. 검사를 더 선택한다고
-승인이 저절로 생기지는 않습니다. `--recursive`가 없어도 `code/style`과 그 입력은 여전히
-의무이므로, 이전 Run이나 캐시에 유효한 결과가 있어야 Run이 GREEN으로 끝납니다.
+승인이 저절로 생기지는 않습니다. `--recursive`가 없어도 `code/style`과 그 입력에 필요한
+리뷰는 여전히 통과해야 하므로, 이전 Run이나 캐시에 유효한 결과가 있어야 Run이 GREEN으로 끝납니다.
 
 
 READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본 상한이 없습니다**. 머신이 감당하기
