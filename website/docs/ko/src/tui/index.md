@@ -295,7 +295,7 @@ eval의 대기 조건은 [eval 의존성](../features/artifact.md#eval-dependenc
 각 행은 게이트를 Artifact별로 묶어, 아직 검증 요건을 충족하지 못한 Artifact를 최대 두 개까지
 완료 상태와 함께 보여 주고, 나머지 개수는 `+N`으로 표시합니다. 대기 중인 대상도 모두 다른 작업 때문에 실행이 보류된 상태라면 그 원인도 한 단계 더 보여 줍니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
 순환 안의 Artifact는 `↻ peer` 표시를 공유합니다.
-그래프가 허용하는 한 상위가 먼저 오며, Artifact 순환 상대와 eval은
+그래프가 허용하는 한 상위가 먼저 오며, 같은 순환에 속한 Artifact와 eval은
 이름순으로 정렬됩니다.
 
 모두 done인 Artifact는 자동으로 접힙니다. 다른 Artifact는 직접 접지 않는 한
