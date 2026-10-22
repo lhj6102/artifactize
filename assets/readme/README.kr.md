@@ -4,7 +4,7 @@
 [![README in Korean](https://img.shields.io/badge/README-%ED%95%9C%EA%B5%AD%EC%96%B4-blue)](README.kr.md)
 [![README in English](https://img.shields.io/badge/README-English-blue)](../../README.md)
 
-# Artifact 그래프 위에서 함께 만드세요.
+# Build together on an Artifact Graph.
 
 Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝트의 일관성을 지켜 줍니다.
 
@@ -16,7 +16,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 
 <p align="center">
   <img src="../others/graph-example.en.png" width="800"
-       alt="Artifact 그래프 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
+       alt="Artifact Graph 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 **우리의 원칙**
 
 - 만드는 방식을 제한하지 않습니다. 원하는 도구와 에이전트 하네스(AI 어시스턴트를 실행하는 앱)를 그대로 쓰세요.
-- 개성을 제한하지 않습니다. 느슨한 가드레일 안에서 자유롭게 만드세요.
+- 개성을 제한하지 않습니다. 느슨한 규칙 안에서 자유롭게 만드세요.
 - AI가 모든 것을 결정하지 않습니다. 비전, 취향, 방향에 관한 중요한 결정은 사람이 내립니다.
 
 **Artifact**는 프로젝트의 한 조각입니다. 코드, 글, 디자인이나 이미지가 될 수 있습니다.
@@ -90,7 +90,7 @@ winget install 9PB6W4LL165D --source msstore
 [Hey Arti](https://artifactize.dev/docs/ko/agent-plugin/hey-arti.html)를 쓰면 코딩
 어시스턴트에게 평소 말투로 이런 검사를 설정하고 실행해 달라고 요청할 수 있습니다.
 [플러그인](https://artifactize.dev/docs/ko/agent-plugin/plugin.html) 하나만 설치하면 Claude Code와
-Codex가 이 안내와 Artifactize의 도구를 함께 갖추게 됩니다.
+Codex에서 이 안내를 참고하고 Artifactize 도구를 쓸 수 있습니다.
 
 ```text
 /plugin marketplace add lhj6102/artifactize          # Claude Code, 세션 안에서
@@ -107,22 +107,22 @@ codex plugin add artifactize@artifactize
 
 ## 실제로 동작하는 제품
 
-아래는 데스크톱 앱의 실제 녹화와 스크린샷입니다. 실제로 검증을 실행하는 프로젝트를
+아래는 데스크톱 앱의 실제 녹화와 스크린샷입니다. 실제 프로젝트에서 검증을 실행하는 화면을
 스크립트([데모](../capture/demos.mts), [스크린샷](../capture/screenshots.mts))로
-촬영했습니다. 예시 리뷰어 "alice"는 리뷰 양식을 보여 주려고 승인 요청을
+녹화하고 촬영했습니다. 예시 리뷰어 "alice"는 리뷰 양식을 보여 주려고 승인 요청을
 맡았을 뿐이며, 아무것도 제출되지 않았습니다. 텍스트 기반 앱(CLI)에도 Monitor와
 Review 화면이 있습니다.
 
 **통과할 때까지 고치기:** 한 예제에서 Run을 네 번 실행하는 과정을 8배속으로 보여 줍니다. Run 사이에
 녹화 스크립트가 실패한 부분을 제거해 AI가 코드를 고치는 과정을 대신합니다. 바뀌지 않은
-작업은 바로 재사용됩니다.
+부분은 이전 결과를 바로 재사용합니다.
 
-<img src="../demos/review-loop.gif" width="1200" alt="Artifactize 데스크톱 앱에서 한 브랜치의 Run 네 번을 실제로 녹화한 화면: 실패한 항목은 빨간색으로 표시되고 Run 사이에 고쳐지며, 바뀌지 않은 작업은 재사용되고, 네 번째 Run에서 모든 조건이 충족됩니다.">
+<img src="../demos/review-loop.gif" width="1200" alt="Artifactize 데스크톱 앱에서 한 브랜치의 Run 네 번을 실제로 녹화한 화면: 실패한 항목은 빨간색으로 표시되고 Run 사이에 고쳐지며, 바뀌지 않은 부분은 이전 결과를 재사용하고, 네 번째 Run에서 모든 조건이 충족됩니다.">
 
-**이 프로젝트의 성장 과정:** Artifactize 자체의 Artifact 그래프가 0.7.0부터 지금까지
+**이 프로젝트의 성장 과정:** Artifactize 자체의 Artifact Graph가 0.7.0부터 지금까지
 릴리스마다 어떻게 성장했는지 보여 줍니다.
 
-<img src="../demos/graph-growth.gif" width="1200" alt="이 저장소의 현재 Artifact 그래프가 0.7.0부터 현재 main까지 릴리스마다 성장하는 모습을 보여 주는 Artifactize 데스크톱 앱의 실제 녹화.">
+<img src="../demos/graph-growth.gif" width="1200" alt="이 저장소의 현재 Artifact Graph가 0.7.0부터 현재 main까지 릴리스마다 성장하는 모습을 보여 주는 Artifactize 데스크톱 앱의 실제 녹화.">
 
 **브랜치와 Run:** 왼쪽 패널에는 Run 칩과 승인 대기 항목이 있는 예제 브랜치가, 오른쪽에는
 그 Run이 보입니다. core는 통과했고, cli의 테스트가 실패해 docs는 막혔으며,

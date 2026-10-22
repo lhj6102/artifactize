@@ -115,7 +115,7 @@ Run/요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)는
 `server token add NAME`과 `server token revoke NAME`은 ASCII
 문자 1–64개를 받습니다. 문자, 숫자, `-`, `_`, `.`입니다. 빈 이름, 공백, 슬래시,
 ASCII가 아닌 텍스트, 더 긴 이름은 **토큰 저장소를 열기 전에** 종료 코드 2로 거부됩니다.
-이 이름은 bearer 비밀이 아니라 표시 라벨입니다.
+이 이름은 인증에 쓰는 비밀 토큰이 아니라 화면에 보여 줄 이름입니다.
 
 `session show`와 `session send`는 Agent 리뷰의
 [저장된 대화](../features/agent.md#saved-conversations)를 읽고 이어 갑니다. `REF`는
@@ -342,8 +342,8 @@ artifactize config graph INPUT_ARTIFACT --impact --json
 ```
 
 로그 조회는 요청 감사 기록 전체가 아니라, 명시적인 보존/없음 증거와 원래 줄 번호를
-돌려줍니다. tail은 기본으로 스트림당 일치하는 줄 50개이며, 범위
-조회는 스트림당 최대 200줄과 크기가 제한된 바이트 예산을 돌려주고, 이어 읽으려면
+돌려줍니다. tail은 기본적으로 스트림당 일치하는 줄 50개를 돌려주고, 범위
+조회 결과는 스트림당 최대 200줄과 정해진 바이트 수로 제한되며, 이어 읽으려면
 `next_start`를 씁니다. tail과 범위는 함께 쓸 수 없습니다. `search`는 대소문자를 구분하는
 1–2048바이트 리터럴 문자열입니다. 원본이 2048바이트보다 긴 줄은 크기가 제한된 앞/끝 텍스트와 함께
 `clipped`로 표시됩니다. 128 KiB 저장 감사 기록을 넘는 끝부분을 포함한 전체 원본 runtime 스트림은

@@ -346,18 +346,18 @@ Detail에서 `!`는 다음 주의 항목의 Detail을 엽니다. Human 동작에
 초점이 필요합니다. 초점 잠금, Esc와 Close 동작, 유지되는 초안은
 [공용 Human Detail](#shared-human-detail)에서 다룹니다.
 
-클릭은 초점을 두고 선택합니다. 더블 클릭은 트리 행의 Detail을 엽니다. 간략 보기를
+클릭은 초점을 두고 선택합니다. 더블 클릭은 트리 행의 Detail을 엽니다. peek를
 클릭하면 Full로 엽니다. Human Detail에서는 선택한 도구를 클릭하면 실행합니다. 휠은 초점을 옮기지 않고
-포인터 아래의 창을 스크롤합니다. 트리에서는 선택이 아니라 보기 영역을 움직이므로, 간략 보기는
+포인터 아래의 창을 스크롤합니다. 트리에서는 선택이 아니라 보기 영역을 움직이므로, peek는
 같은 eval에 머뭅니다. 이동 경로 조각은 클릭할 수 없습니다. 키보드의 괄호 붙여 넣기는
 마우스 캡처가 켜져 있든 꺼져 있든 동작합니다.
 
 ### Detail {#detail}
 
-트리에 초점이 있으면 Detail은 `j`/`k`를 따라가는 **간략 보기**입니다. Outcome과
-eval이 기다리는 Artifact를 보여 줍니다. 실행 중인 Agent의 간략 보기는 대화 기록의 마지막
-줄도 보여 줍니다. Enter, →, 또는 간략 보기를 클릭하면 모달 대신 **Full** Detail이 열립니다.
-Detail을 떠나면 전체 보기가 닫히고 간략 보기가 돌아옵니다.
+트리에 초점이 있으면 Detail은 `j`/`k`를 따라가는 **peek**(간략 보기)입니다. Outcome과
+eval이 기다리는 Artifact를 보여 줍니다. 실행 중인 Agent의 peek는 대화 기록의 마지막
+줄도 보여 줍니다. Enter, →, 또는 peek를 클릭하면 모달 대신 **Full** Detail이 열립니다.
+Detail을 떠나면 전체 보기가 닫히고 peek가 돌아옵니다.
 
 읽기 전용 섹션은 이 순서로 나옵니다. **Outcome → Waits for → What → Provenance
 → Technical**. Outcome은 판정이나 오류를 먼저 보여 줍니다. What에는 지시문과

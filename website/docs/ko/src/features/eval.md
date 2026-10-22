@@ -1,7 +1,7 @@
 # Eval {#eval}
 
-**eval**은 Artifact에 대한 검사 하나입니다. eval에는 변하지 않는 로컬 ID, 무엇이 통과인지
-말해 주는 제목, 그리고 누가 또는 무엇이 리뷰하는지 말해 주는 프로필을 주세요. 예를 들어
+**eval**은 Artifact에 대한 검사 하나입니다. eval에는 바뀌지 않는 로컬 ID, 통과 기준을
+나타내는 제목, 그리고 누가 또는 무엇이 리뷰하는지 정하는 프로필을 지정하세요. 예를 들어
 `library` Artifact의 `[evals.tests]`는 전체 ID가 `library/tests`입니다.
 
 실행되는 세 kind는 같은 수명 주기와 재사용 규칙을 공유합니다.
@@ -18,7 +18,7 @@
 
 리뷰 기준은 `payload.instruction`에 쓰세요. Agent와 Human eval에서
 `pass_schema`와 `fail_schema`는 소유자의 결과 필드를 기술하고, artifactize가
-판정을 덧붙입니다. 닫힌 봉투, 예약된 이름, 판정만 있는 기본값은
+판정을 덧붙입니다. 선언한 필드만 허용하는 결과 객체, 예약된 이름, 판정만 있는 기본값은
 [소유자 결과 스키마](declarations.md#owner-result-schemas)를 보세요. Runtime
 eval은 소유자 스키마 대신 명령의 종료 상태를 씁니다. 이름 붙은 `profile_variants`를 쓰면 호출자가 판단을 고치지 않고
 다른 실행 프로필을 고를 수 있습니다. [선언](declarations.md)을 보세요.

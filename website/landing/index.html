@@ -110,14 +110,14 @@
         <img src="/media/graph-example.en.png" width="1600" height="900" loading="eager" decoding="async"
              alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command."
              data-ko-src="/media/graph-example.ko.png"
-             data-ko-alt="Artifact 그래프 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
+             data-ko-alt="Artifact Graph 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
       </figure>
       <figure class="hero-demo">
         <img src="/media/review-loop.gif" width="1280" height="720" loading="eager" decoding="async"
              alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes."
              data-ko-alt="예제 프로젝트를 네 번 Run한 과정을 Artifactize 데스크톱 앱에서 실제로 녹화했습니다. 실패한 부분이 빨간색으로 표시되면 다음 Run 전에 고치고, 바뀌지 않은 작업은 결과를 재사용하며, 네 번째 Run에서 통과합니다.">
         <figcaption data-locale="en">Each box is an Artifact, a piece of the project with its own checks; the lines between them make up the Artifact Graph. Real recording of the desktop app preview: four Runs of an example, eight times faster.</figcaption>
-        <figcaption data-locale="ko">상자 하나하나가 Artifact, 즉 검사가 따로 붙는 프로젝트의 한 조각이고, 그 사이의 선들이 Artifact 그래프를 이룹니다. 데스크톱 앱 미리보기 버전에서 예제 프로젝트를 네 번 Run한 과정을 녹화해 8배속으로 재생합니다.</figcaption>
+        <figcaption data-locale="ko">상자 하나하나가 Artifact, 즉 검사가 따로 붙는 프로젝트의 한 조각이고, 그 사이의 선들이 Artifact Graph를 이룹니다. 데스크톱 앱 미리보기 버전에서 예제 프로젝트를 네 번 Run한 과정을 녹화해 8배속으로 재생합니다.</figcaption>
       </figure>
     </div>
   </section>
@@ -218,7 +218,7 @@
           <p data-locale="en">Compare pieces with each other. Alice approves the specification before work builds on it.</p>
           <p data-locale="ko">조각끼리 비교하세요. Alice는 명세를 바탕으로 작업을 시작하기 전에 명세를 승인합니다.</p>
           <p data-locale="en" class="sr">The code is compared with the specification; Alice signs off the specification.</p>
-          <p data-locale="ko" class="sr">코드는 명세와 비교되고, Alice가 명세를 승인합니다.</p>
+          <p data-locale="ko" class="sr">코드가 명세에 맞는지 확인하고, Alice가 명세를 승인합니다.</p>
         </section>
 
         <section class="story-step" data-step="runtime" id="step-runtime" aria-labelledby="step-runtime-h">
@@ -249,7 +249,7 @@
           <h3 data-locale="en" id="step-beyond-h">A website and docs pages join the graph.</h3>
           <h3 data-locale="ko" id="step-beyond-h">웹사이트와 문서 페이지가 그래프에 들어옵니다.</h3>
           <p data-locale="en">Check writing and design too: compare the guides with the app connections they describe.</p>
-          <p data-locale="ko">글과 디자인도 검사하세요. 가이드의 설명이 실제 앱 연결과 맞는지 비교합니다.</p>
+          <p data-locale="ko">글과 디자인도 검사하세요. 가이드에 설명된 앱 연결 방식이 실제 구현과 맞는지 확인합니다.</p>
           <p data-locale="en" class="sr">Documentation and website checks join, with Dana’s design approval.</p>
           <p data-locale="ko" class="sr">문서와 웹사이트를 검사하고, Dana가 디자인을 승인하는 절차도 추가합니다.</p>
         </section>
@@ -307,7 +307,7 @@
         <p data-locale="en" class="kicker">See it in the desktop app</p>
         <p data-locale="ko" class="kicker">데스크톱 앱에서 보기</p>
         <h2 data-locale="en" id="app-title">Real projects, recorded in the app.</h2>
-        <h2 data-locale="ko" id="app-title">앱에서 녹화한 실제 프로젝트.</h2>
+        <h2 data-locale="ko" id="app-title">실제 프로젝트를 앱에서 살펴보는 모습을 녹화했습니다.</h2>
         <p data-locale="en">Both recordings come from the desktop app preview, played back faster.</p>
         <p data-locale="ko">두 영상 모두 데스크톱 앱 미리보기 버전에서 녹화했으며, 빠르게 재생합니다.</p>
       </div>
@@ -316,8 +316,8 @@
           <button type="button" class="demo-tab" aria-pressed="true" data-src="/media/graph-growth.gif"
                   data-alt="Real recording of the Artifactize desktop app showing Artifactize's own project graph growing release by release, from 0.7.0 to the current release."
                   data-label="Artifactize’s own project graph, one step per release from 0.7.0 to today."
-                  data-ko-data-alt="Artifactize 자체 프로젝트 그래프가 0.7.0부터 현재 릴리스까지 릴리스마다 성장하는 모습을 담은 Artifactize 데스크톱 앱의 실제 녹화."
-                  data-ko-data-label="Artifactize 자체 프로젝트 그래프, 0.7.0부터 오늘까지 릴리스마다 한 단계씩."><span data-locale="en">The graph grows</span><span data-locale="ko">그래프의 성장</span></button>
+                  data-ko-data-alt="0.7.0부터 현재 릴리스까지 Artifactize 프로젝트의 그래프가 릴리스마다 성장하는 과정을 데스크톱 앱에서 실제로 녹화했습니다."
+                  data-ko-data-label="Artifactize 프로젝트의 그래프가 0.7.0부터 지금까지 릴리스마다 한 단계씩 성장하는 모습입니다."><span data-locale="en">The graph grows</span><span data-locale="ko">그래프의 성장</span></button>
           <button type="button" class="demo-tab" aria-pressed="false" data-src="/media/review-loop.gif"
                   data-alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes."
                   data-label="Four Runs of an example project: failing parts are fixed between Runs, unchanged work is reused, and the last Run passes."
@@ -326,8 +326,8 @@
         </div>
         <img src="/media/graph-growth.gif" width="1280" height="720" loading="lazy" decoding="async"
              alt="Real recording of the Artifactize desktop app showing Artifactize's own project graph growing release by release, from 0.7.0 to the current release."
-             data-ko-alt="Artifactize 자체 프로젝트 그래프가 0.7.0부터 현재 릴리스까지 릴리스마다 성장하는 모습을 담은 Artifactize 데스크톱 앱의 실제 녹화.">
-        <figcaption><span data-locale="en" class="app-demo-caption">Artifactize’s own project graph, one step per release from 0.7.0 to today.</span><span data-locale="ko" class="app-demo-caption">Artifactize 자체 프로젝트 그래프, 0.7.0부터 오늘까지 릴리스마다 한 단계씩.</span></figcaption>
+             data-ko-alt="0.7.0부터 현재 릴리스까지 Artifactize 프로젝트의 그래프가 릴리스마다 성장하는 과정을 데스크톱 앱에서 실제로 녹화했습니다.">
+        <figcaption><span data-locale="en" class="app-demo-caption">Artifactize’s own project graph, one step per release from 0.7.0 to today.</span><span data-locale="ko" class="app-demo-caption">Artifactize 프로젝트의 그래프가 0.7.0부터 지금까지 릴리스마다 한 단계씩 성장하는 모습입니다.</span></figcaption>
       </figure>
     </div>
   </section>

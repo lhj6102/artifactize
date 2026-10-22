@@ -11,7 +11,7 @@ Artifact는 리뷰하는 모든 것입니다. 코드, 문서, 디자인, 이미�
 그것을 키에 포함한 리뷰만 무효가 됩니다. 자식 폴더는 입력을 정리해 주지만,
 같은 저장소에 있다는 것만으로 모든 Artifact가 모든 검사의 의존성이 되지는 않습니다.
 
-실행 관문은 각 eval 자신의 참조에 속합니다. 자식 폴더는
+각 eval의 실행 관문은 그 eval이 참조한 Artifact로 정해집니다. 자식 폴더는
 부모 내용의 일부이므로 부모의 모든 eval이 참조하는 것으로 칩니다.
 [eval 의존성](#eval-dependencies)을 보세요.
 
@@ -142,7 +142,7 @@ BLOCKED eval의 이유에는 막힘의 근원인 RED eval의 이름이 나옵니
 
 Human eval은 의존성 관문에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두
 GREEN일 때만 시작합니다. 사람은 기계 eval이 이미 통과한 것만 승인합니다.
-그때까지 Human eval은 기다립니다. 그 기계 eval 중 하나가 RED나
+그 전에는 Human eval을 시작하지 않습니다. 그 기계 eval 중 하나가 RED나
 ERROR이면 Human eval은 시작하지 않고 BLOCKED가 되며, 그 이유에 해당 eval의 이름이 나옵니다. 예를 들어
 `Sibling machine eval RED: spec/review`처럼 나옵니다. 같은 Artifact의 다른 Human eval은
 이 조건에 들어가지 않으므로, 두 승인이 서로를 기다리는 일은 없습니다.

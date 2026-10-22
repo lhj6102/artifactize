@@ -14,7 +14,8 @@ Read the root README {readme} and its Korean translation {readme-kr}, which live
 assets/readme/. Check these criteria:
 - K-FAITHFUL: Every sentence, list item, heading, caption and image description of the
   root README is translated with the same meaning, in the same order. Nothing is left
-  out, added, softened or strengthened.
+  out, added, softened or strengthened. The headline, the project sentence "Build together
+  on an Artifact Graph.", always stays in English.
 - K-SAME-TARGETS: Badges, commands, code blocks and their order are the same; code-block
   comments may be translated. Every link and image reaches the same target as in the root
   README: repository files through paths relative to assets/readme/, and documentation
@@ -58,6 +59,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 [evals.follows-write-in-korean.payload]
 instruction = """
 Read {write-in-korean}. Read the Korean README {readme-kr}, README.kr.md in assets/readme/.
+The project sentence "Build together on an Artifact Graph." stays in English by design, as the
+headline, and "Artifact Graph" is the product's name for the graph.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the read tool of {readme-kr}.

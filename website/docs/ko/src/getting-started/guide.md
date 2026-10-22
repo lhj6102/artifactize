@@ -93,7 +93,7 @@ artifactize status         # all three post reviews are reused
 cd ../runtime-relations    # continue the tour below
 ```
 
-각 파일은 자기 자신만 해시합니다. 참조된 `house-style` Artifact가
+각 파일 Artifact의 해시에는 그 파일만 들어갑니다. 참조된 `house-style` Artifact가
 검사기와 금지어를 담고 있으므로, 공용 부분이 바뀌면 세 글의 리뷰 모두
 [재사용 키](../features/fingerprint.md#the-reuse-key)가 무효가 됩니다. 재사용 키는
 검사의 기준과 리뷰된 입력을 식별하도록 기록된 값으로, 이전 결과가 여전히 적용되는지를 결정합니다.

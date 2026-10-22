@@ -151,14 +151,14 @@ Run은 그 백엔드에서 새 리뷰를 더 받지 않습니다. 그 Run에서 
 Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not started.
 ```
 
-다음 Run은 그 백엔드를 다시 받아들입니다.
+다음 Run에서는 그 백엔드를 다시 쓸 수 있습니다.
 
 eval 범위 안의 도구만 노출되며, 도구는 차례로 실행됩니다. 명령
 도구는 작성자의 [환경](declarations.md#runtime-execution-library)에서 실행되며,
 호출마다 전용 출력 디렉터리와 임시 디렉터리를 가집니다. 내장 도구는
 artifactize 안에서 실행되며 호출별 디렉터리가 없습니다. `help`는 artifactize 자신이 받은
-환경에서 프로그램을 실행합니다. 도구 결과는 구조화된 데이터를 평평하게 만들지 않고 텍스트, JSON, 검증된 base64 이미지 블록을
-유지합니다. PNG/JPEG/WebP 결과는 두 제공자 전송 방식 모두에 전달되며, 이미지를 지원하지 않는 모델에
+환경에서 프로그램을 실행합니다. 도구 결과는 구조화된 데이터를 평탄화하지 않고 텍스트, JSON, 검증된 base64 이미지 블록을
+그대로 유지합니다. PNG/JPEG/WebP 결과는 두 제공자 전송 방식 모두에 전달되며, 이미지를 지원하지 않는 모델에
 이미지를 요청하면 제공자 오류로 실패합니다. 제공자 호출 ID가 중복되면 안전하게
 실패합니다. 요청 시도별 `usage`는 성공과 ERROR 모두에서 저장되며, 캐시 적중 때는
 시도가 `reusedUsage`로 옮겨지고 지출로 세지 않습니다. 카운터는
