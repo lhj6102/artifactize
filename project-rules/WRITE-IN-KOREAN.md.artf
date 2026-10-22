@@ -18,8 +18,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 instruction = """
 Read WRITE-IN-KOREAN.md of {write-in-korean} with the read_rules tool. It states rules for Korean writing and \
 is itself written in Korean. Read every Korean sentence of it, including the examples, and check it against \
-every K- item of the same document. The item ids and the English words quoted as examples are not Korean \
-prose. Submit GREEN only when no sentence violates an item. Otherwise submit RED with up to 20 violations, \
+every K- item of the same document. The item ids, the English words quoted as examples and the phrases quoted in '…' \
+as what not to write are not prose to judge. Submit GREEN only when no sentence violates an item. Otherwise submit RED with up to 20 violations, \
 each with the item id, the line, the text and one sentence on how to rewrite it."""
 
 [evals.follows-itself.pass_schema]
