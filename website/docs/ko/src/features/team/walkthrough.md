@@ -215,7 +215,7 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 1 (runtime 0, agent 0,
 ```
 
 Bob이 먼저 `verify --all --wait`를 실행했다면, Bob의 `verify --wait`는
-기다리는 Run을 따라갔을 것이고, Alice의 승인이 저장소에 도착하는 즉시 Bob의 요청도
+Run의 진행 상황을 보여 주며 끝날 때까지 대기했을 것이고, Alice의 승인이 저장소에 도착하는 즉시 Bob의 요청도
 확정되었을 것입니다. Bob의 토큰에는 `human`이 없으므로, Bob이 제출한 승인은
 경고와 함께 로컬에만 남습니다.
 

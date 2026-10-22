@@ -13,7 +13,7 @@ Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않�
 
 ## 미룬 작업을 병합 게이트에서 빼기 {#keep-deferred-work-out-of-the-merge-gate}
 
-개발자는 사람이 자리를 비운 동안 기계 작업을 마치려고 `--defer-human`을 쓸 수 있으며,
+개발자는 사람이 자리를 비운 동안 자동 검사를 먼저 마치려고 `--defer-human`을 쓸 수 있으며,
 `--speculate`를 함께 쓸 수도 있습니다. SIGNOFFS_PENDING(종료 코드 5), DEFERRED 승인,
 PROVISIONAL 기계 결과는 승인이 아닙니다. CI의
 `--reuse-only agent,human` 게이트를 유지하세요. 빠진 승인은 실행되지 않고

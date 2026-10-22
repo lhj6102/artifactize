@@ -71,7 +71,7 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
   의존성이 아니며, 명령이 읽는 파일이 저절로 추가되지도 않습니다. 자식 폴더는
   부모 eval의 입력으로 칩니다.
 - eval 하나에 의무 하나. 명령으로 확인할 수 있으면 runtime eval을, 판단이
-  필요하면 [Agent eval](../features/agent.md)을, 사람이 판단이나 권한을 더해야 하는 곳에만
+  필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
   [Human eval](../features/human.md)을 쓰세요. 사람에게는
   Artifact의 runtime eval과 Agent eval이 GREEN이 된 뒤에만 요청합니다.
 - Artifact 하나에 대한 기준은 그 eval 안에 두고, 여러 Artifact가 공유하는 규칙은

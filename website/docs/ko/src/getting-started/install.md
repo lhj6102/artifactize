@@ -58,8 +58,8 @@ cask도 앱을 함께 설치합니다. Homebrew formula, Cargo, 소스 빌드는
 [Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg)를 내려받아
 열고 **Artifactize**를 응용 프로그램 폴더로 끌어다 놓은 뒤 앱을 한 번 여세요.
 명령이 없다면 관리자 권한 확인 창을 승인해 새 터미널에서 `artifactize`를 쓸 수 있게 하세요
-([자세히](#desktop-app)). 이미지 하나가 macOS 11부터 Apple 실리콘과 Intel에서 실행되며,
-Apple의 공증을 받았습니다.
+([자세히](#desktop-app)). Apple의 공증을 받은 이 디스크 이미지 하나로
+macOS 11 이상의 Apple 실리콘 Mac과 Intel Mac을 모두 지원합니다.
 
 **Windows.**
 [Microsoft Store 페이지](https://apps.microsoft.com/detail/9PB6W4LL165D)(x64)에서 Artifactize를 설치한 뒤

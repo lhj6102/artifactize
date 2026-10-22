@@ -128,9 +128,10 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 ```
 
 `executed`는 ERROR 결과와 이 Run이 기록한 Human 요청을 포함해 이 Run이 직접 실행한 횟수이고,
-`reused`는 캐시, 합류, 원격 결과를 셉니다. 다른 프로필이 만든 재사용 결과(다른 모델, 제한, 그 밖의
-설정으로, 모두 재사용 키에 들어가지 않음)에는 그 줄에 `profile NAME`이 붙고, 요약 끝에
-`; N produced by another profile`(JSON에서는 `summary.reused.otherProfile`)이 붙습니다. 설정이
+`reused`는 캐시, 합류, 원격 결과를 셉니다. 모델, 제한 같은 설정은 재사용 키에
+들어가지 않으므로, 다른 설정의 프로필이 만든 결과도 재사용될 수 있습니다. 그런 결과의 줄에는
+`profile NAME`이 붙습니다. 요약 끝에는 `; N produced by another profile`(JSON에서는
+`summary.reused.otherProfile`)이 붙습니다. 설정이
 같은 변형의 결과에는 표시가 붙지 않으며, 저장된 `options.variant`에 변형 이름이 있습니다.
 `Usage`(사용량이 보고됐을 때만 출력)는 이 Run에서 쓴 수치와, 재사용한 실행이 원래 쓴 수치의 합인
 `saved`를 나눠 보여 줍니다. JSON verify와 `run show`에는 같은 수치가 `summary.executed`,
@@ -210,7 +211,7 @@ status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스�
 체크아웃에서 status를 실행하면 verify를 돌리지 않고도 무엇을 다시 리뷰할지 알 수 있습니다.
 force는 여전히 직접 선택한 실행 가능한 eval에만 적용됩니다. Human 실행 동작은 대기 요청을
 기록합니다. 같은 키의 Human 실행이 진행 중이면 원래 verify가 종료한 뒤에도 WAITING_HUMAN과
-`wait` 동작으로 보입니다. 저장된 시도는 정규화한 현재 저장소 경로에 해당하는 기록만 읽습니다. eval마다 있을 수
+`wait` 동작으로 보입니다. 저장된 실행 기록 중에서는 정규화한 현재 저장소 경로에 해당하는 기록만 읽습니다. eval마다 있을 수
 있는 `last: {runId, verdict, fingerprint?}`는 지난 기록이지 현재 증거가 아닙니다. 누가 만든
 결과인지 전부 보려면 `run show RUN_ID`를 쓰세요. 재사용 키가 없는 GREEN이나 RED는 자기 Run만
 충족하므로, 나중의 status에서는 재사용이 아니라 STALE로 나옵니다. basis만 있는 범위도 충족될 수
