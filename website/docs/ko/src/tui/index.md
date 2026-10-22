@@ -221,9 +221,10 @@ ALL과 모든 저장소/워크트리에 닿습니다.
 좁은 창에 줄여 보여 줍니다. **Preview**는 초점을 옮기지 않고 다음 단계를 보여 줍니다. 숨겨진 단계는
 이동 경로에 남습니다. `artifactize › scope › Run › eval`.
 
-화면에는 늘 **Compact + Full + Preview**가 보입니다. 초점이 있는 창이 가운데를 차지하고,
-터미널이 넓을수록 옆 창도 조금씩 넓어집니다. Scope에서는 Full + Preview를, Detail에서는 Tree
-Compact + Detail Full을 보여 줍니다. 터미널이 좁아도 단계를 숨기지 않으니, 초점이 있는 창에
+화면에는 늘 **Compact + Full + Preview**가 보입니다. 옆 창은 터미널 폭이 100열 미만이면
+16열, 139열까지는 28열, 140열부터는 36열이고, 초점이 있는 창이 가운데를 차지합니다.
+Scope에서는 Full + Preview를, Detail에서는 Tree Compact + Detail Full을 보여 줍니다. 터미널이
+좁아도 단계를 숨기지 않으므로 아주 작은 터미널에서는 초점이 있는 창이 보이지 않을 수 있습니다.
 공간이 더 필요하면 터미널을 넓히세요.
 
 - **Scope.** Git 클론은 공통 Git 디렉터리로 묶입니다. `ALL`은
