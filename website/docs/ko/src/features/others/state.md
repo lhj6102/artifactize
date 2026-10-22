@@ -13,7 +13,7 @@ artifactize가 상태를 어디에 보관하는지, 재사용 캐시를 어떻�
 
 **Microsoft Store 패키지**는 Flexible Virtualization 제외 없이
 Windows의 기본 AppData 가상화를 씁니다. AppData 아래의 새 상태는 패키지 전용입니다.
-Store 버전은 zip이나 Cargo 설치와 공유하지 않고 자기만의 Run, 로그인, 캐시를
+Store 버전은 zip이나 Cargo 설치와 공유하지 않고 별도의 Run, 로그인, 캐시를
 유지합니다. 제거하면 Windows가 그 전용 상태를 지웁니다.
 위의 경로는 앱의 논리적 보기일 뿐, 반드시 실제 디스크 위치는 아닙니다.
 [Windows 패키징 스모크 테스트](https://github.com/lhj6102/artifactize/actions/runs/39138230810)는
@@ -77,8 +77,7 @@ ID, 즉 데이터베이스를 만들 때 생성한 무작위 UUID(행 `id`)가 �
 대화와 도구 호출은 상태에 없습니다. 그것은 리뷰의
 [저장된 세션](#agent-sessions)에 있습니다.
 
-지원되는 업그레이드는 순서가 정해진 추가 단계이며, 여는 쓰기 트랜잭션 하나에서
-`user_version`과 함께 적용됩니다. 버전은 그 잠금 아래에서 다시 읽습니다. 스키마 6은
+지원되는 업그레이드는 기존 데이터를 지우지 않고 정해진 순서대로 더하는 단계이며, 상태를 열 때 쓰기 트랜잭션 하나에서 `user_version`과 함께 적용됩니다. 버전은 그 잠금 아래에서 다시 읽습니다. 스키마 6은
 null 가능한 `runs.request_key`와, 키가 NULL이 아닌 경우의 `(repo, request_key)`에 대한 부분 고유 인덱스를
 추가해 7로 업그레이드됩니다. 기존 Run의 키는 NULL로 남습니다. 스키마 7은
 `executions.profile_identity`를 추가하고, 저장된 프로필로 채우고,
@@ -131,8 +130,7 @@ Codex sign-in storage /work/project/.state/auth is inside the git work tree /wor
 이 데이터베이스 안에서 공유됩니다. 다른 워크트리와 프로세스를 포함한 동시 Run은
 재사용 키와 실제 평가 프로필 전체가 모두 일치할 때만 진행 중인 실행에
 자동으로 합류합니다. 대기열의 요청은 기다리는 실행을 가리키며,
-실행 시작이나 백엔드 슬롯을 차지하지 않습니다. 완료되면 그
-실행의 GREEN, RED, ERROR가 기다리던 쪽에 합류한 재사용으로 전달됩니다. ERROR는 이후 Run을 위한
+실행 시작이나 백엔드 슬롯을 차지하지 않습니다. 실행이 끝나면 합류해 기다리던 요청에 그 GREEN, RED, ERROR 결과를 전달하고 재사용으로 기록합니다. ERROR는 이후 Run을 위한
 새 캐시 항목이 아닙니다. Runtime이나 Agent 실행에서 취소나
 소유자가 종료되면(PID와 프로세스 시작 시각으로 확인) 점유가 해제됩니다. 기다리던 쪽 하나가
 대체 실행을 시작하고, 나머지는 그것에 합류합니다. Human 승인은 대체되지 않습니다.

@@ -72,7 +72,7 @@ payload.instruction = "Review {app} and the implementation of {checker}; run its
 
 Agent는 `inspect_checker`를, 사람은 `source_checker`를 받습니다. 두 eval 모두
 참조된 도구 Artifact가 eval 범위에 들어가므로, 그 fingerprint가 재사용에
-관여합니다. 필요하면 도구에도 실제 테스트나 리뷰를 주세요. 끝나지 않은 작업을 우회하려고
+관여합니다. 필요하면 도구 자체도 테스트하거나 리뷰하세요. 끝나지 않은 작업을 우회하려고
 도구를 `basis`로 선언하지 마세요. `execution_paths`는 어떤 빌드된
 바이너리가 실행되었는지 기록할 수 있지만, 그 출처 고정 경로 자체가 재사용을 무효로 만들지는 않습니다.
 

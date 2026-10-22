@@ -26,9 +26,7 @@ eval은 소유자 스키마 대신 명령의 종료 상태를 씁니다. 이름 
 의존성은 그것을 쓰는 eval에 속합니다. 지시문이나 runtime 인자에서
 입력 Artifact를 `{name}`으로 가리키세요. [eval 의존성](artifact.md#eval-dependencies)을 보세요.
 
-실제 입력만 선언하세요. eval의 관찰 범위는 자기 대상과
-명시적인 지시문/Runtime 피연산자 참조에서 시작해, 그런 Artifact마다 그 자식을
-재귀적으로 범위에 넣습니다. 참조된
+실제 입력만 선언하세요. eval의 관찰 범위에는 대상 Artifact, 지시문이나 Runtime 피연산자가 명시적으로 참조한 Artifact, 그리고 이들의 모든 자식 Artifact가 들어갑니다. 참조된
 Artifact의 eval 지시문을 따라가 의존성을 더 늘리지는 않습니다. eval 범위에 들어간 모든 Artifact는
 도구를 제공할 수 있습니다. 도구 피연산자 자체로는 새 입력이 추가되지 않습니다.
 

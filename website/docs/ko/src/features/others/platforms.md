@@ -109,6 +109,6 @@ Microsoft Store 패키지에는 보이는 항목이 두 개 있습니다. 데스
 
 기본 상태 디렉터리는 OS마다 다릅니다. Windows에서는 `%LOCALAPPDATA%\artifactize`,
 Linux와 macOS에서는 `~/.local/state/artifactize`입니다. Store 버전은
-패키지 전용 상태를 따로 유지하며 Windows가 제거 시 이를 지웁니다. WSL은 자기만의 Linux
+패키지 전용 상태를 따로 유지하며 Windows가 제거 시 이를 지웁니다. WSL은 별도의 Linux
 상태를 유지합니다. 전체 우선순위와 Windows 오버레이 주의 사항은
 [상태](state.md#state)를 보세요.

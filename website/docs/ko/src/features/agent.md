@@ -28,8 +28,7 @@ artifactize models codex
 `reasoning`은 선택입니다. 지정하면 OpenAI와 Codex는 정확히
 `reasoning.effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 받습니다. Anthropic은
 적응형 사고(adaptive thinking)와 정확히 `output_config.effort`(`low`, `medium`, `high`,
-`max`)를 받습니다. 다른 값은 거부되며 다른 값으로 바꾸지 않습니다. 요청한 설정을 지원하지 않는
-모델은 제공자에서 실패합니다. artifactize는 모델을 바꾸거나
+`max`)를 받습니다. 다른 값은 거부되며 다른 값으로 바꾸지 않습니다. 모델이 요청한 설정을 지원하지 않으면 제공자에게 보낸 요청이 실패합니다. artifactize는 모델을 바꾸거나
 effort를 낮추지 않습니다. 응답이 모델 ID를 보고하면 정확히 일치해야 합니다.
 
 Agent eval은 runtime eval과 의존성 관문, 재사용 키 점유, 재사용, 최종

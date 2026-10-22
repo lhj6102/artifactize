@@ -270,7 +270,7 @@ eval마다 **행 하나**가 있습니다. Artifact 행은 지금 보이는 eval
 `◇ engine  basis`. 별도의 관계 행이나 늘 켜져 있는 의존성 목록은 없습니다.
 
 Artifact 완료는 eval 행의 색뿐 아니라 상위 관문도 따집니다.
-eval은 자기의 재사용 가능한 GREEN을 유지하면서도, 그 Artifact는 통과 0개(예를 들어 `0/1`)로
+eval의 GREEN 결과를 재사용할 수 있어도, 그 Artifact는 통과 0개(예를 들어 `0/1`)로
 **done, but waits for X**나 **done, but blocked by X**를 보여 줄 수 있습니다.
 따라서 eval 행이 모두 GREEN이라고 해서 Artifact가 소비자에게 준비되었다는 증명은 아닙니다.
 그 Artifact에 필요한 상위 증거도 충족되어야 합니다.

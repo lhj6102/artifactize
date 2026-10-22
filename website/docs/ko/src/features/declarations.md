@@ -276,8 +276,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 그 파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"graph"`가 붙습니다.
 `execution_paths`는 세 kind 모두에서 워크스페이스 기준 출처 고정 경로로 남습니다.
 
-대상은 탐색 시점뿐 아니라 계속 심볼릭 링크를 거치지 않는 기존 일반 파일로
-남아 있어야 합니다. fingerprint 준비/재확인 때, 재사용 전에,
+대상은 탐색할 때뿐 아니라 그 뒤에도 계속 존재하는 일반 파일이어야 하며, 경로에 심볼릭 링크가 없어야 합니다. fingerprint 준비/재확인 때, 재사용 전에,
 eval 시작/종료 때, 그리고 모든 Agent/Human 도구 호출 때 검증되며
 `fingerprint = false`에서도 마찬가지입니다. eval을 시작하기 전에 파일이 잘못되면
 ERROR/PREPARATION_FAILED가 됩니다. 완료된 Runtime/Agent 결과를 확정하다가
@@ -396,8 +395,7 @@ eval을 실행하기 전에 `verify`는 선택된 eval에 필요한 의존성 �
 eval이 선택되지 않은 의존성도 포함됩니다.
 fingerprint는 한 번에 최대 `--fingerprint-jobs N`개까지
 계산하며(기본값: 프로세스가 쓸 수 있는 CPU 수), `status`에서도
-`verify`와 같습니다. Run은 그 한도를 준비 단계와
-Runtime/Agent 리뷰 종료 시 재확인이 나눠 씁니다. **Human 도구 동작과 제출은
+`verify`와 같습니다. 한 Run에서는 준비 단계와 Runtime/Agent 리뷰 종료 시 재확인이 이 한도를 함께 씁니다. **Human 도구 동작과 제출은
 별개의 작업입니다**. 각각 Run의 `--fingerprint-jobs` 설정과 무관하게
 CPU 수만큼의 fingerprint 병렬성을 따로 가집니다.
 값은 완료 순서가 아니라 Artifact를 키로 저장됩니다. 실패하면 이름 순서로 처음

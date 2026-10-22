@@ -16,7 +16,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 
 <p align="center">
   <img src="../others/graph-example.en.png" width="800"
-       alt="Artifact Graph 예시: .artf 파일에서 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 Artifact로 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
+       alt="Artifact Graph 예시: .artf 파일에서 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 Artifact로 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드 테스트가 명세의 요구 사항을 제대로 검증하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 재사용할 수 있습니다. 프로젝트의 다른 버전이나 팀원의 작업 사본에서도 마찬가지입니다.
 
 자리를 비운 동안에도 검사는 계속 실행됩니다. Run마다 Run ID라는 추적 코드가
-붙고, 명령 창을 닫아도 Run은 멈추지 않습니다.
+붙고, 터미널을 닫아도 Run은 멈추지 않습니다.
 
 ## 설치
 
@@ -49,7 +49,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 
 - **macOS**: [Artifactize.dmg 내려받기](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg).
   디스크 이미지 하나로 Apple 실리콘 Mac과 Intel Mac에 모두 설치할 수 있습니다. Artifactize를 응용 프로그램 폴더로 끌어다 놓고
-  한 번 열면 터미널 명령이 설정됩니다.
+  한 번 열면 터미널에서 artifactize 명령을 쓸 수 있습니다.
 - **Windows**: [Microsoft Store에서 Artifactize 받기](https://apps.microsoft.com/detail/9PB6W4LL165D)
   (x64). 설치한 뒤 새 터미널을 여세요.
 - **Linux**: x86_64 Ubuntu 22.04, Debian 12 이상용 [.deb 내려받기](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb).

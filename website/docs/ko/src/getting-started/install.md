@@ -193,7 +193,7 @@ artifactize --version   # in a new terminal
 
 **WSL.** WSL 2 안에서 artifactize는 Linux 빌드입니다. 배포판 안에
 [Linux](#linux) 안내대로 설치하세요. Windows 설치와는 별개이며
-자기만의 상태를 유지합니다. 내장 `open`과 `login codex`는 Windows 프로그램이 아니라
+별도의 상태를 유지합니다. 내장 `open`과 `login codex`는 Windows 프로그램이 아니라
 배포판의 `xdg-open`을 씁니다.
 [파일과 브라우저 열기](../features/others/platforms.md#opening-files-and-the-browser)를 보세요.
 
