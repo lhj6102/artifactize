@@ -21,7 +21,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {core} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -65,7 +71,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {tools} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -109,7 +121,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {desktop} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -153,7 +171,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {hey-arti} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -197,7 +221,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {agent-plugin}, {claude-marketplace} and {codex-marketplace} to inspect them. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -241,7 +271,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {mcp} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -285,7 +321,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {cli} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -329,7 +371,13 @@ with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
 exposed by {tui} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
-Submit GREEN only when no feature is missing, poorly explained or contradicted.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
 each with the doc path:line, the implementation path:line (or skill location),
 and one sentence on how to fix the documentation. Fix the docs, not the code.
@@ -360,7 +408,7 @@ required = ["doc", "code", "fix"]
 additionalProperties = false
 
 [evals.follows-rules]
-title = "The documentation is concise, plain and has one installation home"
+title = "The documentation is concise, plain and written for people who use artifactize"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-rules.profile_variants]
@@ -375,8 +423,14 @@ Review the mdBook documentation {docs} in src/, starting from src/SUMMARY.md. Th
   long-winded explanation fail this criterion.
 - D-PLAIN-DOCS: A reader who is not already an expert can understand the guide. Explain
   necessary terms and commands in plain language rather than assuming professional expertise.
-Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
-20 violations, most important first, each with the item id, a documentation path:line and one
+- D-READER: The reader uses artifactize: they declare a project, run verify, sign off, set up
+  a team store or CI, or write tool Artifacts. Each page first explains what the reader does
+  and what they see as a result. A paragraph that explains how artifactize implements
+  something (process groups, signals, journals, transactions, recovery, locking) or the Rust
+  library API violates this item; the command protocol a tool author writes against is
+  user-facing.
+Read every page. Submit GREEN only when no paragraph violates an item. Otherwise submit RED
+with up to 20 violations, most important first, each with the item id, a documentation path:line and one
 sentence on what to change in the documentation.
 """
 
