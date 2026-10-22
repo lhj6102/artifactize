@@ -243,12 +243,8 @@ Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` p
 sets up the commands on first launch (below). TUI and MCP already come with the ordinary
 `artifactize` binary; they need no additional product install.
 
-The [downloads](#download-the-app) install it, and so do `install.ps1` on Windows,
-`install.sh` on macOS and x86_64 Linux, and the Homebrew cask on macOS. Each release
-attaches the disk image and `.deb` under versioned names too
-(`artifactize-desktop-vVERSION-universal-apple-darwin.dmg`,
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb`), and an AppImage:
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage
+Install it from the [downloads](#download-the-app). Each release also attaches an
+AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage
 executable and run it; it needs glibc 2.35 or later. First launch copies the commands
 to a stable per-user directory and links them in `~/.local/bin`, without
 administrator rights.
@@ -514,9 +510,7 @@ Next, take the [Quick start](guide.md): a five-minute tour that needs no model.
 #### Removed gate-bypass settings
 
 `review_policy` and `review_policy.dependency_gates` are removed; even an empty
-policy table fails configuration validation as an unknown field. The old
-`--ignore-gates` CLI flag and `VerifyOptions.ignore_gates` library option are also
-removed. Choose [speculation and deferred sign-offs](../features/run.md#speculation-and-deferred-sign-offs)
+policy table fails configuration validation as an unknown field. The old `--ignore-gates` flag is also removed. Choose [speculation and deferred sign-offs](../features/run.md#speculation-and-deferred-sign-offs)
 per verification request instead; neither mode waives final approval obligations.
 Old saved keys are ignored on read, so removing the legacy policy needs no state
 migration.

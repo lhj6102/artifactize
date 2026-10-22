@@ -234,9 +234,10 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 
 Ctrl+O, or the palette's **Open a request by ID**, opens a saved request of any
 repository in the Main area: a waiting Human review actionable, as from the Pane, and
-any other request read-only. A read-only request with a log switches between its
-Summary and its Agent or Runtime log, as an eval's chip does, and `t` shows or hides
-its **Debug** facts; **Close** returns to the Pane. It follows its request's changes
+any other request read-only. A finished Human request opens read-only in the Human
+review view, where `t` shows or hides Technical. Another read-only request with a log
+switches between its Summary and its Agent or Runtime log, as an eval's chip does, and
+`t` shows or hides its **Debug** information; **Close** returns to the Pane. It follows its request's changes
 made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 
 ## Human reviews

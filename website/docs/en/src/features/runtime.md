@@ -32,7 +32,9 @@ retention details, including the raw captures current pruning leaves intact. The
 read the same saved evidence.
 
 References such as `{spec}/requirements.json` in the declared operands admit those
-inputs. Files changed during execution invalidate the review. A later Run reuses
+inputs. If a file its fingerprint covers changes while the command runs, the result is
+ERROR (`INPUT_CHANGED`) instead of a verdict; files outside the fingerprint are not
+checked, and an eval without reuse (`fingerprint = false`) is not rechecked. A later Run reuses
 an unchanged result, including a RED result, rather than rerunning the command.
 See [Fingerprint](fingerprint.md) and the [runtime execution reference](declarations.md#runtime-execution)
 for exact limits, environment, substitution and process cleanup.

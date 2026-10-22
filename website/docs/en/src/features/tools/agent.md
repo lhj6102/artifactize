@@ -4,10 +4,8 @@
 
 Command fields `description`, `protocol`, `command` and `args` are required.
 `input_schema` defaults to `{"type":"object","additionalProperties":false}`
-(empty arguments only). Supplied schemas must have root `type: "object"` and are
-compiled by `jsonschema`, without its file/HTTP resolution features. Local `$ref`,
-composition and other standard schema features work; there is no custom keyword
-subset. Schema defaults never change arguments. Declarations/schemas are capped
+(empty arguments only). Supplied schemas must have root `type: "object"`. Standard JSON Schema works,
+including local `$ref` and composition; references to files or URLs do not. Schema defaults never change arguments. Declarations/schemas are capped
 at 8 MiB. Calls require a JSON object of at most 64 KiB before any process or output
 directory is created. Validation errors show at most five bounded, escaped
 instance/schema paths (under 4 KiB), never argument values.
@@ -19,14 +17,14 @@ take `builtin`, optional `args` and optional `description`. Without `args`, `rea
 `read`, `list`, `section` and `help` work on a fixed target, and `graph` with
 `args = []` prints the entire current project structure, as described in
 [Built-in tools](builtin.md). Only explicitly declared tools are listed.
-Built-ins execute in-process without output directories (only `help` starts its
-program); `view_image` applies the same image checks as `json` image results.
+Built-ins need no program of their own (only `help` starts the program it asks);
+`view_image` applies the same image checks as `json` image results.
 
 | Built-in | Arguments | Result |
 |---|---|---|
 | `graph` | Fixed declaration `args = []`; call `{}` | Complete name-based Artifact/eval tree, extracted criteria, graph fingerprint and input → consumer relations |
-| `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1), limit defaults to 80, max 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
-| `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | `artifactId`, `path`, sorted `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
+| `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1, at most 9007199254740991), limit defaults to 80, max 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
+| `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0, at most 9007199254740991), limit defaults to/max 200 | `artifactId`, `path`, sorted `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
 | `glob` | `{pattern, path?}`; `path` must name a directory | Searched `path`, up to 200 sorted logical `files`, `truncated` |
 | `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`; case-sensitive by default, maxResults defaults to/max 200 | Searched `path`, `matches: [{path, line, text}]` (one per matching line, sorted by path then line), `truncated` |
 
@@ -177,7 +175,8 @@ Strings substitute literally; other JSON values use compact JSON. Missing values
 and NUL bytes fail before spawn. `{{` and `}}` escape literal braces. Substitution
 is single-pass: values containing braces, quotes, spaces, `$()` or semicolons
 remain one literal argv element, never shell code. Plain tools receive empty
-stdin. Cleaned, lossily decoded stdout becomes one text block, capped at 64 KiB
+stdin. Their stdout becomes one text block, read as UTF-8 (invalid bytes replaced) with
+terminal color codes and control characters other than tab, LF and CR removed, capped at 64 KiB
 with an explicit truncation marker; nonzero exit marks that bounded stdout as a
 tool error. Stderr is not included. Commands such as `rg` that exit nonzero for
 no matches need an owner wrapper if that should count as successful empty output.

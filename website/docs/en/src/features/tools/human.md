@@ -70,6 +70,5 @@ a verdict, and tool runs are not recorded with the result.
 for one Run (`--run`), with its request, Run and eval IDs, status and reviewer.
 `--json` and `request show` add the saved history, the current claim, the run it
 reuses and the eval definition (null for Runs saved before definitions were
-recorded). They need no repository and run nothing. `run show` and `verify --json`
-summarize a Run: counts by status, executed and reused requests by kind, wall time,
+recorded). They need no repository and run nothing. `run show` and `verify --wait --json` summarize a Run: counts by status, executed and reused requests by kind, wall time,
 attempts and usage. Usage a provider did not report is never shown as zero.

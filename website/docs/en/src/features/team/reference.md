@@ -129,10 +129,9 @@ recorded; the publisher is the server-authenticated token name. An Agent result'
 machine; the conversation itself is never published. Older clients ignore the field,
 and the server stores records as they are, so the protocol and record `schema` (2) are
 unchanged. A reused remote result's request shows the reference, and `session show`
-on it names the machine and state where the conversation lives. Once the local settle
-records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
-its summary record, or the full record with share `full`, outside any database
-transaction. A `--speculate` Run holds that automatic publication until its scheduling
+on it names the machine and state where the conversation lives. When a GREEN or RED result with a reuse key is saved locally, verify publishes its
+summary record, or the full record with share `full`. If publishing fails, the local
+result stays and the failure is reported. A `--speculate` Run holds that automatic publication until its scheduling
 finishes, even while Human reviews are still pending; it then publishes only the
 results that survived, after blocked work has been withdrawn from reuse. Records carry the key, the Eval definition hash, the fingerprint of
 each Artifact the key covers, its `artifactKinds` map (`folder`/`file`/`graph`), and the

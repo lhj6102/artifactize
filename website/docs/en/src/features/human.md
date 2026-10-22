@@ -18,13 +18,12 @@ sign-off lets dependent checks continue in the same Run. Watching or closing a
 terminal does not make the decision. The [Run lifecycle](run.md#submit-observe-and-cancel)
 explains submission, watching and explicit cancellation.
 
-A **reviewer claim** reserves the request for the person reviewing it. This is
-different from artifactize's automatic **reuse-key lock**, which prevents two Runs
-from starting the same matching review simultaneously. Another Run, even from a
-different checkout, can join the existing waiting review; its request is called
-a **follower**. Human actions on a follower go to the original request and
-repository. `--force` bypasses that automatic reuse-key lock, not the need for a
-person to claim the request before acting.
+A **reviewer claim** reserves the request for the person reviewing it. Separately,
+when another Run, even from a different checkout, needs the same sign-off with the same
+inputs and profile, it joins the waiting review instead of asking again; its request is
+called a **follower**, and Human actions on it go to the original request and repository.
+`--force` asks for a new sign-off instead of joining, but a person still claims it before
+acting.
 
 Sign-offs reuse by default when their [reviewed inputs](fingerprint.md) still
 match. A later `verify` can reuse the submitted result and review its consumers.
@@ -51,7 +50,8 @@ artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true
 artifactize review [REQUEST_ID]
 ```
 
-Claim, unclaim, tool and submit default the reviewer to `$USER`; `--reviewer NAME`
+Claim, unclaim, tool and submit default the reviewer to `$USER` (then `$LOGNAME` on
+Linux and macOS, `%USERNAME%` on Windows); pass `--reviewer NAME` when none is set. `--reviewer NAME`
 can select the same explicit reviewer for each action. Reviewer names are local
 cooperative locks, not authenticated accounts. Only the claimant can run tools,
 submit or unclaim. `request claim` prints the claim and `request unclaim` the

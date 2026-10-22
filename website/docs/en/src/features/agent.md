@@ -39,10 +39,11 @@ fingerprint recheck. The backend, model, reasoning and limits are execution
 options, not part of the reuse key: a result another model or profile produced for
 the same eval, Artifact kinds and fingerprints is reused, and its record shows which one it was.
 
-The evaluator's system prompt holds the review rules. Its user message contains only the
-eval title and ID, target Artifact and instruction. Artifact references expand to the
-Artifact ID and its available tools; a file Artifact also includes its workspace-relative
-target path. Instructions therefore need not repeat tool names.
+Write in `payload.instruction` what to check and what counts as GREEN. The reviewer
+receives the eval's title and ID, its target and your instruction; artifactize adds the
+general review rules. Each `{name}` reference tells the reviewer that Artifact's name and
+the tools it can read it with (and a file Artifact's path), so the instruction need not
+name tools.
 
 Agent reviews return schema-validated GREEN or RED verdicts. If the model returns
 an invalid result, artifactize asks once for a correction; a still-invalid result
@@ -104,17 +105,13 @@ is paid for twice. Each attempt is saved in `usage` with its counters, `error` a
 
 ### Prompt caching
 
-Each Agent review gets a random session id, saved on its request as `sessionId`
-(`verify --wait --json`, `run show`, `request show`). Every request of the review, its turns,
-retries and repair turn, sends it to `openai` and `codex` as the cache key, so the
-provider can serve the part of the conversation each turn repeats from its prompt
-cache. Every review, including a forced
-re-review, starts a new session. `anthropic` caches by prefix and sends no session.
-The `cacheReadTokens` counter of each attempt in `usage` shows the cached input.
-A [follow-up](#saved-conversations) to a saved review reuses its session id and
-conversation prefix. Cache hits still depend on the provider: follow-ups remove the
-structured output format for plain-text answers, which invalidates Anthropic's
-format-dependent prompt cache.
+Providers cache the part of a conversation that each turn repeats, so later turns
+of a review cost less. See how much was cached in the `cacheReadTokens` counter of each
+attempt in `usage` (`verify --wait --json`, `run show`, `request show`, `session show
+--summary`). Each review, including a forced one, starts fresh; a
+[follow-up](#saved-conversations) continues its review's conversation and can use its
+cache. Whether the cache hits is up to the provider: an `anthropic` follow-up usually
+does not, because its answer is plain text instead of a verdict.
 
 A failed Agent review records one of these `errorCode` values:
 
@@ -168,12 +165,9 @@ messages, reasoning and tool calls, with their arguments and results, are only i
 review's [saved conversation](#saved-conversations), and
 [`session show --summary`](#session-summary) counts them.
 
-Owner validation before relying on a provider: run one real review per backend
-(OpenAI key, Anthropic key, Codex sign-in) with an accessible exact model ID and a
-declared tool.
-These real reviews are still pending for the owner. Automated tests use fake HTTP
-transports or a [fake provider](#test-against-a-fake-provider) and make no real
-inference requests.
+Before you rely on a backend, run one small review with it, using an exact model ID
+your account can use and one declared tool, and check its result with `run show`. To
+test tools and schemas without a model, use a [fake provider](#test-against-a-fake-provider).
 
 ## Saved conversations
 
@@ -349,8 +343,8 @@ artifactize verify --all --wait
 artifactize logout codex    # delete artifactize's tokens; their revocation is attempted
 ```
 
-- **Sign-in.** `login codex` uses the Codex OAuth client with PKCE, as the Codex
-  CLI does. If another process holds callback port 1455, sign-in asks for the full
+- **Sign-in.** `login codex` opens ChatGPT's sign-in page in your browser, as the
+  Codex CLI does, and returns to artifactize when you have signed in. If another process holds callback port 1455, sign-in asks for the full
   redirect URL instead of waiting for a callback. Copy the URL starting
   `http://localhost:1455/auth/callback?code=` from the address bar after a failed
   load, or DevTools → Network if the page keeps loading, and paste it into the

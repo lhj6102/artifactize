@@ -1,7 +1,15 @@
 # Declarations (.artf)
 
-The exact rules for TOML declarations, folder and file Artifacts, fingerprints,
-Eval dependencies, scoped references and the runtime execution environment.
+Write an `index.artf` next to the folder (or a `NAME.artf` next to the file) you want
+to review, then check it:
+
+```sh
+artifactize config check
+```
+
+It prints `Folder configuration is valid.`, or the error with its file, line and
+column, and exits 2 on an error. This page has the exact rules for declarations, folder
+and file Artifacts, fingerprints, references and how commands run;
 [Artifacts and evals](artifact.md) introduces them.
 
 ## Migrating removed dependency declarations
@@ -449,8 +457,9 @@ only at preparation and recheck.
 Runtime arguments, fingerprint scripts and tool arguments name other Artifacts with
 `{name}`, `{name}/path` or `--flag={name}/path`. `{owner}/child/path` starts at a folder
 Artifact; a file reference is the file itself and takes no path. Each one becomes an
-absolute path when the command runs and makes the eval depend on that Artifact, even if
-its instruction does not mention it. Everything else is passed literally: escaped braces,
+absolute path when the command runs. In instructions and runtime arguments a reference
+makes the eval depend on that Artifact; in a fingerprint script it only lets the script
+read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
 doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
 never builds a command line from a string. An eval may read its target and the Artifacts it
 references, with their children, but not the instructions of the referenced Artifacts'
@@ -495,7 +504,6 @@ remains. `artifactize prune` removes the Run's `output` folder but keeps these s
 captures. Evidence that is missing, partial, or saved only by an older or remote
 artifactize is reported as such.
 
-Cancellation and a timeout stop the command and the programs it started, after a grace
-period of about a second. Commands are trusted local code, **not a sandbox**: they can do
+Cancellation and a timeout stop the command and the programs it started. Commands are trusted local code, **not a sandbox**: they can do
 whatever your account can, must not change the reviewed input, and a program that
 deliberately detaches from the command may keep running.

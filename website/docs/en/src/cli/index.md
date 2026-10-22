@@ -59,8 +59,8 @@ on the root command and on `artifactize tools`.
 | `tools open TARGET` | — | opens default application | 0 success, 1 tool error, 2 usage |
 | `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | `Signed in with Codex.`; JSON `{"provider":"codex","signed_in":true}` | 0 |
 | `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
-| `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
-| `remote logout` | | text or JSON | 0 |
+| `remote login URL` | `--share summary\|full` (summary); token on stdin | `Signed in to URL as NAME (scopes: …).`; JSON `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
+| `remote logout` | | `Signed out of the remote review store.` plus a note that the server keeps the token valid until `server token revoke`; JSON `{"signedIn":false}` | 0 |
 | `remote status` | | text or JSON | 0 signed in, 1 not |
 | `remote push` | `--dry-run` | text or JSON | 0 |
 | `models openai\|anthropic\|codex` | | text or JSON | 0 |
@@ -173,18 +173,17 @@ later sign-off reuse.
 
 ## Runtime CLI
 
-These development examples require a source checkout, Rust and the platform
-build prerequisites from [Installation](../getting-started/install.md#build-from-source-all-platforms).
-Run them from the repository root; `cargo run` builds the CLI from that checkout.
-For an installed CLI, use `artifactize` directly with your own project's path.
+Run your project's evals and read the Run afterwards:
 
 ```sh
-cargo run -q -p artifactize -- --repo crates/artifactize-core/tests/fixtures/runtime verify --all --wait
-cargo run -q -p artifactize -- run show RUN_ID
+artifactize --repo path/to/project verify --all --wait
+artifactize run show RUN_ID
 ```
 
-The fixture intentionally includes GREEN, RED, a timeout ERROR, RED-blocked and
-ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
+`verify --wait` prints each eval's outcome as it settles and exits with the Run's
+[exit code](#command-reference); `run show` prints the saved Run again later. The
+[runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
+blocked evals side by side.
 
 [Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
@@ -298,9 +297,8 @@ For which evals wait or block, including dependency cycles, see
 [Eval dependencies](../features/artifact.md#eval-dependencies).
 
 Status uses `execute`, `reuse`, `wait` and `blocked` actions. Requests, validation
-and status carry `blockedBy` qualified Eval IDs. The monitor groups gate Evals by
-Artifact under `Waits for`. Tags, file kinds and paths remain visible in graph,
-status and monitor output.
+and status carry `blockedBy` qualified Eval IDs. Tags, file kinds and paths appear
+in graph and status output; [Monitor](../tui/index.md#monitor) shows them on screen.
 
 ## Saved Run evidence and terminal views
 
@@ -314,8 +312,8 @@ and [Human reviews](../tui/index.md#review).
 
 ## Current-directory tools
 
-`artifactize tools` also exposes the [standalone scoped tools](../features/tools/builtin.md#artifactize-tools-cli),
-using the same CLI definition and runner as `artifactize-tools`. These tools use
+`artifactize tools` also offers the [standalone scoped tools](../features/tools/builtin.md#artifactize-tools-cli),
+exactly as `artifactize-tools` does. These tools use
 the current directory, not `--repo`; the linked reference explains their path,
 URL and executable lookup rules. `artifactize tools --help` lists both `check`
 and these tools, and `artifactize tools SUBCOMMAND --help` documents each one.

@@ -79,8 +79,8 @@ Changing a covered Artifact's name changes the key. Differently named targets ca
 still share a result when their evaluation criteria and complete covered Artifact
 maps match: the key does not separately identify which covered Artifact is the target.
 For example, two Artifacts whose identical evals reference each other can share results.
-The **Eval definition hash** is lowercase SHA-256 of canonical JSON with recursively
-sorted keys over the **evaluation criteria**:
+The **Eval definition hash** changes whenever one of the eval's **evaluation
+criteria** changes:
 
 - the eval kind (runtime, agent or human);
 - `payload`, including the instruction;
@@ -106,10 +106,9 @@ use their respective execution, gate or wait reasons.
 
 ## Completed result reuse
 
-A successful end-of-review recheck adds the GREEN or RED result to its key's
-history: its self-contained `executions` row gets its completion time, size and last
-use ([State](others/state.md#state)). Errors and cancellation are
-never recorded there. When a key holds more than one record,
+A GREEN or RED result whose inputs were unchanged at the end of its review is kept
+for its key ([cache inspection](others/state.md#cache-inspection)). Errors and
+cancellations are never kept. When a key holds more than one record,
 the most recent by completion time is reused, GREEN or RED. Results from different
 profiles therefore reuse each other: a review that `--profile fast` produced
 satisfies the declared profile, and the other way around.

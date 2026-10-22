@@ -1,10 +1,10 @@
 # Built-in tools
 
-artifactize ships a set of tools written in Rust that behave the same on Linux, macOS
-and Windows, except for how a path's spelling on disk is checked (see
+artifactize comes with tools that behave the same on Linux, macOS and Windows,
+except for how a path's spelling on disk is checked (see
 [Paths](../others/platforms.md#paths)). Declare one by name with `builtin` instead of
-writing a script or calling an OS program such as `cat` or `xdg-open`. Built-in tools run inside artifactize, so
-they do not need the [`artifactize-tools`](#artifactize-tools-cli) command on `PATH`;
+writing a script or calling an OS program such as `cat` or `xdg-open`. They need
+nothing else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command;
 that command and `artifactize tools` offer the filesystem/program tools to scripts
 and runtime evals. The project-aware `graph` tool is available only as a declared
 review tool in artifactize, not in the standalone tools CLI.
