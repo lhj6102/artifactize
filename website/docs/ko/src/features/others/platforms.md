@@ -9,7 +9,7 @@ OS의 설치 채널은 [설치](../../getting-started/install.md)에 있습니�
 
 ## 프로젝트 명령은 선언된 그대로 실행 {#project-commands-run-as-declared}
 
-Runtime eval, fingerprint 스크립트, 명령 Agent 도구, 명령 Human 도구는 모든 OS에서
+Runtime eval, fingerprint 스크립트, 명령을 실행하는 Agent 도구와 Human 도구는 모든 OS에서
 `command`와 `args`를 인자 목록 하나로 실행합니다. 셸도 없고, OS마다 다른 선언도 없습니다.
 리뷰어의 실행 환경에서 쓸 수 있는 명령을 프로젝트에 선언하세요. `python3`나 `grep`을 실행하는 eval이라면 모든
 리뷰어의 `PATH`에 그 명령이 있어야 합니다. 파일을 읽고 검색하는 데는

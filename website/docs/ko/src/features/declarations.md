@@ -58,7 +58,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `fingerprint` | 생략하면 artifactsum. `false`면 재사용 안 함. 그 밖에는 artifactsum이나 스크립트 테이블 |
 | `views.agent_tools`, `views.human_tools` | 선택. 선언한 도구의 맵 |
 | `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령. `command`와 `args`는 필수, `execution_paths`는 선택. 다른 필드는 없음 |
-| `views.agent_tools.<name>.session` | 선택. 같은 Artifact에 선언한 도구 세션 이름. 명령 Agent 도구에만 씀 |
+| `views.agent_tools.<name>.session` | 선택. 같은 Artifact에 선언한 도구 세션 이름. 명령을 실행하는 Agent 도구에만 씀 |
 | `evals.<id>.title` | 필수. 비어 있지 않은 제목 |
 | `evals.<id>.gate` | 선택. `"blocking"`이면 `--defer-human`에서도 Human 승인을 엄격하게 유지. 생략하면 요청 모드를 따름. 다른 값은 없음 |
 | `evals.<id>.mutex` | 선택. 고유한 계층형 mutex 태그 최대 64개의 목록. Runtime과 Agent eval에만 씀. 기본값 없음 |
@@ -432,7 +432,7 @@ stderr의 앞부분 128 KiB씩, 잘렸는지 표시, 종료 상태, 걸린 시�
 Run의 `output` 폴더를 지우지만 이 스트림 캡처는 남깁니다. 캡처가 없거나 일부만 남았거나 이전 버전·원격 실행의 기록만 있으면 그 상태를 알려 줍니다.
 
 명령이 정상으로 끝나든, 취소되거나 시간이 초과되든 그 명령이 시작한 프로그램도 함께 멈추므로,
-백그라운드에서 시작한 것이 명령보다 오래 남지 않습니다. 계속 실행되어야 하는 보조 프로그램에는
+백그라운드에서 시작한 프로그램이 명령보다 오래 남지 않습니다. 계속 실행되어야 하는 보조 프로그램에는
 Agent [도구 세션](tools/agent.md#tool-sessions)이나 Human [launch 도구](tools/human.md#running)를
 쓰세요. 명령은 신뢰하는 로컬
 코드이며 **샌드박스가 아닙니다**. 내 계정이 할 수 있는 일은 무엇이든 할 수 있고, 리뷰하는

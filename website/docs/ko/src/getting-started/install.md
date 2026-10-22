@@ -238,9 +238,9 @@ cargo install --path crates/artifactize-tools --locked
   `/etc/paths.d/artifactize`에 씁니다. 그다음 새
   터미널을 열고 `artifactize --version`을 실행하세요. 두 명령 모두
   설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 옮겼다면
-  다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 확인 창을
-  취소하면 그 번들 위치에서 취소했다는 사실이 앱 상태에 저장되므로, 실행할 때마다
-  묻지 않습니다.
+  다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 요청을
+  취소하면 앱이 설치된 위치별로 취소 여부를 앱 상태에 저장하므로, 같은 위치에서 다시
+  실행할 때는 묻지 않습니다.
 - **Linux AppImage:** 명령은
   `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin`에 복사되고 `~/.local/bin`에서 링크됩니다.
   임시 AppImage 마운트가 사라진 뒤에도 계속 동작하며, 더
