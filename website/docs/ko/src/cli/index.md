@@ -1,7 +1,7 @@
 # CLI {#cli}
 
-프로젝트에서 `artifactize verify --all --wait`를 실행하면 리뷰가 시작됩니다. Run ID를
-알려 주고, Run이 끝날 때까지 기다린 뒤 eval마다 결과를 출력하며, 모두 GREEN이면 0으로
+프로젝트에서 `artifactize verify --all --wait`를 실행하면 리뷰가 시작됩니다. 명령은 Run ID를
+알려 주고, Run이 끝나면 eval마다 결과를 출력하며, 모두 GREEN이면 0으로
 종료합니다. 이 페이지에는 모든 명령의 플래그, 출력, 종료 코드가 있고, 이어서 `verify`의
 정책, 예산, 선택 파일, 프로필 변형을 자세히 설명합니다.
 
@@ -11,14 +11,14 @@
 번까지 받습니다. 저장소를 읽는 명령은 `--repo`를 생략하면 대개 현재 디렉터리를 쓰지만,
 기본값은 명령마다 다릅니다. **doctor는 `--repo`를 직접 줄 때만 프로젝트 선언을
 확인합니다**. Monitor와 Review는 아래 설명처럼 ALL에서 시작합니다. 상태는 기본으로 공유
-[상태 디렉터리](../features/others/state.md#state)를 씁니다. 저장소나 상태를 쓰지 않는 명령은 이
+[상태 디렉터리](../features/others/state.md#state)에 저장됩니다. 저장소나 상태를 쓰지 않는 명령은 이
 옵션들을 무시합니다. Monitor와 Review는 `--json`을 거부합니다. `mcp`는 항상 stdout에
 JSON-RPC를, stderr에 시작 진단을 씁니다. 현재 디렉터리 도구의 출력은 이미 아래 표처럼 텍스트나
 JSON이므로 `--json`을 줘도 바뀌지 않습니다. `tools help`에서 프로그램 인자 뒤에 오는 플래그는
 artifactize가 아니라 그 프로그램에 전달됩니다.
-`SELECTOR`는 위치 인자 `ARTIFACT`나 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`,
-`--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, `--all` 중 정확히
-하나입니다. `CSV`는 `verify --evals app/lint,app/tests`나 `verify --artifacts app,docs`처럼
+`SELECTOR` 자리에는 위치 인자 `ARTIFACT`나 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`,
+`--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, `--all` 중 하나만
+씁니다. `CSV`는 `verify --evals app/lint,app/tests`나 `verify --artifacts app,docs`처럼
 이름이나 eval ID를 쉼표로 이은 목록입니다. `--evals`와 `--artifacts`는 여러 번 줄 수 있으며,
 값은 순서대로 합쳐지고 중복은 빠집니다.
 `help [COMMAND]`와 `-h`/`--help`는 도움말을 출력합니다. 명령 없이 `artifactize`만
@@ -77,7 +77,7 @@ Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 
 취소, 4 INCOMPLETE, 5 SIGNOFFS_PENDING(승인만 남았다는 뜻이지 승인되었다는 뜻이 아님)입니다.
 옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 진행 상황을 지켜보는
 명령을 멈추면 종료 코드 130으로 끝나며, 이 명령을 끝내도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING
-상태의 Run이 끝날 때까지 따라갑니다. 자체 시간 제한이 먼저 끝나면 현재 Run을 출력하고 3으로
+상태의 Run이 끝날 때까지 상태를 계속 확인합니다. Run보다 이 명령의 제한 시간이 먼저 지나면 현재 Run을 출력하고 3으로
 종료하며, Run은 계속 실행됩니다. 모든 명령은 사용법 오류(알 수 없는 옵션, 반복할 수 없는 옵션의 반복, 충돌하거나 빠진 옵션과 값)나 동작 오류가 나면 종료 코드 2로 끝납니다. 오류는 stderr에 텍스트로, 또는
 `--json`이면 stdout에 `{"error":"..."}`로 나옵니다(stdout을 프로토콜에만 쓰는 `mcp`는
 예외). 도구 실패에는 두 가지 예외가 있습니다. 현재 디렉터리 도구(`tools read`, `list`, `glob`,
@@ -197,12 +197,12 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. 준비된 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작
-한 번으로 칩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수를 쓰지 않습니다. fingerprint 준비와
-재확인, 캐시 적중, 합류해서 대기 중인 요청도 쓰지 않습니다. 실행기 준비 초기에 실패한 경우는 시작
+한 번으로 칩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
+재확인, 캐시 적중, 합류해서 대기 중인 요청도 마찬가지입니다. 실행기 준비 초기에 실패한 경우는 시작
 횟수에 넣지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
 실패해도 그 시작은 시작 횟수에 포함되며, 모델을 부르지 않고 ERROR/PREPARATION_FAILED를 기록합니다.
-0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류했던 Run이 실패해서 리뷰를 다시
-실행해야 하는 Run은 그 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
+0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시
+실행해야 하면, 그 리뷰는 자기 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로
 끝납니다. 모든 요청을 시작했다면 실행 횟수가 한도에 정확히 도달해도 오류가 아닙니다.
 
@@ -218,12 +218,12 @@ JSON 배열을 줄 단위 형식으로 다시 읽지는 않습니다. 상대 경
 `verify ... --profile NAME`은 선택과 재귀 정책으로 포함된 모든 실행 가능한 eval에 대해, 선언된
 `profile_variants` 항목 하나를 통째로 고릅니다. 변형은 그다음에 적용됩니다. 실행 가능한
 eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모든 변형은 원래 리뷰어 종류를
-유지합니다. 모르는 변형이면 Run을 만들기 전에 실패하며, 원본 선언은 다시 쓰지 않습니다.
+유지합니다. 없는 변형 이름을 주면 Run을 만들기 전에 실패하며, 원본 선언 파일은 수정하지 않습니다.
 `--recursive`를 주면 이미 선택된 의존성에도 변형이 적용됩니다. 예를 들어 `app/review
 --profile fast`가 실행하는 runtime 변형의 인자에 `{fixtures}`가 있으면, `fixtures`의 eval은
 `fast`가 아니라 기본 프로필로 Run에 들어옵니다. 고른 변형은 실행 옵션일 뿐 재사용 키에 들어가지
-않습니다. 그래서 runtime 변형이 명령이나 인자를 바꾸지 않는 한, 서로 다른 변형(그리고 선언된
-프로필)의 결과는 서로 재사용됩니다. 저장된 요청의 `profile`과 `options`는 결과를 만든 실행을
+않습니다. 그래서 runtime 변형이 명령이나 인자를 바꾸지 않는 한, 변형(그리고 선언된
+프로필)이 달라도 결과를 서로 재사용할 수 있습니다. 저장된 요청의 `profile`과 `options`는 결과를 만든 실행을
 나타내고, 캐시가 다른 프로필의 결과를 돌려주면 `requestedProfile`에 요청한 프로필이 남습니다.
 텍스트 출력은 결과를 만든 프로필의 설정이 다를 때만 재사용 표시에 `profile NAME`을 붙입니다.
 설정이 같은 변형의 결과에는 표시가 붙지 않으며, 저장된 `options.variant`로 구분합니다.
@@ -260,7 +260,7 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 의존성 순환을 포함해 어떤 eval이 대기 상태가 되거나 실행이 차단되는지는
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
 
-status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검증, status에는
+status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. 요청, 검증, status에는
 `blockedBy`로 eval ID가 들어갑니다. 태그, 파일 종류, 경로는 graph와 status 출력에 나오고,
 [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다.
 
@@ -285,7 +285,7 @@ status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검
 | `BASIS` | — | 의존성이 충족된 basis Artifact |
 
 Artifact는 eval이 가진 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
-`STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에 쓰며,
+`STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
 `status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
 
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
@@ -293,7 +293,7 @@ Artifact는 eval이 가진 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFE
 `run show RUN_ID --json`과 `verify --wait --json`은 비어 있지 않을 때 최상위에 `evidence`를
 담습니다. Run 필드는 `run`으로 감싸지 않고 출력 객체에 바로 들어갑니다. `evidence`는 이
 Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다. 일부만 실행한 Run에서 캐시로 쓴
-상위 증거가 그 예입니다. 전체에서 가장 최근 판정은 아닙니다. [Run](../features/run.md#verify-and-runs)을
+상위 증거가 그 예입니다. 전체 기록에서 가장 최근 판정을 담는 것은 아닙니다. [Run](../features/run.md#verify-and-runs)을
 보세요. 터미널 키와 화면 배치는 [Monitor](../tui/index.md#monitor)와
 [Human 리뷰](../tui/index.md#review)에 있습니다.
 
@@ -303,7 +303,7 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 디렉터리에서 실행합니다. Store가 아닌 설치에는 `artifactize-tools`라는 이름으로도 들어
 있습니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
 사용법이 잘못되면 2로 종료합니다. `artifactize tools --help`가 도구 목록을 보여 주며,
-`artifactize tools check`는 이와 달리 선언된 리뷰 도구를 점검합니다. 하위 명령마다의 범위
+`artifactize tools check`는 이와 달리 선언된 리뷰 도구를 점검합니다. 하위 명령별 범위
 규칙과 제한은 [`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli)에
 있습니다.
 
@@ -311,10 +311,10 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 
 `verify SELECTOR --watch`는 Run을 제출한 직후부터 진행 상황을 보여 주고, `run watch RUN_ID`로는 나중에 진행 상황 보기를 시작할 수 있습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`는 실시간
 상태와 개수, `kind: eval_result`는 저장된 요청의 간단한 결과, `kind: outcome`은 Run의 최종
-검증입니다. `--watch`와 `--wait`는 함께 쓸 수 없습니다. 지켜보기는 Run 결과로 종료하며, 중단하면
-130으로 종료하고 지켜보기만 멈춥니다. 다시 붙으면 완료된 eval을 다시 보여 줄 뿐, 지난 이벤트를
+검증입니다. `--watch`와 `--wait`는 함께 쓸 수 없습니다. 지켜보는 명령은 Run 결과에 맞는 종료 코드로 끝나며, 중단하면
+130으로 끝나고 지켜보기만 멈춥니다. 다시 연결하면 완료된 eval을 다시 보여 줄 뿐, 지난 이벤트를
 그대로 재생하지는 않습니다. 자세한 내용이 필요하면 결과의 `next_cursor`를 MCP
-`verify_result`로 따라가거나 저장된 Run을 살펴보세요.
+`verify_result`에 넘겨 다음 내용을 읽거나 저장된 Run을 살펴보세요.
 
 runtime 결과가 실패했을 때:
 
@@ -354,8 +354,8 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 이름을 모두 받으며, 범위는 그 Artifact와 자식 Artifact입니다. eval을 쓰면 그 eval이 공개하는
 이름(`<tool>_<artifact>`)으로 도구를 지정합니다. 도구는 그 eval의 범위에서 실행되므로, 인자가
 다른 Artifact를 가리키는 도구도 그 eval의 리뷰에서처럼 실행됩니다.
-`--args`는 Agent 실행에서만 쓸 수 있습니다. Human 스키마는 빈 객체만 받고, Human 명령은 자유
-인자를 받지 않습니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
+`--args`는 Agent 실행에서만 쓸 수 있습니다. Human 스키마는 빈 객체만 받고, Human 명령에는 임의의
+인자를 넘길 수 없습니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
 환경에서 별도의 임시 출력 폴더(실행 뒤 삭제)를 쓰고, Human 호출은 리뷰어의 실제 환경을 씁니다.
 종료 코드는 준비 완료나 성공이면 0, 선언·사전 점검·도구·정리 실패면 1, 호출이 잘못되면
 2입니다. `--repo`, `--state-dir`, `--json`을 받으며, `--json`이 없어도 보고서는 JSON입니다.
@@ -370,8 +370,8 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 시각, 상태, 판정과 상태별 요청 수(해당 상태가 없으면 0)가 나옵니다. 읽을 수 없는 요청은 세지
 않으며, `unreadable`에 손상된 기록과 그 이유가 나오고 유효한 증거는 그대로 볼 수 있습니다.
 [상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
-프로젝트 코드를 실행하지 않고, 없는 상태를 만들지 않으며, 저장소가 아직 있어야 하는 것도
-아닙니다. 별도의 `history` 명령은 없습니다.
+프로젝트 코드를 실행하지 않고, 없는 상태를 만들지 않으며, 저장소가 지금 남아 있지 않아도
+됩니다. 별도의 `history` 명령은 없습니다.
 
 ## Config graph {#config-graph}
 
@@ -398,12 +398,12 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 �
 계정 인증이 아니라 담당자를 구분하는 데 쓰이며, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 로컬 잠금을 겁니다. 요청을 맡은 사람만 도구를 실행하고,
 제출하고, 담당을 해제할 수 있습니다. `request claim`은 담당 정보를, `request unclaim`은 해제한
 담당 정보를 출력합니다. 다른 리뷰어가 맡았거나 더 이상 대기 중이 아닌 요청의 담당을 해제하려
-하면 종료 코드 2로 끝납니다. 도구 이름은 `<operation>_<artifactId>`이며 자유 인자를 받지 않습니다.
+하면 종료 코드 2로 끝납니다. 도구 이름은 `<operation>_<artifactId>` 형식이며, 호출할 때 임의의 인자를 넘길 수 없습니다.
 텍스트 출력은 캡처한 텍스트나 실행 알림을 보여 주고, `--json`은 도구 결과를 출력합니다. 도구가
 실패하면 2로 종료하며 판정을 만들어 내지 않습니다.
 
 제출하려면 `--verdict GREEN|RED`가 필요합니다. `--fields`와 `--fields-file`은 함께 쓸 수
-없으며, 둘 중 하나로 소유자가 정한 필드만 담은 JSON 객체를 넘기며, 이 객체에 판정은 넣지 않습니다. 생략하면 `{}`입니다. 파일은
+없습니다. 둘 중 하나로 소유자가 정한 필드만 담은 JSON 객체를 넘기며, 판정은 이 객체에 넣지 않습니다. 생략하면 `{}`입니다. 파일은
 일반 파일이어야 하고, 필드와 전체 결과는 256000바이트까지입니다. JSON, 스키마, 리뷰어 이름,
 판정이 잘못되면 2로 종료하며, 요청은 고칠 수 있는 상태로 남습니다. 제출에 성공하면 RED여도
 0으로 종료하며, 별도의 검증 과정을 시작하지 않습니다.
@@ -412,7 +412,7 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 �
 바뀌었거나 계산할 수 없으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`나
 `FINGERPRINT_RECHECK_FAILED`)로 끝나고 명령은 종료 코드 2로 끝납니다. 새 요청을 받으려면
 `verify`를 다시 실행하세요. eval의 선언이나 범위가 바뀌었으면 제출을 종료 코드 2로 거부하고
-요청은 계속 대기합니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
+요청은 대기 상태로 남습니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
 
 이미 맡은 요청에 같은 리뷰어로 `request claim`을 다시 실행해도 기존 담당 정보를 돌려주고 0으로
 종료하므로, 담당 지정은 반복해도 안전합니다. 제출은 한 번만 받으며, 다시 제출하면 종료 코드 2로 끝납니다. 명령이 중단되는 등 제출
@@ -461,7 +461,7 @@ Your final response did not match the required schema: …
 
 텍스트 출력은 도구 결과를 2000자에서 자르고 reasoning은 요약만 보여 줍니다. `--json`은
 `{"reference", "file", "events"}`를 출력합니다. 이 JSON에는 참조, 세션 파일, 저장된
-이벤트 전체가 들어 있어 대화를 그대로 다시 재생할 수 있습니다.
+이벤트 전체가 들어 있어 대화를 그대로 재생할 수 있습니다.
 
 ### 세션 요약 {#session-summary}
 
@@ -517,11 +517,11 @@ notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would
 
 follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 이어 갑니다. 답변은 일반
 텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 헤더에
-경고가 나옵니다. 질문마다 프로필 예산을 새로 받으며, 한 세션에 보낸 질문은 차례대로 처리합니다.
+경고가 나옵니다. 질문마다 프로필의 예산이 새로 적용되며, 한 세션에 보낸 질문은 차례대로 처리합니다.
 캐시, 저장되는 메시지, 호환성은 [follow-up 재생 레퍼런스](../features/others/state.md#follow-up-replay)를
 보세요.
 
-다른 머신이나 다른 상태의 참조를 주면 그 대화가 어디 있는지 알려 주며 실패합니다. 예를 들면
+다른 머신이나 다른 상태의 참조를 주면 그 대화가 저장된 위치를 알려 주고 실패합니다. 예를 들면
 `Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
 5d0e…`입니다. 오래된 저장 대화를 자동으로 정리하면서 지운 세션은 `was removed by the session
 GC`를, 저장된 적이 없는 세션은 `was not saved`를 알립니다. 이런 경우, 아직 실행 중인 요청에

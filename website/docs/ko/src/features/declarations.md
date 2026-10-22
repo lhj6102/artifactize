@@ -1,6 +1,6 @@
 # 선언(.artf) {#declarations-artf}
 
-리뷰하려는 폴더 안에 `index.artf`를, 파일이라면 그 옆에 `NAME.artf`를 쓰고 확인하세요.
+리뷰하려는 폴더 안에 `index.artf`를, 파일이라면 그 옆에 `NAME.artf`를 만든 다음 아래 명령으로 확인하세요.
 
 ```sh
 artifactize config check
@@ -17,7 +17,7 @@ artifactize config check
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
 `"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한 eval이 끝난 뒤 실행되고, 관련 없는 형제 eval은 그대로 실행됩니다.
 
-자식 폴더는 부모의 모든 eval이 참조하는 것으로 칩니다. 그 밖의 Artifact의 리뷰가 먼저
+자식 폴더는 부모의 모든 eval이 참조하는 것으로 간주합니다. 그 밖의 Artifact의 리뷰가 먼저
 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
 
 예전 프로필을 쓰면 설정을 해석하는 단계에서
@@ -33,8 +33,8 @@ artifactize config check
 선언합니다.
 
 선언을 찾을 때는 저장소 루트부터 내려가며, `.git`, `node_modules`, 그리고 루트에 둘 수 있는
-`.artfignore`(gitignore 문법)에 적은 하위 디렉터리와 사이드카 경로는 건너뜁니다. 방문하는
-디렉터리마다 `index.artf`는 그 파일 이름만 가리키는 ignore 패턴이 있어도 읽습니다. 하위
+`.artfignore`(gitignore 문법)에 적은 하위 디렉터리와 사이드카 경로는 건너뜁니다. 탐색하는
+디렉터리의 `index.artf`는 그 파일 이름만 가리키는 ignore 패턴이 있어도 읽습니다. 하위
 프로젝트의 폴더 선언을 빼려면 그 폴더 자체를 탐색에서 빼세요. ignore된 사이드카는 해석하지도
 대상을 확인하지도 않으며, 다른 선언이 포함하지 않는 한 그 대상은 일반 파일로 남습니다. 별도
 프로젝트, 픽스처, 예제가 든 폴더를 적어 두세요.
@@ -65,21 +65,21 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `evals.<id>.profile` | 필수. `runtime`, `agent`, `human` 프로필 |
 | `evals.<id>.payload.instruction` | runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
 | `evals.<id>.pass_schema`, `fail_schema` | 선택. 실행 가능한 eval의 소유자 필드 JSON Schema. Human eval은 [양식으로 입력할 수 있는 형태](#human-result-schemas)만 받음 |
-| `evals.<id>.profile_variants` | 기본 종류를 유지하는, 이름 붙은 완전한 프로필 최대 64개 |
+| `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은, 이름 붙은 완전한 프로필(최대 64개) |
 
-[도구 세션](tools/agent.md#tool-sessions)은 리뷰 하나 동안 테스트 하네스를 계속 실행해 둡니다.
+[도구 세션](tools/agent.md#tool-sessions)을 쓰면 리뷰 하나가 진행되는 동안 테스트 하네스를 계속 실행해 둘 수 있습니다.
 시작, 종료, 정리는 artifactize가 맡으므로 수명이나 시점 옵션을 선언할 일은 없습니다.
 
 선언 키는 모두 snake_case입니다: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
 `gate`, `mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는 표준 이름을 그대로
-씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval과 함께 남고 재사용 키를
-바꾸지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
+씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval에 저장되고 재사용 키에도
+들어가지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
 상태는 `timeoutMs`, `passSchema`, `agentTools`, `blockedBy`처럼 기존 camelCase 필드를 계속
 쓰며, 이는 선언 문법이 아닙니다.
 
-인라인 테이블, 점으로 이은 키, 여러 줄 문자열은 표준 TOML입니다.
+인라인 테이블, 점으로 이은 키, 여러 줄 문자열 같은 표준 TOML 문법을 쓸 수 있습니다.
 
 ```toml
 name = "app"
@@ -108,7 +108,7 @@ TOML 날짜·시각과 유한하지 않은 숫자(`inf`, `nan`)는 JSON으로 �
 스키마를 포함해 어디서든 거부합니다. 날짜를 문자열로 쓰려면 따옴표로 감싸세요. 선언 오류는 TOML 해석 오류든 값의 타입, 필드, 참조 오류든 오류가 난 `.artf` 파일과 줄, 열을 알려 줍니다. 값이 잘못됐으면 `evals.check.profile.args`처럼 그 키도 알려 줍니다.
 
 `config check`는 fingerprint 스크립트를 실행하거나 파일을 해시하지 않고 검사합니다. 선언을
-다시 쓴 뒤에 쓰세요. 예전 선언 파일과 ignore 파일은 읽지 않습니다. ignore되지 않은 예전 선언
+고친 뒤에 실행하세요. 예전 선언 파일과 ignore 파일은 읽지 않습니다. ignore되지 않은 예전 선언
 파일이 있으면 선언 찾기가 실패합니다. 예전 선언 파일 이름을 가진 디렉터리는 디렉터리 ignore
 패턴이 빼지 않는 한 평소처럼 탐색합니다. `.artfignore`로 예전 파일 하나만 ignore하거나 그
 폴더 전체를 건너뛸 수 있습니다. 저장소 루트에 예전 ignore 파일이 있으면 항상 실패합니다. 진단
@@ -130,11 +130,11 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 
 Agent와 Human 결과에는 `verdict`와 소유자가 정한 필드가 들어 있습니다. `pass_schema`(GREEN)와
 `fail_schema`(RED)에는 소유자 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
-위의 `summary` 스키마는 Agent에게서 `{"verdict":"GREEN","summary":"All requirements are
-covered."}`를 받습니다. Human은 GREEN을 따로 고르고, 양식 필드로
+위의 `summary` 스키마라면 Agent는 `{"verdict":"GREEN","summary":"All requirements are
+covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필드로
 `{"summary":"All requirements are covered."}`만 입력합니다.
 
-이 스키마는 JSON Schema입니다. 결과에 어떤 필드가 있을 수 있고 어떤 값을 받는지 정하는
+이 스키마는 JSON Schema입니다. 결과에 어떤 필드가 있을 수 있고 어떤 값을 허용하는지 정하는
 규칙입니다. 결과 객체 전체의 스키마인 **결과 envelope**은 일반 JSON Schema보다 허용하는 것이
 적으며, 참조(다른 스키마를 가리키는 `$ref`)와 조합(여러 스키마를 합치는 `allOf`, `anyOf`,
 `oneOf`, `not`)에도 제한이 있습니다.
@@ -150,7 +150,7 @@ covered."}`를 받습니다. Human은 GREEN을 따로 고르고, 양식 필드�
   `stderr`, `durationMs`, `exitCode`. 감사·실행 데이터는 소유자 필드 밖에 있습니다.
 - 한 판정의 스키마를 생략하면 그 판정에서는 **소유자 필드를 하나도 허용하지 않습니다**.
   Agent는 `{"verdict":"GREEN"}`이나 `{"verdict":"RED"}`만 돌려주고, Human 양식 필드는
-  `{}`입니다. 빈 객체 스키마도 똑같이 닫힌 형식입니다.
+  `{}`입니다. 빈 객체 스키마도 마찬가지로 소유자 필드를 허용하지 않습니다.
 
 ### Human 결과 스키마 {#human-result-schemas}
 
@@ -164,7 +164,7 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 | `{ type = "integer" }`나 `"number"`. `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`를 붙일 수 있음 | 숫자 상자 |
 | `{ type = "boolean" }` | true / false(선택 항목이면 – 도) |
 | `{ enum = ["a", "b"] }`. 문자열만, `type = "string"`은 써도 되고 안 써도 됨 | 선택지 |
-| `{ const = … }` | 표시 없음: 값이 채워짐 |
+| `{ const = … }` | 표시하지 않고 값을 자동으로 채움 |
 | `{ type = "array", items = { type = "string" } }`. 항목에 `minLength`, `maxLength`를 붙일 수 있음 | 텍스트 상자 목록 |
 | `{ type = "array", items = { type = "object", properties = … } }`. 속성은 위의 단일 값 형태만 | 그 필드들의 반복 그룹 |
 
@@ -176,7 +176,7 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 입력하지 않은 그룹도 빠집니다. 데스크톱 앱에서는 `+ Add`와 ✕ 버튼으로 항목과 그룹을 추가하고
 지우며, 터미널 UI에서는 [Review 양식](../tui/index.md)에서 설명하는 키를 씁니다. 패턴, 형식,
 중첩 객체, 그룹 안의 목록, `$ref`, `anyOf` 같은 조합은 사람이 입력할 수 없으므로 거부합니다.
-Agent 스키마는 검사기 기능을 모두 씁니다.
+Agent 스키마에는 검사기가 지원하는 기능을 모두 쓸 수 있습니다.
 
 스키마는 8 MiB까지입니다. Agent의 최종 응답 원문은 1 MiB까지이고, 정규화한 결과는 UTF-16 코드
 단위 256000개까지입니다. 최종 응답이 잘못되면 정해진 범위에서 한 번 수정을 요청할 뿐, 알림 없이
@@ -213,8 +213,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 이름 있는 일반 Artifact이므로 runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
 `verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이 없고, 자식 Artifact를 갖지 않으며,
 다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
-명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위는
-`kind = "graph"`를 쓰고 선언 경로는 `.artf`입니다.
+명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위 항목의
+`kind`는 `"graph"`이고 선언 경로는 `.artf`입니다.
 
 `fingerprint`는 `false`나 빈 테이블이라도 선언하지 마세요. fingerprint는 항상 현재 추출한
 그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`로 선언한 Artifact에는 eval을 둘 수 없고 그 Artifact의 리뷰도 필요 없지만, 의존하는 Artifact에 필요한 리뷰까지 면제되지는 않습니다.
@@ -257,8 +257,8 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 대상은 리뷰하는 동안 내내 심볼릭 링크가 아닌 일반 파일이어야 하며, `fingerprint = false`여도
 마찬가지입니다.
 
-- eval이 시작되기 전에 없거나 잘못됨: eval은 ERROR/PREPARATION_FAILED입니다.
-- Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못됨: 판정 대신 ERROR/INPUT_CHANGED입니다.
+- eval이 시작되기 전에 없거나 잘못됨: eval이 ERROR/PREPARATION_FAILED로 끝납니다.
+- Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못됨: 판정 대신 ERROR/INPUT_CHANGED로 끝납니다.
 - Human 리뷰 중에 없거나 잘못됨: 도구와 제출이 실패하고 요청은 계속 남아 있으니, 파일을 되돌려
   놓고 다시 시도하세요.
 - 내용이 바뀜: 파일 내용의 변경은 fingerprint로 확인하므로, `fingerprint = false`면 내용이 바뀌어도 감지하지 못합니다.
@@ -296,13 +296,13 @@ payload.instruction = "Run the end-to-end suite."
 대기하다 교착 상태에 빠지는 일도 없습니다.
 
 태그는 한 Run 안에서만이 아니라 같은 상태를 쓰는 모든 Run, 워크트리, `verify`에 적용됩니다.
-`--state-dir`이 다르면 태그도 따로입니다. 대기 중인 요청은 `QUEUED`로 남고, `blockedReason`에
+`--state-dir`이 다르면 태그도 따로 적용됩니다. 대기 중인 요청은 `QUEUED`로 남고, `blockedReason`에
 태그를 잡고 있는 eval과 Run이 나옵니다. 대기하는 동안에는 실행 예산을 쓰지 않고, 백엔드 자리나
 `--jobs` 자리도 차지하지 않으며, `timeout_ms`는 eval이 시작할 때부터 셉니다. 태그는 eval이 끝나거나 취소되면
 풀리고, 프로세스가 죽거나 Run이 끝날 때도 풀립니다.
 
-태그는 Artifact가 아니라 그 eval에서 실행하는 명령이나 도구를 나타냅니다. 테스트 코드를 읽기만 하는
-Agent는 다른 eval이 그 테스트를 실행한다고 기다릴 필요가 없습니다. 암묵적인 태그는 없습니다.
+태그는 Artifact가 아니라 그 eval에서 실행하는 명령이나 도구를 나타냅니다. 다른 eval이 테스트를 실행
+중이어도, 테스트 코드를 읽기만 하는 Agent eval까지 대기할 필요는 없습니다. 암묵적인 태그는 없습니다.
 mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fingerprint나 재사용 키가 바뀌지 않고,
 충돌하는 eval이 실행 중일 때도 캐시 결과는 재사용할 수 있습니다.
 
@@ -339,7 +339,7 @@ Artifact 참조는 `payload.instruction`과 runtime `profile.args`에 `{input}`�
 
 탐색은 범위가 정해진 경로 규칙을 따릅니다. 심볼릭 링크와 특수 파일은 ignore하지 않으면
 실패합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
-심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. 소유 범위 밖으로는 따라가지
+심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. Artifact의 범위 밖으로는 나가지
 않으며, 항목 10,000개나 1 GiB를 넘으면 오류와 함께 탐색을 멈춥니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
 파일이 생겨도 `INPUT_CHANGED`가 일어나지 않습니다. 결과마다 포함한 파일 목록을 저장하므로,
@@ -358,7 +358,7 @@ Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도�
 [재사용 키](fingerprint.md#the-reuse-key)에 있습니다. artifactsum이 실패해도 똑같이 준비를
 멈춥니다.
 
-명령은 소유자의 작업 디렉터리에서 stdin으로 JSON `{"version":1,"artifactId":"example"}`을
+명령은 그 Artifact의 작업 디렉터리에서 stdin으로 JSON `{"version":1,"artifactId":"example"}`을
 받아 실행됩니다. 경로 없는 명령은 PATH에서 찾고, 절대 경로 실행 파일은 그대로 실행합니다.
 `./fingerprint.sh`처럼 `/`가 든 상대 경로 실행 파일은 폴더 Artifact의 허용된 범위 안에서
 찾습니다. 파일 Artifact라면 들어 있는 폴더 아래에서 찾으며 상관없는 옆 파일을 가리킬 수도
@@ -368,7 +368,7 @@ Artifact는 자식까지 포함해 스크립트의 범위에 들어오지만 그
 `config check`는 모르는 참조와 형식이 잘못된 참조를 거부하며, 존재 여부와 심볼릭 링크는 명령을
 준비할 때 확인합니다. 인터프리터별 플래그, 래퍼, 진입 파일 규칙은 없습니다.
 
-`fingerprint.script.files`는 소유자 기준의 고유한 파일·디렉터리 경로를 64개까지 받으며, 각
+`fingerprint.script.files`는 Artifact 기준의 고유한 파일·디렉터리 경로를 64개까지 받으며, 각
 경로는 UTF-16 코드 단위 1024개까지입니다. 호출할 때마다 각 경로가 존재하고 심볼릭 링크를 거치지 않는지
 확인하며, 내용은 해시하지 않습니다. 실행 환경, 취소 처리, 원본 출력의 크기 제한은 Runtime 명령과 같으며, 기본 시간 제한은 30,000ms입니다(`timeout_ms`는 1–2,147,483,647). 별도의 출력·임시
 디렉터리는 실행이 끝나면 지웁니다. stdout은 `[A-Za-z0-9._:-]`로 이뤄진 1–128자의 ASCII여야
@@ -382,7 +382,7 @@ runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 �
 ERROR를 기록합니다. force를 줘도 준비와 재확인은 건너뛰지 않습니다. `fingerprint = false`인
 Artifact는 준비할 fingerprint가 없으며, 키 없는 eval은 fingerprint 값 재확인을 건너뜁니다. 파일
 대상 확인은 키 없는 eval을 포함해 준비, eval 시작과 끝, 도구 호출 때 항상 합니다. 필요한 다른
-Artifact의 fingerprint는 그래도 준비할 수 있습니다. 작업 공간을 지켜보지는 않습니다.
+Artifact의 fingerprint는 그래도 준비할 수 있습니다. 작업 공간의 변경을 계속 감시하지는 않습니다.
 artifactsum은 준비와 재확인 때만 해시합니다.
 
 ## 명령 안의 Artifact 참조 {#artifact-references-in-commands}
@@ -417,7 +417,7 @@ artifactize 전용 환경 변수는 전달하지 않습니다. 호출한 쪽의 
 같은 자격 증명과 설정)는 모두 지웁니다. 명령은 `ARTIFACTIZE_WORKSPACE_DIR`,
 `ARTIFACTIZE_OUTPUT_DIR`(출력용 별도 폴더로, Run이 끝나도 prune할 때까지 남음),
 `ARTIFACTIZE_TMP_DIR`, 그리고 명령이 끝나면 지우는 별도 임시 폴더를 가리키는
-`TMPDIR`/`TMP`/`TEMP`를 받습니다. 이 폴더들은 나만 읽을 수 있고, 리뷰하는 프로젝트 안에 두지
+`TMPDIR`/`TMP`/`TEMP`를 받습니다. 이 폴더는 현재 사용자만 읽을 수 있고, 리뷰하는 프로젝트 안에 두지
 않습니다.
 
 명령은 작성자의 환경에서 실행되므로, 다른 터미널 명령과 마찬가지로 실행 환경에 따라 결과가 달라질 수 있습니다.

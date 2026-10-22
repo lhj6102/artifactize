@@ -26,7 +26,7 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 예를 들어 `code/tests`가 `plan`에 의존하고, `plan`에는 사람의 승인 `plan/signoff`가 필요하다고 가정합니다. `verify --eval code/tests`는 테스트를 선택하지만, 그 승인이 아직 유효하지 않으면 GREEN으로
 끝날 수 없습니다. `verify --eval code/tests --recursive`는 `code/style`과 `plan/signoff` 같은
 묶음의 다른 검사도 선택해서, 실행하거나 결과를 재사용할 수 있게 합니다. 검사를 더 선택한다고
-승인이 저절로 생기지는 않습니다. `--recursive`가 없어도 `code/style`과 그 입력에 필요한
+승인이 자동으로 생기지는 않습니다. `--recursive`가 없어도 `code/style`과 그 입력에 필요한
 리뷰는 여전히 통과해야 하므로, 이전 Run이나 캐시에 유효한 결과가 있어야 Run이 GREEN으로 끝납니다.
 
 
@@ -53,7 +53,7 @@ Run은 요청한 쪽과 상관없이 artifactize가 관리합니다. 옵션 없�
 ERROR로 끝나고, 다른 Run이 거기에 합류한 요청도 마찬가지이며, 다음 `verify`가 다시 요청합니다.
 이는 Run이 실행 중일 때만 해당합니다. 이미 SIGNOFFS_PENDING으로 끝난 Run은 끝난 것이므로
 취소해도 바뀌는 것이 없고, 미룬 승인은 계속 남아 있습니다. 프로세스가 죽은 작업은
-ERROR/OWNER_DIED로 끝나고 저절로 다시 실행되지 않으니 다시 verify하세요.
+ERROR/OWNER_DIED로 끝나고 자동으로 다시 실행되지 않으니 다시 verify하세요.
 
 Run은 접수될 때의 선언을 그대로 씁니다. 준비하는 동안 선언을 바꾸면 Run은 다른 기준이나
 프로필로 실행하지 않고 **ERROR/INPUT_CHANGED**로 끝납니다. eval의 실행 일정이 잡힌 뒤에는
@@ -76,8 +76,8 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 재사용할 증거가 없으면 실행하지 않고 INCOMPLETE로 남깁니다. [CLI](../cli/index.md#reuse-only)를
 보세요.
 
-[`--request-key`](../cli/index.md#submission-and-watching)는 호출한 쪽의 시도 하나에 이름을
-붙입니다. 같은 키로 다시 요청하면 같은 Run을 돌려주므로, 응답을 놓쳤을 때 다시 시도하려면 같은
+[`--request-key`](../cli/index.md#submission-and-watching)는 호출하는 쪽이 요청 시도 하나를
+식별하려고 붙이는 키입니다. 같은 키로 다시 요청하면 같은 Run을 돌려주므로, 응답을 놓쳤을 때 다시 시도하려면 같은
 키를 쓰고 무언가를 고친 뒤에는 새 키를 쓰세요. eval 결과 재사용은 이 키와 상관없습니다.
 
 ### 추측 실행과 미룬 승인 {#speculation-and-deferred-sign-offs}
@@ -113,8 +113,8 @@ fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 
 승인을 받으려면 다시 verify하세요.
 
 `status`는 지금 승인을 미루고 있는 요청과 잠정 결과를 표시하지만, 실행 예측은 엄격한 모드를 기준으로 합니다. 기본 옵션으로
-verify를 다시 실행하면 Human 증거가 확보될 때까지 대기합니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING을 끝난
-상태이면서 충족되지 않은 상태로 표시합니다.
+verify를 다시 실행하면 Human 증거가 확보될 때까지 대기합니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING인 Run을, 실행은
+끝났지만 최종 검증 요건은 충족하지 못한 상태로 표시합니다.
 
 텍스트 출력은 요청마다 한 줄을 출력하며, 다른 요청의 실행에서 가져온 결과(fingerprint 적중이나
 합류한 실행)에는 그 출처 Run을 표시합니다([원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서

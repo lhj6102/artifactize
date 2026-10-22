@@ -123,7 +123,7 @@ Pushed 2, already in the store 0, skipped 0.
 `guide/terms`의 재사용 키에 자식 `usage`가 들어 있으므로, 다시 리뷰한 Artifact는 `usage`와 `guide`뿐입니다.
 `off` 대신 저장소에 연결할 수 없는 경우였다면 `verify`는 한 번 경고하고
 같은 방식으로 로컬에서 리뷰했을 것입니다. `remote push`는 각 키에 대해 저장소에
-아직 없는 가장 최근 로컬 결과를 보냅니다. 미러는 결코 보내지 않으며, 토큰에 `human`이 없으면
+아직 없는 가장 최근 로컬 결과를 보냅니다. 미러는 보내지 않으며, 토큰에 `human`이 없으면
 Human 승인은 건너뜁니다.
 
 ## 5. CI가 둘 다 재사용하기 {#5-ci-reuses-both}

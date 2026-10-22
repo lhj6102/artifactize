@@ -109,7 +109,7 @@ start는 평소와 같은 JSON 객체를 읽고, 공유 상태를 전용
 Agent는 인스턴스를 시작하거나, 멈추거나, 이름을 정하지 않습니다. 오류와 취소를 포함해
 모든 세션을 멈추고 정리하는 일은 artifactize가 맡습니다. 리뷰 결과를 재사용할 때는 하네스를
 시작하지 않습니다. 세션은 [저장된 Agent 대화](../agent.md#saved-conversations)가 아닙니다. 하네스가
-구현할 것은 [도구 세션](agent.md#tool-sessions)을 보세요.
+구현해야 할 규약은 [도구 세션](agent.md#tool-sessions)에서 확인하세요.
 
 ## 리뷰하기 전에 선언 확인하기 {#check-a-declaration-before-reviewing}
 

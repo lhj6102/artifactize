@@ -27,9 +27,9 @@ Human의 소유자 필드를 돌려주지 않습니다. 저장된 결과에는 �
 stdout/stderr가 들어 있습니다. 프로그램이 실행 중일 때는
 `artifactize request logs REQUEST_ID`로 지금까지 출력된 로그를 정해진 크기까지 읽을 수 있으며,
 수집이 끝나지 않은 로그는 일부만 있다고 표시됩니다. 이는 그때그때 살펴보는 것이지 자동으로 로그를 계속 보내
-주는 기능은 아닙니다. 로그를 tail, 범위, 검색으로 읽는 방법과 수집 상태는
-[runtime 로그 CLI 레퍼런스](../cli/index.md#agent-streaming-and-runtime-logs)에서, 지금의 정리
-기능이 지우지 않고 남겨 두는 원본 로그를 포함한 보존 방식은 공통
+주는 기능은 아닙니다. 로그를 끝부분, 범위, 검색으로 읽는 방법과 수집 상태는
+[runtime 로그 CLI 레퍼런스](../cli/index.md#agent-streaming-and-runtime-logs)에서 설명합니다. 로그를
+얼마나 보관하는지, 그리고 지금의 정리 기능을 써도 남는 원본 로그는 공통
 [runtime 실행 레퍼런스](declarations.md#runtime-execution)에서 설명합니다. CLI,
 [TUI](../tui/index.md), [데스크톱](../desktop/index.md)은 같은 저장된 증거를 읽습니다.
 
