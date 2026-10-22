@@ -3,7 +3,7 @@
 코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰해야 할까?"라고 물어보세요. Arti는
 프로젝트를 파악하고, 무엇이 중요한지 묻고, 리뷰가 의미 있고 재사용될 수 있도록 Artifact와 eval을
 제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
-대신해 무엇을 승인하는 일은 없습니다.
+대신해 승인하지도 않습니다.
 
 Arti의 안내서인 **스킬**은
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)이며,

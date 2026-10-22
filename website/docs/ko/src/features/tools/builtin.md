@@ -129,13 +129,13 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 파일 시스템 대상은 실제 리뷰에 허용된 범위 안에 있어야 합니다.
 
 - **고정 Agent 도구**는 선언한 Artifact 기준의 논리적 경로를 쓰며, 자식 폴더 안을 가리킬 수도
-  있습니다(`reqs/requirements.md`). 선언 찾기와 `config check`는 이 대상을 그 Artifact의 자식
-  범위에 비추어 확인하고, 없거나 범위 밖인 대상을 거부합니다. 호출할 때도 다시 확인합니다.
+  있습니다(`reqs/requirements.md`). 선언을 찾거나 `config check`를 실행할 때 대상이 존재하고 그 Artifact의
+  자식 범위 안에 있는지 확인하며, 조건에 맞지 않으면 거부합니다. 호출할 때도 다시 확인합니다.
 - **Human 도구**는 같은 논리적 경로와 함께 `{artifactPath}`나 `{artifactPath}/path`,
   `{name}`이나 `{name}/path`(`name`은 Artifact)도 받습니다.
   [Human 도구](human.md#human-tools)를 보세요. `--flag=` 접두어는 받지 않습니다. 선언 찾기와
-  `config check`는 참조 이름과 대상이 있는지를 더 좁은 리뷰 범위가 아니라 작업 공간 전체에
-  비추어 확인합니다. 그래서 `other`가 자식 Artifact가 아니더라도 `{other}/file`이 존재하면 설정 검사를
+  `config check`는 참조 이름과 대상이 더 좁은 리뷰 범위가 아니라 작업 공간 전체에
+  있는지 확인합니다. 그래서 `other`가 자식 Artifact가 아니더라도 `{other}/file`이 존재하면 설정 검사를
   통과할 수 있습니다. 사전 확인과 도구 호출 때 `other`가 그 Human eval의 범위에 들어 있어야 하므로, 그
   eval에서 `{other}`를 직접 참조해야 합니다. Artifact만 대상으로 하는 도구 확인은 그 Artifact의 자식
   범위만 씁니다. 도구 인자는 의존성을 더하거나 범위를 넓히지 않습니다.
