@@ -20,8 +20,11 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Read {writer-introduction}. Read index.html of {landing}. Check the landing page's visible introduction
-and page content against every W- item; installer implementation scripts are not page content.
+Read {writer-introduction}. Read index.html of {landing}. It holds the English page and its Korean
+translation: elements with data-locale="ko" and the values of data-ko-* attributes appear only on the
+Korean page. Review the English page: elements without data-locale or with data-locale="en", and
+attributes as written. Check its visible introduction and page content against every W- item;
+installer implementation scripts are not page content.
 Submit GREEN only when no item is clearly violated. Otherwise submit RED with up to 20 violations,
 most important first, each with the item id, a page path:line and one sentence on what to change
 in the landing page.
@@ -49,4 +52,67 @@ properties.item = { type = "string", minLength = 1 }
 properties.where = { type = "string", minLength = 1 }
 properties.change = { type = "string", minLength = 1 }
 required = ["item", "where", "change"]
+additionalProperties = false
+
+[evals.translates-ko]
+title = "The Korean landing page translates the English one accurately"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.translates-ko.payload]
+instruction = """
+index.html of {landing} holds the English landing page (served at /) and its Korean translation
+(served at /ko/) in one file. The site build keeps an element with data-locale="en" only on the
+English page and one with data-locale="ko" only on the Korean page, keeps elements without
+data-locale on both, and on the Korean page gives an element's ATTR the value of its
+data-ko-ATTR attribute. site.js writes a few words itself, in the page's language from <html lang>.
+Read index.html and site.js and compare the two pages. Check these criteria:
+- K-COMPLETE: Every text a reader sees or hears on the English page has its Korean counterpart in
+  the same place: headings, paragraphs, list items, links and buttons, figure captions, image alt
+  text, aria-label values, the recordings' data-alt and data-label, the page title, the meta and
+  Open Graph descriptions and titles, and the words site.js writes. The story's animated graphic
+  (the .stage element, including the step titles it shows from data-short) stays English by
+  design, as do commands, code, product names and brand names.
+- K-FAITHFUL: Each Korean text has the same meaning as its English counterpart and keeps its order.
+  Nothing is left out, added, softened or strengthened.
+- K-KOREAN: It reads as natural Korean written for Korean readers, not word-for-word English, and
+  uses one Korean term for one English term throughout. Product terms the app shows in English
+  (Artifact, eval, Run, GREEN) may stay in English. The headline is "Artifact 그래프 위에서 함께
+  만드세요.", the Korean form of the project sentence.
+- K-SAME-TARGETS: Every Korean link reaches the same target as its English counterpart, except that
+  documentation links (/docs/...) reach the same page of the Korean documentation (/docs/ko/...),
+  links to the landing page reach /ko/, the hero's example graph is graph-example.ko.png and the
+  canonical and Open Graph URLs are https://artifactize.dev/ko/. The development board (/board/)
+  and the privacy page (/privacy/) are English only, and their Korean links say so. Commands, copy
+  targets and code are unchanged; only comments in code may be translated. Both pages link to
+  each other in the header and declare each other with hreflang.
+Use the list, glob, grep and read tools of {landing}. Tool paths are Artifact-relative. Judge only
+the translation; the English page is reviewed elsewhere.
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
+violations, most important first, each with the criterion id, the index.html or site.js line of the
+Korean text, the line of the English text and one sentence on how to fix the Korean page.
+"""
+
+[evals.translates-ko.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.translates-ko.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.translates-ko.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.translates-ko.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.translation = { type = "string", minLength = 1 }
+properties.original = { type = "string", minLength = 1 }
+properties.fix = { type = "string", minLength = 1 }
+required = ["item", "translation", "original", "fix"]
 additionalProperties = false

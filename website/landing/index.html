@@ -1,22 +1,29 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-ko-lang="ko" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Build together on an Artifact Graph.</title>
-<meta name="description" content="Build together on an Artifact Graph. Split a project into Artifacts, pieces with their own checks: every teammate, human or AI agent, works their own way, and integration reuses every review that still holds.">
-<link rel="canonical" href="https://artifactize.dev/">
+<title data-locale="en">Build together on an Artifact Graph.</title>
+<title data-locale="ko">Artifact 그래프 위에서 함께 만드세요.</title>
+<meta name="description" content="Build together on an Artifact Graph. Split a project into Artifacts, pieces with their own checks: every teammate, human or AI agent, works their own way, and integration reuses every review that still holds."
+      data-ko-content="Artifact 그래프 위에서 함께 만드세요. 프로젝트를 저마다 검사를 가진 조각인 Artifact로 나누면, 사람이든 AI 에이전트든 모든 팀원이 자기 방식대로 일하고, 통합할 때는 아직 유효한 리뷰를 모두 다시 씁니다.">
+<link rel="canonical" href="https://artifactize.dev/" data-ko-href="https://artifactize.dev/ko/">
+<link rel="alternate" hreflang="en" href="https://artifactize.dev/">
+<link rel="alternate" hreflang="ko" href="https://artifactize.dev/ko/">
+<link rel="alternate" hreflang="x-default" href="https://artifactize.dev/">
 <meta name="theme-color" content="#090B0F">
 <meta name="color-scheme" content="dark light">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Artifactize">
-<meta property="og:url" content="https://artifactize.dev/">
-<meta property="og:title" content="Build together on an Artifact Graph.">
-<meta property="og:description" content="Build together on an Artifact Graph. Every part carries its own checks, and integration never pays for the same review twice.">
+<meta property="og:url" content="https://artifactize.dev/" data-ko-content="https://artifactize.dev/ko/">
+<meta property="og:locale" content="en_US" data-ko-content="ko_KR">
+<meta property="og:title" content="Build together on an Artifact Graph." data-ko-content="Artifact 그래프 위에서 함께 만드세요.">
+<meta property="og:description" content="Build together on an Artifact Graph. Every part carries its own checks, and integration never pays for the same review twice."
+      data-ko-content="Artifact 그래프 위에서 함께 만드세요. 모든 조각이 자기 검사를 지니고, 통합할 때 같은 리뷰에 두 번 비용을 들이지 않습니다.">
 <meta property="og:image" content="https://artifactize.dev/media/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Artifactize. Declare. Verify. Reuse. artifactize.dev">
+<meta property="og:image:alt" content="Artifactize. Declare. Verify. Reuse. artifactize.dev" data-ko-content="Artifactize. Declare(선언). Verify(검증). Reuse(재사용). artifactize.dev">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.png" type="image/png" sizes="48x48">
@@ -43,25 +50,31 @@
 <link rel="stylesheet" href="/story/story.css">
 </head>
 <body>
-<a class="skip" href="#main">Skip to content</a>
+<a data-locale="en" class="skip" href="#main">Skip to content</a>
+<a data-locale="ko" class="skip" href="#main">본문으로 건너뛰기</a>
 
 <header class="top">
   <div class="wrap top-row">
-    <a class="brand" href="/" aria-label="Artifactize home">
+    <a class="brand" href="/" aria-label="Artifactize home" data-ko-href="/ko/" data-ko-aria-label="Artifactize 홈">
       <img class="mark" src="/media/artifactize-icon-mark.svg" width="29" height="26" alt="" aria-hidden="true">
       <span>Artifactize</span>
     </a>
-    <nav class="top-nav" aria-label="Main">
-      <a class="hide-sm" href="#story">The story</a>
-      <a class="hide-sm" href="#start">Install</a>
-      <a class="nav-docs" href="/docs/">Docs</a>
-      <a class="nav-icon" href="https://github.com/lhj6102/artifactize" aria-label="Artifactize on GitHub">
+    <nav class="top-nav" aria-label="Main" data-ko-aria-label="주 메뉴">
+      <a data-locale="en" class="hide-sm" href="#story">The story</a>
+      <a data-locale="ko" class="hide-sm" href="#story">스토리</a>
+      <a data-locale="en" class="hide-sm" href="#start">Install</a>
+      <a data-locale="ko" class="hide-sm" href="#start">설치</a>
+      <a data-locale="en" class="nav-docs" href="/docs/">Docs</a>
+      <a data-locale="ko" class="nav-docs" href="/docs/ko/">문서</a>
+      <a data-locale="en" class="nav-lang" href="/ko/" hreflang="ko" lang="ko" aria-label="한국어"><span class="hide-sm">한국어</span><span class="only-sm" aria-hidden="true">KO</span></a>
+      <a data-locale="ko" class="nav-lang" href="/" hreflang="en" lang="en" aria-label="English"><span class="hide-sm">English</span><span class="only-sm" aria-hidden="true">EN</span></a>
+      <a class="nav-icon" href="https://github.com/lhj6102/artifactize" aria-label="Artifactize on GitHub" data-ko-aria-label="GitHub의 Artifactize">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
       </a>
-      <a class="nav-icon" href="https://discord.gg/VswgKkPkS9" aria-label="Artifactize on Discord">
+      <a class="nav-icon" href="https://discord.gg/VswgKkPkS9" aria-label="Artifactize on Discord" data-ko-aria-label="Discord의 Artifactize">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.11 13.11 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03ZM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z"/></svg>
       </a>
-      <button type="button" class="nav-icon theme-toggle" hidden aria-label="Use the light theme">
+      <button type="button" class="nav-icon theme-toggle" hidden aria-label="Use the light theme" data-ko-aria-label="라이트 테마 사용">
         <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
         <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M5.3 18.7l1.5-1.5M17.2 6.8l1.5-1.5"/></g></svg>
       </button>
@@ -73,41 +86,56 @@
 
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-copy">
-      <h1 id="hero-title">Build together on an <em><span class="nowrap">Artifact Graph</span></em>.</h1>
-      <p class="logline">Artifactize brings human and agent work together and keeps your project consistent.</p>
+      <h1 data-locale="en" id="hero-title">Build together on an <em><span class="nowrap">Artifact Graph</span></em>.</h1>
+      <h1 data-locale="ko" id="hero-title"><em><span class="nowrap">Artifact 그래프</span></em> 위에서 함께 만드세요.</h1>
+      <p data-locale="en" class="logline">Artifactize brings human and agent work together and keeps your project consistent.</p>
+      <p data-locale="ko" class="logline">Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝트의 일관성을 지켜 줍니다.</p>
       <div class="audience" aria-labelledby="audience-title">
-        <h2 id="audience-title">Who is it for?</h2>
+        <h2 data-locale="en" id="audience-title">Who is it for?</h2>
+        <h2 data-locale="ko" id="audience-title">누구를 위한 도구인가요?</h2>
         <ul class="audience-list">
-          <li>People who want to build together with others, reviewing efficiently and developing in modules.</li>
-          <li>People who want to trust changes made by AI agents without overseeing every step.</li>
-          <li>People who want code, documents, images, and running applications to stay consistent as the project grows.</li>
+          <li data-locale="en">People who want to build together with others, reviewing efficiently and developing in modules.</li>
+          <li data-locale="ko">다른 사람과 함께 만들면서 효율적으로 리뷰하고 모듈 단위로 개발하고 싶은 사람.</li>
+          <li data-locale="en">People who want to trust changes made by AI agents without overseeing every step.</li>
+          <li data-locale="ko">AI 에이전트가 만든 변경을 모든 단계를 지켜보지 않고도 믿고 싶은 사람.</li>
+          <li data-locale="en">People who want code, documents, images, and running applications to stay consistent as the project grows.</li>
+          <li data-locale="ko">프로젝트가 커져도 코드, 문서, 이미지, 실행 중인 애플리케이션이 서로 어긋나지 않기를 바라는 사람.</li>
         </ul>
       </div>
       <div class="cta">
-        <a class="btn btn-primary" href="#story">See how it works <span aria-hidden="true">↓</span></a>
-        <a class="btn btn-ghost" href="#start">Install</a>
+        <a data-locale="en" class="btn btn-primary" href="#story">See how it works <span aria-hidden="true">↓</span></a>
+        <a data-locale="ko" class="btn btn-primary" href="#story">어떻게 동작하는지 보기 <span aria-hidden="true">↓</span></a>
+        <a data-locale="en" class="btn btn-ghost" href="#start">Install</a>
+        <a data-locale="ko" class="btn btn-ghost" href="#start">설치</a>
       </div>
       <figure class="hero-graph">
         <img src="/media/graph-example.en.png" width="1600" height="900" loading="eager" decoding="async"
-             alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command.">
+             alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command."
+             data-ko-src="/media/graph-example.ko.png"
+             data-ko-alt="Artifact 그래프 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각자의 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
       </figure>
       <figure class="hero-demo">
         <img src="/media/review-loop.gif" width="1280" height="720" loading="eager" decoding="async"
-             alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes.">
-        <figcaption>Each box is an Artifact, a piece of the project with its own checks; the lines between them make up the Artifact Graph. Real recording of the desktop app preview: four Runs of an example, eight times faster.</figcaption>
+             alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes."
+             data-ko-alt="예제 프로젝트를 네 번 Run하는 Artifactize 데스크톱 앱의 실제 녹화: 실패한 부분은 빨갛게 바뀌었다가 Run 사이에 고쳐지고, 바뀌지 않은 작업은 다시 쓰이며, 네 번째 Run이 통과합니다.">
+        <figcaption data-locale="en">Each box is an Artifact, a piece of the project with its own checks; the lines between them make up the Artifact Graph. Real recording of the desktop app preview: four Runs of an example, eight times faster.</figcaption>
+        <figcaption data-locale="ko">상자 하나하나가 Artifact, 즉 자기 검사를 가진 프로젝트의 한 조각이고, 그 사이의 선들이 Artifact 그래프를 이룹니다. 데스크톱 앱 미리보기의 실제 녹화로, 예제의 Run 네 번을 8배속으로 보여 줍니다.</figcaption>
       </figure>
     </div>
   </section>
 
   <section class="story" id="story" aria-labelledby="story-title" data-story>
     <div class="story-scroll" aria-hidden="true" data-story-scroll>
-      <span class="story-scroll-label">Scroll</span>
+      <span data-locale="en" class="story-scroll-label">Scroll</span>
+      <span data-locale="ko" class="story-scroll-label">스크롤</span>
       <span class="story-scroll-track"><span class="story-scroll-fill"></span></span>
       <span class="story-scroll-arrow">↓</span>
     </div>
     <div class="wrap story-head">
-      <p class="kicker">The story</p>
-      <h2 id="story-title">Watch a project grow.</h2>
+      <p data-locale="en" class="kicker">The story</p>
+      <p data-locale="ko" class="kicker">스토리</p>
+      <h2 data-locale="en" id="story-title">Watch a project grow.</h2>
+      <h2 data-locale="ko" id="story-title">프로젝트가 자라는 모습을 지켜보세요.</h2>
     </div>
 
     <div class="story-grid">
@@ -142,93 +170,134 @@
             </ul>
           </div>
         </div>
-        <nav class="story-rail" aria-label="Story steps">
+        <nav class="story-rail" aria-label="Story steps" data-ko-aria-label="스토리 단계">
           <ol>
-            <li><a href="#step-idea" data-short="An idea">An idea</a></li>
-            <li><a href="#step-artifacts" data-short="Artifacts">Artifacts</a></li>
-            <li><a href="#step-relations" data-short="Evals">Evals</a></li>
-            <li><a href="#step-runtime" data-short="Tests and style">Tests and style</a></li>
-            <li><a href="#step-modules" data-short="Modules">Modules</a></li>
-            <li><a href="#step-beyond" data-short="Beyond code">Beyond code</a></li>
-            <li><a href="#step-ripple" data-short="A change">A change</a></li>
-            <li><a href="#step-grows" data-short="It keeps growing">It keeps growing</a></li>
-            <li><a href="#step-parallel" data-short="Work in parallel">Work in parallel</a></li>
-            <li><a href="#step-merge" data-short="Merge and check">Merge and check</a></li>
+            <li><a data-locale="en" href="#step-idea" data-short="An idea">An idea</a><a data-locale="ko" href="#step-idea" data-short="An idea">아이디어</a></li>
+            <li><a data-locale="en" href="#step-artifacts" data-short="Artifacts">Artifacts</a><a data-locale="ko" href="#step-artifacts" data-short="Artifacts">Artifact</a></li>
+            <li><a data-locale="en" href="#step-relations" data-short="Evals">Evals</a><a data-locale="ko" href="#step-relations" data-short="Evals">Eval</a></li>
+            <li><a data-locale="en" href="#step-runtime" data-short="Tests and style">Tests and style</a><a data-locale="ko" href="#step-runtime" data-short="Tests and style">테스트와 스타일</a></li>
+            <li><a data-locale="en" href="#step-modules" data-short="Modules">Modules</a><a data-locale="ko" href="#step-modules" data-short="Modules">모듈</a></li>
+            <li><a data-locale="en" href="#step-beyond" data-short="Beyond code">Beyond code</a><a data-locale="ko" href="#step-beyond" data-short="Beyond code">코드 너머</a></li>
+            <li><a data-locale="en" href="#step-ripple" data-short="A change">A change</a><a data-locale="ko" href="#step-ripple" data-short="A change">변경 하나</a></li>
+            <li><a data-locale="en" href="#step-grows" data-short="It keeps growing">It keeps growing</a><a data-locale="ko" href="#step-grows" data-short="It keeps growing">계속 자랍니다</a></li>
+            <li><a data-locale="en" href="#step-parallel" data-short="Work in parallel">Work in parallel</a><a data-locale="ko" href="#step-parallel" data-short="Work in parallel">동시에 작업</a></li>
+            <li><a data-locale="en" href="#step-merge" data-short="Merge and check">Merge and check</a><a data-locale="ko" href="#step-merge" data-short="Merge and check">합치고 검사</a></li>
           </ol>
         </nav>
       </div>
 
       <div class="story-steps">
-        <p class="sr">Each step below describes the project at that point; the animated graphic beside it shows the same.</p>
+        <p data-locale="en" class="sr">Each step below describes the project at that point; the animated graphic beside it shows the same.</p>
+        <p data-locale="ko" class="sr">아래 각 단계는 그 시점의 프로젝트를 설명하고, 옆의 움직이는 그래픽도 같은 내용을 보여 줍니다.</p>
 
         <section class="story-step" data-step="idea" id="step-idea" aria-labelledby="step-idea-h">
-          <p class="step-k"><b>01</b>An idea</p>
-          <h3 id="step-idea-h">It starts with an idea.</h3>
-          <p>A few notes on what to build. There is nothing to review yet.</p>
-          <p class="sr">One idea, with no checks.</p>
+          <p data-locale="en" class="step-k"><b>01</b>An idea</p>
+          <p data-locale="ko" class="step-k"><b>01</b>아이디어</p>
+          <h3 data-locale="en" id="step-idea-h">It starts with an idea.</h3>
+          <h3 data-locale="ko" id="step-idea-h">아이디어에서 시작합니다.</h3>
+          <p data-locale="en">A few notes on what to build. There is nothing to review yet.</p>
+          <p data-locale="ko">무엇을 만들지 적은 메모 몇 줄입니다. 아직 리뷰할 것은 없습니다.</p>
+          <p data-locale="en" class="sr">One idea, with no checks.</p>
+          <p data-locale="ko" class="sr">검사가 없는 아이디어 하나.</p>
         </section>
 
         <section class="story-step" data-step="artifacts" id="step-artifacts" aria-labelledby="step-artifacts-h">
-          <p class="step-k"><b>02</b>Artifacts</p>
-          <h3 id="step-artifacts-h">The plan and specification become Artifacts.</h3>
-          <p>Choose pieces to review separately. An AI checks whether the specification covers the plan.</p>
-          <p class="sr">The plan and specification become two Artifacts with one AI review.</p>
+          <p data-locale="en" class="step-k"><b>02</b>Artifacts</p>
+          <p data-locale="ko" class="step-k"><b>02</b>Artifact</p>
+          <h3 data-locale="en" id="step-artifacts-h">The plan and specification become Artifacts.</h3>
+          <h3 data-locale="ko" id="step-artifacts-h">계획과 명세가 Artifact가 됩니다.</h3>
+          <p data-locale="en">Choose pieces to review separately. An AI checks whether the specification covers the plan.</p>
+          <p data-locale="ko">따로 리뷰할 조각을 고르세요. AI가 명세가 계획을 다 담았는지 확인합니다.</p>
+          <p data-locale="en" class="sr">The plan and specification become two Artifacts with one AI review.</p>
+          <p data-locale="ko" class="sr">계획과 명세가 AI 리뷰 하나를 가진 두 Artifact가 됩니다.</p>
         </section>
 
         <section class="story-step" data-step="relations" id="step-relations" aria-labelledby="step-relations-h">
-          <p class="step-k"><b>03</b>Evals</p>
-          <h3 id="step-relations-h">Code arrives, and checks connect the parts.</h3>
-          <p>Compare pieces with each other. Alice approves the specification before work builds on it.</p>
-          <p class="sr">The code is compared with the specification; Alice signs off the specification.</p>
+          <p data-locale="en" class="step-k"><b>03</b>Evals</p>
+          <p data-locale="ko" class="step-k"><b>03</b>Eval</p>
+          <h3 data-locale="en" id="step-relations-h">Code arrives, and checks connect the parts.</h3>
+          <h3 data-locale="ko" id="step-relations-h">코드가 들어오고, 검사가 조각들을 잇습니다.</h3>
+          <p data-locale="en">Compare pieces with each other. Alice approves the specification before work builds on it.</p>
+          <p data-locale="ko">조각끼리 비교하세요. Alice는 그 위에 작업이 쌓이기 전에 명세를 승인합니다.</p>
+          <p data-locale="en" class="sr">The code is compared with the specification; Alice signs off the specification.</p>
+          <p data-locale="ko" class="sr">코드는 명세와 비교되고, Alice가 명세를 승인합니다.</p>
         </section>
 
         <section class="story-step" data-step="runtime" id="step-runtime" aria-labelledby="step-runtime-h">
-          <p class="step-k"><b>04</b>Tests and style</p>
-          <h3 id="step-runtime-h">Tests and a style review check the code.</h3>
-          <p>Tests check the code. AI checks its style against a guide approved by Alice.</p>
-          <p class="sr">Tests, an AI style review and Alice’s approval are three different checks.</p>
+          <p data-locale="en" class="step-k"><b>04</b>Tests and style</p>
+          <p data-locale="ko" class="step-k"><b>04</b>테스트와 스타일</p>
+          <h3 data-locale="en" id="step-runtime-h">Tests and a style review check the code.</h3>
+          <h3 data-locale="ko" id="step-runtime-h">테스트와 스타일 리뷰가 코드를 검사합니다.</h3>
+          <p data-locale="en">Tests check the code. AI checks its style against a guide approved by Alice.</p>
+          <p data-locale="ko">테스트가 코드를 검사합니다. AI는 Alice가 승인한 가이드에 맞춰 코드의 스타일을 확인합니다.</p>
+          <p data-locale="en" class="sr">Tests, an AI style review and Alice’s approval are three different checks.</p>
+          <p data-locale="ko" class="sr">테스트, AI 스타일 리뷰, Alice의 승인은 서로 다른 세 가지 검사입니다.</p>
         </section>
 
         <section class="story-step" data-step="modules" id="step-modules" aria-labelledby="step-modules-h">
-          <p class="step-k"><b>05</b>Modules</p>
-          <h3 id="step-modules-h">The code splits into modules.</h3>
-          <p>Give smaller code pieces their own checks so changes can be reviewed where they matter.</p>
-          <p class="sr">The code splits into three parts, each with its own tests and review.</p>
+          <p data-locale="en" class="step-k"><b>05</b>Modules</p>
+          <p data-locale="ko" class="step-k"><b>05</b>모듈</p>
+          <h3 data-locale="en" id="step-modules-h">The code splits into modules.</h3>
+          <h3 data-locale="ko" id="step-modules-h">코드가 모듈로 나뉩니다.</h3>
+          <p data-locale="en">Give smaller code pieces their own checks so changes can be reviewed where they matter.</p>
+          <p data-locale="ko">더 작은 코드 조각마다 자기 검사를 주면, 변경을 그것이 중요한 곳에서 리뷰할 수 있습니다.</p>
+          <p data-locale="en" class="sr">The code splits into three parts, each with its own tests and review.</p>
+          <p data-locale="ko" class="sr">코드가 세 부분으로 나뉘고, 부분마다 자기 테스트와 리뷰를 가집니다.</p>
         </section>
 
         <section class="story-step" data-step="beyond" id="step-beyond" aria-labelledby="step-beyond-h">
-          <p class="step-k"><b>06</b>Beyond code</p>
-          <h3 id="step-beyond-h">A website and docs pages join the graph.</h3>
-          <p>Check writing and design too: compare the guides with the app connections they describe.</p>
-          <p class="sr">Documentation and website checks join, with Dana’s design approval.</p>
+          <p data-locale="en" class="step-k"><b>06</b>Beyond code</p>
+          <p data-locale="ko" class="step-k"><b>06</b>코드 너머</p>
+          <h3 data-locale="en" id="step-beyond-h">A website and docs pages join the graph.</h3>
+          <h3 data-locale="ko" id="step-beyond-h">웹사이트와 문서 페이지가 그래프에 들어옵니다.</h3>
+          <p data-locale="en">Check writing and design too: compare the guides with the app connections they describe.</p>
+          <p data-locale="ko">글과 디자인도 검사하세요. 가이드를 그 가이드가 설명하는 앱 연결과 비교합니다.</p>
+          <p data-locale="en" class="sr">Documentation and website checks join, with Dana’s design approval.</p>
+          <p data-locale="ko" class="sr">문서와 웹사이트 검사가 Dana의 디자인 승인과 함께 들어옵니다.</p>
         </section>
 
         <section class="story-step" data-step="ripple" id="step-ripple" aria-labelledby="step-ripple-h">
-          <p class="step-k"><b>07</b>A change</p>
-          <h3 id="step-ripple-h">Change one module, and only what depends on it runs again.</h3>
-          <p>Change those app connections. Only their checks and the checks that use them run again.</p>
-          <p class="sr">The changed app connections and their users are checked again; unrelated results still apply.</p>
+          <p data-locale="en" class="step-k"><b>07</b>A change</p>
+          <p data-locale="ko" class="step-k"><b>07</b>변경 하나</p>
+          <h3 data-locale="en" id="step-ripple-h">Change one module, and only what depends on it runs again.</h3>
+          <h3 data-locale="ko" id="step-ripple-h">모듈 하나를 바꾸면 그 모듈에 기대는 것만 다시 실행됩니다.</h3>
+          <p data-locale="en">Change those app connections. Only their checks and the checks that use them run again.</p>
+          <p data-locale="ko">그 앱 연결을 바꿔 보세요. 그 연결의 검사와 그 연결을 쓰는 검사만 다시 실행됩니다.</p>
+          <p data-locale="en" class="sr">The changed app connections and their users are checked again; unrelated results still apply.</p>
+          <p data-locale="ko" class="sr">바뀐 앱 연결과 그것을 쓰는 쪽만 다시 검사하고, 관련 없는 결과는 그대로 유효합니다.</p>
         </section>
 
         <section class="story-step" data-step="grows" id="step-grows" aria-labelledby="step-grows-h">
-          <p class="step-k"><b>08</b>It keeps growing</p>
-          <h3 id="step-grows-h">New Artifacts and relations keep arriving.</h3>
-          <p>Add new work and connections without redesigning the project’s review process.</p>
-          <p class="sr">A sync part, a brand guide and their checks join the project.</p>
+          <p data-locale="en" class="step-k"><b>08</b>It keeps growing</p>
+          <p data-locale="ko" class="step-k"><b>08</b>계속 자랍니다</p>
+          <h3 data-locale="en" id="step-grows-h">New Artifacts and relations keep arriving.</h3>
+          <h3 data-locale="ko" id="step-grows-h">새 Artifact와 관계가 계속 생깁니다.</h3>
+          <p data-locale="en">Add new work and connections without redesigning the project’s review process.</p>
+          <p data-locale="ko">프로젝트의 리뷰 과정을 다시 설계하지 않고도 새 작업과 연결을 더하세요.</p>
+          <p data-locale="en" class="sr">A sync part, a brand guide and their checks join the project.</p>
+          <p data-locale="ko" class="sr">동기화 부분과 브랜드 가이드, 그리고 그 검사들이 프로젝트에 들어옵니다.</p>
         </section>
 
         <section class="story-step" data-step="parallel" id="step-parallel" aria-labelledby="step-parallel-h">
-          <p class="step-k"><b>09</b>Work in parallel</p>
-          <h3 id="step-parallel-h">Work on your own copy of the project.</h3>
-          <p>A shared review store lets teammates reuse reviews earned in each other’s project copies.</p>
-          <p class="sr">Alice, Bob and Carol work separately and share their review results.</p>
+          <p data-locale="en" class="step-k"><b>09</b>Work in parallel</p>
+          <p data-locale="ko" class="step-k"><b>09</b>동시에 작업</p>
+          <h3 data-locale="en" id="step-parallel-h">Work on your own copy of the project.</h3>
+          <h3 data-locale="ko" id="step-parallel-h">각자의 프로젝트 사본에서 작업하세요.</h3>
+          <p data-locale="en">A shared review store lets teammates reuse reviews earned in each other’s project copies.</p>
+          <p data-locale="ko">공유 리뷰 저장소가 있으면 팀원들이 서로의 프로젝트 사본에서 얻은 리뷰를 다시 쓸 수 있습니다.</p>
+          <p data-locale="en" class="sr">Alice, Bob and Carol work separately and share their review results.</p>
+          <p data-locale="ko" class="sr">Alice, Bob, Carol이 따로 작업하고 리뷰 결과를 공유합니다.</p>
         </section>
 
         <section class="story-step" data-step="merge" id="step-merge" aria-labelledby="step-merge-h">
-          <p class="step-k"><b>10</b>Merge and check</p>
-          <h3 id="step-merge-h">Bring changes together and check only what is new.</h3>
-          <p>Bring changes together. The team checks review the new combinations and read shared results without changing them.</p>
-          <p class="sr">The combined project reuses existing reviews and checks the new combinations.</p>
+          <p data-locale="en" class="step-k"><b>10</b>Merge and check</p>
+          <p data-locale="ko" class="step-k"><b>10</b>합치고 검사</p>
+          <h3 data-locale="en" id="step-merge-h">Bring changes together and check only what is new.</h3>
+          <h3 data-locale="ko" id="step-merge-h">변경을 합치고 새로 생긴 것만 검사하세요.</h3>
+          <p data-locale="en">Bring changes together. The team checks review the new combinations and read shared results without changing them.</p>
+          <p data-locale="ko">변경을 하나로 합치세요. 팀 검사는 새 조합을 리뷰하고, 공유된 결과는 바꾸지 않고 읽기만 합니다.</p>
+          <p data-locale="en" class="sr">The combined project reuses existing reviews and checks the new combinations.</p>
+          <p data-locale="ko" class="sr">합친 프로젝트는 기존 리뷰를 다시 쓰고 새 조합만 검사합니다.</p>
         </section>
       </div>
     </div>
@@ -237,96 +306,117 @@
   <section class="band" id="app" aria-labelledby="app-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="kicker">See it in the desktop app</p>
-        <h2 id="app-title">Real projects, recorded in the app.</h2>
-        <p>Both recordings come from the desktop app preview, played back faster.</p>
+        <p data-locale="en" class="kicker">See it in the desktop app</p>
+        <p data-locale="ko" class="kicker">데스크톱 앱에서 보기</p>
+        <h2 data-locale="en" id="app-title">Real projects, recorded in the app.</h2>
+        <h2 data-locale="ko" id="app-title">앱에서 녹화한 실제 프로젝트.</h2>
+        <p data-locale="en">Both recordings come from the desktop app preview, played back faster.</p>
+        <p data-locale="ko">두 녹화 모두 데스크톱 앱 미리보기에서 찍었고, 빠르게 재생합니다.</p>
       </div>
       <figure class="app-demo" data-app-demo>
-        <div class="demo-tabs" role="group" aria-label="Choose a recording">
+        <div class="demo-tabs" role="group" aria-label="Choose a recording" data-ko-aria-label="녹화 선택">
           <button type="button" class="demo-tab" aria-pressed="true" data-src="/media/graph-growth.gif"
                   data-alt="Real recording of the Artifactize desktop app showing Artifactize's own project graph growing release by release, from 0.7.0 to the current release."
-                  data-label="Artifactize’s own project graph, one step per release from 0.7.0 to today.">The graph grows</button>
+                  data-label="Artifactize’s own project graph, one step per release from 0.7.0 to today."
+                  data-ko-data-alt="Artifactize 자체 프로젝트 그래프가 0.7.0부터 현재 릴리스까지 릴리스마다 자라는 모습을 담은 Artifactize 데스크톱 앱의 실제 녹화."
+                  data-ko-data-label="Artifactize 자체 프로젝트 그래프, 0.7.0부터 오늘까지 릴리스마다 한 단계씩."><span data-locale="en">The graph grows</span><span data-locale="ko">그래프가 자랍니다</span></button>
           <button type="button" class="demo-tab" aria-pressed="false" data-src="/media/review-loop.gif"
                   data-alt="Real recording of the Artifactize desktop app over four Runs of an example project: failing parts turn red, are fixed between Runs, unchanged work is reused, and the fourth Run passes."
-                  data-label="Four Runs of an example project: failing parts are fixed between Runs, unchanged work is reused, and the last Run passes.">The review loop</button>
+                  data-label="Four Runs of an example project: failing parts are fixed between Runs, unchanged work is reused, and the last Run passes."
+                  data-ko-data-alt="예제 프로젝트를 네 번 Run하는 Artifactize 데스크톱 앱의 실제 녹화: 실패한 부분은 빨갛게 바뀌었다가 Run 사이에 고쳐지고, 바뀌지 않은 작업은 다시 쓰이며, 네 번째 Run이 통과합니다."
+                  data-ko-data-label="예제 프로젝트의 Run 네 번: 실패한 부분은 Run 사이에 고쳐지고, 바뀌지 않은 작업은 다시 쓰이며, 마지막 Run이 통과합니다."><span data-locale="en">The review loop</span><span data-locale="ko">리뷰 반복</span></button>
         </div>
         <img src="/media/graph-growth.gif" width="1280" height="720" loading="lazy" decoding="async"
-             alt="Real recording of the Artifactize desktop app showing Artifactize's own project graph growing release by release, from 0.7.0 to the current release.">
-        <figcaption><span class="app-demo-caption">Artifactize’s own project graph, one step per release from 0.7.0 to today.</span></figcaption>
+             alt="Real recording of the Artifactize desktop app showing Artifactize's own project graph growing release by release, from 0.7.0 to the current release."
+             data-ko-alt="Artifactize 자체 프로젝트 그래프가 0.7.0부터 현재 릴리스까지 릴리스마다 자라는 모습을 담은 Artifactize 데스크톱 앱의 실제 녹화.">
+        <figcaption><span data-locale="en" class="app-demo-caption">Artifactize’s own project graph, one step per release from 0.7.0 to today.</span><span data-locale="ko" class="app-demo-caption">Artifactize 자체 프로젝트 그래프, 0.7.0부터 오늘까지 릴리스마다 한 단계씩.</span></figcaption>
       </figure>
     </div>
   </section>
 
   <section class="band start" id="start" aria-labelledby="start-title">
     <div class="wrap start-inner">
-      <p class="kicker">Get started</p>
-      <h2 id="start-title">Try it in five minutes.</h2>
-      <p>Artifactize is open source under the Apache License 2.0. It runs on Linux, macOS and Windows; the quick start reviews an example project without an AI account or provider access key.</p>
+      <p data-locale="en" class="kicker">Get started</p>
+      <p data-locale="ko" class="kicker">시작하기</p>
+      <h2 data-locale="en" id="start-title">Try it in five minutes.</h2>
+      <h2 data-locale="ko" id="start-title">5분 만에 써 보세요.</h2>
+      <p data-locale="en">Artifactize is open source under the Apache License 2.0. It runs on Linux, macOS and Windows; the quick start reviews an example project without an AI account or provider access key.</p>
+      <p data-locale="ko">Artifactize는 Apache License 2.0으로 공개된 오픈 소스입니다. Linux, macOS, Windows에서 실행되며, 빠른 시작은 AI 계정이나 제공자 접근 키 없이 예제 프로젝트를 리뷰합니다.</p>
       <div class="install" data-install>
         <div class="downloads">
           <a class="btn btn-ghost download" data-os="macos" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg">
-            <span>Download for macOS</span>
-            <span class="download-meta">Apple silicon and Intel · .dmg</span>
+            <span data-locale="en">Download for macOS</span>
+            <span data-locale="ko">macOS용 내려받기</span>
+            <span data-locale="en" class="download-meta">Apple silicon and Intel · .dmg</span>
+            <span data-locale="ko" class="download-meta">Apple 실리콘과 Intel · .dmg</span>
           </a>
           <a class="btn btn-ghost download" data-os="windows" href="https://apps.microsoft.com/detail/9PB6W4LL165D">
-            <span>Get it for Windows</span>
+            <span data-locale="en">Get it for Windows</span>
+            <span data-locale="ko">Windows용 받기</span>
             <span class="download-meta">Microsoft Store · x64</span>
           </a>
           <a class="btn btn-ghost download" data-os="linux" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb">
-            <span>Download for Linux</span>
+            <span data-locale="en">Download for Linux</span>
+            <span data-locale="ko">Linux용 내려받기</span>
             <span class="download-meta">x86_64 · .deb</span>
           </a>
         </div>
-        <p class="download-note">The app brings the <code>artifactize</code> command with it. On a Mac, open the app once to set up the Terminal command. On Ubuntu 22.04, Debian 12 or later, open the .deb with your software installer or run <code>sudo apt install ./Artifactize-amd64.deb</code>.</p>
-        <h3 class="install-cli-title">Or install from the command line</h3>
-        <div class="demo-tabs install-tabs" role="tablist" aria-label="Operating system" hidden>
+        <p data-locale="en" class="download-note">The app brings the <code>artifactize</code> command with it. On a Mac, open the app once to set up the Terminal command. On Ubuntu 22.04, Debian 12 or later, open the .deb with your software installer or run <code>sudo apt install ./Artifactize-amd64.deb</code>.</p>
+        <p data-locale="ko" class="download-note">앱에 <code>artifactize</code> 명령이 함께 들어 있습니다. Mac에서는 앱을 한 번 열면 터미널 명령이 설정됩니다. Ubuntu 22.04, Debian 12 이상에서는 소프트웨어 설치 프로그램으로 .deb를 열거나 <code>sudo apt install ./Artifactize-amd64.deb</code>를 실행하세요.</p>
+        <h3 data-locale="en" class="install-cli-title">Or install from the command line</h3>
+        <h3 data-locale="ko" class="install-cli-title">또는 명령줄에서 설치</h3>
+        <div class="demo-tabs install-tabs" role="tablist" aria-label="Operating system" data-ko-aria-label="운영체제" hidden>
           <button type="button" class="demo-tab" role="tab" id="install-tab-linux" aria-controls="install-linux" aria-selected="true" data-os="linux">Linux</button>
           <button type="button" class="demo-tab" role="tab" id="install-tab-macos" aria-controls="install-macos" aria-selected="false" tabindex="-1" data-os="macos">macOS</button>
           <button type="button" class="demo-tab" role="tab" id="install-tab-windows" aria-controls="install-windows" aria-selected="false" tabindex="-1" data-os="windows">Windows</button>
         </div>
         <div class="panel start-panel" role="tabpanel" id="install-linux" aria-labelledby="install-tab-linux" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
-          <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
+          <button type="button" class="copy" aria-label="Copy the install command" data-ko-aria-label="설치 명령 복사" hidden>Copy</button>
           <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Linux (x86_64, aarch64): installs to ~/.local/bin, no sudo; on x86_64 also the desktop app</span>
+<pre class="code term"><code><span data-locale="en" class="t-dim"># Linux (x86_64, aarch64): installs to ~/.local/bin, no sudo; on x86_64 also the desktop app</span><span data-locale="ko" class="t-dim"># Linux (x86_64, aarch64): sudo 없이 ~/.local/bin에 설치, x86_64에서는 데스크톱 앱도 설치</span>
 <span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span>
 <span class="t-prompt">$</span> artifactize --version</code></pre>
         </div>
         <div class="panel start-panel" role="tabpanel" id="install-macos" aria-labelledby="install-tab-macos">
           <div data-copy="brew install lhj6102/tap/artifactize">
-            <button type="button" class="copy" aria-label="Copy the Homebrew install command" hidden>Copy</button>
+            <button type="button" class="copy" aria-label="Copy the Homebrew install command" data-ko-aria-label="Homebrew 설치 명령 복사" hidden>Copy</button>
             <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># macOS (Apple silicon, Intel) with Homebrew</span>
+<pre class="code term"><code><span data-locale="en" class="t-dim"># macOS (Apple silicon, Intel) with Homebrew</span><span data-locale="ko" class="t-dim"># macOS (Apple 실리콘, Intel), Homebrew 사용</span>
 <span class="t-prompt">$</span> <span data-command>brew install lhj6102/tap/artifactize</span>
 <span class="t-prompt">$</span> artifactize --version</code></pre>
           </div>
           <div class="install-alt-block" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
-            <button type="button" class="copy" aria-label="Copy the install script command" hidden>Copy</button>
+            <button type="button" class="copy" aria-label="Copy the install script command" data-ko-aria-label="설치 스크립트 명령 복사" hidden>Copy</button>
             <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Without Homebrew: installs to ~/.local/bin and the app to ~/Applications, no sudo</span>
+<pre class="code term"><code><span data-locale="en" class="t-dim"># Without Homebrew: installs to ~/.local/bin and the app to ~/Applications, no sudo</span><span data-locale="ko" class="t-dim"># Homebrew 없이: sudo 없이 ~/.local/bin에, 앱은 ~/Applications에 설치</span>
 <span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span></code></pre>
           </div>
-          <p class="install-alt">With Homebrew, the app and the commands: <code>brew install --cask lhj6102/tap/artifactize</code></p>
+          <p data-locale="en" class="install-alt">With Homebrew, the app and the commands: <code>brew install --cask lhj6102/tap/artifactize</code></p>
+          <p data-locale="ko" class="install-alt">Homebrew로 앱과 명령을 함께 설치하려면: <code>brew install --cask lhj6102/tap/artifactize</code></p>
         </div>
         <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows">
           <div data-copy="winget install 9PB6W4LL165D --source msstore">
-            <button type="button" class="copy" aria-label="Copy the Microsoft Store install command" hidden>Copy</button>
+            <button type="button" class="copy" aria-label="Copy the Microsoft Store install command" data-ko-aria-label="Microsoft Store 설치 명령 복사" hidden>Copy</button>
             <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Windows x64 from the Microsoft Store, with the desktop app; then open a new terminal</span>
+<pre class="code term"><code><span data-locale="en" class="t-dim"># Windows x64 from the Microsoft Store, with the desktop app; then open a new terminal</span><span data-locale="ko" class="t-dim"># Windows x64, Microsoft Store에서 데스크톱 앱과 함께 설치한 뒤 새 터미널을 여세요</span>
 <span class="t-prompt">PS&gt;</span> <span data-command>winget install 9PB6W4LL165D --source msstore</span>
 <span class="t-prompt">PS&gt;</span> artifactize --version</code></pre>
           </div>
           <div class="install-alt-block" data-copy="irm https://artifactize.dev/install.ps1 | iex">
-            <button type="button" class="copy" aria-label="Copy the PowerShell install command" hidden>Copy</button>
+            <button type="button" class="copy" aria-label="Copy the PowerShell install command" data-ko-aria-label="PowerShell 설치 명령 복사" hidden>Copy</button>
             <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Without the Store, in PowerShell with no administrator rights</span>
+<pre class="code term"><code><span data-locale="en" class="t-dim"># Without the Store, in PowerShell with no administrator rights</span><span data-locale="ko" class="t-dim"># Store 없이, 관리자 권한 없는 PowerShell에서</span>
 <span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span></code></pre>
           </div>
-          <p class="install-alt">The PowerShell download is not code-signed, so Smart App Control may block it; the Store version is signed by Microsoft.</p>
+          <p data-locale="en" class="install-alt">The PowerShell download is not code-signed, so Smart App Control may block it; the Store version is signed by Microsoft.</p>
+          <p data-locale="ko" class="install-alt">PowerShell로 내려받는 파일은 코드 서명이 없어 스마트 앱 컨트롤이 막을 수 있습니다. Store 버전은 Microsoft가 서명합니다.</p>
         </div>
       </div>
       <div class="cta center">
-        <a class="btn btn-primary" href="/docs/getting-started/guide.html">5-minute quick start <span aria-hidden="true">→</span></a>
-        <a class="btn btn-ghost" href="/docs/getting-started/install.html">Installation guide</a>
+        <a data-locale="en" class="btn btn-primary" href="/docs/getting-started/guide.html">5-minute quick start <span aria-hidden="true">→</span></a>
+        <a data-locale="ko" class="btn btn-primary" href="/docs/ko/getting-started/guide.html">5분 빠른 시작 <span aria-hidden="true">→</span></a>
+        <a data-locale="en" class="btn btn-ghost" href="/docs/getting-started/install.html">Installation guide</a>
+        <a data-locale="ko" class="btn btn-ghost" href="/docs/ko/getting-started/install.html">설치 안내</a>
         <a class="btn btn-ghost" href="https://github.com/lhj6102/artifactize">GitHub</a>
       </div>
     </div>
@@ -336,21 +426,28 @@
 
 <footer class="foot">
   <div class="wrap foot-row">
-    <a class="brand" href="/" aria-label="Artifactize home">
+    <a class="brand" href="/" aria-label="Artifactize home" data-ko-href="/ko/" data-ko-aria-label="Artifactize 홈">
       <img class="mark" src="/media/artifactize-icon-mark.svg" width="24" height="22" alt="" aria-hidden="true">
       <span>Artifactize</span>
     </a>
-    <p class="foot-tag">Declare. <em>Verify.</em> Reuse.</p>
-    <nav class="foot-nav" aria-label="Footer">
-      <a href="/docs/">Docs</a>
-      <a href="/docs/getting-started/guide.html">Quick start</a>
-      <a href="/docs/features/others/reference.html">Reference</a>
-      <a href="/board/">Development</a>
-      <a href="/privacy/">Privacy</a>
+    <p data-locale="en" class="foot-tag">Declare. <em>Verify.</em> Reuse.</p>
+    <p data-locale="ko" class="foot-tag">선언. <em>검증.</em> 재사용.</p>
+    <nav class="foot-nav" aria-label="Footer" data-ko-aria-label="바닥글">
+      <a data-locale="en" href="/docs/">Docs</a>
+      <a data-locale="ko" href="/docs/ko/">문서</a>
+      <a data-locale="en" href="/docs/getting-started/guide.html">Quick start</a>
+      <a data-locale="ko" href="/docs/ko/getting-started/guide.html">빠른 시작</a>
+      <a data-locale="en" href="/docs/features/others/reference.html">Reference</a>
+      <a data-locale="ko" href="/docs/ko/features/others/reference.html">레퍼런스</a>
+      <a data-locale="en" href="/board/">Development</a>
+      <a data-locale="ko" href="/board/" hreflang="en">개발 현황 (영어)</a>
+      <a data-locale="en" href="/privacy/">Privacy</a>
+      <a data-locale="ko" href="/privacy/" hreflang="en">개인정보 처리방침 (영어)</a>
       <a href="https://github.com/lhj6102/artifactize">GitHub</a>
       <a href="https://discord.gg/VswgKkPkS9">Discord</a>
     </nav>
-    <p class="foot-meta"><a href="https://github.com/lhj6102/artifactize/blob/main/LICENSE">Open source · Apache-2.0</a></p>
+    <p data-locale="en" class="foot-meta"><a href="https://github.com/lhj6102/artifactize/blob/main/LICENSE">Open source · Apache-2.0</a></p>
+    <p data-locale="ko" class="foot-meta"><a href="https://github.com/lhj6102/artifactize/blob/main/LICENSE">오픈 소스 · Apache-2.0</a></p>
   </div>
 </footer>
 
