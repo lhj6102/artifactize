@@ -64,7 +64,10 @@ Only the reviewer who claimed the request can run its tools; see
 [Human reviews](../human.md). A tool runs the declaration recorded with the request:
 if the eval's scope or declarations changed since then, the tool refuses to run
 instead of running the new version. A tool error is something to fix and retry, not
-a verdict, and tool runs are not recorded with the result.
+a verdict, and tool runs are not recorded with the result. Before a tool runs, the
+reviewed files are checked: if their fingerprint changed, or cannot be computed, the
+request ends ERROR (INPUT_CHANGED or FINGERPRINT_RECHECK_FAILED) without running the tool,
+and the next `verify` asks again.
 
 `request list` shows every saved request (waiting, claimed and settled), optionally
 for one Run (`--run`), with its request, Run and eval IDs, status and reviewer.

@@ -120,21 +120,8 @@ non-ASCII text and longer names are rejected with exit 2 **before opening the
 token store**. This name is a display label, not the bearer secret.
 
 `session show` and `session send` read and continue an Agent review's
-[saved conversation](../features/agent.md#saved-conversations); see
-[Agent sessions](#agent-sessions). `REF` is the
-request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a request
-id such as `run-Hq2b9X-1`, or a `sessionId`; a request that reused a result names the
-review that produced it. `show` prints the conversation as text, and with `--json` the
-stored events as they are: `{"reference","file","events"}`. `show --summary` prints
-the [session summary](#session-summary), computed from the
-session file alone: the backend, model and time span, the turns with their tokens and
-the total, the tool calls per tool with how many failed, and the follow-ups; `--json`
-prints `{"reference","sessionId","requestId","backend","model","reasoning","startedAt","endedAt","durationMs","followUps","turns","tokens","toolCalls"}`.
-`send` prints the answer under a header naming the session, the follow-up number and
-the model, and `files changed since this review` when an Artifact the review covered
-changed; `--json` prints `{"reference","sessionId","requestId","send","filesChanged","answer","usage"}`.
-Both exit 2 for a reference to another machine or state, a session that the automatic cleanup of old saved conversations removed (reported as `was removed by the session GC`), one
-that was not saved, a request that is still running (`send`), and a failed follow-up.
+[saved conversation](../features/agent.md#saved-conversations); their arguments, output
+and errors are in [Agent sessions](#agent-sessions).
 
 Every command that opens an older state upgrades it as described in
 [State](../features/others/state.md#state); a state it cannot open exits 2, and `doctor`
@@ -183,7 +170,8 @@ artifactize run show RUN_ID
 ```
 
 `verify --wait` names the Run on stderr, waits for it to end, then prints each eval's
-outcome and exits with the Run's [exit code](#command-reference); use `--watch` instead of `--wait` to stream each eval as JSON lines as it settles; `run show` prints the saved Run again later. The
+outcome and exits with the Run's [exit code](#command-reference); use `--watch` instead of `--wait` to stream each eval as JSON lines as it settles; `run show` prints the saved Run again later. Up to 64 KiB of the Run's own diagnostics
+and any Run error also go to stderr, with `--json` too. The
 [runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
 blocked evals side by side.
 
@@ -566,17 +554,14 @@ for caching, stored messages and compatibility details.
 
 A reference to another machine or state fails with where it lives, for example
 `Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
-5d0e…`. A session the size-bound collection deleted reports `was removed by the
-session GC`, and one that was never saved `was not saved`.
+5d0e…`. A session the automatic cleanup of old saved conversations deleted reports `was removed
+by the session GC`, and one that was never saved `was not saved`. `session show` and
+`session send` exit 2 for these, for a request that is still running (`send`) and for a
+failed follow-up.
 
-**Retention.** [Agent sessions](../features/others/state.md#agent-sessions) explains how
-the session store is kept within its size. In short, in `limits.json` (`agentSessions`):
-once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
-it is at or below `targetBytes` (768 MiB). This runs once a `verify` Run has scheduled
-and settled its evals (a Run that fails earlier skips it) and in `artifactize prune`,
-and never touches the session of a request that is still running
-or one a `session send` holds. `doctor` shows the store's size. `"enabled": false`
-stops saving new conversations.
+**Retention.** Old conversations are deleted once the store grows past its size limit;
+[Agent sessions](../features/others/state.md#agent-sessions) gives the limits and how to
+change them.
 
 **Privacy.** A conversation contains everything the reviewer read through its tools,
 including file contents, and everything it wrote. It stays on this machine in

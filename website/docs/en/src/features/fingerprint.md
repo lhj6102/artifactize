@@ -170,8 +170,6 @@ suffixes remain meaningful; a relocation that preserves those logical declaratio
 and ownership does not change the graph fingerprint. Execution options are still
 saved in ordinary state records.
 
-This is only a fingerprint algorithm. Existing reuse keys, Runs, status and review
-flows decide whether to reuse or review again. The graph is evaluated against
-current state, never a stored diff or structural history. A graph eval title
-change invalidates its graph fingerprint even though titles are excluded from the
-ordinary Eval definition hash. Both built-in `graph` tools use this same extraction.
+A graph review always looks at the current structure, never a diff against an earlier
+one. Changing a graph eval's title reviews the graph again, although a title change does
+not do that for other evals.

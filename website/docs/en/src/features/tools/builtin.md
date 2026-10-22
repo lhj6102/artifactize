@@ -82,7 +82,8 @@ block; fixed `read`, `section` and `help` return text blocks:
   author's environment minus every `ARTIFACTIZE_*` variable (matched ignoring case). For a
   Human, it runs in the reviewer's whole environment, `ARTIFACTIZE_*` variables included,
   such as an `ARTIFACTIZE_REMOTE_TOKEN` credential. It must finish within 10 seconds, exit 0 and
-  print at most 64 KiB, stdout and stderr together. It runs a real program, so name
+  print at most 64 KiB, stdout and stderr together. If it exits nonzero, the tool fails
+  with the exit status and the program's stderr as it is, without its stdout. It runs a real program, so name
   only programs you trust.
 - **`open`** (Human only) opens one file, folder or `http://`/`https://` URL in the
   desktop's default application: `xdg-open` on Linux and WSL, `open` on macOS, the

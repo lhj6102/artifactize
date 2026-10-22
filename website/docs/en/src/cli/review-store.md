@@ -83,7 +83,8 @@ artifactize remote logout
 
 A client is configured only through the state directory and the environment,
 never `.artf` declarations, so a cloned repository cannot redirect a token. `remote
-login URL` reads one token line from stdin (never argv). It attempts to hide
+login URL` reads one token line from stdin (never argv), without the surrounding
+whitespace; a token over 4096 bytes is refused. It attempts to hide
 terminal input; on Windows, if that fails, it warns that the token will be visible
 and continues reading. Non-terminal stdin is read without changing terminal echo.
 It verifies the token with `GET /v1/whoami`, then stores it in
@@ -152,9 +153,9 @@ the store's latest record of each key, and a record that already is the latest i
 not sent again. The store keeps each execution once, so a record it already holds
 answers `created: false`. Both count as `existing`, and pushing twice is harmless.
 Human sign-offs without the `human` scope, and records over their size limit, are
-`skipped` with a reason on stderr. `--dry-run` sends nothing and reports what would
-be pushed. The output is `Pushed N, already in the store M, skipped K.`, or JSON
-`{"dryRun":false,"pushed":N,"existing":M,"skipped":K}`. Unlike `verify`, `push`
+`skipped` with a reason on stderr. The output is `Pushed N, already in the store M, skipped K.`, or JSON
+`{"dryRun":false,"pushed":N,"existing":M,"skipped":K}`. `--dry-run` sends nothing and
+prints `Would push N, already in the store M, skipped K.` (JSON `"dryRun":true`). Unlike `verify`, `push`
 fails on any remote failure, and it needs the `publish` scope.
 
 Connection errors, request timeouts and 5xx answers fail open: one warning, then the

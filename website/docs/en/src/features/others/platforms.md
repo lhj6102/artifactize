@@ -24,7 +24,9 @@ inherit the reviewer's complete environment, `ARTIFACTIZE_*` variables included,
 private temporary or output directories ([Human tools](../tools/human.md)).
 
 On Linux, programs the desktop app starts from its AppImage get the environment the app
-was started with, as if you had started them yourself.
+was started with, minus the settings the AppImage adds. A variable you had set that the
+AppImage overwrote, such as `GTK_THEME`, is removed rather than restored; set it again in
+the command if it needs it.
 
 ## Program lookup
 

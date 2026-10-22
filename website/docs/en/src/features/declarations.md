@@ -286,11 +286,13 @@ The target must stay a regular file, not a symbolic link, for as long as it is
 reviewed, also with `fingerprint = false`:
 
 - missing or invalid before its eval starts: the eval is ERROR/PREPARATION_FAILED;
-- missing, invalid or changed when a Runtime or Agent review ends: ERROR/INPUT_CHANGED
-  instead of a verdict;
+- missing or invalid when a Runtime or Agent review ends: ERROR/INPUT_CHANGED instead
+  of a verdict;
 - missing or invalid during a Human review: tools and submission fail, the request keeps
-  waiting, and you restore the file and try again; if it changed, a submitted sign-off is
-  ERROR/INPUT_CHANGED;
+  waiting, and you restore the file and try again;
+- changed contents: detected only through a fingerprint, so with `fingerprint = false`
+  an edit to the file is not noticed; otherwise a Runtime or Agent review, or a
+  sign-off, ends ERROR/INPUT_CHANGED;
 - a tool call on a missing or invalid target returns an error without running the tool.
 
 Verify again once the file is back.
@@ -334,8 +336,7 @@ Tags describe the eval's own command or tools, never its Artifact: an Agent that
 only reads test code need not wait because another eval runs those tests. There
 are no implicit tags. Mutex tags are execution options, not evaluation criteria;
 changing them changes neither fingerprints nor reuse keys, and cached results
-can still be reused while a conflicting eval runs. Human try-claim behavior is
-not implemented.
+can still be reused while a conflicting eval runs.
 
 ## Human gate policy
 

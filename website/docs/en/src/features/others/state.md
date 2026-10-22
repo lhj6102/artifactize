@@ -1,8 +1,10 @@
 # State, cache and limits
 
-Where artifactize keeps its state, how to inspect and limit the reuse cache, how
-to cap Agent backends machine-wide, how saved Agent conversations are kept and
-bounded, and the local diagnostics and maintenance commands.
+Run `artifactize doctor` to see where your state is: its first line is the state
+directory, followed by the checks of the backends, cache and saved conversations, and it
+exits 0 when everything is ready. This page explains that directory, how to inspect and
+limit the reuse cache, how to cap Agent backends machine-wide, and how saved Agent
+conversations are kept and bounded.
 
 ## State
 
@@ -203,8 +205,10 @@ this machine, was never saved or lives in a remote store is reported as such, an
 ### Local readers
 
 Monitor and Review update on their own when a Run changes, within five seconds at the
-latest. A waiting Human review's Detail shows the tool commands of the current declarations,
-without claiming the review or running anything. A follower opens its
+latest. A waiting Human review's Detail shows the tool commands of the declarations as they
+were when you first opened it, without claiming the review or running anything; a refresh
+or reopening keeps them. Each tool run checks the review's declarations again, and the
+commands shown are updated after one. A follower opens its
 original request. If publishing to a team store fails after a local submission, the local
 result stays and the failure is shown.
 

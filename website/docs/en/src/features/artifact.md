@@ -132,7 +132,9 @@ that cycle. These gates also determine waiting and speculative cancellation.
 For example, if `docs`'s eval references `cli` and `cli`'s eval references `docs`,
 they form a cycle: a RED `cli/tests` does not block `docs/matches-cli` or replace
 its verdict. Both run independently and must pass before consumers outside the
-cycle can proceed.
+cycle can proceed. If `cli`'s eval also references `core`, a RED `core/tests` blocks
+both `cli/tests` and `docs/matches-cli`, because a cycle shares its outside inputs. An
+eval elsewhere that references `docs` waits for every eval of `docs` and `cli`.
 
 A BLOCKED Eval's reason names the RED Evals at the root of the block, for example
 `Dependency verdict RED: core/tests`, never Evals that were merely still running.
