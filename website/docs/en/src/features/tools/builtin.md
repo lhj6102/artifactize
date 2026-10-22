@@ -116,17 +116,19 @@ in their private output directory.
 
 Declare `builtin = "graph", args = []` on any Artifact; no graph Artifact is
 required. It always reads the entire current project's declarations, not the
-selected review's historical Run or only its scope. It does not read source
-contents, start an eval or add dependencies. It shows the same graph the
+selected review's historical Run or only its scope, and starts no eval and adds no
+dependencies. It shows the same graph the
 [graph fingerprint](../fingerprint.md#graph-fingerprint) covers:
 
-- **Agent:** no model input (`{}` only). Prints a name-based, cycle-safe tree of
+- **Agent:** no model input (`{}` only). Reads declarations only, no source files.
+  Prints a name-based, cycle-safe tree of
   Artifacts and their evals, the complete extracted definitions/evaluation criteria,
   the graph fingerprint, and labeled arrows from input to consumer.
 - **Human:** `kind = "launch"`. Starts `artifactize-desktop graph --repo PATH`
   using the normal detached application handoff. `artifactize-desktop` must be
   installed and discoverable through the program search path. The app opens on that
-  branch's [Current](../../desktop/index.md#current): the same graph renderer and
+  branch's [Current](../../desktop/index.md#current), which reads the worktree's files to
+  predict what would be reused or run: the same graph renderer and
   keyboard/zoom interactions as a Run's, but current declarations, each Artifact
   marked as reused or would run, rather than Run verdicts. Expand **Structure and
   evaluation criteria** for the same complete text tree as the Agent sees;

@@ -7,9 +7,7 @@ not build or run your application, and it never approves anything in a person's 
 
 Its instruction guide, called a **skill**, is
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md),
-and comes with the [plugin](plugin.md). It points Arti to these docs and has it read a
-page before it explains or writes something it is unsure of; when a page and the skill
-disagree, the page wins.
+and comes with the [plugin](plugin.md).
 
 ## Get the skill
 

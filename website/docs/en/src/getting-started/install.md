@@ -330,8 +330,10 @@ or interrupting a watcher leaves the Run running; `artifactize run cancel RUN_ID
 is the explicit cancellation action. The foreground Human deadline and
 `verify --timeout-ms` are removed. `--request-key` makes retries return the same Run.
 
-Gate bypass (`--ignore-gates` and `review_policy`) is removed. Per-request
-`--speculate` and `--defer-human` replace it, both off by default; deferred sign-offs
+Gate bypass (`--ignore-gates` and `review_policy`, including
+`review_policy.dependency_gates`) is removed; even an empty `review_policy` table fails
+configuration validation, so delete it. Per-request `--speculate` and `--defer-human`
+replace it, both off by default and neither waiving final approval; deferred sign-offs
 end with `SIGNOFFS_PENDING` and `--wait` exit 5. See [Runs and status](../features/run.md).
 Plain `artifactize monitor` starts on ALL; `monitor .`, a positional path or `--repo`
 selects that repository initially.
@@ -405,7 +407,8 @@ the browser returns to `localhost:1455`. On WSL 2, a Windows browser works too; 
 the printed URL into it if nothing opens. If another program, such as a Codex CLI or app sign-in, is using port 1455,
 artifactize asks you to paste the address instead. On another machine, use the same fallback.
 Paste the full URL starting `http://localhost:1455/auth/callback?code=` into the
-terminal, or the desktop sign-in's paste field. Find it in the browser's address bar
+terminal, or the desktop sign-in's paste field. Sign-in must finish within five minutes;
+after that, run `login codex` again. Find it in the browser's address bar
 after the failed load, or in DevTools → Network if the page keeps loading.
 `logout codex` deletes artifactize's tokens
 and asks the server to revoke them; it warns when the revocation is not confirmed. To use the tokens of an existing Codex sign-in instead, set
@@ -495,10 +498,3 @@ AppData files are also outside the Store package's cleanup; see the
 
 Next, take the [Quick start](guide.md): a five-minute tour that needs no model.
 
-#### Removed gate-bypass settings
-
-`review_policy` and `review_policy.dependency_gates` are removed; even an empty
-policy table fails configuration validation as an unknown field. The old `--ignore-gates` flag is also removed. Choose [speculation and deferred sign-offs](../features/run.md#speculation-and-deferred-sign-offs)
-per verification request instead; neither mode waives final approval obligations.
-Old saved keys are ignored on read, so removing the legacy policy needs no state
-migration.

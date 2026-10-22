@@ -1,8 +1,10 @@
 # Fingerprints and reuse
 
-A fingerprint says what an Artifact's reviews depend on. An eval's earlier result
-is reused when the eval is unchanged and the fingerprints of the Artifacts it
-depends on are unchanged, so review cost follows the size of a change.
+Run `artifactize verify --all --wait` twice: the second time every eval reports
+`GREEN (reused …)` and nothing runs again. Change one file and verify again: only the evals
+that depend on that file run. A fingerprint says what an Artifact's reviews depend on. An
+eval's earlier result is reused when the eval is unchanged and the fingerprints of the
+Artifacts it depends on are unchanged, so review cost follows the size of a change.
 
 ## Fingerprints
 

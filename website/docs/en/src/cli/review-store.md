@@ -43,39 +43,32 @@ prints a JSON report, even without `--json`:
 `purgedEntries` counts the records `--purge` deleted. Names of revoked tokens are never reused. `rm KEY` deletes every record of a key and prints
 `{"removed":true}` (false if absent).
 
-The API takes `Authorization: Bearer TOKEN` and answers JSON (`{"error":...}` on
-failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
+`artifactize` clients are the only writers: `verify`, `request submit` and `remote push`
+publish, and `verify` and `status` look up. The server answers them over these routes,
+useful for proxy and firewall rules. Each takes `Authorization: Bearer TOKEN` and answers
+JSON, `{"error":...}` on failure, 401 for a missing, unknown or revoked token and 403 for a
+missing scope:
 
-| Route | Scope | Result |
+| Route | Scope | Used by |
 |---|---|---|
-| `GET /v1/whoami` | any | `{"principal":NAME,"scopes":[...]}` |
-| `POST /v1/lookup` with `{"keys":[KEY,...]}` (at most 1000) | `read` | `{"entries":[record,...]}`: the latest record of each found key |
-| `PUT /v1/entries/{key}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the store already holds this execution of the key |
+| `GET /v1/whoami` | any | `remote login`, `remote status` |
+| `POST /v1/lookup` | `read` | `verify`, `status`, `remote push` |
+| `PUT /v1/entries/{key}` | `publish` (+ `human` for Human sign-offs) | `verify`, `request submit`, `remote push` |
 
-`artifactize` writes these records itself (`verify`, `request submit`, `remote push`).
-A record looks like this:
-
-```json
-{"schema":2,"key":"<64 hex digits>","evalDefHash":"<64 hex digits>",
- "fingerprints":{"app":"app-v1"},"artifactKinds":{"app":"folder"},
- "verdict":"GREEN","evalId":"app/check","runId":"run-a","requestId":"run-a-1",
- "executionId":"execution-run-a-1","profile":{"kind":"runtime"},"options":{},
- "result":{"verdict":"GREEN"},"usage":null,
- "producer":{"name":"alice@laptop","version":"0.15.0"},
- "startedAt":"2026-10-04T00:00:00Z","completedAt":"2026-10-04T00:00:01Z"}
-```
-
-`schema` must be 2 and `verdict` `GREEN` or `RED`; `key` must be the reuse key of
-`evalDefHash`, `fingerprints` and `artifactKinds` (each covered Artifact, with a valid
-name). `reviewer` names a Human sign-off's reviewer, and `executionPaths` an Agent
-result's tool files. A summary record (share `summary`) carries no command arguments,
-captured output or repository path; a full record (share `full`) adds the saved
-`execution` as it is. The server refuses a malformed record, including another schema,
-a missing completion time or a key that does not match, and limits its size to 256 KiB
-for a summary and 16 MiB for a full record. It sets `publisher` (the token name) and `publishedAt`
-(its own clock). Clients use a record only if it matches the key they asked for, so a
-store cannot make a client reuse a result for different criteria or inputs. Lookups update the last use of the record they
-return; inserts evict least-recently-used records above 100,000 records or 4 GiB.
+A record names the eval, its verdict, the fingerprints it covered, the Run that produced
+it and the producer. A summary record (share `summary`) also carries the eval's declared
+profile, including a runtime eval's command and arguments, but no captured output, no
+record of what the command actually ran and no repository path; a full record (share
+`full`) adds the saved execution with its output. Keep secrets out of declared arguments
+if you share summaries. A record is at most 256 KiB as a summary and 16 MiB as a full
+record. The server refuses a record that is malformed, has no completion time or is sent
+for another key than its own, and stamps the publishing token's name and its own time.
+Each client then checks that a record really matches the criteria and fingerprints it
+asked for and ignores one that does not, with a warning, so a store cannot make a client
+reuse a result for different criteria or inputs. To see what is shared, use
+`artifactize cache list` on a client; to remove a key's records, `artifactize server rm
+KEY`. Lookups count as use, and the store removes the least recently used records above
+100,000 records or 4 GiB.
 
 **Upgrading.** Upgrade the server and its clients together. A store from 0.3 or 0.4
 keeps its tokens but drops its records, so clients review once more and publish again;

@@ -173,7 +173,7 @@ later sign-off reuse.
 
 [Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
-See the [upgrade reference](../getting-started/install.md#removed-gate-bypass-settings)
+See the [upgrade reference](../getting-started/install.md#upgrading-from-011)
 for removed legacy gate-bypass settings. `--force` marks only explicitly
 selected executable evals for a fresh review, not recursive dependencies; it
 neither expands

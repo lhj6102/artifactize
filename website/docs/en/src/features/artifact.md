@@ -38,7 +38,7 @@ structure to an agent or opens it in Desktop for a person.
 
 A folder with an `index.artf` is an Artifact. `name` is required; `basis`,
 `views`, `fingerprint` and `tags` are optional. For older declarations,
-see the [legacy policy upgrade reference](../getting-started/install.md#removed-gate-bypass-settings).
+see the [legacy policy upgrade reference](../getting-started/install.md#upgrading-from-011).
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
 `usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval

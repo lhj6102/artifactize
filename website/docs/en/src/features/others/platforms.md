@@ -11,8 +11,10 @@ Runtime evals, fingerprint scripts, command Agent tools and command Human tools 
 their `command` with `args` as one argument vector on every OS. There is no shell and
 no per-OS variant of a declaration. A project declares commands that exist where it is
 reviewed: an eval that runs `python3` or `grep` needs them on every reviewer's `PATH`.
-For reading, searching and opening files, the [built-in tools](../tools/builtin.md) work
-everywhere without an external program.
+For reading and searching files, the [built-in tools](../tools/builtin.md) work
+everywhere without an external program. `open` uses the system opener: `open` on macOS,
+the default application on Windows, and `xdg-open` on Linux and WSL, which must be
+installed.
 
 Commands run in your own environment, as described in
 [Runtime execution](../declarations.md#runtime-execution). What differs by OS: the private
