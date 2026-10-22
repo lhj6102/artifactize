@@ -1,7 +1,9 @@
 # CLI
 
-Every command, its flags, output and exit codes, then the details of `verify`
-policy, budgets, selection files and profile variants.
+Run `artifactize verify --all --wait` in a project to review it: it names the Run, waits
+for it and prints each eval's outcome, then exits 0 when everything is GREEN. This page lists
+every command with its flags, output and exit codes, then the details of `verify` policy,
+budgets, selection files and profile variants.
 
 ## Command reference
 
@@ -118,7 +120,8 @@ non-ASCII text and longer names are rejected with exit 2 **before opening the
 token store**. This name is a display label, not the bearer secret.
 
 `session show` and `session send` read and continue an Agent review's
-[saved conversation](../features/agent.md#saved-conversations). `REF` is the
+[saved conversation](../features/agent.md#saved-conversations); see
+[Agent sessions](#agent-sessions). `REF` is the
 request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a request
 id such as `run-Hq2b9X-1`, or a `sessionId`; a request that reused a result names the
 review that produced it. `show` prints the conversation as text, and with `--json` the
@@ -201,13 +204,13 @@ Speculation and deferral never waive final requirements.
 join the same review and how `--force` changes that.
 
 There is no default eval-concurrency cap: every READY eval starts as soon as it is
-ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it
+ready. Add `--jobs N` (1–4294967295) only when that concurrency causes trouble; it
 then bounds the evals of this Run. Agent reviews are still
 bounded machine-wide per backend by `$STATE/limits.json`
 ([Backend capacity](../features/others/state.md#backend-capacity)); a request waiting for a backend slot
 holds no optional `--jobs` slot and no executor start.
 
-`--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
+`--fingerprint-jobs N` (on `verify` and `status`, 1–4294967295) bounds how many
 fingerprints are computed at once; the default is the number of CPUs available to
 the process. In `verify`, one shared bound covers preparation and Runtime/Agent
 end-of-review rechecks, independently of `--jobs`, which bounds evals. Human tool
@@ -215,8 +218,7 @@ actions and submissions separately use CPU-sized fingerprint parallelism and do
 not inherit this setting. Results and output do not depend on the bound or on
 completion order.
 
-`verify --max-executions N` sets a nonnegative, shared per-Run executor-start
-budget (unlimited when omitted); it is not an Artifact declaration field.
+`verify --max-executions N` sets a shared per-Run executor-start budget of 0–18446744073709551615 (unlimited when omitted); it is not an Artifact declaration field.
 The Run records an explicit `jobs` cap (the field is absent when unlimited),
 `fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
@@ -312,7 +314,7 @@ and [Human reviews](../tui/index.md#review).
 
 `artifactize tools` exposes the same current-directory tools on every install,
 including the Microsoft Store package. Non-Store channels also put `artifactize-tools`
-next to `artifactize`; either spelling uses the same parser and runner, output and
+next to `artifactize`; both spellings take the same arguments and give the same output and
 exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
 rather than running a current-directory tool.
 
@@ -332,13 +334,15 @@ There is no Artifact scope outside a review, so the current directory is the sco
 Filesystem targets for read/list/glob/grep/section/open must be relative and stay
 below it; `.` names the directory itself and is the default for list/glob/grep.
 Absolute targets, `..` and symlinks are refused, even when a link points inside.
-This is **not** a restriction on help's literal executable or subcommand arguments:
-its ordinary lookup accepts absolute/parent paths and executable symlinks as
-explained above. Only `open` accepts a URL,
+This does not apply to `help`'s program and arguments, which are found as in
+[`help`](../features/tools/builtin.md#tools). Only `open` accepts a URL,
 and only `http://` or `https://`.
 
-`read`, `section` and `help` print text with the limits above; `list`, `glob` and
-`grep` print the JSON result of the Agent tool. From the command line, `help` runs the
+`read`, `section` and `help` print text with the limits of
+[Built-in tools](../features/tools/builtin.md#tools) (`section` matches a heading exactly,
+and output past 64 KiB ends with a truncation marker); `list`, `glob` and `grep` print the
+JSON result of the [Agent tools](../features/tools/agent.md#agent-tools), with their pattern
+syntax and limits. From the command line, `help` runs the
 program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
 with no private temporary or output directory. A tool error goes to stderr with exit
 1; invalid usage exits 2. `artifactize-tools --help` and `artifactize-tools
@@ -413,8 +417,7 @@ JSON even without `--json`.
 `run list [--repo-only | --all]` lists saved Runs newest first as a text table, or
 as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
 current directory when omitted); `--repo-only` makes that default explicit, and
-`--all` includes every repository in the shared state. `--limit N` (default 50)
-and `--offset N` (default 0) page the filtered results. Each row includes the Run
+`--all` includes every repository in the shared state. `--limit N` (default 50) and `--offset N` (default 0), each 0–4294967295, page the filtered results; a value out of range exits 2. Each row includes the Run
 ID, repository, creation/completion timestamps, status, and request counts by
 verdict/state (absent states have zero requests). Unreadable requests do not count;
 `unreadable` names damaged records and their reasons while valid evidence stays
@@ -567,8 +570,8 @@ A reference to another machine or state fails with where it lives, for example
 5d0e…`. A session the size-bound collection deleted reports `was removed by the
 session GC`, and one that was never saved `was not saved`.
 
-**Retention.** The session store is bounded by size in
-[`limits.json`](../features/others/state.md#agent-sessions) (`agentSessions`):
+**Retention.** [Agent sessions](../features/others/state.md#agent-sessions) explains how
+the session store is kept within its size. In short, in `limits.json` (`agentSessions`):
 once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
 it is at or below `targetBytes` (768 MiB). This runs once a `verify` Run has scheduled
 and settled its evals (a Run that fails earlier skips it) and in `artifactize prune`,

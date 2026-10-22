@@ -171,9 +171,8 @@ the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
 pannable, zoomable minimap helps navigate the graph. A graph of **more than 500
 Artifacts** has no minimap. While more than 500 Artifacts are in view, they are
 painted as boxes in their lights, and a click on one opens its Detail; zoom in until
-fewer are in view to see them as named nodes that Tab and Enter reach again. A new snapshot or scan relights a
-graph in place, and lays it out again only when its Artifacts or edges change, keeping
-the graph shown until the new layout is ready. An Artifact's Detail draws at most 16
+fewer are in view to see them as named nodes that Tab and Enter reach again. When a Run changes, the graph's colors update in
+place; it is arranged again only when Artifacts or edges change. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
 
 ### Detail

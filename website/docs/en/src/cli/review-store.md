@@ -1,8 +1,10 @@
 # Review store server and client
 
-The exact behavior of `artifactize server` and of the client side of the shared
-review store. The [Team review store](../features/team/index.md) guide shows
-how to set one up.
+Start a store with `artifactize server token add alice --scopes read,publish` (it prints
+the token once) and `artifactize server run`, then sign a machine in with
+`printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/`, which prints
+`Signed in to … as alice`. This page is the exact behavior of the server and of the client;
+the [Team review store](../features/team/index.md) guide walks through a setup.
 
 ## Review store server
 

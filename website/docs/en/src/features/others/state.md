@@ -202,10 +202,9 @@ this machine, was never saved or lives in a remote store is reported as such, an
 
 ### Local readers
 
-Monitor and Review read the state and update on their own when a Run changes, within five
-seconds at the latest; they never read your declarations or files again to refresh. The
-exception is a waiting Human review's Detail, which reads the current declarations to show
-its tool commands, without claiming the review or running anything. A follower opens its
+Monitor and Review update on their own when a Run changes, within five seconds at the
+latest. A waiting Human review's Detail shows the tool commands of the current declarations,
+without claiming the review or running anything. A follower opens its
 original request. If publishing to a team store fails after a local submission, the local
 result stays and the failure is shown.
 

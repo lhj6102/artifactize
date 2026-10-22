@@ -1,8 +1,6 @@
 # Install artifactize
 
-Every install provides `artifactize`, with its [built-in tools](../cli/index.md#current-directory-tools)
-available as `artifactize tools`. Non-Store channels also provide those tools as the
-standalone `artifactize-tools` command.
+
 Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
 prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Apple
 silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum, and the
@@ -43,8 +41,9 @@ Only `cargo install` needs a Rust toolchain: the latest stable Rust, from
 
 ## Install
 
-Pick your OS. Install from one channel only; the Store uses the `artifactize tools`
-facade, while other channels also install the standalone tools command.
+Pick your OS and install from one channel only. Every install provides `artifactize`,
+with its [built-in tools](../cli/index.md#current-directory-tools) as `artifactize tools`;
+all but the Store also add them as the `artifactize-tools` command.
 
 Start by downloading the app for your OS. If you prefer the command line, or the
 app does not fit your system, choose an alternative:
@@ -405,10 +404,8 @@ In PowerShell, set a key with `$env:OPENAI_API_KEY = "..."`.
 a sign-in URL and opens it in the default browser (`xdg-open` on Linux and WSL, `open`
 on macOS, the default browser on Windows). Finish in a browser on the same machine:
 the browser returns to `localhost:1455`. On WSL 2, a Windows browser works too; copy
-the printed URL into it if nothing opens. Artifactize reserves both IPv4 and IPv6
-loopback addresses (IPv4 only if the host has no IPv6). If another process, such as
-a Codex CLI or app sign-in, holds port 1455, artifactize skips its callback listener
-and asks for a pasted redirect instead. On another machine, use the same fallback.
+the printed URL into it if nothing opens. If another program, such as a Codex CLI or app sign-in, is using port 1455,
+artifactize asks you to paste the address instead. On another machine, use the same fallback.
 Paste the full URL starting `http://localhost:1455/auth/callback?code=` into the
 terminal, or the desktop sign-in's paste field. Find it in the browser's address bar
 after the failed load, or in DevTools → Network if the page keeps loading.

@@ -65,11 +65,9 @@ An eval depends on its target Artifact and on what the target directly connects:
 
 artifactize does not follow connections further than that. Whether a change two
 connections away matters is up to how you define fingerprints: a fingerprint
-script can read a file of any Artifact it names in its args. The key is
-
-```text
-hash(Eval definition hash, sorted (Artifact name, kind, fingerprint) of each covered Artifact)
-```
+script can read a file of any Artifact it names in its args. So a result is reviewed
+again when the eval's criteria change, or the name, kind or fingerprint of its target or of
+an Artifact it covers changes.
 
 Artifact names and kinds (`folder`, `file` or `graph`) are part of the key, for the
 target and every covered dependency. A change from folder to file never reuses

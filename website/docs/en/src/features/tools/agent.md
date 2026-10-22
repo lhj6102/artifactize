@@ -77,9 +77,9 @@ Its optional `glob` argument is a filename filter, not a call to the `glob` tool
 Glob patterns use `*` within a component and `**` across directories, relative to `path`.
 Glob and grep patterns (including grep's optional `glob`) must be nonempty and at
 most 4096 characters. Globs must be relative, with no leading slash,
-backslashes, colons, NUL, or empty/`.`/`..` path components. Grep uses Rust `regex`
-syntax, with a 2 MiB compiled-regex size ceiling; an empty, invalid or oversized
-regex is an error. Grep's optional `glob` filter matches relative file paths
+backslashes, colons, NUL, or empty/`.`/`..` path components. Grep's pattern is a regular expression, a text-search pattern such as `fn \w+_test` (a
+line with `fn ` and a name ending in `_test`), in the syntax of Rust's `regex`; an empty,
+invalid or very large pattern is an error. Grep's optional `glob` filter matches relative file paths
 (or the basename when `path` names a file). Hidden files are included; git ignore
 rules do not filter results.
 Bounds are 10,000

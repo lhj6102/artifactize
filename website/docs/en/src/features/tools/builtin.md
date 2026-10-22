@@ -103,11 +103,9 @@ The path is a logical path inside its admitted Artifact scope, with the usual
 no-traversal and no-symlink checks. It reads a nonempty regular file and returns
 an embedded image block (`type`, base64 `data`, `mimeType`), not a printed filename.
 
-Detection checks signatures and container framing, not the extension; it does not
-decode pixels or fully validate image contents. Supported signatures are PNG,
-JPEG and WebP; unsupported signatures, GIF/BMP and animated PNG are refused.
-The image-file bytes must be at most **4 MiB inclusive** after any base64 decoding,
-not a bound on decoded pixel memory. The
+The file's contents, not its extension, decide the format: PNG, JPEG and WebP are
+supported; GIF, BMP, animated PNG and anything else are refused. The file may be at most
+**4 MiB**. The
 [image-result contract](agent.md#image-results) explains normalization and the
 same MIME/size checks for command tools; only those command tools can name files
 in their private output directory.

@@ -27,10 +27,9 @@ artifactize models anthropic --json
 artifactize models codex
 ```
 
-`reasoning` is optional. When present, OpenAI and Codex receive exactly
-`reasoning.effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Anthropic receives
-adaptive thinking and exactly `output_config.effort` (`low`, `medium`, `high`,
-`max`). Other values are rejected, never remapped. A model that does not support
+`reasoning` is optional. OpenAI and Codex accept `none`, `minimal`, `low`, `medium`,
+`high`, `xhigh` and `max`; Anthropic accepts `low`, `medium`, `high` and `max`. Other values
+are a declaration error and are never changed into another value. A model that does not support
 the requested setting fails at the provider; artifactize does not substitute a
 model or lower effort. If the response reports a model ID, it must match exactly.
 

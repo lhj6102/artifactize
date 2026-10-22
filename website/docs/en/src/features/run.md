@@ -45,9 +45,10 @@ Artifactize owns the Run independently of its requester. Plain `verify` submits,
 prints its Run ID (or `{"run","state"}` with `--json`) and exits 0 on **acceptance**,
 not approval. `verify --wait` announces the ID on stderr, observes settlement and
 renders the saved result. Closing or interrupting that watcher stops observation
-only; the Run continues. Only `run cancel RUN_ID` explicitly requests cancellation:
-it stops new admission and owned active work, waits for cleanup, and records
-ERROR/CANCELLED without erasing committed evidence. It does not kill an execution
+only; the Run continues. Only `run cancel RUN_ID` requests cancellation. It returns at once (exit 0)
+once the request is recorded; the Run then stops starting work, stops its running work and
+ends ERROR/CANCELLED, keeping results already saved. Follow it with `run watch RUN_ID` or
+`run show RUN_ID` before you rely on the work having stopped. It does not kill an execution
 this Run joined from another Run. Its sign-offs still waiting, deferred ones
 included, end as ERROR too, and so do the requests other Runs joined to them; the
 next `verify` asks again. This applies only while the Run is running: a Run that
@@ -55,10 +56,10 @@ already ended SIGNOFFS_PENDING is finished, so cancelling it changes nothing and
 deferred sign-offs keep waiting. Work whose process died ends as ERROR/OWNER_DIED and is not run again by itself;
 verify again.
 
-A Run keeps the declarations it was accepted with. If you change them before its evals
-start, the Run ends **ERROR/INPUT_CHANGED** instead of running different criteria or
-profiles. Finish editing the
-declarations and submit a new Run; the accepted Run is not retargeted.
+A Run keeps the declarations it was accepted with. If you change them while it prepares,
+the Run ends **ERROR/INPUT_CHANGED** instead of running different criteria or profiles; once
+its evals are scheduled, they run as accepted. Finish editing the declarations and submit a
+new Run (cancel the old one if it is still running); the accepted Run is not retargeted.
 
 In strict mode, the Run waits for WAITING_HUMAN requests like other reviews.
 A submission unblocks dependents in that same Run. There is no Human wait deadline
@@ -233,9 +234,8 @@ not current evidence. Use `run show RUN_ID` for full attribution. Noncached GREE
 satisfies only its own Run, so its later status is STALE rather than reuse (ENG-24).
 Basis-only scopes can be satisfied; a basis with unmet dependencies is INCOMPLETE.
 
-When an eval with a reuse key has no current cached result, `status` explains why.
-It compares the current key with the newest cached GREEN/RED record for the same
-eval and Eval definition hash (from any repository in this state), and reports
+When an eval with a reuse key has no current cached result, `status` explains what
+changed since its last GREEN or RED result with the same criteria, and reports
 `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a `Fingerprint changed since Run RUN_ID: ...` line, for example `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. `files`
 lists the target's own files as `path` (changed), `+path` (added) or
 `-path` (removed); `dependencies` lists the children and named Artifacts
