@@ -17,7 +17,7 @@ cd artifactize
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
 
 Artifactize의 **상태(state)** 는 Run과 결과를 저장하는 곳입니다.
-이 둘러보기의 리뷰는 평소 상태와 분리해 두세요. POSIX 셸(예를 들어
+이 둘러보기의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 폴더를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
 명령에도 그 설정을 넘겨 줍니다. 그다음 예제로 들어가 선언을 확인하세요.

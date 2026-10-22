@@ -18,8 +18,8 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
   `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 그 안의 파일을,
   파일 Artifact는 대상 파일 하나를 해시합니다.
 - `fingerprint = { script = { command = "hash", args = [] } }`는 명령의 출력을
-  fingerprint로 씁니다. 스스로는 아무것도 해시하지 않으므로, 다시 리뷰해야 할 입력과 스크립트
-  변경을 모두 명령이 반영해야 합니다.
+  fingerprint로 씁니다. artifactize가 따로 해시를 계산하지 않으므로, 다시 리뷰해야 할 입력과 스크립트의
+  변경을 모두 명령의 출력에 반영해야 합니다.
 - `fingerprint = false`는 재사용을 끕니다. `fingerprint = true`는 거부합니다.
 
 ## Artifactsum {#artifactsum}
