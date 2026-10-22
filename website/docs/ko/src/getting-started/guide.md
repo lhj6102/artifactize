@@ -159,7 +159,7 @@ artifactize monitor        # Initially select ALL repositories in this state
 Run이 실행되는 동안 두 번째 터미널에서 시작하세요. Enter나 →로
 Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 한 단계 돌아갑니다. `j`/`k`는
 선택하고, `?`는 도움말을 보여 주며, `q`는 종료합니다. Detail은 Agent 대화, Runtime
-로그, 또는 eval이 기다리는 요구 사항을 보여 줍니다. 살펴보기만으로는 소유자 명령이 실행되지 않습니다.
+로그, 또는 eval을 실행하기 전에 충족해야 할 조건을 보여 줍니다. 살펴보기만으로는 소유자 명령이 실행되지 않습니다.
 
 Human 요청 맡기, 도구, 판정 양식은
 [Human 리뷰와 monitor](../tui/index.md#monitor)를 보세요.

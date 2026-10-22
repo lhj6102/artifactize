@@ -106,9 +106,7 @@ properties.summary = { type = "string", minLength = 1 }
 TOML에는 null 값이 없습니다. 선택 필드는 생략하고 `null`을 쓰지 마세요. 스키마에
 `type = "null"`은 쓸 수 있지만, null `const` 같은 null 값 자체는 쓸 수 없습니다. 따옴표 없는
 TOML 날짜·시각과 유한하지 않은 숫자(`inf`, `nan`)는 JSON으로 나타낼 수 없으므로 payload와
-스키마를 포함해 어디서든 거부합니다. 날짜를 문자열로 쓰려면 따옴표로 감싸세요. 선언 오류는
-TOML 해석 실패, 잘못된 값의 타입, 잘못된 필드나 참조 중 무엇이든 `.artf` 파일, 줄, 열을
-알려 줍니다. 값이 잘못됐으면 `evals.check.profile.args`처럼 그 키도 알려 줍니다.
+스키마를 포함해 어디서든 거부합니다. 날짜를 문자열로 쓰려면 따옴표로 감싸세요. 선언 오류는 TOML 해석 오류든 값의 타입, 필드, 참조 오류든 오류가 난 `.artf` 파일과 줄, 열을 알려 줍니다. 값이 잘못됐으면 `evals.check.profile.args`처럼 그 키도 알려 줍니다.
 
 `config check`는 fingerprint 스크립트를 실행하거나 파일을 해시하지 않고 검사합니다. 선언을
 다시 쓴 뒤에 쓰세요. 예전 선언 파일과 ignore 파일은 읽지 않습니다. ignore되지 않은 예전 선언
@@ -419,14 +417,14 @@ artifactize는 프로그램을 적은 인자 그대로, 셸 없이, Artifact 폴
 명령은 작성자의 평소 터미널 환경에서 실행되므로, 프로젝트에 명령을 선언할 때도 터미널에 입력하듯 쓰면 됩니다. 실제 홈과 캐시 위치(`HOME`, `XDG_*`, Windows에서는 `USERPROFILE`, `APPDATA`,
 `LOCALAPPDATA`와 시스템 변수)를 포함해 `artifactize` 프로세스의 환경을 모두 전달하므로, 버전
 관리자로 설치한 `cargo`나 `pnpm`처럼 이 변수로 위치를 찾는 도구도 터미널에서처럼 동작합니다.
-artifactize 자신의 변수는 빠집니다. 호출한 쪽의 `ARTIFACTIZE_*` 변수(`ARTIFACTIZE_REMOTE_TOKEN`
+artifactize 전용 환경 변수는 전달하지 않습니다. 호출한 쪽의 `ARTIFACTIZE_*` 변수(`ARTIFACTIZE_REMOTE_TOKEN`
 같은 자격 증명과 설정)는 모두 지웁니다. 명령은 `ARTIFACTIZE_WORKSPACE_DIR`,
 `ARTIFACTIZE_OUTPUT_DIR`(출력용 별도 폴더로, Run이 끝나도 prune할 때까지 남음),
 `ARTIFACTIZE_TMP_DIR`, 그리고 명령이 끝나면 지우는 별도 임시 폴더를 가리키는
 `TMPDIR`/`TMP`/`TEMP`를 받습니다. 이 폴더들은 나만 읽을 수 있고, 리뷰하는 프로젝트 안에 두지
 않습니다.
 
-명령이 작성자의 환경을 보므로, 결과는 다른 터미널 명령처럼 그 환경에 따라 달라질 수 있습니다.
+명령은 작성자의 환경에서 실행되므로, 다른 터미널 명령과 마찬가지로 실행 환경에 따라 결과가 달라질 수 있습니다.
 환경은 [재사용 키](fingerprint.md#the-reuse-key)에 들어가지 않으므로 도구를 업그레이드해도 캐시
 결과가 무효가 되지 않습니다. 도구 버전에 따라 바뀌어야 하는 fingerprint라면 그 버전을 읽어야
 합니다.

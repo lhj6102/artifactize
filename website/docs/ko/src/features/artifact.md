@@ -109,8 +109,8 @@ profile = { kind = "runtime", command = "node", args = ["{e2e-tests}/run.mjs", "
 payload.instruction = "Run {e2e-tests} against {app}."
 ```
 
-`e2e-tests` Artifact는 테스트 코드 자체, 즉 그 스타일과 기능 문서에 얼마나 충실한지를
-평가합니다. 자기 테스트 코드를 리뷰한다며 애플리케이션 테스트를 실행하지는 않습니다. 상관없는
+`e2e-tests` Artifact의 eval은 테스트 코드 자체를 평가합니다. 테스트 코드의 스타일과, 기능 문서를
+얼마나 충실히 따르는지를 봅니다. 자기 테스트 코드를 리뷰한다며 애플리케이션 테스트를 실행하지는 않습니다. 상관없는
 `app` 스타일 Eval은 지시문에서 테스트 코드 리뷰를 참조하지 않았다면, 그 리뷰가 끝나지 않아도
 실행할 수 있습니다.
 

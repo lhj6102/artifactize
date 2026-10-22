@@ -76,7 +76,7 @@ fingerprint가 필요하므로 `fingerprint = false`면 재사용하지 않습�
 끝나고 Review에서 사라집니다. 이렇게 끝나는 규칙, 합류, Run이 끝난 뒤의 승인 제출은
 [Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
 
-반려되면 하위 작업이 크게 헛수고가 되는 승인이라면, 엄격한 대기 게이트를 직접 지정하세요.
+승인이 반려될 때 그 결과에 의존하는 많은 작업을 다시 해야 한다면, 승인이 끝날 때까지 기다리도록 게이트를 직접 지정하세요.
 
 ```toml
 [evals.release]

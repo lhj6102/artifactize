@@ -439,6 +439,18 @@ at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
 leave the request correctable. A successful submission exits 0, even for RED;
 it does not start a separate verifier.
 
+Before a tool runs or a submission is saved, the reviewed files and declarations are
+checked again. If a fingerprint changed or cannot be computed, the request ends ERROR
+(`INPUT_CHANGED` or `FINGERPRINT_RECHECK_FAILED`) with no verdict and the command exits 2;
+run `verify` again for a new request. If the eval's declarations or scope changed, the
+submission is refused with exit 2 and the request keeps waiting: restore the
+declarations to submit, or verify again.
+
+Claiming again as the same reviewer returns the existing claim and exits 0, so a claim is
+safe to repeat. A submission is accepted only once; repeating it exits 2. After an
+uncertain submission, such as an interrupted command, check the request with
+`request show` before submitting again.
+
 ## Agent sessions
 
 **Reading.** `REF` is the `ref`, a request id (`run-FiVNCV-1`) or a `sessionId`:

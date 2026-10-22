@@ -37,8 +37,8 @@ Human 도구는 리뷰어가 리뷰하는 동안 실행할 수 있는 것입니�
 
 ## Tool log {#tool-log}
 
-도구의 stdout과 stderr는 리뷰어의 Tool log에 실시간으로 나옵니다. 그래서 도구가 사용자가 고른
-선택, 측정한 값, 저장한 파일 같은 정보를 출력하면 리뷰어가 그 내용을 결과에 복사할 수 있습니다.
+도구의 stdout과 stderr는 리뷰어의 Tool log에 실시간으로 나옵니다. 그래서 도구가 사용자의
+선택 내용, 측정값, 저장한 파일 등의 정보를 출력하면 리뷰어가 이를 결과에 복사할 수 있습니다.
 로그는 실행마다 `▶ HH:MM:SS · operation · Artifact`를 보여 주고, 이어서 출력 줄(stderr는
 빨간색), 마지막에 `■ exit CODE`(또는 `launched`, `done`, `cancelled`, `timed out`,
 `error: …`)를 보여 줍니다. 내장 도구의 텍스트는 끝날 때 나오고 `■ done`으로 끝납니다. `open`은

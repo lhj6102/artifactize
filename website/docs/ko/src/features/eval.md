@@ -4,7 +4,7 @@
 리뷰 주체를 정하는 프로필을 설정하세요. 예를 들어 `library` Artifact의
 `[evals.tests]`는 전체 ID가 `library/tests`입니다.
 
-실행하는 세 종류는 같은 수명 주기와 재사용 규칙을 따릅니다.
+세 종류의 eval은 실행부터 끝날 때까지의 처리 방식과 결과 재사용 규칙이 같습니다.
 
 | 종류 | 리뷰어 | 판정 |
 |---|---|---|
@@ -36,7 +36,7 @@ Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종�
 eval이 읽을 수 있는 범위는 [재사용 키](fingerprint.md#the-reuse-key)가 포함하는 범위보다
 넓습니다. 키는 대상, 그 직접 자식, 이름으로 가리킨 입력만 포함하므로, `app/ui`의 자식 안쪽이
 바뀌었다는 것만으로 `app/review`를 다시 리뷰하지는 않습니다. 실행 게이트는 형제 eval의 참조가
-아니라 이 eval 자신의 참조와 대상의 자식을 따라갑니다. 자기 Artifact와 순환으로 묶인
+아니라 이 eval이 참조한 Artifact와 대상 Artifact의 자식으로 정해집니다. 자기 Artifact와 순환으로 묶인
 Artifact는 게이트가 되지 않으므로, 형제나 순환으로 묶인 대상이 RED여도 막히지 않습니다. 다만 [Human eval](artifact.md#human-sign-offs)은 같은 Artifact의 기계 검사 eval이 모두 GREEN이 된 뒤에 시작합니다. 선언
 방법은 [Artifact](artifact.md)를 보세요.
 

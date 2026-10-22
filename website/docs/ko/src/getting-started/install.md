@@ -211,7 +211,7 @@ cargo install artifactize@<version> artifactize-tools@<version> --locked   # a p
 
 ### 소스에서 빌드 (모든 플랫폼) {#build-from-source-all-platforms}
 
-소스에서 빌드하려면 체크아웃에서 설치하세요. 체크아웃의 `rust-toolchain.toml`이
+소스에서 빌드하려면 저장소를 복제한 뒤 그 디렉터리에서 다음 명령으로 설치하세요. 체크아웃의 `rust-toolchain.toml`이
 안정 Rust를 선택합니다. 예제 프로젝트와 [빠른 시작](guide.md)도
 체크아웃을 씁니다.
 
@@ -373,7 +373,7 @@ Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정�
 카탈로그도 없고, 다른 백엔드나 모델로 대체되지도 않습니다.
 
 **백엔드**는 Artifactize가 Agent 리뷰를 모델 서비스로 보낼 때 쓰는
-연결입니다. **API 키**는 그 서비스의 비밀 계정 자격 증명입니다.
+연결입니다. **API 키**는 그 서비스에서 계정을 인증할 때 쓰는 비공개 인증 정보입니다.
 API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys)이나
 [Anthropic Console](https://console.anthropic.com/settings/keys)에서 키를 만든 다음, 해당 명령의
 `...`를 그 키로 바꾸세요. 키를 커밋하거나 Artifact 선언에 넣지 마세요.

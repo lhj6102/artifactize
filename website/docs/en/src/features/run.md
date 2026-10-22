@@ -122,7 +122,8 @@ including requests joined to them. Claimed sign-offs are retired too. They leave
 Review and cannot be claimed again. The same key still joins the existing review;
 original sign-offs in another working tree and live WAITING_HUMAN originals stay
 untouched. Until retirement, a deferred sign-off can still be submitted after its
-Run ends; submission rechecks the fingerprints and refuses changed files.
+Run ends; submission rechecks the fingerprints, and changed files end the request ERROR
+(`INPUT_CHANGED`) without a verdict, so verify again for a new sign-off.
 
 `status` labels current deferred waits and provisional results, but its execution
 prediction remains strict: a new default verify still waits for Human evidence.

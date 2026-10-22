@@ -33,7 +33,7 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 
 READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본 상한이 없습니다**. 동시 실행이
 문제를 일으킬 때만 `--jobs N`(최소 1)을 쓰세요. 새 READY 작업은 묶음 전체가 끝날 때가 아니라
-결과가 하나 나올 때마다 시작합니다. `--jobs`, 백엔드 한도, `--max-executions` 때문에 일부만 실행할 수 있으면 준비된 작업을 먼저 실행하고, 그다음에는 결과를 기다리는 후속 eval이 더 길게 이어지는 작업을 먼저 실행합니다. 선택 순서는 우열이 같을 때만 따집니다. 무언가를 기다리는 작업은 이유와 함께
+결과가 하나 나올 때마다 시작합니다. `--jobs`, 백엔드 한도, `--max-executions` 때문에 일부만 실행할 수 있으면 준비된 작업을 먼저 실행하고, 그다음에는 결과를 기다리는 후속 eval이 더 길게 이어지는 작업을 먼저 실행합니다. 우선순위가 같을 때만 선택한 순서대로 실행합니다. 무언가를 기다리는 작업은 이유와 함께
 QUEUED로 표시됩니다. 다른 Run의 리뷰에 합류한 runtime이나 Agent 요청은 직접 지정한
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기, 백엔드 자리
@@ -108,7 +108,8 @@ DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED�
 마찬가지입니다. 이런 승인은 Review에서 사라지고 다시 claim할 수 없습니다. 같은 키라면 기존
 리뷰에 그대로 합류합니다. 다른 워크트리의 원래 승인과 아직 WAITING_HUMAN인 원래 승인은 건드리지
 않습니다. 이렇게 끝나기 전까지는 미룬 승인을 그 Run이 끝난 뒤에도 제출할 수 있으며, 제출할 때
-fingerprint를 다시 확인하고 바뀐 파일이 있으면 거부합니다.
+fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`)로 끝나니 새
+승인을 받으려면 다시 verify하세요.
 
 `status`는 현재 미룬 대기와 잠정 결과를 표시하지만, 실행 예측은 엄격하게 합니다. 기본 옵션의 새
 verify는 여전히 Human 증거를 기다립니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING을 끝난
@@ -158,8 +159,7 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 요
 ```
 
 이는 이 Run이 쓴 증거이지 가장 최근 결과가 아닙니다. JSON 형태는
-[CLI 레퍼런스](../cli/index.md#saved-run-evidence-and-terminal-views)에 있습니다. 이전 Run을
-Monitor에서 열면 선언을 바꾼 뒤에도 그 Run 자신의 정의와 게이트로 실행된 그대로 보여 줍니다.
+[CLI 레퍼런스](../cli/index.md#saved-run-evidence-and-terminal-views)에 있습니다. 선언을 바꾼 뒤에도 Monitor에서 이전 Run을 열면 그때 저장한 정의와 실행 게이트를 기준으로 실행 내역을 보여 줍니다.
 
 `run list`는 저장된 Run을 보여 줍니다. [Run 목록](../cli/index.md#run-list)을 보세요.
 
