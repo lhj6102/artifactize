@@ -13,6 +13,11 @@ Artifactize brings human and agent work together and keeps your project consiste
 - People who want code, documents, images, and running applications to stay consistent as the project grows.
 
 <p align="center">
+  <img src="assets/others/graph-example.en.png" width="800"
+       alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command.">
+</p>
+
+<p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
     <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/promo.gif" width="640"
          alt="A real terminal recording of Artifactize checking a project and reusing earlier reviews.">

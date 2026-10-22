@@ -22,6 +22,9 @@ def layout(destination: Path) -> None:
         shutil.copyfile(BRAND / name, destination / "media" / name)
     for name in ("review-loop.gif", "graph-growth.gif"):
         shutil.copyfile(WEBSITE.parent / "assets" / "demos" / name, destination / "media" / name)
+    # The hero's example graph is rendered from assets/others/graph-example.html.
+    shutil.copyfile(WEBSITE.parent / "assets" / "others" / "graph-example.en.png",
+                    destination / "media" / "graph-example.en.png")
 
 
 if __name__ == "__main__":
