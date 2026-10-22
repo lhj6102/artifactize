@@ -22,7 +22,7 @@ covers setup.
 - [Human tools](../tools/human.md#human-tools)
 - [Human tools in a review](../tools/human.md#in-a-review)
 - [Built-in tools](../tools/builtin.md#tools)
-- [`artifactize-tools` CLI](../../cli/index.md#current-directory-tools)
+- [`artifactize-tools` CLI](../tools/builtin.md#artifactize-tools-cli)
 - [Local diagnostics and maintenance](../../cli/maintenance.md#doctor-models-and-prune)
 - [Review store server](../../cli/review-store.md#review-store-server)
 - [Remote review store client](../../cli/review-store.md#remote-review-store-client)

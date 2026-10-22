@@ -125,9 +125,8 @@ The producer (`user@host`) and the Human reviewer are what the publishing machin
 recorded; the publisher is the server-authenticated token name. An Agent result's
 `producer` also carries `session`, the reference to its
 [saved conversation](../features/agent.md#saved-conversations) on the producing
-machine; the conversation itself is never published. Older clients ignore the field,
-and the server stores records as they are, so the protocol and record `schema` (2) are
-unchanged. A reused remote result's request shows the reference, and `session show`
+machine; the conversation itself is never published. Older clients work with
+the same store without upgrading. A reused remote result's request shows the reference, and `session show`
 on it names the machine and state where the conversation lives. When a GREEN or RED result with a reuse key is saved locally, verify publishes its
 summary record, or the full record with share `full`. If publishing fails, the local
 result stays and the failure is reported. A `--speculate` Run holds that automatic publication until its scheduling

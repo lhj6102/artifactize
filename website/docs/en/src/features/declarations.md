@@ -280,7 +280,8 @@ of artifactsum names only the target, and scripts and `fingerprint = false` work
 
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
 its containing folder. Scope entries carry `kind = "file"`, `"folder"` or `"graph"`.
-`execution_paths` stay workspace-relative provenance pins for all three kinds.
+`execution_paths`, the project-relative paths of tool files whose hashes are recorded
+to show which version ran, work the same for all three kinds.
 
 The target must stay a regular file, not a symbolic link, for as long as it is
 reviewed, also with `fingerprint = false`:

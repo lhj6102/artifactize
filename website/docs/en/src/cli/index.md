@@ -25,7 +25,8 @@ to that program, not artifactize.
 `verify --evals app/lint,app/tests` or `verify --artifacts app,docs`.
 `--evals` and `--artifacts` may each be repeated; their values add up in order,
 duplicates dropped.
-`help [COMMAND]` and `-h`/`--help` print help. `-V`/`--version` prints the version
+`help [COMMAND]` and `-h`/`--help` print help, as does `artifactize` with no command
+(exit 0; still text with `--json`). `-V`/`--version` prints the version
 on the root command and on `artifactize tools`.
 
 | Command | Flags | Output | Exit |
@@ -162,16 +163,9 @@ later sign-off reuse.
 
 ## Runtime CLI
 
-Run your project's evals and read the Run afterwards:
-
-```sh
-artifactize --repo path/to/project verify --all --wait
-artifactize run show RUN_ID
-```
-
 `verify --wait` names the Run on stderr, waits for it to end, then prints each eval's
-outcome and exits with the Run's [exit code](#command-reference); use `--watch` instead of `--wait` to stream each eval as JSON lines as it settles; `run show` prints the saved Run again later. Up to 64 KiB of the Run's own diagnostics
-and any Run error also go to stderr, with `--json` too. The
+outcome and exits with the Run's [exit code](#command-reference). Up to 64 KiB of the
+Run's own diagnostics and any Run error also go to stderr, with `--json` too. The
 [runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
 blocked evals side by side.
 
@@ -299,44 +293,12 @@ and [Human reviews](../tui/index.md#review).
 
 ## Current-directory tools
 
-`artifactize tools` exposes the same current-directory tools on every install,
-including the Microsoft Store package. Non-Store channels also put `artifactize-tools`
-next to `artifactize`; both spellings take the same arguments and give the same output and
-exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
-rather than running a current-directory tool.
-
-For runtime evals, fingerprint scripts and your own scripts:
-
-```sh
-artifactize tools read DEV-CODING.md             # also: artifactize-tools read DEV-CODING.md
-artifactize-tools list [PATH]
-artifactize-tools glob PATTERN [PATH]
-artifactize-tools grep [--glob GLOB] [--case-insensitive] PATTERN [PATH]
-artifactize-tools section spec.md "Install"
-artifactize-tools help cargo build          # cargo build --help
-artifactize-tools open notes.md             # or an http(s) URL
-```
-
-There is no Artifact scope outside a review, so the current directory is the scope.
-Filesystem targets for read/list/glob/grep/section/open must be relative and stay
-below it; `.` names the directory itself and is the default for list/glob/grep.
-Absolute targets, `..` and symlinks are refused, even when a link points inside.
-This does not apply to `help`'s program and arguments, which are found as in
-[`help`](../features/tools/builtin.md#tools). Only `open` accepts a URL,
-and only `http://` or `https://`.
-
-`read`, `section` and `help` print text with the limits of
-[Built-in tools](../features/tools/builtin.md#tools) (`section` matches a heading exactly; `read` and
-`section` output past 64 KiB ends with a truncation marker, while `help` output over 64 KiB
-fails with `Help output exceeds 64 KiB.` and exit 1); `list`, `glob` and `grep` print the
-JSON result of the [Agent tools](../features/tools/agent.md#agent-tools), with their pattern
-syntax and limits. From the command line, `help` runs the
-program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
-with no private temporary or output directory. A tool error goes to stderr with exit
-1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
-`artifactize tools SUBCOMMAND --help` describes one. `artifactize tools help PROGRAM
-SUBCOMMAND...` is different: it runs `PROGRAM SUBCOMMAND... --help` and prints that
-program's help.
+`artifactize tools read|list|glob|grep|section|help|open ...` runs the built-in tools on
+the current directory; non-Store installs also have them as `artifactize-tools`. They print
+text or JSON on stdout, exit 1 with the error on stderr when a tool fails and 2 on invalid
+usage. `artifactize tools --help` lists them, and `artifactize tools check` checks declared
+review tools instead. Every subcommand, its scope rules and limits are in
+[`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli).
 
 ## Agent streaming and runtime logs
 
@@ -493,8 +455,9 @@ Your final response did not match the required schema: …
 ```
 
 Text output cuts tool results after 2000 characters and shows only reasoning
-summaries. `--json` prints the stored events as they are, which is also the
-conversation's replayable export.
+summaries. `--json` prints `{"reference", "file", "events"}`: the reference, the session
+file, and the stored events as they are, which is also the conversation's replayable
+export.
 
 ### Session summary
 
@@ -540,10 +503,14 @@ artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still ho
 ```
 
 ```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · gpt-6-luna · files changed since this review
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna · files changed since this review
 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
+
+With `--json`, `send` prints `{"reference", "sessionId", "requestId", "send", "filesChanged",
+"answer", "usage"}`: `send` is the follow-up number, `filesChanged` whether reviewed inputs
+changed (null when unknown), `answer` the text and `usage` the token counts of each attempt.
 
 A follow-up continues the saved conversation with the same model and current
 project tools. Its answer is plain text; it does not change the recorded verdict,

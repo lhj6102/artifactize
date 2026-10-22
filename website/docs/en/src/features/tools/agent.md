@@ -74,7 +74,10 @@ not match: narrow the path or rename the entry. `grep` accepts a file
 or directory and skips binary (NUL) or invalid-UTF-8 contents in their entirety.
 Its optional `glob` argument is a filename filter, not a call to the `glob` tool.
 
-Glob patterns use `*` within a component and `**` across directories, relative to `path`.
+Glob patterns are relative to `path`: `*` matches within one folder name, `**` across
+folders, `?` one character, `[abc]` or `[a-z]` one character from a set or range, and
+`{md,txt}` either alternative. To match a literal `*`, `?`, `[` or `{`, put it in brackets,
+such as `[*]`; backslash escapes are not accepted.
 Glob and grep patterns (including grep's optional `glob`) must be nonempty and at
 most 4096 characters. Globs must be relative, with no leading slash,
 backslashes, colons, NUL, or empty/`.`/`..` path components. Grep's pattern is a regular expression, a text-search pattern such as `fn \w+_test` (a
@@ -164,10 +167,9 @@ that output directory are refused. Artifactize reads and embeds the bytes before
 removing the invocation's output, so the returned result is self-contained base64,
 not a dangling local file path.
 
-Images must be nonempty PNG, JPEG or WebP, at most **4 MiB inclusive** of
-image-file bytes after base64 decoding, not decoded pixels. Detection checks
-signatures/container framing rather than full image validity. Those bytes, not
-the filename extension, identify the format and must match
+Images must be nonempty PNG, JPEG or WebP files of at most **4 MiB**. A file that is
+accepted can still be damaged and fail to display. The file's contents, not its
+extension, identify the format and must match
 `image/png`, `image/jpeg` or `image/webp` respectively. Invalid base64, a MIME
 mismatch, unsupported formats such as GIF/BMP, and animated PNG are rejected.
 The overall normalized 8 MiB tool-result limit still applies after base64 encoding.

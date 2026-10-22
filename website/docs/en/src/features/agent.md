@@ -253,9 +253,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   stops `codex` for the Run. A plain HTTP 429 is a `RATE_LIMIT`, retried. HTTP 401
   and 403 are `AUTHENTICATION` and say how to sign in again. A token endpoint that is
   unreachable or failing during a refresh is `TRANSIENT`.
-- **Reuse.** Like any backend, `codex` records its backend, model, reasoning and
-  limits on each result, outside the reuse key: a `codex` result and an `openai` or
-  `anthropic` result for the same eval and fingerprints reuse each other.
+
 - **Models.** `models codex` lists the models the Codex model picker shows for your
   account, in the server's order. A profile may name any model your account can use,
   listed or not.

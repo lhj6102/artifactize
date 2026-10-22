@@ -1,8 +1,19 @@
 # Artifact
 
-An Artifact is anything you review: code, docs, designs, images. A folder or a
-single file declares its evals in a static TOML `.artf` file. artifactize reads
-these declarations into one dependency graph.
+An Artifact is anything you review: code, docs, designs, images. Declare one by adding
+an `index.artf` to a folder (or `notes.md.artf` beside a file):
+
+```toml
+name = "docs"
+
+[evals.links]
+title = "Links resolve"
+profile = { kind = "runtime", command = "python3", args = ["check_links.py"] }
+```
+
+Then run `artifactize config check`; it prints `Folder configuration is valid.` or the
+error with its file, line and column. artifactize reads these declarations into one
+dependency graph.
 
 ## Artifact Graph
 

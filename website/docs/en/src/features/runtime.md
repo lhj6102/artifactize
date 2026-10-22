@@ -13,8 +13,8 @@ profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"], ti
 payload.instruction = "Run the tests of {library}."
 ```
 
-`command` and `args` are separate: artifactize starts an argument vector, not a
-shell command. The working directory is the Artifact folder, or the containing
+`command` and `args` are separate: each `args` entry reaches the program as one
+argument, and no shell interprets quotes, pipes or `*`. The working directory is the Artifact folder, or the containing
 folder for a file Artifact. Programs use the author's normal toolchain environment,
 with artifactize's caller variables withheld and private output and temporary
 space outside the repository. See [Operating systems](others/platforms.md) for

@@ -3,10 +3,10 @@
 Install the binary as described in [Install](install.md), then try the
 example projects. Each README lists the exact commands:
 
-- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): runtime evals over
-  parent/child folders, `{artifact}` references in instructions
-  and argv, a basis Artifact, a RED-able check, and reuse through the built-in
-  artifactsum, with `status` explaining what changed.
+- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): checks that run commands over parent and
+  child folders, `{artifact}` references in instructions and command arguments, an
+  Artifact that only supplies input, a check you can make fail, and reuse of results
+  until files change, with `status` explaining what changed.
 - [Agent tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools): an Agent eval using the built-in
   `read`, `grep`, `view_image` and `section` tools and a declared `json` tool,
   pass/fail schemas, backend and model selection, and a Human sign-off with the

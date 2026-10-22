@@ -4,7 +4,7 @@ artifactize comes with tools that behave the same on Linux, macOS and Windows,
 except for how a path's spelling on disk is checked (see
 [Paths](../others/platforms.md#paths)). Declare one by name with `builtin` instead of
 writing a script or calling an OS program such as `cat` or `xdg-open`. They need nothing
-else installed, not even the [`artifactize-tools`](../../cli/index.md#current-directory-tools) command, except
+else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command, except
 `open`, which uses the system's opener (`xdg-open` on Linux), and `help`, which runs the
 program it asks;
 that command and `artifactize tools` offer the filesystem/program tools to scripts
@@ -61,8 +61,9 @@ block; fixed `read`, `section` and `help` return text blocks:
   `[output truncated]`. It validates only the bounded prefix it inspects: NUL or
   invalid UTF-8 there is refused, but such bytes later in a truncated file may go
   undetected. The CLI fixed read has the same limit.
-- **`list`** prints one page of the folder's sorted entries as JSON, like the
-  model's `list`.
+- **`list`** prints the first page of the folder's sorted entries as JSON, like the
+  model's `list`, but takes no offset or limit, so it cannot fetch later pages; declare the
+  model-input `list` or a custom command when a folder has more entries.
 - **`section`** prints one section of a Markdown file. It finds the first heading
   whose text equals `heading` exactly, at any level (`#` or underlined headings;
   headings inside code blocks do not count). The section runs from that heading to
@@ -116,8 +117,8 @@ in their private output directory.
 Declare `builtin = "graph", args = []` on any Artifact; no graph Artifact is
 required. It always reads the entire current project's declarations, not the
 selected review's historical Run or only its scope. It does not read source
-contents, start an eval or add dependencies. The two audience-specific tools use
-exactly the extraction that produces the graph fingerprint:
+contents, start an eval or add dependencies. It shows the same graph the
+[graph fingerprint](../fingerprint.md#graph-fingerprint) covers:
 
 - **Agent:** no model input (`{}` only). Prints a name-based, cycle-safe tree of
   Artifacts and their evals, the complete extracted definitions/evaluation criteria,
@@ -168,5 +169,44 @@ fingerprint; the default artifactsum covers the Artifact's own files.
 
 ## `artifactize-tools` CLI
 
-The same tools run from scripts and runtime evals as `artifactize tools` or
-`artifactize-tools`; see [Current-directory tools](../../cli/index.md#current-directory-tools).
+`artifactize tools` exposes the same current-directory tools on every install,
+including the Microsoft Store package. Non-Store channels also put `artifactize-tools`
+next to `artifactize`; both spellings take the same arguments and give the same output and
+exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
+rather than running a current-directory tool.
+
+For runtime evals, fingerprint scripts and your own scripts:
+
+```sh
+artifactize tools read DEV-CODING.md             # also: artifactize-tools read DEV-CODING.md
+artifactize-tools list [PATH]
+artifactize-tools glob PATTERN [PATH]
+artifactize-tools grep [--glob GLOB] [--case-insensitive] PATTERN [PATH]
+artifactize-tools section spec.md "Install"
+artifactize-tools help cargo build          # cargo build --help
+artifactize-tools open notes.md             # or an http(s) URL
+```
+
+There is no Artifact scope outside a review, so the current directory is the scope.
+Filesystem targets for read/list/glob/grep/section/open must be relative and stay
+below it; `.` names the directory itself and is the default for list/glob/grep.
+Absolute targets, `..` and symlinks are refused, even when a link points inside.
+This does not apply to `help`'s program and arguments, which are found as in
+[`help`](#tools). Only `open` accepts a URL,
+and only `http://` or `https://`.
+
+`read`, `section` and `help` print text with the limits of
+[Built-in tools](#tools) (`section` matches a heading exactly; `read` and
+`section` output past 64 KiB ends with a truncation marker, while `help` output over 64 KiB
+fails with `Help output exceeds 64 KiB.` and exit 1); `list`, `glob` and `grep` print the
+JSON result of the [Agent tools](agent.md#agent-tools), with their pattern
+syntax and limits. From the command line, `help` runs the
+program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
+with no private temporary or output directory. A tool error goes to stderr with exit
+1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
+`artifactize tools SUBCOMMAND --help` describes one. `artifactize tools help PROGRAM
+SUBCOMMAND...` is different: it runs `PROGRAM SUBCOMMAND... --help` and prints that
+program's help.
+
+Without an Artifact scope, `list` returns only the first page of entries and takes no
+offset or limit; for longer folders use `glob` or a custom command.

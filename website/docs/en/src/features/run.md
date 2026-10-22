@@ -214,7 +214,8 @@ Status prepares fingerprints needed by executable evals in the selected required
 closure, using the same isolation, validation and `--fingerprint-jobs` bound as verify.
 Fingerprint failures exit 2; an old saved fingerprint is never substituted. It never
 runs tools or eval commands, creates Runs, reserves work, creates a missing database
-or updates cache access times. Fingerprint scripts use disposable output under the
+or updates local cache access times. A result it finds in a team review store does count
+as used there, which keeps it longer. Fingerprint scripts use disposable output under the
 state directory, which may be created even when no database exists. `config graph` and
 `config check` remain fully static and never run owner code.
 

@@ -13,8 +13,8 @@ carries the app beside the commands. Stable releases are also published on
 [Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D). It is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
-Before v1, the Linux build gates a release; the macOS and Windows archives and the
-desktop app are attached as soon as they build.
+If a release has no download for your system yet, install with Cargo or
+[build from source](#build-from-source-all-platforms).
 
 ## Prerequisites
 
@@ -44,7 +44,7 @@ Only `cargo install` needs a Rust toolchain: the latest stable Rust, from
 ## Install
 
 Pick your OS and install from one channel only. Every install provides `artifactize`,
-with its [built-in tools](../cli/index.md#current-directory-tools) as `artifactize tools`;
+with its [built-in tools](../features/tools/builtin.md#artifactize-tools-cli) as `artifactize tools`;
 all but the Store also add them as the `artifactize-tools` command.
 
 Start by downloading the app for your OS. If you prefer the command line, or the
@@ -238,11 +238,8 @@ placeholder version `0.0.0-dev`.
 ### Desktop app
 
 The [desktop app](../desktop/index.md) shows every live branch with its Runs and what it
-would run now, and the Human reviews waiting, in one window. It shows the Runs that `artifactize verify` starts, so the commands come with it: the
-Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` put
-`artifactize` on `PATH`. From the disk image or an AppImage run on its own, the app
-sets up the commands on first launch (below). TUI and MCP already come with the ordinary
-`artifactize` binary; they need no additional product install.
+would run now, and the Human reviews waiting, in one window. From the disk image or an AppImage, the app sets up the `artifactize` commands on first
+launch (below).
 
 Install it from the [downloads](#download-the-app). Each release also attaches an
 AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage

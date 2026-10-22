@@ -35,7 +35,7 @@ will differ.
 ## 1. The server
 
 On the host that runs the store, create one token per machine. `token add` prints
-each token once; the store keeps only its SHA-256.
+each token once; save it then, because it cannot be shown again.
 
 ```sh
 artifactize --state-dir "$WALK/server" server token add alice-laptop --scopes read,publish,human
@@ -96,8 +96,8 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0,
 ```
 
 Bob's checkout has the same Artifact names, kinds and content, so the fingerprints,
-Eval definition hashes and therefore the reuse keys match. Paths do not matter. `status` asked the store without
-changing anything. `verify` mirrored the three records into Bob's local cache:
+Eval definition hashes and therefore the reuse keys match. Paths do not matter. `status` asked the store without changing
+Bob's state; the store counts the lookup as use. `verify` mirrored the three records into Bob's local cache:
 `artifactize cache list` shows them with the store as their origin. A later
 `verify` reuses them locally, even without the store.
 
