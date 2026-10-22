@@ -144,8 +144,8 @@ Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human �
 예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
 
 BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval이
-나오며, 아직 실행 중이었을 뿐인 eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 ERROR도
-막으며 `Dependency ERROR: …`로 나옵니다. `blockedBy`에도 같은 eval이 나오고, 확정된 Run에는
+나오며, 아직 실행 중이었을 뿐인 eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 eval의 ERROR도
+그에 의존하는 작업을 막으며, 사유는 `Dependency ERROR: …`로 나옵니다. `blockedBy`에도 같은 eval이 나오고, 확정된 Run에는
 그 eval이 모두 나옵니다.
 
 ### Human 승인 {#human-sign-offs}

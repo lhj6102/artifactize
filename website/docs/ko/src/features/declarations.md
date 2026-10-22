@@ -211,8 +211,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 ```
 
 이름 있는 일반 Artifact이므로 runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
-`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval, 자식 소유,
-다른 Artifact와의 관계는 없습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
+`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본으로 주어지는 eval도, 자식을 소유하는 관계도,
+다른 Artifact와의 관계도 없습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
 명령은 저장소 루트에서 실행되며, 그래프를 선언한다고 그 폴더의 소유자가 되지는 않습니다. 범위는
 `kind = "graph"`를 쓰고 선언 경로는 `.artf`입니다.
 
