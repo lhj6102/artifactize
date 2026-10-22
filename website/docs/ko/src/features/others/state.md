@@ -109,9 +109,9 @@ Run만 제한합니다. 한 머신에서 여러 Run(워크트리, CI 작업, 팀
 리뷰는 실행되는 동안 그 백엔드의 자리 하나를 쓰고, 끝나면 그 자리를 비웁니다. 결과를
 재사용하거나 합류한 요청은 자리를 차지하지 않습니다. 리뷰 프로세스가 죽으면 쓰던 자리가 비고
 그 리뷰는 ERROR(`OWNER_DIED`)로 끝납니다. 자리가 모두 차 있으면 요청은 `Waiting for a free codex
-slot: all 4 are in use on this machine (limits.json).` 같은 이유와 함께 QUEUED로
-기다리고, 빈 자리는 Run의 [스케줄링 순서](../run.md#verify-and-runs)대로 대기 중인 요청에
-돌아갑니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 runtime eval,
+slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 QUEUED로
+표시되고, 자리가 비면 Run의 [스케줄링 순서](../run.md#verify-and-runs)대로 대기 중인 요청을
+실행합니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 runtime eval,
 Human 요청, 다른 백엔드는 계속 실행됩니다. [eval mutex 태그](../declarations.md#eval-mutex-tags)는
 자리를 차지하지 않고 충돌하는 eval을 따로 늦춥니다. `run cancel RUN_ID`는 그 Run에서 기다리던
 요청을 ERROR(`CANCELLED`)로 끝내고 그 자리를 비웁니다. `verify --wait`를 중단해도 지켜보기만 멈추며 Run은 계속 실행됩니다.

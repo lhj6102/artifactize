@@ -131,8 +131,8 @@ cask가 formula를 대신합니다).
 brew install --cask lhj6102/tap/artifactize
 ```
 
-설치 스크립트는 macOS에서도 Linux와 똑같은 확인 과정과 환경
-변수로 동작합니다. 명령은 `~/.local/bin`에 설치되는데, 새 Mac에서는 이 디렉터리가
+macOS에서도 설치 스크립트는 Linux와 같은 확인 과정을 거치고 같은 환경
+변수를 씁니다. 명령은 `~/.local/bin`에 설치되는데, 새 Mac에서는 이 디렉터리가
 `PATH`에 없습니다. 스크립트가 `~/.zshrc` 같은 셸 시작 파일에 추가할 줄을
 출력합니다. 데스크톱 앱도 `~/Applications/Artifactize.app`으로 설치합니다.
 

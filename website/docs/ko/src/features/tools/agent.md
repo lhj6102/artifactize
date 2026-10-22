@@ -172,7 +172,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 명령이 빈 출력을 정상 결과로 돌려주게 하려면 소유자가 래퍼를 만들어야 합니다.
 
 명령의 실행 파일을 찾을 때도 공통 [프로그램 찾기](../others/platforms.md#program-lookup)
-규칙을 따르며, 파일 Artifact에 대한 예외와 범위 위쪽으로 올라가는 경로의 거부도 그대로 적용됩니다. JSON 프로토콜 argv는
+규칙을 따르며, 파일 Artifact에 적용되는 예외도 같고, 허용 범위를 벗어나 위로 올라가는 경로도 똑같이 거부합니다. JSON 프로토콜 argv는
 범위가 정해진 기존 Artifact 참조를 쓸 수 있지만, eval이 허용한 범위 밖의 Artifact를 더할 수는
 없습니다. plain argv는 스키마 속성 자리 표시자만 씁니다. 명령 자체는 치환하지 않습니다. 명령은
 그 Artifact 폴더(파일 Artifact라면 그 파일이 있는 폴더)에서 작성자의 환경
