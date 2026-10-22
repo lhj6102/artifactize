@@ -22,7 +22,7 @@ artifactize-desktop graph --repo PATH
 아무것도 고르지 않으며, 어느 쪽이든 모든 브랜치가 나열됩니다. `review`는
 가장 최근에 승인 대기가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `graph`에는
 `--repo`가 필요하며 그 브랜치의 [Current](#current)를 보여 줍니다. `--state-dir PATH`는
-상태 디렉터리를 고르며, 그렇지 않으면 앱은 공유 상태 홈을 씁니다. `--reviewer NAME`은
+상태 디렉터리를 고르며, 그렇지 않으면 앱은 공유 상태 디렉터리를 씁니다. `--reviewer NAME`은
 협업할 때 리뷰를 맡은 사람으로 보일 이름(보통은 사용자 이름)을 정합니다. `-h`, `--help`, `help`(모드 뒤에 써도 됨)는 잘못된 인자와
 마찬가지로 stderr에 도움말을 출력하고 2로 종료합니다. 앱은 종료하면 0으로, 시작하지 못하면
 1로 끝납니다.

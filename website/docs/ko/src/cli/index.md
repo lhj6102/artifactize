@@ -11,7 +11,7 @@
 번까지 받습니다. 저장소를 읽는 명령은 `--repo`를 생략하면 대개 현재 디렉터리를 쓰지만,
 기본값은 명령마다 다릅니다. **doctor는 `--repo`를 직접 줄 때만 프로젝트 선언을
 확인합니다**. Monitor와 Review는 아래 설명처럼 ALL에서 시작합니다. 상태는 기본으로 공유
-[상태 홈](../features/others/state.md#state)을 씁니다. 저장소나 상태를 쓰지 않는 명령은 이
+[상태 디렉터리](../features/others/state.md#state)를 씁니다. 저장소나 상태를 쓰지 않는 명령은 이
 옵션들을 무시합니다. Monitor와 Review는 `--json`을 거부합니다. `mcp`는 항상 stdout에
 JSON-RPC를, stderr에 시작 진단을 씁니다. 현재 디렉터리 도구의 출력은 이미 아래 표처럼 텍스트나
 JSON이므로 `--json`을 줘도 바뀌지 않습니다. `tools help`에서 프로그램 인자 뒤에 오는 플래그는
@@ -257,7 +257,7 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
 관계를 맺지 않습니다.
 
-의존성 순환을 포함해 어떤 eval이 기다리거나 막히는지는
+의존성 순환을 포함해 어떤 eval이 대기 상태가 되거나 실행이 차단되는지는
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
 
 status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검증, status에는

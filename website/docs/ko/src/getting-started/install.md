@@ -271,7 +271,7 @@ artifactize-desktop
 이 순서대로, Cargo로 설치하기 전에 프런트엔드를 빌드하세요.
 위와 같이 같은 체크아웃에서 CLI도 설치하세요. 앱은
 `artifactize verify`가 시작한 Run을 보여 줍니다. 앱은 Store 앱의 전용 상태가 아니라
-패키지되지 않은 CLI와 같은 상태 홈과 자격 증명을 씁니다.
+패키지되지 않은 CLI와 같은 상태 디렉터리와 자격 증명을 씁니다.
 
 ### Claude Code와 Codex용 플러그인 {#plugin-for-claude-code-and-codex}
 
