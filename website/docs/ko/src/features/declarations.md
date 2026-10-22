@@ -73,7 +73,7 @@ ID 순서로 정렬됩니다.
 모든 선언 키는 snake_case입니다: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
 `profile_variants`, `gate`, `mutex`.
-이런 타입이 정해진 경계에서 알 수 없는 필드와 camelCase 표기는 거부됩니다.
+위의 선언 필드에는 정해진 이름과 타입만 쓸 수 있으며, 알 수 없는 필드와 camelCase 표기는 거부됩니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는
 표준 이름을 그대로 씁니다. 소유자가 정의한 payload 필드는 정한 이름을 그대로 씁니다.
 `--json`, 도구 프로토콜, 저장된 상태는 `timeoutMs`, `passSchema`, `agentTools`, `blockedBy` 같은
@@ -428,8 +428,7 @@ Artifact에서는 상대 경로 실행 파일을 대신 들어 있는 폴더 아
 크기가 제한된 원본 출력, 기본 30,000 ms 시간 제한을 공유합니다(`timeout_ms`는
 1–2,147,483,647을 받음). 전용 출력 디렉터리와 임시 디렉터리는
 호출마다 끝나면 제거됩니다. stdout은 정확히
-`[A-Za-z0-9._:-]`의 ASCII 문자 1–128개여야 하며, 뒤에 LF 하나(Windows에서는 CRLF 하나)가 올 수 있습니다. 다른
-공백은 허용되지 않으며 값을 다듬지도 않습니다. 0이 아닌 종료, 잘못된 출력,
+`[A-Za-z0-9._:-]`의 ASCII 문자 1–128개여야 하며, 뒤에 LF 하나(Windows에서는 CRLF 하나)가 올 수 있습니다. 다른 공백은 허용되지 않으며, 값의 앞뒤 공백도 자동으로 지우지 않습니다. 0이 아닌 종료, 잘못된 출력,
 시간 초과, 취소, 없는 파일, 정리 실패는 어떤 eval도 시작하지 않고, 캐시되지 않은 리뷰로 대체하지도 않은 채
 운영 오류로 준비를 중단합니다.
 stderr는 fingerprint 진단으로 전달되지 않습니다.

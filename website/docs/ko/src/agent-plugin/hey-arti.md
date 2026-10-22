@@ -1,6 +1,6 @@
 # Hey Arti: 프로젝트의 리뷰 구성하기 {#hey-arti-shape-a-projects-reviews}
 
-**Arti는 artifactize의 현장 배치 엔지니어(Forward Deployed Engineer)입니다.** 코딩 어시스턴트에게 Arti를 주면
+**Arti는 artifactize의 현장 배치 엔지니어(Forward Deployed Engineer)입니다.** 코딩 어시스턴트에 Arti 스킬을 추가하면
 프로젝트를 파악하고, 리뷰가 의미 있고 재사용될 수 있도록
 프로젝트를 Artifact와 eval로 구성하는 방법을 추천합니다. Arti는 좋은 웨이터처럼 일합니다.
 메뉴와 어떤 조합이 잘 맞는지 알고, 추천하기 전에 먼저 듣고, 주문을 확인하고,
@@ -152,8 +152,7 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 턴을 끝내도 Run은 멈추지 않으며, 취소를 요청하는 것은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
-Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을
-요청할 수 있지만, 필요한 사람을 우회하려고 그러는 일은 결코 없습니다. SIGNOFFS_PENDING은 **완전한
+Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **완전한
 승인이 아닙니다**.
 
 Arti가 각 결과를 다루는 방식:

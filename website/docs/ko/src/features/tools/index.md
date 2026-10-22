@@ -54,7 +54,7 @@ input_schema = { type = "object", properties = { section = { type = "string" } }
 source = { builtin = "read", args = ["{artifactPath}/inspect.py"] }
 ```
 
-eval의 기준에서 도구 Artifact를 참조해 소비자에 붙이세요.
+도구를 쓸 eval의 기준에서 그 도구 Artifact를 참조하세요.
 
 ```toml
 name = "app"

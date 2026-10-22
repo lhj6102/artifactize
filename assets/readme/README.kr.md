@@ -107,7 +107,7 @@ codex plugin add artifactize@artifactize
 
 ## 실제로 동작하는 제품
 
-아래는 데스크톱 앱의 실제 녹화와 스크린샷입니다. 실제 프로젝트에서 검증을 실행하는 화면을
+아래는 데스크톱 앱의 실제 녹화와 스크린샷입니다. 실제 프로젝트에서 검사를 실행하는 화면을
 스크립트([데모](../capture/demos.mts), [스크린샷](../capture/screenshots.mts))로
 녹화하고 촬영했습니다. 예시 리뷰어 "alice"는 리뷰 양식을 보여 주려고 승인 요청을
 맡았을 뿐이며, 아무것도 제출되지 않았습니다. 텍스트 기반 앱(CLI)에도 Monitor와
@@ -134,7 +134,6 @@ core가 통과했고, cli의 테스트가 실패해 docs는 막혔으며, releas
 
 <img src="../screenshots/detail.png" width="1200" alt="실제 Artifactize 데스크톱 앱의 cli Artifact Detail: 이웃인 core와 docs, 그리고 lint와 tests 검사.">
 
-**Review:** 승인할 리뷰 목록에서 release 승인 요청을 열어 예시 리뷰어가 맡고, notes 도구를
-실행한 뒤 GREEN 양식을 열어 둔 모습입니다.
+**Review:** 예시 리뷰어가 승인 요청 목록에서 release 승인 요청을 열어 맡은 다음, notes 도구를 실행하고 GREEN 양식을 열어 둔 화면입니다.
 
 <img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 검토 지침, notes 도구, 도구 로그, GREEN 양식.">

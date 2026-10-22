@@ -190,8 +190,7 @@ Artifact 칩에서는 그 Artifact를 가운데 두고 이웃과의 관계를 �
 왼쪽에는 이 Artifact의 eval이 사용하는 Artifact가, 오른쪽에는 이 Artifact를
 사용하는 eval이 속한 Artifact가 있습니다. 그림은 움직이지 않으며, 이웃을 클릭하면 그 이웃의
 Detail이 열립니다. 그 아래에는 판정과 함께 그 eval들(하나를 클릭하면 그 칩이 나옴), 그
-**Tools**, 그리고 경로가 있습니다. 기다리는 것을 포함한 나머지 사실은 모두
-**Debug** 아래에 접혀 있습니다.
+**Tools**, 그리고 경로가 있습니다. 대기 중인 의존성을 포함한 나머지 정보는 모두 **Debug** 아래에 접혀 있습니다.
 
 **Tools**는 Artifact가 선언한 [Human 도구](../features/tools/human.md)이며,
 리뷰에서처럼(아래) `▶ operation` 버튼으로 나오며, 리뷰와 마찬가지로 전용 **Tool log**가 있습니다. 클릭하면
@@ -331,8 +330,7 @@ Main area가 보여 주던 것으로 돌아가며, 텍스트 필드나 선택 �
   결과를 푸시하며(또는 시험 실행), 로그아웃합니다. **Summary**는 호출 세부 사항,
   캡처한 출력, 도구 호출 이력을 빼고, **Full**은 저장된 실행도 보냅니다.
   Summary도 리뷰 메타데이터, 소유자 결과, 선언된 Runtime 명령과
-  인자, Agent 실행 경로 메타데이터는 공유합니다. 그 선언에는
-  경로나 민감한 리터럴이 들어 있을 수 있으므로, Summary는 비밀 가리기가 아닙니다. 팀의
+  인자, Agent 실행 경로 메타데이터는 공유합니다. 그 선언에는 경로나 민감한 리터럴이 들어 있을 수 있으며, Summary를 골라도 이런 정보가 자동으로 가려지지는 않습니다. 팀의
   개인정보 요구에 맞게 고르세요. 로그아웃은 로컬 설정을 제거할 뿐, **서버
   토큰은 제거하지 않습니다**. 저장소 관리자가 [그 토큰을 폐기](../features/team/reference.md#review-store-server)해야 합니다.
   [공유와 푸시 동작](../features/team/reference.md#remote-review-store-client)을 보세요.

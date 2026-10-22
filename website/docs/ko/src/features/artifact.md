@@ -56,7 +56,7 @@ payload.instruction = "Check that every bold term in {intro} and {usage} is defi
 ## 파일 Artifact {#file-artifacts}
 
 일반 파일 `hero.png` 옆의 사이드카 `hero.png.artf`는 그 파일을
-Artifact로 선언합니다. 같은 스키마를 쓰며, 전체에서 고유한 자기 `name`이 필요합니다.
+Artifact로 선언합니다. 같은 스키마를 쓰며, 프로젝트 전체에서 겹치지 않는 `name`을 지정해야 합니다.
 
 ```toml
 # hero.png.artf
@@ -110,8 +110,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 리뷰는 그것을 쓰는 eval을 늦추고, RED인 입력 리뷰는 그 eval을 막습니다. `--speculate`를 쓰면 입력 관문이 결정되기 전에 작업을 시작할 수 있지만, 아직 충족되지 않은 요구 사항이 면제되지는 않습니다.
 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 모든 증거가 있어야 합니다.
 
-막히는 것은 언제나 eval이지 Artifact가 아닙니다. eval의 실행 관문은
-그 eval이 참조하는 Artifact들의 실제 eval과, 그 eval이 속한 Artifact의 표시된 가장 가까운 자식들의 실제 eval입니다. RED
+막히는 것은 언제나 eval이지 Artifact가 아닙니다. eval의 실행 관문에는 그 eval이 참조한 Artifact의 eval과, 그 eval이 속한 Artifact 아래에서 가장 가까운 자식 Artifact들의 eval이 들어갑니다. RED
 또는 BLOCKED인 관문은 차례로 그 eval을 막으므로, 막힘은 이 eval 관문을 따라 전파됩니다.
 자식의 RED eval은 부모의 모든 eval을 막습니다. eval이 없는 중간 Artifact는
 실행 관문을 제공하지 않습니다. 그 Artifact를 참조해도 그 Artifact의 입력이나 자식에 실행이
