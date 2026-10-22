@@ -91,16 +91,6 @@
   .tree .artf { color: var(--agent); }
   .tree .artf .file { color: var(--agent); }
   .tree svg { width: 30px; height: 30px; flex: none; }
-  .tree .note {
-    position: absolute;
-    left: 48px;
-    right: 24px;
-    bottom: 40px;
-    margin: 0;
-    color: var(--dim);
-    font-size: 17px;
-    word-break: keep-all;
-  }
 
   /* ---------- The graph ---------- */
 
@@ -123,6 +113,9 @@
   .edges .agent { fill: var(--agent); stroke: var(--agent); }
   .edges .runtime { fill: var(--runtime); stroke: var(--runtime); }
   .edges path.line { fill: none; stroke-width: 2.2; }
+  .edges .human path.line { marker-end: url(#arrow-human); }
+  .edges .agent path.line { marker-end: url(#arrow-agent); }
+  .edges .runtime path.line { marker-end: url(#arrow-runtime); }
   .edges .agent path.line { stroke-dasharray: 9 7; }
   .edges .human path.line { stroke-dasharray: 2 7; stroke-linecap: round; stroke-width: 3; }
   .edges text { stroke: none; }
@@ -179,12 +172,6 @@
   }
   .legend span { display: flex; align-items: center; gap: 16px; }
   .legend svg { flex: none; }
-  .legend .about {
-    margin-left: auto;
-    padding-left: 32px;
-    border-left: 1px solid var(--line);
-    font-size: 17px;
-  }
 </style>
 </head>
 <body>
@@ -219,16 +206,19 @@
         </ul>
       </li>
     </ul>
-    <p class="note" data-t="note"></p>
   </section>
 
   <section class="graph">
     <h2 data-t="title"></h2>
 
-    <!-- Each check sits on a line from the Artifact it belongs to to the one it reads;
-         a check that reads only its own Artifact loops back to it. -->
+    <!-- Each check sits on a line from the Artifact it reads to the Artifact it belongs to,
+         and the arrow points at the latter; a check that reads only its own Artifact loops
+         back to it. -->
     <svg class="edges" viewBox="0 0 1190 800" aria-hidden="true">
       <defs>
+        <marker id="arrow-human" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1.5 11 6 1 10.5Z" fill="var(--human)"/></marker>
+        <marker id="arrow-agent" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1.5 11 6 1 10.5Z" fill="var(--agent)"/></marker>
+        <marker id="arrow-runtime" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1.5 11 6 1 10.5Z" fill="var(--runtime)"/></marker>
         <g id="check"><circle r="14" fill="#FFFFFF" stroke-width="2.4"/><path d="m-6 0.5 4 4 8-8.5" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
       </defs>
 
@@ -280,7 +270,6 @@
     <span><svg width="64" height="6"><path d="M2 3H62" stroke="var(--agent)" stroke-width="3" stroke-dasharray="10 7"/></svg><span data-t="legendAgent"></span></span>
     <span><svg width="64" height="6"><path d="M3 3H62" stroke="var(--human)" stroke-width="3.4" stroke-dasharray="0.1 8" stroke-linecap="round"/></svg><span data-t="legendHuman"></span></span>
     <span><svg width="34" height="30" viewBox="0 0 24 24"><g fill="none" stroke="var(--dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5"/><path d="M20 3.5v5h-5"/></g></svg><span data-t="legendSelf"></span></span>
-    <span class="about" data-t="legendLines"></span>
   </footer>
 </div>
 
@@ -289,7 +278,6 @@
   const TEXT = {
     en: {
       repository: "Project files",
-      note: ".artf files declare each Artifact (a file or folder to review) and its checks",
       title: "Example Artifact Graph",
       person: "Person",
       problem: "Problem",
@@ -307,11 +295,9 @@
       legendAgent: "AI agent review",
       legendHuman: "Person's review",
       legendSelf: "Reads only its own Artifact",
-      legendLines: "Lines show which Artifact a check reads",
     },
     ko: {
       repository: "프로젝트 파일",
-      note: ".artf에 Artifact(검토할 파일·폴더)와 평가 기준 정의",
       title: "Artifactize 검증 그래프 예시",
       person: "사람",
       problem: "문제",
@@ -329,11 +315,9 @@
       legendAgent: "Agent 평가",
       legendHuman: "사람 검토",
       legendSelf: "자기 Artifact만 읽는 평가",
-      legendLines: "연결선은 평가가 읽는 Artifact를 나타냅니다",
     },
     zh: {
       repository: "项目文件",
-      note: "在 .artf 中定义 Artifact（要审查的文件或文件夹）及其评估标准",
       title: "Artifactize 验证图示例",
       person: "人",
       problem: "问题",
@@ -351,7 +335,6 @@
       legendAgent: "Agent 评估",
       legendHuman: "人工审查",
       legendSelf: "只读取自身 Artifact 的评估",
-      legendLines: "连线表示评估读取的 Artifact",
     },
   };
 
