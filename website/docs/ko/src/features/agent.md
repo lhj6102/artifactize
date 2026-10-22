@@ -1,8 +1,6 @@
 # Agent eval과 백엔드 {#agent-evals-and-backends}
 
-Agent eval은 명시한 백엔드 하나를 통해 정확한 모델 하나에게, 선언한 읽기 전용 도구로
-Artifact를 리뷰하고 엄격한 GREEN 또는 RED
-판정을 돌려 달라고 요청합니다.
+Agent eval은 지정한 백엔드 하나를 통해 정확히 지정한 모델 하나에 리뷰를 요청합니다. 모델은 선언된 읽기 전용 도구로 Artifact를 살펴본 뒤 정해진 형식의 GREEN 또는 RED 판정을 돌려줍니다.
 
 ## Agent 리뷰 {#agent-reviews}
 

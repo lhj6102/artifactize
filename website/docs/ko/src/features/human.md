@@ -52,7 +52,7 @@ artifactize review [REQUEST_ID]
 claim, unclaim, tool, submit은 리뷰어 기본값으로 `$USER`를 씁니다. `--reviewer NAME`으로
 각 동작에 같은 명시적 리뷰어를 고를 수 있습니다. 리뷰어 이름은 인증된 계정이 아니라 로컬
 협업용 잠금입니다. 요청을 맡은 사람만 도구를 실행하고,
-제출하거나 맡기를 풀 수 있습니다. `request claim`은 맡은 내용을, `request unclaim`은
+제출하거나 맡기를 해제할 수 있습니다. `request claim`은 맡은 내용을, `request unclaim`은
 풀린 내용을 출력합니다. 다른 사람이 맡은 요청이나 더 이상 기다리지 않는 요청을 풀려고 하면
 2로 종료합니다. 도구 이름은 `<operation>_<artifactId>`이며 자유 인자를 받지 않습니다.
 텍스트 출력은 캡처한 텍스트나 실행 알림을 출력하고, `--json`은 도구
@@ -83,7 +83,7 @@ CI가 원하는 대로 [실행되지 않습니다](../cli/index.md#reuse-only).
 
 리뷰어에게 미룬 승인은 DEFERRED 표시가 붙은 일반 승인입니다.
 `review`, monitor, 데스크톱, 요청 목록에서
-WAITING_HUMAN 요청과 함께 나열되며, 맡기, 도구, 놓기, 제출은 같은 방식으로
+WAITING_HUMAN 요청과 함께 나열되며, 맡기, 도구, 맡기 해제, 제출은 같은 방식으로
 Human 권한을 확인합니다. 막힌 승인은 결코 사람에게 제시되지 않습니다. Run이 어떻게 끝나는지
 (SIGNOFFS_PENDING, 종료 코드 5)와 다음 verify가 결과를 어떻게 재사용하는지는
 [추측 실행과 미룬 승인](run.md#speculation-and-deferred-sign-offs)에 있습니다.

@@ -14,7 +14,7 @@ Artifact를 가리킵니다. 폴더 참조는 `/path`
 논리적 경로 검사와 심볼릭 링크 금지 검사로 해석됩니다. 다른 중괄호 형식은 거부되며,
 임의의 문자열 템플릿이나 이스케이프된 중괄호 치환은 없습니다. 알 수 없는
 이름과 잘못된 피연산자 문법은 워크스페이스를 불러올 때 거부됩니다. 도구
-피연산자는 결코 의존성을 추가하거나 리뷰에 받아들여진 범위를 넓히지 않습니다. 존재하지만
+피연산자는 결코 의존성을 추가하거나 리뷰의 eval 범위를 넓히지 않습니다. 존재하지만
 범위 밖인 Artifact, 없는 입력, 심볼릭 링크는 실행 전에 실패합니다. 입력
 메타데이터는 호출할 때마다 확인합니다. 파일 대상이 일반 파일인지, 존재하는지, 심볼릭 링크가 아닌지도
 탐색 때와 모든 도구 호출 때 확인하며, `fingerprint = false`에서도 마찬가지입니다.
@@ -98,7 +98,7 @@ Human 리뷰 흐름과 [review](../../tui/index.md#review) 터미널 UI는
   `human::default_reviewer()`는 `$USER`를 읽습니다(Windows에서는 `USERNAME`으로 대체).
   예약, 갱신,
   만료 타이머, 준비 단계, 준비 완료 훅, 알람은 없습니다.
-- `human::unclaim(receipts, request_id, reviewer)`는 판정 없이 그 잠금을 놓아,
+- `human::unclaim(receipts, request_id, reviewer)`는 판정 없이 그 잠금을 해제해,
   다른 리뷰어가 요청을 맡을 수 있게 합니다. 맡은 사람만 놓을 수 있으며,
   요청이 아직 기다리고 있을 때만 가능합니다.
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation, run)`은

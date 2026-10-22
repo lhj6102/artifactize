@@ -152,8 +152,7 @@ artifactize verify --all --wait --reuse-only agent,human
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
-CI는 아무것도 실행하지 않았습니다. 읽기 토큰은 결코 게시하지 않으므로, CI가 실행한 것은
-CI 안에 남습니다. 서버를 멈추고 새 상태 디렉터리로
+CI는 아무것도 실행하지 않았습니다. 읽기 토큰으로는 결과를 게시할 수 없으므로, CI에서 만든 결과는 CI의 로컬 상태에만 남습니다. 서버를 멈추고 새 상태 디렉터리로
 같은 명령을 실행해 보세요. 저장소에 닿을 수 없으므로 CI는 로컬에서 리뷰하고 계속 통과합니다.
 
 ```text

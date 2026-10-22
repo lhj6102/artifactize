@@ -12,7 +12,7 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 ```
 
 저장된 요청을 검색하고 대기 중인 Human 요청을 리뷰하는 터미널 UI이며,
-`request`와 같은 수명 주기를 씁니다. 프로세스 안에서 맡고, 도구를 실행하고, 맡기를 놓고, 제출하며,
+`request`와 같은 수명 주기를 씁니다. 프로세스 안에서 맡고, 도구를 실행하고, 맡기를 해제하고, 제출하며,
 제출을 `request submit`과 똑같이 원격 리뷰 저장소에 게시합니다. 두 번째 터미널이나
 tmux 창처럼 단독으로도 실행됩니다.
 
@@ -116,11 +116,11 @@ fields`), Tools 창 제목은 그 키를 알려 주며(`Tools (1) · Tab`,
 |---|---|
 | `c` | 대기 중인 요청을 명시적으로 맡음. Detail에 초점이 있을 때만 동작 |
 | `g` / `r` | 맡은 뒤 GREEN / RED를 고르고 그 양식을 엶 |
-| `u` | 판정 없이 맡기를 놓음 |
+| `u` | 판정 없이 맡기를 해제함 |
 | Ctrl-G / Ctrl-R | 편집 중에 판정을 고르거나 바꿈 |
 | Ctrl-S | 고른 양식을 제출 |
 | PgUp / PgDn | 초점이 있는 필드나 완료된 결과 보기 영역을 스크롤, Tools에 초점이 있으면 Tool log를 스크롤. Tab/화살표는 여전히 필드를 고름 |
-| Ctrl-U | 편집 중에 맡기를 놓음 |
+| Ctrl-U | 편집 중에 맡기를 해제함 |
 | Tab / Shift-Tab | Tools와 Fields 사이를 전환. 편집 중인 Fields에서는 Tab이 필드 사이를 이동하고 Shift-Tab이 Tools로 전환 |
 | `i` / `t` | 편집 중이 아닐 때 지시문 펼치기 / Technical 켜고 끄기 |
 | Enter | Tools에 초점이 있으면 선택한 도구를 바로 실행(맡은 뒤) |
@@ -188,11 +188,11 @@ Human 수명 주기 작업이 진행 중인 동안에는, 초점이 있는 영�
 
 양식이나 작업 밖에서는 Detail에서도 `q`가 종료합니다. 어느 UI에서든 Ctrl-C는
 진행 중인 모든 Human 수명 주기 작업의 취소를 요청합니다. 맡기, 도구, 제출
-(게시 포함), 놓기입니다. 그 작업이 진행 중인 동안에는 UI에 머물며,
+(게시 포함), 맡기 해제입니다. 그 작업이 진행 중인 동안에는 UI에 머물며,
 진행 중인 작업이 없으면 Ctrl-C는 양식 안에서도 종료를 시작합니다.
 단독 `review`는 이 세션이 맡고 제출하지 않은 요청을
 나열합니다. `k`는 맡기를 유지하고 종료하고, `u`는 놓고
-종료하며, Esc는 머뭅니다. 놓기에 실패하면 Review는 열린 채로 오류를 보여 주고
+종료하며, Esc는 머뭅니다. 맡기 해제에 실패하면 Review는 열린 채로 오류를 보여 주고
 실패한 맡기를 유지합니다. `u`로 다시 시도하거나 `k`로 유지한 채 종료하세요. 이 단독 종료 확인 창에서 Ctrl-C를 다시 누르면
 남은 맡기를 유지한 채 종료합니다. 종료 확인 창은 양식의 초안을 버리지 않고
 양식을 옆으로 치워 둡니다. Monitor는 종료할 때 맡기를 유지하므로, 돌려주고 싶다면
@@ -306,8 +306,7 @@ Run의 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)도
 
 eval이 무엇을 기다리는지는 [eval 의존성](../features/artifact.md#eval-dependencies)을 따릅니다.
 행은 그 관문을 충족되지 않은 Artifact 최대 둘로 묶고, 그다음 `+N`을 붙이며, 각
-Artifact의 완료 상태를 함께 보여 줍니다. 대상이 모두 자기도 기다리고 있으면 원인을
-한 단계 더 붙입니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
+Artifact의 완료 상태를 함께 보여 줍니다. 기다리는 대상이 모두 다른 작업을 기다리는 중이면 그 원인도 한 단계 더 보여 줍니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
 순환 안의 Artifact는 `↻ peer` 표시를 공유합니다.
 그래프가 허용하는 한 상위가 먼저 오며, Artifact 순환 상대와 eval은
 이름순으로 정렬됩니다.
@@ -402,9 +401,7 @@ Detail은 다시 제출하라고 하지 않고 완료된 로컬 결과와
 [로컬 읽기 레퍼런스](../features/others/state.md#local-readers)를
 보세요.
 
-새로 고침에 실패하면 시각이 찍힌 **read failed at …** 알림이 기록됩니다. Monitor와
-Review 목록은 마지막으로 알던 데이터를 유지하므로, 보이는 요청, 결과, 맡기는
-오래된 것일 수 있으며 현재 상태를 확정하지 않습니다. 단독 Review의 Human이 아닌 Detail은 목록으로 돌아갈 때까지
+새로 고침에 실패하면 시각이 찍힌 **read failed at …** 알림이 기록됩니다. Monitor와 Review 목록에는 마지막으로 읽어 온 데이터가 남으므로, 보이는 요청, 결과, 맡기 정보가 현재 상태와 다를 수 있습니다. 단독 Review의 Human이 아닌 Detail은 목록으로 돌아갈 때까지
 알림을 숨길 수 있으며, 기록 다시 읽기에 실패하면 이전
 Detail을 유지하지 않고 지울 수 있습니다. Review에서는 요청 목록으로 돌아가
 `r`을 누르고, Monitor에서는 Scope, Runs, 트리에서 새로 고침을 요청하세요.

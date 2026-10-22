@@ -100,9 +100,7 @@ fingerprint가 있을 때만 키를 가집니다. 생략하면 폴더와 파일 
 구조적 그래프 fingerprint를 줍니다. 폴더나 파일 Artifact가
 `fingerprint = false`를 선언하면 그 eval은 재사용되지 않으며, 모든 `verify`가 그것을
 다시 리뷰합니다. 강제하지 않은 READY Runtime/Agent eval이라면 `status`가 실행 이유에서
-재사용이 꺼진 대상이나 의존성을 알려 줍니다. READY Human eval은 대신
-맡기와 제출을 기다리는 요청이라는 이유를 주며, 강제된 eval, 막힌 eval, 기다리는 eval은
-각각 실행, 관문, 대기 이유를 씁니다.
+재사용이 꺼진 대상이나 의존성을 알려 줍니다. READY Human eval에는 리뷰어가 맡고 제출하기를 기다리는 요청이라는 이유가 나오고, 강제 실행한 eval, 막힌 eval, 대기 중인 eval에는 각각 실행, 관문, 대기 이유가 나옵니다.
 
 ## 완료된 결과 재사용 {#completed-result-reuse}
 

@@ -37,7 +37,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 **Artifact**는 프로젝트의 한 조각입니다. 코드, 글, 디자인이나 이미지가 될 수 있습니다.
 **Artifact Graph**는 이 조각들이 어떻게 연결되는지 보여 줍니다. 조각마다 테스트, AI 리뷰,
 사람의 승인 같은 검사를 붙이세요. 검사 대상이 바뀌지 않았다면 Artifactize는 이전 결과를
-재사용할 수 있습니다. 프로젝트 버전이 다르거나 팀원이 작업하는 사본이어도 마찬가지입니다.
+재사용할 수 있습니다. 프로젝트의 다른 버전이나 팀원의 작업 사본에서도 마찬가지입니다.
 
 자리를 비운 동안에도 검사는 계속 실행됩니다. Run마다 Run ID라는 추적 코드가
 붙고, 명령 창을 닫아도 Run은 멈추지 않습니다.
@@ -48,7 +48,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 함께 들어 있으므로 Rust 빌드 도구는 필요 없습니다.
 
 - **macOS**: [Artifactize.dmg 내려받기](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg).
-  Apple 실리콘과 Intel에서 모두 쓰는 디스크 이미지 하나입니다. Artifactize를 응용 프로그램 폴더로 끌어다 놓고
+  디스크 이미지 하나로 Apple 실리콘 Mac과 Intel Mac에 모두 설치할 수 있습니다. Artifactize를 응용 프로그램 폴더로 끌어다 놓고
   한 번 열면 터미널 명령이 설정됩니다.
 - **Windows**: [Microsoft Store에서 Artifactize 받기](https://apps.microsoft.com/detail/9PB6W4LL165D)
   (x64). 설치한 뒤 새 터미널을 여세요.

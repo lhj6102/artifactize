@@ -12,7 +12,7 @@ eval의 기준을 대신하거나 판정을 지어내지 않습니다.
 현재 Artifact 그래프 보기를 할 수 있습니다. Human 도구는 파일이나 URL을 평소의
 애플리케이션으로 열 수도 있습니다. 파일을 읽고, 폴더를 나열하고, 텍스트를 검색하고,
 이미지나 섹션을 보여 주는 Agent 내장 도구는 머신 전체가 아니라 eval의 범위에 들어간 Artifact만 봅니다.
-`graph`는 eval이 어떤 Artifact를 받아들이든 프로젝트의 현재 선언을 모두 읽습니다.
+`graph`는 eval 범위와 상관없이 프로젝트의 현재 선언을 모두 읽습니다.
 `help`는 일반적인 실행 파일 검색으로 찾은 실제 프로그램을 실행하며,
 선언된 명령 도구도 신뢰하는 프로그램입니다. 어느 쪽도 **OS
 샌드박스가 아닙니다**.
@@ -71,7 +71,7 @@ payload.instruction = "Review {app} and the implementation of {checker}; run its
 ```
 
 Agent는 `inspect_checker`를, 사람은 `source_checker`를 받습니다. 두 eval 모두
-참조된 도구 Artifact를 받아들이므로, 그 fingerprint가 재사용에
+참조된 도구 Artifact가 eval 범위에 들어가므로, 그 fingerprint가 재사용에
 관여합니다. 필요하면 도구에도 실제 테스트나 리뷰를 주세요. 끝나지 않은 작업을 우회하려고
 도구를 `basis`로 선언하지 마세요. `execution_paths`는 어떤 빌드된
 바이너리가 실행되었는지 기록할 수 있지만, 그 출처 고정 경로 자체가 재사용을 무효로 만들지는 않습니다.
@@ -117,4 +117,4 @@ start는 평소와 같은 JSON 객체를 읽고, 공유 상태를 전용
 `artifactize tools check`는 프로젝트 명령을 실행하지 않고 사용 가능 여부와 선언을
 확인합니다. 특정 도구를 시험하려면 명시적인
 [실행 형식](agent.md#tool-diagnostics)을 쓰세요. 이 형식은 Run, 리뷰, 캐시
-항목을 만들지 않습니다. 세션에 묶인 Agent 도구는 그 진단 호출을 위해 새로 소유한 하네스를 받습니다.
+항목을 만들지 않습니다. 세션에 묶인 Agent 도구는 그 진단 호출에만 쓰는 하네스를 새로 실행합니다.

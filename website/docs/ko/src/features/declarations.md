@@ -279,8 +279,8 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 대상은 탐색 시점뿐 아니라 계속 심볼릭 링크를 거치지 않는 기존 일반 파일로
 남아 있어야 합니다. fingerprint 준비/재확인 때, 재사용 전에,
 eval 시작/종료 때, 그리고 모든 Agent/Human 도구 호출 때 검증되며
-`fingerprint = false`에서도 마찬가지입니다. eval이 받아들여지기 전에 파일이 잘못되면
-ERROR/PREPARATION_FAILED가 됩니다. 완료된 Runtime/Agent 결과를 받아들이다가
+`fingerprint = false`에서도 마찬가지입니다. eval을 시작하기 전에 파일이 잘못되면
+ERROR/PREPARATION_FAILED가 됩니다. 완료된 Runtime/Agent 결과를 확정하다가
 대상이 잘못된 상태가 된 것을 발견하면, 의미상 판정 대신 ERROR/INPUT_CHANGED를 기록합니다.
 Human 동작은 먼저 기록된 범위와 선언을 다시 불러옵니다.
 파일 대상이 없거나 잘못되어 탐색이나 재연결에 실패하면
@@ -416,7 +416,7 @@ Artifact 이름과 kind(`folder`/`file`/`graph`), 의존성 fingerprint, eval
 명령은 소유자의 작업 디렉터리에서 stdin으로 JSON
 `{"version":1,"artifactId":"example"}`을 받아 실행됩니다. 경로 없는 명령은 PATH로 찾고,
 절대 경로 실행 파일은 적힌 그대로 실행합니다. `/`가 들어간 상대 경로 실행 파일(예:
-`./fingerprint.sh`)은 폴더 Artifact의 받아들여진 범위 안에서 찾습니다. 파일
+`./fingerprint.sh`)은 폴더 Artifact의 eval 범위 안에서 찾습니다. 파일
 Artifact에서는 상대 경로 실행 파일을 대신 들어 있는 폴더 아래에서 찾으며,
 관련 없는 형제 파일을 가리켜도 됩니다. 두 경우 모두 경로 탈출과 심볼릭 링크는 거부됩니다.
 인자는 명시적인 범위 지정 Artifact 참조를 빼고는 리터럴로 남습니다. `{name}`은
@@ -438,7 +438,7 @@ Artifact에서는 상대 경로 실행 파일을 대신 들어 있는 폴더 아
 운영 오류로 준비를 중단합니다.
 stderr는 fingerprint 진단으로 전달되지 않습니다.
 
-runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED를 받아들이기 전에 포함된 fingerprint를
+runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED를 확정하기 전에 포함된 fingerprint를
 다시 계산합니다. 값이 바뀌었으면 의미상 결과 없이 ERROR/INPUT_CHANGED를 기록하고,
 재확인에 실패하면 ERROR를 기록합니다. 강제 실행(force)도 준비나 재확인을
 건너뛰지 않습니다. `fingerprint = false`인 Artifact에는 준비할 fingerprint가 없으며,
@@ -457,7 +457,7 @@ runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED를 받아들이기 전�
 payload는 결코 바뀌지 않으며 참조가 파일 내용으로 펼쳐지지도 않습니다.
 
 `scope::eval_scope`는 대상과 명시적인 참조, 그리고 그 자식
-범위 전체를 받아들이지만, 참조된 Artifact의 eval 지시문은 받아들이지 않습니다.
+범위 전체를 eval 범위에 넣지만, 참조된 Artifact의 eval 지시문은 넣지 않습니다.
 `Scope::resolve_path`는 논리적 자식 경로를 따라 정규 Artifact
 ID를 찾고, `Scope::resolve_input`은 추가로 심볼릭 링크를 거치지 않는 기존 파일/디렉터리를
 요구합니다. 논리적 경로는 절대 경로, 경로 탈출, 빈
@@ -465,7 +465,7 @@ ID를 찾고, `Scope::resolve_input`은 추가로 심볼릭 링크를 거치지 
 선언된 경로(`fingerprint.files`, `fingerprint.script.files`, `execution_paths`)는
 더 짧아 각각 최대 1024 단위입니다.
 
-runtime 명령을 준비하기 전에 받아들여진 범위로 `scope::resolve_argv`를 호출하세요.
+runtime 명령을 준비하기 전에 eval 범위로 `scope::resolve_argv`를 호출하세요.
 명시적인 `{name}`, `{name}/path`, `--flag={name}/path` 피연산자는
 범위 안의 절대 입력 경로로 해석되며, 지시문 참조가 없어도 의존성을 추가합니다.
 폴더 소유자에서 시작하는 논리적 경로에는 `{owner}/child/path`를 쓰세요.
@@ -510,7 +510,7 @@ runtime 명령을 준비하기 전에 받아들여진 범위로 `scope::resolve_
 그 버전을 직접 읽어야 합니다.
 
 runtime 마감 시간의 기본값은 30,000 ms이며 1부터 2,147,483,647 ms까지 받습니다.
-이 시간에는 아직 실행되지 않은 자식 프로세스를 등록하는 시간과 실행 시간이 함께 들어가며, 그 사이에 다시 시작하지 않습니다. stdout과
+제한 시간은 자식 프로세스를 등록하기 시작할 때부터 재며, 등록이 끝나고 실제로 실행을 시작해도 처음부터 다시 재지 않습니다. stdout과
 stderr의 **저장된 감사 기록**은 각각 처음 128 KiB를 보존합니다. Runtime eval은 또한
 그 캡처가 정리되거나 제거될 때까지 끝부분을 포함한 전체 원본 스트림을 전용 Run 출력에 보존합니다.
 `request logs`/MCP `request_logs`는 크기가 제한된
