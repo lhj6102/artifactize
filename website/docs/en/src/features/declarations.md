@@ -322,9 +322,11 @@ Omitting `mutex` (or declaring `mutex = []`) adds no constraint.
 Two evals conflict if any of their tags are equal or one is an ancestor of the
 other. `use-computer` conflicts with every descendant;
 `use-computer:db` conflicts with `use-computer:db:users`, but not with
-`use-computer:browser` or `use-computer:database`. An eval waits until no conflicting
-eval is running and then takes all its tags at once, so two evals never wait for each
-other. Tags add no priority or ordering.
+`use-computer:browser` or `use-computer:database`. Give the same tag, or an ancestor and its
+descendant, to evals that must not run together, such as two that drive the same display.
+An eval whose tag is held shows `QUEUED` with the holder named (below) and starts when it
+is released; tags add no priority or ordering, and evals waiting on each other's tags
+cannot deadlock.
 
 Tags apply to every Run, worktree and `verify` on the same state, not only within a Run;
 a different `--state-dir` has its own tags. A waiting request stays `QUEUED`, and its

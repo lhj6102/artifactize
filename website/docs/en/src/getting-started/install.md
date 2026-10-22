@@ -3,14 +3,7 @@
 Pick your OS in the table below, install from one channel, then open a new terminal and
 run `artifactize --version`: it prints the installed version, such as `artifactize 0.15.0`.
 
-Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
-prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Apple
-silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum, and the
-[desktop app](#desktop-app): one macOS disk image for both Mac CPUs, signed and
-notarized by Apple, and a Linux AppImage and `.deb` for x86_64; the Windows zip
-carries the app beside the commands. Stable releases are also published on
-[crates.io](https://crates.io/crates/artifactize), Homebrew and the
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D). It is open source under the
+artifactize is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 If a release has no download for your system yet, install with Cargo or

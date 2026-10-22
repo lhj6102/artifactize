@@ -47,9 +47,9 @@ lookup, including absolute paths, parent-relative paths and executable symlinks.
 Its subcommand arguments are forwarded unchanged, not resolved as scoped file
 operands. It runs a trusted program, not an operation confined to Artifact files.
 
-Windows batch files (`.cmd`, `.bat`) run directly, without a shell string: each
-argument is quoted for `cmd.exe`, and artifactize refuses an argument it cannot
-pass safely: `.cmd` and `.bat` files cannot take every character. The error reads
+Windows batch files (`.cmd`, `.bat`) can be a command, but not every character can
+reach them as an argument. artifactize refuses such an argument instead of passing it
+changed. The error reads
 `Process arguments could not be passed safely`, and nothing runs.
 
 Tool sessions are stopped and cleaned up the same way on every OS; the
