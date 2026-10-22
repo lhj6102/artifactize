@@ -1,5 +1,7 @@
 # Install artifactize
 
+Pick your OS in the table below, install from one channel, then open a new terminal and
+run `artifactize --version`: it prints the installed version, such as `artifactize 0.15.0`.
 
 Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
 prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Apple
@@ -251,11 +253,10 @@ administrator rights.
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.
 
-The app checks standard terminal command locations and its inherited `PATH` in the
-background, without running shell startup files. On macOS this includes the system's
-`/etc/paths` and `/etc/paths.d` entries, which new login terminals use. An existing
-command from Homebrew, an install script, `.deb` or the Store is left alone;
-there is no setting to choose. Otherwise:
+On first launch the app checks whether a terminal already finds `artifactize`. If
+Homebrew, an install script, the `.deb` or the Store installed it, nothing changes.
+Otherwise it sets the commands up, and you then open a new terminal and run
+`artifactize --version`:
 
 - **macOS:** the app writes its absolute `Contents/MacOS` directory to
   `/etc/paths.d/artifactize` through the system administrator prompt. Open a new

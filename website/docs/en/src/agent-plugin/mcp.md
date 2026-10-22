@@ -182,10 +182,9 @@ not preserved. Reinvoke the **same tool with the same arguments**, adding
 selects the next group of Run records; it is distinct from the cursor continuing
 one group's JSON. `verify_result` instead pages its structured `findings` array.
 
-Cursors identify the tool, arguments and current saved projection. Elapsed fields
-use the first page's observation clock, so clock movement alone cannot expire a
-continuation while a Run waits for a person. A foreign or
-stale cursor is rejected; restart that inspection if the evidence changed. A failed
+A cursor works only with the same tool and arguments while the saved evidence is
+unchanged; time passing alone does not expire it. Otherwise it is rejected: start that
+inspection again from the first page. A failed
 tool call returns MCP `isError:true` with `{code,message}`. `operation_failed` carries
 the CLI's error message, cut to its first 2,048 characters; `response_too_large` means
 the answer does not fit a detail page, so narrow the inspection (for example a

@@ -51,8 +51,9 @@ crates/app/tests/
 examples/
 ```
 
-Names, eval IDs, tool/session names and profile variant names match
-`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Artifact names are globally unique. Evals are
+Names, eval IDs, tool/session names and profile variant names start with a letter or
+digit and have at most 64 letters, digits, underscores or hyphens
+(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
 by ID, not by their position in the TOML source.
@@ -115,10 +116,9 @@ TOML has no null value. Omit optional fields; do not use `null`. A schema may sa
 `type = "null"`, but literal null values such as a null `const` cannot be written.
 Unquoted TOML dates/times and non-finite numbers (`inf`, `nan`) are rejected
 anywhere, including payloads and schemas, because they have no JSON equivalent.
-Quote dates to use them as strings. Declaration errors name the `.artf` file,
-line and column when parsing or validating their contents, including syntax,
-deserialization, semantic validation and cross-Artifact reference errors. Field validation and unsupported-value errors
-also name the typed key path, such as `evals.check.profile.args`.
+Quote dates to use them as strings. A declaration error names the `.artf` file, line and column, whether the TOML does not
+parse, a value has the wrong type, or a field or reference is invalid. A wrong value also
+names its key, such as `evals.check.profile.args`.
 
 `config check` validates without executing fingerprint scripts or hashing files.
 Use it after rewriting declarations. Legacy declaration and ignore files are not
@@ -241,8 +241,8 @@ always the current extracted graph. Otherwise ordinary Artifact rules apply:
 `basis = true` explicitly declares no own review obligations and cannot own evals;
 it does not satisfy unmet dependencies. A no-eval graph without `basis = true`
 remains UNREVIEWED, as any no-eval Artifact does. No source file is
-created or required. Ordinary Artifact cycles are allowed; extraction is flat and
-includes the graph Artifact's own declaration without recursive fingerprinting.
+created or required. Ordinary Artifact cycles are allowed, and the graph fingerprint also covers the graph
+Artifact's own declaration.
 
 The [graph fingerprint](fingerprint.md#graph-fingerprint)
 changes with structural definitions, not source file bytes or evaluation
@@ -275,28 +275,25 @@ root stay relative to the containing folder. Default artifactsum covers only the
 target file. A workspace can have only file Artifacts; it does not need a folder
 declaration.
 
-Omit `fingerprint` to hash the file. An explicit artifactsum form must be
-`fingerprint = { files = ["hero.png"] }` for `hero.png.artf`: only the target
-filename is allowed. `fingerprint = {}` and `files = ["."]` are rejected, as is
-`fingerprint.ignore`, even an empty list. Script fingerprints and
-`fingerprint = false` remain available.
+Omit `fingerprint` to hash the file; the [file-Artifact form](fingerprint.md#artifactsum)
+of artifactsum names only the target, and scripts and `fingerprint = false` work too.
 
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
 its containing folder. Scope entries carry `kind = "file"`, `"folder"` or `"graph"`.
 `execution_paths` stay workspace-relative provenance pins for all three kinds.
 
-The target must remain an existing regular file with no symlink traversal, not
-just at discovery. It is validated at fingerprint preparation/recheck, before
-reuse, at eval start/end and on every Agent/Human tool call, including with
-`fingerprint = false`. A file invalid before eval admission produces
-ERROR/PREPARATION_FAILED. If accepting a completed Runtime/Agent result discovers
-that a target has become invalid, it records ERROR/INPUT_CHANGED instead of a
-semantic verdict. A Human action first reloads its recorded scope and declarations;
-if discovery or reconnection fails, for example because a file target is missing
-or invalid, the action fails without settling the waiting request. A changed
-fingerprint value after successful Human reconnection still settles
-ERROR/INPUT_CHANGED for a keyed request. Preparation failures abort before reuse
-or execution; tool calls return an error without running the tool.
+The target must stay a regular file, not a symbolic link, for as long as it is
+reviewed, also with `fingerprint = false`:
+
+- missing or invalid before its eval starts: the eval is ERROR/PREPARATION_FAILED;
+- missing, invalid or changed when a Runtime or Agent review ends: ERROR/INPUT_CHANGED
+  instead of a verdict;
+- missing or invalid during a Human review: tools and submission fail, the request keeps
+  waiting, and you restore the file and try again; if it changed, a submitted sign-off is
+  ERROR/INPUT_CHANGED;
+- a tool call on a missing or invalid target returns an error without running the tool.
+
+Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
 [upgrade reference](../getting-started/install.md#removed-gate-bypass-settings).
@@ -369,21 +366,10 @@ Artifacts, cycles, scheduling and the Human prerequisites.
 
 ## Artifactsum
 
-[Fingerprints and reuse](fingerprint.md#artifactsum)
-describes `files` and `ignore`. Omitting `fingerprint` uses artifactsum. For a
-folder, `fingerprint = {}` does the same. A file Artifact's explicit artifactsum
-form must list its target filename. `fingerprint = false` disables reuse;
-`fingerprint = true` is rejected.
-
-The value changes when a covered file's name or content changes. It covers only the
-Artifact's own files: a dependency's change reaches an eval through the dependency's fingerprint
-in the [reuse key](fingerprint.md#the-reuse-key). Folder walks
-exclude child Artifact folders and every `*.artf` file. Explicitly listing a
-`.artf` file in `fingerprint.files` fails `config check`, even if the file does not
-exist. Discovery also rejects non-regular `.artf` entries, including directories;
-a directory named `bundle.artf` is not an ordinary hashable input. File Artifacts
-hash only their target by default. Tags are not hashed and do not change the Eval definition hash or
-reuse key.
+Omitting `fingerprint` uses artifactsum; for a folder, `fingerprint = {}` does the same.
+`fingerprint = false` disables reuse and `fingerprint = true` is rejected. What it covers,
+`files`, `ignore` and the file-Artifact form are in
+[Fingerprints and reuse](fingerprint.md#artifactsum). Tags are not hashed.
 
 Walks follow scoped path rules. Symlinks and special files fail closed unless they
 are ignored. Every applicable `.gitignore` is read as rule metadata even when it is

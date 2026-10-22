@@ -53,7 +53,7 @@ file Artifact. Omit the field for its default; use a script if the fingerprint
 needs to cover more than the file.
 
 The old `dependencies` fingerprint option is rejected: a fingerprint covers only its own
-Artifact. Walk limits and manifests are in the [reference](declarations.md#artifactsum); the script form is under
+Artifact. Walk limits are in the [reference](declarations.md#artifactsum); the script form is under
 [fingerprint scripts](declarations.md#fingerprint-scripts).
 
 ## The reuse key

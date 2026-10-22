@@ -226,7 +226,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   redirect URL instead of waiting for a callback. Copy the URL starting
   `http://localhost:1455/auth/callback?code=` from the address bar after a failed
   load, or DevTools → Network if the page keeps loading, and paste it into the
-  terminal or desktop sign-in. See [sign-in setup](../getting-started/install.md#backends)
+  terminal or desktop sign-in. Sign-in must finish within five minutes; after that, run
+  `login codex` again. See [sign-in setup](../getting-started/install.md#backends)
   for the browser flow.
   It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`, readable
   only by you. Use the same `--state-dir` for `login`, `models` and `verify`.
@@ -238,7 +239,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   expires, once for all Runs. When the server rejects the refresh
   token for good, the tokens are deleted and the review says to sign in again.
 - **An existing Codex sign-in.** With `ARTIFACTIZE_CODEX_AUTH_FILE` set, for example
-  to `~/.codex/auth.json`, artifactize reads that file's `tokens.access_token` (and
+  to `~/.codex/auth.json` (a regular file of at most 1 MiB; anything else is refused and
+  gives no sign-in), artifactize reads that file's `tokens.access_token` (and
   `tokens.account_id`) on every turn instead of its own tokens. It never writes,
   copies or refreshes the file. Once the token has a minute or less left, reviews
   fail with a message to sign in with Codex again, for example with `codex login`. `logout codex` leaves

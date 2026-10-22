@@ -29,12 +29,16 @@ For example, suppose `code/tests` relies on `plan`, which needs a person's
 `plan/signoff`. `verify --eval code/tests` selects the test, but cannot finish GREEN
 without that still-valid approval. `verify --eval code/tests --recursive` also
 selects the group's other checks, such as `code/style` and `plan/signoff`, so they
-can run or reuse results. Selecting more checks never supplies approval itself.
+can run or reuse results. Selecting more checks never supplies approval itself. Without
+`--recursive`, `code/style` and its inputs are still obligations: the Run ends GREEN only
+when they have valid results too, from an earlier Run or the cache.
 
 
 Every READY eval starts as soon as ready, with **no default concurrency cap**.
 Use `--jobs N` (minimum 1) only when concurrency causes trouble. New READY work
-starts after each result, not after a whole batch; work that waits for something shows
+starts after each result, not after a whole batch. When `--jobs`, a backend limit or
+`--max-executions` leaves room for only some work, ready work goes first, then work with
+longer chains of evals waiting on it; selection order only breaks ties; work that waits for something shows
 as QUEUED with its reason. A runtime or Agent request joining another Run's review counts against an explicit `--jobs`; a Human request joining a sign-off and a cache hit do not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
 QUEUED can mean awaiting admission, a backend slot, a joined execution, or an
 explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
@@ -214,24 +218,23 @@ or updates cache access times. Fingerprint scripts use disposable output under t
 state directory, which may be created even when no database exists. `config graph` and
 `config check` remain fully static and never run owner code.
 
-A completed record for the eval's current reuse key yields PASS or RED and a
-`reuse` action; its reason says so, and names the profile that produced it when
-that is not the requested one. verify attaches cached results before their gates
-resolve, so the action stays `reuse` while a dependency is pending or RED. The
-state then shows the gate (WAIT_DEPENDENCY or BLOCKED) and the reason names it. An
-eval without a cached result runs only once its gates are GREEN. It shows `blocked`
-behind a RED dependency and `execute` when its dependencies are GREEN through
-cached results. It shows `wait` when a dependency's result, directly or further
-upstream, exists only after verify executes it (or after a live execution finishes).
-That is the limit of the prediction: status cannot say whether a `wait` eval
-will execute. Text ends with, for example, `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on a merged
+Each eval's action says what `verify` would do with it:
+
+| Action | When | Example reason |
+|---|---|---|
+| `reuse` | a GREEN or RED result for its current reuse key exists, even while a dependency is pending or RED (the state then shows WAIT_DEPENDENCY or BLOCKED) | `The current eval and fingerprints have a completed cached result.` |
+| `execute` | no result, and its dependencies are GREEN through results that exist now | `The current eval and fingerprints have no completed cached result.` |
+| `blocked` | no result, and a dependency is RED | `Dependency verdict RED: core/tests` |
+| `wait` | no result, and a dependency's result exists only after verify runs it | `Waiting for current GREEN dependency evidence: core/tests` |
+
+Status cannot say whether a `wait` eval will execute. Text ends with, for example, `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on a merged
 checkout answers what verify will re-review there without running it. Force still
 applies only to selected executable evals. Human execution actions record a waiting
 request; an active Human execution of the same key projects WAITING_HUMAN and a
 `wait` action, even after the original verifier exits. Saved attempts are read
 for this canonical repository only: each eval's optional `last: {runId, verdict, fingerprint?}` is historical,
-not current evidence. Use `run show RUN_ID` for full attribution. Noncached GREEN/RED
-satisfies only its own Run, so its later status is STALE rather than reuse (ENG-24).
+not current evidence. Use `run show RUN_ID` for full attribution. A GREEN or RED without a reuse key
+satisfies only its own Run, so its later status is STALE rather than reuse.
 Basis-only scopes can be satisfied; a basis with unmet dependencies is INCOMPLETE.
 
 When an eval with a reuse key has no current cached result, `status` explains what

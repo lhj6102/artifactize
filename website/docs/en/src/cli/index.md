@@ -70,7 +70,7 @@ on the root command and on `artifactize tools`.
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor [PATH]` | starts on ALL; PATH or `--repo PATH` selects only the initial repository; `--all` conflicts with a path | terminal UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH` (a `repo:` search term), `--all` (the default; not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
-| `server run` | `--listen ADDR` (`127.0.0.1:8417`) | `Listening on http://ADDR/`; JSON `{"listen":ADDR}` | 0 |
+| `server run` | `--listen ADDR` (`127.0.0.1:8417`): a numeric `IP:PORT` (`[::1]:8417` for IPv6), no hostnames; port 0 picks a free port, which the output names | `Listening on http://ADDR/`; JSON `{"listen":ADDR}` | 0 |
 | `server token add NAME` | `--scopes read,publish,human` | the token, once, and a reminder to store it; JSON `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
 | `server token list` | | text or JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON (also without `--json`) | 0 |
@@ -133,7 +133,7 @@ prints `{"reference","sessionId","requestId","backend","model","reasoning","star
 `send` prints the answer under a header naming the session, the follow-up number and
 the model, and `files changed since this review` when an Artifact the review covered
 changed; `--json` prints `{"reference","sessionId","requestId","send","filesChanged","answer","usage"}`.
-Both exit 2 for a reference to another machine or state, a session the GC removed, one
+Both exit 2 for a reference to another machine or state, a session that the automatic cleanup of old saved conversations removed (reported as `was removed by the session GC`), one
 that was not saved, a request that is still running (`send`), and a failed follow-up.
 
 Every command that opens an older state upgrades it as described in
@@ -248,11 +248,10 @@ for every executable eval included by the selection and recursion policy before
 applying variants.
 Each executable eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
-Run, and source declarations are never rewritten. With `--recursive`, variants apply to executable dependencies already in that
-scope. Runtime variant arguments then rebuild scoped references and dependency
-gates, and the included scope is recomputed. Dependencies newly included through
-those variant arguments retain their default profiles; the named variant is not
-applied again to the expanded scope. The selected
+Run, and source declarations are never rewritten. With `--recursive`, the variant also
+applies to the dependencies already selected. For example, if `app/review --profile fast`
+runs a runtime variant whose arguments name `{fixtures}`, then `fixtures`' evals join the
+Run with their default profiles, not `fast`. The selected
 variant is an execution option: it is not part of the reuse key, so results of
 different variants (and of the declared profile) reuse each other unless a runtime
 variant changes the command or args. Stored request `profile` and `options`
@@ -339,16 +338,17 @@ This does not apply to `help`'s program and arguments, which are found as in
 and only `http://` or `https://`.
 
 `read`, `section` and `help` print text with the limits of
-[Built-in tools](../features/tools/builtin.md#tools) (`section` matches a heading exactly,
-and output past 64 KiB ends with a truncation marker); `list`, `glob` and `grep` print the
+[Built-in tools](../features/tools/builtin.md#tools) (`section` matches a heading exactly; `read` and
+`section` output past 64 KiB ends with a truncation marker, while `help` output over 64 KiB
+fails with `Help output exceeds 64 KiB.` and exit 1); `list`, `glob` and `grep` print the
 JSON result of the [Agent tools](../features/tools/agent.md#agent-tools), with their pattern
 syntax and limits. From the command line, `help` runs the
 program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
 with no private temporary or output directory. A tool error goes to stderr with exit
-1; invalid usage exits 2. `artifactize-tools --help` and `artifactize-tools
-SUBCOMMAND --help` describe each subcommand. The facade uses `artifactize tools
---help` and `artifactize tools SUBCOMMAND --help`. `artifactize tools help PROGRAM
-SUBCOMMAND...` is the built-in help tool, not clap's help-navigation command.
+1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
+`artifactize tools SUBCOMMAND --help` describes one. `artifactize tools help PROGRAM
+SUBCOMMAND...` is different: it runs `PROGRAM SUBCOMMAND... --help` and prints that
+program's help.
 
 ## Agent streaming and runtime logs
 
@@ -376,8 +376,7 @@ queries return at most 200 lines per stream and a bounded byte budget, with
 `next_start` for continuation. Tail and range are exclusive. `search` is a literal,
 case-sensitive 1–2048-byte string. Lines longer than 2048 raw bytes are marked
 `clipped` with bounded head/tail text. Full raw runtime streams, including tails beyond the 128 KiB saved
-audit, stay in Run output. Current `prune` leaves raw stream files and completion
-markers in invocation roots; it supplies no raw-log retention policy. Missing or
+audit, stay in Run output. `prune` keeps these raw logs, and nothing deletes them on a schedule. Missing or
 older/remote audit-only evidence is labeled explicitly. See the shared
 [runtime retention reference](../features/declarations.md#runtime-execution). See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
 for the shared evidence/event schemas and client delivery limits.
@@ -395,8 +394,8 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 
 `tools check` discovers and validates declarations, resolves executable availability,
 scoped argv operands and declared execution paths, and prints JSON scopes, schemas
-and per-tool readiness checks. It is static by default: no owner process, fingerprint
-script, database or output directory is created. A positional selector or `--eval`
+and per-tool readiness checks. It is static by default: it runs no project tool or
+fingerprint script and creates no state or output folder. A positional selector or `--eval`
 selects one Agent/Human eval and cannot be combined with `--artifact` or
 `--audience`. Explicit execution requires `--tool` and either an eval selector or
 both `--artifact` and `--audience`. With `--artifact`, the short operation name or

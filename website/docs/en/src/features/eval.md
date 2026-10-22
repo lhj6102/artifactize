@@ -26,15 +26,15 @@ profile without editing the judgment; see [Declarations](declarations.md).
 Dependencies belong to the consuming eval: name its input Artifacts as `{name}`
 in its instruction or runtime arguments. See [Eval dependencies](artifact.md#eval-dependencies).
 
-Declare only real inputs. An eval's observation scope starts with its own target
-and its explicit instruction/Runtime-operand references, then recursively admits
-the children of every such Artifact. It does not follow a referenced
-Artifact's own eval instructions into more dependencies. All admitted Artifacts
-can contribute tools. Tool operands do not add new inputs on their own.
+Declare only real inputs. An eval can look at its target, the Artifacts its
+instruction or runtime arguments name, and all their child Artifacts. For example,
+`app/review` with the instruction `Check {app} against {spec}.` can read `app`, `spec`, and
+`app/ui` if `ui` is a child of `app`, and use their tools; it does not reach what `spec`'s
+own evals reference. Naming an Artifact in a tool's arguments does not add an input.
 
-Observation access is broader than the [reuse key](fingerprint.md#the-reuse-key):
-that key covers the target, its direct children and this eval's explicit
-inputs, not every recursively reachable observation. Execution gates follow this eval’s own references and its target's children, not its siblings' references.
+What an eval can read is more than what its [reuse key](fingerprint.md#the-reuse-key)
+covers: the key covers the target, its direct children and the named inputs, so a change
+deeper inside `app/ui`'s own children does not by itself review `app/review` again. Execution gates follow this eval’s own references and its target's children, not its siblings' references.
 Its own Artifact and the Artifacts in a cycle with it never gate it; a RED sibling or cycle peer does not block it, except that a [Human eval](artifact.md#human-sign-offs) waits for its Artifact's machine evals. See [Artifact](artifact.md) for declarations.
 
 `artifactize verify library/tests --wait` starts a [Run](run.md) for one eval.

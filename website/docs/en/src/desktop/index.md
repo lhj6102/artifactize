@@ -26,7 +26,9 @@ default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
 state directory; otherwise the app uses the shared state home. `--reviewer NAME`
-sets the cooperative claim name (normally the user name). Invalid arguments exit 2.
+sets the cooperative claim name (normally the user name). `-h`, `--help` or `help`
+(also after a mode) prints help on stderr and exits 2, as invalid arguments do. The app
+exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
 Ctrl+K, F1 or the **Commands** button opens a searchable command palette; Enter runs a
@@ -310,7 +312,9 @@ this window took Human claims it has not submitted or released itself, choose
 claim leaves it held for this reviewer; it is not a verdict. The prompt lists the
 claims this window took, as this window last saw them: a claim released or settled
 from the CLI or another window can still be listed, and a claim taken before the
-window opened is not.
+window opened is not. Quitting cancels tools that are still producing output and any
+review work in progress; programs a launch tool opened keep running, so close them
+yourself.
 
 ## Settings
 
