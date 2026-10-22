@@ -1,18 +1,18 @@
-# Korean writing checklist
+# 한글 작성 체크리스트
 
-- **K-NATURAL**: Write the Korean a Korean technical writer would write from scratch, not a
-  translation of English. A grammatical sentence that still reads as translated is a
-  violation. Do not carry over English word order, possessives (…의 것, …자신의), causatives
-  or passives literally; no phrase should need translating back into English to be understood.
-- **K-WHAT-HAPPENS**: Say what actually happens instead of the dictionary equivalent of an
-  English verb or metaphor. Things that are not people or living beings do not grow, live,
-  survive, wait, remember, own, accept, trust or yield in Korean: a project 커지다 rather than
-  자라다, a sign-off 남아 있다 rather than 기다리다, a program 계속 실행되다 rather than
-  살아남다.
-- **K-EVERYDAY-WORDS**: Use the everyday Korean word a developer would use, not a literal
-  rendering of the English one: 일반 for plain, 실행 기록 for receipt.
-- **K-TERMS**: Use one Korean term for one concept throughout. Product terms that the app,
-  commands or declarations show in English (Artifact, eval, Run, Run ID, fingerprint,
-  GREEN, RED, screen and button names) stay in English, the same way everywhere.
-- **K-REGISTER**: Write prose in one polite register (합니다, 하세요) with consistent
-  sentence endings.
+- **K-NATURAL**: 영어를 옮긴 글이 아니라, 한국 개발자가 처음부터 한국어로 쓴 것처럼
+  씁니다. 문법이 맞더라도 번역한 티가 나는 문장은 위반입니다. 영어 어순, 소유 표현
+  (…의 것, …자신의), 사동·피동 표현을 그대로 옮기지 않습니다. 영어로 되돌려 봐야 뜻이
+  통하는 문장이 없어야 합니다.
+- **K-WHAT-HAPPENS**: 영어 동사나 비유를 사전에 나온 뜻으로 옮기지 말고, 실제로 일어나는
+  일을 씁니다. 사람이나 생물이 아닌 것을 주어로 자라다, 살다, 살아남다, 기다리다,
+  기억하다, 소유하다, 받아들이다, 믿다, 양보하다를 쓰지 않습니다. 예를 들어 프로젝트는
+  자라지 않고 커지며, 승인은 기다리지 않고 남아 있으며, 프로그램은 살아남지 않고 계속
+  실행됩니다.
+- **K-EVERYDAY-WORDS**: 영어 단어를 글자 그대로 옮긴 말 대신 개발자가 평소에 쓰는 말을
+  씁니다. 예를 들어 plain은 '평범한'이 아니라 '일반', receipt는 '영수증'이 아니라
+  '실행 기록'입니다.
+- **K-TERMS**: 한 개념에는 처음부터 끝까지 한 용어만 씁니다. 앱, 명령, 선언에 영어로
+  나오는 제품 용어(Artifact, eval, Run, Run ID, fingerprint, GREEN, RED, 화면과 버튼
+  이름)는 어디서나 같은 영어로 씁니다.
+- **K-REGISTER**: 본문은 '합니다', '하세요'로 끝나는 존댓말 하나로 통일합니다.
