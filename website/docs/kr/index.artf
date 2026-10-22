@@ -1,0 +1,179 @@
+name = "docs-kr"
+fingerprint = { files = ["src"] }
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.translates-guide]
+title = "The Korean documentation translates Getting Started and the Artifact, Eval, Fingerprint and Run chapters accurately"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.translates-guide.payload]
+instruction = """
+Review the Korean documentation {docs-kr} as a translation of the English documentation
+{docs}. Both are mdBook sources with the same chapter paths under src/. The area of this
+review is src/SUMMARY.md, src/getting-started/, and the chapters directly in src/features/ (artifact, declarations, eval, agent, human, runtime, fingerprint and run); compare each of its English files with the Korean file at the same path.
+Check these criteria:
+- K-SAME-PAGES: Every English file in the area has a Korean file at the same path and the
+  Korean side has no extra file; src/SUMMARY.md lists the same chapters in the same order
+  and nesting.
+- K-FAITHFUL: Every paragraph, list item, table cell, note and heading is translated with
+  the same meaning and in the same order. Nothing is left out, added, softened or
+  strengthened, and no English prose is left untranslated.
+- K-KOREAN: It reads as natural Korean technical writing, not word-for-word English, and
+  uses one Korean term for one English term throughout. Product terms that the app,
+  commands or declarations show in English (Artifact, eval, Run, Run ID, fingerprint,
+  GREEN, RED, screen and button names) may stay in English.
+- K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
+  samples are unchanged; only comments inside code blocks may be translated. Every link
+  reaches the same target, and every heading carries its English heading's anchor as an
+  explicit {#id} so that links and the language switch land on the same section.
+Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
+Artifact-relative. Judge only the translation; the English documentation is reviewed
+elsewhere.
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
+20 violations, most important first, each with the criterion id, the Korean path:line,
+the English path:line and one sentence on how to fix the Korean documentation.
+"""
+
+[evals.translates-guide.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.translates-guide.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.translates-guide.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.translates-guide.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.translation = { type = "string", minLength = 1 }
+properties.original = { type = "string", minLength = 1 }
+properties.fix = { type = "string", minLength = 1 }
+required = ["item", "translation", "original", "fix"]
+additionalProperties = false
+
+[evals.translates-features]
+title = "The Korean documentation translates the Tools, Working as a team and Others chapters accurately"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.translates-features.payload]
+instruction = """
+Review the Korean documentation {docs-kr} as a translation of the English documentation
+{docs}. Both are mdBook sources with the same chapter paths under src/. The area of this
+review is src/features/tools/, src/features/team/ and src/features/others/; compare each of its English files with the Korean file at the same path.
+Check these criteria:
+- K-SAME-PAGES: Every English file in the area has a Korean file at the same path and the
+  Korean side has no extra file; src/SUMMARY.md lists the same chapters in the same order
+  and nesting.
+- K-FAITHFUL: Every paragraph, list item, table cell, note and heading is translated with
+  the same meaning and in the same order. Nothing is left out, added, softened or
+  strengthened, and no English prose is left untranslated.
+- K-KOREAN: It reads as natural Korean technical writing, not word-for-word English, and
+  uses one Korean term for one English term throughout. Product terms that the app,
+  commands or declarations show in English (Artifact, eval, Run, Run ID, fingerprint,
+  GREEN, RED, screen and button names) may stay in English.
+- K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
+  samples are unchanged; only comments inside code blocks may be translated. Every link
+  reaches the same target, and every heading carries its English heading's anchor as an
+  explicit {#id} so that links and the language switch land on the same section.
+Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
+Artifact-relative. Judge only the translation; the English documentation is reviewed
+elsewhere.
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
+20 violations, most important first, each with the criterion id, the Korean path:line,
+the English path:line and one sentence on how to fix the Korean documentation.
+"""
+
+[evals.translates-features.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.translates-features.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.translates-features.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.translates-features.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.translation = { type = "string", minLength = 1 }
+properties.original = { type = "string", minLength = 1 }
+properties.fix = { type = "string", minLength = 1 }
+required = ["item", "translation", "original", "fix"]
+additionalProperties = false
+
+[evals.translates-endpoints]
+title = "The Korean documentation translates the Desktop, Agent plugin, CLI and TUI chapters accurately"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.translates-endpoints.payload]
+instruction = """
+Review the Korean documentation {docs-kr} as a translation of the English documentation
+{docs}. Both are mdBook sources with the same chapter paths under src/. The area of this
+review is src/desktop/, src/agent-plugin/, src/cli/ and src/tui/; compare each of its English files with the Korean file at the same path.
+Check these criteria:
+- K-SAME-PAGES: Every English file in the area has a Korean file at the same path and the
+  Korean side has no extra file; src/SUMMARY.md lists the same chapters in the same order
+  and nesting.
+- K-FAITHFUL: Every paragraph, list item, table cell, note and heading is translated with
+  the same meaning and in the same order. Nothing is left out, added, softened or
+  strengthened, and no English prose is left untranslated.
+- K-KOREAN: It reads as natural Korean technical writing, not word-for-word English, and
+  uses one Korean term for one English term throughout. Product terms that the app,
+  commands or declarations show in English (Artifact, eval, Run, Run ID, fingerprint,
+  GREEN, RED, screen and button names) may stay in English.
+- K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output
+  samples are unchanged; only comments inside code blocks may be translated. Every link
+  reaches the same target, and every heading carries its English heading's anchor as an
+  explicit {#id} so that links and the language switch land on the same section.
+Use the list, glob, grep and read tools of {docs} and {docs-kr}. Tool paths are
+Artifact-relative. Judge only the translation; the English documentation is reviewed
+elsewhere.
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
+20 violations, most important first, each with the criterion id, the Korean path:line,
+the English path:line and one sentence on how to fix the Korean documentation.
+"""
+
+[evals.translates-endpoints.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.translates-endpoints.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.translates-endpoints.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.translates-endpoints.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.translation = { type = "string", minLength = 1 }
+properties.original = { type = "string", minLength = 1 }
+properties.fix = { type = "string", minLength = 1 }
+required = ["item", "translation", "original", "fix"]
+additionalProperties = false
