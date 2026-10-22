@@ -11,7 +11,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 **누구를 위한 도구인가요?**
 
 - 다른 사람과 함께 만들면서 효율적으로 리뷰하고 모듈 단위로 개발하고 싶은 사람.
-- AI 에이전트가 일하는 과정을 일일이 지켜보지 않고도 그 변경을 믿고 싶은 사람.
+- AI 에이전트가 일하는 과정을 일일이 지켜보지 않고도 에이전트가 만든 변경을 믿고 싶은 사람.
 - 프로젝트가 커져도 코드, 문서, 이미지, 실행 중인 애플리케이션이 서로 어긋나지 않기를 바라는 사람.
 
 <p align="center">
@@ -119,10 +119,10 @@ Review 화면이 있습니다.
 
 <img src="../demos/review-loop.gif" width="1200" alt="Artifactize 데스크톱 앱에서 한 브랜치의 Run 네 번을 실제로 녹화한 화면: 실패한 항목은 빨간색으로 표시되고 Run 사이에 고쳐지며, 바뀌지 않은 작업은 재사용되고, 네 번째 Run에서 모든 조건이 충족됩니다.">
 
-**이 프로젝트가 자라 온 과정:** Artifactize 자체의 Artifact 그래프가 0.7.0부터 지금까지
-릴리스마다 어떻게 자랐는지 보여 줍니다.
+**이 프로젝트의 성장 과정:** Artifactize 자체의 Artifact 그래프가 0.7.0부터 지금까지
+릴리스마다 어떻게 성장했는지 보여 줍니다.
 
-<img src="../demos/graph-growth.gif" width="1200" alt="이 저장소의 현재 Artifact 그래프가 0.7.0부터 현재 main까지 릴리스마다 자라는 모습을 보여 주는 Artifactize 데스크톱 앱의 실제 녹화.">
+<img src="../demos/graph-growth.gif" width="1200" alt="이 저장소의 현재 Artifact 그래프가 0.7.0부터 현재 main까지 릴리스마다 성장하는 모습을 보여 주는 Artifactize 데스크톱 앱의 실제 녹화.">
 
 **브랜치와 Run:** 왼쪽 패널에 Run 칩과 대기 중인 승인이 있는 예제 브랜치, 그리고
 그 Run입니다. core는 통과했고, cli의 테스트가 실패해 docs는 막혔으며,
@@ -130,7 +130,7 @@ release는 사람의 승인을 기다립니다.
 
 <img src="../screenshots/monitor.png" width="1200" alt="실제 Artifactize 데스크톱 앱: 왼쪽 패널의 예제 브랜치와 대기 중인 승인, 그리고 core는 통과, cli는 실패, docs는 막힘, release는 승인 대기인 Run 그래프.">
 
-**Detail:** cli가 사용하는 core와 cli를 사용하는 docs 사이에 있는 cli와, 그 검사들입니다.
+**Detail:** cli와 그 검사들이 보이고, 양옆에 cli가 사용하는 core와 cli를 사용하는 docs가 함께 보입니다.
 
 <img src="../screenshots/detail.png" width="1200" alt="실제 Artifactize 데스크톱 앱의 cli Artifact Detail: 이웃인 core와 docs, 그리고 lint와 tests 검사.">
 

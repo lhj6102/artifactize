@@ -75,7 +75,7 @@ Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0,
 
 ## 3. Bob이 Alice의 판정 재사용하기 {#3-bob-reuses-alices-verdicts}
 
-Bob을 위한 세 번째 터미널을 열고 같은 복사한 디렉터리 경로를 설정하세요.
+Bob을 위한 세 번째 터미널을 열고, 앞에서 복사해 둔 것과 같은 디렉터리 경로를 설정하세요.
 
 ```sh
 export WALK='/path/from/setup'

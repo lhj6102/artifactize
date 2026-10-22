@@ -125,9 +125,10 @@ Read {write-in-korean}. Read index.html and site.js of {landing}. index.html hol
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the list, glob, grep and read tools of {landing}; tool paths are Artifact-relative.
-Submit GREEN only when no item is clearly violated. Otherwise submit RED with up to 20
-violations, most important first, each with the item id, the path:line, the text and one
-sentence on how to rewrite it.
+Read every Korean sentence. Submit GREEN only when no sentence violates an item; a sentence
+that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED with up
+to 20 violations, most important first, each with the item id, the path:line, the text and
+one sentence on how to rewrite it.
 """
 
 [evals.follows-write-in-korean.pass_schema]
