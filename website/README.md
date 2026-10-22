@@ -8,6 +8,8 @@ deployed from this directory to Cloudflare Workers (static assets).
 | `landing/` | The landing page, copied to `dist/` as is: a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. The development board at `/board/` (`landing/board/`, native ES modules with JSDoc types) reads the repository's branches, pull requests, `dev-green` tag and releases from GitHub's public API in the visitor's browser, so it stays live without a redeploy; the note it reads in pull request bodies is defined by the development skills in `.agents/skills/`. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the promo media (`landing/media/`), `404.html`, `_headers`, the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json`, `story/README.md` and the `*.artf` declarations out of the deployed site. The brand images and favicons are copied from `../assets/brand/` at build time. |
 | `docs/` | The user docs as an [mdBook](https://rust-lang.github.io/mdBook/): `book.toml`, `src/` (`SUMMARY.md` and the chapters) and `theme/`. Built into `dist/docs/`. |
 | `build.sh` | Builds everything into `dist/` (gitignored) and checks every internal link. |
+| `layout.py` | Copies the landing page, brand assets and demo GIFs into a destination shared by the build and preview. |
+| `preview.py` | Opens a private landing-only HTTP preview in your browser, without mdBook or other Python dependencies. |
 | `check-links.py` | The internal link check that `build.sh` runs over `dist/`. |
 | `../assets/brand/` | The sole brand source, generated images, generator, minimum tool requirements, Artifact declarations and social card template. |
 | `make-media.sh` | Re-creates the promo media in `landing/media/` from the promo master (not the social card). |
@@ -16,8 +18,23 @@ deployed from this directory to Cloudflare Workers (static assets).
 
 ## Build and preview
 
-The build needs mdBook 0.5.4 (the version `build.sh` and the workflow pin) and
-`python3`:
+To try just this tree's landing page, run the **preview** Human tool in the landing
+Artifact's Detail, or run this from the workspace root:
+
+```sh
+python3 website/preview.py
+```
+
+It lays out the page and its shared assets in a private temporary directory, serves
+`http://127.0.0.1` on an available port and opens that URL in your default browser.
+Only Python's standard library is needed. `/docs/` is not included; unknown paths
+return the landing page's `404.html` with status 404. Ctrl+C or SIGTERM stops it;
+after 30 minutes without a request it exits by itself. Both paths remove its
+temporary files. Run the tool again to restart it. Root-absolute asset links need
+HTTP, so do not open `landing/index.html` with `file://`.
+
+For the full site, including docs, the build needs mdBook 0.5.4 (the version
+`build.sh` and the workflow pin) and `python3`:
 
 ```sh
 cargo install mdbook --version 0.5.4 --locked --root ~/.local   # or a release binary
