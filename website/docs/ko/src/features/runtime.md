@@ -13,8 +13,8 @@ profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"], ti
 payload.instruction = "Run the tests of {library}."
 ```
 
-`command`와 `args`는 따로 씁니다. artifactize는 셸 명령이 아니라 인자 벡터를
-시작합니다. 작업 디렉터리는 Artifact 폴더이고, 파일 Artifact라면 그 파일이 들어 있는
+`command`와 `args`는 따로 씁니다. artifactize는 셸을 거치지 않고 프로그램에
+인자 목록을 넘겨 실행합니다. 작업 디렉터리는 Artifact 폴더이고, 파일 Artifact라면 그 파일이 들어 있는
 폴더입니다. 프로그램은 작성자의 평소 툴체인 환경을 쓰되,
 artifactize 호출자의 변수는 빠지고, 저장소 밖에 전용 출력 공간과 임시
 공간을 받습니다. 실행 파일 찾기와 이식 가능한 명령은
@@ -23,8 +23,8 @@ artifactize 호출자의 변수는 빠지고, 저장소 밖에 전용 출력 공
 종료 코드 0이면 **GREEN**, 다른 종료 코드면 **RED**입니다. 시작 실패, 시간 초과,
 중단, 잘못된 입력은 대신 운영 오류가 됩니다. Runtime 명령은 Agent/Human 소유자 필드를 돌려주지 않습니다. 저장된 결과에는
 완료 후의 종료 코드와 크기가 제한된 stdout/stderr가 들어 있습니다. 실행이 아직
-출력을 덧붙이는 동안에는 `artifactize request logs REQUEST_ID`로 크기가 제한된 스냅샷을 읽을 수 있습니다.
-확인되지 않은 캡처에는 일부라는 표시가 명시적으로 붙습니다. 이것은 스냅샷 확인이지
+출력을 덧붙이는 동안에는 `artifactize request logs REQUEST_ID`로 크기가 제한된 스냅숏을 읽을 수 있습니다.
+확인되지 않은 캡처에는 일부라는 표시가 명시적으로 붙습니다. 이것은 스냅숏 확인이지
 자동 스트리밍 로그 피드가 아닙니다. [runtime 로그 CLI 레퍼런스](../cli/index.md#agent-streaming-and-runtime-logs)에서
 끝부분/범위/검색과 캡처 증거를 설명하고, 공용
 [runtime 실행 레퍼런스](declarations.md#runtime-execution-library)가 현재 정리 기능이 그대로 남겨 두는 원본 캡처를 포함한

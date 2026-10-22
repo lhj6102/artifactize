@@ -45,7 +45,7 @@ INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 �
     ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}
 ```
 
-- 읽기 토큰은 재사용하지만 결코 게시하지 않습니다.
+- 읽기 토큰으로는 결과를 재사용할 수 있지만 게시할 수는 없습니다.
 - 장애는 오류가 아닙니다. `verify`는 한 번 경고하고 로컬 캐시로 계속합니다.
   그러면 저장소에만 있는 리뷰는 재사용되지 않으므로 Run은 INCOMPLETE가 됩니다.
 - 거부된 토큰, TLS 실패, 잘못된 설정은 작업을 실패시키므로(종료 코드 2),

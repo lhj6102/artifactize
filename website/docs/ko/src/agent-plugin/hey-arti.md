@@ -168,7 +168,7 @@ Arti가 각 결과를 다루는 방식:
   RED나 ERROR eval입니다. Arti는 그것을 먼저 고친 뒤 다시 검증합니다.
 - **ERROR**: 검사를 실행할 수 없었습니다. Arti는 `request_logs`나 `session_show`를 읽고
   없는 프로그램 같은 원인을 고치며, 판정을 고치는 일은 결코 없습니다.
-- **SIGNOFFS_PENDING**: 나머지는 모두 통과했고 사람의 승인이 기다리고 있습니다.
+- **SIGNOFFS_PENDING**: 나머지는 모두 통과했고 사람의 승인만 남았습니다.
   완전한 승인이 아니며, Arti는 사람에게 넘깁니다(아래).
 - **INCOMPLETE**: 필요한 증거가 없습니다. 예를 들어 CI가 기존 리뷰를
   재사용하기만 하는 경우입니다. Arti는 빠진 eval을 실행하는 verify로 그 증거를 얻습니다.

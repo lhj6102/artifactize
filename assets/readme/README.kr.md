@@ -11,7 +11,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 **누구를 위한 도구인가요?**
 
 - 다른 사람과 함께 만들면서 효율적으로 리뷰하고 모듈 단위로 개발하고 싶은 사람.
-- AI 에이전트가 만든 변경을 모든 단계를 지켜보지 않고도 믿고 싶은 사람.
+- AI 에이전트가 일하는 과정을 일일이 지켜보지 않고도 그 변경을 믿고 싶은 사람.
 - 프로젝트가 커져도 코드, 문서, 이미지, 실행 중인 애플리케이션이 서로 어긋나지 않기를 바라는 사람.
 
 <p align="center">
@@ -117,10 +117,10 @@ Review 화면이 있습니다.
 녹화 스크립트가 실패한 부분을 제거해 AI가 코드를 고치는 과정을 대신합니다. 바뀌지 않은
 작업은 바로 재사용됩니다.
 
-<img src="../demos/review-loop.gif" width="1200" alt="Artifactize 데스크톱 앱에서 한 브랜치의 Run 네 번을 실제로 녹화한 화면: 실패는 빨간색이 되고 Run 사이에 고쳐지며, 바뀌지 않은 작업은 재사용되고, 네 번째 Run은 충족됩니다.">
+<img src="../demos/review-loop.gif" width="1200" alt="Artifactize 데스크톱 앱에서 한 브랜치의 Run 네 번을 실제로 녹화한 화면: 실패한 항목은 빨간색으로 표시되고 Run 사이에 고쳐지며, 바뀌지 않은 작업은 재사용되고, 네 번째 Run에서 모든 조건이 충족됩니다.">
 
-**이 프로젝트가 자라 온 과정:** 릴리스마다의 Artifactize 자신의 Artifact 그래프를
-0.7.0부터 지금까지 보여 줍니다.
+**이 프로젝트가 자라 온 과정:** Artifactize 자체의 Artifact 그래프가 0.7.0부터 지금까지
+릴리스마다 어떻게 자랐는지 보여 줍니다.
 
 <img src="../demos/graph-growth.gif" width="1200" alt="이 저장소의 현재 Artifact 그래프가 0.7.0부터 현재 main까지 릴리스마다 자라는 모습을 보여 주는 Artifactize 데스크톱 앱의 실제 녹화.">
 
@@ -137,4 +137,4 @@ release는 사람의 승인을 기다립니다.
 **Review:** 대기 중인 리뷰에서 연 release 승인 요청입니다. 예시 리뷰어가 맡아
 notes 도구를 실행한 뒤 GREEN 양식을 열어 둔 상태입니다.
 
-<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제의 맡은 승인 요청과 그 지시, notes 도구, 도구 로그, GREEN 양식.">
+<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 그 지시, notes 도구, 도구 로그, GREEN 양식.">

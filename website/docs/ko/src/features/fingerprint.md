@@ -91,8 +91,8 @@ Artifact 이름과 kind(`folder`, `file`, `graph`)는 대상과
 `timeout_ms`, `max_tool_calls`, `max_tokens`, runtime `timeout_ms`, 선택된
 프로필 변형이 그렇습니다. eval ID와 제목, 태그, 저장소 경로, 쓰지 않는
 프로필 변형, 도구 선언(`views`)도 들어가지 않습니다. 도구는
-Artifact를 보는 방법이므로, 도구의 설명이나 스키마만 바꿔서는 다시 리뷰하지 않습니다. 도구 변경이
-중요하게 하려면 관련 파일을 fingerprint에 포함하세요.
+Artifact를 보는 방법이므로, 도구의 설명이나 스키마만 바꿔서는 다시 리뷰하지 않습니다. 도구가
+바뀔 때 다시 리뷰하게 하려면 관련 파일을 fingerprint에 포함하세요.
 
 실행형 eval은 그 대상과 그것이 의존하는 모든 Artifact에
 fingerprint가 있을 때만 키를 가집니다. 생략하면 폴더와 파일 Artifact에는
