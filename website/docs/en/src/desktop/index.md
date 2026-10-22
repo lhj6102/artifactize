@@ -1,11 +1,9 @@
 # Desktop
 
-The desktop app is a window onto the same machine-wide state as the CLI and TUI.
-It is the artifactize app of this machine, not of one repository: one screen shows
-every live branch of every project with Runs here and every Human review waiting for
-a person. Browse Runs, see what each branch would run now, inspect evidence and handle
-Human sign-offs without a second review engine or a separate evidence store. A change
-made in the app or with the CLI shows in the other. Every release ships it beside the
+Open the app to see, on one screen, every live branch of every project with Runs on
+this machine and every Human review waiting for a person. Browse Runs, see what each
+branch would run now, inspect evidence and handle Human sign-offs. The app works on the
+same state as the CLI and TUI, so a change made in one shows in the others. Every release ships it beside the
 commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the

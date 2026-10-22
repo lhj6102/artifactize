@@ -123,8 +123,8 @@ Agent 리뷰가 시작되면 artifactize는 eval 도구의 각 실행 경로에 
 `{"content":[{"type":"text","text":"..."},{"type":"json","data":{}}]}`.
 이미지 블록은 [아래](#image-results)에서 설명합니다. 텍스트는 블록당 최대 64 KiB, 압축한 JSON
 데이터는 블록당 최대 512 KiB, 정리한 결과 전체는 최대 8 MiB입니다. 두 프로세스 출력은 각각
-16 MiB까지입니다. 결과 객체는 `content`와 선택 항목인 불리언 `isError`만 받습니다. 블록도 모두
-닫혀 있습니다. 텍스트 블록은 `type`과 `text`만, JSON 블록은 `type`과 `data`만, 이미지 블록은
+16 MiB까지입니다. 결과 객체는 `content`와 선택 항목인 불리언 `isError`만 받습니다. 각 블록에도
+정해진 필드 외의 필드를 넣을 수 없습니다. 텍스트 블록은 `type`과 `text`만, JSON 블록은 `type`과 `data`만, 이미지 블록은
 `type`, `mimeType`, 그리고 `data`나 `path` 중 정확히 하나만 받습니다. 결과나 블록에 다른 필드가
 있으면 리뷰어에게 넘기는 메타데이터가 아니라 잘못된 출력 오류입니다. 종료 코드 0으로 직접 알리는
 오류는 `{"isError":true,"content":[{"type":"text","text":"Choose a smaller range."}]}`처럼 비어
@@ -207,7 +207,7 @@ protocol = "json"
 `protocol`, `timeout_ms`, 동시 실행 옵션은 받지 않습니다. 명령 도구의 `session`은 자기
 Artifact에 있는 세션을 가리켜야 하며, 내장 도구와 Human 도구는 `session`을 받지 않습니다.
 
-하네스는 다음 start 계약을 구현합니다.
+하네스의 start 명령은 다음 규칙을 따라야 합니다.
 
 - stdin으로 평소의 JSON 요청을 읽습니다. `ARTIFACTIZE_SESSION_DIR`은 artifactize가 주는 별도의
   디렉터리이며, 세션에 묶인 도구와 stop이 함께 쓰는 상태를 여기에 둡니다.
@@ -221,7 +221,7 @@ Artifact에 있는 세션을 가리켜야 하며, 내장 도구와 Human 도구�
 고르세요. 데스크톱 하네스는 자기 헤드리스 디스플레이를 직접 시작합니다. Agent는 인스턴스 ID를
 보지 못하고 start나 stop을 부를 수 없습니다.
 
-실행 경로 고정은 여전히 리뷰를 시작할 때 일어납니다. 도구 세션은 Agent가 그 세션에 묶인 도구를
+실행 경로는 이전과 마찬가지로 리뷰를 시작할 때 고정합니다. 도구 세션은 Agent가 그 세션에 묶인 도구를
 처음 호출할 때 시작하고, 이후의 호출은 그 세션을 다시 씁니다. 허용됐지만 도구가 한 번도 호출되지
 않은 세션은 프로세스를 시작하지 않고 세션 디렉터리도 만들지 않습니다. 시작과 준비에 걸린
 시간은 리뷰의 시간 제한에 들어갑니다. start를 실행할 수 없거나 준비되기 전에 끝나면 Agent는

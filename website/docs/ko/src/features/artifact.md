@@ -45,7 +45,7 @@ eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[eva
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
 runtime eval은 종료 코드가 판정입니다(0이면 GREEN). Agent나 Human은 소유자 필드와 함께 GREEN이나
-RED를 돌려줍니다. 의존성은 eval마다 자기 참조와 그 Artifact의 자식에서 나옵니다.
+RED를 돌려줍니다. 각 eval의 의존성은 그 eval이 참조하는 Artifact와 대상 Artifact의 자식으로 정해집니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의
 `guide` Artifact이며, 그 README에서 자식, `{artifact}` 참조, basis Artifact를 설명합니다.
@@ -111,8 +111,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 
 `e2e-tests` Artifact는 테스트 코드 자체, 즉 그 스타일과 기능 문서에 얼마나 충실한지를
 평가합니다. 자기 테스트 코드를 리뷰한다며 애플리케이션 테스트를 실행하지는 않습니다. 상관없는
-`app` 스타일 Eval은 자기 지시문이 테스트 코드 리뷰를 참조하지 않는 한 그 리뷰를 기다리지
-않습니다.
+`app` 스타일 Eval은 지시문에서 테스트 코드 리뷰를 참조하지 않았다면, 그 리뷰가 끝나지 않아도
+실행할 수 있습니다.
 
 모든 Eval은 입력의 판정과 상관없이 자기 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
 효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 Eval이 늦어지고,
@@ -158,7 +158,7 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}
 
-`fingerprint`를 생략하면 Artifact 자신의 파일을 해시하는 내장 방식인 **artifactsum**을 씁니다.
+`fingerprint`를 생략하면 내장 방식인 **artifactsum**으로 그 Artifact에 속한 파일을 해시합니다.
 `fingerprint = false`는 재사용을 끄고, 스크립트로 다른 값을 정할 수도 있습니다. 형식, 포함하는
 입력, GREEN/RED 결과 재사용은 [Fingerprint](fingerprint.md)에서 설명합니다.
 

@@ -79,8 +79,8 @@ Artifactize는 모든 OS에서 경로를 대소문자를 구분해 맞춥니다.
 WSL은 Linux처럼 동작합니다. `wslview`나 Windows 프로그램으로 대체하지 않습니다.
 `xdg-open`이 없거나 아무것도 열지 않으면 배포판의 `xdg-utils`를 설치하고
 기본 애플리케이션을 설정하세요. WSL에서 `xdg-open`은 `explorer.exe`를 통해 파일을 여는데,
-`explorer.exe`는 파일을 연 뒤에도 실패를 보고하므로, WSL에서 artifactize는
-`xdg-open`의 종료 상태 4도 받아들입니다. `login codex`는 어떤 브라우저에서든 쓸 수 있도록 로그인 URL도 출력합니다.
+`explorer.exe`는 파일을 연 뒤에도 실패를 보고하므로, WSL에서는 `xdg-open`이
+종료 상태 4를 돌려줘도 성공으로 처리합니다. `login codex`는 어떤 브라우저에서든 쓸 수 있도록 로그인 URL도 출력합니다.
 
 ## 데스크톱에서 콘솔 실행 {#desktop-console-launches}
 

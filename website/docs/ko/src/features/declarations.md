@@ -75,7 +75,8 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
 `gate`, `mutex`. 이 자리에서 모르는 필드와 camelCase 표기는 거부합니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는 표준 이름을 그대로
-씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. `--json`, 도구 프로토콜, 저장된
+씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval과 함께 남고 재사용 키를
+바꾸지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
 상태는 `timeoutMs`, `passSchema`, `agentTools`, `blockedBy`처럼 기존 camelCase 필드를 계속
 쓰며, 이는 선언 문법이 아닙니다.
 
@@ -416,8 +417,7 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 artifactize는 프로그램을 적은 인자 그대로, 셸 없이, Artifact 폴더(파일 Artifact면 들어 있는
 폴더)에서 실행합니다.
 
-명령은 작성자의 평소 터미널 환경에서 실행되므로, 프로젝트는 터미널에 입력하듯 명령을 선언하면
-됩니다. 실제 홈과 캐시 위치(`HOME`, `XDG_*`, Windows에서는 `USERPROFILE`, `APPDATA`,
+명령은 작성자의 평소 터미널 환경에서 실행되므로, 프로젝트에 명령을 선언할 때도 터미널에 입력하듯 쓰면 됩니다. 실제 홈과 캐시 위치(`HOME`, `XDG_*`, Windows에서는 `USERPROFILE`, `APPDATA`,
 `LOCALAPPDATA`와 시스템 변수)를 포함해 `artifactize` 프로세스의 환경을 모두 전달하므로, 버전
 관리자로 설치한 `cargo`나 `pnpm`처럼 이 변수로 위치를 찾는 도구도 터미널에서처럼 동작합니다.
 artifactize 자신의 변수는 빠집니다. 호출한 쪽의 `ARTIFACTIZE_*` 변수(`ARTIFACTIZE_REMOTE_TOKEN`

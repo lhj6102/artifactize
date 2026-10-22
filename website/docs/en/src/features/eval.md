@@ -21,7 +21,9 @@ Write the review criteria in `payload.instruction`. For Agent and Human evals,
 adds the verdict. See [Owner-result schemas](declarations.md#owner-result-schemas)
 for the closed envelope, reserved names and the verdict-only default. Runtime
 evals use their command's exit status instead of owner schemas. Named `profile_variants` let a caller select an alternative execution
-profile without editing the judgment; see [Declarations](declarations.md).
+profile. An Agent variant changes only how the review runs; a runtime variant with another
+command or arguments is a different check, with its own reuse key and inputs. See
+[Declarations](declarations.md).
 
 Dependencies belong to the consuming eval: name its input Artifacts as `{name}`
 in its instruction or runtime arguments. See [Eval dependencies](artifact.md#eval-dependencies).

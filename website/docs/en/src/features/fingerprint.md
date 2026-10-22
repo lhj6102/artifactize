@@ -108,8 +108,10 @@ A GREEN or RED result whose inputs were unchanged at the end of its review is ke
 for its key ([cache inspection](../cli/maintenance.md#cache-inspection)). Errors and
 cancellations are never kept. When a key holds more than one record,
 the most recent by completion time is reused, GREEN or RED. Results from different
-profiles therefore reuse each other: a review that `--profile fast` produced
-satisfies the declared profile, and the other way around.
+profiles therefore reuse each other when their criteria and inputs are the same: a review
+that an Agent variant such as `--profile fast` produced satisfies the declared profile, and
+the other way around. A runtime variant whose command or arguments differ has its own key,
+and may name other inputs.
 
 Records retain their producing profile and provenance; the [Run result
 reference](run.md#verify-and-runs) owns the audit-field and source-kind inventory.

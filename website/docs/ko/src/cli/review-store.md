@@ -2,8 +2,7 @@
 
 `artifactize server token add alice --scopes read,publish`(토큰을 한 번 출력합니다)와
 `artifactize server run`으로 저장소를 시작하고,
-`printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/`로 머신을
-로그인시키면 `Signed in to … as alice`가 출력됩니다. 이 페이지는 서버와 클라이언트가
+`printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/`로 그 머신에서 로그인하면 `Signed in to … as alice`가 출력됩니다. 이 페이지는 서버와 클라이언트가
 정확히 어떻게 동작하는지 설명합니다. 설정 과정은 [팀 리뷰 저장소](../features/team/index.md)
 가이드에서 차례대로 따라 할 수 있습니다.
 

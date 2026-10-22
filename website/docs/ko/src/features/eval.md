@@ -20,8 +20,9 @@ Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종�
 `fail_schema`가 소유자의 결과 필드를 정하고, 판정은 artifactize가 더합니다. 닫힌 결과 형식,
 예약된 이름, 판정만 있는 기본값은 [소유자 결과 스키마](declarations.md#owner-result-schemas)를
 보세요. Runtime eval은 소유자 스키마 대신 명령의 종료 상태를 씁니다. 이름을 붙인
-`profile_variants`를 두면 판단 기준은 그대로 두고 호출하는 쪽이 다른 실행 프로필을 고를 수
-있습니다. [선언](declarations.md)을 보세요.
+`profile_variants`를 두면 호출하는 쪽이 다른 실행 프로필을 고를 수 있습니다. Agent 변형은
+리뷰를 실행하는 방식만 바꾸고, 명령이나 인자가 다른 runtime 변형은 자기 재사용 키와 입력을 가진
+다른 검사입니다. [선언](declarations.md)을 보세요.
 
 의존성은 그 결과를 쓰는 eval에 속합니다. 입력 Artifact를 지시문이나 runtime 인자에 `{name}`으로
 적으세요. [Eval 의존성](artifact.md#eval-dependencies)을 보세요.

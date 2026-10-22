@@ -313,7 +313,7 @@ Microsoft Store는 안정 릴리스만 따라가며, Microsoft가 검토하는 �
 Run, 캐시 기록, Human 승인은 보존됩니다. 스키마 6~8만 다룰 수 있는 이전 바이너리는
 업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
 
-이제 `artifactize verify`는 지속되는 Run을 제출하고, 그 ID를 출력한 뒤 접수되면 종료합니다.
+이제 `artifactize verify`는 터미널을 닫아도 계속 실행되는 Run을 제출하고, Run ID를 출력한 뒤 접수되면 종료합니다.
 검증 종료 코드가 필요한 스크립트와 CI에는 `--wait`를 추가하세요. 터미널을 닫거나
 지켜보는 명령을 중단해도 Run은 계속 실행됩니다. `artifactize run cancel RUN_ID`가
 명시적인 취소 동작입니다. 포그라운드 Human 마감 시간과

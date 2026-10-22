@@ -333,8 +333,7 @@ artifactize config graph INPUT_ARTIFACT --impact --json
 줍니다. tail과 범위 조회는 함께 쓸 수 없습니다. `search`는 1–2048바이트의 문자열을 대소문자를
 구분해 그대로 찾습니다. 원래 2048바이트가 넘는 줄은 `clipped`로 표시하고 앞뒤 일부만
 보여 줍니다. 저장된 128 KiB 감사 기록 뒤쪽까지 포함한 runtime 원본 스트림 전체는 Run 출력에
-남습니다. `prune`은 이 원본 로그를 지우지 않으며, 정해진 주기로 지우는 기능도 없습니다. 없거나
-이전 버전, 원격의 감사 기록만 있는 증거는 그렇다고 분명히 표시합니다. 공통
+남습니다. `prune`은 이 원본 로그를 지우지 않으며, 정해진 주기로 지우는 기능도 없습니다. 원본 로그가 없거나 이전 버전 또는 원격 실행의 감사 기록만 남아 있으면 그 상태를 분명히 표시합니다. 공통
 [runtime 보존 레퍼런스](../features/declarations.md#runtime-execution)를 보세요. 공통 증거와
 이벤트 스키마, 클라이언트 전달 제한은 [MCP 집중 진단](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)에
 있습니다.

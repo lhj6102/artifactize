@@ -15,8 +15,9 @@ fields that verdict's schema allows, side by side. Follow-up answers from
 
 Artifactize validates the answer against the owner schema itself, so every JSON Schema
 keyword you declare is enforced, even those a provider cannot constrain. If the answer
-does not match, the Agent is told what was wrong and gets one more chance. The saved
-conversation shows that message:
+does not match, the Agent is told what was wrong and gets one more chance, without tools:
+it must answer from what it has already gathered, and asking for a tool then also ends the
+review with `INVALID_RESULT`. The saved conversation shows that message:
 
 ```text
 Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema

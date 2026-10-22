@@ -170,16 +170,11 @@ artifactize keeps each Agent review's conversation on this machine, so you can r
 what the reviewer saw and said, and ask it a follow-up in the same conversation, much
 like continuing a chat. The recorded verdict never changes.
 
-**What is saved.** Each review session gets one owner-only file under
-`$STATE/agent-sessions/` ([layout](others/state.md#agent-sessions)).
-It holds the system prompt and instructions, every turn's messages, each tool call
-with its arguments and full result and whether it failed, the repair turn (the prompt
-that asked for it and the answer it replaced), each provider attempt with its token
-counters, and the provider's encrypted reasoning, which
-only the provider can read and which lets a follow-up continue the conversation. It also records the backend, model, reasoning, provider
-parameters, budgets and tool definitions, the [`sessionId`](#prompt-caching), and the
-Run and request ids. Every backend is saved, `anthropic` included. The session is the
-only record of a review's tool calls: the request keeps its verdict, result and usage.
+**What is saved.** Each review session is kept in one file only your account can read
+([layout](others/state.md#agent-sessions)): the instructions, every message, each tool
+call with its result, the correction turn, token counts and the settings the review
+used. It is the only record of a review's tool calls: the request keeps its verdict,
+result and usage.
 Saving never fails a review: a write error is reported on stderr and the review goes
 on without it.
 
