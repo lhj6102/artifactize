@@ -188,8 +188,8 @@ Artifact와 현재 fingerprint, 없으면 null), 이를 합친 `key`(fingerprint
 `verify`가 Run의 키로 쓸 값과 같습니다. 동작 개수는 실행에 포함된 eval만 셉니다. 종료 코드
 0은 현재 검증 요건을 모두 충족했다는 뜻이고, 1은 아직 충족하지 못한 요건이 남았다는 뜻이며, 입력이나 상태가 잘못되면 2입니다.
 
-status는 선택한 범위의 실행 가능한 eval에 필요한 fingerprint를 verify와 같은 격리, 검사,
-`--fingerprint-jobs` 한도로 준비합니다. fingerprint가 실패하면 2로 종료하며, 예전에 저장한
+status도 verify와 같은 격리와 검사 규칙을 적용하며, `--fingerprint-jobs` 한도 안에서
+선택한 범위의 실행 가능한 eval에 필요한 fingerprint를 계산합니다. fingerprint가 실패하면 2로 종료하며, 예전에 저장한
 fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하지 않고, Run을 만들지 않고, 작업을
 점유하지 않고, 없는 데이터베이스를 만들지 않고, 로컬 캐시의 사용 시각도 바꾸지 않습니다. 다만
 팀 리뷰 저장소에서 찾은 결과는 그곳에서 사용으로 치므로 더 오래 남습니다. fingerprint

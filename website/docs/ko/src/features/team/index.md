@@ -118,7 +118,7 @@ artifactize remote status
 
 - 서버는 인증된 `publisher`, 즉 토큰 이름을 찍습니다. `producer`와
   Human `reviewer`는 게시하는 머신이 보고한 값입니다.
-- `publish` 토큰이 있으면 어떤 키에 대해서든 어떤 판정이든 주장할 수 있습니다. 신뢰할 수 없는 CI(포크
+- `publish` 토큰이 있으면 어떤 키에든 GREEN이나 RED 판정 기록을 게시할 수 있습니다. 신뢰할 수 없는 CI(포크
   풀 리퀘스트)에는 `read`만 주고, `human`은 승인하는 사람에게만 주세요. 토큰이
   유출되거나 오용되면 `server token revoke NAME --purge`로 그 토큰이 게시한
   항목도 삭제합니다.

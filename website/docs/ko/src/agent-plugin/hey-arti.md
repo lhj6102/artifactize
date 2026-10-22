@@ -114,8 +114,8 @@ eval의 지시문, 결과 스키마, runtime 명령을 바꾸면 그
 ## MCP를 먼저 쓰기 {#use-mcp-first}
 
 Arti는 `config_graph`로 Artifact, eval, 의존성을 찾고(`impact:true`는
-하위 소비자를 보수적으로 추가), `config_check`로 선언을 검증하며,
-`status`로 어떤 eval이 실행되고, 재사용되고, 기다릴지 예측합니다. `tools_check`는
+그 입력을 쓰는 하위 Artifact 중 영향을 받을 수 있는 대상을 넓게 포함), `config_check`로 선언을 검증하며,
+`status`로 각 eval이 실행, 재사용, 대기 중 어느 쪽이 될지 예측합니다. `tools_check`는
 도구와 세션을 정적으로 살펴봅니다. Arti는 확인 결과를 파싱하기 전에 이어지는 페이지를
 모두 읽습니다. [MCP 레퍼런스](mcp.md)에 이 도구들과 MCP가
 [일부러 빼놓은 것](mcp.md#deliberately-absent)이 나와 있습니다. MCP가 등록되지 않았다면
