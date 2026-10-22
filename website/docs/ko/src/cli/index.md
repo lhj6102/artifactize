@@ -171,8 +171,8 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 
 없어진 예전 게이트 우회 설정은 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)를
 보세요. `--force`는 직접 선택한 실행 가능한 eval만 새로 리뷰하도록 표시하며, 재귀로 포함된
-의존성에는 적용되지 않습니다. 실행 범위를 넓히거나 게이트를 건너뛰지도 않습니다. Run은 결정된
-정책과 요청마다 force 여부를 기록합니다. 강제로 실행하는 eval은 캐시 결과를 읽지 않고,
+의존성에는 적용되지 않습니다. 실행 범위를 넓히거나 게이트를 건너뛰지도 않습니다. Run에는 결정된
+정책과 각 요청의 force 여부가 기록됩니다. 강제로 실행하는 eval은 캐시 결과를 읽지 않고,
 실행 중인 작업에도 합류하지 않습니다. `--force`로 새로 실행한 eval의 결과가 GREEN이나 RED면 그 키의 가장 최근 기록으로 추가되고, 리뷰
 저장소가 설정되어 있으면 게시되어 이후 Run이 재사용합니다. 의존성은 로컬 기록을 계속
 재사용할 수 있지만, `--force`로 실행한 Run은 저장소에서 아무것도 읽지 않습니다. 추측 실행과 승인 미루기도
@@ -272,7 +272,7 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 
 | 상태 | eval | Artifact |
 |---|---|---|
-| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족됨 | eval이 모두 `PASS`이고 의존하는 Artifact도 충족됨 |
+| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족됨 | eval이 모두 `PASS`이고 의존하는 Artifact도 모두 검증 요건을 충족함 |
 | `RED` | 현재 재사용 키에 맞는 RED 결과가 있음 | eval 중 하나가 `RED` |
 | `BLOCKED` | 게이트가 RED | eval 중 하나가 `BLOCKED` |
 | `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 대기 중 |
@@ -282,7 +282,7 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없음(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE` |
 | `UNREVIEWED` | 리뷰한 적이 없음 | 리뷰한 eval이 없거나 eval이 없음 |
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact가 충족되지 않음 |
-| `BASIS` | — | 의존성이 충족된 basis Artifact |
+| `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact |
 
 Artifact는 그 eval들의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
 `STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에만 나오며,

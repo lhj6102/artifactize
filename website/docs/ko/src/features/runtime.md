@@ -31,7 +31,7 @@ stdout/stderr가 들어 있습니다. 프로그램이 실행 중일 때는
 [Runtime 로그 CLI 레퍼런스](../cli/index.md#agent-streaming-and-runtime-logs)에서 설명합니다. 로그
 보관 기간과, 현재 정리 기능이 지우지 않고 남겨 두는 원본 로그는 공통
 [Runtime 실행 레퍼런스](declarations.md#runtime-execution)에서 설명합니다. CLI,
-[TUI](../tui/index.md), [데스크톱](../desktop/index.md)은 같은 저장된 증거를 읽습니다.
+[TUI](../tui/index.md), [데스크톱](../desktop/index.md)은 저장된 증거를 공통으로 읽습니다.
 
 선언한 인자에 `{spec}/requirements.json` 같은 참조를 쓰면 그 Artifact가 입력이 됩니다. 명령이 실행되는
 동안 fingerprint가 포함하는 파일이 바뀌면 판정 대신 ERROR(`INPUT_CHANGED`)가 됩니다.
