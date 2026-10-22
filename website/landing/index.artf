@@ -65,7 +65,9 @@ index.html of {landing} holds the English landing page (served at /) and its Kor
 English page and one with data-locale="ko" only on the Korean page, keeps elements without
 data-locale on both, and on the Korean page gives an element's ATTR the value of its
 data-ko-ATTR attribute. site.js writes a few words itself, in the page's language from <html lang>.
-Read index.html and site.js and compare the two pages. Check these criteria:
+Read index.html and site.js and compare the two pages. The project sentence "Build together on an
+Artifact Graph." always stays in English, on the Korean page too: as the headline, the page title,
+the Open Graph title and the start of the descriptions. Check these criteria:
 - K-COMPLETE: Every text a reader sees or hears on the English page has its Korean counterpart in
   the same place: headings, paragraphs, list items, links and buttons, figure captions, image alt
   text, aria-label values, the recordings' data-alt and data-label, the page title, the meta and
@@ -73,8 +75,7 @@ Read index.html and site.js and compare the two pages. Check these criteria:
   (the .stage element, including the step titles it shows from data-short) stays English by
   design, as do commands, code, product names and brand names.
 - K-FAITHFUL: Each Korean text has the same meaning as its English counterpart and keeps its order.
-  Nothing is left out, added, softened or strengthened. The headline is "Artifact 그래프 위에서
-  함께 만드세요.", the Korean form of the project sentence.
+  Nothing is left out, added, softened or strengthened.
 - K-SAME-TARGETS: Every Korean link reaches the same target as its English counterpart, except that
   documentation links (/docs/...) reach the same page of the Korean documentation (/docs/ko/...),
   links to the landing page reach /ko/, the hero's example graph is graph-example.ko.png and the
@@ -120,7 +121,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-write-in-korean.payload]
 instruction = """
-Read {write-in-korean}. Read index.html and site.js of {landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale=\"ko\" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text.
+Read {write-in-korean}. Read index.html and site.js of {landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale=\"ko\" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text; the project sentence "Build together on an Artifact Graph." stays in English by design.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the list, glob, grep and read tools of {landing}; tool paths are Artifact-relative.

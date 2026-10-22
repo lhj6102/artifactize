@@ -80,8 +80,8 @@ page and one with `data-locale="ko"` only on the Korean page; elements without i
 both. On the Korean page, `data-ko-ATTR="value"` gives the element's `ATTR` that value, for
 example `data-ko-href` or `data-ko-alt`. Put the Korean element right after its English one
 and change both together; the landing Artifact's `translates-ko` eval compares them. The words
-`site.js` writes come from its table for the page's `<html lang>`. The scroll story's graphic
-stays English; the board, the privacy page and `404.html` are English only.
+`site.js` writes come from its table for the page's `<html lang>`. The project sentence "Build together on an Artifact Graph." and the scroll story's graphic
+stay English; the board, the privacy page and `404.html` are English only.
 
 ## Brand assets
 
