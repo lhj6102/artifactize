@@ -198,8 +198,8 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. 준비된 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작
 한 번으로 칩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수를 쓰지 않습니다. fingerprint 준비와
-재확인, 캐시 적중, 합류해서 대기 중인 요청도 쓰지 않습니다. 실행기 준비 초기에 실패하면 시작
-횟수를 쓰지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
+재확인, 캐시 적중, 합류해서 대기 중인 요청도 쓰지 않습니다. 실행기 준비 초기에 실패한 경우는 시작
+횟수에 넣지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
 실패해도 그 시작은 쓴 것으로 치고 모델을 부르지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류했던 Run이 실패해서 리뷰를 다시
 실행해야 하는 Run은 그 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,

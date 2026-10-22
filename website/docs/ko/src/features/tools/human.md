@@ -1,6 +1,6 @@
 # Human 도구 {#human-tools}
 
-Human 도구는 리뷰어가 리뷰하는 동안 실행할 수 있는 것입니다. 직접 선언한 명령일 수도 있고,
+Human 도구는 리뷰어가 리뷰하는 동안 실행하도록 미리 선언해 둔 도구입니다. 직접 선언한 명령일 수도 있고,
 [내장 도구](builtin.md)(`read`, `list`, `section`, `help`, `open`, `graph`)일 수도 있습니다.
 선언 예는 [Human 리뷰](../human.md#human-tools)에 있습니다. `open`과 `graph`는 프로그램을
 실행하고, 나머지는 출력을 보여 줍니다. 이 아래에서는 명령 도구를 설명합니다.

@@ -93,8 +93,8 @@ codex mcp get artifactize
 `{"kind":"eval","evalId":"library/tests"}`,
 `{"kind":"artifacts","artifactIds":["library","consumer"]}`,
 `{"kind":"evals","evalIds":["library/tests","consumer/review"]}`입니다.
-배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 일반 CLI 의존성/재사용 기본값이 적용되며,
-전송 방식별 스케줄링이나 수명 주기 설정은 없습니다. 이 객체는
+배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 의존성 처리와 결과 재사용에는 CLI와 같은 기본 규칙이 적용되며,
+전송 방식에 따른 별도의 스케줄링이나 수명 주기 설정은 없습니다. 이 객체는
 CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
 ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
 
@@ -114,7 +114,7 @@ Run에는 `jobs` 필드가 없습니다.
 잠정적인 진행을 허용하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
 돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
 이는 완전한 승인이 아닙니다(CLI 지켜보기는 5로 종료). `gate = "blocking"`을 직접 지정한
-Human eval은 여전히 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 이후의 승인이 자동 검사을 다시 실행하지는 않습니다.
+Human eval은 여전히 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 기다리는 것은 오류가 아니라 정상적인 상태입니다.
 `verify_wait`는 runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로

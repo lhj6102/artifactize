@@ -82,7 +82,7 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 출력의 JSON 형태는 [로컬 진단과 유지보수](../cli/maintenance.md#doctor-models-and-prune)에
 있습니다.
 
-Agent 리뷰는 모델의 답변을 만들어지는 대로 스트리밍합니다. 리뷰 전체의 제한 시간은
+Agent 리뷰에서는 모델이 답변을 생성하는 동안 그 내용을 스트리밍으로 받습니다. 리뷰 전체의 제한 시간은
 기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
 ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.

@@ -14,8 +14,8 @@ artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/
 - Linux(x86_64 또는 aarch64), macOS(Apple 실리콘 또는 Intel), 또는 Windows(x64). WSL 2에서는
   Linux 빌드가 실행됩니다.
 - 예제 프로젝트는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 씁니다.
-  두 명령 모두 터미널에서 쓸 수 있어야 합니다. 프로젝트는 선언된
-  명령을 모든 OS에서 적힌 그대로 실행합니다. [운영체제](../features/others/platforms.md)를 보세요.
+  두 명령 모두 터미널에서 쓸 수 있어야 합니다. artifactize는 모든 OS에서
+  프로젝트에 선언된 명령을 적힌 그대로 실행합니다. [운영체제](../features/others/platforms.md)를 보세요.
 - Agent eval을 쓰려면 백엔드마다 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Codex가 포함된 ChatGPT 요금제 중 필요한 것을 준비하세요(선택 사항). Runtime eval과 Human eval에는
   아무것도 필요 없습니다.
 

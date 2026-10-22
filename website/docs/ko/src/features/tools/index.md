@@ -107,8 +107,8 @@ start는 평소와 같은 JSON 객체를 읽고, 공유 상태를 전용
 `ARTIFACTIZE_SESSION_DIR`에 쓰고, 준비 완료 줄 하나를 출력한 뒤 계속 실행됩니다. 세션에 묶인
 도구 호출과 stop 명령은 같은 디렉터리를 쓰고, 세션은 리뷰마다 따로 만들어집니다.
 Agent는 인스턴스를 시작하거나, 멈추거나, 이름을 정하지 않습니다. 오류와 취소를 포함해
-모든 세션을 멈추고 정리하는 일은 artifactize가 맡습니다. 재사용된 리뷰는 아무것도 시작하지
-않습니다. 세션은 [저장된 Agent 대화](../agent.md#saved-conversations)가 아닙니다. 하네스가
+모든 세션을 멈추고 정리하는 일은 artifactize가 맡습니다. 리뷰 결과를 재사용할 때는 하네스를
+시작하지 않습니다. 세션은 [저장된 Agent 대화](../agent.md#saved-conversations)가 아닙니다. 하네스가
 구현할 것은 [도구 세션](agent.md#tool-sessions)을 보세요.
 
 ## 리뷰하기 전에 선언 확인하기 {#check-a-declaration-before-reviewing}
