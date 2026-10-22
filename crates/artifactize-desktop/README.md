@@ -2,6 +2,31 @@
 
 The desktop app (Tauri 2 and Svelte 5) over the `artifactize` library.
 
+## Try this branch's app
+
+In the desktop Artifact's Detail, run the **app** Human tool. It builds this tree's
+production frontend and desktop app (without WebDriver), then opens this worktree's branch
+on your display with your own artifactize state and complete environment. Build output streams
+to the Tool log. Closing the app removes its private build output; it never writes `ui/dist`
+or the workspace's `target/`. The CLI and `artifactize-tools` are built beside the app, without
+registering or replacing commands in your installation.
+
+Install the UI dependencies once from the workspace root before using the tool:
+
+```sh
+pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile
+```
+
+The tool needs the ordinary desktop build prerequisites (Rust, Node, pnpm and the platform's
+Tauri system dependencies). To run the same command directly from `crates/artifactize-desktop/`:
+
+```sh
+node harness/app.mts
+```
+
+The app is yours to close, even if you close artifactize first. Ctrl+C or SIGTERM to the
+launcher is forwarded to the app; cleanup waits for it to exit.
+
 ## Automated tests
 
 `pnpm e2e` in `ui/` builds the CLI and the test app into invocation-owned output and runs

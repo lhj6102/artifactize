@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createConnection, createServer, type Socket } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { constants, homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -329,7 +329,12 @@ export function runProgramAsync(program: string, args: readonly string[], option
 
 /** Run a build step with inherited output; with `capture`, its standard output is
  * returned and its progress on standard error stays visible. */
-export async function runStep(program: string, args: readonly string[], options: { env: Environment; cwd: NativePath; capture?: boolean }): Promise<string> {
+export async function runStep(program: string, args: readonly string[], options: { env: Environment; cwd: NativePath; capture?: boolean; forwardInterrupts?: boolean }): Promise<string> {
+  if (options.forwardInterrupts) {
+    const code = await runVisible(program, args, options.env, options.cwd);
+    if (code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${code}`);
+    return "";
+  }
   const child = spawn(program, args, { cwd: options.cwd, env: options.env, stdio: ["ignore", options.capture ? "pipe" : 2, "inherit"] });
   let output = "";
   child.stdout?.on("data", (chunk: Buffer) => { output += chunk; });
@@ -372,6 +377,40 @@ export async function runForwardingInterrupts(
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
   }
+}
+
+/** A person's foreground program: keep its real display/environment and output, forward
+ * interrupts, and await its exit before the caller deletes its build inputs. Unix children
+ * get an owned group so an interrupted build does not leave its compiler children behind. */
+export async function runVisible(program: string, args: readonly string[], env: Environment, cwd: NativePath): Promise<number> {
+  const child = spawn(program, args, { env, cwd, stdio: "inherit", detached: !WINDOWS });
+  const forward = (signal: NodeJS.Signals) => () => {
+    if (child.pid === undefined) return;
+    if (WINDOWS) {
+      // Node has no Unix signals on Windows; kill requests native termination.
+      child.kill(signal);
+    } else {
+      try { process.kill(-child.pid, signal); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    }
+  };
+  const interrupt = forward("SIGINT");
+  const terminate = forward("SIGTERM");
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  try {
+    return await new Promise<number>((done, fail) => {
+      child.once("error", fail);
+      child.once("close", (code, signal) => done(code ?? (signal ? 128 + constants.signals[signal] : 1)));
+    });
+  } finally {
+    process.off("SIGINT", interrupt);
+    process.off("SIGTERM", terminate);
+  }
+}
+
+export function setExitCode(code: number): void {
+  process.exitCode = code;
 }
 
 /** Wrap the entire owner, not an app/driver or an individual WebDriver command. */
@@ -472,7 +511,19 @@ export function packageCommand(args: string[]): { program: string; args: string[
     if (/^pnpm\.(?:c|m)?js$/.test(name)) return { program: process.execPath, args: [entry, ...args] };
     if (name === "pnpm" || name === "pnpm-native" || name.endsWith(".exe")) return { program: entry, args };
   }
-  if (WINDOWS) throw new Error("Start desktop E2E through pnpm e2e so its executable entry point is inherited");
+  if (WINDOWS) {
+    // A Human tool starts with node, not pnpm, so npm_execpath need not exist. Find
+    // a native pnpm or the JS entry behind npm/Corepack's shim without invoking cmd.
+    for (const folder of (variable("PATH") ?? "").split(delimiter).filter(Boolean)) {
+      const executable = join(folder, "pnpm.exe");
+      if (existsSync(executable)) return { program: executable, args };
+      for (const entry of ["node_modules/pnpm/bin/pnpm.cjs", "node_modules/corepack/dist/pnpm.js"]) {
+        const script = resolve(folder, entry);
+        if (existsSync(script)) return { program: process.execPath, args: [script, ...args] };
+      }
+    }
+    throw new Error("pnpm is missing: install pnpm, or start through pnpm so its executable entry point is inherited");
+  }
   return { program: "pnpm", args };
 }
 
