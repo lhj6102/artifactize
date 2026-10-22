@@ -234,8 +234,8 @@ cargo install --path crates/artifactize-tools --locked
 스크립트, `.deb`, Store로 설치했다면 아무것도 바꾸지 않습니다. 그렇지 않으면 명령을 설정하며,
 그다음 새 터미널을 열고 `artifactize --version`을 실행하면 됩니다.
 
-- **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 앱의 절대 경로 `Contents/MacOS` 디렉터리를
-  `/etc/paths.d/artifactize`에 씁니다. 그다음 새
+- **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 앱 내부 `Contents/MacOS` 디렉터리의 절대 경로를
+  `/etc/paths.d/artifactize`에 기록합니다. 그다음 새
   터미널을 열고 `artifactize --version`을 실행하세요. 두 명령 모두
   설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 옮겼다면
   다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 요청을
