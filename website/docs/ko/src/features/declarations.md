@@ -15,8 +15,7 @@ artifactize config check
 `kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성 eval을 지우고, 필요한 Artifact를
 그 결과를 쓰는 eval의 `payload.instruction`(또는 runtime `args`)에 `{name}` 참조로 넣으세요.
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
-`"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한
-eval을 기다리고, 상관없는 형제 eval은 그대로 실행됩니다.
+`"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한 eval이 끝난 뒤 실행되고, 관련 없는 형제 eval은 그대로 실행됩니다.
 
 자식 폴더는 부모의 모든 eval이 참조하는 것으로 칩니다. 그 밖의 Artifact의 리뷰가 먼저
 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
@@ -220,7 +219,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 `fingerprint`는 `false`나 빈 테이블이라도 선언하지 마세요. fingerprint는 항상 현재 추출한
 그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`로 선언한 Artifact에는 eval을 둘 수 없고 그 Artifact의 리뷰도 필요 없지만, 의존하는 Artifact에 필요한 리뷰까지 면제되지는 않습니다.
 `basis = true`가 없고 eval도 없는 그래프는 eval 없는 다른 Artifact처럼 UNREVIEWED로 남습니다.
-소스 파일은 만들지도 필요로 하지도 않습니다. 일반 Artifact의 순환도 허용하며, 그래프
+소스 파일을 만들지 않으며, 소스 파일이 없어도 됩니다. 일반 Artifact의 순환도 허용하며, 그래프
 fingerprint는 그래프 Artifact 자신의 선언도 포함합니다.
 
 [그래프 fingerprint](fingerprint.md#graph-fingerprint)는 소스 파일 내용이나 eval 실행 옵션이
@@ -272,7 +271,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 없어진 예전 정책 필드와 대신 쓸 것은
 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)를 보세요.
 
-## Eval mutex 태그 {#eval-mutex-tags}
+## eval mutex 태그 {#eval-mutex-tags}
 
 runtime이나 Agent eval은 `gate`와 `profile` 옆에 `mutex`를 선언할 수 있습니다.
 
@@ -326,11 +325,11 @@ payload.instruction = "Approve the delivery before dependent work proceeds."
 [verify 모드](../cli/index.md#verify-modes)와 [미룬 승인](human.md#deferred-sign-offs)을
 보세요.
 
-## Eval 의존성 {#eval-dependencies}
+## eval 의존성 {#eval-dependencies}
 
 Artifact 참조는 `payload.instruction`과 runtime `profile.args`에 `{input}`이나
 `{input}/path`로 씁니다. 의무, 자식 Artifact, 순환, 스케줄링, Human 선행 조건은
-[Eval 의존성](artifact.md#eval-dependencies)에 있습니다.
+[eval 의존성](artifact.md#eval-dependencies)에 있습니다.
 
 ## Artifactsum {#artifactsum}
 

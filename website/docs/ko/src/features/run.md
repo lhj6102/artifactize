@@ -4,7 +4,7 @@
 `verify`가 무엇을 실행하고, 재사용하고, 기다리고, 막을지 예측합니다. `status`도 선언된
 fingerprint 스크립트는 실행할 수 있습니다.
 
-## Eval 실행 게이트 {#eval-execution-gates}
+## eval 실행 게이트 {#eval-execution-gates}
 
 `verify`는 eval마다 자기 [실행 게이트](artifact.md#eval-dependencies)에 따라 실행 시점을
 정하며, 여기에는 [Human 승인의 기계 검사 선행 조건](artifact.md#human-sign-offs)도 포함됩니다.
@@ -23,8 +23,7 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 이미 모든 검사와, 검사가 없는 대상의 의무까지 선택합니다. 파일 Artifact 선택자는 자기 eval만
 선택하며, 둘러싼 폴더의 eval은 선택하지 않습니다.
 
-예를 들어 `code/tests`가 `plan`에 기대고, `plan`에는 사람의 승인 `plan/signoff`가 필요하다고
-합시다. `verify --eval code/tests`는 테스트를 선택하지만, 그 승인이 아직 유효하지 않으면 GREEN으로
+예를 들어 `code/tests`가 `plan`에 의존하고, `plan`에는 사람의 승인 `plan/signoff`가 필요하다고 가정합니다. `verify --eval code/tests`는 테스트를 선택하지만, 그 승인이 아직 유효하지 않으면 GREEN으로
 끝날 수 없습니다. `verify --eval code/tests --recursive`는 `code/style`과 `plan/signoff` 같은
 묶음의 다른 검사도 선택해서, 실행하거나 결과를 재사용할 수 있게 합니다. 검사를 더 선택한다고
 승인이 저절로 생기지는 않습니다. `--recursive`가 없어도 `code/style`과 그 입력은 여전히
@@ -38,7 +37,7 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기, 백엔드 자리
 대기, 합류한 실행 대기, 직접 정한 Run의 작업 상한 대기를 뜻할 수 있습니다. 백엔드 자리를
-기다리는 동안에는 작업 상한을 쓰지 않습니다.
+기다리는 요청은 Run의 `--jobs` 수에 들어가지 않습니다.
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
 
@@ -209,7 +208,7 @@ status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스�
 체크아웃에서 status를 실행하면 verify를 돌리지 않고도 무엇을 다시 리뷰할지 알 수 있습니다.
 force는 여전히 직접 선택한 실행 가능한 eval에만 적용됩니다. Human 실행 동작은 대기 요청을
 기록합니다. 같은 키의 Human 실행이 진행 중이면 원래 verify가 종료한 뒤에도 WAITING_HUMAN과
-`wait` 동작으로 보입니다. 저장된 시도는 이 정규화한 저장소의 것만 읽습니다. eval마다 있을 수
+`wait` 동작으로 보입니다. 저장된 시도는 정규화한 현재 저장소 경로에 해당하는 기록만 읽습니다. eval마다 있을 수
 있는 `last: {runId, verdict, fingerprint?}`는 지난 기록이지 현재 증거가 아닙니다. 누가 만든
 결과인지 전부 보려면 `run show RUN_ID`를 쓰세요. 재사용 키가 없는 GREEN이나 RED는 자기 Run만
 충족하므로, 나중의 status에서는 재사용이 아니라 STALE로 나옵니다. basis만 있는 범위도 충족될 수

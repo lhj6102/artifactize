@@ -81,7 +81,7 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 | `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 닿을 때까지 기다림. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
 | `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 따라감. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 반환할 때 간결한 관찰 |
 | `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 발견 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
-| `verify_cancel` | `run` | 명시적 취소 확인. 정리 여부는 확정을 지켜보세요 |
+| `verify_cancel` | `run` | 명시적 취소 확인. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
 
 `scope`는 `kind` 필드로 선택 유형을 구분하는 공용 Selection JSON 객체입니다.
 

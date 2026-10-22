@@ -21,8 +21,8 @@ payload.instruction = "Run the tests of {library}."
 artifactize 변수는 빠지고 저장소 밖에 별도의 출력·임시 공간을 받습니다. 실행 파일 찾기와 어느
 OS에서나 동작하는 명령은 [운영체제](others/platforms.md)를 보세요.
 
-종료 코드 0이면 **GREEN**, 그 밖의 종료 코드면 **RED**입니다. 시작하지 못했거나, 시간이
-초과됐거나, 중단됐거나, 입력이 잘못되면 판정 대신 동작 오류가 됩니다. Runtime 명령은 Agent나
+시작하지 못했거나, 시간이 초과됐거나, 중단됐거나, 입력이 잘못되면 판정 대신 동작 오류가
+됩니다. Runtime 명령은 Agent나
 Human의 소유자 필드를 돌려주지 않습니다. 저장된 결과에는 완료 뒤의 종료 코드와 크기가 제한된
 stdout/stderr가 들어 있습니다. 프로그램이 실행 중일 때는
 `artifactize request logs REQUEST_ID`로 지금까지 출력된 로그를 정해진 크기까지 읽을 수 있으며,

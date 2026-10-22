@@ -64,18 +64,11 @@ Apple의 공증을 받았습니다.
 **Windows.**
 [Microsoft Store 페이지](https://apps.microsoft.com/detail/9PB6W4LL165D)(x64)에서 Artifactize를 설치한 뒤
 새 터미널을 열고 `artifactize --version`을 실행하세요. Microsoft가 Store 패키지에 서명하므로
-스마트 앱 컨트롤이 실행을 허용하고, Store가 패키지를 최신 상태로 유지합니다. 이 패키지는
-`artifactize`를 앱 실행 별칭으로 제공하며,
-그 도구는 `artifactize tools read FILE`, `artifactize tools list` 같은 식으로 실행합니다.
-다른 채널은 독립 실행형 `artifactize-tools` 명령도 제공합니다. 시작 메뉴 항목도
-두 개 추가됩니다. **Artifactize**는 [데스크톱 앱](#desktop-app)을 열고,
-**Artifactize CLI**는 명령의 도움말과 Windows Terminal 또는
-PowerShell을 열라는 안내를 보여 준 뒤, 그 프로세스만 콘솔에 연결되어 있으면 Enter를 누를 때까지 창을 유지합니다. 터미널에서 실행하거나
-입출력을 리디렉션한 경우에는 멈추지 않습니다. Store 패키지는 Windows의 기본
-AppData 가상화를 씁니다. 그래서 앱과 명령은 zip이나 Cargo 설치와 Run, 로그인, 캐시를 공유하지 않고
-패키지 전용 상태를 따로 유지합니다.
-Store 앱을 제거하면 Windows가 그 전용 상태도 지웁니다. Windows 오버레이 주의 사항은
-[상태](../features/others/state.md#state)를 보세요.
+스마트 앱 컨트롤이 실행을 허용하고, Store가 패키지를 최신 상태로 유지합니다. 시작 메뉴의
+**Artifactize** 항목은 [데스크톱 앱](#desktop-app)을 엽니다. Store 버전의
+[시작 메뉴 항목](../features/others/platforms.md#desktop-console-launches)과
+[별도로 유지하는 상태](../features/others/state.md#state)는 다른 Windows 차이점과 함께
+설명합니다.
 
 **Linux.** x86_64 Ubuntu 22.04, Debian 12 이상에서는
 [Artifactize-amd64.deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)를 내려받아

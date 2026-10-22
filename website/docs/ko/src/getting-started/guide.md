@@ -73,7 +73,7 @@ status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에�
 검사인 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
 구분은 [선언 (.artf)](../features/declarations.md)을 보세요.
 
-## 파일과 Eval 의존성 {#files-and-eval-dependencies}
+## 파일과 eval 의존성 {#files-and-eval-dependencies}
 
 `hero.png.artf` 같은 사이드카는 옆에 있는 파일을 독립된
 Artifact로 선언합니다. 사이드카에는 `name`이 필요하고, 폴더와 같은 TOML 스키마를 쓰며, 기본적으로

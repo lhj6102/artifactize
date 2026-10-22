@@ -23,8 +23,8 @@ with artifactize's caller variables withheld and private output and temporary
 space outside the repository. See [Operating systems](others/platforms.md) for
 executable lookup and portable commands.
 
-Exit 0 is **GREEN**; another exit code is **RED**. Failure to start, a timeout,
-interruption or invalid inputs produce operational errors instead. Runtime commands do not return Agent/Human owner fields. Saved results include the
+Failure to start, a timeout, interruption or invalid inputs produce operational
+errors instead of a verdict. Runtime commands do not return Agent/Human owner fields. Saved results include the
 exit code and bounded stdout/stderr after completion. While execution is still
 appending output, `artifactize request logs REQUEST_ID` can read bounded snapshots;
 unconfirmed captures are explicitly marked partial. This is snapshot inspection,

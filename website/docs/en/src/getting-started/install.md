@@ -65,18 +65,11 @@ from macOS 11; Apple has notarized it.
 **Windows.** Install Artifactize from its
 [Microsoft Store page](https://apps.microsoft.com/detail/9PB6W4LL165D) (x64), then
 open a new terminal and run `artifactize --version`. Microsoft signs Store packages, so
-Smart App Control lets them run, and the Store keeps them up to date. The package
-provides `artifactize` as an app execution alias;
-its tools run as `artifactize tools read FILE`, `artifactize tools list`, and so on.
-Other channels also provide the standalone `artifactize-tools` command. It adds two
-Start menu entries: **Artifactize** opens the [desktop app](#desktop-app), and
-**Artifactize CLI** shows the command's help and a hint to open Windows Terminal or
-PowerShell, then waits for Enter when it owns the console alone; terminal launches
-and redirected input/output never pause. The Store package uses Windows' default
-AppData virtualization: the app and the command keep their own package-private state
-rather than sharing Runs, sign-in and cache with zip or Cargo installs.
-Windows removes that private state when you uninstall the Store app. See
-[State](../features/others/state.md#state) for the Windows overlay caveat.
+Smart App Control lets them run, and the Store keeps them up to date. The Start
+menu's **Artifactize** entry opens the [desktop app](#desktop-app). The Store version's
+[Start menu entries](../features/others/platforms.md#desktop-console-launches) and its
+[separate state](../features/others/state.md#state) are described with the other
+Windows differences.
 
 **Linux.** On x86_64 Ubuntu 22.04, Debian 12 or later, download
 [Artifactize-amd64.deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)

@@ -258,10 +258,10 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 관계를 맺지 않습니다.
 
 의존성 순환을 포함해 어떤 eval이 기다리거나 막히는지는
-[Eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
+[eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
 
 status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검증, status에는
-`blockedBy`로 Eval ID가 들어갑니다. 태그, 파일 종류, 경로는 graph와 status 출력에 나오고,
+`blockedBy`로 eval ID가 들어갑니다. 태그, 파일 종류, 경로는 graph와 status 출력에 나오고,
 [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다.
 
 ### status 상태 {#status-states}
@@ -376,8 +376,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 ## Config graph {#config-graph}
 
 `config graph [ARTIFACT]`는 기본으로 프로젝트 전체를 보여 주고, ARTIFACT를 주면 순환으로
-묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 그 결과를 쓰는
-하위 Artifact와 그들에게 필요한 입력까지 포함합니다. 이는 구조상 닿을 수 있는 범위를 넉넉하게
+묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 그 결과를 쓰는 하위 Artifact와 각 Artifact가 쓰는 입력도 포함합니다. 이는 구조상 닿을 수 있는 범위를 넉넉하게
 잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`는 Artifact나 eval
 하나 또는 여러 개를 범위로 같은 정의를 보여 줍니다. 실제로 무엇을 실행하고 재사용할지는
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,

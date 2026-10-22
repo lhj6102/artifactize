@@ -13,7 +13,7 @@
 - [완료된 결과 재사용](../fingerprint.md#completed-result-reuse)
 - [캐시 제한](state.md#cache-limits)
 - [파일 Artifact](../declarations.md#file-artifacts)
-- [Eval 의존성](../declarations.md#eval-dependencies)
+- [eval 의존성](../declarations.md#eval-dependencies)
 - [Agent 백엔드](../agent.md#agent-backends)
 - [Codex](../agent.md#codex)
 - [가짜 provider로 테스트하기](../agent.md#test-against-a-fake-provider)

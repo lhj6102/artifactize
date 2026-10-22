@@ -100,8 +100,7 @@ ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마�
 
 provider는 매 턴 반복되는 대화 부분을 캐시하므로 리뷰의 뒤쪽 턴일수록 비용이 줄어듭니다. 얼마나
 캐시되었는지는 `usage`에 있는 시도별 `cacheReadTokens` 수치로 확인하세요(`verify --wait
---json`, `run show`, `request show`, `session show --summary`). 강제한 리뷰를 포함해 리뷰는
-매번 새로 시작합니다. [follow-up](#saved-conversations)은 그 리뷰의 대화를 이어 가므로 캐시를
+--json`, `run show`, `request show`, `session show --summary`). 강제로 실행한 리뷰도 포함해 리뷰는 매번 새로 시작합니다. [follow-up](#saved-conversations)은 그 리뷰의 대화를 이어 가므로 캐시를
 쓸 수 있습니다. 캐시 적중 여부는 provider가 정합니다. `anthropic` follow-up은 답이 판정이 아닌
 일반 텍스트라서 대개 캐시가 적중하지 않습니다.
 

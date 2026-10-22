@@ -32,7 +32,7 @@ INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 �
 저장소에서 **Settings → Secrets and variables → Actions**를 열고,
 `ARTIFACTIZE_READ_TOKEN`이라는 저장소 시크릿(secret)을 추가해 그 토큰을 값으로 넣으세요. 아래의
 예시 URL은 팀이 접근할 수 있는 저장소 URL로 바꾸세요. `${{ secrets... }}`
-표현식이 실행 시점에 비밀을 제공하므로, 토큰을 이 파일에 붙여 넣지 마세요.
+표현식이 실행 시점에 시크릿에 저장한 토큰 값을 전달하므로, 토큰을 이 파일에 직접 붙여 넣지 마세요.
 다른 CI 서비스에서도 시크릿 저장 기능이나 환경 변수 설정을 쓰세요.
 
 ```yaml
