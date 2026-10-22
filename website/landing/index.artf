@@ -73,11 +73,8 @@ Read index.html and site.js and compare the two pages. Check these criteria:
   (the .stage element, including the step titles it shows from data-short) stays English by
   design, as do commands, code, product names and brand names.
 - K-FAITHFUL: Each Korean text has the same meaning as its English counterpart and keeps its order.
-  Nothing is left out, added, softened or strengthened.
-- K-KOREAN: It reads as natural Korean written for Korean readers, not word-for-word English, and
-  uses one Korean term for one English term throughout. Product terms the app shows in English
-  (Artifact, eval, Run, GREEN) may stay in English. The headline is "Artifact 그래프 위에서 함께
-  만드세요.", the Korean form of the project sentence.
+  Nothing is left out, added, softened or strengthened. The headline is "Artifact 그래프 위에서
+  함께 만드세요.", the Korean form of the project sentence.
 - K-SAME-TARGETS: Every Korean link reaches the same target as its English counterpart, except that
   documentation links (/docs/...) reach the same page of the Korean documentation (/docs/ko/...),
   links to the landing page reach /ko/, the hero's example graph is graph-example.ko.png and the
@@ -86,7 +83,7 @@ Read index.html and site.js and compare the two pages. Check these criteria:
   targets and code are unchanged; only comments in code may be translated. Both pages link to
   each other in the header and declare each other with hreflang.
 Use the list, glob, grep and read tools of {landing}. Tool paths are Artifact-relative. Judge only
-the translation; the English page is reviewed elsewhere.
+whether the Korean says the same; the Korean writing and the English page are reviewed elsewhere.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
 violations, most important first, each with the criterion id, the index.html or site.js line of the
 Korean text, the line of the English text and one sentence on how to fix the Korean page.
@@ -115,4 +112,44 @@ properties.translation = { type = "string", minLength = 1 }
 properties.original = { type = "string", minLength = 1 }
 properties.fix = { type = "string", minLength = 1 }
 required = ["item", "translation", "original", "fix"]
+additionalProperties = false
+
+[evals.follows-write-in-korean]
+title = "The Korean landing page follows the Korean writing rules"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.follows-write-in-korean.payload]
+instruction = """
+Read {write-in-korean}. Read index.html and site.js of {landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale=\"ko\" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text.
+Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
+output samples and links are not prose and are not judged; whether the Korean says the same as
+the English is reviewed elsewhere. Use the list, glob, grep and read tools of {landing}; tool paths are Artifact-relative.
+Submit GREEN only when no item is clearly violated. Otherwise submit RED with up to 20
+violations, most important first, each with the item id, the path:line, the text and one
+sentence on how to rewrite it.
+"""
+
+[evals.follows-write-in-korean.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-write-in-korean.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.follows-write-in-korean.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.follows-write-in-korean.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.where = { type = "string", minLength = 1 }
+properties.text = { type = "string", minLength = 1 }
+properties.fix = { type = "string", minLength = 1 }
+required = ["item", "where", "text", "fix"]
 additionalProperties = false

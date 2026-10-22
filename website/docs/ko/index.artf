@@ -29,8 +29,8 @@ Check these criteria:
   heading's anchor as an explicit {#id} so that links and the language switch land on the same
   section. The part titles in src/SUMMARY.md are not page headings and have no anchor in either
   book; mdBook would show an {#id} there literally.
-Judge whether the Korean says the same thing, not how natural its Korean is; the writing style
-is reviewed elsewhere, and so is the English documentation. Use the list, glob, grep and read
+Judge whether the Korean says the same thing, not how it is written; the Korean writing is
+reviewed elsewhere, and so is the English documentation. Use the list, glob, grep and read
 tools of {docs} and {docs-ko}. Tool paths are Artifact-relative.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
 violations, most important first, each with the criterion id, the Korean path:line, the English
@@ -62,48 +62,38 @@ properties.fix = { type = "string", minLength = 1 }
 required = ["item", "translation", "original", "fix"]
 additionalProperties = false
 
-[evals.natural-korean]
-title = "The Korean documentation reads as natural Korean technical writing"
+[evals.follows-write-in-korean]
+title = "The Korean documentation follows the Korean writing rules"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
-[evals.natural-korean.payload]
+[evals.follows-write-in-korean.payload]
 instruction = """
-Read the Korean documentation {docs-ko}, an mdBook source whose chapters are under src/. Judge
-its Korean writing on its own; whether it says the same as the English documentation is
-reviewed elsewhere. Check these criteria:
-- K-NATURAL: It reads as natural Korean technical writing for Korean readers, not word-for-word
-  English: no English word order, possessives, causatives or personified states carried over
-  literally, and no phrase a Korean developer would have to translate back to English to
-  understand.
-- K-TERMS: One Korean term is used for one concept throughout. Product terms that the app,
-  commands or declarations show in English (Artifact, eval, Run, Run ID, fingerprint, GREEN,
-  RED, screen and button names) may stay in English, consistently.
-- K-CONSISTENT-STYLE: The chapters share one register and sentence ending style.
-Code blocks, commands, configuration keys, file paths and output samples are not prose and are
-not judged. Use the list, glob, grep and read tools of {docs-ko}. Tool paths are
-Artifact-relative.
-Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
-violations, most important first, each with the criterion id, the Korean path:line, the text
-and one sentence on how to rewrite it.
+Read {write-in-korean}. Read the Korean documentation {docs-ko}, an mdBook source whose chapters are under src/.
+Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
+output samples and links are not prose and are not judged; whether the Korean says the same as
+the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-ko}; tool paths are Artifact-relative.
+Submit GREEN only when no item is clearly violated. Otherwise submit RED with up to 20
+violations, most important first, each with the item id, the path:line, the text and one
+sentence on how to rewrite it.
 """
 
-[evals.natural-korean.pass_schema]
+[evals.follows-write-in-korean.pass_schema]
 type = "object"
 properties.summary = { type = "string", minLength = 1 }
 required = ["summary"]
 additionalProperties = false
 
-[evals.natural-korean.fail_schema]
+[evals.follows-write-in-korean.fail_schema]
 type = "object"
 required = ["violations"]
 additionalProperties = false
 
-[evals.natural-korean.fail_schema.properties.violations]
+[evals.follows-write-in-korean.fail_schema.properties.violations]
 type = "array"
 minItems = 1
 maxItems = 20
 
-[evals.natural-korean.fail_schema.properties.violations.items]
+[evals.follows-write-in-korean.fail_schema.properties.violations.items]
 type = "object"
 properties.item = { type = "string", minLength = 1 }
 properties.where = { type = "string", minLength = 1 }
