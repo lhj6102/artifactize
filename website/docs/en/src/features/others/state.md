@@ -168,7 +168,7 @@ session named by its `sessionId`. `session show --json` prints its events; each 
 
 The verdict, result and usage stay in the Run; the session is the only record of the
 conversation and its tool calls, which
-[`session show --summary`](../agent.md#session-summary) counts.
+[`session show --summary`](../../cli/index.md#session-summary) counts.
 
 ### Follow-up replay
 

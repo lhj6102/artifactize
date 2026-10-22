@@ -35,8 +35,7 @@ can run or reuse results. Selecting more checks never supplies approval itself.
 Every READY eval starts as soon as ready, with **no default concurrency cap**.
 Use `--jobs N` (minimum 1) only when concurrency causes trouble. New READY work
 starts after each result, not after a whole batch; work that waits for something shows
-as QUEUED with its reason. A request joining another Run's review counts against an
-explicit `--jobs`; a cache hit does not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
+as QUEUED with its reason. A runtime or Agent request joining another Run's review counts against an explicit `--jobs`; a Human request joining a sign-off and a cache hit do not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
 QUEUED can mean awaiting admission, a backend slot, a joined execution, or an
 explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
 
@@ -176,17 +175,7 @@ It is the evidence this Run used, not the latest result; its JSON shape is in th
 [CLI reference](../cli/index.md#saved-run-evidence-and-terminal-views). Saved definitions,
 `evidence` and request states let the monitor judge gates without the current declarations.
 
-`run list [--repo-only | --all]` lists saved Runs newest first as a text table, or
-as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
-current directory when omitted); `--repo-only` makes that default explicit, and
-`--all` includes every repository in the shared state. `--limit N` (default 50)
-and `--offset N` (default 0) page the filtered results. Each row includes the Run
-ID, repository, creation/completion timestamps, status, and request counts by
-verdict/state (absent states have zero requests). Unreadable requests do not count;
-`unreadable` names damaged records and their reasons while valid evidence stays
-available. See [state troubleshooting](others/state.md#unreadable-records). Reads do not run owner code,
-create missing state, or require a repository to still exist. There is no
-separate `history` command.
+`run list` lists saved Runs; see [Run list](../cli/index.md#run-list).
 
 Review policy, `--force`, `--max-executions`, selection files and `--profile`
 variants are in the [reference](../cli/index.md#runtime-cli), with the
@@ -271,23 +260,7 @@ states as they stand now, including later Human submissions. Its headline keeps
 **SATISFIED / NOT SATISFIED at Run end**; a dim `*` marks rows whose derived state
 changed since that end, not files changed. See [Monitor](../tui/index.md#monitor).
 
-`config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
-including cycle peers. `--impact` includes downstream consumers and their required
-inputs: conservative structural reachability, not an exact reuse-key prediction.
-MCP `config_graph` exposes the same definitions with single/multiple Artifact or
-eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
-input-to-consumer relations. Full JSON includes resolved static Artifact/eval
-definitions (profiles, payloads, schemas and tool views), tags,
-child/instruction/argv relation metadata, cycle markers and
-dependency-first strongly connected components (SCCs): groups of Artifacts that
-mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
-workspace-relative target `path`. Status also shows file kinds/paths; the monitor
-uses `[file]` on tree rows and keeps the target path in Detail.
-Component IDs refer to the full graph and may be
-noncontiguous in a selected projection. `config check` keeps its static validity
-confirmation and JSON Artifact/eval counts. There is one text or full JSON output
-level, with no `plan`, `--compact` or `--full`. The former top-level `graph`
-command is hidden from help; it prints `graph moved to "artifactize config graph"` and exits 2.
+`config graph` prints the static graph; see [Config graph](../cli/index.md#config-graph).
 
 ### Current graph review tools
 

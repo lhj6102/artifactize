@@ -8,11 +8,9 @@ plugin gives Claude Code and Codex two things together:
 - the [artifactize MCP server](mcp.md), the tools your assistant uses to inspect the
   project and start and follow verification Runs.
 
-This repository is the plugin's marketplace: a catalog the host reads to find and
-install the plugin. The plugin is one [Agent Plugins](https://agent-plugins.org)
-package, the `agent-plugin/` folder, which every host installs; Claude Code adds only
-its own manifest. The plugin installs no program, runs no hooks and holds no
-credentials.
+You install it from this repository, which Claude Code and Codex read as a plugin
+marketplace. The same plugin works in both. It installs no program, runs no hooks and
+holds no credentials.
 
 ## Before you start
 

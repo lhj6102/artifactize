@@ -50,22 +50,8 @@ artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true
 artifactize review [REQUEST_ID]
 ```
 
-Claim, unclaim, tool and submit default the reviewer to `$USER` (then `$LOGNAME` on
-Linux and macOS, `%USERNAME%` on Windows); pass `--reviewer NAME` when none is set. `--reviewer NAME`
-can select the same explicit reviewer for each action. Reviewer names are local
-cooperative locks, not authenticated accounts. Only the claimant can run tools,
-submit or unclaim. `request claim` prints the claim and `request unclaim` the
-released claim; unclaiming a request someone else holds, or one that no longer
-waits, exits 2. Tool names are `<operation>_<artifactId>` and take no free arguments.
-Text output prints captured text or a launch notice; `--json` prints the tool
-result. A tool failure exits 2 and does not invent a verdict.
-
-Submission requires `--verdict GREEN|RED`. `--fields` and `--fields-file` are
-mutually exclusive JSON objects of owner fields (default `{}`), not verdict
-wrappers. Files must be regular files; fields and the complete result are bounded
-at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
-leave the request correctable. A successful submission exits 0, even for RED;
-it does not start a separate verifier.
+Every option, output and exit code of these commands is in
+[Human requests](../cli/index.md#human-requests).
 
 The [Run exit codes](../cli/index.md#command-reference) distinguish interrupted
 observation, explicit cancellation and missing review obligations.

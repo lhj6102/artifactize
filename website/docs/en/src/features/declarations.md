@@ -407,12 +407,9 @@ CPUs, whatever the Run's `--fingerprint-jobs`. A failure reports the first faili
 Artifact in name order and stops the rest. Each script gets its own private output
 folder.
 
-Every executable eval on an Artifact receives the same literal value, saved on
-its request and in the Run's Artifact validation. artifactize adds no repository,
-eval, profile, tool-view, dependency or content salt to script output. The eval's
-[reuse key](fingerprint.md#the-reuse-key) combines it with the
-Artifact names and kinds (`folder`/`file`/`graph`), dependency fingerprints and Eval
-definition hash. Physical paths never enter the reuse key. Artifactsum
+The script's output is used unchanged as the Artifact's fingerprint, the same for
+every eval of the Artifact, and saved with each request. How it combines with the
+criteria and dependencies is in [the reuse key](fingerprint.md#the-reuse-key). Artifactsum
 failures abort preparation in the same way.
 
 The command runs from its owner's working directory with JSON on stdin:

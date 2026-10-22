@@ -1,6 +1,9 @@
 # Agent tools
 
-[Tools](index.md#build-your-own-tool-artifact) shows how to declare and attach a custom tool Artifact.
+Declare a command tool under `[views.agent_tools.NAME]` in a tool Artifact and reference
+that Artifact from an eval: the eval's Agent then sees it as `NAME_ARTIFACT`. Check it with
+[`tools check`](../../cli/index.md#tool-diagnostics) before a review.
+[Tools](index.md#build-your-own-tool-artifact) walks through an example.
 
 Command fields `description`, `protocol`, `command` and `args` are required.
 `input_schema` defaults to `{"type":"object","additionalProperties":false}`

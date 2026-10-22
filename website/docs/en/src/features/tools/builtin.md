@@ -4,7 +4,7 @@ artifactize comes with tools that behave the same on Linux, macOS and Windows,
 except for how a path's spelling on disk is checked (see
 [Paths](../others/platforms.md#paths)). Declare one by name with `builtin` instead of
 writing a script or calling an OS program such as `cat` or `xdg-open`. They need nothing
-else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command, except
+else installed, not even the [`artifactize-tools`](../../cli/index.md#current-directory-tools) command, except
 `open`, which uses the system's opener (`xdg-open` on Linux), and `help`, which runs the
 program it asks;
 that command and `artifactize tools` offer the filesystem/program tools to scripts
@@ -169,38 +169,5 @@ fingerprint; the default artifactsum covers the Artifact's own files.
 
 ## `artifactize-tools` CLI
 
-`artifactize tools` exposes the same current-directory tools on every install,
-including the Microsoft Store package. Non-Store channels also put `artifactize-tools`
-next to `artifactize`; either spelling uses the same parser and runner, output and
-exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
-rather than running a current-directory tool.
-
-For runtime evals, fingerprint scripts and your own scripts:
-
-```sh
-artifactize tools read DEV-CODING.md             # also: artifactize-tools read DEV-CODING.md
-artifactize-tools list [PATH]
-artifactize-tools glob PATTERN [PATH]
-artifactize-tools grep [--glob GLOB] [--case-insensitive] PATTERN [PATH]
-artifactize-tools section spec.md "Install"
-artifactize-tools help cargo build          # cargo build --help
-artifactize-tools open notes.md             # or an http(s) URL
-```
-
-There is no Artifact scope outside a review, so the current directory is the scope.
-Filesystem targets for read/list/glob/grep/section/open must be relative and stay
-below it; `.` names the directory itself and is the default for list/glob/grep.
-Absolute targets, `..` and symlinks are refused, even when a link points inside.
-This is **not** a restriction on help's literal executable or subcommand arguments:
-its ordinary lookup accepts absolute/parent paths and executable symlinks as
-explained above. Only `open` accepts a URL,
-and only `http://` or `https://`.
-
-`read`, `section` and `help` print text with the limits above; `list`, `glob` and
-`grep` print the JSON result of the Agent tool. From the command line, `help` runs the
-program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
-with no private temporary or output directory. A tool error goes to stderr with exit
-1; invalid usage exits 2. `artifactize-tools --help` and `artifactize-tools
-SUBCOMMAND --help` describe each subcommand. The facade uses `artifactize tools
---help` and `artifactize tools SUBCOMMAND --help`. `artifactize tools help PROGRAM
-SUBCOMMAND...` is the built-in help tool, not clap's help-navigation command.
+The same tools run from scripts and runtime evals as `artifactize tools` or
+`artifactize-tools`; see [Current-directory tools](../../cli/index.md#current-directory-tools).

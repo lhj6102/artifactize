@@ -160,7 +160,7 @@ separate. OpenAI input already includes its cache reads. Never sum every counter
 Unreported fields stay absent. The request keeps the verdict, result and usage; the
 messages, reasoning and tool calls, with their arguments and results, are only in the
 review's [saved conversation](#saved-conversations), and
-[`session show --summary`](#session-summary) counts them.
+[`session show --summary`](../cli/index.md#session-summary) counts them.
 
 Before you rely on a backend, run one small review with it, using an exact model ID
 your account can use and one declared tool, and check its result with `run show`. To
@@ -205,125 +205,8 @@ state database. A request that reuses a result names the review that produced it
 (as `producer.session`), never the conversation, so a teammate's verdict tells you
 whose state holds its conversation.
 
-**Reading.** `REF` is the `ref`, a request id (`run-FiVNCV-1`) or a `sessionId`:
-
-```sh
-artifactize session show run-FiVNCV-1
-```
-
-```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
-Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
-Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
-
-── System
-You are an artifactize evaluator. …
-
-── User (turn 1)
-Eval: Review notes (notes/review)
-Target Artifact: notes
-Instruction: Check Artifact notes (tools: read_notes). …
-
-── Assistant (turn 1)
-[reasoning] Reading the notes
-[tool call read_notes] {"path":"notes.md"}
-
-── User (turn 2)
-[tool result read_notes]
-{"artifactId":"notes","lines":[{"number":1,"text":"notes: R1 holds.\n"}], …}
-
-── Assistant (turn 2)
-{"result":{"verdict":"GREEN","verdictFields":{}}}
-
-── Repair prompt (turn 3)
-Your final response did not match the required schema: …
-
-── Assistant (turn 3)
-{"result":{"verdict":"GREEN","verdictFields":{"covered":["R1"]}}}
-
-── Result: {"covered":["R1"],"verdict":"GREEN"}
-```
-
-Text output cuts tool results after 2000 characters and shows only reasoning
-summaries. `--json` prints the stored events as they are, which is also the
-conversation's replayable export.
-
-### Session summary
-
-`--summary` counts what the conversation spent and did, from the session file alone:
-its turns (provider requests) with the tokens of each and in total, the tool calls per
-tool with how many failed, the follow-ups, and the backend, model and time span. A
-failed call returned an error, or never ran because a budget, the deadline or the end
-of the review stopped it first.
-
-```sh
-artifactize session show run-FiVNCV-1 --summary
-```
-
-```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
-Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
-Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
-Time: 2026-10-06T09:14:02.118604115Z to 2026-10-06T09:16:41.502330019Z (159.4 s)
-Turns: 5 · follow-ups: 1
-Tokens: input 21410 · output 1318 · cache read 15872 · reasoning 704
-  turn 1: input 3920 · output 212 · cache read 0 · reasoning 128
-  turn 2: input 4310 · output 260 · cache read 3840 · reasoning 160
-  turn 3: input 4402 · output 96 · cache read 4224 · reasoning 64
-  follow-up 1, turn 1: input 4366 · output 410 · cache read 3840 · reasoning 224
-  follow-up 1, turn 2: input 4412 · output 340 · cache read 3968 · reasoning 128
-Tool calls: 3 (1 failed)
-  read_notes: 2
-  search_notes: 1 (1 failed)
-```
-
-A turn that took several attempts says so, for example `(2 attempts)`. Token counters
-are the ones the provider reported, summed over the turn's attempts; a counter no
-attempt reported is left out. `--json` prints the same as one object: `backend`,
-`model`, `reasoning`, `startedAt`, `endedAt`, `durationMs`, `followUps`, `turns` (each
-with `followUp` when it answered one, `turn`, `attempts` and `tokens`), `tokens`,
-`toolCalls` (`{"read_notes": {"calls": 2, "failed": 0}, …}`), `sessionId`,
-`requestId` and `reference`.
-
-**Following up.**
-
-```sh
-artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still hold?"
-```
-
-```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna (reasoning max) · files changed since this review
-
-notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
-```
-
-A follow-up continues the saved conversation with the same model and current
-project tools. Its answer is plain text; it does not change the recorded verdict,
-result or reuse. The header warns when reviewed inputs have changed. Each question
-gets fresh profile budgets, and questions to one session run in order. See the
-[follow-up replay reference](others/state.md#follow-up-replay)
-for caching, stored messages and compatibility details.
-
-A reference to another machine or state fails with where it lives, for example
-`Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
-5d0e…`. A session the size-bound collection deleted reports `was removed by the
-session GC`, and one that was never saved `was not saved`.
-
-**Retention.** The session store is bounded by size in
-[`limits.json`](others/state.md#agent-sessions) (`agentSessions`):
-once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
-it is at or below `targetBytes` (768 MiB). This runs once a `verify` Run has scheduled
-and settled its evals (a Run that fails earlier skips it) and in `artifactize prune`,
-and never touches the session of a request that is still running
-or one a `session send` holds. `doctor` shows the store's size. `"enabled": false`
-stops saving new conversations.
-
-**Privacy.** A conversation contains everything the reviewer read through its tools,
-including file contents, and everything it wrote. It stays on this machine in
-owner-only files and is never uploaded, including to the team review store. A
-follow-up sends the conversation to the review's own backend, as each review turn
-does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
-`$STATE/agent-sessions` to remove what is saved.
+Read a saved conversation with `session show`, count it with `session show --summary` and
+ask it a follow-up with `session send`; see [Agent sessions](../cli/index.md#agent-sessions).
 
 ## Codex
 

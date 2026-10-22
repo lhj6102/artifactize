@@ -144,7 +144,7 @@ listed below. They return the same JSON as their CLI counterpart, split into det
 | `config_check` | none | `config check` |
 | `config_graph` | `scope` (defaults all), `impact` (false) | `config graph [ARTIFACT] [--impact]`; MCP also accepts eval/multi-selection |
 | `request_logs` | **`id`**, `stream` (`stdout`/`stderr`/`both`), `tail`, `start`, `end`, `search` | `request logs ID` with matching flags |
-| `run_list` | `limit` (0–20, default 20), `offset` (0 or more, default 0) | `run list --limit 20 --offset N` for this repository, newest first |
+| `run_list` | `limit` (0–20, default 20), `offset` (0–4294967295, default 0) | `run list --limit 20 --offset N` for this repository, newest first |
 | `run_show` | **`run`** | `run show RUN` |
 | `request_list` | `run` | `request list [--run RUN]`, restricted to this repository |
 | `request_show` | **`id`** | `request show ID` |

@@ -61,7 +61,7 @@ on the root command and on `artifactize tools`.
 | `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | `Signed in to URL as NAME (scopes: …).`; JSON `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
 | `remote logout` | | `Signed out of the remote review store.` plus a note that the server keeps the token valid until `server token revoke`; JSON `{"signedIn":false}` | 0 |
-| `remote status` | | text or JSON | 0 signed in, 1 not |
+| `remote status` | | URL, share, token source, reachability, then principal and scopes or the error; JSON below | 0 signed in, 1 not |
 | `remote push` | `--dry-run` | text or JSON | 0 |
 | `models openai\|anthropic\|codex` | | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
@@ -123,7 +123,7 @@ request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a r
 id such as `run-Hq2b9X-1`, or a `sessionId`; a request that reused a result names the
 review that produced it. `show` prints the conversation as text, and with `--json` the
 stored events as they are: `{"reference","file","events"}`. `show --summary` prints
-the [session summary](../features/agent.md#session-summary), computed from the
+the [session summary](#session-summary), computed from the
 session file alone: the backend, model and time span, the turns with their tokens and
 the total, the tool calls per tool with how many failed, and the follow-ups; `--json`
 prints `{"reference","sessionId","requestId","backend","model","reasoning","startedAt","endedAt","durationMs","followUps","turns","tokens","toolCalls"}`.
@@ -180,8 +180,7 @@ artifactize run show RUN_ID
 ```
 
 `verify --wait` names the Run on stderr, waits for it to end, then prints each eval's
-outcome and exits with the Run's [exit code](#command-reference); add `--watch` to see
-each eval as it settles; `run show` prints the saved Run again later. The
+outcome and exits with the Run's [exit code](#command-reference); use `--watch` instead of `--wait` to stream each eval as JSON lines as it settles; `run show` prints the saved Run again later. The
 [runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
 blocked evals side by side.
 
@@ -311,14 +310,43 @@ and [Human reviews](../tui/index.md#review).
 
 ## Current-directory tools
 
-`artifactize tools` also offers the [standalone scoped tools](../features/tools/builtin.md#artifactize-tools-cli),
-exactly as `artifactize-tools` does. These tools use
-the current directory, not `--repo`; the linked reference explains their path,
-URL and executable lookup rules. `artifactize tools --help` lists both `check`
-and these tools, and `artifactize tools SUBCOMMAND --help` documents each one.
+`artifactize tools` exposes the same current-directory tools on every install,
+including the Microsoft Store package. Non-Store channels also put `artifactize-tools`
+next to `artifactize`; either spelling uses the same parser and runner, output and
+exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
+rather than running a current-directory tool.
 
+For runtime evals, fingerprint scripts and your own scripts:
 
-### Agent streaming and runtime logs
+```sh
+artifactize tools read DEV-CODING.md             # also: artifactize-tools read DEV-CODING.md
+artifactize-tools list [PATH]
+artifactize-tools glob PATTERN [PATH]
+artifactize-tools grep [--glob GLOB] [--case-insensitive] PATTERN [PATH]
+artifactize-tools section spec.md "Install"
+artifactize-tools help cargo build          # cargo build --help
+artifactize-tools open notes.md             # or an http(s) URL
+```
+
+There is no Artifact scope outside a review, so the current directory is the scope.
+Filesystem targets for read/list/glob/grep/section/open must be relative and stay
+below it; `.` names the directory itself and is the default for list/glob/grep.
+Absolute targets, `..` and symlinks are refused, even when a link points inside.
+This is **not** a restriction on help's literal executable or subcommand arguments:
+its ordinary lookup accepts absolute/parent paths and executable symlinks as
+explained above. Only `open` accepts a URL,
+and only `http://` or `https://`.
+
+`read`, `section` and `help` print text with the limits above; `list`, `glob` and
+`grep` print the JSON result of the Agent tool. From the command line, `help` runs the
+program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
+with no private temporary or output directory. A tool error goes to stderr with exit
+1; invalid usage exits 2. `artifactize-tools --help` and `artifactize-tools
+SUBCOMMAND --help` describe each subcommand. The facade uses `artifactize tools
+--help` and `artifactize tools SUBCOMMAND --help`. `artifactize tools help PROGRAM
+SUBCOMMAND...` is the built-in help tool, not clap's help-navigation command.
+
+## Agent streaming and runtime logs
 
 `verify SELECTOR --watch` submits and immediately follows the saved Run;
 `run watch RUN_ID` attaches later. Both emit flushed JSON lines, regardless of
@@ -379,3 +407,178 @@ execution); Human calls use the reviewer's real environment. Exit codes are
 0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
 invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are
 JSON even without `--json`.
+
+## Run list
+
+`run list [--repo-only | --all]` lists saved Runs newest first as a text table, or
+as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
+current directory when omitted); `--repo-only` makes that default explicit, and
+`--all` includes every repository in the shared state. `--limit N` (default 50)
+and `--offset N` (default 0) page the filtered results. Each row includes the Run
+ID, repository, creation/completion timestamps, status, and request counts by
+verdict/state (absent states have zero requests). Unreadable requests do not count;
+`unreadable` names damaged records and their reasons while valid evidence stays
+available. See [state troubleshooting](../features/others/state.md#unreadable-records). Reads do not run owner code,
+create missing state, or require a repository to still exist. There is no
+separate `history` command.
+
+## Config graph
+
+`config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
+including cycle peers. `--impact` includes downstream consumers and their required
+inputs: conservative structural reachability, not an exact reuse-key prediction.
+MCP `config_graph` exposes the same definitions with single/multiple Artifact or
+eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
+input-to-consumer relations. Full JSON includes resolved static Artifact/eval
+definitions (profiles, payloads, schemas and tool views), tags,
+child/instruction/argv relation metadata, cycle markers and
+dependency-first strongly connected components (SCCs): groups of Artifacts that
+mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
+workspace-relative target `path`. Status also shows file kinds/paths; the monitor
+uses `[file]` on tree rows and keeps the target path in Detail.
+Component IDs refer to the full graph and may be
+noncontiguous in a selected projection. `config check` keeps its static validity
+confirmation and JSON Artifact/eval counts. There is one text or full JSON output
+level, with no `plan`, `--compact` or `--full`. The former top-level `graph`
+command is hidden from help; it prints `graph moved to "artifactize config graph"` and exits 2.
+
+## Human requests
+
+Claim, unclaim, tool and submit default the reviewer to `$USER` (then `$LOGNAME` on
+Linux and macOS, `%USERNAME%` on Windows); pass `--reviewer NAME` when none is set. `--reviewer NAME`
+can select the same explicit reviewer for each action. Reviewer names are local
+cooperative locks, not authenticated accounts. Only the claimant can run tools,
+submit or unclaim. `request claim` prints the claim and `request unclaim` the
+released claim; unclaiming a request someone else holds, or one that no longer
+waits, exits 2. Tool names are `<operation>_<artifactId>` and take no free arguments.
+Text output prints captured text or a launch notice; `--json` prints the tool
+result. A tool failure exits 2 and does not invent a verdict.
+
+Submission requires `--verdict GREEN|RED`. `--fields` and `--fields-file` are
+mutually exclusive JSON objects of owner fields (default `{}`), not verdict
+wrappers. Files must be regular files; fields and the complete result are bounded
+at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
+leave the request correctable. A successful submission exits 0, even for RED;
+it does not start a separate verifier.
+
+## Agent sessions
+
+**Reading.** `REF` is the `ref`, a request id (`run-FiVNCV-1`) or a `sessionId`:
+
+```sh
+artifactize session show run-FiVNCV-1
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
+Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
+Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
+
+── System
+You are an artifactize evaluator. …
+
+── User (turn 1)
+Eval: Review notes (notes/review)
+Target Artifact: notes
+Instruction: Check Artifact notes (tools: read_notes). …
+
+── Assistant (turn 1)
+[reasoning] Reading the notes
+[tool call read_notes] {"path":"notes.md"}
+
+── User (turn 2)
+[tool result read_notes]
+{"artifactId":"notes","lines":[{"number":1,"text":"notes: R1 holds.\n"}], …}
+
+── Assistant (turn 2)
+{"result":{"verdict":"GREEN","verdictFields":{}}}
+
+── Repair prompt (turn 3)
+Your final response did not match the required schema: …
+
+── Assistant (turn 3)
+{"result":{"verdict":"GREEN","verdictFields":{"covered":["R1"]}}}
+
+── Result: {"covered":["R1"],"verdict":"GREEN"}
+```
+
+Text output cuts tool results after 2000 characters and shows only reasoning
+summaries. `--json` prints the stored events as they are, which is also the
+conversation's replayable export.
+
+### Session summary
+
+`--summary` counts what the conversation spent and did, from the session file alone:
+its turns (provider requests) with the tokens of each and in total, the tool calls per
+tool with how many failed, the follow-ups, and the backend, model and time span. A
+failed call returned an error, or never ran because a budget, the deadline or the end
+of the review stopped it first.
+
+```sh
+artifactize session show run-FiVNCV-1 --summary
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
+Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
+Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
+Time: 2026-10-06T09:14:02.118604115Z to 2026-10-06T09:16:41.502330019Z (159.4 s)
+Turns: 5 · follow-ups: 1
+Tokens: input 21410 · output 1318 · cache read 15872 · reasoning 704
+  turn 1: input 3920 · output 212 · cache read 0 · reasoning 128
+  turn 2: input 4310 · output 260 · cache read 3840 · reasoning 160
+  turn 3: input 4402 · output 96 · cache read 4224 · reasoning 64
+  follow-up 1, turn 1: input 4366 · output 410 · cache read 3840 · reasoning 224
+  follow-up 1, turn 2: input 4412 · output 340 · cache read 3968 · reasoning 128
+Tool calls: 3 (1 failed)
+  read_notes: 2
+  search_notes: 1 (1 failed)
+```
+
+A turn that took several attempts says so, for example `(2 attempts)`. Token counters
+are the ones the provider reported, summed over the turn's attempts; a counter no
+attempt reported is left out. `--json` prints the same as one object: `backend`,
+`model`, `reasoning`, `startedAt`, `endedAt`, `durationMs`, `followUps`, `turns` (each
+with `followUp` when it answered one, `turn`, `attempts` and `tokens`), `tokens`,
+`toolCalls` (`{"read_notes": {"calls": 2, "failed": 0}, …}`), `sessionId`,
+`requestId` and `reference`.
+
+**Following up.**
+
+```sh
+artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still hold?"
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · gpt-6-luna · files changed since this review
+
+notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
+```
+
+A follow-up continues the saved conversation with the same model and current
+project tools. Its answer is plain text; it does not change the recorded verdict,
+result or reuse. The header warns when reviewed inputs have changed. Each question
+gets fresh profile budgets, and questions to one session run in order. See the
+[follow-up replay reference](../features/others/state.md#follow-up-replay)
+for caching, stored messages and compatibility details.
+
+A reference to another machine or state fails with where it lives, for example
+`Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
+5d0e…`. A session the size-bound collection deleted reports `was removed by the
+session GC`, and one that was never saved `was not saved`.
+
+**Retention.** The session store is bounded by size in
+[`limits.json`](../features/others/state.md#agent-sessions) (`agentSessions`):
+once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
+it is at or below `targetBytes` (768 MiB). This runs once a `verify` Run has scheduled
+and settled its evals (a Run that fails earlier skips it) and in `artifactize prune`,
+and never touches the session of a request that is still running
+or one a `session send` holds. `doctor` shows the store's size. `"enabled": false`
+stops saving new conversations.
+
+**Privacy.** A conversation contains everything the reviewer read through its tools,
+including file contents, and everything it wrote. It stays on this machine in
+owner-only files and is never uploaded, including to the team review store. A
+follow-up sends the conversation to the review's own backend, as each review turn
+does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
+`$STATE/agent-sessions` to remove what is saved.

@@ -1,6 +1,6 @@
 # Install artifactize
 
-Every install provides `artifactize`, with its [built-in tools](../features/tools/builtin.md#artifactize-tools-cli)
+Every install provides `artifactize`, with its [built-in tools](../cli/index.md#current-directory-tools)
 available as `artifactize tools`. Non-Store channels also provide those tools as the
 standalone `artifactize-tools` command.
 Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
@@ -292,9 +292,7 @@ cargo install --path crates/artifactize-desktop --locked --bin artifactize-deskt
 artifactize-desktop
 ```
 
-The frontend must be built before Cargo: the normal app embeds `ui/dist`. Keep
-the default Cargo features and do not enable the test-only `e2e` feature for a
-normal app. Install the CLI from the same checkout too, as above: the app shows the
+Build the frontend before the Cargo install, in this order. Install the CLI from the same checkout too, as above: the app shows the
 Runs that `artifactize verify` starts. The app uses the same state home and credentials as the unpackaged
 CLI, not the Store app's private state.
 
@@ -349,12 +347,9 @@ file. There is no converter. Have an agent rewrite and commit the files, remove 
 legacy markers and run `artifactize config check`. Families are removed; use your own generator if
 you want templates and commit its `.artf` output. See [Declarations (.artf)](../features/declarations.md).
 
-The original 0.9 transition introduced state schema 6 and required replacing
-pre-schema-6 state. Current versions preserve existing schema-6 or schema-7 state
-by upgrading it automatically to schema 9, including Runs, cache records and Human
-approvals. Only schemas 1–5 require a new state: they are refused with exit 2, and
-`artifactize doctor` reports a hard error and exits 1. For those older states, set
-`ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new directory, or move the old one away.
+A state from before 0.9 (schemas 1–5) is refused: set `ARTIFACTIZE_STATE_HOME` or
+`--state-dir` to a new directory, or move the old one away. Later states upgrade by
+themselves ([State](../features/others/state.md#state)).
 Reuse-key v2 matches no pre-0.9 result, even in
 a team review store or with a script fingerprint. The first full `verify` reviews
 every eval once, Human sign-offs included. See [Upgrading to 0.9](../features/fingerprint.md#upgrading-to-09).
@@ -498,10 +493,8 @@ touches active Runs, database rows or the repository. To remove retained unpacka
 state, delete the state directory that `artifactize doctor` prints on its first line.
 
 Uninstall does not remove your project files, exported files, or state explicitly
-placed outside AppData with `--state-dir` or an environment override. Files written
-by user-configured commands outside the package-private view can remain too; the
-Windows packaging test measured a Runtime child's new AppData file in the real
-location. Remove those separately if you no longer need them. Existing unvirtualized
+placed outside AppData with `--state-dir` or an environment override. Files your evals' commands wrote, including in AppData, stay too; remove them
+separately if you no longer need them. Existing unvirtualized
 AppData files are also outside the Store package's cleanup; see the
 [Windows behavior and overlay caveat](../features/others/state.md#state).
 

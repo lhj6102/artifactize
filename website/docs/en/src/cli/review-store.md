@@ -20,7 +20,7 @@ in its own `review-store.sqlite` under `--state-dir`, separate from `state.sqlit
 It keeps every record of each [reuse key](../features/fingerprint.md#the-reuse-key) and
 answers a lookup with the latest one by completion time, GREEN or RED, whoever
 published it and in whatever order records arrived. `server run` serves plain HTTP
-on loopback by default (it warns when bound elsewhere) and stops on Ctrl-C/SIGTERM;
+on loopback by default (it warns when bound elsewhere) and stops on Ctrl-C;
 put a TLS proxy or tunnel in front, because clients require HTTPS except on
 loopback. Token commands work on the same file while the server runs, and take
 effect immediately.
@@ -29,13 +29,15 @@ Token names are bounded ASCII display labels, not secrets; the
 [CLI identity rules](index.md#identity-arguments) give the syntax and
 pre-store validation.
 
-`token add` prints a random bearer token once; the store keeps only its SHA-256.
+`token add` prints a random bearer token once; the store cannot show it again, so save it then.
 Scopes are `read` (look up), `publish` (publish runtime and Agent records) and
 `human` (additionally publish Human sign-offs, together with `publish`). Give
 untrusted CI `read` only. `token list` shows names, scopes and creation/revocation
 times, never tokens. `token revoke NAME` rejects the token at once; `--purge`
 also deletes every record it published, and may be repeated later. Revocation always
-prints a JSON report, even without `--json`. Names of revoked tokens are never reused. `rm KEY` deletes every record of a key and prints
+prints a JSON report, even without `--json`:
+`{"name":"alice-laptop","revokedAt":"2026-10-06T09:14:02Z","purgedEntries":0}`, where
+`purgedEntries` counts the records `--purge` deleted. Names of revoked tokens are never reused. `rm KEY` deletes every record of a key and prints
 `{"removed":true}` (false if absent).
 
 The API takes `Authorization: Bearer TOKEN` and answers JSON (`{"error":...}` on
@@ -93,8 +95,13 @@ rejected. A stored token is bound to the origin it was issued for.
 `ARTIFACTIZE_REMOTE` (a URL, or `off`), `ARTIFACTIZE_REMOTE_TOKEN` (for CI) and
 `ARTIFACTIZE_REMOTE_SHARE` (`summary` or `full`) override `remote.json` and the
 stored token. `remote status` prints the URL, share level, token source
-(`env`, `file` or `none`), reachability, principal and scopes; it exits 0 when the
-store accepts the token. Requests use a 2 s connect and 5 s total timeout and never
+(`env`, `file` or `none`), reachability, and then the principal and scopes or the store's error; it exits 0 when
+the store accepts the token and 1 otherwise. Its JSON is
+`{"configured":true,"url":…,"share":…,"tokenSource":…,"reachable":BOOL,"principal":…,"scopes":[…],"error":…}`,
+with `principal` and `scopes` null unless signed in and `error` null when signed in; a
+refused token is `reachable: true` with an error, an unreachable store `reachable: false`.
+Without a configured store it prints `No remote review store is configured.` (JSON
+`{"configured":false}`) and exits 1. Requests use a 2 s connect and 5 s total timeout and never
 follow redirects. `remote logout` deletes the stored token and `remote.json`; the
 server keeps the token valid until `server token revoke`. Tokens are never printed
 or logged.
