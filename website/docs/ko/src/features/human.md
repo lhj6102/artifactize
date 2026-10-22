@@ -21,8 +21,7 @@ Human eval은 BLOCKED가 되고 그 이유에 해당 eval의 이름이 나옵니
 **리뷰어 맡기(claim)** 는 리뷰할 사람에게 그 요청을 배정해 둡니다. 이는
 같은 리뷰를 두 Run이 동시에 시작하지 못하게 막는 artifactize의 자동 **재사용 키 잠금**과
 다릅니다. 다른 체크아웃에서 시작한 Run이라도 다른 Run은 기존 대기 리뷰에 합류할 수 있으며,
-그 요청을 **팔로워(follower)** 라고 부릅니다. 팔로워에 대한 Human 동작은 원래 요청과
-저장소로 갑니다. `--force`는 그 자동 재사용 키 잠금을 우회할 뿐, 사람이 동작하기 전에
+그 요청을 **팔로워(follower)** 라고 부릅니다. 팔로워에서 한 Human 동작은 원래 요청이 있는 저장소에서 그 요청에 적용됩니다. `--force`는 그 자동 재사용 키 잠금을 우회할 뿐, 사람이 동작하기 전에
 요청을 맡아야 한다는 조건까지 우회하지는 않습니다.
 
 승인은 [리뷰된 입력](fingerprint.md)이 여전히 일치하면 기본적으로 재사용됩니다.
@@ -109,7 +108,7 @@ payload.instruction = "Review the release before dependent work proceeds."
 
 ## Human 도구 {#human-tools}
 
-`views.human_tools`는 미리 정의된 도구의 별도 안전한 이름 맵입니다. 리뷰어가
+`views.human_tools`는 미리 정의한 Human 도구를 안전한 이름에 연결하는 별도의 맵입니다. 리뷰어가
 도구를 실행하며, 도구는 자유 인자를 받지 않습니다. [내장 도구](tools/builtin.md)는
 Linux, macOS, Windows에서 똑같이 동작합니다. `open`은 파일, 폴더, 또는 `http(s)`
 URL을 데스크톱의 기본 애플리케이션으로 열고, `graph`는 현재 프로젝트

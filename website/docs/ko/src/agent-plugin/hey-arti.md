@@ -147,8 +147,7 @@ CLI 대체 명령은 `artifactize config check`, `artifactize config graph`,
 
 Arti는 `verify_start`로 시작하고 돌려받은 Run ID를 보관하며,
 호스트가 MCP 진행 상황을 보여 주면 `verify_watch`로, 그렇지 않으면 `verify_wait`로 따라가고,
-`verify_result`로 발견 사항을 읽습니다. 접수된 Run이 통과한 Run은 아닙니다. 실패한 runtime 발견 사항은
-`request_logs`로, Agent 발견 사항은 `session_show`로 진단합니다.
+`verify_result`로 발견 사항을 읽습니다. 접수된 Run이 통과한 Run은 아닙니다. Runtime eval의 실패 원인은 `request_logs`로, Agent eval의 지적 사항은 `session_show`로 살펴봅니다.
 Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거나, 에이전트의
 턴을 끝내도 Run은 멈추지 않으며, 취소를 요청하는 것은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.

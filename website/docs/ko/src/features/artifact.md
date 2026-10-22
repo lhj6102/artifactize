@@ -1,7 +1,6 @@
 # Artifact {#artifact}
 
-Artifact는 리뷰하는 모든 것입니다. 코드, 문서, 디자인, 이미지가 모두 Artifact가 될 수 있습니다. 폴더나
-파일 하나가 정적 TOML `.artf` 파일에 자기 eval을 선언합니다. artifactize는
+Artifact는 리뷰하는 모든 것입니다. 코드, 문서, 디자인, 이미지가 모두 Artifact가 될 수 있습니다. 폴더나 파일 하나의 eval은 정적 TOML 형식의 `.artf` 파일에 선언합니다. artifactize는
 이 선언들을 읽어 하나의 의존성 그래프로 만듭니다.
 
 ## Artifact 그래프 {#artifact-graph}
@@ -122,8 +121,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 eval의 Artifact와 의존성 순환에 함께 있는 eval들은
 [Human 형제 선행 조건](#human-sign-offs)을 빼면 이 관문에서 제외됩니다. 순환은
 eval 참조와 자식을 따라갑니다. 부모를 직접 또는 참조 사슬을 거쳐 참조하는 자식은
-부모와 같은 순환에 있습니다. 같은 순환의 상대를 참조하면 그 순환의 외부 관문이 따라오고,
-다른 순환을 참조하면 그 순환의 모든 eval이 따라옵니다.
+부모와 같은 순환에 있습니다. 같은 의존성 순환에 속한 Artifact를 참조하면 그 순환 바깥의 실행 관문이 적용되고, 다른 순환의 Artifact를 참조하면 그 순환의 모든 eval이 실행 관문에 들어갑니다.
 이 관문들은 대기와 추측 실행의 취소도 결정합니다.
 
 예를 들어 `docs`의 eval이 `cli`를 참조하고 `cli`의 eval이 `docs`를 참조하면

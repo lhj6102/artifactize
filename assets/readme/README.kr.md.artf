@@ -60,7 +60,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 instruction = """
 Read {write-in-korean}. Read the Korean README {readme-kr}, README.kr.md in assets/readme/.
 The project sentence "Build together on an Artifact Graph." stays in English by design, as the
-headline, and "Artifact Graph" is the product's name for the graph.
+headline, and "Artifact Graph" is the product's name for the graph. The root README says
+"checks" in plain words where the docs say eval, so the Korean README says 검사 for them.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the read tool of {readme-kr}.

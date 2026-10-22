@@ -98,8 +98,7 @@ Human 리뷰 흐름과 [review](../../tui/index.md#review) 터미널 UI는
   예약, 갱신,
   만료 타이머, 준비 단계, 준비 완료 훅, 알람은 없습니다.
 - `human::unclaim(receipts, request_id, reviewer)`는 판정 없이 그 잠금을 해제해,
-  다른 리뷰어가 요청을 맡을 수 있게 합니다. 맡은 사람만 놓을 수 있으며,
-  요청이 아직 기다리고 있을 때만 가능합니다.
+  다른 리뷰어가 요청을 맡을 수 있게 합니다. 요청을 맡은 사람만 맡기를 해제할 수 있으며, 요청이 아직 대기 상태일 때만 가능합니다.
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation, run)`은
   `run`에 기록하며(기록하지 않으려면 `Run::unwatched()`), 맡은 사람을 인가하고, 기록된 Artifact/eval 범위와 선언을 다시 열고,
   요청에 재사용 키가 있을 때만 등록된 Human 도구를 호출하기 전에 fingerprint를 확인합니다.

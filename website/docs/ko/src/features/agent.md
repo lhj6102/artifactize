@@ -417,7 +417,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 가짜 제공자는 요청된 모델에 대해 제공자의 전송 형식으로 답을 `text/event-stream`으로
 스트리밍합니다. `openai`에서는 `response.completed` 이벤트 하나면 충분합니다.
-이 가짜 제공자는 GREEN 스키마가 `{"verdict":"GREEN"}`을 받아들이는 리뷰를 통과시킵니다.
+이 가짜 제공자는 `{"verdict":"GREEN"}`만 돌려줘도 GREEN 스키마를 충족하는 리뷰를 통과시킵니다.
 `pass_schema`가 다른 필드를 요구하면, 가짜 제공자의 `text` 응답에
 그에 맞는 올바른 값을 넣으세요. 그렇지 않으면 검증이 복구를 일으키고, 그래도
 잘못되면 `INVALID_RESULT`가 됩니다.

@@ -95,9 +95,7 @@ Artifact를 보는 방법이므로, 도구의 설명이나 스키마만 바꿔�
 바뀔 때 다시 리뷰하게 하려면 관련 파일을 fingerprint에 포함하세요.
 
 실행형 eval은 그 대상과 그것이 의존하는 모든 Artifact에
-fingerprint가 있을 때만 키를 가집니다. 생략하면 폴더와 파일 Artifact에는
-그런 kind의 basis Artifact를 포함해 artifactsum이 주어지고, graph Artifact는 언제나
-구조적 그래프 fingerprint를 줍니다. 폴더나 파일 Artifact가
+fingerprint가 있을 때만 키를 가집니다. 생략하면 폴더와 파일 Artifact에는(그런 kind의 basis Artifact 포함) artifactsum이 적용되고, graph Artifact에는 언제나 구조적 그래프 fingerprint가 적용됩니다. 폴더나 파일 Artifact가
 `fingerprint = false`를 선언하면 그 eval은 재사용되지 않으며, 모든 `verify`가 그것을
 다시 리뷰합니다. 강제하지 않은 READY Runtime/Agent eval이라면 `status`가 실행 이유에서
 재사용이 꺼진 대상이나 의존성을 알려 줍니다. READY Human eval에는 리뷰어가 맡고 제출하기를 기다리는 요청이라는 이유가 나오고, 강제 실행한 eval, 막힌 eval, 대기 중인 eval에는 각각 실행, 관문, 대기 이유가 나옵니다.

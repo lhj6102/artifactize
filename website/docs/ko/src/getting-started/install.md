@@ -13,7 +13,7 @@ Linux(정적 링크, x86_64와 aarch64), macOS(Apple
 [Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D)에도 게시됩니다.
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE)으로 공개된 오픈 소스입니다.
 
-v1 전까지는 Linux 빌드가 릴리스의 관문입니다. macOS와 Windows 압축 파일, 그리고
+v1 전까지는 Linux 빌드가 성공해야 릴리스할 수 있습니다. macOS와 Windows 압축 파일, 그리고
 데스크톱 앱은 빌드되는 대로 첨부됩니다.
 
 ## 사전 요구 사항 {#prerequisites}
