@@ -105,7 +105,7 @@ notes = { description = "Print the review notes of {artifactName}.", builtin = "
 ```
 
 내장 도구는 `builtin`과 `args`, 선택 항목인 `description`을 받습니다. 종류는 도구에 따라
-정해집니다. `open`과 `graph`는 실행하는 종류이고, 나머지는 출력을 보여 주는 종류입니다.
+정해집니다. `open`과 `graph`는 프로그램 실행용이고, 나머지는 출력 표시용입니다.
 
 명령 도구는 고른 프로그램을 실행합니다. `description`, `kind`, `command`, `args`는
 필수 항목이며, `kind`는 `"launch"`나 `"output"`입니다. `timeout_ms`(1–2147483647)는

@@ -46,8 +46,8 @@ artifactize verify --all --wait
 ```
 
 세 결과 모두 GREEN이고 종료 코드는 0(성공)이어야 합니다. 출력에는
-저장된 Run의 이름이 `run-Abc123` 같은 식별자로 나옵니다. 다음 명령의 `RUN_ID`를
-그 글자 그대로가 아니라 **화면에 출력된 식별자**로 바꾸세요.
+저장된 Run의 이름이 `run-Abc123` 같은 식별자로 나옵니다. 다음 명령에서는 `RUN_ID`를
+그대로 입력하지 말고 **화면에 출력된 Run ID**를 넣으세요.
 
 ```sh
 artifactize run show RUN_ID

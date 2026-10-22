@@ -79,7 +79,7 @@ Agent는 `inspect_checker`를, 사람은 `source_checker`를 쓸 수 있습니�
 `{"content":[{"type":"text","text":"The required headings are present."}]}` 같은
 JSON 콘텐츠 객체 하나를 출력합니다.
 `plain` 명령은 선언된 스키마 속성을 별도의 argv
-항목으로 치환하고, 크기가 제한된 stdout을 텍스트로 돌려줍니다. Human 명령은 자유 인자를 받지 않으므로,
+항목으로 치환하고, 크기가 제한된 stdout을 텍스트로 돌려줍니다. Human 명령에는 실행할 때 임의의 인자를 추가로 넘길 수 없으므로,
 출력을 수집하는 `output` 방식이나 애플리케이션을 실행하는 `launch` 방식 중 하나로 선언하세요. 전체 프로토콜, 범위, 제한은
 [Agent 도구](agent.md)와 [Human 도구](human.md)를 보세요.
 

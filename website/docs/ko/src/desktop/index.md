@@ -194,10 +194,10 @@ Detail이 열립니다. 그 아래에는 이 Artifact의 eval과 판정(클릭�
 Artifact의 Tool log에 쌓여 Detail을 다시 열면 보입니다. 실행 기록은 앱이 실행되는 동안
 그 Tool log에 남습니다. 그래프의 노드에는 도구 버튼이 없습니다.
 
-eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 시간과 토큰(`k`나 `M` 단위), 사용한 모델,
-또는 재사용으로 아낀 것, 지시문,
-결과(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록), 그리고 있으면
-**Execution options**, **Execution metadata**, **Fingerprint**가 나옵니다.
+eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 시간과 토큰(`k`나 `M` 단위)과 사용한 모델,
+또는 재사용으로 절약한 시간과 토큰, 지시문,
+결과(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록)가 나옵니다. 관련 정보가 있으면
+**Execution options**, **Execution metadata**, **Fingerprint**도 함께 표시합니다.
 Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 재사용할 결과를
 보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact나 Human이 아닌 eval의 Summary에서
 `t`로 보이거나 숨깁니다. 로그가 있는 eval은 칩 아래에서
