@@ -134,7 +134,7 @@ artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
 
-`verify --wait`는 stderr에 Run ID를 알리고, Run이 끝날 때까지 기다린 다음 eval마다 결과를
+`verify --wait`는 stderr에 Run ID를 알리고, Run이 끝날 때까지 대기한 다음 eval마다 결과를
 출력하고 Run의 [종료 코드](#command-reference)로 종료합니다. Run 자체의 진단(최대 64 KiB)과
 Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 [runtime-relations 예제](../getting-started/examples.md)에서 GREEN, RED, 막힌 eval을 나란히
@@ -233,7 +233,7 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 `verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 이은 목록을 받습니다.
 목록에 있는 종류의 eval은 결과를 재사용만 할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
 있는 그 재사용 키의 완료된 기록이나, 설정되어 있다면 [리뷰 저장소](review-store.md)에 있는
-기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 부르거나 Human 요청을 만들지 않으며, 같은 재사용 키로 진행 중인 리뷰가 있어도 끝나기를 기다리지 않습니다.
+기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 부르거나 Human 요청을 만들지 않으며, 같은 재사용 키로 진행 중인 리뷰가 있어도 그 리뷰가 끝날 때까지 대기하지 않습니다.
 강제로 실행하는 eval은 캐시 결과를 읽지 않으므로, 목록에 있는 종류에 `--force`를 주면 절대 실행되지
 않습니다. 목록에 없는 종류는 평소처럼 실행합니다. CI에서
 `artifactize verify --all --wait --reuse-only agent,human`을 쓰면 테스트는 실행하고 리뷰는
@@ -275,7 +275,7 @@ status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검
 | `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족됨 | eval이 모두 `PASS`이고 의존하는 Artifact도 충족됨 |
 | `RED` | 현재 재사용 키에 맞는 RED 결과가 있음 | eval 중 하나가 `RED` |
 | `BLOCKED` | 게이트가 RED | eval 중 하나가 `BLOCKED` |
-| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 기다리는 중 |
+| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 대기 중 |
 | `WAITING_HUMAN` | 사람의 처리가 필요한 Human 요청이 있음 | — |
 | `DEFERRED` | 사람의 처리가 필요한 미룬 승인 요청이 있음 | eval 중 하나가 `DEFERRED` |
 | `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL` | eval 중 하나가 `PROVISIONAL` |

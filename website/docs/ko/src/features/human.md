@@ -10,8 +10,8 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 다른 Human eval은 이 조건에 들어가지 않습니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
-검사가 준비되면 artifactize는 사람의 결정을 기다리는 작업을 **WAITING_HUMAN 요청**으로
-저장합니다. 사람을 기다리는 동안에는 Run의 `--jobs` 실행 자리도, `--max-executions` 예산도
+검사가 준비되면 artifactize는 사람의 결정이 필요한 작업을 **WAITING_HUMAN 요청**으로
+저장합니다. 사람의 결정을 대기하는 동안에는 Run의 `--jobs` 실행 자리도, `--max-executions` 예산도
 쓰지 않으며, 그 예산이 0이어도 마찬가지입니다. 기본 모드에서는 Human 승인이 제출될 때까지 시간
 제한 없이 Run이 대기하며, 승인이 제출되면 그 승인에 의존하는 검사가 같은 Run 안에서 이어서 실행됩니다. 진행
 상황을 지켜보거나 터미널을 닫아도 승인이나 거부가 제출되지는 않습니다. 제출, 지켜보기, 직접 취소는
@@ -51,7 +51,7 @@ artifactize review [REQUEST_ID]
 있습니다.
 
 [Run 종료 코드](../cli/index.md#command-reference)로 지켜보기 중단, 직접 취소, 빠진 리뷰 의무를
-구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하거나 기다리지 않습니다. CI에서는
+구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하지 않고 결과를 대기하지도 않습니다. CI에서는
 Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면 [실행되지 않습니다](../cli/index.md#reuse-only).
 
 `request list`와 `request show`의 필드, Run 요약은 [레퍼런스](tools/human.md#in-a-review)에
@@ -76,7 +76,7 @@ fingerprint가 필요하므로 `fingerprint = false`면 재사용하지 않습�
 끝나고 Review에서 사라집니다. 이렇게 끝나는 규칙, 합류, Run이 끝난 뒤의 승인 제출은
 [Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
 
-승인이 반려될 때 그 결과에 의존하는 많은 작업을 다시 해야 한다면, 승인이 끝날 때까지 기다리도록 게이트를 직접 지정하세요.
+승인이 반려될 때 그 결과에 의존하는 많은 작업을 다시 해야 한다면, 승인이 끝날 때까지 그 작업을 막도록 게이트를 직접 지정하세요.
 
 ```toml
 [evals.release]
@@ -109,7 +109,7 @@ notes = { description = "Print the review notes of {artifactName}.", builtin = "
 
 명령 도구는 고른 프로그램을 실행합니다. `description`, `kind`, `command`, `args`는
 필수 항목이며, `kind`는 `"launch"`나 `"output"`입니다. `timeout_ms`(1–2147483647)는
-선택 항목입니다. `input_schema`, 자유 호출 인자, `protocol`, `execution_paths`,
+선택 항목입니다. `input_schema`, 호출할 때 임의로 넘기는 인자, `protocol`, `execution_paths`,
 `metadata`, `script` 래퍼는 받지 않습니다. 설명은 `{artifactName}`을 포함해 Agent 설명 규칙을
 따릅니다.
 

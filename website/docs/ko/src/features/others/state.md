@@ -62,7 +62,7 @@ Codex sign-in storage /work/project/.state/auth is inside the git work tree /wor
 끝날 때까지 대기하며, 실행 시작 횟수나 백엔드 자리를 쓰지 않습니다. 합류한 요청도 같은 GREEN, RED, ERROR를
 받으며, ERROR는 이후 Run을 위해 남겨 두지 않습니다. 첫 번째 Runtime이나 Agent 리뷰가
 취소되거나 끝나지 못하면, 대기 중이던 Run이 직접 실행하고 나머지는 그 실행에 합류합니다. Human
-승인은 다시 시작하지 않습니다. 승인을 요청한 Run이 취소되거나 멈추면, 그 승인과 이를 기다리던
+승인은 다시 시작하지 않습니다. 승인을 요청한 Run이 취소되거나 멈추면, 그 승인과 그 결과를 대기하던
 요청이 모두 ERROR로 끝나고 새 `verify`가 다시 요청합니다. 대기 중이던 Run을 취소해도 첫 번째
 Run은 취소되지 않습니다. `--force`는 항상 실행을 따로 합니다. 진행 중인 리뷰는 원격
 저장소를 통해 공유하지 않으며, 이를 지원하는 설정도 없습니다.
@@ -113,7 +113,7 @@ slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 Q
 표시되고, 자리가 비면 Run의 [스케줄링 순서](../run.md#verify-and-runs)대로 대기 중인 요청을
 실행합니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 runtime eval,
 Human 요청, 다른 백엔드는 계속 실행됩니다. [eval mutex 태그](../declarations.md#eval-mutex-tags)는
-자리를 차지하지 않고 충돌하는 eval을 따로 늦춥니다. `run cancel RUN_ID`는 그 Run에서 기다리던
+자리를 차지하지 않고 충돌하는 eval을 따로 늦춥니다. `run cancel RUN_ID`는 그 Run에서 대기 중이던
 요청을 ERROR(`CANCELLED`)로 끝내고 그 자리를 비웁니다. `verify --wait`를 중단해도 지켜보기만 멈추며 Run은 계속 실행됩니다.
 
 [백엔드를 멈추는](../agent.md#stopping-a-backend) 실패가 나면, 그 Run에서 대기 중이던 요청은 그
