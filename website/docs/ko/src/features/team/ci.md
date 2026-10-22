@@ -15,7 +15,7 @@ Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않�
 
 개발자는 사람이 자리를 비운 동안 자동 검사를 먼저 마치려고 `--defer-human`을 쓸 수 있으며,
 `--speculate`를 함께 쓸 수도 있습니다. SIGNOFFS_PENDING(종료 코드 5), DEFERRED 승인,
-PROVISIONAL 기계 결과는 승인이 아닙니다. CI의
+PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙니다. CI의
 `--reuse-only agent,human` 게이트를 유지하세요. 빠진 승인은 실행되지 않고
 INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 없습니다.
 사람이 GREEN을 제출하면 CI는 바뀌지 않은 자동 검사 결과와 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. 그냥 verify가 접수된 것을 CI 성공으로 취급하지 마세요.

@@ -97,7 +97,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 자기 선행 조건, 즉 같은 Artifact의 다른 기계 검사 eval이 GREEN이 되고 이를 막는 게이트가 없다는
 조건을 충족하는 즉시 보냅니다. 그때 다른 기계 검사 작업이 아직 실행 중일 수 있으니, 최종 상태를
 리뷰하려면 그 작업이 끝날 때까지 기다리세요. 요청은 DEFERRED, 그에 의존하는 결과는 PROVISIONAL로 표시됩니다. 둘 다 실제 승인이
-아닙니다. `gate = "blocking"`은 엄격한 Human 게이트를 유지합니다. 다른 의무가 모두 통과하면
+아닙니다. `gate = "blocking"`은 엄격한 Human 게이트를 유지합니다. 나머지 검증 요건을 모두 충족하면
 Run은 SIGNOFFS_PENDING(종료 코드 5)으로 끝나며, 이는 **승인만 남았다**는 뜻입니다. 그 승인이
 제출되기를 기다리지는 않습니다. 나중에 제출하면 요청이 바뀔 뿐, 지난 Run의 판정은 바뀌지
 않습니다. 새 verify는 바뀌지 않은 잠정 기계 검사 결과를 재사용합니다. 승인이 GREEN이면
@@ -179,8 +179,8 @@ artifactize --repo PROJECT config check --json
 ```
 
 `status`는 `verify`와 같은 선택자 중 하나를 받으며 기본은 `--all`이고, 같은 `--profile`,
-`--recursive`, `--force` 정책 옵션을 받습니다. 현재 Artifact와 eval의 [상태](../cli/index.md#status-states), 채워지지 않은 최종
-의무, `execute` / `reuse` / `wait` / `blocked` 동작을 알려 줍니다. 필요한 범위의 eval은 모두
+`--recursive`, `--force` 정책 옵션을 받습니다. 현재 Artifact와 eval의 [상태](../cli/index.md#status-states), 아직 충족하지 못한 최종
+검증 요건, `execute` / `reuse` / `wait` / `blocked` 동작을 알려 줍니다. 필요한 범위의 eval은 모두
 나오며, `selected`와 `included`로 직접 선택한 것과 실행에 포함된 것(재귀로 들어온 의존성)을
 구분합니다. JSON에서는 eval마다 [재사용 키](fingerprint.md#the-reuse-key)를 이루는 값도
 보여 줍니다. `evalDefHash`, 대상의 `fingerprint`, `fingerprints`(eval이 의존하는 각

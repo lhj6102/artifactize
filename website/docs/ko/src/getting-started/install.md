@@ -166,8 +166,8 @@ artifactize --version   # in a new terminal
 
 **스마트 앱 컨트롤.** 설치 스크립트가 쓰는 릴리스 zip은 코드 서명이 되어 있지 않습니다.
 스마트 앱 컨트롤이 켜진 컴퓨터에서는 이전 릴리스가 실행되었더라도 Windows가 새 릴리스를
-차단할 수 있습니다. Windows가 새 바이너리를 차단하면 스크립트는 무엇이든 교체하기 전에
-멈춥니다. 이전 `artifactize`와 `artifactize-tools`는 설치된 채로
+차단할 수 있습니다. Windows가 새 바이너리를 차단하면 스크립트는 기존 파일을 하나도
+교체하지 않고 멈춥니다. 이전 `artifactize`와 `artifactize-tools`는 설치된 채로
 실행할 수 있고, `Path`도 바뀌지 않습니다. 애플리케이션 제어
 정책을 우회하지 말고 Microsoft Store에서 설치하세요.
 

@@ -27,8 +27,8 @@ Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종�
 
 실제 입력만 선언하세요. eval은 자기 대상, 지시문이나 runtime 인자가 가리키는 Artifact, 그리고
 그 자식 Artifact를 모두 볼 수 있습니다. 예를 들어 지시문이 `Check {app} against {spec}.`인
-`app/review`는 `app`, `spec`, 그리고 `ui`가 `app`의 자식이라면 `app/ui`도 읽고 그 도구를 쓸
-수 있지만, `spec`의 eval이 참조하는 것까지는 닿지 않습니다. 도구 인자에 Artifact를 적는다고
+`app/review`는 `app`과 `spec`을 읽고 그 도구를 쓸 수 있습니다. `ui`가 `app`의 자식이라면
+`app/ui`도 마찬가지입니다. 하지만 `spec`의 eval이 참조하는 다른 Artifact에는 접근할 수 없습니다. 도구 인자에 Artifact를 적는다고
 입력이 늘어나지는 않습니다.
 
 eval이 읽을 수 있는 범위는 [재사용 키](fingerprint.md#the-reuse-key)가 포함하는 범위보다

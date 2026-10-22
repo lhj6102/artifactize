@@ -11,7 +11,7 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
-리뷰받는 조각 하나하나가 **Artifact**입니다. Artifact의 `index.artf`는 **eval**이라고
+리뷰받는 작업 단위 하나하나가 **Artifact**입니다. Artifact의 `index.artf`는 **eval**이라고
 부르는 검사들을 나열한 텍스트 설정 파일입니다. 이 파일은 읽기 쉬운 `key = value`
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
@@ -137,7 +137,7 @@ artifactize run show RUN_ID
 ```
 
 `claim`, `tool`, `submit`은 `--reviewer NAME`을 넘기지 않으면 내 사용자 이름(`$USER`)을 리뷰어로
-씁니다. `request unclaim REQUEST_ID`는 맡기를 해제합니다. `artifactize
+씁니다. `request unclaim REQUEST_ID`는 claim을 해제합니다. `artifactize
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
 지시문을 미리 보여 줍니다. Enter는 Detail을 열고, `c`는 명시적으로 요청을 맡으며, Tab은 도구로 초점을 옮기고
 Enter(또는 클릭)는 도구 하나를 바로 실행합니다. `g`/`r`은 GREEN/RED 입력 칸을 열고, Ctrl-S는

@@ -213,7 +213,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 이름 있는 일반 Artifact이므로 runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
 `verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이 없고, 자식 Artifact를 갖지 않으며,
 다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
-명령은 저장소 루트에서 실행되며, 그래프를 선언한다고 그 폴더의 소유자가 되지는 않습니다. 범위는
+명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위는
 `kind = "graph"`를 쓰고 선언 경로는 `.artf`입니다.
 
 `fingerprint`는 `false`나 빈 테이블이라도 선언하지 마세요. fingerprint는 항상 현재 추출한

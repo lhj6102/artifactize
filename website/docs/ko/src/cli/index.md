@@ -465,7 +465,7 @@ Your final response did not match the required schema: …
 
 ### 세션 요약 {#session-summary}
 
-`--summary`는 세션 파일만 읽어 대화에서 쓴 사용량과 도구 호출 등을 집계합니다. 턴(provider
+`--summary`는 세션 파일만 읽어 대화의 토큰 사용량과 도구 호출 수 등을 집계합니다. 턴(provider
 요청)마다의 토큰과 합계, 도구별 호출 수와 실패 수, follow-up, 백엔드, 모델, 시간 범위가
 나옵니다. 실패한 호출은 오류를 돌려줬거나, 예산이나 마감 시간이나 리뷰 종료 때문에 실행되지
 못한 호출입니다.
