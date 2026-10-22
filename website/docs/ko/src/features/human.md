@@ -66,7 +66,7 @@ Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면
 작업을 따로 빠르게 할 수 있습니다.
 
 미룬 승인에는 DEFERRED 표시가 붙지만, 리뷰어가 처리하는 방법은 일반 승인과 같습니다. `review`, monitor, 데스크톱,
-요청 목록에 WAITING_HUMAN 요청과 함께 나오고, 맡기, 도구, 해제, 제출도 똑같이 Human 권한을
+요청 목록에 WAITING_HUMAN 요청과 함께 나오고, 담당 지정, 도구, 해제, 제출도 똑같이 Human 권한을
 확인합니다. 막힌 승인은 사람에게 보여 주지 않습니다. Run이 어떻게 끝나는지(SIGNOFFS_PENDING,
 종료 코드 5)와 다음 verify가 결과를 어떻게 재사용하는지는
 [추측 실행과 미룬 승인](run.md#speculation-and-deferred-sign-offs)에 있습니다. 이 재사용에는

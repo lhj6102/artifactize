@@ -75,8 +75,8 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 
 Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 2 ERROR 또는
 취소, 4 INCOMPLETE, 5 SIGNOFFS_PENDING(승인만 남았다는 뜻이지 승인되었다는 뜻이 아님)입니다.
-옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 지켜보기를 멈추면
-130으로 종료하며, 지켜보기를 닫아도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING
+옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 진행 상황을 지켜보는
+명령을 멈추면 종료 코드 130으로 끝나며, 이 명령을 끝내도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING
 상태의 Run이 끝날 때까지 따라갑니다. 자체 시간 제한이 먼저 끝나면 현재 Run을 출력하고 3으로
 종료하며, Run은 계속 실행됩니다. 모든 명령은 사용법 오류(알 수 없는 옵션, 반복할 수 없는 옵션의 반복, 충돌하거나 빠진 옵션과 값)나 동작 오류가 나면 종료 코드 2로 끝납니다. 오류는 stderr에 텍스트로, 또는
 `--json`이면 stdout에 `{"error":"..."}`로 나옵니다(stdout을 프로토콜에만 쓰는 `mcp`는
@@ -197,7 +197,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. 준비된 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작
-한 번으로 칩니다. Human 대기, 맡기, 도구 실행은 시작 횟수를 쓰지 않습니다. fingerprint 준비와
+한 번으로 칩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수를 쓰지 않습니다. fingerprint 준비와
 재확인, 캐시 적중, 합류해서 대기 중인 요청도 쓰지 않습니다. 실행기 준비 초기에 실패하면 시작
 횟수를 쓰지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
 실패해도 그 시작은 쓴 것으로 치고 모델을 부르지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
@@ -207,7 +207,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 끝납니다. 시작하지 못한 요청 없이 딱 한도만큼 쓴 것은 오류가 아닙니다.
 
 Human 대기와 취소는 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)를
-따릅니다. 맡기, 도구, 승인은 [Human 가이드](../features/human.md)에서 다룹니다.
+따릅니다. 담당 지정, 도구, 승인은 [Human 가이드](../features/human.md)에서 다룹니다.
 
 선택 파일은 4 MiB 이하의 일반 파일이어야 하며, JSON 문자열 배열이나 한 줄에 앞뒤 공백을 뺀 ID
 하나씩을 담습니다(UTF-8 BOM과 CRLF도 됩니다). 중복을 빼기 전 기준으로 ID가 1–100000개여야
@@ -245,7 +245,7 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
   docs/review [run-Hq2b9X-4]: STALE — Not reused (--reuse-only agent): no cached or stored result, so it was not executed.
 ```
 
-이 eval에 의존하는 eval은 다른 증거가 없을 때와 똑같이 기다리거나 막힙니다. 예산을 다 썼을
+이 eval에 의존하는 eval도 다른 증거가 없을 때와 마찬가지로 대기 상태가 되거나 실행이 차단됩니다. 예산을 다 썼을
 때처럼, 다른 eval이 RED나 ERROR여도 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로 끝나며, 그
 종류들을 `reuseOnly`로 기록합니다. `status`는 이 플래그를 받지 않으며, 옵션 없는 `verify`가
 무엇을 할지 예측합니다.
@@ -396,8 +396,8 @@ ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄
 macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 없으면 `--reviewer NAME`을
 주세요. `--reviewer NAME`으로 동작마다 같은 리뷰어를 직접 지정할 수도 있습니다. 리뷰어 이름은
 계정 인증이 아니라 담당자를 구분하는 데 쓰이며, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 로컬 잠금을 겁니다. 요청을 맡은 사람만 도구를 실행하고,
-제출하고, 맡기를 해제할 수 있습니다. `request claim`은 맡기 정보를, `request unclaim`은 해제한
-맡기 정보를 출력합니다. 다른 리뷰어가 맡았거나 더 이상 대기 중이 아닌 요청의 맡기를 해제하려
+제출하고, 담당을 해제할 수 있습니다. `request claim`은 담당 정보를, `request unclaim`은 해제한
+담당 정보를 출력합니다. 다른 리뷰어가 맡았거나 더 이상 대기 중이 아닌 요청의 담당을 해제하려
 하면 종료 코드 2로 끝납니다. 도구 이름은 `<operation>_<artifactId>`이며 자유 인자를 받지 않습니다.
 텍스트 출력은 캡처한 텍스트나 실행 알림을 보여 주고, `--json`은 도구 결과를 출력합니다. 도구가
 실패하면 2로 종료하며 판정을 만들어 내지 않습니다.
@@ -414,8 +414,8 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 �
 `verify`를 다시 실행하세요. eval의 선언이나 범위가 바뀌었으면 제출을 종료 코드 2로 거부하고
 요청은 계속 대기합니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
 
-이미 맡은 요청에 같은 리뷰어로 `request claim`을 다시 실행해도 기존 맡기 정보를 돌려주고 0으로
-종료하므로, 맡기는 반복해도 안전합니다. 제출은 한 번만 받으며, 다시 제출하면 종료 코드 2로 끝납니다. 명령이 중단되는 등 제출
+이미 맡은 요청에 같은 리뷰어로 `request claim`을 다시 실행해도 기존 담당 정보를 돌려주고 0으로
+종료하므로, 담당 지정은 반복해도 안전합니다. 제출은 한 번만 받으며, 다시 제출하면 종료 코드 2로 끝납니다. 명령이 중단되는 등 제출
 결과가 불확실하면 다시 제출하기 전에 `request show`로 요청을 확인하세요.
 
 ## Agent 세션 {#agent-sessions}

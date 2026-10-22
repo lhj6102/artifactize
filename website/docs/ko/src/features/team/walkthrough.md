@@ -193,8 +193,8 @@ export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
 artifactize verify --all --wait
 ```
 
-새 터미널에서 위와 같이 `WALK`를 복사한 경로로 설정하고, 같은 프로젝트로 들어가
-Alice의 같은 상태를 고르세요. `REQUEST_ID`는 `request list`가 출력한
+새 터미널에서도 앞에서 복사한 경로로 `WALK`를 설정하고, 같은 프로젝트 디렉터리로 이동한 뒤
+Alice가 쓰는 상태 디렉터리를 지정하세요. `REQUEST_ID`는 `request list`가 출력한
 대기 중인 요청의 식별자로 바꾸세요.
 
 ```sh

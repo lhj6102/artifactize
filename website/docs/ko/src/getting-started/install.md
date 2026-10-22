@@ -31,7 +31,7 @@ Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라�
 나오면, 그 도구를 설치하거나 도구가 설치된 디렉터리를 `PATH`에 추가한 뒤 계속하세요.
 
 Rust 툴체인은 `cargo install`에만 필요합니다.
-[rustup](https://rustup.rs)으로 받은 최신 안정 Rust와 C 컴파일러가 필요합니다(SQLite를 소스에서 빌드합니다).
+[rustup](https://rustup.rs)으로 받은 Rust 최신 안정 버전과 C 컴파일러가 필요합니다(SQLite를 소스에서 빌드합니다).
 
 ## 설치 {#install}
 

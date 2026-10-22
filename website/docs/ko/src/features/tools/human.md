@@ -48,7 +48,7 @@ Human 도구는 리뷰어가 리뷰하는 동안 실행할 수 있는 것입니�
 
 데스크톱 앱은 리뷰가 아니어도 Artifact의 Human 도구를 [Detail](../../desktop/index.md#detail)에
 보여 줍니다. 거기서 클릭하면 그 브랜치 워크트리의 지금 상태에서 도구를 바로 실행합니다.
-요청도, 맡기도, fingerprint 확인도 없고, 증거로 기록되는 것도 없습니다. 출력 줄은 그 Artifact의
+요청도, 담당 지정도, fingerprint 확인도 없고, 증거로 기록되는 것도 없습니다. 출력 줄은 그 Artifact의
 Tool log로 가며, 이 로그는 앱이 실행되는 동안 남습니다.
 
 ## 리뷰 중에 {#in-a-review}
@@ -62,7 +62,7 @@ FINGERPRINT_RECHECK_FAILED)로 끝내며, 다음 `verify`가 다시 요청합니
 
 `request list`는 저장된 요청을 모두(대기 중, 맡음, 확정됨) 보여 주며, `--run`으로 Run 하나만
 볼 수도 있습니다. 요청, Run, eval ID와 상태, 리뷰어가 나옵니다. `--json`과 `request show`에는
-저장된 이력, 현재 맡기 정보, 재사용한 실행, eval 정의(정의를 기록하기 전에 저장된 Run이면 null)가
+저장된 이력, 현재 담당 정보, 재사용한 실행, eval 정의(정의를 기록하기 전에 저장된 Run이면 null)가
 더해집니다. 저장소가 필요 없고 아무것도 실행하지 않습니다. `run show`와 `verify --wait --json`은
 Run을 요약합니다. 상태별 개수, 종류별로 실행하고 재사용한 요청, 걸린 시간, 시도, 사용량이
 나옵니다. provider가 보고하지 않은 사용량은 0으로 보여 주지 않습니다.

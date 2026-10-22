@@ -137,7 +137,7 @@ artifactize run show RUN_ID
 ```
 
 `claim`, `tool`, `submit`은 `--reviewer NAME`을 넘기지 않으면 내 사용자 이름(`$USER`)을 리뷰어로
-씁니다. `request unclaim REQUEST_ID`는 맡기를 해제합니다. `artifactize
+씁니다. `request unclaim REQUEST_ID`는 담당을 해제합니다. `artifactize
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
 지시문을 미리 보여 줍니다. Enter는 Detail을 열고, `c`는 명시적으로 요청을 맡으며, Tab은 도구로 초점을 옮기고
 Enter(또는 클릭)는 도구 하나를 바로 실행합니다. `g`/`r`은 GREEN/RED 입력 칸을 열고, Ctrl-S는
@@ -161,7 +161,7 @@ Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 �
 선택하고, `?`는 도움말을 보여 주며, `q`는 종료합니다. Detail은 Agent 대화, Runtime
 로그, 또는 eval을 실행하기 전에 충족해야 할 조건을 보여 줍니다. 살펴보기만으로는 소유자 명령이 실행되지 않습니다.
 
-Human 요청 맡기, 도구, 판정 양식은
+Human 요청 담당 지정, 도구, 판정 양식은
 [Human 리뷰와 monitor](../tui/index.md#monitor)를 보세요.
 
 ## 팀 리뷰 저장소 (선택) {#team-review-store-optional}
