@@ -90,9 +90,9 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 ## eval 의존성 {#eval-dependencies}
 
-의존성은 그 Artifact의 모든 Eval이 아니라 입력을 쓰는 Eval에 속합니다. `payload.instruction`이나
-runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키며, 그 Eval은 입력을 판단하는
-Eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 쓰임을 확인하는 eval이 `{name}`으로
+의존성은 그 Artifact의 모든 eval이 아니라 입력을 쓰는 eval에 속합니다. `payload.instruction`이나
+runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키며, 그 eval은 입력을 판단하는
+eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 쓰임을 확인하는 eval이 `{name}`으로
 가리키면 됩니다. 그 밖의 방식으로는 의존성이 추가되지 않습니다.
 
 자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact의 파일에는 자식 폴더가 포함되므로,
@@ -112,21 +112,21 @@ payload.instruction = "Run {e2e-tests} against {app}."
 
 `e2e-tests` Artifact의 eval은 테스트 코드 자체를 평가합니다. 테스트 코드의 스타일과, 기능 문서를
 얼마나 충실히 따르는지를 봅니다. 테스트 코드 자체를 리뷰할 때는 애플리케이션 테스트를 실행하지 않습니다. 상관없는
-`app` 스타일 Eval은 지시문에서 테스트 코드 리뷰를 참조하지 않았다면, 그 리뷰가 끝나지 않아도
+`app` 스타일 eval은 지시문에서 테스트 코드 리뷰를 참조하지 않았다면, 그 리뷰가 끝나지 않아도
 실행할 수 있습니다.
 
-모든 Eval은 입력의 판정과 상관없이 자기 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
-효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 Eval이 늦어지고,
+모든 eval은 입력의 판정과 상관없이 자기 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
+효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval이 늦어지고,
 입력 리뷰가 RED면 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 증거가
 모두 있어야 합니다.
 
-게이트는 Eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. Eval의 실행 게이트는 참조한 Artifact의 Eval과, 자기
-Artifact에서 가장 가까운 자식 Artifact의 Eval입니다. 게이트가 RED나 BLOCKED면 그 Eval도 막히므로,
-막힘은 이 eval 게이트를 따라 퍼집니다. 자식의 Eval이 RED면 부모의 모든 Eval이 막힙니다. Eval이
+게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
+하나라도 막혔으면 BLOCKED를 보여 줍니다. eval의 실행 게이트는 참조한 Artifact의 eval과, 자기
+Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로,
+막힘은 이 eval 게이트를 따라 퍼집니다. 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
 없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
 실행을 막지는 않습니다. 다만 그것들은 여전히 최종 승인 의무에 속하므로, 그 Artifact를 쓰는
-Eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
+eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
 
 eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들은 **순환**을 이룹니다. 부모를
 참조하는 자식도 부모와 순환을 이룹니다. 순환 안의 eval은 서로의 게이트가 되지 않습니다. 예를 들어
@@ -143,19 +143,19 @@ eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 무엇이 기다리고 어떤 추측 실행 작업을 취소할지도 이 게이트로 정해집니다.
 
-BLOCKED인 Eval의 사유에는 `Dependency verdict RED: core/tests`처럼 막힘의 뿌리가 된 RED Eval이
-나오며, 아직 실행 중이었을 뿐인 Eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 ERROR도
-막으며 `Dependency ERROR: …`로 나옵니다. `blockedBy`에도 같은 Eval이 나오고, 확정된 Run에는
-그 Eval이 모두 나옵니다.
+BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 막힘의 뿌리가 된 RED eval이
+나오며, 아직 실행 중이었을 뿐인 eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 ERROR도
+막으며 `Dependency ERROR: …`로 나옵니다. `blockedBy`에도 같은 eval이 나오고, 확정된 Run에는
+그 eval이 모두 나옵니다.
 
 ### Human 승인 {#human-sign-offs}
 
-Human Eval은 의존성 게이트에 더해, 자기 Artifact의 Human이 아닌 다른 Eval이 모두 GREEN일 때만
-시작합니다. 사람은 기계 검사 Eval을 이미 통과한 것만 승인합니다. 그전까지는 기다립니다. 그
-기계 검사 eval 중 하나라도 RED나 ERROR면 Human Eval은 시작하지 않고 BLOCKED가 되며, 사유에
-`Sibling machine eval RED: spec/review`처럼 그 Eval이 나옵니다. 같은 Artifact의 다른 Human
-Eval에는 이 조건을 적용하지 않으므로, 두 승인 요청이 서로의 완료를 기다리는 일은 없습니다. 옵션 없는 `verify`,
-`--speculate`, `--defer-human` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 기계 검사 Eval이
+Human eval은 의존성 게이트에 더해, 자기 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
+시작합니다. 사람은 기계 검사 eval을 이미 통과한 것만 승인합니다. 그전까지는 기다립니다. 그
+기계 검사 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
+`Sibling machine eval RED: spec/review`처럼 그 eval이 나옵니다. 같은 Artifact의 다른 Human
+eval에는 이 조건을 적용하지 않으므로, 두 승인 요청은 서로의 완료를 선행 조건으로 삼지 않습니다. 옵션 없는 `verify`,
+`--speculate`, `--defer-human` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 기계 검사 eval이
 GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}

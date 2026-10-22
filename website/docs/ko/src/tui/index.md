@@ -24,7 +24,7 @@ ID가 없으면 상태 안의 모든 저장소에서 검색이 찾은 요청을
 그 원래 요청을 엽니다.
 
 검색은 자유 텍스트와 `key:value` 조건이며, 모든 조건이 일치해야 합니다. 일반 단어는
-대소문자 구분 없이 저장소, eval, 요청 ID, 맡은 사람의 일부에 일치합니다. 키는 조건을
+저장소 경로, eval, 요청 ID, 맡은 사람 이름에서 대소문자를 구분하지 않고 부분 문자열로 찾습니다. 키는 조건을
 한 필드로 제한합니다. 공백이 있는 값은 따옴표로 감싸고(`repo:"/work/my repo"`), 단어를
 글자 그대로 검색하려면 따옴표로 감싸세요(`"type:style"`).
 
@@ -293,7 +293,7 @@ Run의 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)도
 
 eval이 무엇을 기다리는지는 [eval 의존성](../features/artifact.md#eval-dependencies)을 따릅니다.
 행은 그 게이트를 충족되지 않은 Artifact 최대 둘로 묶고, 그다음 `+N`을 붙이며, 각
-Artifact의 완료 상태를 함께 보여 줍니다. 기다리는 대상이 모두 다른 작업을 기다리는 중이면 그 원인도 한 단계 더 보여 줍니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
+Artifact의 완료 상태를 함께 보여 줍니다. 대기 중인 대상도 모두 다른 작업 때문에 실행이 보류된 상태라면 그 원인도 한 단계 더 보여 줍니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
 순환 안의 Artifact는 `↻ peer` 표시를 공유합니다.
 그래프가 허용하는 한 상위가 먼저 오며, Artifact 순환 상대와 eval은
 이름순으로 정렬됩니다.

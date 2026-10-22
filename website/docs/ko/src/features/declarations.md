@@ -425,7 +425,7 @@ artifactize 전용 환경 변수는 전달하지 않습니다. 호출한 쪽의 
 환경은 [재사용 키](fingerprint.md#the-reuse-key)에 들어가지 않으므로 도구를 업그레이드해도 캐시
 결과가 무효가 되지 않습니다. 도구 버전이 바뀔 때 fingerprint도 바뀌어야 한다면, fingerprint 계산에 도구 버전을 넣으세요.
 
-runtime 마감 시간은 기본 30,000ms이고 1부터 2,147,483,647ms까지 받습니다. 결과에는 stdout과
+runtime의 제한 시간은 기본 30,000ms이며, 1~2,147,483,647ms로 설정할 수 있습니다. 결과에는 stdout과
 stderr의 앞부분 128 KiB씩, 잘렸는지 표시, 종료 상태, 걸린 시간이 남습니다. 텍스트는 UTF-8로
 읽고(잘못된 바이트는 대체), 터미널 색상 코드와 탭, LF, CR을 뺀 ASCII 제어 문자를 지웁니다(DEL은
 남깁니다). 전체 스트림은 Run 출력에 남으며, `request logs`와 MCP `request_logs`가 끝부분, 범위,

@@ -220,8 +220,8 @@ force는 여전히 직접 선택한 실행 가능한 eval에만 적용됩니다.
 RED 결과 이후 무엇이 바뀌었는지 설명하고 `changes: {sinceRunId, files?, dependencies?,
 summary}`를 알려 줍니다. 텍스트로는 `Fingerprint changed since Run RUN_ID: ...` 줄이며, 예를
 들어 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`입니다. `files`는
-대상 자신의 파일을 `path`(바뀜), `+path`(추가), `-path`(삭제)로 보여 주고, `dependencies`는
-fingerprint가 바뀐 자식과 이름으로 참조한 Artifact를 `name`, `+name`, `-name`으로 보여
+대상 Artifact에 속한 파일의 변경을 `path`(바뀜), `+path`(추가), `-path`(삭제)로 보여 주고, `dependencies`는
+fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `name`, `+name`, `-name`으로 보여
 줍니다. 스크립트 fingerprint나 파일 목록이 빠진 매니페스트는 대상에 대해
 `fingerprint changed`나 `inputs changed`만 알릴 수 있습니다. 그 eval 정의가 캐시된 적이 없거나
 강제한 eval이면 설명이 나오지 않습니다. 강제하지 않은 READY Runtime/Agent eval에 키가 없으면,
@@ -230,7 +230,7 @@ fingerprint가 바뀐 자식과 이름으로 참조한 Artifact를 `name`, `+nam
 기다리는 eval은 그 게이트나 대기 상태를 설명합니다.
 
 기다리는 eval의 `blockedBy`에는 결과가 아직 없는 eval의 ID가, BLOCKED인 eval의 `blockedBy`에는 사유와 마찬가지로 실행을 막은 RED eval의 ID가 나옵니다. Detail은 이 게이트를 입력 Artifact별로 `Waits for`
-아래에 묶어 보여 주며, `w`를 누르면 대기 중인 Eval이 나옵니다.
+아래에 묶어 보여 주며, `w`를 누르면 대기 중인 eval이 나옵니다.
 
 나중에 Human이 승인을 제출하면 기다리던 Run이 확정될 수 있습니다. `run show`는 저장된 검증과
 요청을 그대로 보여 줍니다. monitor는 저장된 정의와 증거에 지금의 요청 상태(나중에 제출한 Human

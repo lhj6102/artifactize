@@ -43,8 +43,8 @@
 루트입니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
 그 도구를 쓸 수 있습니다. 절대 경로, 경로를 거슬러 올라가는 구성 요소, 심볼릭 링크는 받지
 않습니다. 논리적 경로는 UTF-16 코드 단위 4096개까지이고, ASCII 제어 문자, 백슬래시, 콜론, 빈
-구성 요소나 `.`/`..` 구성 요소는 거부합니다. `.` 하나만 쓰면 list/glob/grep에서 파일 Artifact의
-가상 루트로 받아들이고, 그 밖의 점 구성 요소는 거부합니다. 도구는 자기 eval 범위의 Artifact에만
+구성 요소나 `.`/`..` 구성 요소는 거부합니다. `.` 하나는 list/glob/grep에서 파일 Artifact의
+가상 루트로 해석하고, 그 밖의 점 구성 요소는 거부합니다. 도구는 자기 eval 범위의 Artifact에만
 닿고, 다른 eval의 범위에는 닿지 않습니다. 파일은 읽기 전용으로 열고, 심볼릭 링크는 따라가지
 않으며, 특수 파일은 읽을 수 없습니다. `list`는 `symlink`/`other` 항목을 보여 줄 수 있지만,
 검색에서는 건너뜁니다. Windows에서는 junction과 그 밖의 reparse point도 링크로 쳐서 대상으로 쓸 수
@@ -175,7 +175,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 [프로그램 찾기](../others/platforms.md#program-lookup) 규칙을 따릅니다. JSON 프로토콜 argv는
 범위가 정해진 기존 Artifact 참조를 쓸 수 있지만, eval이 허용한 범위 밖의 Artifact를 더할 수는
 없습니다. plain argv는 스키마 속성 자리 표시자만 씁니다. 명령 자체는 치환하지 않습니다. 명령은
-자기 Artifact 폴더(파일 Artifact라면 들어 있는 폴더)에서 작성자 자신의 환경
+그 Artifact 폴더(파일 Artifact라면 그 파일이 있는 폴더)에서 작성자의 환경
 ([runtime 환경](../declarations.md#runtime-execution): 실제 홈, 호출한 쪽의 `ARTIFACTIZE_*` 변수는
 없음)으로 실행됩니다. 호출마다 별도의 임시·출력 폴더를 주고, 호출이 끝나면 그 폴더를 지웁니다. 기본 마감
 시간은 120000ms(1–2147483647)이며, 호출이 정상으로 끝나든, 취소되거나 시간이 초과되든 명령과 그 명령이 시작한 것을 멈춥니다.

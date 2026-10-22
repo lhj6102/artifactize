@@ -231,7 +231,7 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 ## 재사용만 하기 {#reuse-only}
 
 `verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 이은 목록을 받습니다.
-목록에 있는 종류의 Eval은 결과를 재사용만 할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
+목록에 있는 종류의 eval은 결과를 재사용만 할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
 있는 그 재사용 키의 완료된 기록이나, 설정되어 있다면 [리뷰 저장소](review-store.md)에 있는
 기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 부르거나 Human 요청을 만들지 않으며, 같은 재사용 키로 진행 중인 리뷰가 있어도 끝나기를 기다리지 않습니다.
 강제한 eval은 캐시 결과를 읽지 않으므로, 목록에 있는 종류에 `--force`를 주면 절대 실행되지
@@ -252,8 +252,8 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 
 ## 의존성 선택과 출력 {#dependency-selection-and-output}
 
-`artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 Eval을 선택합니다. 필요한 의존성
-범위의 Eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
+`artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 eval을 선택합니다. 필요한 의존성
+범위의 eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
 합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 둘러싼 폴더와 자동으로
 관계를 맺지 않습니다.
 

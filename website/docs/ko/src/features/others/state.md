@@ -64,8 +64,8 @@ Codex sign-in storage /work/project/.state/auth is inside the git work tree /wor
 취소되거나 끝나지 못하면, 기다리던 Run이 직접 실행하고 나머지는 그 실행에 합류합니다. Human
 승인은 다시 시작하지 않습니다. 승인을 요청한 Run이 취소되거나 멈추면, 그 승인과 이를 기다리던
 요청이 모두 ERROR로 끝나고 새 `verify`가 다시 요청합니다. 기다리던 Run을 취소해도 첫 번째
-Run은 취소되지 않습니다. `--force`는 항상 자기 실행을 따로 합니다. 실행 중인 리뷰는 원격
-저장소로 나누지 않으며, 이를 위한 설정은 없습니다.
+Run은 취소되지 않습니다. `--force`는 항상 자기 실행을 따로 합니다. 진행 중인 리뷰는 원격
+저장소를 통해 공유하지 않으며, 이를 지원하는 설정도 없습니다.
 
 ## 읽을 수 없는 기록 {#unreadable-records}
 
