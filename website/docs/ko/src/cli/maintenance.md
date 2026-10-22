@@ -52,8 +52,8 @@ Run도 건너뜁니다. `--older-than`은 Run이 끝난 시각과 비교하며, 
 `skippedRuns`를 포함합니다. `prune`은 `--older-than`과 상관없이
 [Agent 세션 저장소](../features/others/state.md#agent-sessions)도 크기 한도까지 줄입니다.
 지운 세션은 `removedSessions`에, `--dry-run`이면 `wouldRemoveSessions`에 나옵니다. 미리
-보기는 실행 중인 `session send`가 어떤 세션을 쓰는지 모르므로, 실제 정리에서는 이보다 적게
-지울 수 있습니다.
+보기에서는 실행 중인 `session send`가 쓰는 세션을 확인할 수 없으므로, 실제 정리에서는 이보다
+적게 지울 수 있습니다.
 
 ## Doctor, models, prune {#doctor-models-and-prune}
 

@@ -20,7 +20,7 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 
 `--recursive`는 선택한 Artifact의 다른 검사를 포함해 그 묶음의 모든 검사를 설정 순서대로
 선택합니다. 서로 고리처럼 의존하는 대상은 **순환으로 묶인 대상**이며 함께 포함됩니다. `--all`은
-이미 모든 검사와, 검사가 없는 대상의 의무까지 선택합니다. 파일 Artifact 선택자는 그 파일의 eval만
+이미 모든 검사를 선택하며, 검사가 없는 대상도 최종 검증 요건에 포함합니다. 파일 Artifact 선택자는 그 파일의 eval만
 선택하며, 둘러싼 폴더의 eval은 선택하지 않습니다.
 
 예를 들어 `code/tests`가 `plan`에 의존하고, `plan`에는 사람의 승인 `plan/signoff`가 필요하다고 가정합니다. `verify --eval code/tests`는 테스트를 선택하지만, 그 승인이 아직 유효하지 않으면 GREEN으로

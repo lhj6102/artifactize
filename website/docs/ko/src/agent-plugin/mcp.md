@@ -16,7 +16,7 @@
 1. 모든 도구가 받는, 절대 경로 폴더인 호출의 `project` 인자
 2. 서버를 시작할 때 준 `--repo PATH`
 3. 호스트의 첫 로컬 [MCP root](https://modelcontextprotocol.io/specification/2025-06-18/client/roots).
-   첫 호출 때 물으며(답을 최대 10초 기다림), 호스트의 root가 바뀐 뒤 다시 묻습니다.
+   첫 호출 때 물으며(답은 최대 10초 대기), 호스트의 root가 바뀐 뒤 다시 묻습니다.
 4. 호스트가 root를 주지 않으면 서버를 시작한 디렉터리. 단, 그 디렉터리가 서버를 실행한
    플러그인의 폴더라면 제외합니다.
 
@@ -64,7 +64,7 @@ codex mcp add artifactize -- artifactize mcp
 codex mcp get artifactize
 ```
 
-Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명령도
+등록한 명령은 Codex의 MCP 설정에 기록됩니다. 전역으로 등록한 명령도
 의도한 프로젝트 디렉터리에서 시작해야 합니다. 호스트가 프로젝트에서
 실행될 수 없다면, 스킬 디렉터리를 가리키지 말고
 `artifactize --repo PATH mcp`로 프로젝트별 명령을 등록하세요.
@@ -98,8 +98,8 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
 ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
 
-`request_key`는 ASCII 문자/숫자/`._:-` 1–128개입니다. 같은 저장소 + 같은 키는
-편집이나 완료 뒤에도 같은 시도를 돌려줍니다. 새 시도에는
+`request_key`는 ASCII 문자/숫자/`._:-` 1–128개입니다. 같은 저장소에서 같은 키로
+다시 요청하면, 프로젝트를 고쳤거나 Run이 끝난 뒤에도 기존 시도를 돌려줍니다. 새 시도에는
 새 키를 쓰거나 키를 쓰지 마세요. 키를 생략하면 언제나 새 Run을 만들며, 기존
 eval 결과 재사용은 유지됩니다.
 

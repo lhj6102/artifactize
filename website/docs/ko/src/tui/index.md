@@ -55,8 +55,8 @@ kind, status, `is:` 값입니다. 후보가 하나면 Tab으로 그 후보를 �
 처음의 대기 중인 Human뿐 아니라 모든 요청 kind를 포함합니다. 한 페이지에는 요청 100개가 나오며,
 PgDn은 더 오래된 것을, PgUp은 더 새로운 것을 보여 줍니다.
 
-목록에는 대기 중인 승인마다 항목 하나가 있습니다. 이후의 Run이 대기 중인
-Human 실행에 합류시킨 팔로워들은 원래 요청으로 한 번만 나열되며, monitor에서처럼 Human 도구와 소유자 스키마는
+목록에는 대기 중인 승인마다 항목 하나가 있습니다. 이후 Run의 요청이 대기 중인
+Human 실행에 합류하면 원래 요청만 한 번 나열되며, monitor에서처럼 Human 도구와 소유자 스키마는
 원래 요청에 기록되고, 맡기, 도구 실행, 제출도 모두 원래 요청을 기준으로 처리합니다. 검색 대상은 원래 요청이므로,
 팔로워가 속한 저장소를 검색 조건으로 써도 그 요청을 찾을 수 없습니다. 원래 요청이 더 이상 대기 중이 아니면 팔로워도 별도 항목으로 나열됩니다. Human 요청은 아래의 Human Detail을 열며, 확정된 뒤에는 읽기 전용입니다. 그 밖의
 요청은 읽기 전용 Detail을 엽니다. Run 안에서 그 eval에 대한 monitor의 섹션,
@@ -273,7 +273,7 @@ eval의 GREEN 결과를 재사용할 수 있어도, 그 Artifact는 통과 0개(
 | `✓` done | GREEN, 실행했거나 재사용함 |
 | `✗` / `!` failed | RED / ERROR |
 | `◐` / `?` / `·` in progress | 실행 중, Human 대기(맡은 사람과 함께), 실행 허가 대기, 백엔드 자리나 명시적 `--jobs` 상한 대기, 또는 실행에 합류 중 |
-| `…` waits for X | 실행 중인 Run이 X의 필요한 eval이 GREEN이 되기를 기다림 |
+| `…` waits for X | 실행 중인 Run에서 X에 필요한 eval이 GREEN이 될 때까지 대기 |
 | `⊘` blocked by X | 상위의 RED나 막힌 eval 때문에 실행할 수 없음 |
 | `○` / `$` / `-` not run | 끝난 Run이 X를 기다렸거나, 증거가 오래되었거나, eval을 리뷰하지 않았음(`○`). 예산이 바닥났음(`$`). eval에 요청도 저장된 증거도 없음(`-`) |
 
@@ -291,7 +291,7 @@ Run의 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)도
 **SIGNOFFS_PENDING** Run은 그 승인만 남았다는 뜻입니다. 나중에 승인을 제출해도 Run 종료 때 기록한 판정은 바뀌지 않고 현재 요청에만 반영되며, 엄격한 Human
 게이트의 승인 조건도 그대로입니다.
 
-eval이 무엇을 기다리는지는 [eval 의존성](../features/artifact.md#eval-dependencies)을 따릅니다.
+eval의 대기 조건은 [eval 의존성](../features/artifact.md#eval-dependencies) 규칙에 따라 정해집니다.
 행은 그 게이트를 충족되지 않은 Artifact 최대 둘로 묶고, 그다음 `+N`을 붙이며, 각
 Artifact의 완료 상태를 함께 보여 줍니다. 대기 중인 대상도 모두 다른 작업 때문에 실행이 보류된 상태라면 그 원인도 한 단계 더 보여 줍니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
 순환 안의 Artifact는 `↻ peer` 표시를 공유합니다.
