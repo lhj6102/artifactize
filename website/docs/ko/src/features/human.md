@@ -10,14 +10,14 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 다른 Human eval은 이 조건에 들어가지 않습니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
-검사가 준비되면 artifactize는 사람의 결정을 기다리는 작업인 **WAITING_HUMAN 요청**을
+검사가 준비되면 artifactize는 사람의 결정을 대기 중인 작업인 **WAITING_HUMAN 요청**을
 저장합니다. 사람을 기다리는 동안에는 Run의 `--jobs` 실행 자리도, `--max-executions` 예산도
 쓰지 않으며, 그 예산이 0이어도 마찬가지입니다. 기본 모드에서는 Human 승인이 제출될 때까지 시간
 제한 없이 Run이 대기하며, 승인이 제출되면 그 승인에 의존하는 검사가 같은 Run 안에서 이어서 실행됩니다. 터미널을
 지켜보거나 닫는다고 결정이 내려지지는 않습니다. 제출, 지켜보기, 직접 취소는
 [Run 수명 주기](run.md#submit-observe-and-cancel)에서 설명합니다.
 
-**리뷰어 claim**은 리뷰하는 사람에게 요청을 맡겨 둡니다. 이와 별개로, 다른 체크아웃에서
+리뷰어가 요청을 **claim**하면 그 리뷰어가 담당자로 지정됩니다. 이와 별개로, 다른 체크아웃에서
 온 것이라도 다른 Run이 같은 입력과 프로필로 같은 승인을 필요로 하면 다시 요청하지 않고 대기 중인
 리뷰에 합류합니다. 이렇게 합류한 요청을 **팔로워**라고 하며, 팔로워에서 한 Human 작업은 원래
 요청과 그 저장소에서 처리됩니다. `--force`는 합류하지 않고 새 승인을 요청하지만, 이때도 사람이 먼저
@@ -51,8 +51,8 @@ artifactize review [REQUEST_ID]
 있습니다.
 
 [Run 종료 코드](../cli/index.md#command-reference)로 지켜보기 중단, 직접 취소, 빠진 리뷰 의무를
-구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하거나 기다리지 않습니다. CI에
-맞게 Human eval은 승인을 재사용하거나 [실행되지 않습니다](../cli/index.md#reuse-only).
+구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하거나 기다리지 않습니다. CI에서는
+Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면 [실행되지 않습니다](../cli/index.md#reuse-only).
 
 `request list`와 `request show`의 필드, Run 요약은 [레퍼런스](tools/human.md#in-a-review)에
 있습니다.

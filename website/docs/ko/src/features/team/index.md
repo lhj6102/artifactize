@@ -28,8 +28,8 @@ sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/ar
 
 두 경로를 호스트에 맞게 바꾸세요. 원본은 서버의 실제
 `review-store.sqlite`여야 합니다. 프로젝트 체크아웃 밖에 있는, 이미 존재하고 쓸 수 있는 백업 디렉터리를 고르세요
-(이 예에서는 `/srv/backups`). `-readonly`는 원본 경로를 잘못 입력했을 때
-비어 있는 새 원본 데이터베이스가 몰래 만들어지는 것을 막습니다.
+(이 예에서는 `/srv/backups`). `-readonly`를 쓰면 원본 경로를 잘못 입력해도
+그 위치에 빈 데이터베이스가 새로 생기지 않습니다.
 
 서버와 클라이언트는 함께 업그레이드하세요. 0.9의 재사용 키 v2는 더 오래된 기록과 일치하지 않으므로, Human 승인을 포함한
 모든 실행형 eval에 새 리뷰가 한 번씩 필요합니다. 전체 레퍼런스는 [리뷰 저장소 서버](../../cli/review-store.md#review-store-server)를
@@ -63,7 +63,7 @@ HTTPS 연결을 받아 로컬로 전달하는 서버입니다. **터널**은 대
 주소가 로컬이므로 여기서는 일반 HTTP가 허용됩니다. 네트워크 트래픽은
 암호화된 SSH 터널을 통해 전송됩니다. 저장소의 일반 HTTP 포트를 네트워크에 직접 노출하지 마세요.
 터널이 없으면 클라이언트는 TLS 리버스 프록시가 제공하는 HTTPS 주소를 요구합니다.
-SSH의 평소 호스트 확인과 인증을 따르고, 우회하지 마세요.
+SSH의 표준 호스트 확인과 인증 절차를 따르고, 이를 우회하지 마세요.
 
 ## 로그인하고 결과 공유하기 {#sign-in-and-share-results}
 
@@ -83,7 +83,7 @@ artifactize remote status
 - `verify`는 저장소의 결과를 재사용하고 자기 GREEN/RED 결과를 게시합니다.
 - `status`는 원격 재사용을 예측합니다.
 - `request submit`은 Human 승인을 게시합니다.
-- `remote push`는 저장소에 닿을 수 없던 동안 만든 결과를 보냅니다.
+- `remote push`는 저장소에 연결할 수 없던 동안 만든 결과를 보냅니다.
 
 전체 레퍼런스는 [원격 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)를 보세요.
 

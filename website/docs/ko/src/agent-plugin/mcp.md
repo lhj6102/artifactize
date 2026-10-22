@@ -68,7 +68,7 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 의도한 프로젝트 디렉터리에서 시작해야 합니다. 호스트가 프로젝트에서
 실행될 수 없다면, 스킬 디렉터리를 가리키지 말고
 `artifactize --repo PATH mcp`로 프로젝트별 명령을 등록하세요.
-평소의 호스트 권한/인증은 그대로 적용되며, 우회 플래그는 필요 없습니다.
+일반 호스트 권한/인증은 그대로 적용되며, 우회 플래그는 필요 없습니다.
 
 등록은 도구를 제공할 뿐, [Hey Arti 스킬](hey-arti.md)은 제공하지 않습니다.
 
@@ -78,7 +78,7 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 | --- | --- | --- |
 | `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | Run을 제출. Run 상태 요약이며 승인 결과가 아님 |
 | `verify_status` | `run` | 저장된 상태, 개수, 경과 초, `next_check` |
-| `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 닿을 때까지 기다림. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
+| `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 도달할 때까지 대기. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
 | `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 따라감. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 호출이 끝나면 간단한 상태 요약을 반환함 |
 | `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 발견 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
 | `verify_cancel` | `run` | 명시적 취소 확인. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
@@ -93,14 +93,14 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 `{"kind":"eval","evalId":"library/tests"}`,
 `{"kind":"artifacts","artifactIds":["library","consumer"]}`,
 `{"kind":"evals","evalIds":["library/tests","consumer/review"]}`입니다.
-배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 평소의 CLI 의존성/재사용 기본값이 적용되며,
+배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 일반 CLI 의존성/재사용 기본값이 적용되며,
 전송 방식별 스케줄링이나 수명 주기 설정은 없습니다. 이 객체는
 CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
 ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
 
 `request_key`는 ASCII 문자/숫자/`._:-` 1–128개입니다. 같은 저장소 + 같은 키는
 편집이나 완료 뒤에도 같은 시도를 돌려줍니다. 새 시도에는
-새 키를 쓰거나 키를 쓰지 마세요. 키를 생략하면 언제나 새 Run을 만들며, 평소의
+새 키를 쓰거나 키를 쓰지 마세요. 키를 생략하면 언제나 새 Run을 만들며, 기존
 eval 결과 재사용은 유지됩니다.
 
 동시 실행은 기본으로 무제한입니다. READY eval은 모두 시작할 수 있으며,
@@ -109,7 +109,7 @@ Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 �
 Run에는 `jobs` 필드가 없습니다.
 
 두 모드 인자는 기본값이 false이며 CLI의 `--speculate`, `--defer-human`과 뜻이 같습니다.
-`speculate`는 상위 판단 전에 요청된 하위 작업을 평소의 스케줄링 한도 안에서
+`speculate`는 상위 판단 전에 요청된 하위 작업을 일반 스케줄링 한도 안에서
 시작하며, 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. `defer_human`은
 잠정적인 진행을 허용하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
 돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
@@ -185,7 +185,7 @@ cursor는 저장된 증거가 그대로인 동안 같은 도구와 같은 인자
 
 자격 증명 로그인/로그아웃, Human 맡기/제출/맡기 해제, prune, 캐시 제거,
 원격 푸시, 대화형 monitor/review, 저장소 서버, 프로젝트 도구 실행,
-Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전히 CLI와 평소의 Human 리뷰 인터페이스입니다.
+Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전히 CLI와 일반 Human 리뷰 인터페이스입니다.
 
 
 ## 스트리밍과 집중 진단 {#streaming-and-focused-diagnosis}
@@ -202,7 +202,7 @@ Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전
   남은 발견 사항은 그 `next_cursor`를 따라 `verify_result`로 읽으세요.
 
 연결할 때마다 기준 상태와 이미 완료된 eval을 다시 보내므로, 필요하면
-연결 사이에서 요청 ID와 상태로 중복을 제거하세요. 호출이 제한 시간에 닿아 반환될 때
+연결 사이에서 요청 ID와 상태로 중복을 제거하세요. 호출이 제한 시간에 도달해 반환될 때
 Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았다고 보장할 수는 없습니다.
 최종 검증 결과는 `verify_result`로 확인하세요. 진행 토큰이 없으면
 같은 호출이 기다리기만 하고 알림은 보내지 않습니다. 진행 알림을 쓰지 않는 클라이언트에서는
@@ -239,8 +239,8 @@ Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았�
 [runtime 실행 레퍼런스](../features/declarations.md#runtime-execution)에 있습니다.
 
 `config_graph`는 훅을 호출하지 않고 정적 정의, eval, 순환 상대, 입력→소비자
-관계를 찾습니다. Artifact/eval을 고르면 그 필요 범위가 나오며,
-`impact:true`를 더하면 닿을 수 있는 하위 소비자와 그 필요 입력이
+관계를 찾습니다. Artifact나 eval을 고르면 그 대상의 의존성 범위가 나오며,
+`impact:true`를 더하면 영향을 받을 수 있는 하위 Artifact와 각각에 필요한 입력도
 포함됩니다. 이는 구조상 영향을 받을 수 있는 대상을 넓게 포함한
 것일 뿐, 포함된 모든 eval의 재사용 키가 실제로 바뀌었다는 뜻은 아닙니다. 실제 재사용 결정은 `status`로 확인하세요.
 

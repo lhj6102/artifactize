@@ -110,7 +110,7 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로 리뷰의 뒤�
 |---|---|---|
 | `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부됨: HTTP 401/403, API 키 없음, Codex 로그인 없음, 만료된 인증 파일 | 안 함. 백엔드를 멈춤 |
 | `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 안 함. 백엔드를 멈춤 |
-| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나 `Retry-After`가 마감 시간에 닿음 | 함 |
+| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나 `Retry-After`가 마감 시간에 도달함 | 함 |
 | `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림. 요청한 재시도 대기가 너무 길어도 이 분류를 유지 | 출력 전이면 함 |
 | `TIMEOUT` | 리뷰의 `timeout_ms` 마감 시간 | 안 함 |
 | `CANCELLED` | Run을 직접 취소함(`run cancel` 또는 MCP `verify_cancel`) | 안 함 |
@@ -131,7 +131,7 @@ Ctrl-C는 `verify --wait`의 지켜보기만 멈출 뿐, 지켜보던 Agent 리�
 
 `AUTHENTICATION`이나 `QUOTA` 실패는 같은 백엔드의 모든 리뷰에서 똑같이 반복되므로, 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다. 그 Run에서 뒤이어 오는 같은 백엔드의 리뷰는 시작하지 않고
 `BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 빈 자리를
-기다리던 리뷰([백엔드 수용량](others/state.md#backend-capacity))도 같은 방식으로 기다리기를
+대기 중이던 리뷰([백엔드 수용량](others/state.md#backend-capacity))도 같은 방식으로 대기를
 멈추며, 멈춘 백엔드는 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
 재사용할 수 있는 결과는 여전히 재사용하며, 다른 백엔드는 그대로 진행합니다. Run은 멈춘 백엔드를
 `stoppedBackends`(`verify --wait --json`과 `run show`)에 남기고, `verify`는 이렇게 출력합니다.

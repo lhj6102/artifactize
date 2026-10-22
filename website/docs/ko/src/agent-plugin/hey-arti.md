@@ -160,8 +160,8 @@ Arti가 각 결과를 다루는 방식:
 
 ## 사람에게 넘기고 물러나기 {#hand-off-to-the-person-then-yield}
 
-Arti는 `request_list`/`request_show`로 대기 중인 요청을 알려 주고,
-기준과 `artifactize review REQUEST_ID`(또는 평소의 리뷰 인터페이스)를 줍니다.
+Arti는 `request_list`/`request_show`로 대기 중인 요청과 그 리뷰 기준을 알려 주고,
+`artifactize review REQUEST_ID`(또는 평소 쓰는 리뷰 인터페이스)로 요청을 여는 방법을 안내합니다.
 Human 리뷰를 맡거나, 승인하거나, 제출하는 일은 결코 없습니다. 독립적인 작업을 계속하거나, 저장소, Run, 대기 중인 요청, 다음 할 일을 짧게 정리해 사용자에게 넘긴 뒤, 나중에 같은 Run을 확인하며 다시 이어 갑니다. 물러나는 것은 취소가 아니며,
 연결 유지용 턴이나 폴링 루프는 필요 없습니다.
 

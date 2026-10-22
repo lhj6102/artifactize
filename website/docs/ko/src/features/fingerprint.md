@@ -67,7 +67,7 @@ fingerprint를 어떻게 정하느냐에 달렸습니다. fingerprint 스크립�
 Artifact의 파일이면 무엇이든 읽을 수 있습니다. 그래서 eval의 기준이 바뀌거나, 대상이나 포함한
 Artifact의 이름, 종류, fingerprint가 바뀌면 그 eval을 다시 실행합니다.
 
-Artifact 이름과 종류(`folder`, `file`, `graph`)는 대상과 포함한 모든 의존성에 대해 키에
+키에는 대상 Artifact와 포함된 모든 의존성의 이름과 종류(`folder`, `file`, `graph`)가
 들어갑니다. 폴더가 파일로 바뀌면 스크립트가 같은 fingerprint를 내더라도 이전 결과를 재사용하지
 않습니다. 실제 경로는 키에 들어가지 않으므로, 이름, 종류, fingerprint가 같은 복사본은
 재사용합니다. 포함한 Artifact의 이름을 바꾸면 키가 바뀝니다. 대상 이름이 달라도 평가 기준과

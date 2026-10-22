@@ -95,8 +95,8 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0,
 ```
 
 Bob의 체크아웃은 Artifact 이름, kind, 내용이 같아 fingerprint와
-eval 정의 해시가 같고, 따라서 재사용 키도 일치합니다. 경로는 상관없습니다. `status`는 Bob의 상태를 바꾸지 않고
-저장소에 물었으며, 저장소는 이 조회를 사용으로 셉니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
+eval 정의 해시가 같고, 따라서 재사용 키도 일치합니다. 경로는 상관없습니다. `status`는 Bob의 로컬 상태를 바꾸지 않고
+저장소를 조회했으며, 저장소는 이 조회를 사용으로 셉니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
 `artifactize cache list`가 저장소를 출처로 하는 그 기록을 보여 줍니다. 이후의
 `verify`는 저장소가 없어도 그 기록을 로컬에서 재사용합니다.
 
@@ -121,7 +121,7 @@ Pushed 2, already in the store 0, skipped 0.
 ```
 
 `guide/terms`의 재사용 키에 자식 `usage`가 들어 있으므로, 다시 리뷰한 Artifact는 `usage`와 `guide`뿐입니다.
-`off` 대신 저장소에 닿을 수 없는 경우였다면 `verify`는 한 번 경고하고
+`off` 대신 저장소에 연결할 수 없는 경우였다면 `verify`는 한 번 경고하고
 같은 방식으로 로컬에서 리뷰했을 것입니다. `remote push`는 각 키에 대해 저장소에
 아직 없는 가장 최근 로컬 결과를 보냅니다. 미러는 결코 보내지 않으며, 토큰에 `human`이 없으면
 Human 승인은 건너뜁니다.
@@ -152,14 +152,14 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0,
 ```
 
 CI는 아무것도 실행하지 않았습니다. 읽기 토큰으로는 결과를 게시할 수 없으므로, CI에서 만든 결과는 CI의 로컬 상태에만 남습니다. 서버를 멈추고 새 상태 디렉터리로
-같은 명령을 실행해 보세요. 저장소에 닿을 수 없으므로 CI는 로컬에서 리뷰하고 계속 통과합니다.
+같은 명령을 실행해 보세요. 저장소에 연결할 수 없으므로 CI는 로컬에서 리뷰하고 계속 통과합니다.
 
 ```text
 Remote store is unreachable: Connection refused (os error 111); continuing without the remote review store.
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
-반면 거부된 토큰은 작업을 종료 코드 2로 실패시킵니다.
+반면 토큰이 거부되면 작업은 종료 코드 2로 실패합니다.
 
 ## Human 승인 {#human-sign-offs}
 

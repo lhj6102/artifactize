@@ -39,7 +39,7 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기, 백엔드 자리
 대기, 합류한 실행 대기, 직접 정한 Run의 작업 상한 대기를 뜻할 수 있습니다. 백엔드 자리를
-기다리는 요청은 Run의 `--jobs` 수에 들어가지 않습니다.
+대기 중인 요청은 Run의 `--jobs` 수에 들어가지 않습니다.
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
 
@@ -49,7 +49,7 @@ Run은 요청한 쪽과 상관없이 artifactize가 관리합니다. 옵션 없�
 보여 줍니다. 터미널을 닫거나 지켜보는 명령을 중단해도 지켜보기만 멈출 뿐 Run은 계속 실행됩니다. 취소를 요청하는
 것은 `run cancel RUN_ID`뿐입니다. 요청이 기록되면 바로 0으로 종료하고, 그 뒤 Run은 새 작업을
 시작하지 않고, 실행 중인 작업을 멈추고, 이미 저장된 결과는 남긴 채 ERROR/CANCELLED로 끝납니다.
-작업이 정말 멈췄는지 확인하려면 `run watch RUN_ID`나 `run show RUN_ID`로 이어서 보세요. 이 Run이 다른 Run의 실행에 합류했다면 그 원래 실행은 멈추지 않습니다. 미룬 승인을 포함해 아직 기다리던 승인도
+작업이 정말 멈췄는지 확인하려면 `run watch RUN_ID`나 `run show RUN_ID`로 이어서 보세요. 이 Run이 다른 Run의 실행에 합류했다면 그 원래 실행은 멈추지 않습니다. 미룬 승인을 포함해 아직 대기 중이던 승인도
 ERROR로 끝나고, 다른 Run이 거기에 합류한 요청도 마찬가지이며, 다음 `verify`가 다시 요청합니다.
 이는 Run이 실행 중일 때만 해당합니다. 이미 SIGNOFFS_PENDING으로 끝난 Run은 끝난 것이므로
 취소해도 바뀌는 것이 없고, 미룬 승인은 계속 남아 있습니다. 프로세스가 죽은 작업은
@@ -225,15 +225,15 @@ summary}`를 알려 줍니다. 텍스트로는 `Fingerprint changed since Run RU
 fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `name`, `+name`, `-name`으로 보여
 줍니다. 스크립트 fingerprint나 파일 목록이 빠진 매니페스트는 대상에 대해
 `fingerprint changed`나 `inputs changed`만 알릴 수 있습니다. 그 eval 정의가 캐시된 적이 없거나
-강제한 eval이면 설명이 나오지 않습니다. 강제하지 않은 READY Runtime/Agent eval에 키가 없으면,
+강제로 실행한 eval이면 설명이 나오지 않습니다. 강제로 실행하지 않은 READY Runtime/Agent eval에 키가 없으면,
 실행 사유에 `fingerprint = false`를 선언한 대상이나 의존성이 나옵니다. READY인 Human eval은 키가
 없어도 "Record a request awaiting a Human claim and submission"이라고 나옵니다. 막혔거나
 대기 중인 eval에는 실행을 막는 게이트나 대기 사유가 표시됩니다.
 
-기다리는 eval의 `blockedBy`에는 결과가 아직 없는 eval의 ID가, BLOCKED인 eval의 `blockedBy`에는 사유와 마찬가지로 실행을 막은 RED eval의 ID가 나옵니다. Detail은 이 게이트를 입력 Artifact별로 `Waits for`
+대기 중인 eval의 `blockedBy`에는 결과가 아직 없는 eval의 ID가, BLOCKED인 eval의 `blockedBy`에는 사유와 마찬가지로 실행을 막은 RED eval의 ID가 나옵니다. Detail은 이 게이트를 입력 Artifact별로 `Waits for`
 아래에 묶어 보여 주며, `w`를 누르면 대기 중인 eval이 나옵니다.
 
-나중에 Human이 승인을 제출하면 기다리던 Run이 확정될 수 있습니다. `run show`는 저장된 검증과
+나중에 Human이 승인을 제출하면 대기 중이던 Run이 확정될 수 있습니다. `run show`는 저장된 검증과
 요청을 그대로 보여 줍니다. monitor는 저장된 정의와 증거에 지금의 요청 상태(나중에 제출한 Human
 승인 포함)를 더해 트리를 만듭니다. 맨 위 줄은 **Run이 끝났을 때의 SATISFIED / NOT
 SATISFIED**를 유지하며, 흐린 `*`는 그 뒤로 상태가 바뀐 행을 표시합니다. 파일이 바뀌었다는 뜻은
