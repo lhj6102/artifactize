@@ -220,7 +220,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`로 선언한 Artifact에는 eval을 둘 수 없고 그 Artifact의 리뷰도 필요 없지만, 의존하는 Artifact에 필요한 리뷰까지 면제되지는 않습니다.
 `basis = true`가 없고 eval도 없는 그래프는 eval 없는 다른 Artifact처럼 UNREVIEWED로 남습니다.
 소스 파일을 만들지 않으며, 소스 파일이 없어도 됩니다. 일반 Artifact의 순환도 허용하며, 그래프
-fingerprint는 그래프 Artifact 자신의 선언도 포함합니다.
+Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
 [그래프 fingerprint](fingerprint.md#graph-fingerprint)는 소스 파일 내용이나 eval 실행 옵션이
 아니라 구조에 관한 정의가 바뀔 때 바뀝니다. 차이 비교, 이력, 자동 리뷰 정책은 없습니다. 결과는

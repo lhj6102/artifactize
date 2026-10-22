@@ -75,7 +75,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 
 Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 2 ERROR 또는
 취소, 4 INCOMPLETE, 5 SIGNOFFS_PENDING(승인만 남았다는 뜻이지 승인되었다는 뜻이 아님)입니다.
-옵션 없는 `verify`는 검증 결과가 아니라 접수되면 0으로 종료합니다. Ctrl-C로 지켜보기를 멈추면
+옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 지켜보기를 멈추면
 130으로 종료하며, 지켜보기를 닫아도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING
 상태의 Run이 끝날 때까지 따라갑니다. 자체 시간 제한이 먼저 끝나면 현재 Run을 출력하고 3으로
 종료하며, Run은 계속 실행됩니다. 모든 명령은 사용법 오류(알 수 없는 옵션, 반복할 수 없는 옵션의 반복, 충돌하거나 빠진 옵션과 값)나 동작 오류가 나면 종료 코드 2로 끝납니다. 오류는 stderr에 텍스트로, 또는
@@ -460,8 +460,8 @@ Your final response did not match the required schema: …
 ```
 
 텍스트 출력은 도구 결과를 2000자에서 자르고 reasoning은 요약만 보여 줍니다. `--json`은
-`{"reference", "file", "events"}`를 출력합니다. 참조, 세션 파일, 그리고 저장된 이벤트를
-그대로 담으며, 이것이 대화를 다시 재생할 수 있는 내보내기이기도 합니다.
+`{"reference", "file", "events"}`를 출력합니다. 이 JSON에는 참조, 세션 파일, 저장된
+이벤트 전체가 들어 있어 대화를 그대로 다시 재생할 수 있습니다.
 
 ### 세션 요약 {#session-summary}
 

@@ -65,7 +65,7 @@ eval은 대상 Artifact와, 대상과 직접 이어진 것에 의존합니다.
 artifactize는 그보다 더 멀리 연결을 따라가지 않습니다. 두 단계 떨어진 변경이 중요한지는
 fingerprint를 어떻게 정하느냐에 달렸습니다. fingerprint 스크립트는 인자에서 이름으로 가리킨
 Artifact의 파일이면 무엇이든 읽을 수 있습니다. 그래서 eval의 기준이 바뀌거나, 대상이나 포함한
-Artifact의 이름, 종류, fingerprint가 바뀌면 결과를 다시 리뷰합니다.
+Artifact의 이름, 종류, fingerprint가 바뀌면 그 eval을 다시 실행합니다.
 
 Artifact 이름과 종류(`folder`, `file`, `graph`)는 대상과 포함한 모든 의존성에 대해 키에
 들어갑니다. 폴더가 파일로 바뀌면 스크립트가 같은 fingerprint를 내더라도 이전 결과를 재사용하지

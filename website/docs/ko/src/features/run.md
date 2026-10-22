@@ -32,8 +32,10 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 
 READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본 상한이 없습니다**. 머신이 감당하기
 어려울 만큼 프로세스가 많아지는 등 한꺼번에 실행하는 것이 문제를 일으킬 때만 `--jobs N`(최소
-1)을 쓰세요. `--jobs`, 백엔드 한도, `--max-executions` 때문에 일부만 실행할 수 있으면 나머지는
-이유와 함께 QUEUED로 표시되고, 앞선 작업이 끝나는 대로 시작합니다. 다른 Run의 리뷰에 합류한 runtime이나 Agent 요청은 직접 지정한
+1)을 쓰세요. `--jobs`나 백엔드 한도 때문에 일부만 실행할 수 있으면 나머지는 이유와 함께 QUEUED로
+표시되고, 앞선 작업이 끝나는 대로 시작합니다. `--max-executions`는 다릅니다. Run이 시작하는 리뷰의
+총수를 제한하며, 다 쓰고 나면 남은 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 INCOMPLETE로
+끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 runtime이나 Agent 요청은 직접 지정한
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기, 백엔드 자리
 대기, 합류한 실행 대기, 직접 정한 Run의 작업 상한 대기를 뜻할 수 있습니다. 백엔드 자리를
@@ -110,8 +112,8 @@ DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED�
 fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`)로 끝나니 새
 승인을 받으려면 다시 verify하세요.
 
-`status`는 현재 미룬 대기와 잠정 결과를 표시하지만, 실행 예측은 엄격하게 합니다. 기본 옵션의 새
-verify는 여전히 Human 증거를 기다립니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING을 끝난
+`status`는 현재 미룬 대기와 잠정 결과를 표시하지만, 실행 예측은 엄격하게 합니다. 기본 옵션으로
+verify를 다시 실행하면 Human 증거가 확보될 때까지 대기합니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING을 끝난
 상태이면서 충족되지 않은 상태로 표시합니다.
 
 텍스트 출력은 요청마다 한 줄을 출력하며, 다른 요청의 실행에서 가져온 결과(fingerprint 적중이나

@@ -3,7 +3,7 @@
 명령과 경로는 모든 OS에 같은 방식으로 한 번만 선언하세요. artifactize는 그 선언을
 Linux(x86_64와 aarch64), macOS(Apple 실리콘과 Intel), Windows(x64)에서 실행하며, WSL 2에서는
 Linux 빌드가 실행됩니다. 리뷰하기 전에는 `artifactize tools check`가 프로그램을 찾을 수 없는
-도구를 알려 주고, 리뷰 중에 프로그램을 시작하지 못하면 eval은 RED가 아니라 ERROR가 됩니다. 각
+도구를 알려 주고, 리뷰 중에 Runtime eval의 프로그램을 시작하지 못하면 그 eval은 RED가 아니라 ERROR가 되고, 도구의 프로그램을 시작하지 못하면 도구 오류를 돌려주며 리뷰는 계속됩니다. 각
 OS의 설치 채널은 [설치](../../getting-started/install.md)에 있습니다. 이 페이지는 OS마다 다른
 점을 정리합니다.
 

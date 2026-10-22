@@ -65,7 +65,7 @@ artifactize review [REQUEST_ID]
 요청합니다. 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요. `--speculate`로 기계 검사
 작업을 따로 빠르게 할 수 있습니다.
 
-리뷰어는 미룬 승인도 DEFERRED 표시가 붙은 일반 승인과 같은 방식으로 처리합니다. `review`, monitor, 데스크톱,
+미룬 승인에는 DEFERRED 표시가 붙지만, 리뷰어가 처리하는 방법은 일반 승인과 같습니다. `review`, monitor, 데스크톱,
 요청 목록에 WAITING_HUMAN 요청과 함께 나오고, claim, 도구, 해제, 제출도 똑같이 Human 권한을
 확인합니다. 막힌 승인은 사람에게 보여 주지 않습니다. Run이 어떻게 끝나는지(SIGNOFFS_PENDING,
 종료 코드 5)와 다음 verify가 결과를 어떻게 재사용하는지는
@@ -107,9 +107,9 @@ notes = { description = "Print the review notes of {artifactName}.", builtin = "
 내장 도구는 `builtin`과 `args`, 선택 항목인 `description`을 받습니다. 종류는 도구에 따라
 정해집니다. `open`과 `graph`는 실행하는 종류이고, 나머지는 출력을 보여 주는 종류입니다.
 
-명령 도구는 고른 프로그램을 실행합니다. `description`, `kind = "launch"` 또는
-`kind = "output"`, `command`, `args`가 정확히 필요하고, 선택 항목으로 `timeout_ms`
-(1–2147483647)를 받습니다. `input_schema`, 자유 호출 인자, `protocol`, `execution_paths`,
+명령 도구는 고른 프로그램을 실행합니다. `description`, `kind`, `command`, `args`는
+필수 항목이며, `kind`는 `"launch"`나 `"output"`입니다. `timeout_ms`(1–2147483647)는
+선택 항목입니다. `input_schema`, 자유 호출 인자, `protocol`, `execution_paths`,
 `metadata`, `script` 래퍼는 받지 않습니다. 설명은 `{artifactName}`을 포함해 Agent 설명 규칙을
 따릅니다.
 

@@ -120,7 +120,7 @@ Would push 2, already in the store 0, skipped 0.
 Pushed 2, already in the store 0, skipped 0.
 ```
 
-다시 리뷰된 것은 `usage`와, `guide/terms` 키가 자식 `usage`를 포함하는 `guide`뿐입니다.
+`guide/terms`의 재사용 키에 자식 `usage`가 들어 있으므로, 다시 리뷰한 Artifact는 `usage`와 `guide`뿐입니다.
 `off` 대신 저장소에 닿을 수 없는 경우였다면 `verify`는 한 번 경고하고
 같은 방식으로 로컬에서 리뷰했을 것입니다. `remote push`는 각 키에 대해 저장소에
 아직 없는 가장 최근 로컬 결과를 보냅니다. 미러는 결코 보내지 않으며, 토큰에 `human`이 없으면

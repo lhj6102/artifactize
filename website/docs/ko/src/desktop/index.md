@@ -134,8 +134,8 @@ Detail이 열립니다. 저장된 검증과 충족되지 않은 의무, 요청 �
 [`artifactize status`](../features/run.md#status-and-static-graph)처럼 워크트리의 지금 상태를 스캔하고,
 Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는
 reused(모든 eval의 결과가 평가 없이 재사용됨), would run, waiting,
-blocked 중 하나로 색칠됩니다. Run의 Artifact처럼 노드에는 이름만 나오고, 접근성 이름이
-어느 쪽인지와 그 eval 중 몇 개가 실행될지를 알려 줍니다. 머리말은 언제 스캔했는지 알려 줍니다.
+blocked 중 하나로 색칠됩니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
+그 Artifact의 상태와 실행될 eval 수를 담습니다. 머리말은 언제 스캔했는지 알려 줍니다.
 다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, 그 브랜치의 Run이 끝날 때 다시 스캔합니다.
 **Structure and evaluation criteria**를 펼치면 전체 트리, 기준, 라벨 붙은
 관계를 텍스트로 볼 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
@@ -209,7 +209,7 @@ Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 �
 그 Run에 요청이 없습니다. 그 칩은 결과의 Summary, Human 컨트롤, Tool log 없이
 섹션을 읽기 전용으로 보여 줍니다.
 
-Agent log는 실시간으로 갱신됩니다. 초점이 있는 Agent 로그에서 ↑/↓ 또는 `j`/`k`는 행 단위로,
+Agent log는 실시간으로 갱신됩니다. 초점이 있는 Agent log에서 ↑/↓ 또는 `j`/`k`는 행 단위로,
 PgUp/PgDn은 페이지 단위로 이동하고, Home/End나 **Top/Bottom**은 양 끝으로 가며, 마우스 휠은
 스크롤합니다. 위로 이동하면 따라가기를 멈추고, Bottom으로 돌아가면 새 메시지를 따라갑니다.
 Space나 Enter로 화면에 보이는 묶음을 펼치거나 접을 수 있으며, 묶음 제목을 클릭해도
@@ -252,7 +252,7 @@ Tools로 이동하고, Ctrl+U는 편집 중에도 맡기를 해제합니다.
 맨 아래로 다시 스크롤하면 다시 따라갑니다. 그 텍스트는 선택할 수 있는 일반
 텍스트이므로, 도구가 출력한 내용을 결과에 복사하세요. 로그는 앱이 실행되는 동안 유지되며
 이 창에서 제출하면 지워집니다. CLI나
-다른 창에서 한 제출은 여기서의 편집을 끝내지만 이 창의 로그는 그대로 보여 둡니다. 아무것도
+다른 창에서 결과를 제출하면 이 창의 편집은 끝나지만 로그는 그대로 남습니다. 아무것도
 저장되지 않습니다.
 
 요청을 맡은 뒤 `g`는 GREEN을, `r`은 RED를 엽니다. 각각 eval의

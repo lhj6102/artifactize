@@ -3,8 +3,9 @@
 Declare each command and path once, the same way for every OS: artifactize runs it on
 Linux (x86_64 and aarch64), macOS (Apple silicon and Intel) and Windows (x64), and WSL 2
 runs the Linux build. Before a review, `artifactize tools check` reports a tool whose
-program cannot be found; during a review, a program that cannot start makes the eval
-ERROR rather than RED. [Install](../../getting-started/install.md) has the channels for
+program cannot be found; during a review, a Runtime eval whose program cannot start is
+ERROR rather than RED, and a tool whose program cannot start returns a tool error while
+the review goes on. [Install](../../getting-started/install.md) has the channels for
 each OS. This page lists what differs between them.
 
 ## Project commands run as declared
