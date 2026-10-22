@@ -47,10 +47,9 @@ absolute paths, traversal components or symlinks. Logical paths are at most
 4096 UTF-16 code units and reject ASCII controls, backslashes, colons and empty
 or `.`/`..` components. The lone `.` is accepted as
 a file Artifact's virtual root for list/glob/grep; other dot components are
-rejected. The registry scope remains the eval's
-admitted Artifacts, not other evals' references. Paths are opened read-only through
-pinned directory descriptors with no-follow component checks; special files cannot
-be read. `list` can report `symlink`/`other` entries, but searches skip them.
+rejected. A tool reaches only the Artifacts in its own eval's scope, never those of
+other evals. Files are opened read-only, symbolic links are never followed, and special
+files cannot be read. `list` can report `symlink`/`other` entries, but searches skip them.
 A file Artifact exposes only its target file, not unrelated siblings in its
 working directory. `list` with no path or `path: "."` lists that virtual root's
 target file. Read the target by its filename; file paths remain relative to the
@@ -117,23 +116,15 @@ omitted when empty. Declared execution paths are up to 64 unique workspace-relat
 files/directories of up to 1024 UTF-16 code units each, resolved without symlinks or copying. This remains
 workspace-relative for file Artifacts; it is not relative to their cwd or target.
 
-When an Agent review starts, artifactize pins each execution path of the eval's
-tools: a file to the SHA-256 of its bytes, a directory to the SHA-256 over each
-file's or symlink's relative path and digest (a symlink inside contributes its target
-and is not followed). Directories are only traversed: they do not contribute a
-digest or increment the entry counter, so empty directories do not count. The pins
-are recorded in the result's provenance as
-`executionPaths: {"TOOL": {"PATH": "sha256"}}` (by registered tool name, such as
-`coverage_spec`, and declared path), travel with remote records, and stay with the
-result when it is reused, so a reused verdict shows which binary produced it. A
-path that cannot be pinned (missing, a special file, or more than 1 GiB of file
-bytes) fails the review with `PREPARATION_FAILED` before the Agent is called.
-Pins retain at most 10,000 file/symlink entries; after that many have been retained,
-encountering any further filesystem entry fails preparation. This is not a total
-filesystem traversal bound: directory visits alone, including empty directories,
-do not increment the counter. Pins are provenance, not part of the
-[reuse key](../fingerprint.md#the-reuse-key): to review again when a binary
-changes, cover it in a fingerprint.
+When an Agent review starts, artifactize records the SHA-256 of each execution path
+of the eval's tools (for a directory, of its files and symbolic links) in the result as
+`executionPaths: {"TOOL": {"PATH": "sha256"}}`, by published tool name such as
+`coverage_spec`. The record travels with remote results and stays with a reused result,
+so a reused verdict shows which binary produced it. A path that is missing, is a special
+file, holds more than 1 GiB or more than 10,000 files fails the review with
+`PREPARATION_FAILED` before the Agent is called. These hashes are a record, not part of
+the [reuse key](../fingerprint.md#the-reuse-key): to review again when a binary changes,
+cover it in a fingerprint.
 Successful stdout is one JSON object with 1–32 content blocks:
 `{"content":[{"type":"text","text":"..."},{"type":"json","data":{}}]}`.
 Image blocks are described [below](#image-results).
@@ -196,24 +187,17 @@ rules, including the file-Artifact exception and rejection of scoped traversal.
 JSON-protocol argv may use existing scoped Artifact references, but
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
-Command calls use the owner's working directory (the containing folder for a file
-Artifact) as cwd, the author's own environment (the
-[runtime environment](../declarations.md#runtime-execution-library): the real home, no
-`ARTIFACTIZE_*` variables of the caller) with private external TMP/output, a default 120000 ms deadline (1–2147483647), and
-process-group cancellation/cleanup. Per-call directories are removed on success,
-failure and cancellation, including dropped call futures; caller-owned output
-roots remain. Commands are trusted read-only programs, not sandboxed.
+A command runs in its Artifact's folder (the containing folder for a file Artifact),
+in the author's own environment (the
+[runtime environment](../declarations.md#runtime-execution): the real home, no
+`ARTIFACTIZE_*` variables of the caller) with a private temporary and output folder per
+call, removed when the call ends. The default deadline is 120000 ms (1–2147483647);
+cancellation and a timeout stop the command and what it started. Commands are trusted
+read-only programs, not sandboxed.
 
-Internal callers use `tools::Registry::new(&config, "artifact/eval")`, `list()`
-and `call(name, args, output_root, cancellation).await`. Only Agent evals are
-accepted. Each Artifact in its admitted scope contributes its Agent declarations
-under `<name>_<artifactId>`; tool-name and session-provenance-name concatenation
-collisions are rejected. Human tools
-are never listed. Listing creates no directories and runs no owner code. Calls
-return normalized `ToolResult` (the `Success` or `Error` variant; read it with `content()` and
-`is_error()`) for successful, authored and
-system-error results. Registry calls do not mutate payloads or declarations. The
-Agent loop calls this registry.
+An Agent eval sees the Agent tools of every Artifact in its scope, each named
+`<name>_<artifactId>`, such as `coverage_spec`; two tools that would get the same name
+are a declaration error. Human tools are never offered to an Agent.
 
 ## Tool sessions
 
@@ -261,67 +245,35 @@ Execution-path pinning still happens at review start. A tool session starts only
 when the Agent first calls a tool bound to it; later bound calls reuse that session.
 An admitted session whose tools are never called starts no process and creates no
 session directory. Startup and readiness count toward the review's timeout.
-Spawn failure or exit before readiness is returned to the Agent as that tool call's
-error, not `PREPARATION_FAILED`. Later calls to the same session return the same
-startup error without restarting it. Readiness has no separate fixed bound: start
-may prepare while its process lives, until the review times out or is cancelled.
-After readiness, stdout and stderr are drained and discarded.
+If start cannot run or exits before it is ready, the Agent gets that as the tool
+call's error, not `PREPARATION_FAILED`, and later calls to the session return the same
+error without starting it again. There is no separate readiness timeout: start may
+prepare until the review times out or is cancelled. Output after the ready line is
+discarded.
 
-If the start process exits during the review, artifactize immediately kills its
-remaining process group/Job and cancels in-flight bound calls. The cleaned group
-is released once termination is confirmed, so later review cleanup does not signal
-its old numeric process-group ID. A failure to retire its saved identity is reported
-without skipping cancellation/join of bound calls or stop. Later bound calls return
+If the start process exits during the review, artifactize stops what it started and
+cancels running bound calls. Later bound calls return
 ``The tool session `app` ended.``; there is no restart. This is an ordinary tool
-error in the saved conversation, not a new event kind.
+error in the saved conversation.
 
-Every session that started goes through stop and cleanup on every review ending:
-verdict, error, timeout, cancellation or dropped review future, including a review
-panic. A start that exits before readiness is cleaned up immediately; otherwise
-stop is attempted after the Agent loop and before input revalidation, fingerprint
-recheck and result commit. Cleanup cancels and awaits in-flight bound calls before
-running stop. Stop uses its own cancellation token and an internal
-30-second bound, then artifactize kills and reaps the session group/Job. Its
-directory and admission records are removed only after all owned-process cleanup
-is confirmed, even when stop itself fails or hangs. Windows cleanup waits for all
-Job descendants, with a separate internal 30-second termination bound.
-
-Cleanup does not depend on the program that asked for the review: if that caller
-shuts down its async runtime, artifactize's own background executor still runs stop
-and cleanup. If the artifactize process itself is killed, stop cannot run, so the
-next tool session cleans up first. Each session directory records the process that
-owns it and a **lease**, a marker that its cleanup is still in progress. Before
-starting, artifactize removes directories whose owner has exited (including one that
-has exited but was never waited for) or whose lease was released after a failed
-cleanup, even if the owner is still alive. Directories with an active lease belong
-to a running review and are left alone.
-
-On Unix, artifactize records each start, stop and bound-call process group before
-admitting it, and checks the saved process ID and start time before sending a signal,
-so it never signals a reused process ID, even when the group's first process has
-already exited. Windows Jobs end when their owner dies; recovery waits up to 30
-seconds for Windows to release open file handles.
-
-A cleanup failure is reported instead of a successful result. When process cleanup
-is not confirmed, artifactize keeps its **journals** (the records of which processes
-it started) so a later start can finish the job; a directory that could not be
-removed is swept by the next start once its lease is released. If that sweep fails,
-the journals are kept and the new session is refused rather than admitted. A reused
-or waited-on result starts nothing.
+However the review ends (verdict, error, timeout or cancellation), every session that
+started is stopped after the Agent finishes and before the result is checked and saved.
+Running bound calls are cancelled first, then stop runs, with up to 30 seconds before
+artifactize ends the session's programs itself. The session folder is removed once they
+have ended, even when stop fails or hangs. If artifactize itself is killed, stop cannot
+run; the next tool session first cleans up what was left. A cleanup failure is reported
+instead of a successful result, and while an earlier session could not be cleaned up, a
+new one is refused. A reused or joined result starts nothing.
 
 Start/stop execution-path pins use `<session>_<artifact>.start` and `.stop` keys
 in the result's existing `executionPaths` provenance, including remote records.
 `tools check` statically checks the referenced session's executables and operands
 without running it. `tools check --execute` on a bound tool and `session send`
-each own fresh lazy sessions: they start on the first bound call and clean up
-afterward. A follow-up that calls no bound tools starts nothing.
+each start a new session on the first bound call and stop it afterward. A follow-up
+that calls no bound tools starts nothing.
 
-Internal callers register lazy sessions with
-`registry.sessions(state, selected_tool_or_none, cancellation)`,
-attach them with `registry.with_sessions(&sessions)`, then release and await
-`sessions.close().await` after their calls. Dropping the guard also starts cleanup.
-Session commands remain **trusted, not sandboxed**: commands can modify the
-workspace or escape cleanup by deliberately detaching descendants.
+Session commands are **trusted, not sandboxed**: they can change the workspace, and a
+program that deliberately detaches from them may keep running.
 
 ## Tool diagnostics
 

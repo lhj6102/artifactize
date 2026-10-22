@@ -91,8 +91,10 @@ eval, ignoring case; `repo:` and `branch:` match part of that one field.
 `sort:recent` puts the branch with the most recent Run first and branches without
 Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
 and values: ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
-mouse. Enter without an open suggestion returns to the list. Esc closes suggestions,
-then puts back `sort:recent`, then returns to the list.
+mouse. Enter without an open suggestion returns to the list. A query that cannot be
+read, such as an unknown key, shows its error in place of the branches, and neither list
+shows entries until it is fixed. Esc closes suggestions, then puts back `sort:recent`,
+then returns to the list.
 
 ### Waiting reviews
 
@@ -166,10 +168,8 @@ the whole canvas, the same whether the Detail floats over it or not.
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
 the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
-pannable, zoomable minimap helps navigate the graph, and above **80 Artifacts** only
-elements in view are rendered: panning or zooming draws those it brings into view.
-A graph of **more than 500 Artifacts** draws its edges on a canvas below the
-Artifacts and has no minimap. While more than 500 Artifacts are in view, they are
+pannable, zoomable minimap helps navigate the graph. A graph of **more than 500
+Artifacts** has no minimap. While more than 500 Artifacts are in view, they are
 painted as boxes in their lights, and a click on one opens its Detail; zoom in until
 fewer are in view to see them as named nodes that Tab and Enter reach again. A new snapshot or scan relights a
 graph in place, and lays it out again only when its Artifacts or edges change, keeping

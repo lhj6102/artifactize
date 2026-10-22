@@ -12,9 +12,9 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 ```
 
 A terminal UI that searches saved requests and reviews the waiting Human ones, with the
-same lifecycle as `request`: it claims, runs tools, unclaims and submits in-process, and
-publishes a submission to the remote review store exactly like `request submit`. It also
-runs on its own, for example in a second terminal or tmux pane.
+same steps as `request`: it claims, runs tools, unclaims and submits, and publishes a
+submission to the remote review store exactly like `request submit`. Run it in a second
+terminal or tmux pane beside your work.
 
 Without an ID it lists the requests its search finds across every repository in the state,
 newest Run first, with their eval, request, status, claim, age and repository; Enter opens
@@ -85,7 +85,7 @@ scrollable Runtime-evidence pane, beside or below its sections depending on widt
 
 ### Shared Human Detail
 
-The monitor and standalone `review` use **one Human review component**. Opening
+The monitor and standalone `review` show a Human review the same way. Opening
 or previewing a request claims nothing. The instruction comes first, below one
 line of status, claim and waiting time. `t` shows or hides Technical: request,
 Run, repository, full claim details, shared execution, creation time and GREEN/RED
@@ -201,8 +201,7 @@ one back. Esc never quits either UI.
 
 After a standalone submission the list returns. A page emptied by reviews goes
 back to the nearest earlier page that still lists requests; `review` exits only
-when no request matches the search any more. Monitor keeps the completed result open in Detail. Both use the
-same in-process lifecycle jobs; monitor does not launch the standalone command.
+when no request matches the search any more. Monitor keeps the completed result open in Detail.
 
 ## Monitor
 
@@ -386,7 +385,7 @@ Detail depends on the eval kind:
   remote conversations explain why they cannot be shown here. Use `session show
   --json` for the complete saved record. See the
   [transcript reader reference](../features/others/state.md#transcript-reader)
-  for storage, streaming and history behavior.
+  for streaming and long conversations.
 - **Runtime:** saved stdout/stderr, exit code and capture truncation beside the
   sections when Detail has at least 90 inner-content columns (92 including its
   outer borders); in a narrower pane the evidence stacks below. Running,
@@ -401,8 +400,8 @@ Browsing is read-only. If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. See the
-[local reader reference](../features/others/state.md#local-readers) for
-subscription and recovery behavior.
+[local reader reference](../features/others/state.md#local-readers) for how
+the screens refresh.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims

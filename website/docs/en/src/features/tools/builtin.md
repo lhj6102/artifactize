@@ -65,8 +65,9 @@ block; fixed `read`, `section` and `help` return text blocks:
   whose text equals `heading` exactly, at any level (`#` or underlined headings;
   headings inside code blocks do not count). The section runs from that heading to
   the next heading of the same or a higher level, so nested sections are included.
-  When no heading matches, the error lists the headings the file has. The file may
-  be up to 8 MiB; the printed section, up to 64 KiB.
+  When no heading matches, the error lists the headings the file has. The heading
+  the model passes must be 1–4096 characters, and a declared heading may not be blank.
+  The file may be up to 8 MiB; the printed section, up to 64 KiB.
 - **`help`** runs `program subcommand... --help` and prints its output. The program is
   a literal program or path. Bare names use `PATH` (with `PATHEXT` on Windows).
   Unlike scoped command-tool executables, help uses ordinary program lookup:

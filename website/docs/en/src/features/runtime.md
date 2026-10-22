@@ -27,12 +27,12 @@ appending output, `artifactize request logs REQUEST_ID` can read bounded snapsho
 unconfirmed captures are explicitly marked partial. This is snapshot inspection,
 not an automatic streaming log feed. The [runtime-log CLI reference](../cli/index.md#agent-streaming-and-runtime-logs)
 explains tail/range/search and capture evidence; the shared
-[runtime execution reference](declarations.md#runtime-execution-library) owns
+[runtime execution reference](declarations.md#runtime-execution) owns
 retention details, including the raw captures current pruning leaves intact. The CLI, [TUI](../tui/index.md) and [Desktop](../desktop/index.md)
 read the same saved evidence.
 
 References such as `{spec}/requirements.json` in the declared operands admit those
 inputs. Files changed during execution invalidate the review. A later Run reuses
 an unchanged result, including a RED result, rather than rerunning the command.
-See [Fingerprint](fingerprint.md) and the [runtime execution reference](declarations.md#runtime-execution-library)
+See [Fingerprint](fingerprint.md) and the [runtime execution reference](declarations.md#runtime-execution)
 for exact limits, environment, substitution and process cleanup.

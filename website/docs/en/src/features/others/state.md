@@ -6,104 +6,35 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 9),
-with the canonical repository path recorded on each Run. The state home is
-`$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
-`%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
+One state, a `state.sqlite` database, holds the Runs of every repository on the
+machine. It lives in `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`,
+else (on Windows) `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
+`--state-dir PATH` uses another folder for the whole state, including each Run's
+output under `PATH/runs`. Saved Runs stay readable after their repository is removed.
 
-The **Microsoft Store package** uses Windows' default AppData virtualization, with
-no Flexible Virtualization exclusions. New state under AppData is package-private:
-the Store version keeps its own Runs, sign-in and cache instead of sharing them
-with zip or Cargo installs. Windows removes that private state on uninstall.
-The path above is the app's logical view, not necessarily its physical disk location.
-The [Windows packaging smoke test](https://github.com/lhj6102/artifactize/actions/runs/39138230810)
-measured both `state.sqlite` and `review-store.sqlite` under
-`%LOCALAPPDATA%\Packages\lhj6102.Artifactize_ayfzfzbsv48sg\LocalCache\Local\artifactize`,
-with no real `%LOCALAPPDATA%\artifactize` directory created on its fresh Windows
-Server runner (build 26100).
+The state may not live inside the reviewed repository or another artifactize
+workspace (a folder with a `.artf` declaration, a legacy `artifactize.json` or
+`.artifactizeignore`, or above one): a command refuses it before writing. If you can
+search a parent folder but not list it, artifactize cannot see every declaration in it,
+so keep the state outside your projects.
 
-That same test launched a PowerShell child through a Runtime eval. The child's new
-`%LOCALAPPDATA%` file was **not redirected**: the unpackaged shell found it in real
-AppData, not in the package-private location. This measures that runner and command,
-not every child program or Windows version. User-configured commands run with the
-user's rights; do not assume their AppData writes are package-private or removed
-when the Store app is uninstalled.
+The **Microsoft Store package** keeps its own Runs, sign-in and cache, separate from
+zip or Cargo installs, and Windows removes them on uninstall. This is not a sandbox:
+programs your evals run write to the real AppData, and the Store app can still read
+existing files of an unpackaged install. Do not rely on side-by-side installs to keep
+data apart.
 
-This is not a sandbox or a guarantee that existing unpackaged state is inaccessible.
-[Microsoft documents](https://learn.microsoft.com/en-us/windows/msix/desktop/flexible-virtualization#default-msix-behavior)
-that on Windows 10 1903 and later, reads can fall back to existing unvirtualized
-AppData files, and modifications to those existing files can affect the real files.
-Do not rely on side-by-side Store and unpackaged installs to isolate existing data.
-State explicitly placed outside AppData is not covered by AppData virtualization or
-the Store's private-state uninstall cleanup.
+The state keeps every Run with its requests, verdicts, how each eval ran and the
+definitions it started with. Read them with `run list`, `run show`, `request list`,
+`request show` and [`cache list`](#cache-inspection); how an Agent review went, its
+conversation and tool calls, is in its [saved session](#agent-sessions).
 
-`--state-dir PATH` moves the whole state, including
-private output directories under `PATH/runs`. Saved Runs stay readable after the
-original repository is removed. State/output inside the reviewed repository or
-another artifactize workspace is rejected, including through symlink ancestors.
-For this safety check, any ancestor containing a `.artf` declaration, legacy
-`artifactize.json` or legacy `.artifactizeignore` marks a workspace, even though
-legacy declarations are not read. Sidecar-only workspaces are protected too.
-Database files and their WAL sidecars must be
-regular files.
-
-Known limitation: a search-only ancestor can be traversed but not listed. When
-listing fails with permission denied, the guard falls back to fixed-marker
-probes for `.git`, `index.artf`, legacy `artifactize.json` and legacy
-`.artifactizeignore`. It cannot discover a sidecar-only workspace in that
-ancestor. Keep state and credentials outside such workspaces explicitly; do not
-rely on sidecar detection where directory listing is unavailable.
-
-The state keeps what was reviewed, with which verdict, and how it was executed, in
-five tables:
-
-| Table | One row per | Columns besides the saved JSON in `data` |
-|---|---|---|
-| `runs` | Run | `id`, `repo`, `status`, nullable `request_key`, `revision` |
-| `run_definitions` | Run with definitions | `run_id` |
-| `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, `claimed_by` and `claimed_at` (the Human claim of a waiting request), `revision` |
-| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), `profile_identity` (the effective profile of a keyed claim), the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used`, and `revision` |
-| `state_meta` | named value of the state | `name`, `value` |
-
-A Run's `data` is its changing state: status, control, validation and evidence. Its
-definitions (the Artifacts, evals and relations it was started with) are fixed for
-the Run's life and live in `run_definitions`, written once with the Run; saving the Run
-again never rewrites them. A trigger raises `revision` on every update of a `runs`,
-`requests` or `executions` row, so a reader learns what changed by comparing numbers
-instead of reading records. A Run has one request per eval and per ordinal.
-One execution per (reuse key, effective evaluation profile) can be
-active (RUNNING or WAITING_HUMAN) at a time; a forced (`--force`) execution bypasses this claim and
-never holds its key's active slot. `state_meta` holds the state's stable
-id, a random UUID made when the database is created (row `id`), which
-[Agent session references](#agent-sessions) name. How a review went, its
-conversation and its tool calls, is not in the state: it is in the review's
-[saved session](#agent-sessions).
-
-Supported upgrades are ordered additive steps applied together with `user_version` in one
-opening write transaction; the version is read again under that lock. Schema 6 upgrades
-to 7 by adding nullable `runs.request_key` and a partial unique index on `(repo, request_key)`
-where the key is not NULL. Existing Runs keep NULL keys. Schema 7 upgrades to 8 by
-adding `executions.profile_identity`, filling it from saved profiles and replacing
-the active-key uniqueness index with `(key, profile_identity)`. Schema 8 upgrades to 9 by
-moving each Run's definitions out of its record into `run_definitions` (a record that does
-not read keeps its text) and adding the `revision` columns, their triggers and the indexes
-that read them. Run/request/execution IDs, cache,
-state identity and Human approvals survive; repeated opens do not remigrate. Existing-state
-readers and `doctor` use the same preflight without creating an absent database. Migration
-requires write access; a failed transaction rolls back rather than bypassing version checks.
-
-Same repository/key returns the same accepted Run; NULL keys never coalesce submissions.
-Worker PID/start identity and admission, cancellation intent, activity and failure code live
-in optional/defaulted Run JSON control fields. Old Runs without them are readable and are
-not treated as dead workers. Saved Run-end validation remains historical; detailed results
-are derived from saved Runs, requests and executions, not stored as another result snapshot.
-Dead-worker recovery keeps committed evidence, cleans only identity-checked owned children
-and releases dead slots. It records OWNER_DIED instead of replaying work; unconfirmed
-cleanup retains its journal records.
-
-**Downgrade boundary:** Binaries that only support schemas 6 to 8 cannot open a schema-9
-state after upgrade; their version guards refuse it. Unknown/newer versions and schemas 1–5 remain unsupported;
-commands exit 2 and `doctor` reports a hard error (exit 1). The older-schema message is:
+**Upgrades.** A state written by artifactize with schema 6, 7 or 8 is upgraded to the
+current schema 9 the first time a command opens it. Runs, IDs, cached results and Human
+sign-offs are kept. The upgrade needs write access and is one way: an older binary that
+only knows schemas 6 to 8 refuses the upgraded state, so back up the state folder first if
+you may go back. A state from schemas 1 to 5, or from a newer artifactize, is refused
+(exit 2) with:
 
 ```text
 This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). Only schema 6 and later supported versions can be upgraded.
@@ -114,52 +45,42 @@ and then reuses as before. Reuse-key v2 matches no earlier records, including
 script fingerprints and team-store records. See
 [Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
 
-Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
-sign-in and the review store token, is refused when it lies inside a git work tree or
-an artifactize workspace (an ancestor with any current or legacy marker above) or
-inside `--repo`, even in a gitignored folder. The `.git` check protects Git work
-trees separately from Artifact declaration markers. `login codex` and
-`remote login` then fail before signing in, with a message naming both folders:
+**Tokens stay out of repositories.** `$STATE/auth`, which holds the Codex sign-in and the
+review store token, is refused when it lies inside a git work tree, an artifactize
+workspace or `--repo`, even in a gitignored folder. `login codex` and `remote login` then
+fail before signing in, naming both folders:
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
 ```
 
 Use a state directory outside the repository, or `ARTIFACTIZE_CODEX_AUTH_FILE` and
-`ARTIFACTIZE_REMOTE_TOKEN`, which need no storage. `doctor` reports such a state as a
-warning while nothing is stored there, and as a hard error once a sign-in is (for
-example, after `git init` above an existing state). No writer transaction spans a
-subprocess or async suspension. Completed results with a reuse key are shared
-within this database. Concurrent Runs, including other worktrees and processes,
-automatically join an in-flight execution only when both its reuse key and its
-complete effective evaluation profile match. The queued request names the execution
-it waits for; it takes no execution start or backend slot. Completion delivers that
-execution's GREEN, RED or ERROR to its waiters as joined reuse. An ERROR is not a
-new cache entry for later Runs. For a Runtime or Agent execution, cancellation or a
-dead owner (checked by PID and process start time) releases the claim: one waiter
-starts a replacement, and the others join it. A Human sign-off is not replaced: when
-its owning Run is cancelled or its worker stops, the sign-off and every request
-waiting on it, in any Run, end as ERROR, and a new `verify` requests another one.
-Cancelling a waiter does not cancel the owner. `--force` always runs
-its own execution and never joins. There are no sharing settings, and in-flight
-sharing never crosses a remote store. Completed GREEN/RED reuse remains keyed by
-the reuse key alone, even if the producing profile differs.
+`ARTIFACTIZE_REMOTE_TOKEN`, which store nothing. `doctor` warns about such a state while
+no sign-in is stored there, and reports a hard error once one is (for example, after
+`git init` above an existing state).
+
+**Runs share work.** Completed results with a reuse key are reused by every Run on the
+same state. When two Runs, from other worktrees or processes too, need the same review
+with the same profile at the same time, the second joins the first instead of running it
+again; its request waits for that execution and uses no execution start or backend slot.
+The joined request gets the same GREEN, RED or ERROR; an ERROR is not kept for later Runs.
+If the first Runtime or Agent execution is cancelled or its process dies, one waiting Run
+starts it again and the others join that one. A Human sign-off is not restarted: when its
+Run is cancelled or stops, the sign-off and every request waiting on it end as ERROR, and
+a new `verify` asks again. Cancelling a waiting Run does not cancel the first one.
+`--force` always runs its own execution. Running reviews are not shared through a remote
+store, and there are no settings for this.
 
 ## Unreadable records
 
-An individual saved record can be unreadable even when the database and its other
-records are valid. Artifactize skips that record as review evidence rather than
-inventing a verdict. Invalid requests are excluded from Run-list request counts;
-a Run with damaged requests can still open, while an unreadable Run record is
-marked unreadable rather than treated as a normal saved Run.
-
-Status and Run listings expose `unreadable` diagnostics with the record's `kind`,
-`id` and `reason`; evidence readers also print an `Unreadable ...` diagnostic on
-stderr. Valid records remain accessible. Preserve the state for diagnosis and
-start a new verification when fresh evidence is needed; missing counts do not
-mean the damaged reviews passed. This is different from a database-open or
-unsupported-schema failure, which can prevent the command from reading state at
-all. `doctor` checks that database/schema readiness; it is not a record-repair tool.
+A single saved record can be unreadable while the rest of the state is fine.
+Artifactize then skips it as evidence instead of inventing a verdict: its requests are
+left out of Run counts, and an unreadable Run is shown as unreadable. Status and Run
+listings report each one under `unreadable` with its `kind`, `id` and `reason`, and the
+commands that read evidence print an `Unreadable ...` line on stderr. Missing counts do
+not mean those reviews passed: keep the state for diagnosis and verify again when you
+need fresh evidence. `doctor` checks that the state opens and has a supported schema; it
+does not repair records.
 
 ## Cache inspection
 
@@ -169,105 +90,71 @@ artifactize cache show KEY [--history]
 artifactize cache rm KEY
 ```
 
-These commands use the shared state home or `--state-dir PATH`, without loading a
-repository. Each reuse key keeps every completed GREEN/RED record, and the latest by
-completion time is the one `verify` reuses. `list` shows the latest record of each
-key: key, eval, verdict, completion time, producer, repository (or the remote store
-it came from), how many records the key holds, retained JSON bytes and last use (a
-text table, or a JSON array that also carries the Eval definition hash, the target's
-fingerprint and the profile variant). `--history` lists every record, latest first
-within each key. `show` prints the key's latest saved execution as JSON, with
-result, actual `profile`, `options` (backend, model, reasoning, limits and
-variant), `fingerprints` (each Artifact the key covers), additive `artifactKinds`
-(the covered names mapped to `folder`/`file`/`graph`), provenance, usage and
-`producer` (`user@host` and artifactize version; submitted Human results also
-record their `reviewer`); a missing key prints `null` and exits 4. `show
---history` prints all of the key's records as a JSON array, latest first. Entries
-mirrored from a [shared remote review store](../team/reference.md) carry an `origin`
-(store, publisher, publication time), which `list` shows in place of the
-repository. Reads neither create missing state nor update access times. A key's
-records are its completed GREEN/RED executions whose history columns
-(`completed_at`, `bytes`, `last_used`) are set; the latest is the newest completion,
-then the most recently stored. `rm` takes every record of the key out of its history
-and prints `{"removed":true}` (false if absent), preserving saved Runs and the
-executions themselves. `rm` refuses a key with an active execution or waiter. Keys
-come from `cache list` or from a request's `key` in `verify --wait --json` and `run show`.
+These commands use the shared state or `--state-dir PATH` and need no repository. Each
+reuse key keeps every completed GREEN/RED record, and the latest is the one `verify`
+reuses. `list` shows the latest record of each key: key, eval, verdict, completion time,
+producer, repository (or the remote store it came from), how many records the key holds,
+their size and last use. Its JSON also has the eval definition hash, the target's
+fingerprint and the profile variant. `--history` lists every record, latest first.
 
-How reuse keys are built and what a hit returns is in
-[Completed result reuse](../fingerprint.md#completed-result-reuse); entry and byte
-limits are in [Cache limits](#cache-limits).
+`show` prints the key's latest record as JSON: result, the actual `profile`, `options`
+(backend, model, reasoning, limits and variant), `fingerprints` of each Artifact the key
+covers, `artifactKinds` (each covered name with `folder`, `file` or `graph`), usage and
+`producer` (`user@host` and artifactize version, plus the `reviewer` of a Human result).
+Records from a [shared remote review store](../team/reference.md) carry an `origin`
+(store, publisher, publication time). A missing key prints `null` and exits 4;
+`--history` prints all records as an array. Reading changes nothing.
+
+`rm` stops every record of the key from being reused and prints `{"removed":true}`
+(false if absent); saved Runs keep their results. It refuses a key that is being reviewed
+right now. Keys come from `cache list` or from a request's `key` in `verify --wait --json`
+and `run show`. How keys are built and what a hit returns is in
+[Completed result reuse](../fingerprint.md#completed-result-reuse).
 
 ## Cache limits
 
-Saving a new reusable result automatically removes the least recently reused
-eligible cache records to stay within **10,000 records** and **1 GiB** of saved
-result data. One record may occupy at most **16 MiB**. A larger result still reaches
-its own Run and any current waiters, but it is not kept for later reuse.
+Saving a new reusable result removes the least recently reused records to stay within
+**10,000 records** and **1 GiB** of saved results. One record may take at most
+**16 MiB**; a larger result still reaches its own Run and any Run waiting for it, but is
+not kept for later reuse. Reuse counts as use; inspecting does not. Records of a review
+that is running, or that another Run still needs, are kept, so the limits can be exceeded
+for a while. A cleanup failure is printed on stderr and never changes a verdict.
 
-Reusing a record updates when it was last used; inspecting it does not. Cleanup
-removes the least recently used records first, breaking ties by key and completion
-time. It keeps a key's records while a review of that key is running, and any
-records another Run still needs, so these limits can temporarily be exceeded. A cleanup failure is printed on stderr without
-changing an already-completed verdict; the next saved result retries cleanup.
-
-Cache cleanup and `cache rm` stop records from being reused. They do not remove
-the saved execution audit, Run receipts or Run output files. These limits therefore
-do not cap the whole database or temporary files of active Runs. Matching evidence
-has no age-based expiry, and cache cleanup does not automatically delete Run files.
-Use `artifactize prune` to remove eligible finished Run output.
+These limits cover reuse only: saved Runs and their output files stay, and nothing
+expires with age. Use `artifactize prune` to remove finished Runs' output.
 
 ## Backend capacity
 
-READY evals have no default Run-concurrency cap. An explicit `--jobs N` limits
-only that Run; add it when unrestricted concurrency causes trouble. Multiple
-Runs on one machine (worktrees, CI jobs, a team member's integration run) can still send more
-Agent reviews to one backend at once than its rate limit or subscription allows.
-`$STATE/limits.json` caps the Agent reviews in flight per backend across every
-`verify` that uses that state directory:
+`verify` runs every READY eval at once unless you pass `--jobs N`, which limits only that
+Run. Several Runs on one machine (worktrees, CI jobs, a teammate's run) can still send
+more Agent reviews to one backend than its rate limit or subscription allows.
+`$STATE/limits.json` caps the Agent reviews in flight per backend across every `verify`
+on that state:
 
 ```json
 {"backends": {"codex": 4, "openai": 16}}
 ```
 
-Keys are backend names as profiles declare them (`openai`, `anthropic`, `codex`),
-and each limit is 1–100000. A backend without an entry is unlimited, and with no
-file nothing is limited. The file is read when a `verify` starts. A file that is not
-a regular file, is not valid JSON, has other fields, names an unknown or removed
-backend or a limit out of range fails `verify` before it creates a Run (exit 2);
-`doctor` reports the limits, or the problem as a hard error.
+Keys are backend names (`openai`, `anthropic`, `codex`), and each limit is 1–100000. A
+backend without an entry, or a machine without the file, is unlimited. `verify` reads the
+file when it starts. The file must be a regular UTF-8 JSON file of at most 64 KiB with only
+known fields; anything else stops `verify` before it creates a Run (exit 2), and `doctor`
+reports it as a hard error.
 
-The bookkeeping is the `executions` table of `state.sqlite`: an Agent review's
-execution names its `backend`, and it holds one of that backend's slots while its
-status is RUNNING. A slot is taken just before a review would start: one write
-transaction (`BEGIN IMMEDIATE`) counts the RUNNING executions of the backend and,
-under the limit, inserts this one. A request that would reuse a result or join a live
-execution of its key takes none. The slot frees when the review's execution
-completes. An execution whose owner process has exited (including an unreaped
-zombie, checked by process state, pid and start time) ends as ERROR (`OWNER_DIED`) the next time a process asks for a slot,
-which frees its slot with it; there is no separate cleanup. When a review's failure
-stops its backend for the Run ([`BACKEND_STOPPED`](../agent.md#stopping-a-backend)),
-the stop is recorded before its slot frees, so a request waiting for that slot is not
-started.
+A review takes a slot of its backend while it runs and frees it when it ends; a request
+that reuses or joins a result takes none. A review whose process died frees its slot and
+ends as ERROR (`OWNER_DIED`). When all slots are in use, the request waits as QUEUED with
+a reason such as `Waiting for a free codex slot: all 4 are in use on this machine
+(limits.json).`, and freed slots go to waiting requests in the Run's
+[scheduling order](../run.md#verify-and-runs). A waiting request does not count against
+`--jobs` or `--max-executions`, so runtime evals, Human requests and other backends keep
+running. [Eval mutex tags](../declarations.md#eval-mutex-tags) delay conflicting evals
+separately, without holding a slot. `run cancel RUN_ID` ends the Run's waiting requests as
+ERROR (`CANCELLED`) and frees their slots; interrupting `verify --wait` only stops
+watching.
 
-With every slot of its backend in use, a request waits, as QUEUED, with a reason
-such as `Waiting for a free codex slot: all 4 are in use on this machine
-(limits.json).`. As slots free up, retries follow the Run's scheduling priorities:
-READY work first, then the longest remaining dependency path, with selection order
-only breaking ties. A later-selected request can therefore receive the next slot
-first. While waiting, a request does not count against an explicit `--jobs` cap and consumes no
-`--max-executions` start, so runtime evals, Human requests and other backends
-keep running. When admitted, it counts against `--jobs` if given; without that
-cap, backend capacity imposes no other concurrency limit. Explicitly declared
-[eval mutex tags](../declarations.md#eval-mutex-tags) independently delay conflicting
-runtime and Agent evals across the same shared state store, without holding a
-backend slot while they wait. Explicit `run cancel RUN_ID` ends
-its waiting requests with status ERROR and `errorCode = "CANCELLED"`, and its held slots are released. Interrupting
-`verify --wait` only stops observation; it does not cancel the Run.
-
-Tool-session state lives under `$STATE/tool-sessions/`, separately from saved
-Agent conversations. Artifactize removes it after confirmed cleanup and retains
-unconfirmed state for recovery. See the [tool-session lifecycle](../tools/agent.md#tool-sessions)
-for the single detailed start, stop and crash-recovery contract.
+A failure that [stops a backend](../agent.md#stopping-a-backend) for the Run keeps its
+waiting requests from starting on that backend.
 
 ## Agent sessions
 
@@ -282,130 +169,72 @@ Each Agent review's conversation is saved under the state, for
 | Field | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | `false` saves no new conversation; saved ones stay readable |
-| `maxBytes` | 1 GiB | The store's size that starts a collection; at least 1 |
-| `targetBytes` | 768 MiB when `maxBytes` is greater than 768 MiB; otherwise `(maxBytes / 4) * 3`, dividing first with integer division | The size a collection brings the store down to; an explicit value overrides the default and must be lower than `maxBytes` |
+| `maxBytes` | 1 GiB | The store's size that starts a cleanup; at least 1 |
+| `targetBytes` | 768 MiB, or three quarters of `maxBytes` when that is 768 MiB or less | The size a cleanup brings the store down to; must be lower than `maxBytes` |
 
-A collection runs once a `verify` Run has scheduled and settled its evals, and in
-`prune`; a Run that fails earlier, while preparing, scheduling or saving, skips it, and
-`prune` collects on request. When the
-conversation files take more than `maxBytes`, it deletes the sessions written longest
-ago, one at a time, until they take `targetBytes` or less, so each collection frees a
-fixed amount rather than one session at a time. It never deletes the session of a
-request that is still RUNNING, nor one that a `session send` holds; such sessions can
-keep the store above its target until a later collection. A collection that fails
-during `verify` is reported on stderr and leaves the Run as it is. The other
-`limits.json` rules apply: an unknown field, a value of the wrong type, `maxBytes` 0 or
-a `targetBytes` that is not lower than `maxBytes` fails `verify` and `prune` (exit 2),
-and `doctor` reports it as a hard error.
+A cleanup runs when a `verify` Run has finished its evals, and on `prune`. When the
+conversations take more than `maxBytes`, it deletes the oldest sessions until they take
+`targetBytes` or less. It never deletes the session of a running review or one a
+`session send` is using, so the store can stay above its target until a later cleanup. A
+cleanup that fails during `verify` is reported on stderr and leaves the Run as it is. An
+invalid `agentSessions` value fails `verify` and `prune` (exit 2), and `doctor` reports it.
 
-The store is `$STATE/agent-sessions/`, owner-only (0700; a protected owner-only DACL
-on Windows), and it is refused when it is not. Each session is one append-only JSON
-Lines file, owner-only (0600), named by its `sessionId`:
-
-```text
-$STATE/agent-sessions/
-  e83bf374-5136-484c-8d2f-2ce38ee4ca57.jsonl   the conversation, one event per line
-  e83bf374-5136-484c-8d2f-2ce38ee4ca57.lock    held while a session send appends to it
-```
-
-Events identify their `kind` and normally record their time in `at`; older
-records can omit optional timestamps or header metadata. New records use:
+The store is `$STATE/agent-sessions/`, readable only by you, with one JSON Lines file per
+session named by its `sessionId`. `session show --json` prints its events; each has a
+`kind`:
 
 | `kind` | Holds |
 |---|---|
-| `review` | First line: `version` (1), `sessionId`, `runId`, `requestId`, `evalId`, `target`, `producer`, `state`, `backend`, `model`, `reasoning`, `parameters` (as sent, with `prompt_cache_key`), `budgets` (`timeoutMs`, `maxToolCalls`, `maxTokens`) and `tools` (the definitions offered) |
-| `message` | One message as the provider received or sent it (`message`, a rig message: `role` `system`, `user` or `assistant`, with text, tool calls, tool results and reasoning, encrypted content and signatures included), and the `turn` (provider request) that carried it; a message of tool results has `isError`, whether each result failed, in order; the repair prompt has `"repair": true`, and a follow-up's framed question has the person's own words in `question` |
-| `delivery` | Display-only streaming data: `turn`, `attempt`, nonempty `block` identifier, `contentKind` (`text` or `summary`), `text`, and `state` (`delta`, `complete` or `interrupted`) |
-| `attempt` | One provider attempt of a `turn`: its `attempt` number, the `usage` counters the provider reported (`inputTokens`, `outputTokens`, `totalTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens`, where reported), and its `error` and `errorCode` when it failed |
+| `review` | First line: the session, Run, request and eval IDs, target, producer, backend, model, reasoning, parameters, budgets and the tools offered |
+| `message` | One message sent to or received from the model, with its text, tool calls and tool results; a follow-up's own words are in `question` |
+| `delivery` | Text shown while it streamed (`delta`, `complete` or `interrupted`); never part of the conversation or usage |
+| `attempt` | One provider attempt: its usage counters and, when it failed, `error` and `errorCode` |
 | `end` | The review's `result`, or its `errorCode` and `error` |
-| `send` | A follow-up starts: its `send` number, the person's `text`, the `framing` sent before it, `filesChanged` and the `tools` offered |
+| `send` | A follow-up starts: its number, the person's `text` and the tools offered |
 | `answer` | The follow-up's answer `text`, or its `errorCode` and `error` |
 
-Delivery `delta` records carry incremental text, `complete` marks a completed
-block, and `interrupted` marks delivery that ended before completion (including
-an interrupted attempt). They drive the live display only: they never add to
-conversation replay history or usage totals, which come from semantic messages
-and attempt records.
-
-The events of a follow-up also carry its `send` number. When a budget, the deadline or
-a repeated call ID stops a turn's tool calls, the results of the calls that ran are
-saved and the others have none. The request's verdict, result and usage stay in
-`state.sqlite`; the session is the only record of the conversation and its tool calls,
-and [`session show --summary`](../agent.md#session-summary) counts them.
-A last line cut short by a crash is ignored when the file is read.
+The verdict, result and usage stay in the Run; the session is the only record of the
+conversation and its tool calls, which
+[`session show --summary`](../agent.md#session-summary) counts.
 
 ### Follow-up replay
 
-`session send` uses the saved review's backend, model, reasoning and session id.
-OpenAI and Codex retain the same `prompt_cache_key`; Codex also retains the
-`session-id` header. Saved history and the system prompt are replayed unchanged
-so the cached prefix matches. Current project tools are offered again; changed
-covered fingerprints add a warning to the header and the model's context.
+`session send` asks the saved review a question with the same backend, model and
+reasoning, replaying the saved conversation so the provider can reuse its cache. The
+project's current tools are offered again, and if a covered Artifact changed since the
+review, the header and the model are told. The question is a follow-up, not a new review:
+the model answers in plain text, may use the tools, and the recorded verdict never changes.
+`session show` prints your question as you wrote it.
 
-A question is a new user turn framed as a follow-up, not a new review. The
-frame asks for plain text, permits the tools and states that the recorded verdict
-will not change. Modern review system prompts state that same distinction;
-older saved conversations rely on the new turn's framing. `session show` prints
-the person's original question, while its JSON export retains the framing too.
-
-Questions, answers and tool calls append to the same saved thread. Sends to one
-session serialize: each continues after the preceding answer. Each question has
-fresh profile budgets. A RUNNING request cannot be followed up; recorded verdict,
-result, usage and reuse evidence remain immutable.
+Questions, answers and tool calls are added to the same conversation, one question at a
+time, each with fresh profile budgets. A running review cannot be asked yet.
 
 ### Provider transport
 
-The rig-core 0.43.0 provider client uses streaming OpenAI Responses with
-`store:false`, encrypted reasoning replay and parallel tool calls disabled, or
-Anthropic Messages. Anthropic requires a per-turn output cap of 16384 tokens,
-separate from the review budget. One review deadline covers all turns, retries and
-tools. Incomplete responses are errors even if a partial answer contains a verdict.
-Nested HTTP retries and redirects are disabled; artifactize handles turn retries
-as described in [retries and error codes](../agent.md#retries-and-error-codes).
+One review deadline covers every turn, retry and tool call. A response that ends early is
+an error even if it already contains a verdict. Anthropic answers are capped at 16384
+output tokens per turn, apart from the review's own budget. Retries are described in
+[retries and error codes](../agent.md#retries-and-error-codes).
 
 ### Transcript reader
 
-Monitor Detail displays readable message text, public reasoning summaries and
-collapsed tool activity, not raw message envelopes or private reasoning payloads.
-Streaming updates replace their provisional text with final content; interrupted
-partial output is labeled. Public OpenAI/Codex summaries are read from streaming
-frames without changing the bytes passed to rig, the provider client library.
-Display-only events never enter replayed model history.
-
-The reader follows new messages until you scroll away. Resize preserves the
-reading position while paused and stays at the bottom while following. Tool
-activity expands to names, targets and recorded states, not full tool arguments
-or successful output. `session show --json` exports the complete saved events.
-Missing local sessions, never-saved conversations and remote references are
-reported separately; a remote reference cannot open arbitrary local files.
-
-History is indexed incrementally into private temporary text and row files, with
-only the visible pages loaded. There is no fixed first-2-MiB history cutoff.
-One complete event needs memory proportional to its size while being decoded;
-other history and layout work yields between bounded chunks. Complete malformed
-events report errors, while partial lines and incomplete UTF-8 wait for the next
-append. Replacement, truncation or deletion resets the reader; closing or resetting
-it removes its temporary files. Later `session send` events remain readable after
-the original review ends.
+Monitor Detail shows a review's messages, public reasoning summaries and collapsed tool
+activity, not raw messages or private reasoning. Streaming text is replaced by the final
+text, and output that stopped early is labeled. The reader follows new messages until you
+scroll away; resizing keeps your place. Tool activity shows names, targets and states, not
+full arguments or successful output; `session show --json` has everything. Long
+conversations open quickly and can be scrolled to the start. A session that is missing on
+this machine, was never saved or lives in a remote store is reported as such, and later
+`session send` answers stay readable after the review ends.
 
 ### Local readers
 
-Monitor and Review only read the state; they never rediscover declarations or
-fingerprints to refresh. The one exception is opening a waiting Human review's
-Detail: it reads the current declarations to show that review's tool commands,
-without claiming the review or running anything. They follow changes as they happen: the first open reader
-hosts a temporary owner-only local channel (no daemon) on which writers announce which
-Runs they changed, and readers read only those again, the Run you have open included.
-Without the channel, or when it misses something, a check every five seconds catches
-up, and a replaced database is read again from the start. Opening a reader reads only
-the list of Runs and the Run you open, so even a very large Run is quick to follow.
-This is local coordination, not push delivery from a team store.
-
-The Run worker separately reconciles dead execution owners and backend slots and
-optional remote results, without a Human wait deadline. Explicit Human actions use
-the shared atomic claim, fingerprint recheck, schema validation and
-`submit_and_publish` APIs. Followers resolve to their original request. Publication
-failure after local settlement preserves and shows that settlement.
+Monitor and Review read the state and update on their own when a Run changes, within five
+seconds at the latest; they never read your declarations or files again to refresh. The
+exception is a waiting Human review's Detail, which reads the current declarations to show
+its tool commands, without claiming the review or running anything. A follower opens its
+original request. If publishing to a team store fails after a local submission, the local
+result stays and the failure is shown.
 
 ## Local diagnostics and maintenance
 
@@ -415,74 +244,56 @@ artifactize models openai|anthropic|codex [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 ```
 
-`prune` operates on the selected state's Runs across repositories, not the current
-repository. Eligible Run statuses are exactly **GREEN, RED, ERROR and INCOMPLETE**,
-with a completion timestamp, only terminal requests, and no live execution owner
-(PID plus process start time). SIGNOFFS_PENDING Runs are **always skipped**, even
-after their Human requests settle: later submissions do not rewrite that historical
-Run status. Other unfinished Runs are also skipped. `--older-than` compares Run completion time;
-use a whole-number `s`, `m`, `h`, `d` or `w` duration. With no age filter, every
-eligible Run is considered. `--dry-run` returns `wouldRemove` without deleting;
-normal JSON returns `removed`, and both include `skippedRuns`. `prune` also collects
-the [Agent session store](#agent-sessions) under its size bounds, whatever
-`--older-than` says: `removedSessions` lists the deleted sessions, and with `--dry-run`
-`wouldRemoveSessions` those over the size bounds. A dry run does not check for a running
-`session send`, which an actual prune leaves alone, so the two can differ.
-
-What `doctor` checks, the `models` output and exactly which directories `prune`
-removes are in the [reference](#doctor-models-and-prune).
+`prune` works on the selected state's Runs across repositories, not only the current one.
+It removes the output of Runs that ended **GREEN, RED, ERROR or INCOMPLETE** and have
+nothing still running. SIGNOFFS_PENDING Runs are **always skipped**, even after their
+sign-offs are submitted, and so are unfinished Runs. `--older-than` compares the Run's
+end time, as a whole number of `s`, `m`, `h`, `d` or `w`; without it every eligible Run is
+pruned. `--dry-run` returns `wouldRemove` without deleting; a real prune returns
+`removed`; both include `skippedRuns`. `prune` also cleans the
+[Agent session store](#agent-sessions) down to its size bounds, whatever `--older-than`
+says: `removedSessions` lists what it deleted, and `--dry-run` lists
+`wouldRemoveSessions`. A dry run does not know which sessions a running `session send`
+uses, so the real prune can delete fewer.
 
 ### Doctor, models and prune
 
-`doctor` makes no provider calls and creates no Run, verdict, cache entry or auth
-file. It reports the resolved state directory and tests writability with a temporary
-directory, removed immediately (in the nearest existing ancestor when state does
-not yet exist). Before the writable probe it enforces the same current/legacy
-workspace-marker safety boundary, even without `--repo`; unsafe state fails
-without writing a probe inside that workspace. It reads the state database's
-schema, applying a supported additive upgrade if needed: a
-database [written by an earlier artifactize](#state) (schemas 1–5) or by a newer
-one is a hard error (exit 1), with the message other commands refuse it with and
-its `schema` and the `supported` one in the details. `--repo`
-additionally runs the same static validation as `config check`. The `limits` check
-reads [`limits.json`](#backend-capacity) and reports the backend capacity (an
-invalid file is a hard error). The `sessions` check reports the
-[Agent session store](#agent-sessions): how many sessions it holds and their bytes,
-`maxBytes`, `targetBytes`, whether saving is `enabled`, the store's `directory` and the
-state's `stateId`. API keys are
-reported only as present/absent, never validated or printed. Missing keys are
-warnings: optional backends need not all be configured. A backend with a
-[test endpoint](../agent.md#test-against-a-fake-provider) is a warning
-that reports it as `testEndpoint`; an invalid test endpoint is a hard error. The
-`codex` check reads the sign-in without a lock, refresh or network call: no sign-in
-is a warning, a stored sign-in passes even when its access token has expired (the
-next use refreshes it), and an expired `ARTIFACTIZE_CODEX_AUTH_FILE` token is a
-warning. A `$STATE/auth` [inside a repository](#state) is a warning while no sign-in
-is stored there, with `refused` in the details holding the message, and a hard error
-once one is. Its details name the `source` (`stored`, `file` or `none`), `expiresAt` and
-`expired`, and `testEndpoint`/`testAuthEndpoint` when they are set. The remote review
-store check is also offline: it reports the resolved URL, share level and token source; a
-missing token is a warning, and an invalid configuration (including plain HTTP to a
-non-loopback host) or an unsafe token file is a hard error. Invalid config,
-unsafe/unwritable state or invalid auth storage are hard errors. Exit is 0 without
-hard errors, 1 with hard errors, and 2 for invocation errors.
+`doctor` calls no provider and creates no Run, verdict, cache entry or sign-in. It
+reports the state directory, checks that it is writable and outside a workspace, and
+checks that the state database has a supported schema, upgrading it
+[if needed](#state); an unsupported schema is a hard error that shows its `schema` and
+the `supported` one. `--repo` also runs the checks of `config check`. Further checks:
 
-`models openai` and `models anthropic` call the provider's models endpoint with the
-corresponding API key through rig; Anthropic pagination is followed. `models codex`
-lists the [Codex](../agent.md#codex) models of the signed-in account. A
-test endpoint replaces the provider's API root here too. There is no account or backend
-fallback. Text lists tab-separated slug/name pairs; JSON is
-consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`.
-Listings preserve provider order.
+- `limits`: the [backend capacity](#backend-capacity); an invalid `limits.json` is a hard
+  error.
+- `sessions`: the [Agent session store](#agent-sessions): how many sessions and bytes,
+  `maxBytes`, `targetBytes`, `enabled`, its `directory` and the state's `stateId`.
+- API keys: reported as present or absent, never checked or printed; a missing key is a
+  warning, since you need only the backends you use. A
+  [test endpoint](../agent.md#test-against-a-fake-provider) is a warning that names it as
+  `testEndpoint`; an invalid one is a hard error.
+- `codex`: the sign-in, read without refreshing or going online. No sign-in is a warning;
+  a stored sign-in passes even when its access token expired (the next use refreshes it);
+  an expired `ARTIFACTIZE_CODEX_AUTH_FILE` token is a warning. A `$STATE/auth`
+  [inside a repository](#state) is a warning, with the refusal message in `refused`, until a
+  sign-in is stored there, then a hard error. Details name the `source` (`stored`, `file`
+  or `none`), `expiresAt`, `expired` and any test endpoints.
+- The remote review store, also offline: its URL, share level and token source. A missing
+  token is a warning; an invalid configuration (including plain HTTP to a non-loopback
+  host) or an unsafe token file is a hard error.
 
-Only known scratch directories below `state/runs/<run-id>` are removed: runtime
-`output` (and `tmp`, `home` and `cache` left by older versions) and leftover tool output.
-Run roots, unknown files/directories, database rows, results and reuse records
-remain. Symlinks (including nested links), non-directory targets and
-repository content are refused before deletion. `.git` and the current/legacy
-Artifact markers above protect workspace copies, including Git-less projects
-copied inside Run output. Both `--dry-run` and real prune enforce this boundary.
-Database reads have a five-second busy timeout and finish before deletion; prune
-holds no writer lock. This is plain
-prune, without quarantine, crash-recovery machinery or hostile filesystem-race
-protection. Saved `run show` and `request show` remain readable after pruning.
+Exit is 0 without hard errors, 1 with hard errors, and 2 for invocation errors.
+
+`models openai` and `models anthropic` list the models the API key can use; `models codex`
+lists those of the signed-in [Codex](../agent.md#codex) account. A test endpoint replaces
+the provider here too, and there is no fallback to another account or backend. Text lists
+tab-separated slug/name pairs; JSON is
+`{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`, in the
+provider's order.
+
+`prune` removes only the output folders inside `state/runs/<run-id>`: runtime `output`
+(and `tmp`, `home` and `cache` left by older versions) and leftover tool output. Run
+records, results, reuse records and unknown files stay, and `run show` and `request show`
+still work. It refuses symbolic links and anything that looks like a project (a `.git` or
+an Artifact declaration), also on `--dry-run`. Do not run it while another program is
+changing those folders.

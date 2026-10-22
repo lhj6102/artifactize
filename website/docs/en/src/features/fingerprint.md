@@ -38,8 +38,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   declaration and fails discovery.
   A neighboring file Artifact's target remains in the folder's hash; it creates
   no automatic child relation.
-- `ignore`: up to 64 `.gitignore`-style globs relative to the owner, without
-  negation. They always exclude, like the built-in ignores `.git`,
+- `ignore`: up to 64 unique `.gitignore`-style globs relative to the owner, without
+  negation; a pattern may not be blank, start with `#` or contain control characters. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
   exclude more, with git semantics: every one from the repository root (`--repo`)
   down through the Artifact and walked directories applies. A pattern is relative

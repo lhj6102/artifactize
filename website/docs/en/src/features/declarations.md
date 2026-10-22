@@ -66,9 +66,9 @@ by ID, not by their position in the TOML source.
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals; a Human eval's take only [form shapes](#human-result-schemas) |
 | `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind |
 
-[Tool sessions](tools/agent.md#tool-sessions) keep a harness alive for one review.
-Artifactize owns their start, stop, cleanup and crash recovery; declarations expose
-no lifecycle or cleanup-timing options. The linked reference gives the full contract.
+[Tool sessions](tools/agent.md#tool-sessions) keep a harness running for one review.
+Artifactize starts, stops and cleans them up; there are no lifecycle or timing options
+to declare.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
@@ -314,18 +314,16 @@ Omitting `mutex` (or declaring `mutex = []`) adds no constraint.
 Two evals conflict if any of their tags are equal or one is an ancestor of the
 other. `use-computer` conflicts with every descendant;
 `use-computer:db` conflicts with `use-computer:db:users`, but not with
-`use-computer:browser` or `use-computer:database`. All an eval's tags are acquired
-together, so partial acquisition cannot deadlock. It waits until no conflicting
-eval is running. This rule adds no priority, ordering or scheduling optimization.
+`use-computer:browser` or `use-computer:database`. An eval waits until no conflicting
+eval is running and then takes all its tags at once, so two evals never wait for each
+other. Tags add no priority or ordering.
 
-Held tags are recorded atomically with execution ownership in the machine's
-shared state store. They apply across Runs, worktrees and verify processes using
-that store, not only within a Run. A waiting request stays `QUEUED`; its
-`blockedReason` identifies the holding eval and Run. Waiting consumes no execution
-budget, backend slot or job slot. `timeout_ms` starts when the eval actually
-starts, not while it waits. Tags are released on completion or cancellation, and
-dead process owners or ended Runs cannot retain them. Separate explicitly chosen
-state directories are isolated stores, not a shared lock namespace.
+Tags apply to every Run, worktree and `verify` on the same state, not only within a Run;
+a different `--state-dir` has its own tags. A waiting request stays `QUEUED`, and its
+`blockedReason` names the eval and Run that hold the tag. Waiting uses no execution
+budget, backend slot or job slot, and `timeout_ms` starts only when the eval starts.
+Tags are released when the eval ends or is cancelled, also when its process dies or
+its Run ends.
 
 Tags describe the eval's own command or tools, never its Artifact: an Agent that
 only reads test code need not wait because another eval runs those tests. There
@@ -397,15 +395,12 @@ recorded `fingerprints` against current dependency fingerprints.
 Before executing evals, `verify` computes fingerprints in their selected required
 dependency closure, including dependencies whose evals are not selected.
 Up to `--fingerprint-jobs N`
-fingerprints are computed at once (default: the CPUs available to the process),
-in `status` as in `verify`. A Run shares that bound between preparation and its
-Runtime/Agent end-of-review rechecks. **Human tool actions and submissions are
-separate operations**: each creates its own CPU-sized fingerprint parallelism,
-independent of the Run's `--fingerprint-jobs` setting.
-Values are keyed by Artifact, not completion order. A failure reports the first
-failing Artifact in name order and cancels fingerprints after it. Scripts run in
-separate private output directories. `--fingerprint-jobs 1` serializes that Run's
-preparation and Runtime/Agent rechecks, not all Human checks or other Runs.
+fingerprints are computed at once (default: the number of CPUs), in `status` as in
+`verify`, both before the evals and when Runtime and Agent reviews end. A Human tool
+run or submission checks its fingerprints separately, as many at once as there are
+CPUs, whatever the Run's `--fingerprint-jobs`. A failure reports the first failing
+Artifact in name order and stops the rest. Each script gets its own private output
+folder.
 
 Every executable eval on an Artifact receives the same literal value, saved on
 its request and in the Run's Artifact validation. artifactize adds no repository,
@@ -449,61 +444,40 @@ mandatory at preparation, eval start/end and tool calls, including for unkeyed
 evals. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
 only at preparation and recheck.
 
-## Scoped input library
+## Artifact references in commands
 
-`config::read_workspace_config` (also used by `config check`) resolves nearest
-child ownership, validates explicit references, and returns typed
-input-to-consumer `relations` for graph scheduling. Instruction references resolve
-a global Artifact name. Backslash-escaped braces, doubled
-braces, `${variables}`, nested/JSON groups and unmatched braces stay literal.
-Payloads are never changed and references never expand file content.
+Runtime arguments, fingerprint scripts and tool arguments name other Artifacts with
+`{name}`, `{name}/path` or `--flag={name}/path`. `{owner}/child/path` starts at a folder
+Artifact; a file reference is the file itself and takes no path. Each one becomes an
+absolute path when the command runs and makes the eval depend on that Artifact, even if
+its instruction does not mention it. Everything else is passed literally: escaped braces,
+doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
+never builds a command line from a string. An eval may read its target and the Artifacts it
+references, with their children, but not the instructions of the referenced Artifacts'
+evals.
 
-`scope::eval_scope` admits the target and explicit references plus their child
-closure, not the referenced Artifacts' eval instructions.
-`Scope::resolve_path` follows logical child paths to canonical Artifact
-ids; `Scope::resolve_input` additionally requires existing files/directories
-without symlink traversal. Logical paths reject absolute paths, traversal, empty
-components, backslashes, colons, ASCII controls and lengths above 4096 UTF-16 code units.
-Declared paths (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`)
-are shorter: up to 1024 units each.
+Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
+colons or control characters, or be longer than 4096 characters; paths you declare
+(`fingerprint.files`, `fingerprint.script.files` and `execution_paths`) are limited to 1024.
+`config check` checks the names and syntax; whether a referenced file exists, and that no
+symbolic link is followed, is checked when the command is prepared.
 
-Before preparing a runtime command, call `scope::resolve_argv` with the admitted
-scope. Explicit `{name}`, `{name}/path` and `--flag={name}/path` operands resolve to
-absolute scoped input paths and add dependencies even without instruction
-references. Use `{owner}/child/path` for logical paths starting at a folder owner.
-A file reference resolves to the file itself. Other arguments (including escaped
-references) remain literal, and the command is never interpolated. `config check`
-validates names and syntax but does not open runtime operands or execute programs.
-Input existence and symlink checks happen during argument preparation. Graph
-closure, runtime CLI execution and the Agent tool registry use these resolvers.
+## Runtime execution
 
-## Runtime execution library
-
-`runtime::Command::prepare(program, args, workspace, run_dir, timeout_ms)` prepares
-one invocation for `runtime::execute`. Arguments are literal; the runner never adds
-a shell. The default cwd is the canonical workspace; a scoped caller can set
-`command.cwd` to the Artifact's working directory (the containing folder for a
-file Artifact). `process::run` is the lower-level API for resolved commands with
-a complete explicit environment. `verify` uses the owner working directory as cwd.
+Artifactize runs the program with its arguments as written, without a shell, in the
+Artifact's folder (the containing folder for a file Artifact).
 
 Commands run in the author's own terminal environment, so a project declares them as
 it would type them: the whole environment of the `artifactize` process is passed on,
 including the real home and cache locations (`HOME`, `XDG_*`, and on Windows
 `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and the system variables), so toolchains
 that resolve through them, such as `cargo` or `pnpm` behind a version manager, work as
-in a terminal. What is artifactize's own stays out: every `ARTIFACTIZE_*` variable of the
-caller (its credentials such as `ARTIFACTIZE_REMOTE_TOKEN`, and its settings) is
-removed, and the command receives only the variables artifactize sets for it. Each
-prepared runtime command gets a fresh owner-only directory below the caller's external
-`run_dir`, with owner-only `output` and `tmp` subdirectories (0700 on Unix, a protected
-owner-only DACL on Windows). Children receive
-`ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`, and
-`TMPDIR`/`TMP`/`TEMP` pointing at the private temporary directory, which is removed
-when the command ends. Existing output ancestors are canonicalized before creation; output
-inside the canonical workspace, including through symlinks, is rejected. The
-caller owns the run directory; prepared output persists after execution for
-receipts and explicit pruning. Failed preparation removes its newly owned
-invocation directory, not the caller's root.
+in a terminal. Artifactize's own variables stay out: every `ARTIFACTIZE_*` variable of the
+caller (credentials such as `ARTIFACTIZE_REMOTE_TOKEN`, and settings) is removed. The
+command gets `ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR` (a private folder for its
+output, kept after the Run until you prune it), `ARTIFACTIZE_TMP_DIR`, and
+`TMPDIR`/`TMP`/`TEMP` pointing at a private temporary folder removed when the command ends.
+Only you can read these folders, and they are never inside the reviewed project.
 
 Because commands see the author's environment, a result depends on it like any
 terminal command does, and it is not part of the
@@ -511,31 +485,17 @@ terminal command does, and it is not part of the
 does not invalidate a cached result. A fingerprint that must change with a tool's
 version has to read that version.
 
-The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 ms.
-It covers inert-child registration and execution without a reset. Each stdout
-and stderr **saved audit** retains the first 128 KiB. Runtime evals also retain
-full raw streams in private Run output, including the tail, until those captures
-are pruned or removed; `request logs`/MCP `request_logs` read bounded
-tail/range/search excerpts. Once a capture is gone, only the bounded saved audit
-may remain: paging cannot recover its missing tail. This is the skill's "until
-pruning" availability boundary, not a promise that every cleanup command removes
-all captures. Current `artifactize prune` removes recognized scratch
-subdirectories but leaves raw stream files and completion markers in invocation
-roots. It supplies no raw-capture retention policy; keep that current command
-scope distinct from pruning or deleting Run output itself.
-Missing, partial and older/remote audit-only evidence are reported explicitly. Runtime
-results decode UTF-8 lossily, remove ANSI CSI sequences and C0 controls except tab,
-LF and CR (DEL is preserved), and retain the truncation flag and actual exit
-status/duration. Low-level process results remain unmodified bytes.
+The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 ms. The
+result keeps the first 128 KiB of stdout and of stderr, with a flag when it was cut, and
+the exit status and duration. Text is read as UTF-8 (invalid bytes replaced), with
+terminal color codes and control characters other than tab, LF and CR removed. The full
+streams stay in the Run's output, where `request logs` and MCP `request_logs` read their
+end, a range or matching lines. Once a capture is deleted, only the saved first 128 KiB
+remains. `artifactize prune` removes the Run's `output` folder but keeps these stream
+captures. Evidence that is missing, partial, or saved only by an older or remote
+artifactize is reported as such.
 
-Cancellation and timeout stop the owned child tree. On Unix, artifactize sends
-SIGTERM to its process group, then SIGKILL after at most one second. On Windows,
-it attempts Ctrl-Break for the console group, then terminates the owned Job
-Object after the grace period. Ordinary leader exit also cleans up the group or
-job. Capture stops waiting at most one second after cleanup if a pipe remains open.
-Dropping the caller cancels the supervisor, which still cleans up and reaps the
-leader. Configured programs are trusted local code, **not an OS sandbox**: they
-can use ordinary OS access, must keep reviewed input unchanged, and descendants
-that deliberately leave the owned process group or job may escape cleanup. These
-controls do not promise confinement or detection of every adversarial transient
-write.
+Cancellation and a timeout stop the command and the programs it started, after a grace
+period of about a second. Commands are trusted local code, **not a sandbox**: they can do
+whatever your account can, must not change the reviewed input, and a program that
+deliberately detaches from the command may keep running.

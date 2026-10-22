@@ -141,8 +141,7 @@ cache and Human approvals; schemas 1–5 and versions above 9 are refused ([Stat
 ## Submission and watching
 
 Plain `verify` submits, prints the Run ID and exits 0 on acceptance; add `--wait` where
-a script needs the outcome's exit code. A repeated `--request-key` returns its original
-Run. [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel) owns the
+a script needs the outcome's exit code. A repeated `--request-key` returns its original Run; a key is 1–128 ASCII letters, digits, `.`, `_`, `:` or `-`, and any other key exits 2. [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel) owns the
 details.
 
 ```sh
@@ -233,7 +232,7 @@ Zero permits reuse, joining and Human reviews; a budgeted waiter replacing a fai
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
-error. There are no reservations, refunds, admission pools or restart ledger.
+error.
 
 Human waiting and cancellation follow [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel);
 the [Human guide](../features/human.md) covers claims, tools and sign-offs.
@@ -250,10 +249,7 @@ for every executable eval included by the selection and recursion policy before
 applying variants.
 Each executable eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
-Run, and source declarations are never rewritten. The library accepts
-`project::selection::ProfileSelection::Named` or `ProfileSelection::Evals` (a
-qualified-eval-to-name map); mappings outside that pre-variant included scope fail.
-With `--recursive`, variants apply to executable dependencies already in that
+Run, and source declarations are never rewritten. With `--recursive`, variants apply to executable dependencies already in that
 scope. Runtime variant arguments then rebuild scoped references and dependency
 gates, and the included scope is recomputed. Dependencies newly included through
 those variant arguments retain their default profiles; the named variant is not
@@ -354,5 +350,5 @@ case-sensitive 1–2048-byte string. Lines longer than 2048 raw bytes are marked
 audit, stay in Run output. Current `prune` leaves raw stream files and completion
 markers in invocation roots; it supplies no raw-log retention policy. Missing or
 older/remote audit-only evidence is labeled explicitly. See the shared
-[runtime retention reference](../features/declarations.md#runtime-execution-library). See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
+[runtime retention reference](../features/declarations.md#runtime-execution). See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
 for the shared evidence/event schemas and client delivery limits.

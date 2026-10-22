@@ -73,8 +73,8 @@ observation, explicit cancellation and missing review obligations.
 never records a Human request or waits: a Human eval reuses a sign-off or is
 [not executed](../cli/index.md#reuse-only), as CI wants.
 
-The [reference](tools/human.md#human-reviews) has the library API, the
-`request list` and `request show` fields and Run summaries.
+The [reference](tools/human.md#in-a-review) has the `request list` and
+`request show` fields and Run summaries.
 
 ## Deferred sign-offs
 

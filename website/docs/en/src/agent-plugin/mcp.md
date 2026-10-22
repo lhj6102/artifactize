@@ -79,14 +79,14 @@ Registration supplies tools, not the [Hey Arti skill](hey-arti.md).
 
 ## Verification tools
 
-| Tool | Arguments | Core operation / answer |
+| Tool | Arguments | Answer |
 | --- | --- | --- |
-| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate`, `defer_human` | Submit via `runs::start`; compact Run observation, not approval |
-| `verify_status` | `run` | `runs::status`: saved state, counts, elapsed seconds and `next_check` |
-| `verify_wait` | `run`, optional `seconds` | `runs::wait`: Run end or bound; default 30, integer 0–40; observing takes under 45 seconds, after the first call's roots question, if any |
-| `verify_watch` | `run`; optional standard `_meta.progressToken` on the tool call | Change-driven `runs::watch`, up to 30 seconds; progress messages contain JSON Run events; compact observation at return |
-| `verify_result` | `run`, optional `cursor` | `runs::result`: verdict and up to 20 concise findings, `next_cursor`; `ready:false` while active |
-| `verify_cancel` | `run` | `runs::cancel`: explicit cancellation acknowledgement; observe settlement for cleanup |
+| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate`, `defer_human` | Submits the Run; compact Run observation, not approval |
+| `verify_status` | `run` | Saved state, counts, elapsed seconds and `next_check` |
+| `verify_wait` | `run`, optional `seconds` | Waits for the Run's end or the bound; default 30, integer 0–40; observing takes under 45 seconds, after the first call's roots question, if any |
+| `verify_watch` | `run`; optional standard `_meta.progressToken` on the tool call | Follows changes for up to 30 seconds; progress messages contain JSON Run events; compact observation at return |
+| `verify_result` | `run`, optional `cursor` | Verdict and up to 20 concise findings, `next_cursor`; `ready:false` while active |
+| `verify_cancel` | `run` | Explicit cancellation acknowledgement; observe settlement for cleanup |
 
 `scope` is the shared Selection JSON envelope, tagged by `kind`:
 
@@ -109,19 +109,19 @@ new key or no key. Omitting the key always creates a new Run while retaining
 normal eval-result reuse.
 
 Concurrency is unlimited by default: all READY evals can start, subject to
-backend limits in `limits.json`. An optional positive integer `jobs` is the same
+backend limits in `limits.json`. An optional `jobs` (1–4294967295) is the same
 per-Run cap as CLI `--jobs`; add it only when unrestricted concurrency causes
-trouble. The Run omits `jobs` when unlimited; older saved numeric caps remain
-readable.
+trouble. The Run omits `jobs` when unlimited.
 
-Both mode arguments default false and pass directly to shared `RunModes`.
-`speculate` starts requested downstream work within core scheduling limits before
+Both mode arguments default false and mean the same as CLI `--speculate` and
+`--defer-human`.
+`speculate` starts requested downstream work within the usual scheduling limits before
 upstream judgment; an upstream RED/ERROR cancels only the work it makes invalid. `defer_human`
 permits provisional progress and returns terminal `signoffs_pending` when only
 deferred sign-offs remain. `verify_result` reports verdict `SIGNOFFS_PENDING`;
 this is not full approval (the CLI watcher exits 5). Explicit `gate = "blocking"`
-still blocks. `DEFERRED` and `PROVISIONAL` request states are forwarded from core,
-not reinterpreted by MCP. Later sign-offs do not re-run the machine work.
+still blocks. Request states such as `DEFERRED` and `PROVISIONAL` are the same as in
+the CLI. Later sign-offs do not re-run the machine work.
 
 A running answer is smaller than 2 KiB. Waiting is ordinary state, not an error.
 `verify_wait` treats runtime, Agent and Human evals equally: it does **not** return
@@ -136,8 +136,7 @@ Human judgment stays with the person; MCP cannot claim, release or submit it.
 ## Inspection tools
 
 All inspection tools accept an optional detail `cursor` as well as the arguments
-listed below. They invoke the same core operations and JSON projections as their
-CLI counterpart; MCP adds only a bounded, lossless transport page.
+listed below. They return the same JSON as their CLI counterpart, split into detail pages.
 
 | Tool | Arguments (optional unless marked required) | CLI counterpart |
 | --- | --- | --- |
@@ -145,7 +144,7 @@ CLI counterpart; MCP adds only a bounded, lossless transport page.
 | `config_check` | none | `config check` |
 | `config_graph` | `scope` (defaults all), `impact` (false) | `config graph [ARTIFACT] [--impact]`; MCP also accepts eval/multi-selection |
 | `request_logs` | **`id`**, `stream` (`stdout`/`stderr`/`both`), `tail`, `start`, `end`, `search` | `request logs ID` with matching flags |
-| `run_list` | `limit` (0–20, default 20), `offset` | `run list --limit 20 --offset N` for this repository |
+| `run_list` | `limit` (0–20, default 20), `offset` (0 or more, default 0) | `run list --limit 20 --offset N` for this repository, newest first |
 | `run_show` | **`run`** | `run show RUN` |
 | `request_list` | `run` | `request list [--run RUN]`, restricted to this repository |
 | `request_show` | **`id`** | `request show ID` |
@@ -186,11 +185,12 @@ one group's JSON. `verify_result` instead pages its structured `findings` array.
 Cursors identify the tool, arguments and current saved projection. Elapsed fields
 use the first page's observation clock, so clock movement alone cannot expire a
 continuation while a Run waits for a person. A foreign or
-stale cursor is rejected; restart that inspection if the evidence changed. No
-transport-owned snapshots or background subscriptions are stored. Tool operation failures
-use MCP `isError:true` with bounded `{code,message}` content (the existing core
-operation errors retain their message under `operation_failed`); details are not truncated to
-pretend that an incomplete page is the whole result.
+stale cursor is rejected; restart that inspection if the evidence changed. A failed
+tool call returns MCP `isError:true` with `{code,message}`. `operation_failed` carries
+the CLI's error message, cut to its first 2,048 characters; `response_too_large` means
+the answer does not fit a detail page, so narrow the inspection (for example a
+`request_logs` range or search). Details are never cut to pretend that an incomplete
+page is the whole result.
 
 ## Deliberately absent
 
@@ -204,8 +204,8 @@ entry points for these actions.
 
 Submit with `verify_start`, retain the Run ID, then call `verify_watch` with the
 standard tool-call metadata `{"progressToken":"your-observer"}` in `_meta`.
-While this call is pending, artifactize subscribes to shared state changes and
-sends `notifications/progress`. The notification's `message` is a JSON envelope:
+While this call is pending, artifactize sends `notifications/progress` as the Run
+changes. The notification's `message` is a JSON envelope:
 
 - `{"kind":"update","data":...}`: compact live state/counts, **not approval**.
 - `{"kind":"eval_result","data":...}`: one saved request/eval status and concise
@@ -221,7 +221,8 @@ progress token, the same call waits but sends no notifications; prefer
 `verify_wait` in clients that do not consume progress. No rapid polling is needed.
 Subscriptions end with the call (30-second bound), client cancellation or
 connection closure, and a later call reattaches to the saved Run (see
-[Verification tools](#verification-tools) for who owns the Run). Lost/coalesced invalidations reconcile from saved state rather than inventing
+[Verification tools](#verification-tools) for who owns the Run). Changes that arrive
+together may be merged into one notification; each one reflects the saved state, not
 a complete event history.
 
 The **client/agent host** must display progress or route it into its own task
@@ -251,7 +252,7 @@ or `not_runtime` (use request/session evidence instead). Empty is not missing.
 A reused request follows its original local producer; remote records do not
 promise locally retained logs. How long raw captures are kept, and what
 `artifactize prune` leaves, is in the
-[runtime execution reference](../features/declarations.md#runtime-execution-library).
+[runtime execution reference](../features/declarations.md#runtime-execution).
 
 `config_graph` discovers static definitions, evals, cycle peers and input-to-consumer
 relations without invoking hooks. Select an Artifact/eval for its required closure;
@@ -261,7 +262,7 @@ included eval's reuse key changed. Use `status` to inspect actual reuse decision
 
 ## Protocol versions
 
-The server uses the pinned rmcp transport. It supports the 2026-07-28 MCP
-lifecycle, with discovery and per-request metadata, and older clients that start
-with `initialize` and `notifications/initialized`. It offers no Tasks extension and
-no durable subscription owned by the transport.
+The server supports the 2026-07-28 MCP lifecycle, with discovery and per-request
+metadata, and older clients that start with `initialize` and
+`notifications/initialized`. It offers no Tasks extension, and no subscription outlives
+its call.

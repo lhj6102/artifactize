@@ -19,7 +19,7 @@ environment: `artifactize` passes on its whole environment (the home and cache v
 each OS, and on Windows the system variables too), so a toolchain behind a version manager
 resolves as in a terminal. Only `ARTIFACTIZE_*` variables are withheld, and each run gets a
 private `TMPDIR` (`TMP` and `TEMP` as well) of its own. See the
-[runtime environment](../declarations.md#runtime-execution-library). Command Human tools
+[runtime environment](../declarations.md#runtime-execution). Command Human tools
 inherit the reviewer's complete environment, `ARTIFACTIZE_*` variables included, and get no
 private temporary or output directories ([Human tools](../tools/human.md)).
 
@@ -50,14 +50,13 @@ lookup, including absolute paths, parent-relative paths and executable symlinks.
 Its subcommand arguments are forwarded unchanged, not resolved as scoped file
 operands. It runs a trusted program, not an operation confined to Artifact files.
 
-Windows batch files (`.cmd`, `.bat`) run directly, without a shell string: the Rust
-standard library quotes each argument for `cmd.exe` and refuses an argument it cannot
-pass safely. The error reads `Process arguments could not be passed safely`, and
-nothing runs.
+Windows batch files (`.cmd`, `.bat`) run directly, without a shell string: each
+argument is quoted for `cmd.exe`, and artifactize refuses an argument it cannot
+pass safely: `.cmd` and `.bat` files cannot take every character. The error reads
+`Process arguments could not be passed safely`, and nothing runs.
 
-Tool sessions use process groups on Unix and kill-on-close Jobs on Windows.
-Artifactize owns their cleanup and recovery; the cross-platform
-[tool-session contract](../tools/agent.md#tool-sessions) explains the guarantees
+Tool sessions are stopped and cleaned up the same way on every OS; the
+[tool-session contract](../tools/agent.md#tool-sessions) explains what that covers
 and the limits of trusted commands.
 
 ## Paths
