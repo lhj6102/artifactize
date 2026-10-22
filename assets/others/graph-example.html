@@ -1,0 +1,381 @@
+<!doctype html>
+<!-- An example Artifact Graph: a small project's files on the left, the graph its
+     declarations make on the right. capture.mts renders it into graph-example.<lang>.png
+     (?lang=en, ko or zh); the README and the landing page use those images. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Example Artifact Graph</title>
+<!-- The landing page's brand fonts; capture.mts serves them at /fonts/. -->
+<link rel="stylesheet" href="/fonts/fonts.css">
+<style>
+  :root {
+    --bg: #F7F9FC;
+    --panel: #FFFFFF;
+    --line: #DFE4EB;
+    --dot: #D9DFE8;
+    --text: #0F141B;
+    --dim: #586276;
+    --folder: #2F6FED;
+    --runtime: #1F5FE0;
+    --agent: #7C3AED;
+    --human: #C26A0A;
+    --sans: 'Pretendard Variable', 'Noto Sans CJK KR', sans-serif;
+    --mono: 'JetBrains Mono', 'Noto Sans Mono CJK KR', monospace;
+  }
+  :root:lang(zh) {
+    --sans: 'Pretendard Variable', 'Noto Sans CJK SC', sans-serif;
+    --mono: 'JetBrains Mono', 'Noto Sans Mono CJK SC', monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body { color: var(--text); font-family: var(--sans); }
+
+  .figure {
+    display: grid;
+    grid-template-columns: 410px 1fr;
+    grid-template-rows: 1fr 100px;
+    width: 1600px;
+    height: 900px;
+    background: var(--bg);
+  }
+
+  h2 {
+    margin: 0;
+    font: 700 32px/1.2 'Space Grotesk', var(--sans);
+    letter-spacing: -0.01em;
+  }
+
+  /* ---------- The repository ---------- */
+
+  .tree {
+    position: relative;
+    padding: 46px 0 0 48px;
+  }
+  .tree::after {
+    content: "";
+    position: absolute;
+    top: 44px;
+    right: 0;
+    bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+  .tree ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .tree > ul { margin-top: 44px; padding-left: 26px; }
+  .tree ul ul {
+    margin-left: 22px;
+    padding-left: 22px;
+    border-left: 1.5px solid var(--line);
+  }
+  .tree li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .tree li > span {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 58px;
+    font: 500 21px/1 var(--mono);
+  }
+  .tree li > ul { flex-basis: 100%; }
+  .tree .chevron { width: 22px; margin-left: -34px; margin-right: -2px; color: var(--dim); }
+  .tree .folder { color: var(--folder); }
+  .tree .file { color: var(--dim); }
+  .tree .artf { color: var(--agent); }
+  .tree .artf .file { color: var(--agent); }
+  .tree svg { width: 30px; height: 30px; flex: none; }
+  .tree .note {
+    position: absolute;
+    left: 48px;
+    right: 24px;
+    bottom: 40px;
+    margin: 0;
+    color: var(--dim);
+    font-size: 17px;
+    word-break: keep-all;
+  }
+
+  /* ---------- The graph ---------- */
+
+  .graph {
+    position: relative;
+    padding: 46px 0 0 42px;
+    background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
+    background-size: 22px 22px;
+  }
+  .graph svg.edges {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .edges text {
+    font: 600 17px var(--sans);
+  }
+  .edges .human { fill: var(--human); stroke: var(--human); }
+  .edges .agent { fill: var(--agent); stroke: var(--agent); }
+  .edges .runtime { fill: var(--runtime); stroke: var(--runtime); }
+  .edges path.line { fill: none; stroke-width: 2.2; }
+  .edges .agent path.line { stroke-dasharray: 9 7; }
+  .edges .human path.line { stroke-dasharray: 2 7; stroke-linecap: round; stroke-width: 3; }
+  .edges text { stroke: none; }
+
+  .node {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 22px;
+    height: 88px;
+    background: var(--panel);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 6px 18px rgba(15, 20, 27, 0.06);
+  }
+  .node svg { width: 34px; height: 34px; flex: none; color: var(--dim); }
+  .node b { display: block; font: 700 22px/1.2 var(--sans); }
+  .node small { display: block; margin-top: 6px; color: var(--dim); font: 500 17px/1 var(--mono); }
+
+  .person {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: var(--human);
+    font: 600 18px var(--sans);
+  }
+  .person .face {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border: 2.6px solid var(--human);
+    border-radius: 50%;
+    background: #FFF4E6;
+  }
+  .person svg { width: 30px; height: 30px; }
+  .person span { color: var(--text); }
+
+  /* ---------- The legend ---------- */
+
+  .legend {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 52px;
+    padding: 0 48px;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--dim);
+    font-size: 19px;
+  }
+  .legend span { display: flex; align-items: center; gap: 16px; }
+  .legend svg { flex: none; }
+  .legend .about {
+    margin-left: auto;
+    padding-left: 32px;
+    border-left: 1px solid var(--line);
+    font-size: 17px;
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 12h8M8 16h8M8 8h2"/></g></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-idea" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/></g></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/></g></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m6 9 3 3-3 3M12 15h5"/></g></symbol>
+  </defs>
+</svg>
+
+<div class="figure">
+  <section class="tree">
+    <h2 data-t="repository"></h2>
+    <ul>
+      <li><span><svg class="chevron"><use href="#i-chevron"/></svg><svg class="folder"><use href="#i-folder"/></svg>project/</span>
+        <ul>
+          <li><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li>
+          <li><span class="artf"><svg class="file"><use href="#i-file"/></svg>PROBLEM.md.artf</span></li>
+          <li><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
+          <li><span class="artf"><svg class="file"><use href="#i-file"/></svg>SPEC.md.artf</span></li>
+          <li><span><svg class="folder"><use href="#i-folder"/></svg>code/</span>
+            <ul><li><span class="artf"><svg class="file"><use href="#i-file"/></svg>index.artf</span></li></ul>
+          </li>
+          <li><span><svg class="folder"><use href="#i-folder"/></svg>docs/</span>
+            <ul><li><span class="artf"><svg class="file"><use href="#i-file"/></svg>index.artf</span></li></ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <p class="note" data-t="note"></p>
+  </section>
+
+  <section class="graph">
+    <h2 data-t="title"></h2>
+
+    <!-- Each check sits on a line from the Artifact it belongs to to the one it reads;
+         a check that reads only its own Artifact loops back to it. -->
+    <svg class="edges" viewBox="0 0 1190 800" aria-hidden="true">
+      <defs>
+        <g id="check"><circle r="14" fill="#FFFFFF" stroke-width="2.4"/><path d="m-6 0.5 4 4 8-8.5" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+      </defs>
+
+      <g class="human">
+        <path class="line" d="M92 280 H262"/>
+        <use href="#check" x="178" y="280"/>
+        <text x="178" y="250" text-anchor="middle" data-t="reviewProblem"></text>
+      </g>
+
+      <g class="agent">
+        <path class="line" d="M442 266 C 492 228 600 228 650 266"/>
+        <use href="#check" x="546" y="238"/>
+        <text x="546" y="206" text-anchor="middle" data-t="solvesProblem"></text>
+
+        <path class="line" d="M716 324 C 690 410 652 500 650 596"/>
+        <use href="#check" x="674" y="455"/>
+        <text x="702" y="447" data-t="testsRequirements"></text>
+
+        <path class="line" d="M730 612 C 860 590 1000 480 1060 356"/>
+        <use href="#check" x="922" y="518"/>
+        <text x="950" y="526" data-t="explainsUsage"></text>
+
+        <path class="line" d="M987 268 C 965 214 995 186 1025 186 C 1055 186 1085 214 1063 268"/>
+        <use href="#check" x="1025" y="186"/>
+        <text x="1025" y="154" text-anchor="middle" data-t="readable"></text>
+
+        <path class="line" d="M570 614 C 530 610 506 640 506 676 C 506 716 560 730 596 682"/>
+        <use href="#check" x="508" y="682"/>
+        <text x="520" y="746" text-anchor="middle" data-t="codingRules"></text>
+      </g>
+
+      <g class="runtime">
+        <path class="line" d="M730 640 C 770 642 790 662 790 684 C 790 716 740 730 704 682"/>
+        <use href="#check" x="790" y="684"/>
+        <svg x="812" y="694" width="34" height="34" style="color:var(--runtime)"><use href="#i-terminal"/></svg>
+        <text x="830" y="756" text-anchor="middle" data-t="runsTests"></text>
+      </g>
+    </svg>
+
+    <div class="person" style="left:36px;top:250px"><div class="face"><svg><use href="#i-person"/></svg></div><span data-t="person"></span></div>
+    <div class="node" style="left:262px;top:236px;width:180px"><svg><use href="#i-idea"/></svg><div><b data-t="problem"></b><small>PROBLEM.md</small></div></div>
+    <div class="node" style="left:650px;top:236px;width:172px"><svg><use href="#i-file"/></svg><div><b data-t="spec"></b><small>SPEC.md</small></div></div>
+    <div class="node" style="left:900px;top:268px;width:250px"><svg><use href="#i-file"/></svg><div><b data-t="docs"></b><small>docs/</small></div></div>
+    <div class="node" style="left:570px;top:596px;width:160px"><svg><use href="#i-code"/></svg><div><b data-t="code"></b><small>code/</small></div></div>
+  </section>
+
+  <footer class="legend">
+    <span><svg width="64" height="6"><path d="M2 3H62" stroke="var(--runtime)" stroke-width="3"/></svg><span data-t="legendRuntime"></span></span>
+    <span><svg width="64" height="6"><path d="M2 3H62" stroke="var(--agent)" stroke-width="3" stroke-dasharray="10 7"/></svg><span data-t="legendAgent"></span></span>
+    <span><svg width="64" height="6"><path d="M3 3H62" stroke="var(--human)" stroke-width="3.4" stroke-dasharray="0.1 8" stroke-linecap="round"/></svg><span data-t="legendHuman"></span></span>
+    <span><svg width="34" height="30" viewBox="0 0 24 24"><g fill="none" stroke="var(--dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5"/><path d="M20 3.5v5h-5"/></g></svg><span data-t="legendSelf"></span></span>
+    <span class="about" data-t="legendLines"></span>
+  </footer>
+</div>
+
+<script>
+  // The figure's text in each language. A line break in a label starts a new line.
+  const TEXT = {
+    en: {
+      repository: "Project files",
+      note: ".artf files declare each Artifact (a file or folder to review) and its checks",
+      title: "Example Artifact Graph",
+      person: "Person",
+      problem: "Problem",
+      spec: "Design",
+      code: "Code",
+      docs: "Documentation",
+      reviewProblem: "Problem review",
+      solvesProblem: "Does the design solve the problem?",
+      testsRequirements: "Do the tests check\nthe requirements?",
+      explainsUsage: "Are features and usage\nexplained correctly?",
+      readable: "Is it easy to read?",
+      codingRules: "Follows the coding rules",
+      runsTests: "Runs the test command",
+      legendRuntime: "Command check",
+      legendAgent: "AI agent review",
+      legendHuman: "Person's review",
+      legendSelf: "Reads only its own Artifact",
+      legendLines: "Lines show which Artifact a check reads",
+    },
+    ko: {
+      repository: "프로젝트 파일",
+      note: ".artf에 Artifact(검토할 파일·폴더)와 평가 기준 정의",
+      title: "Artifactize 검증 그래프 예시",
+      person: "사람",
+      problem: "문제",
+      spec: "설계",
+      code: "코드",
+      docs: "문서",
+      reviewProblem: "문제 정의 검토",
+      solvesProblem: "문제를 해결하는 설계인가?",
+      testsRequirements: "테스트가 요구사항을\n검증하는가?",
+      explainsUsage: "기능과 사용법을\n정확히 설명하는가?",
+      readable: "문서의 가독성",
+      codingRules: "코드 작성 기준",
+      runsTests: "테스트 명령 실행",
+      legendRuntime: "실행 검증",
+      legendAgent: "Agent 평가",
+      legendHuman: "사람 검토",
+      legendSelf: "자기 Artifact만 읽는 평가",
+      legendLines: "연결선은 평가가 읽는 Artifact를 나타냅니다",
+    },
+    zh: {
+      repository: "项目文件",
+      note: "在 .artf 中定义 Artifact（要审查的文件或文件夹）及其评估标准",
+      title: "Artifactize 验证图示例",
+      person: "人",
+      problem: "问题",
+      spec: "设计",
+      code: "代码",
+      docs: "文档",
+      reviewProblem: "审查问题定义",
+      solvesProblem: "设计是否解决了问题？",
+      testsRequirements: "测试是否验证了需求？",
+      explainsUsage: "是否准确说明了\n功能和用法？",
+      readable: "文档的可读性",
+      codingRules: "代码编写标准",
+      runsTests: "运行测试命令",
+      legendRuntime: "执行验证",
+      legendAgent: "Agent 评估",
+      legendHuman: "人工审查",
+      legendSelf: "只读取自身 Artifact 的评估",
+      legendLines: "连线表示评估读取的 Artifact",
+    },
+  };
+
+  const lang = new URLSearchParams(location.search).get("lang") || "en";
+  const text = TEXT[lang];
+  if (!text) throw new Error(`No text for language ${lang}; choose one of ${Object.keys(TEXT).join(", ")}.`);
+  document.documentElement.lang = lang;
+  const SVG = "http://www.w3.org/2000/svg";
+  for (const element of document.querySelectorAll("[data-t]")) {
+    const lines = text[element.dataset.t].split("\n");
+    if (element instanceof SVGTextElement) {
+      lines.forEach((line, index) => {
+        const span = document.createElementNS(SVG, "tspan");
+        span.setAttribute("x", element.getAttribute("x"));
+        if (index > 0) span.setAttribute("dy", "1.45em");
+        span.textContent = line;
+        element.append(span);
+      });
+    } else {
+      element.textContent = lines.join(" ");
+    }
+  }
+  // capture.mts waits for this before taking the picture.
+  document.fonts.ready.then(() => { document.documentElement.dataset.ready = lang; });
+</script>
+</body>
+</html>

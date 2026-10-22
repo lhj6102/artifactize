@@ -24,6 +24,8 @@ cp "$brand"/artifactize-icon{,-mark}.svg "$brand/artifactize-icon-h56.png" \
     "$brand/og.jpg" dist/media/
 # The landing page shows the desktop demos the capture script records into assets/demos/.
 cp "$PWD/../assets/demos/review-loop.gif" "$PWD/../assets/demos/graph-growth.gif" dist/media/
+# The hero's example graph is rendered from assets/others/graph-example.html.
+cp "$PWD/../assets/others/graph-example.en.png" dist/media/
 
 # Each language is its own book sharing docs/theme/: English at /docs/, Korean
 # at /docs/kr/. Inject the same favicons into an isolated copy of the theme,
