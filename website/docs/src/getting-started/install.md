@@ -46,19 +46,61 @@ Only `cargo install` needs a Rust toolchain: the latest stable Rust, from
 Pick your OS. Install from one channel only; the Store uses the `artifactize tools`
 facade, while other channels also install the standalone tools command.
 
-Start with the default for your OS, or choose an alternative below:
+Start by downloading the app for your OS. If you prefer the command line, or the
+app does not fit your system, choose an alternative:
 
-| OS | Default | Alternatives |
-|---|---|---|
-| Linux | [Install script](#linux) | [`.deb` or AppImage](#desktop-app), [Cargo binaries](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
-| macOS | [Homebrew](#macos) | [Install script](#macos), [disk image](#desktop-app), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
-| Windows | [Microsoft Store](#windows) | [PowerShell install script](#windows), [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| OS | Default: the app | Command line | Other |
+|---|---|---|---|
+| macOS | [Disk image](#download-the-app) | [Homebrew or install script](#macos) | [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| Windows | [Microsoft Store](#download-the-app) | [winget or PowerShell install script](#windows) | [Cargo](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
+| Linux | [`.deb`](#download-the-app) (x86_64) | [Install script](#linux) | [AppImage](#desktop-app), [Cargo binaries](#cargo-all-platforms), [build from source](#build-from-source-all-platforms) |
 
-The defaults install the desktop app too, except Homebrew, which installs it as a
-separate cask. Cargo and a source build install the commands only.
+The app brings the `artifactize` command with it. The install scripts and the Homebrew
+cask install the app too; the Homebrew formula, Cargo and a source build install the
+commands only.
 
+### Download the app
 
-### Linux
+**macOS.** Download
+[Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg),
+open it and drag **Artifactize** to Applications, then open the app once. If the
+command is missing, approve its administrator prompt to make `artifactize` available
+in new terminals ([details](#desktop-app)). One image runs on Apple silicon and Intel,
+from macOS 11; Apple has notarized it.
+
+**Windows.** Install Artifactize from its
+[Microsoft Store page](https://apps.microsoft.com/detail/9PB6W4LL165D) (x64), then
+open a new terminal and run `artifactize --version`. Microsoft signs Store packages, so
+Smart App Control lets them run, and the Store keeps them up to date. The package
+provides `artifactize` as an app execution alias;
+its tools run as `artifactize tools read FILE`, `artifactize tools list`, and so on.
+Other channels also provide the standalone `artifactize-tools` command. It adds two
+Start menu entries: **Artifactize** opens the [desktop app](#desktop-app), and
+**Artifactize CLI** shows the command's help and a hint to open Windows Terminal or
+PowerShell, then waits for Enter when it owns the console alone; terminal launches
+and redirected input/output never pause. The Store package uses Windows' default
+AppData virtualization: the app and the command keep their own package-private state
+rather than sharing Runs, sign-in and cache with zip or Cargo installs.
+Windows removes that private state when you uninstall the Store app. See
+[State](../features/others/state.md#state) for the Windows overlay caveat.
+
+**Linux.** On x86_64 Ubuntu 22.04, Debian 12 or later, download
+[Artifactize-amd64.deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)
+and open it with your software installer, or run:
+
+```sh
+sudo apt install ./Artifactize-amd64.deb
+artifactize --version
+```
+
+It installs all three commands to `/usr/bin` and needs WebKitGTK 4.1 and GTK 3, which
+apt pulls in. On aarch64 or another distribution, use the [install script](#linux).
+
+### Command line
+
+To install from a terminal instead, use the default command for your OS.
+
+#### Linux
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
@@ -84,7 +126,7 @@ curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_VERSION=0.5.2 sh    
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/bin" sh   # this directory
 ```
 
-### macOS
+#### macOS
 
 [Homebrew](https://brew.sh/) is a macOS package manager: it installs and updates
 command-line tools for you. If `brew` is not available in your terminal, follow
@@ -114,28 +156,15 @@ on `PATH`; the script prints the line to add to your shell's startup file, such 
 curl -fsSL https://artifactize.dev/install.sh | sh
 ```
 
-### Windows
+#### Windows
 
-**Microsoft Store (default).** Install Artifactize from its
-[Store page](https://apps.microsoft.com/detail/9PB6W4LL165D), or in a terminal:
+**Microsoft Store from a terminal (default).** The same
+[Store package](#download-the-app), installed with winget:
 
 ```powershell
 winget install 9PB6W4LL165D --source msstore
 artifactize --version   # in a new terminal
 ```
-
-Microsoft signs Store packages, so Smart App Control lets them run, and the Store
-keeps them up to date. The package provides `artifactize` as an app execution alias;
-its tools run as `artifactize tools read FILE`, `artifactize tools list`, and so on.
-Other channels also provide the standalone `artifactize-tools` command. It adds two
-Start menu entries: **Artifactize** opens the [desktop app](#desktop-app), and
-**Artifactize CLI** shows the command's help and a hint to open Windows Terminal or
-PowerShell, then waits for Enter when it owns the console alone; terminal launches
-and redirected input/output never pause. The Store package uses Windows' default
-AppData virtualization: the app and the command keep their own package-private state
-rather than sharing Runs, sign-in and cache with zip or Cargo installs.
-Windows removes that private state when you uninstall the Store app. See
-[State](../features/others/state.md#state) for the Windows overlay caveat.
 
 **PowerShell install script.** In Windows PowerShell 5.1 or PowerShell 7, without
 administrator rights:
@@ -159,9 +188,9 @@ replacing anything: your previous `artifactize` and `artifactize-tools` stay ins
 and runnable, and `Path` is left unchanged. Do not bypass your application-control
 policy; install from the Microsoft Store instead.
 
-**winget** is not available yet: `lhj6102.Artifactize` has not been accepted into
-[winget](https://learn.microsoft.com/windows/package-manager/winget/). Use the
-Microsoft Store or the install script.
+**winget's own package** is not available yet: `lhj6102.Artifactize` has not been
+accepted into the [winget](https://learn.microsoft.com/windows/package-manager/winget/)
+repository. Use the Store package above or the install script.
 
 **WSL.** Inside WSL 2, artifactize is the Linux build: install it in the distribution
 with the [Linux](#linux) instructions. It is separate from a Windows install and keeps
@@ -214,15 +243,15 @@ Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` p
 sets up the commands on first launch (below). TUI and MCP already come with the ordinary
 `artifactize` binary; they need no additional product install.
 
-The defaults above install it: the Microsoft Store and `install.ps1` on Windows,
+The [downloads](#download-the-app) install it, and so do `install.ps1` on Windows,
 `install.sh` on macOS and x86_64 Linux, and the Homebrew cask on macOS. Each release
-also attaches the app on its own:
-
-| File | Install |
-|---|---|
-| `artifactize-desktop-vVERSION-universal-apple-darwin.dmg` | Open it and drag **Artifactize** to Applications, then open the app once. If the command is missing, approve its administrator prompt to make `artifactize` available in new terminals. One image runs on Apple silicon and Intel, from macOS 11; Apple has notarized it. |
-| `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` | `sudo apt install ./artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb` on Ubuntu 22.04, Debian 12 or later. It installs all three commands to `/usr/bin` and needs WebKitGTK 4.1 and GTK 3, which apt pulls in. |
-| `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage` | Make it executable and run it; it needs glibc 2.35 or later. First launch copies the commands to a stable per-user directory and links them in `~/.local/bin`, without administrator rights. |
+attaches the disk image and `.deb` under versioned names too
+(`artifactize-desktop-vVERSION-universal-apple-darwin.dmg`,
+`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb`), and an AppImage:
+`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage
+executable and run it; it needs glibc 2.35 or later. First launch copies the commands
+to a stable per-user directory and links them in `~/.local/bin`, without
+administrator rights.
 
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.

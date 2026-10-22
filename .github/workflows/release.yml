@@ -199,12 +199,17 @@ jobs:
         working-directory: dist
         run: |
           sha256sum -c ./*.sha256
-          # A stable name too, so the landing page's download button can link to
-          # releases/latest/download/Artifactize.dmg.
+          # Stable names too, so the landing page's download buttons can link to
+          # releases/latest/download/Artifactize.dmg and Artifactize-amd64.deb.
           for dmg in ./*-universal-apple-darwin.dmg; do
             [ -f "$dmg" ] || continue
             cp "$dmg" Artifactize.dmg
             sha256sum Artifactize.dmg >Artifactize.dmg.sha256
+          done
+          for deb in ./*-x86_64-unknown-linux-gnu.deb; do
+            [ -f "$deb" ] || continue
+            cp "$deb" Artifactize-amd64.deb
+            sha256sum Artifactize-amd64.deb >Artifactize-amd64.deb.sha256
           done
           gh release upload "$GITHUB_REF_NAME" ./*
 
