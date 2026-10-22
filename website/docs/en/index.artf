@@ -314,7 +314,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 [evals.matches-cli.payload]
 instruction = """
 Review {docs} against only {cli}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is CLI (src/cli/), including every command, flag, default, output and exit behavior. Interactive terminal screens belong to the TUI area; the CLI area explains how to launch them.
+The owned documentation area is CLI (src/cli/), including every command, flag, default, output and exit behavior. Interactive terminal screens belong to the TUI area; the CLI area explains how to launch them. The current-directory tools (`artifactize-tools` and its `artifactize tools` spelling) belong to the Tools area; the CLI area lists them and links there.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
