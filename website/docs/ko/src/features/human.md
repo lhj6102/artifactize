@@ -11,7 +11,7 @@ Human eval은 BLOCKED가 되고 그 이유에 해당 eval의 이름이 나옵니
 이 조건에 들어가지 않습니다. [Human 승인](artifact.md#human-sign-offs)을 보세요.
 
 검사가 준비되면 artifactize는 **WAITING_HUMAN 요청**을 저장합니다.
-사람의 결정을 기다리는 작업입니다. 그 사람을 기다리는 동안에는 Run의
+사람의 결정이 필요한 작업입니다. 사람의 결정이 나기 전까지는 Run의
 `--jobs` 실행 슬롯도, `--max-executions` 예산도 쓰지 않으며, 예산이
 0이어도 마찬가지입니다. 일반 모드에서 Run은 Human 시간 제한 없이 기다리고, 승인이 제출되면
 의존하는 검사가 같은 Run 안에서 이어집니다. 터미널을 지켜보거나 닫는다고

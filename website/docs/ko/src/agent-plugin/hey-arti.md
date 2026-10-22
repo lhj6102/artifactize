@@ -42,9 +42,9 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
   가장 도움이 될 곳 두세 곳과 도움이 되지 않을 곳을 짚고,
   첫 단계로 eval 한두 개를 가진 Artifact 하나를 제안합니다.
 - **새 프로젝트 구성하기**: 아래 단계입니다.
-- **큰 저장소에 점진적으로 도입하기**: 가장 아픈 영역만 선언하고,
+- **큰 저장소에 점진적으로 도입하기**: 문제가 가장 큰 영역만 선언하고,
   나머지는 넓은 리뷰 하나로 묶지 않고 선언하지 않은 채 두며, 첫 영역의
-  판정을 믿게 되면 다음 영역을 추가합니다.
+  판정을 신뢰할 수 있게 되면 다음 영역을 추가합니다.
 - **기존 설정 점검하기**: `config_check`와 `config_graph`를 실행하고,
   결과를 [모범 사례](#the-practices-it-recommends)와 대조한 뒤, 사용자가 어떤 편집에 동의하기 전에
   각 발견 사항을 그 해결 방법과 함께 보고합니다.
@@ -96,8 +96,8 @@ Arti가 추천하는 조합과, 각 검사를 누가 소유하고 무엇을 참�
 
 - **라이브러리와 소비자**: 라이브러리가 자기 테스트를 소유하고, 소비자의 리뷰가
   `{library}`를 참조합니다.
-- **명세와 앱**: 앱이 자기 테스트(runtime)와 `{spec}`에 대한 리뷰
-  (Agent)를 소유합니다.
+- **명세와 앱**: 앱에 자기 테스트(runtime)와 `{spec}`에 대한 리뷰
+  (Agent)가 있습니다.
 - **앱과 E2E 테스트**: 테스트 모음 실행은 앱의 eval이며, 그 인자에
   `{e2e-tests}`가 들어갑니다. 테스트 코드 자신의 eval은 그 스타일과 범위를 리뷰합니다.
 - **문서와 에셋**: 문서는 그것이 설명하는 코드에 대해 리뷰됩니다. 각
@@ -141,7 +141,7 @@ CLI 대체 명령은 `artifactize config check`, `artifactize config graph`,
 리뷰어가 실행 중인 무언가를 살펴봐야 할 때, 스킬은
 `views.agent_sessions.<name>.start`/`stop`으로 선언한 세션과 `session = "<name>"`으로 묶은 명령 도구를 보여 주며,
 그 프로그램은 fingerprint가 포함하도록 Artifact 안에 둡니다.
-세션의 수명은 artifactize가 소유합니다.
+세션의 시작부터 종료까지는 artifactize가 관리합니다.
 [도구 세션](../features/tools/agent.md#tool-sessions)을 보세요.
 
 ## 지속되는 Run 따라가기 {#follow-a-durable-run}
@@ -150,7 +150,7 @@ Arti는 `verify_start`로 시작하고 돌려받은 Run ID를 보관하며,
 호스트가 MCP 진행 상황을 보여 주면 `verify_watch`로, 그렇지 않으면 `verify_wait`로 따라가고,
 `verify_result`로 발견 사항을 읽습니다. 접수된 Run이 통과한 Run은 아닙니다. 실패한 runtime 발견 사항은
 `request_logs`로, Agent 발견 사항은 `session_show`로 진단합니다.
-Run은 artifactize가 소유합니다. 터미널을 닫거나, 연결을 끊거나, 에이전트의
+Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거나, 에이전트의
 턴을 끝내도 Run은 멈추지 않으며, 취소를 요청하는 것은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 

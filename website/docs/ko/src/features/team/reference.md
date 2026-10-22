@@ -132,7 +132,7 @@ ERROR(`SUPERSEDED`)가 됩니다. 텍스트 출력은 출처를 알려 줍니다
 데이터베이스 트랜잭션 밖에서 요약 기록을, 공유 수준이 `full`이면 전체 기록을 보냅니다.
 `--speculate` Run은 Human 리뷰가 아직 대기 중이더라도 스케줄링이
 끝날 때까지 이 자동 게시를 미룹니다. 그 뒤 막힌 작업을 재사용에서 거둔 다음,
-살아남은 결과만 게시합니다. 기록에는 키, eval 정의 해시, 키가 포함하는 각 Artifact의
+끝까지 유효한 결과만 게시합니다. 기록에는 키, eval 정의 해시, 키가 포함하는 각 Artifact의
 fingerprint, 그 `artifactKinds` 맵(`folder`/`file`/`graph`), 실행
 `options`(백엔드, 모델,
 reasoning, 제한, 프로필 변형), Agent 결과의 `executionPaths` 고정 값이 들어 있습니다. `request submit`은 Human 승인을 게시합니다.

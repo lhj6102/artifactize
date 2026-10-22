@@ -86,7 +86,7 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 어떤 Artifact가 다른 Artifact를 쓴다면, 그 사용을 검사하는 eval이 그것을 `{name}`으로 가리킵니다.
 그 밖의 어떤 것도 의존성을 추가하지 않습니다.
 
-자식은 어떤 eval도 적지 않는 유일한 연결입니다. 폴더 Artifact의 파일에는 자식
+부모와 자식 사이의 연결은 eval에 적지 않아도 생기는 유일한 연결입니다. 폴더 Artifact의 파일에는 자식
 폴더가 포함되므로, 자식은 부모의 모든 eval이 그것을 참조한 것과 똑같이 취급됩니다.
 부모의 각 eval은 표시된 가장 가까운 자식들의 eval에 의존합니다.
 

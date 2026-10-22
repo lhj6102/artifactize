@@ -235,7 +235,7 @@ cargo install --path crates/artifactize-tools --locked
 
 ### 데스크톱 앱 {#desktop-app}
 
-[데스크톱 앱](../desktop/index.md)은 살아 있는 모든 브랜치와 그 Run, 그리고 지금 실행한다면
+[데스크톱 앱](../desktop/index.md)은 현재 있는 모든 브랜치와 그 Run, 그리고 지금 실행한다면
 무엇이 실행될지, 대기 중인 Human 리뷰를 한 창에서 보여 줍니다. 앱은 `artifactize verify`가 시작한 Run을 보여 주므로 명령도 함께 제공됩니다.
 Microsoft Store, `install.ps1`, `install.sh`, Homebrew cask, `.deb`는
 `artifactize`를 `PATH`에 넣습니다. 디스크 이미지나 단독으로 실행한 AppImage에서는 앱이
@@ -362,8 +362,8 @@ snake_case이고 eval은 `[evals.<id>]` 테이블입니다. `.artfignore`가 예
 Human 승인을 포함해 모든 eval을 한 번씩 리뷰합니다. [0.9로 업그레이드](../features/fingerprint.md#upgrading-to-09)를 보세요.
 
 이제 Monitor는 eval의 Detail을 모달이 아니라 자기 패널에서 엽니다. 독립 실행형
-Review도 같은 Human Detail을 씁니다. 요청 맡기는 명시적으로 하며, 도구 실행과 제출은
-대신 요청을 맡지 않습니다. 판정 양식, 제출 키, 편집기 단축키가 바뀌었습니다.
+Review도 같은 Human Detail을 씁니다. 요청은 직접 맡아야 하며, 도구를 실행하거나
+결과를 제출해도 요청을 맡은 것으로 처리되지 않습니다. 판정 양식, 제출 키, 편집기 단축키가 바뀌었습니다.
 현재 조작 방법은 [Human 리뷰와 Monitor](../features/human.md)를 보세요.
 
 0.5.0은 `chatgpt`와 `claude` Agent 백엔드를 `login chatgpt`,

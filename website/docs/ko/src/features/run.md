@@ -42,7 +42,7 @@ QUEUED는 실행 허가 대기, 백엔드 슬롯 대기, 합류한 실행 대기
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
 
-Artifactize는 요청한 쪽과 독립적으로 Run을 소유합니다. 그냥 `verify`는 제출하고,
+Artifactize는 요청한 쪽과 상관없이 Run을 관리합니다. 그냥 `verify`는 제출하고,
 Run ID(`--json`이면 `{"run","state"}`)를 출력한 뒤 승인이 아니라 **접수**되면
 0으로 종료합니다. `verify --wait`는 ID를 stderr에 알리고, 확정될 때까지 지켜본 뒤
 저장된 결과를 보여 줍니다. 그 지켜보기를 닫거나 중단하면 지켜보기만
@@ -97,7 +97,7 @@ Run은 **ERROR/INPUT_CHANGED**로 끝납니다. 선언 편집을 마친 뒤
 그 때문에 무효가 되는 작업, 즉 자기
 Artifact와 순환 밖에서 그것에 의존하는 eval만 즉시 취소하고, 재사용할 수 있는 취소 결과 없이 BLOCKED로 표시합니다.
 GREEN이면 같은 파일에 대해 이미 만든 결과를 유지합니다. 결과는 스케줄링이 끝난 뒤에만,
-그리고 끝까지 살아남은 결과만 [팀 리뷰 저장소](team/reference.md)와 공유됩니다.
+그리고 끝까지 유효한 결과만 [팀 리뷰 저장소](team/reference.md)와 공유됩니다.
 
 미루기는 대기 중인 Human 관문을 지나 실행하게 해 줍니다. 미룰 수 있는 승인의
 요청은 가능한 한 늦게, 그 Artifact의 다른 기계 eval이

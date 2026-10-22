@@ -10,7 +10,7 @@ Codex는 Responses의 `text.format`을, Anthropic은 Messages의 `output_config.
 `verdict` 다음에 소유자 필드인 `verdictFields`가 오는 `result` 필드를 가진 객체입니다.
 두 선택지 모두 같은 판별자를 맨 앞에 두므로, 키 순서가 제약되더라도
 소유자 필드가 정렬상 앞에 온다는 이유만으로 판정이 선택되지는 않습니다. 저장되는 결과는
-`"verdict":"GREEN"` 또는 `"verdict":"RED"`와 허용된 소유자 필드를 담은 평평한 객체로 남습니다.
+`"verdict":"GREEN"` 또는 `"verdict":"RED"`와 허용된 소유자 필드를 중첩 없이 최상위에 나란히 담은 객체입니다.
 최종 답 전까지는 도구를 계속 쓸 수 있고, 후속 질문의 답은 일반 텍스트로 남습니다.
 
 모든 구조화된 객체는 닫혀 있고 모든 필드가 필수입니다. 선택적인 소유자 필드는
