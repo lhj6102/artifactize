@@ -101,8 +101,8 @@ speculation substitutes for actual reusable Human GREEN evidence.
 
 ## Human tools
 
-`views.human_tools` is a separate safe-name map of predefined tools. The reviewer runs
-them; they take no free arguments. A [built-in tool](tools/builtin.md)
+List the reviewer's tools under `views.human_tools`, one named entry per tool. The
+reviewer runs them; they take no free arguments. A [built-in tool](tools/builtin.md)
 works the same on Linux, macOS and Windows: `open` opens a file, folder or `http(s)`
 URL in the desktop's default application; `graph` launches the current project
 graph viewer. `read`, `list`, `section` and `help` print text in the terminal.

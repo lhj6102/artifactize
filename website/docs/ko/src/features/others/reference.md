@@ -1,7 +1,7 @@
 # 보조 레퍼런스 {#supporting-reference}
 
-artifactize의 자세한 레퍼런스입니다. 모든 명령과 플래그, 정확한 제한, 스키마와 프로토콜, 상태가
-있는 위치를 다룹니다. 공통 동작은 [기능](../artifact.md) 영역에서 설명하고, 설정은
+명령의 문법과 출력, 정확한 한도, 스키마나 프로토콜, 상태가 있는 위치를 찾을 때 아래 링크를
+쓰세요. 공통 동작은 [기능](../artifact.md) 영역에서 설명하고, 설정은
 [설치](../../getting-started/install.md)에서 다룹니다.
 
 - [명령 레퍼런스](../../cli/index.md#command-reference)

@@ -1,7 +1,7 @@
 # Supporting reference
 
-The detailed reference for artifactize: every command and flag, exact limits,
-schemas and protocols, and where the state lives. The [Features](../artifact.md) area explains shared behavior, and [Install](../../getting-started/install.md)
+Use these links to look up a command's syntax and output, an exact limit, schema or
+protocol, or where the state lives. The [Features](../artifact.md) area explains shared behavior, and [Install](../../getting-started/install.md)
 covers setup.
 
 - [Command reference](../../cli/index.md#command-reference)

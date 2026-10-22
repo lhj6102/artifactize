@@ -92,7 +92,7 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 의존성은 그 Artifact의 모든 Eval이 아니라 입력을 쓰는 Eval에 속합니다. `payload.instruction`이나
 runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키며, 그 Eval은 입력을 판단하는
 Eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 쓰임을 확인하는 eval이 `{name}`으로
-가리키면 됩니다. 그 밖에는 의존성을 더하는 것이 없습니다.
+가리키면 됩니다. 그 밖의 방식으로는 의존성이 추가되지 않습니다.
 
 자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact의 파일에는 자식 폴더가 포함되므로,
 자식은 부모의 모든 eval이 참조한 것과 똑같이 칩니다. 부모의 각 eval은 Artifact로 선언된 가장
@@ -116,8 +116,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 
 모든 Eval은 입력의 판정과 상관없이 자기 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
 효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 Eval이 늦어지고,
-입력 리뷰가 RED면 막힙니다. `--speculate`는 입력 게이트가 정해지기 전에 작업을 시작하게 해 주지만,
-빠진 요구 사항을 승인해 주지는 않습니다. 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 증거가
+입력 리뷰가 RED면 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 증거가
 모두 있어야 합니다.
 
 게이트는 Eval마다 적용됩니다. Artifact는 Eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
@@ -128,18 +127,17 @@ Artifact에서 가장 가까운 자식 Artifact의 Eval입니다. 게이트가 R
 실행을 막지는 않습니다. 다만 그것들은 여전히 최종 승인 의무에 속하므로, 그 Artifact를 쓰는
 Eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
 
-eval의 대상 Artifact와 의존성 순환으로 묶인 Artifact에는
-[Human 형제 선행 조건](#human-sign-offs)을 빼고 이 게이트를 적용하지 않습니다. 순환은 Eval 참조와
-자식을 따라갑니다. 부모를 직접 또는 여러 단계를 거쳐 참조하는 자식은 부모와 순환으로 묶입니다.
-순환으로 묶인 대상을 참조하면 그 순환 바깥의 게이트를 이어받고, 다른 순환을 참조하면 그 순환의
-모든 Eval을 게이트로 받습니다. 대기와 추측 실행 취소도 이 게이트로 정해집니다.
+eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들은 **순환**을 이룹니다. 부모를
+참조하는 자식도 부모와 순환을 이룹니다. 순환 안의 eval은 서로의 게이트가 되지 않습니다. 예를 들어
+`docs`의 eval이 `cli`를 참조하고 `cli`의 eval이 `docs`를 참조하면, `cli/tests`가 RED여도
+`docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은 따로 실행되며, 순환 밖에서 이들을
+쓰는 eval이 진행하려면 둘 다 통과해야 합니다.
 
-예를 들어 `docs`의 eval이 `cli`를 참조하고 `cli`의 eval이 `docs`를 참조하면 둘은 순환을
-이룹니다. 이때 `cli/tests`가 RED여도 `docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은
-따로 실행되며, 순환 밖에서 이들을 쓰는 eval이 진행하려면 둘 다 통과해야 합니다. `cli`의 eval이
-`core`도 참조한다면, 순환은 바깥 입력을 함께 쓰므로 `core/tests`가 RED일 때 `cli/tests`와
-`docs/matches-cli`가 모두 막힙니다. 다른 곳에서 `docs`를 참조하는 eval은 `docs`와 `cli`의 모든
-eval을 기다립니다.
+순환 밖의 입력은 여전히 순환 전체의 게이트가 됩니다. `cli`의 eval이 `core`도 참조한다면,
+`core/tests`가 RED일 때 `cli/tests`와 `docs/matches-cli`가 모두 막힙니다. 다른 곳에서 `docs`를
+참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
+Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
+예외입니다. 무엇이 기다리고 어떤 추측 실행 작업을 취소할지도 이 게이트로 정해집니다.
 
 BLOCKED인 Eval의 사유에는 `Dependency verdict RED: core/tests`처럼 막힘의 뿌리가 된 RED Eval이
 나오며, 아직 실행 중이었을 뿐인 Eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 ERROR도

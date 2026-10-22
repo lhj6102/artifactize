@@ -134,19 +134,19 @@ with no Evals supplies no execution gates: referring to it does not gate executi
 on its own inputs or children. Those still belong to the final approval obligations,
 so the consumer may execute without the Run being able to finish GREEN.
 
-An Eval's own Artifact and its dependency-cycle peers are excluded from these
-gates, apart from the [Human sibling prerequisite](#human-sign-offs). Cycles follow
-Eval references and children: a child that references its parent, directly or
-through a chain, is its parent's cycle peer. A reference to a cycle peer carries
-the cycle's external gates; a reference to another cycle carries every Eval of
-that cycle. These gates also determine waiting and speculative cancellation.
+Artifacts whose evals reference each other, directly or through a chain, form a
+**cycle**; a child that references its parent forms one with it. Evals in a cycle do not
+gate each other. For example, if `docs`'s eval references `cli` and `cli`'s eval
+references `docs`, a RED `cli/tests` does not block `docs/matches-cli` or replace its
+verdict. Both run independently and must pass before consumers outside the cycle can
+proceed.
 
-For example, if `docs`'s eval references `cli` and `cli`'s eval references `docs`,
-they form a cycle: a RED `cli/tests` does not block `docs/matches-cli` or replace
-its verdict. Both run independently and must pass before consumers outside the
-cycle can proceed. If `cli`'s eval also references `core`, a RED `core/tests` blocks
-both `cli/tests` and `docs/matches-cli`, because a cycle shares its outside inputs. An
-eval elsewhere that references `docs` waits for every eval of `docs` and `cli`.
+Inputs from outside the cycle still gate all of it: if `cli`'s eval also references
+`core`, a RED `core/tests` blocks both `cli/tests` and `docs/matches-cli`. An eval
+elsewhere that references `docs` waits for every eval of `docs` and `cli`. An Eval's
+own Artifact is likewise not a gate for it, apart from the
+[Human sibling prerequisite](#human-sign-offs). These gates also decide what waits and
+which speculative work is cancelled.
 
 A BLOCKED Eval's reason names the RED Evals at the root of the block, for example
 `Dependency verdict RED: core/tests`, never Evals that were merely still running.

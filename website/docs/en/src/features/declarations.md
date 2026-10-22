@@ -82,7 +82,7 @@ to declare.
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
 `profile_variants`, `gate` and `mutex`.
-Unknown fields and camelCase spellings at these typed boundaries are rejected.
+Other keys, and camelCase spellings such as `timeoutMs` for `timeout_ms`, are rejected.
 JSON Schema keywords such as `additionalProperties`, `minLength` and `maxItems`
 keep their standard names. Owner-defined payload fields keep their chosen names. They are kept with the eval
 and change its reuse key, but an Agent sees only `payload.instruction`, so write

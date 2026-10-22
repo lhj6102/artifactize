@@ -25,20 +25,16 @@ A call that ends up with no project answers that it needs `project`: a host with
 that does not answer in time or names no local folder, or a server in its plugin's
 folder.
 
-It works with current MCP hosts and with older ones. The host talks to it only
-through the program's input and output: stdout carries protocol messages, and
-diagnostics go to stderr. There is no network port or extra token. A bounded
+It works with current MCP hosts and with older ones. Stdout carries protocol messages,
+and diagnostics go to stderr. A bounded
 `verify_watch` call can also send standard MCP progress notifications. See
 [Protocol versions](#protocol-versions) for the details.
 
 ## Register the MCP server
 
-
-
 Complete the [installation setup](../getting-started/install.md), then launch
 the coding host from **your project directory**.
-The stdio server uses the same binary and shared state as the CLI. It is not the
-HTTP review store (`artifactize server`), and requires no port, token argument or
+It is not the HTTP review store (`artifactize server`), and needs no token argument or
 changed host timeout.
 
 In Claude Code and Codex, the [plugin](plugin.md) registers this server together

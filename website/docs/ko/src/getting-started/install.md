@@ -369,7 +369,7 @@ artifactize 프로젝트 안에서는 거부됩니다. `$HOME`에 있는 dotfile
 
 ## 백엔드 {#backends}
 
-Agent eval은 정확히 하나의 백엔드와 하나의 정확한 모델 ID를 지정합니다. 모델
+Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. 모델
 카탈로그도 없고, 다른 백엔드나 모델로 대체되지도 않습니다.
 
 **백엔드**는 Artifactize가 Agent 리뷰를 모델 서비스로 보낼 때 쓰는

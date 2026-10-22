@@ -60,9 +60,9 @@ artifactize review [REQUEST_ID]
 ## 미룬 승인 {#deferred-sign-offs}
 
 사람이 실행 하나하나를 이끌지 않고 승인만 하려면 `verify --defer-human`을 고르세요. 머신 설정이
-아니라 요청마다 정하며, 기본으로 꺼져 있습니다. 기계 검사 작업은 대기 중인 승인을 지나 계속되고,
-승인은 같은 Artifact의 기계 검사 eval이 GREEN이 되는 즉시 요청되므로 다른 작업이 아직 실행 중일
-수 있습니다. 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요. `--speculate`로 기계 검사
+아니라 요청마다 정하며, 기본으로 꺼져 있습니다. 승인 대기 중에도 기계 검사는 계속 실행되고,
+같은 Artifact의 기계 검사 eval이 GREEN이 되면 다른 작업의 완료 여부와 관계없이 승인을
+요청합니다. 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요. `--speculate`로 기계 검사
 작업을 따로 빠르게 할 수 있습니다.
 
 리뷰어는 미룬 승인도 DEFERRED 표시가 붙은 일반 승인과 같은 방식으로 처리합니다. `review`, monitor, 데스크톱,
@@ -92,7 +92,7 @@ payload.instruction = "Review the release before dependent work proceeds."
 
 ## Human 도구 {#human-tools}
 
-`views.human_tools`는 미리 정해 둔 도구를 안전한 이름으로 담는 별도의 맵입니다. 리뷰어가
+리뷰어가 쓸 도구는 `views.human_tools` 아래에 도구마다 이름을 붙여 적으세요. 리뷰어가
 실행하며, 자유 인자는 받지 않습니다. [내장 도구](tools/builtin.md)는 Linux, macOS, Windows에서
 똑같이 동작합니다. `open`은 파일, 폴더, `http(s)` URL을 데스크톱의 기본 애플리케이션으로 열고,
 `graph`는 현재 프로젝트 그래프 뷰어를 실행합니다. `read`, `list`, `section`, `help`는 터미널에

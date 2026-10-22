@@ -126,8 +126,7 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 
 옵션 없는 `verify`는 Run을 제출하고 Run ID를 출력한 뒤, 접수되면 0으로 종료합니다. 스크립트에서
 결과에 따른 종료 코드가 필요하면 `--wait`를 붙이세요. 같은 `--request-key`로 다시 제출하면 처음
-만든 Run을 돌려줍니다. 키는 ASCII 글자, 숫자, `.`, `_`, `:`, `-`로 이뤄진 1–128자이며, 그
-밖의 키는 2로 종료합니다. 자세한 내용은
+만든 Run을 돌려줍니다. 키는 ASCII 글자, 숫자, `.`, `_`, `:`, `-`로 이뤄진 1–128자이며, 조건에 맞지 않는 키를 쓰면 명령이 종료 코드 2로 끝납니다. 자세한 내용은
 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)에 있습니다.
 
 ```sh
@@ -310,8 +309,7 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 
 ## Agent 스트리밍과 runtime 로그 {#agent-streaming-and-runtime-logs}
 
-`verify SELECTOR --watch`는 제출하자마자 저장된 Run을 따라가고, `run watch RUN_ID`는 나중에
-붙습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`는 실시간
+`verify SELECTOR --watch`는 Run을 제출한 직후부터 진행 상황을 보여 주고, `run watch RUN_ID`로는 나중에 진행 상황 보기를 시작할 수 있습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`는 실시간
 상태와 개수, `kind: eval_result`는 저장된 요청의 간단한 결과, `kind: outcome`은 Run의 최종
 검증입니다. `--watch`와 `--wait`는 함께 쓸 수 없습니다. 지켜보기는 Run 결과로 종료하며, 중단하면
 130으로 종료하고 지켜보기만 멈춥니다. 다시 붙으면 완료된 eval을 다시 보여 줄 뿐, 지난 이벤트를

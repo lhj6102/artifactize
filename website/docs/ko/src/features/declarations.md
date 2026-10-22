@@ -73,7 +73,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 
 선언 키는 모두 snake_case입니다: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
-`gate`, `mutex`. 이 자리에서 모르는 필드와 camelCase 표기는 거부합니다.
+`gate`, `mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는 표준 이름을 그대로
 씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval과 함께 남고 재사용 키를
 바꾸지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
