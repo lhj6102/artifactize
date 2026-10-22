@@ -3,10 +3,10 @@
 [설치](install.md)에 나온 대로 바이너리를 설치한 뒤 예제 프로젝트를
 실행해 보세요. 각 README에 정확한 명령이 적혀 있습니다.
 
-- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): 부모/자식 폴더에 걸친
-  Runtime eval, 지시문과 argv 안의 `{artifact}` 참조,
-  basis Artifact, RED가 될 수 있는 검사, 내장 artifactsum을 통한 재사용을 보여 주며,
-  `status`가 무엇이 바뀌었는지 설명합니다.
+- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): 부모와 자식 폴더에서 명령을
+  실행하는 검사, 지시문과 명령 인자 안의 `{artifact}` 참조, 입력만 제공하는 Artifact, 일부러
+  실패시켜 볼 수 있는 검사, 파일이 바뀔 때까지 결과를 재사용하는 모습을 보여 주며, `status`가
+  무엇이 바뀌었는지 설명합니다.
 - [Agent tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools): 내장
   `read`, `grep`, `view_image`, `section` 도구와 선언한 `json` 도구를 쓰는 Agent eval,
   통과/실패 스키마, 백엔드와 모델 선택, 그리고 내장 `open`, `read` 도구를 쓰는

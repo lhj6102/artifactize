@@ -96,7 +96,7 @@ whitespace; a token over 4096 bytes is refused. It attempts to hide
 terminal input; on Windows, if that fails, it warns that the token will be visible
 and continues reading. Non-terminal stdin is read without changing terminal echo.
 It verifies the token with `GET /v1/whoami`, then stores it in
-`$STATE/auth/remote-token.json`, which only your account can read and writes
+`$STATE/auth/remote-token.json`, which only your account can read, and writes
 `$STATE/remote.json`: `{"url":"https://reviews.example/","share":"summary"}`.
 URLs must use HTTPS with the system trust store; plain `http://` is accepted only
 for `localhost`, `127.0.0.0/8` and `[::1]`. Credentials, queries and fragments are

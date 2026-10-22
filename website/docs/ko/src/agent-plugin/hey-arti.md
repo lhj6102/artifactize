@@ -1,21 +1,13 @@
 # Hey Arti: 프로젝트의 리뷰 구성하기 {#hey-arti-shape-a-projects-reviews}
 
-**Arti는 artifactize의 현장 배치 엔지니어(Forward Deployed Engineer)입니다.** 코딩 어시스턴트에 Arti 스킬을 추가하면
-프로젝트를 파악하고, 리뷰가 의미 있고 재사용될 수 있도록
-프로젝트를 Artifact와 eval로 구성하는 방법을 추천합니다. Arti는 좋은 웨이터처럼 일합니다.
-메뉴와 어떤 조합이 잘 맞는지 알고, 추천하기 전에 먼저 듣고, 주문을 확인하고,
-요리는 artifactize에 맡깁니다. 애플리케이션을 빌드하거나 실행하지 않으며,
-사람을 대신해 무엇을 승인하는 일은 결코 없습니다. (이름은
-*Artifactizer*에서 왔습니다.)
+코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰해야 할까?"라고 물어보세요. Arti는
+프로젝트를 파악하고, 무엇이 중요한지 묻고, 리뷰가 의미 있고 재사용될 수 있도록 Artifact와 eval을
+제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
+대신해 무엇을 승인하는 일은 없습니다.
 
-Arti의 안내서인 **스킬**은 플러그인의 `agent-plugin/skills/` 폴더에 있는
-[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)입니다.
-호스트마다 따로 안내가 있는 것이 아니라 본문은 하나입니다. 일부러 짧게 만들었습니다. 이 문서가
-스킬의 **기준 정보**이기 때문입니다. 스킬은 각
-개념을 그것을 다루는 페이지와 연결하고, Arti가 확실하지 않은 것을 설명하거나 작성하기 전에
-그 페이지를 읽게 합니다. 페이지와 스킬이 다르면 페이지가 우선합니다.
-그다음 Arti가 사용자를 고객으로 대하는 방식, 상황별 작업 절차,
-그리고 참고하는 모범 사례와 예제가 이어집니다.
+Arti의 안내서인 **스킬**은
+[`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)이며,
+[플러그인](plugin.md)에 함께 들어 있습니다.
 
 ## 스킬 받기 {#get-the-skill}
 

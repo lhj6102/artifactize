@@ -9,7 +9,7 @@ eval의 기준을 대신하거나 판정을 지어내지 않습니다.
 
 래퍼를 직접 만들기 전에 [내장 도구](builtin.md)를 쓰세요. 파일 읽기, 폴더 나열,
 텍스트 검색, 이미지나 Markdown 섹션 보기, 프로그램 도움말 확인,
-현재 Artifact 그래프 보기를 할 수 있습니다. Human 도구는 파일이나 URL을 평소의
+현재 Artifact Graph 보기를 할 수 있습니다. Human 도구는 파일이나 URL을 평소의
 애플리케이션으로 열 수도 있습니다. 파일을 읽고, 폴더를 나열하고, 텍스트를 검색하고,
 이미지나 섹션을 보여 주는 Agent 내장 도구는 머신 전체가 아니라 eval의 범위에 들어간 Artifact만 봅니다.
 `graph`는 eval 범위와 상관없이 프로젝트의 현재 선언을 모두 읽습니다.
@@ -107,14 +107,14 @@ args = ["board"]
 start는 평소와 같은 JSON 객체를 읽고, 공유 상태를 전용
 `ARTIFACTIZE_SESSION_DIR`에 쓰고, 준비 완료 줄 하나를 출력한 뒤 계속 실행됩니다. 세션에 묶인
 호출과 stop은 같은 디렉터리를 받으며, 리뷰마다 별도의 세션을 받습니다.
-에이전트는 인스턴스를 시작하거나, 멈추거나, 이름 붙이지 않습니다. 준비,
-중지, 프로세스 정리는 오류와 취소를 포함해 Artifactize가 맡습니다. 재사용된 리뷰는
-아무것도 시작하지 않습니다. 세션은 [저장된 Agent 대화](../agent.md#saved-conversations)가 아닙니다.
-수명 주기와 복구 계약은 [도구 세션](agent.md#tool-sessions)을 보세요.
+에이전트는 인스턴스를 시작하거나, 멈추거나, 이름 붙이지 않습니다. 오류와 취소를 포함해
+모든 세션을 멈추고 정리하는 일은 artifactize가 맡습니다. 재사용된 리뷰는 아무것도 시작하지
+않습니다. 세션은 [저장된 Agent 대화](../agent.md#saved-conversations)가 아닙니다. 하네스가
+구현할 것은 [도구 세션](agent.md#tool-sessions)을 보세요.
 
 ## 리뷰하기 전에 선언 확인하기 {#check-a-declaration-before-reviewing}
 
 `artifactize tools check`는 프로젝트 명령을 실행하지 않고 사용 가능 여부와 선언을
 확인합니다. 특정 도구를 시험하려면 명시적인
-[실행 형식](agent.md#tool-diagnostics)을 쓰세요. 이 형식은 Run, 리뷰, 캐시
+[실행 형식](../../cli/index.md#tool-diagnostics)을 쓰세요. 이 형식은 Run, 리뷰, 캐시
 항목을 만들지 않습니다. 세션에 묶인 Agent 도구는 그 진단 호출에만 쓰는 하네스를 새로 실행합니다.

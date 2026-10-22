@@ -8,26 +8,20 @@ Windows(x64)에서 실행됩니다. WSL 2에서는 Linux 빌드가 실행됩니�
 ## 프로젝트 명령은 선언된 그대로 실행 {#project-commands-run-as-declared}
 
 Runtime eval, fingerprint 스크립트, 명령 Agent 도구, 명령 Human 도구는 모든 OS에서
-`command`를 `args`와 함께 인자 벡터 하나로 실행합니다. 셸도 없고,
-선언의 OS별 변형도 없습니다. 프로젝트에는 리뷰를 실행하는 환경에 있는 명령을 선언하세요.
-`python3`나 `grep`을 실행하는 eval이라면 모든 리뷰어의 `PATH`에 그 명령이 있어야 합니다.
-파일을 읽고, 검색하고, 여는 데는 [내장 도구](../tools/builtin.md)가
-외부 프로그램 없이 어디서나 동작합니다.
+`command`와 `args`를 인자 목록 하나로 실행합니다. 셸도 없고, OS마다 다른 선언도 없습니다.
+프로젝트에는 리뷰하는 곳에 있는 명령을 선언하세요. `python3`나 `grep`을 실행하는 eval이라면 모든
+리뷰어의 `PATH`에 그 명령이 있어야 합니다. 파일을 읽고 검색하는 데는
+[내장 도구](../tools/builtin.md)가 외부 프로그램 없이 어디서나 동작합니다. `open`은 시스템의
+여는 프로그램을 씁니다. macOS에서는 `open`, Windows에서는 기본 애플리케이션, Linux와 WSL에서는
+`xdg-open`이며, `xdg-open`은 설치되어 있어야 합니다.
 
-Runtime eval, fingerprint 스크립트, 명령 Agent 도구는 작성자의 환경에서도
-실행됩니다. `artifactize`가 받은 환경 변수 전체(각 OS의 홈과 캐시 변수, Windows에서는
-시스템 변수까지)를 그대로 넘겨주므로, 버전 관리자로 설치한 툴체인도
-터미널에서와 같은 방식으로 찾을 수 있습니다. `ARTIFACTIZE_*` 변수만 빠지고, 실행마다
-전용 `TMPDIR`(`TMP`와 `TEMP`도)를 받습니다.
-[runtime 환경](../declarations.md#runtime-execution-library)을 보세요. 명령 Human 도구는
-`ARTIFACTIZE_*` 변수를 포함한 리뷰어의 환경 전체를 물려받으며,
-전용 임시 디렉터리나 출력 디렉터리를 받지 않습니다([Human 도구](../tools/human.md)).
+명령은 [Runtime 실행](../declarations.md#runtime-execution)에서 설명한 대로 내 환경에서
+실행됩니다. OS마다 다른 점은 이렇습니다. 별도의 임시 폴더는 Linux와 macOS에서 `TMPDIR`이고,
+Windows에서는 `TMP`와 `TEMP`도 함께 지정합니다. Windows에서는 시스템 변수도 전달합니다.
 
-Linux에서 AppImage로(직접 또는 `install.sh`의
-실행 파일을 통해) 시작한 데스크톱 앱은, 번들에 든 라이브러리를 불러오도록
-번들의 디렉터리를 `PATH`, `LD_LIBRARY_PATH` 같은 목록의 앞에 두고
-번들의 변수와 함께 실행됩니다. 앱이 시작하는 모든 프로그램은 앱이 시작될 때의 환경을 받습니다.
-그 항목과 변수는 빠지므로, 시스템 프로그램은 자기 라이브러리를 불러옵니다.
+Linux에서 데스크톱 앱이 AppImage로 시작한 프로그램은 앱이 시작될 때의 환경에서 AppImage가 더한
+설정을 뺀 환경을 받습니다. 직접 설정해 둔 변수를 AppImage가 덮어썼다면(`GTK_THEME` 등) 원래
+값으로 되돌리지 않고 지웁니다. 명령에 그 변수가 필요하면 다시 설정하세요.
 
 ## 프로그램 찾기 {#program-lookup}
 
@@ -39,26 +33,23 @@ fingerprint 스크립트, 명령 도구에서 같은 방식으로 찾습니다.
   비어 있으면 그 디렉터리를 찾습니다. Windows에서는 확장자 없는 이름에 `PATHEXT`의 각 확장자를 차례로 붙여 보므로,
   `npx`가 `npx.cmd`를 찾습니다. `PATHEXT`가 없으면 순서는 `.COM;.EXE;.BAT;.CMD`입니다.
 - `./tools/check`처럼 `/`가 들어간 상대 이름은
-  폴더 Artifact의 eval 범위 안에서 해석됩니다. 파일 Artifact에서는 상대 경로 실행 파일을
+  폴더 Artifact의 허용된 범위 안에서 해석됩니다. 파일 Artifact에서는 상대 경로 실행 파일을
   들어 있는 폴더 아래에서 해석하며, 관련 없는 형제 파일을 가리켜도 됩니다(예:
   `./inspect`). 두 경우 모두 `..`과 심볼릭 링크는 거부됩니다. 이 실행 파일 찾기 때문에
-  형제 파일이 내장 도구나 범위 지정 argv 참조에 보이게 되지는 않습니다.
+  형제 파일이 내장 도구나 범위가 정해진 argv 참조에 보이게 되지는 않습니다.
 - 절대 경로는 적힌 그대로 실행합니다.
 
 내장 **help**는 다릅니다. 그 리터럴 실행 파일은 절대 경로, 상위 경로 기준 상대 경로,
 실행 파일 심볼릭 링크를 포함해 일반적인 cwd/PATH 검색을 씁니다.
-하위 명령 인자는 범위 지정 파일 피연산자로 해석하지 않고 그대로 전달합니다.
+하위 명령 인자는 범위가 정해진 파일 인자로 해석하지 않고 그대로 전달합니다.
 help는 Artifact 파일에 갇힌 작업이 아니라 신뢰하는 프로그램을 실행합니다.
 
-Windows 배치 파일(`.cmd`, `.bat`)은 셸 문자열 없이 바로 실행됩니다. Rust
-표준 라이브러리가 각 인자를 `cmd.exe`용으로 따옴표 처리하며, 안전하게 전달할 수 없는 인자는
-거부합니다. 오류 메시지는 `Process arguments could not be passed safely`이고,
-아무것도 실행되지 않습니다.
+Windows 배치 파일(`.cmd`, `.bat`)도 명령으로 쓸 수 있지만, 모든 문자를 인자로 넘길 수는
+없습니다. artifactize는 그런 인자를 바꿔서 넘기지 않고 거부합니다. 오류 메시지는
+`Process arguments could not be passed safely`이고, 아무것도 실행되지 않습니다.
 
-도구 세션은 Unix에서는 프로세스 그룹을, Windows에서는 닫으면 종료되는 Job을 씁니다.
-정리와 복구는 Artifactize가 맡으며, 플랫폼 공통
-[도구 세션 계약](../tools/agent.md#tool-sessions)이 그 보장과
-신뢰하는 명령의 한계를 설명합니다.
+도구 세션은 모든 OS에서 같은 방식으로 멈추고 정리합니다. 그 범위와 신뢰하는 명령의 한계는
+[도구 세션 계약](../tools/agent.md#tool-sessions)에서 설명합니다.
 
 ## 경로 {#paths}
 

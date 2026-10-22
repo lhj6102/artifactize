@@ -33,7 +33,7 @@ sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/ar
 비어 있는 새 원본 데이터베이스가 몰래 만들어지는 것을 막습니다.
 
 서버와 클라이언트는 함께 업그레이드하세요. 0.9의 재사용 키 v2는 더 오래된 기록과 일치하지 않으므로, Human 승인을 포함한
-모든 실행형 eval에 새 리뷰가 한 번씩 필요합니다. 전체 레퍼런스는 [리뷰 저장소 서버](reference.md#review-store-server)를
+모든 실행형 eval에 새 리뷰가 한 번씩 필요합니다. 전체 레퍼런스는 [리뷰 저장소 서버](../../cli/review-store.md#review-store-server)를
 보세요.
 
 ## 팀원을 안전하게 연결하기 {#connect-teammates-securely}
@@ -86,7 +86,7 @@ artifactize remote status
 - `request submit`은 Human 승인을 게시합니다.
 - `remote push`는 저장소에 닿을 수 없던 동안 만든 결과를 보냅니다.
 
-전체 레퍼런스는 [원격 리뷰 저장소 클라이언트](reference.md#remote-review-store-client)를 보세요.
+전체 레퍼런스는 [원격 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)를 보세요.
 
 **CI.** CI는 환경 변수로만 설정합니다. [CI](ci.md)를 보세요.
 
@@ -129,4 +129,4 @@ artifactize remote status
   제거합니다.
 - 저장소는 `.artf` 선언이 아니라 `$STATE/remote.json`과 환경 변수로만 설정되므로,
   복제한 저장소가 토큰을 다른 곳으로 보낼 수 없습니다.
-  토큰은 0600으로 저장되고, 발급된 저장소에 묶이며, 결코 출력되지 않습니다.
+  토큰은 내 계정만 읽고 쓸 수 있는 파일에 저장되고, 발급받은 저장소에서만 쓰이며, 출력되지 않습니다.

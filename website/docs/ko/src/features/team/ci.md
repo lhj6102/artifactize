@@ -12,12 +12,12 @@ Agent 리뷰나 Human 승인은 [실행되지 않고](../../cli/index.md#reuse-o
 개발자의 `verify`가 현재 키에 대해 그것을 만든 뒤에야 통과합니다. Artifactsum이
 기본으로 재사용을 켜 두며, 대상이나 의존성의 `fingerprint = false`는 재사용을 끕니다.
 
-## 미룬 작업을 병합 관문에서 빼기 {#keep-deferred-work-out-of-the-merge-gate}
+## 미룬 작업을 병합 게이트에서 빼기 {#keep-deferred-work-out-of-the-merge-gate}
 
 개발자는 사람이 자리를 비운 동안 기계 작업을 마치려고 `--defer-human`을 쓸 수 있으며,
 `--speculate`를 함께 쓸 수도 있습니다. SIGNOFFS_PENDING(종료 코드 5), DEFERRED 승인,
 PROVISIONAL 기계 결과는 승인이 아닙니다. CI의
-`--reuse-only agent,human` 관문을 유지하세요. 빠진 승인은 실행되지 않고
+`--reuse-only agent,human` 게이트를 유지하세요. 빠진 승인은 실행되지 않고
 INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 없습니다.
 사람이 GREEN을 제출하면 CI는 바뀌지 않은 기계 증거와
 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. 그냥 verify가 접수된 것을 CI 성공으로 취급하지 마세요.
@@ -50,12 +50,13 @@ INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 �
   그러면 저장소에만 있는 리뷰는 재사용되지 않으므로 Run은 INCOMPLETE가 됩니다.
 - 거부된 토큰, TLS 실패, 잘못된 설정은 작업을 실패시키므로(종료 코드 2),
   잘못된 설정이 몰래 건너뛰어지는 일은 없습니다.
-- `ARTIFACTIZE_REMOTE=off`는 명령 하나에 대해 저장소를 끕니다.
+- `ARTIFACTIZE_REMOTE=off`는 명령 하나에 대해 저장소를 끕니다. 그래도 읽을 수 없는
+  `remote.json`이 있으면 명령이 실패하니, 먼저 고치거나 지우세요.
 
 [팀 워크스루](walkthrough.md#5-ci-reuses-both)에서 이를 처음부터 끝까지 실행해 봅니다.
 
 ## 모델 없이 Agent eval 테스트하기 {#test-agent-evals-without-a-model}
 
-CI 작업은 루프백에서 시작한 가짜 제공자를 상대로, 버려도 되는 상태 디렉터리와
+CI 작업은 루프백에서 시작한 가짜 provider를 상대로, 버려도 되는 상태 디렉터리와
 꺼진 저장소로 Agent eval을 실행할 수 있습니다.
-[가짜 제공자로 테스트하기](../agent.md#test-against-a-fake-provider)를 보세요.
+[가짜 provider로 테스트하기](../agent.md#test-against-a-fake-provider)를 보세요.

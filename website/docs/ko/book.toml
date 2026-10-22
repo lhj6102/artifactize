@@ -24,3 +24,6 @@ enable = true
 
 [output.html.search]
 enable = true
+
+[output.html.redirect]
+"features/team/reference.html" = "/docs/ko/cli/review-store.html"

@@ -10,7 +10,7 @@
 # 기능
 
 - [Artifact](features/artifact.md)
-  - [선언과 Artifact 그래프](features/declarations.md)
+  - [선언과 Artifact Graph](features/declarations.md)
 - [Eval](features/eval.md)
   - [Agent](features/agent.md)
   - [Agent 응답](features/tools/agent-responses.md)
@@ -25,7 +25,6 @@
 - [팀으로 일하기](features/team/index.md)
   - [워크스루: 두 머신과 CI](features/team/walkthrough.md)
   - [CI](features/team/ci.md)
-  - [리뷰 저장소 레퍼런스](features/team/reference.md)
 - [기타](features/others/index.md)
   - [상태, 캐시, 제한](features/others/state.md)
   - [운영체제](features/others/platforms.md)
@@ -44,6 +43,8 @@
 # CLI
 
 - [CLI](cli/index.md)
+  - [리뷰 저장소 서버와 클라이언트](cli/review-store.md)
+  - [캐시와 유지보수](cli/maintenance.md)
 
 # TUI
 

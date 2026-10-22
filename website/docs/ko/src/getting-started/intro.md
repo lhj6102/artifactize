@@ -1,6 +1,6 @@
 # Artifactize {#artifactize}
 
-Artifact 그래프 위에서 함께 만드세요.
+Build together on an Artifact Graph.
 
 Artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되, 바뀌지 않은 작업은
 다시 검사하지 않도록 도와줍니다. **Artifact**는 리뷰할 수 있는 작업 단위입니다.
@@ -20,9 +20,9 @@ Linux, macOS, Windows에서 실행됩니다. [설치](/docs/ko/getting-started/i
 
 ## 다음으로 볼 곳 {#where-to-go-next}
 
-- **[기능](/docs/ko/features/artifact.html):** Artifact와 그 그래프, eval,
-  fingerprint, Run, 도구, 팀 공유. 이 기능들은 모든 인터페이스에서 같은
-  라이브러리를 통해 동작합니다.
+- **[기능](/docs/ko/features/artifact.html):** Artifact와 eval을 선언하고, 무엇을
+  재사용할지 정하고, 검증을 실행하고 따라가고, 리뷰어에게 도구를 주고, 팀과 결과를 공유합니다.
+  CLI, 데스크톱 앱, 에이전트 플러그인에서 똑같이 동작합니다.
 - **[데스크톱](/docs/ko/desktop/index.html):** 창에서 Run을 살펴보고 Human 리뷰를 처리합니다.
 - **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** Arti에게 이식 가능한 스킬을 주고
   [MCP](/docs/ko/agent-plugin/mcp.html)로 코딩 호스트를 연결합니다.

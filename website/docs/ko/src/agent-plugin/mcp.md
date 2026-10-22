@@ -78,14 +78,14 @@ Codex는 이를 자기 MCP 설정에 기록합니다. 전역으로 등록한 명
 
 ## 검증 도구 {#verification-tools}
 
-| 도구 | 인자 | 핵심 작업 / 답 |
+| 도구 | 인자 | 답 |
 | --- | --- | --- |
-| `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | `runs::start`로 제출. 승인이 아니라 간결한 Run 관찰 |
-| `verify_status` | `run` | `runs::status`: 저장된 상태, 개수, 경과 초, `next_check` |
-| `verify_wait` | `run`, 선택적으로 `seconds` | `runs::wait`: Run 종료 또는 한도까지. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
-| `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 변경이 있을 때 동작하는 `runs::watch`, 최대 30초. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 반환할 때 간결한 관찰 |
-| `verify_result` | `run`, 선택적으로 `cursor` | `runs::result`: 판정과 간결한 발견 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
-| `verify_cancel` | `run` | `runs::cancel`: 명시적 취소 확인. 정리 여부는 확정을 지켜보세요 |
+| `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | Run을 제출. 승인이 아니라 간결한 Run 관찰 |
+| `verify_status` | `run` | 저장된 상태, 개수, 경과 초, `next_check` |
+| `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 닿을 때까지 기다림. 기본 30, 정수 0–40. 첫 호출의 root 질문이 있다면 그 뒤에, 관찰은 45초 안에 끝남 |
+| `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 따라감. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 반환할 때 간결한 관찰 |
+| `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 발견 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
+| `verify_cancel` | `run` | 명시적 취소 확인. 정리 여부는 확정을 지켜보세요 |
 
 `scope`는 `kind` 필드로 선택 유형을 구분하는 공용 Selection JSON 객체입니다.
 
@@ -108,18 +108,17 @@ ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
 eval 결과 재사용은 유지됩니다.
 
 동시 실행은 기본으로 무제한입니다. READY eval은 모두 시작할 수 있으며,
-`limits.json`의 백엔드 제한만 따릅니다. 선택적인 양의 정수 `jobs`는 CLI `--jobs`와 같은
+`limits.json`의 백엔드 제한만 따릅니다. 선택 인자 `jobs`(1–4294967295)는 CLI `--jobs`와 같은
 Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 추가하세요. 무제한이면 Run은
-`jobs`를 생략하며, 예전에 저장된 숫자 상한도 계속 읽을 수 있습니다.
+`jobs`를 생략합니다.
 
-두 모드 인자는 기본값이 false이며 공용 `RunModes`로 그대로 전달됩니다.
-`speculate`는 상위 판단 전에 요청된 하위 작업을 핵심 스케줄링 한도 안에서
+두 모드 인자는 기본값이 false이며 CLI의 `--speculate`, `--defer-human`과 뜻이 같습니다.
+`speculate`는 상위 판단 전에 요청된 하위 작업을 평소의 스케줄링 한도 안에서
 시작하며, 상위의 RED/ERROR는 그 때문에 무효가 되는 작업만 취소합니다. `defer_human`은
 잠정적인 진행을 허용하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
 돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
 이는 완전한 승인이 아닙니다(CLI 지켜보기는 5로 종료). 명시적인 `gate = "blocking"`은
-여전히 막습니다. `DEFERRED`와 `PROVISIONAL` 요청 상태는 핵심에서 그대로 전달되며,
-MCP가 다시 해석하지 않습니다. 이후의 승인이 기계 작업을 다시 실행하지는 않습니다.
+여전히 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 이후의 승인이 기계 작업을 다시 실행하지는 않습니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 기다리는 것은 오류가 아니라 정상적인 상태입니다.
 `verify_wait`는 runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로
@@ -134,8 +133,7 @@ Human 판단은 사람에게 있으며, MCP는 그것을 맡거나, 놓거나, �
 ## 확인 도구 {#inspection-tools}
 
 모든 확인 도구는 아래 나열한 인자와 함께 선택적인 세부 `cursor`를 받습니다.
-CLI 대응 명령과 같은 핵심 작업과 JSON 투영을 호출하며, MCP는
-크기가 제한되고 손실 없는 전송 페이지만 더합니다.
+CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 
 | 도구 | 인자(필수라고 표시한 것 외에는 선택) | CLI 대응 명령 |
 | --- | --- | --- |
@@ -143,7 +141,7 @@ CLI 대응 명령과 같은 핵심 작업과 JSON 투영을 호출하며, MCP는
 | `config_check` | 없음 | `config check` |
 | `config_graph` | `scope`(기본 all), `impact`(false) | `config graph [ARTIFACT] [--impact]`. MCP는 eval/여러 개 선택도 받음 |
 | `request_logs` | **`id`**, `stream`(`stdout`/`stderr`/`both`), `tail`, `start`, `end`, `search` | 해당 플래그를 쓴 `request logs ID` |
-| `run_list` | `limit`(0–20, 기본 20), `offset` | 이 저장소에 대한 `run list --limit 20 --offset N` |
+| `run_list` | `limit`(0–20, 기본 20), `offset`(0–4294967295, 기본 0) | 이 저장소에 대한 `run list --limit 20 --offset N`, 최신 순 |
 | `run_show` | **`run`** | `run show RUN` |
 | `request_list` | `run` | 이 저장소로 제한된 `request list [--run RUN]` |
 | `request_show` | **`id`** | `request show ID` |
@@ -181,12 +179,12 @@ offset은 UTF-8 바이트 오프셋입니다. `run_list.offset`은
 다음 Run 기록 묶음을 고르며, 한 묶음의 JSON을 이어 가는 cursor와는 다릅니다.
 `verify_result`는 대신 구조화된 `findings` 배열을 페이지 단위로 넘깁니다.
 
-cursor는 도구, 인자, 현재 저장된 투영을 식별합니다. 경과 시간 필드는 첫 페이지를 조회한 시점을 기준으로 계산하므로, Run이 사람의 승인을 받는 동안 시간이 흘러도 이어 읽기가 만료되지는 않습니다. 다른 호출의 cursor나
-오래된 cursor는 거부되며, 증거가 바뀌었다면 그 확인을 다시 시작하세요. 전송 계층이 소유하는
-스냅숏이나 백그라운드 구독은 저장되지 않습니다. 도구 작업 실패는
-크기가 제한된 `{code,message}` 내용과 함께 MCP `isError:true`를 씁니다(기존 핵심
-작업 오류는 `operation_failed` 아래에 메시지를 유지). 불완전한 페이지를 전체 결과처럼 보이게 하려고
-세부 내용을 자르지는 않습니다.
+cursor는 저장된 증거가 그대로인 동안 같은 도구와 같은 인자에서만 동작하며, 시간이 흐른다고
+만료되지는 않습니다. 그렇지 않으면 거부되니, 그 확인을 첫 페이지부터 다시 시작하세요. 실패한
+도구 호출은 `{code,message}`와 함께 MCP `isError:true`를 돌려줍니다. `operation_failed`에는 CLI의
+오류 메시지가 처음 2,048자까지 담깁니다. `response_too_large`는 답이 세부 페이지 하나에 들어가지
+않는다는 뜻이니, `request_logs`의 범위나 검색처럼 확인 범위를 좁히세요. 불완전한 페이지를 전체
+결과처럼 보이게 하려고 세부 내용을 자르는 일은 없습니다.
 
 ## 일부러 빼놓은 것 {#deliberately-absent}
 
@@ -199,7 +197,7 @@ Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전
 
 `verify_start`로 제출하고 Run ID를 보관한 다음, `_meta`에 표준
 도구 호출 메타데이터 `{"progressToken":"your-observer"}`를 넣어 `verify_watch`를 호출하세요.
-이 호출이 대기하는 동안 artifactize는 공유 상태 변경을 구독하고
+이 호출이 대기하는 동안 artifactize는 Run이 바뀔 때마다
 `notifications/progress`를 보냅니다. 알림의 `message`는 JSON 객체입니다.
 
 - `{"kind":"update","data":...}`: 간결한 실시간 상태/개수. **승인이 아닙니다**.
@@ -216,8 +214,8 @@ Run이 종료 상태로 관찰되었더라도, 클라이언트가 outcome 알림
 `verify_wait`를 쓰세요. 빠른 폴링은 필요 없습니다.
 구독은 호출(30초 한도), 클라이언트 취소, 연결
 종료와 함께 끝나며, 이후의 호출은 저장된 Run에 다시 연결합니다(Run을 누가 소유하는지는
-[검증 도구](#verification-tools)를 보세요). 무효화 알림이 빠지거나 하나로 합쳐지면, 전체 이벤트 이력을
-지어내지 않고 저장된 상태를 다시 읽어 맞춥니다.
+[검증 도구](#verification-tools)를 보세요). 함께 도착한 변경은 알림 하나로 합쳐질 수 있으며,
+각 알림은 전체 이벤트 이력이 아니라 저장된 상태를 반영합니다.
 
 진행 알림은 **클라이언트/에이전트 호스트**가 보여 주거나 자기 작업
 대기열/대화로 보내야 합니다. MCP 알림만으로는 모델 턴이 생기거나 추론 캐시가 유지되지 않으며, 호출이나 연결이 끝난 뒤에는 알림도 전달되지 않습니다. Artifactize는
@@ -244,7 +242,7 @@ Run이 종료 상태로 관찰되었더라도, 클라이언트가 outcome 알림
 재사용된 요청의 로그는 결과를 만든 원래 로컬 실행에서 찾으며, 원격 기록만으로는
 로그가 로컬에 보존되어 있다고 보장할 수 없습니다. 원본 캡처를 얼마나 오래 보관하는지와
 `artifactize prune`이 무엇을 남기는지는
-[runtime 실행 레퍼런스](../features/declarations.md#runtime-execution-library)에 있습니다.
+[runtime 실행 레퍼런스](../features/declarations.md#runtime-execution)에 있습니다.
 
 `config_graph`는 훅을 호출하지 않고 정적 정의, eval, 순환 상대, 입력→소비자
 관계를 찾습니다. Artifact/eval을 고르면 그 필요 범위가 나오며,
@@ -254,6 +252,6 @@ Run이 종료 상태로 관찰되었더라도, 클라이언트가 outcome 알림
 
 ## 프로토콜 버전 {#protocol-versions}
 
-서버는 고정된 rmcp 전송을 씁니다. 탐색과 요청별 메타데이터를 갖춘 2026-07-28 MCP
+서버는 탐색과 요청별 메타데이터를 갖춘 2026-07-28 MCP
 수명 주기를 지원하며, `initialize`와 `notifications/initialized`로 시작하는
-이전 클라이언트도 지원합니다. Tasks 확장은 제공하지 않으며, 전송 계층에서 지속 구독을 따로 유지하지도 않습니다.
+이전 클라이언트도 지원합니다. Tasks 확장은 제공하지 않으며, 호출이 끝난 뒤까지 남는 구독은 없습니다.
