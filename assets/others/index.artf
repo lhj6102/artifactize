@@ -1,0 +1,47 @@
+name = "others"
+
+[views.agent_tools]
+list = { builtin = "list" }
+read = { builtin = "read" }
+view_image = { description = "View an image saved in {artifactName}, such as graph-example.en.png.", builtin = "view_image" }
+
+[evals.renders-html]
+title = "The saved images are what their HTML renders now"
+profile = { kind = "runtime", command = "node", args = ["capture.mts", "check"], timeout_ms = 300000 }
+payload.instruction = "Render every HTML figure of {others} again with its capture script and compare each image with the saved one."
+
+[evals.explains-graph]
+title = "The example graph shows how Artifactize works, the same in every language"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+
+[evals.explains-graph.payload]
+instruction = """
+{others} holds graph-example.html and the images capture.mts renders from it in English \
+(graph-example.en.png), Korean (graph-example.ko.png) and Chinese (graph-example.zh.png). It \
+shows an example project's files on the left and the Artifact Graph their declarations make \
+on the right. Read graph-example.html and view every image. Using {docs}, judge:
+- Accuracy: the files declare the Artifacts the way the docs describe (.artf beside a file, \
+index.artf for a folder); each check is the kind its legend says (a command, an AI agent or a \
+person); each line joins the Artifact a check belongs to with the Artifact the check reads, and \
+a check that reads only its own Artifact loops back to it. Nothing contradicts the docs.
+- Plain language: the English text follows W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING of \
+{writer-introduction}.
+- Languages: the Korean and Chinese images say what the English one says, in natural wording, \
+and all three show the same layout.
+- Layout: in every image, no text is clipped, overlaps a box, line or other text, or is too \
+small to read at half size.
+Submit GREEN when all four hold. Otherwise submit RED with one finding per problem, naming the \
+image or the HTML line and saying what to change in graph-example.html.
+"""
+
+[evals.explains-graph.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.explains-graph.fail_schema]
+type = "object"
+properties.findings = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } }
+required = ["findings"]
+additionalProperties = false

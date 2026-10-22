@@ -503,11 +503,13 @@ p {
   }
 }
 
+.hero-graph,
 .hero-demo {
   max-width: 1080px;
   margin: 36px auto 0;
 }
 
+.hero-graph img,
 .hero-demo img {
   display: block;
   width: 100%;

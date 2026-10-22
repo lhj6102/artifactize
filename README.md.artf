@@ -18,13 +18,14 @@ instruction = """
 Read the shared checklist {writer-introduction} and the
 root README {readme}. Check every W- item and this Artifact's own criteria:
 - R-FLOW: Badges are at the top; the exact project sentence is the first headline, followed by
-  a one-line logline, who it is for, the introduction video, the project's principles, a short explanation,
-  installation, and real product screenshots at the bottom.
+  a one-line logline, who it is for, the example Artifact Graph image, the introduction video, the project's
+  principles, a short explanation, installation, and real product screenshots at the bottom. The example
+  graph is the English image rendered in assets/others/ (graph-example.en.png), referenced by that path.
 - R-INSTALL-OS: The README guides installation itself by operating system. Default methods
   per OS plus a pointer to alternatives are sufficient. It must not replace those defaults
   with only a link to the docs installation page.
-- R-REAL-SCREENS: This covers the product images at the bottom; the introduction video near
-  the top is R-FLOW's. The README may attach the screenshots in assets/screenshots/ and the
+- R-REAL-SCREENS: This covers the product images at the bottom; the example graph and the
+  introduction video near the top are R-FLOW's. The README may attach the screenshots in assets/screenshots/ and the
   demos in assets/demos/, which are captured from the real app. It references them by
   those paths, never as copies elsewhere. Example data
   is labeled as such and must not present fabricated Human approvals as genuine.

@@ -24,6 +24,8 @@ cp "$brand"/artifactize-icon{,-mark}.svg "$brand/artifactize-icon-h56.png" \
     "$brand/og.jpg" dist/media/
 # The landing page shows the desktop demos the capture script records into assets/demos/.
 cp "$PWD/../assets/demos/review-loop.gif" "$PWD/../assets/demos/graph-growth.gif" dist/media/
+# The hero's example graph is rendered from assets/others/graph-example.html.
+cp "$PWD/../assets/others/graph-example.en.png" dist/media/
 
 # Inject the same favicons into an isolated mdBook source, never docs/theme/.
 # mdBook fingerprints the copies and rewrites links in every generated page.
