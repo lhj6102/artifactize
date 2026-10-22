@@ -21,9 +21,9 @@ OS에서나 동작하는 명령은 [운영체제](others/platforms.md)를 보세
 종료 코드 0이면 **GREEN**, 그 밖의 종료 코드면 **RED**입니다. 시작하지 못했거나, 시간이
 초과됐거나, 중단됐거나, 입력이 잘못되면 판정 대신 동작 오류가 됩니다. Runtime 명령은 Agent나
 Human의 소유자 필드를 돌려주지 않습니다. 저장된 결과에는 완료 뒤의 종료 코드와 크기가 제한된
-stdout/stderr가 들어 있습니다. 실행이 아직 출력을 쓰는 동안에는
-`artifactize request logs REQUEST_ID`로 크기가 제한된 그 시점의 내용을 읽을 수 있으며, 확정되지
-않은 캡처는 일부만 있다고 표시됩니다. 이는 그때그때 살펴보는 것이지 자동으로 로그를 계속 보내
+stdout/stderr가 들어 있습니다. 프로그램이 실행 중일 때는
+`artifactize request logs REQUEST_ID`로 지금까지 출력된 로그를 정해진 크기까지 읽을 수 있으며,
+수집이 끝나지 않은 로그는 일부만 있다고 표시됩니다. 이는 그때그때 살펴보는 것이지 자동으로 로그를 계속 보내
 주는 기능은 아닙니다. tail/범위/검색과 캡처 증거는
 [runtime 로그 CLI 레퍼런스](../cli/index.md#agent-streaming-and-runtime-logs)에서, 지금의 정리
 기능이 남겨 두는 원본 캡처를 포함한 보존 방식은 공통

@@ -493,6 +493,9 @@ remains. `artifactize prune` removes the Run's `output` folder but keeps these s
 captures. Evidence that is missing, partial, or saved only by an older or remote
 artifactize is reported as such.
 
-Cancellation and a timeout stop the command and the programs it started. Commands are trusted local code, **not a sandbox**: they can do
+When the command ends, whether normally, by cancellation or by a timeout, the programs
+it started are stopped too, so nothing it started in the background outlives it; use an
+Agent [tool session](tools/agent.md#tool-sessions) or a Human
+[launch tool](tools/human.md#running) for a helper that must keep running. Commands are trusted local code, **not a sandbox**: they can do
 whatever your account can, must not change the reviewed input, and a program that
 deliberately detaches from the command may keep running.

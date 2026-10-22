@@ -311,9 +311,10 @@ plugin.
 
 ### Upgrading from 0.11
 
-State schemas 6 to 8 are upgraded additively to the current schema 9 on first use. Existing
-Runs, cache records and Human approvals are preserved. An older binary limited to schemas 6 to 8
-cannot open the upgraded state; keep a backup before switching versions.
+The state's format of saved review data (its schema) is upgraded automatically on first use,
+from schemas 6 to 8 to the current schema 9; existing Runs, cache records and Human approvals
+are kept. An older artifactize cannot open the upgraded state, so keep a backup before
+switching versions.
 
 `artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
 Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal

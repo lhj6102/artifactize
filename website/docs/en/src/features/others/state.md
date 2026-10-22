@@ -44,9 +44,7 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 A state written by a newer artifactize is refused with `Unsupported state schema
 version: N; a newer artifactize wrote it.`: update artifactize to open it.
 
-A new 0.9 state reviews every executable eval once, Human sign-offs included,
-and then reuses as before. Reuse-key v2 matches no earlier records, including
-script fingerprints and team-store records. See
+After an upgrade to 0.9, every eval is reviewed once; see
 [Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
 
 **Tokens stay out of repositories.** `$STATE/auth`, which holds the Codex sign-in and the

@@ -225,9 +225,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   work tree, an artifactize workspace or `--repo`, `login codex` refuses and names the
   folder, and `doctor` warns
   ([State](others/state.md#state)). Use a state directory outside
-  it, or `ARTIFACTIZE_CODEX_AUTH_FILE`. artifactize refreshes the access token five minutes before it
-  expires, once for all Runs. When the server rejects the refresh
-  token for good, the tokens are deleted and the review says to sign in again.
+  it, or `ARTIFACTIZE_CODEX_AUTH_FILE`. artifactize refreshes the access token before it expires. When
+  the server rejects the refresh token for good, the tokens are deleted and the review says to sign in again.
 - **An existing Codex sign-in.** With `ARTIFACTIZE_CODEX_AUTH_FILE` set, for example
   to `~/.codex/auth.json` (a regular file of at most 1 MiB; anything else is refused and
   gives no sign-in), artifactize reads that file's `tokens.access_token` (and

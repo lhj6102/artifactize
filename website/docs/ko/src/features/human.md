@@ -86,8 +86,8 @@ profile = { kind = "human" }
 payload.instruction = "Review the release before dependent work proceeds."
 ```
 
-`gate`가 없으면 Human eval은 요청의 기본 모드를 따릅니다. CI는
-`verify --all --wait --reuse-only agent,human`으로 엄격하게 유지됩니다. 승인 미루기도 추측
+`gate`가 없으면 Human eval은 요청의 기본 모드를 따릅니다. CI에서는
+`verify --all --wait --reuse-only agent,human`을 써서 필요한 승인이 모두 있어야 통과하게 하세요. 승인 미루기도 추측
 실행도 재사용할 수 있는 실제 Human GREEN 증거를 대신하지 않습니다.
 
 ## Human 도구 {#human-tools}

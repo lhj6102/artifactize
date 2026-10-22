@@ -227,8 +227,8 @@ cargo install --path crates/artifactize-tools --locked
 
 ### 데스크톱 앱 {#desktop-app}
 
-[데스크톱 앱](../desktop/index.md)은 현재 있는 모든 브랜치와 그 Run, 그리고 지금 실행한다면
-무엇이 실행될지, 대기 중인 Human 리뷰를 한 창에서 보여 줍니다. 디스크 이미지나 AppImage로
+[데스크톱 앱](../desktop/index.md)은 현재 브랜치 목록과 각 브랜치의 Run, 지금 verify하면
+실행할 작업, 대기 중인 Human 리뷰를 한 창에 보여 줍니다. 디스크 이미지나 AppImage로
 실행하면 앱이 첫 실행 때 `artifactize` 명령을 설정합니다(아래 참고).
 
 [내려받기](#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
@@ -307,8 +307,8 @@ Microsoft Store는 안정 릴리스만 따라가며, Microsoft가 검토하는 �
 
 ### 0.11에서 업그레이드 {#upgrading-from-011}
 
-상태 스키마 6~8은 처음 사용할 때 기존 데이터를 지우지 않고 필요한 부분만 더해 현재 스키마 9로 업그레이드됩니다. 기존
-Run, 캐시 기록, Human 승인은 보존됩니다. 스키마 6~8만 다룰 수 있는 이전 바이너리는
+저장된 리뷰 데이터의 형식(스키마)은 처음 사용할 때 스키마 6~8에서 현재 스키마 9로 저절로
+업그레이드되며, 기존 Run, 캐시 기록, Human 승인은 그대로 남습니다. 이전 버전의 artifactize는
 업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
 
 이제 `artifactize verify`는 터미널을 닫아도 계속 실행되는 Run을 제출하고, Run ID를 출력한 뒤 접수되면 종료합니다.
@@ -340,7 +340,7 @@ snake_case이고 eval은 `[evals.<id>]` 테이블입니다. `.artfignore`가 예
 팀 리뷰 저장소에 있거나 스크립트 fingerprint를 쓰는 경우도 마찬가지입니다. 첫 전체 `verify`는
 Human 승인을 포함해 모든 eval을 한 번씩 리뷰합니다. [0.9로 업그레이드](../features/fingerprint.md#upgrading-to-09)를 보세요.
 
-이제 Monitor는 eval의 Detail을 모달이 아니라 자기 패널에서 엽니다. 독립 실행형
+이제 Monitor는 eval의 Detail을 모달이 아니라 전용 패널에서 엽니다. 독립 실행형
 Review도 같은 Human Detail을 씁니다. 요청은 직접 맡아야 하며, 도구를 실행하거나
 결과를 제출해도 요청을 맡은 것으로 처리되지 않습니다. 판정 양식, 제출 키, 편집기 단축키가 바뀌었습니다.
 현재 조작 방법은 [Human 리뷰와 Monitor](../features/human.md)를 보세요.

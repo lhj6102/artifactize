@@ -119,7 +119,7 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로 리뷰의 뒤�
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없음 | 안 함 |
 | `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 모르거나 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 안 함 |
 | `AGENT_ERROR` | 그 밖의 모든 경우. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구 | 안 함 |
-| `BACKEND_STOPPED` | 시작하지 않음: Run이 그 백엔드에 리뷰를 더 받지 않음 | — |
+| `BACKEND_STOPPED` | 시작하지 않음: 그 Run에서 그 백엔드로 새 리뷰를 보내지 않음 | — |
 
 Ctrl-C는 `verify --wait`의 지켜보기만 멈출 뿐, 지켜보던 Agent 리뷰는 멈추지 않으며 Run은
 계속됩니다. 직접 취소를 요청해야 Run의 작업이 멈춥니다.
@@ -208,8 +208,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `--state-dir`을 쓰세요. 토큰은 절대 저장소 안에 저장하지 않습니다. `$STATE/auth`가 git 작업
   트리, artifactize 작업 공간, `--repo` 안에 있으면 `login codex`는 그 폴더를 밝히며 거부하고
   `doctor`는 경고합니다([상태](others/state.md#state)). 저장소 바깥의 상태 디렉터리나
-  `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 5분 전에 모든
-  Run을 위해 한 번 갱신합니다. 서버가 갱신 토큰을 영구히 거부하면 토큰을 지우고, 리뷰는 다시
+  `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 전에
+  갱신합니다. 서버가 갱신 토큰을 영구히 거부하면 토큰을 지우고, 리뷰는 다시
   로그인하라고 알립니다.
 - **이미 있는 Codex 로그인 쓰기.** `ARTIFACTIZE_CODEX_AUTH_FILE`을 예를 들어
   `~/.codex/auth.json`(1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로
@@ -256,8 +256,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 - 테스트 엔드포인트가 설정되어 있는 동안 `doctor`는 경고하고 이를 `testEndpoint`로 알립니다.
 
 가짜는 요청한 모델에 대해 provider의 전송 형식대로 `text/event-stream`으로 답을 스트리밍합니다.
-`openai`라면 `response.completed` 이벤트 하나면 됩니다. 이 가짜는 GREEN 스키마가
-`{"verdict":"GREEN"}`을 받아들이는 리뷰를 통과시킵니다. `pass_schema`에 다른 필드가 필요하면
+`openai`라면 `response.completed` 이벤트 하나면 됩니다. 이 가짜 provider는 `{"verdict":"GREEN"}`만으로 GREEN 스키마를 충족하는 리뷰를 통과시킵니다. `pass_schema`에 다른 필드가 필요하면
 가짜의 `text` 응답에 그 필드의 유효한 값을 넣으세요. 그러지 않으면 검사에서 수정 요청이
 일어나고, 그래도 맞지 않으면 `INVALID_RESULT`가 됩니다.
 

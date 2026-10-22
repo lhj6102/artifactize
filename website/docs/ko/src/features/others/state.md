@@ -41,9 +41,8 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 더 새로운 artifactize가 쓴 상태는 `Unsupported state schema version: N; a newer artifactize
 wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 
-0.9의 새 상태는 Human 승인을 포함해 실행 가능한 eval을 모두 한 번 리뷰한 다음, 전처럼
-재사용합니다. 재사용 키 v2는 스크립트 fingerprint와 팀 저장소 기록을 포함해 이전 기록과 하나도
-맞지 않습니다. [0.9로 업그레이드](../fingerprint.md#upgrading-to-09)를 보세요.
+0.9로 업그레이드하면 모든 eval을 한 번 리뷰합니다.
+[0.9로 업그레이드](../fingerprint.md#upgrading-to-09)를 보세요.
 
 **토큰은 저장소 밖에 둡니다.** Codex 로그인 정보와 리뷰 저장소 토큰을 담는 `$STATE/auth`가
 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면, gitignore된 폴더라도 거부합니다.

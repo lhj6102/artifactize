@@ -201,7 +201,9 @@ in the author's own environment (the
 [runtime environment](../declarations.md#runtime-execution): the real home, no
 `ARTIFACTIZE_*` variables of the caller) with a private temporary and output folder per
 call, removed when the call ends. The default deadline is 120000 ms (1–2147483647);
-cancellation and a timeout stop the command and what it started. Commands are trusted
+when the call ends, normally, by cancellation or by a timeout, the command and what it
+started are stopped; use a [tool session](#tool-sessions) for a helper that must keep
+running. Commands are trusted
 read-only programs, not sandboxed.
 
 An Agent eval sees the Agent tools of every Artifact in its scope, each named
