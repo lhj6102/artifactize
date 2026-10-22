@@ -26,7 +26,7 @@ list = { builtin = "list" }
 notes = { builtin = "read", args = ["{artifactPath}/notes.md"] }
 ```
 
-eval은 실제로 참조하는 Artifact의 도구를 봅니다. 도구 이름은
+eval은 실제로 참조하는 Artifact에 선언된 도구를 쓸 수 있습니다. 도구 이름은
 `<operation>_<artifactName>`이 되므로, `spec`에 선언한 `read`는 `read_spec`입니다.
 
 ## 직접 도구 Artifact 만들기 {#build-your-own-tool-artifact}

@@ -38,7 +38,7 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
 있지만 도구와 맞아야 합니다(`open`과 `graph`는 실행, 나머지는 출력). 맞지 않으면
 `config check`가 거부합니다. 내장 도구는 `timeout_ms`, `command`, `protocol`, `input_schema`를
 받지 않습니다. 리뷰어는 [명령 도구](agent.md#agent-tools)처럼 각 도구를
-`<name>_<artifactId>`로 봅니다.
+`<name>_<artifactId>`라는 이름으로 씁니다.
 
 ## 도구 {#tools}
 

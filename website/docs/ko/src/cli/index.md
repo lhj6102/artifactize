@@ -157,7 +157,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 어느 모드에서든 Human eval은 같은 Artifact의 Human이 아닌 eval이 모두 GREEN이 된 뒤에만
 요청되며, 그중 하나라도 RED나 ERROR면 BLOCKED가 됩니다. `--speculate`에서는 새로 준비된 작업을
 실행할 `--jobs`나 백엔드 자리가 모자라면 artifactize가 실행 중인 추측 실행 리뷰를 중단할 수 있습니다. 그 리뷰는 나중에
-다시 시작하며 `--max-executions`를 한 번 더 씁니다. 이 모드들은 실행 순서를 바꿀 뿐 승인 여부를
+다시 시작하며, 다시 시작할 때도 `--max-executions`로 정한 실행 횟수에 한 번 더 포함됩니다. 이 모드들은 실행 순서를 바꿀 뿐 승인 여부를
 바꾸지 않습니다. `verify --wait`는 평소와 같은 결과 종료 코드를 씁니다. 0 GREEN,
 1 RED, 2 ERROR, 4 INCOMPLETE, 5 SIGNOFFS_PENDING입니다.
 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)에서 스케줄링, 취소, 잠정

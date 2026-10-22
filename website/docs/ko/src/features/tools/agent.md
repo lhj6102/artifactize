@@ -1,7 +1,7 @@
 # Agent 도구 {#agent-tools}
 
 도구 Artifact의 `[views.agent_tools.NAME]` 아래에 명령 도구를 선언하고, eval에서 그 Artifact를
-참조하세요. 그러면 그 eval의 Agent는 이 도구를 `NAME_ARTIFACT`로 봅니다. 리뷰하기 전에
+참조하세요. 그러면 그 eval의 Agent는 이 도구를 `NAME_ARTIFACT`라는 이름으로 쓸 수 있습니다. 리뷰하기 전에
 [`tools check`](../../cli/index.md#tool-diagnostics)로 확인하세요. 단계별 예제는
 [도구](index.md#build-your-own-tool-artifact)에 있습니다.
 
@@ -182,7 +182,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 명령은 샌드박스가 아니라 신뢰하는 읽기 전용 프로그램입니다.
 
 Agent eval은 그 eval의 범위에 있는 모든 Artifact의 Agent 도구를 `coverage_spec`처럼
-`<name>_<artifactId>` 이름으로 봅니다. 두 도구가 같은 이름이 되면 `config check`는 통과하지만
+`<name>_<artifactId>`라는 이름으로 쓸 수 있습니다. 두 도구가 같은 이름이 되면 `config check`는 통과하지만
 리뷰는 `PREPARATION_FAILED`로 실패하며, `artifactize tools check`가 이를 알려 줍니다. 이름이
 겹치지 않을 때까지 도구나 Artifact의 이름을 바꾸세요. Human 도구는
 Agent에게 주지 않습니다.
