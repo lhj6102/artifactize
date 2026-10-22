@@ -32,8 +32,9 @@ Token names are bounded ASCII display labels, not secrets; the
 pre-store validation.
 
 `token add` prints a random bearer token once; the store cannot show it again, so save it then.
-Scopes are `read` (look up), `publish` (publish runtime and Agent records) and
-`human` (additionally publish Human sign-offs, together with `publish`). Give
+`--scopes` is required and has no default; omitting it exits 2. Scopes are `read`
+(look up), `publish` (publish runtime and Agent records) and `human` (additionally publish
+Human sign-offs, together with `publish`). Give
 untrusted CI `read` only. `token list` shows names, scopes and creation/revocation
 times, never tokens. `token revoke NAME` rejects the token at once; `--purge`
 also deletes every record it published, and may be repeated later. Revocation always
@@ -51,20 +52,34 @@ failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
 | `POST /v1/lookup` with `{"keys":[KEY,...]}` (at most 1000) | `read` | `{"entries":[record,...]}`: the latest record of each found key |
 | `PUT /v1/entries/{key}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the store already holds this execution of the key |
 
-The server refuses a malformed record and limits its size to 256 KiB for a summary
-and 16 MiB for a full record. It sets `publisher` (the token name) and `publishedAt`
+`artifactize` writes these records itself (`verify`, `request submit`, `remote push`).
+A record looks like this:
+
+```json
+{"schema":2,"key":"<64 hex digits>","evalDefHash":"<64 hex digits>",
+ "fingerprints":{"app":"app-v1"},"artifactKinds":{"app":"folder"},
+ "verdict":"GREEN","evalId":"app/check","runId":"run-a","requestId":"run-a-1",
+ "executionId":"execution-run-a-1","profile":{"kind":"runtime"},"options":{},
+ "result":{"verdict":"GREEN"},"usage":null,
+ "producer":{"name":"alice@laptop","version":"0.15.0"},
+ "startedAt":"2026-10-04T00:00:00Z","completedAt":"2026-10-04T00:00:01Z"}
+```
+
+`schema` must be 2 and `verdict` `GREEN` or `RED`; `key` must be the reuse key of
+`evalDefHash`, `fingerprints` and `artifactKinds` (each covered Artifact, with a valid
+name). `reviewer` names a Human sign-off's reviewer, and `executionPaths` an Agent
+result's tool files. A summary record (share `summary`) carries no command arguments,
+captured output or repository path; a full record (share `full`) adds the saved
+`execution` as it is. The server refuses a malformed record, including another schema,
+a missing completion time or a key that does not match, and limits its size to 256 KiB
+for a summary and 16 MiB for a full record. It sets `publisher` (the token name) and `publishedAt`
 (its own clock). Clients use a record only if it matches the key they asked for, so a
 store cannot make a client reuse a result for different criteria or inputs. Lookups update the last use of the record they
 return; inserts evict least-recently-used records above 100,000 records or 4 GiB.
 
-**Upgrading.** A schema 1 or 2 `review-store.sqlite` (artifactize 0.3 or 0.4) is
-upgraded in place to schema 3 when the server opens it. Tokens are kept. Stored
-records are dropped: they were keyed by fingerprint and Eval definition hash as 0.4
-computed them, which no 0.5 key matches, so clients review again once and publish
-anew. A 0.5 server answers 0.4 and 0.3 clients (their lookup keys and their
-`PUT /v1/entries/{evalDefHash}/{fingerprint}` route) with 410 and a message to
-upgrade; the 0.3 `staleKey` alias is gone. Upgrade the server and its clients
-together.
+**Upgrading.** Upgrade the server and its clients together. A store from 0.3 or 0.4
+keeps its tokens but drops its records, so clients review once more and publish again;
+0.3 and 0.4 clients are told to upgrade.
 
 0.9 uses reuse-key v2, so it reuses no pre-0.9 record, including script-fingerprint
 results and Human sign-offs. Existing store records cannot satisfy the new keys;
@@ -131,17 +146,11 @@ on it names the machine and state where the conversation lives. When a GREEN or 
 summary record, or the full record with share `full`. If publishing fails, the local
 result stays and the failure is reported. A `--speculate` Run holds that automatic publication until its scheduling
 finishes, even while Human reviews are still pending; it then publishes only the
-results that survived, after blocked work has been withdrawn from reuse. Records carry the key, the Eval definition hash, the fingerprint of
-each Artifact the key covers, its `artifactKinds` map (`folder`/`file`/`graph`), and the
-execution `options` (backend, model,
-reasoning, limits and profile variant) and an Agent result's `executionPaths` pins. `request submit` publishes Human sign-offs.
-A token without `read` looks nothing up and one without `publish` publishes nothing,
-so a read-only CI token only reuses. Human sign-offs also need `human`; with any
-other token they stay local with a warning. Nothing is published for evals without a
-reuse key. `--force` never reads
-from the store, but a forced result is a new record
-and is published like any other, so it becomes the store's latest too (unless a
-newer one exists). `status` makes the same comparison with a read-only lookup,
+results that survived, after blocked work has been withdrawn from reuse. `request submit` publishes Human sign-offs. The token's scopes
+decide what happens: without `read` nothing is looked up, without `publish` nothing is
+published (so a read-only CI token only reuses), and without `human` sign-offs stay local
+with a warning. Evals without a reuse key publish nothing. `--force` never reads from the
+store, but its result is published and becomes the latest. `status` makes the same comparison with a read-only lookup,
 without mirroring, so its `reuse` prediction includes newer remote results;
 `status --force` makes no remote call.
 

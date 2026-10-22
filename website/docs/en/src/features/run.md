@@ -177,8 +177,8 @@ those verdicts in `evidence`, a map from qualified eval IDs to saved states:
 ```
 
 It is the evidence this Run used, not the latest result; its JSON shape is in the
-[CLI reference](../cli/index.md#saved-run-evidence-and-terminal-views). Saved definitions,
-`evidence` and request states let the monitor judge gates without the current declarations.
+[CLI reference](../cli/index.md#saved-run-evidence-and-terminal-views). Opening an earlier Run in Monitor shows it as it ran, with its own definitions and
+gates, even after you have changed the declarations.
 
 `run list` lists saved Runs; see [Run list](../cli/index.md#run-list).
 

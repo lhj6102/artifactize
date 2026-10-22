@@ -72,7 +72,7 @@ on the root command and on `artifactize tools`.
 | `monitor [PATH]` | starts on ALL; PATH or `--repo PATH` selects only the initial repository; `--all` conflicts with a path | terminal UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH` (a `repo:` search term), `--all` (the default; not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
 | `server run` | `--listen ADDR` (`127.0.0.1:8417`): a numeric `IP:PORT` (`[::1]:8417` for IPv6), no hostnames; port 0 picks a free port, which the output names | `Listening on http://ADDR/`; JSON `{"listen":ADDR}` | 0 |
-| `server token add NAME` | `--scopes read,publish,human` | the token, once, and a reminder to store it; JSON `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
+| `server token add NAME --scopes SCOPES` | `--scopes` (required, no default; a comma list of `read`, `publish`, `human`) | the token, once, and a reminder to store it; JSON `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
 | `server token list` | | text or JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON (also without `--json`) | 0 |
 | `server rm KEY` | | JSON | 0 |

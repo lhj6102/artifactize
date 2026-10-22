@@ -6,8 +6,8 @@ verdict.
 
 ## Agent reviews
 
-Agent evals use one explicit model and backend, with no bundled catalog, aliases,
-credential search or fallback:
+There is no bundled model catalog, alias, credential search or fallback:
+
 
 ```toml
 # Inside [evals.review]
@@ -329,8 +329,6 @@ export ARTIFACTIZE_OPENAI_BASE_URL=http://127.0.0.1:8080/v1 OPENAI_API_KEY=dummy
 ARTIFACTIZE_REMOTE=off artifactize --state-dir "$(mktemp -d)" verify --all --wait
 ```
 
-To exercise a tool, answer the first request with a `function_call` output item
-(`call_id`, `name`, JSON-encoded `arguments`). Its `response.completed` event must
-follow `response.output_item.added` and `response.output_item.done` events for the
-call. The next request's `input` then carries the tool's `function_call_output`.
-Answer that one with the verdict message.
+To try a command tool on its own, without a model, use
+[`tools check --execute`](../cli/index.md#tool-diagnostics); its input and output follow the
+[command tool protocol](tools/agent.md).

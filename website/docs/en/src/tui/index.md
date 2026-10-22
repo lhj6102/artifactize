@@ -103,9 +103,11 @@ scrolls it. While Technical is shown the instruction stays expanded, so hide
 Technical with `t` before `i` can fold it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens the Tools and
 Tool log column to 60% of the available width;
-the selected tool shows its action and description. A command tool shows its resolved command line. A recorded per-tool resolution
-error shows the declaration and its reason; a request-wide resolution failure
-instead falls back to the declared command without displaying that explanation.
+the selected tool shows its action and description. A command tool shows its resolved command line. If a tool's command could not be
+worked out, for example because its program is missing, it shows the declaration and why.
+If the review's declarations could not be read at all, every tool shows its command as
+declared, without a reason; running the tool then reports the error. Fix the declaration
+and verify again.
 A built-in shows an action on a logical target instead: for example, opening
 `notes.md`, printing a Markdown section, or listing a directory, not a shell
 command line.
