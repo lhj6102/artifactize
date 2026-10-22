@@ -10,7 +10,7 @@ GREEN이나 RED 결과에 무엇이 들어갈지는 `pass_schema`와 `fail_schem
 Agent는 먼저 도구를 호출할 수 있고, 그다음 provider의 구조화된 출력으로 최종 답을 냅니다. 이
 출력은 [소유자 스키마](../declarations.md#owner-result-schemas)에 맞도록 제한됩니다. 저장되는
 결과는 `"verdict":"GREEN"`이나 `"verdict":"RED"`와, 그 판정의 스키마가 허용하는 소유자 필드를
-나란히 담은 객체 하나입니다. `session send`의 follow-up 답변은 일반 텍스트입니다.
+함께 담은 객체 하나입니다. `session send`의 follow-up 답변은 일반 텍스트입니다.
 
 artifactize가 직접 답을 소유자 스키마로 검사하므로, provider가 제한하지 못하는 키워드를
 포함해 선언한 JSON Schema 키워드가 모두 적용됩니다. 답이 스키마에 맞지 않으면 Agent에게 무엇이

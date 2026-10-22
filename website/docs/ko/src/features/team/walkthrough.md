@@ -1,6 +1,6 @@
 # 워크스루: 두 머신과 CI가 판정을 공유하기 {#walkthrough-two-machines-and-ci-share-verdicts}
 
-이 워크스루는 [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)를 다시 씁니다.
+이 워크스루는 [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)를 사용합니다.
 Alice와 Bob은 서로 다른 체크아웃과 상태 디렉터리를 씁니다. CI에는 세 번째
 체크아웃이 있습니다. `artifactize server` 하나가 공유 판정을 보관합니다. 모든
 단계를 컴퓨터 한 대에서 실행할 수 있습니다. 이 실습에서는 `--state-dir`로 상태 디렉터리를
@@ -29,7 +29,7 @@ export WALK="COPIED_WALK_PATH"
 한 터미널에서 export해도 다른 터미널의 변수는 설정되지 않습니다.
 `mktemp`를 다시 실행하지 마세요. 이 로컬 예제는 모두 같은 폴더를 써야 합니다. 아래
 출력은 Alice/Bob 역할을 보여 주는 예이며, 실제 Run ID와 user/host 라벨은
-다를 것입니다.
+다릅니다.
 
 ## 1. 서버 {#1-the-server}
 
@@ -69,7 +69,7 @@ Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0,
 각 GREEN 결과가 fingerprint 재확인을 통과했으므로, `verify`는 요약
 기록을 게시했습니다. 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프입니다.
 요약에는 캡처한 stdout/stderr, 별도의 호출 감사 기록,
-로컬 저장소 출처가 빠졌습니다. 선언된 runtime 명령과 인자는
+로컬 저장소 출처가 빠졌습니다. 선언된 Runtime 명령과 인자는
 프로필의 일부로 여전히 공유되었으며, 그 인자 안의 경로와 민감한 리터럴은
 가려지지 않습니다.
 
@@ -94,9 +94,9 @@ Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
-Bob의 체크아웃은 Artifact 이름, kind, 내용이 같아 fingerprint와
+Bob의 체크아웃은 Artifact 이름, 종류, 내용이 같아 fingerprint와
 eval 정의 해시가 같고, 따라서 재사용 키도 일치합니다. 경로는 상관없습니다. `status`는 Bob의 로컬 상태를 바꾸지 않고
-저장소를 조회했으며, 저장소는 이 조회를 사용으로 셉니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
+저장소를 조회했으며, 저장소는 이 조회를 사용한 것으로 기록합니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
 `artifactize cache list`가 저장소를 출처로 하는 그 기록을 보여 줍니다. 이후의
 `verify`는 저장소가 없어도 그 기록을 로컬에서 재사용합니다.
 
@@ -123,7 +123,7 @@ Pushed 2, already in the store 0, skipped 0.
 `guide/terms`의 재사용 키에 자식 `usage`가 들어 있으므로, 다시 리뷰한 Artifact는 `usage`와 `guide`뿐입니다.
 `off` 대신 저장소에 연결할 수 없는 경우였다면 `verify`는 한 번 경고하고
 같은 방식으로 로컬에서 리뷰했을 것입니다. `remote push`는 각 키에 대해 저장소에
-아직 없는 가장 최근 로컬 결과를 보냅니다. 미러는 보내지 않으며, 토큰에 `human`이 없으면
+아직 없는 가장 최근 로컬 결과를 보냅니다. 미러링한 기록은 보내지 않으며, 토큰에 `human`이 없으면
 Human 승인은 건너뜁니다.
 
 ## 5. CI가 둘 다 재사용하기 {#5-ci-reuses-both}

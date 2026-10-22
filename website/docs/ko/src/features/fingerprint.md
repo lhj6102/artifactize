@@ -24,7 +24,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 
 ## Artifactsum {#artifactsum}
 
-Artifact는 그 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint가 바뀌면 다시
+Artifact의 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint가 바뀌면 그 Artifact를 다시
 리뷰합니다. 폴더의 입력을 좁히려면 다음처럼 씁니다.
 
 ```toml
@@ -39,12 +39,12 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   실패합니다. 옆에 있는 파일 Artifact의 대상은 폴더 해시에 그대로 들어가며, 자동으로 자식
   관계가 생기지는 않습니다.
 - `ignore`: 소유자 기준의 `.gitignore` 형식 glob 최대 64개이며, 고유해야 하고 부정 패턴은 쓸 수
-  없습니다. 비어 있거나, `#`로 시작하거나, 제어 문자가 든 패턴은 안 됩니다. 내장 ignore인
-  `.git`, `__pycache__/`, `*.pyc`, `target/`, `node_modules/`처럼 항상 제외합니다. `.gitignore`
-  파일은 git 방식대로 더 제외합니다. 저장소 루트(`--repo`)부터 Artifact와 훑는 디렉터리까지의
+  없습니다. 비어 있거나, `#`로 시작하거나, 제어 문자가 든 패턴은 안 됩니다. 이 패턴에 맞는 파일은
+  `.git`, `__pycache__/`, `*.pyc`, `target/`, `node_modules/` 같은 내장 ignore처럼 항상 제외합니다. `.gitignore`
+  파일에 적힌 패턴도 git과 같은 방식으로 제외합니다. 저장소 루트(`--repo`)부터 Artifact와 훑는 디렉터리까지의
   `.gitignore`가 모두 적용됩니다. 패턴은 그 파일이 있는 폴더를 기준으로 하고, 부정 패턴도 쓸 수
-  있으며, 하위 디렉터리의 `.gitignore` 규칙이 상위 디렉터리의 규칙보다 우선합니다. `files`에 직접 적은, 선언이 아닌 파일은
-  ignore되지 않습니다.
+  있으며, 하위 디렉터리의 `.gitignore` 규칙이 상위 디렉터리의 규칙보다 우선합니다. `files`에 직접 적은 파일은
+  선언 파일이 아니라면 어떤 패턴으로도 제외되지 않습니다.
 
 파일 Artifact는 대상 파일만 해시합니다. artifactsum 형식을 직접 쓸 때는
 `fingerprint = { files = ["hero.png"] }`처럼 그 파일만 적어야 합니다. 파일 Artifact에서는
@@ -60,9 +60,9 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 eval은 대상 Artifact와, 대상과 직접 이어진 것에 의존합니다.
 
 - 대상의 자식 Artifact
-- eval이 지시문이나 runtime 인자에서 이름으로 가리킨 Artifact
+- eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact
 
-artifactize는 그보다 더 멀리 연결을 따라가지 않습니다. 두 단계 떨어진 변경이 중요한지는
+artifactize는 그보다 먼 연결은 살피지 않습니다. 두 단계 떨어진 변경이 중요한지는
 fingerprint를 어떻게 정하느냐에 달렸습니다. fingerprint 스크립트는 인자에서 이름으로 가리킨
 Artifact의 파일이면 무엇이든 읽을 수 있습니다. 그래서 eval의 기준이 바뀌거나, 대상이나 포함한
 Artifact의 이름, 종류, fingerprint가 바뀌면 그 eval을 다시 실행합니다.
@@ -76,13 +76,13 @@ Artifact의 이름, 종류, fingerprint가 바뀌면 그 eval을 다시 실행�
 결과를 함께 쓸 수 있습니다. **eval 정의 해시**는 eval의 **평가 기준** 중 하나가 바뀔 때마다
 바뀝니다.
 
-- eval 종류(runtime, agent, human)
+- eval 종류(Runtime, Agent, Human)
 - 지시문을 포함한 `payload`
 - `pass_schema`와 `fail_schema`
-- runtime eval이라면 명령과 인자
+- Runtime eval이라면 명령과 인자
 
 **평가 실행 옵션**은 키에 들어가지 않습니다. Agent의 백엔드, 모델, reasoning, `timeout_ms`,
-`max_tool_calls`, `max_tokens`, runtime의 `timeout_ms`, 고른 프로필 변형이 그렇습니다. eval
+`max_tool_calls`, `max_tokens`, Runtime의 `timeout_ms`, 고른 프로필 변형이 그렇습니다. eval
 ID와 제목, 태그, 저장소 경로, 쓰지 않은 프로필 변형, 도구 선언(`views`)도 들어가지 않습니다.
 도구는 Artifact를 보는 방법일 뿐이므로, 도구의 설명이나 스키마만 바꿔서는 다시 리뷰하지
 않습니다. 도구 변경도 반영하려면 관련 파일을 fingerprint에 포함하세요.
@@ -101,7 +101,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 키에 기록이 여러 개 있으면 GREEN이든 RED이든 완료 시각이 가장 늦은 것을 재사용합니다. 그래서
 평가 기준과 입력이 같으면 프로필이 달라도 기존 결과를 재사용할 수 있습니다. 선언된 프로필로 요청한
 리뷰에 `--profile fast` 같은 Agent 변형으로 만든 결과를 재사용할 수 있고, 그 반대도 됩니다.
-명령이나 인자가 다른 runtime 변형은 별도의 키를 가지며, 다른 입력을 가리킬 수도 있습니다.
+명령이나 인자가 다른 Runtime 변형은 별도의 키를 가지며, 다른 입력을 가리킬 수도 있습니다.
 
 기록에는 결과를 만든 프로필과 출처가 남습니다. 감사 필드와 출처 종류 목록은
 [Run 결과 레퍼런스](run.md#verify-and-runs)에 있습니다.
@@ -140,17 +140,16 @@ v2는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 �
 
 - Artifact 이름과 종류, `basis`, fingerprint 범위: artifactsum의 `files`와 `ignore`, 스크립트의
   `command`, `args`, `files`, 또는 `fingerprint = false`.
-  
 - 입력 Artifact와 그것을 쓰는 쪽 사이의 관계: 부모·자식 관계(자식 폴더 경로가 아니라 이름), 지시문 참조,
-  runtime argv 참조(eval ID, argv 위치, 논리적 접미 경로 포함)와 그 입력 대상.
+  Runtime argv 참조(eval ID, argv 위치, 논리적 접미 경로 포함)와 그 입력 대상.
 - eval ID, 소유 Artifact, 제목, 선택 항목 `gate`, 평가 기준: 기본 프로필 종류, 지시문과 소유자
-  맥락을 포함한 `payload` 전체, `pass_schema`, `fail_schema`, runtime `command`/`args`.
+  맥락을 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
 
 평가 실행 옵션(백엔드, 모델, reasoning, fingerprint 스크립트 시간 제한을 포함한 모든
 `timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그), 모든 도구
 뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용은 빠집니다. 선언한 범위 경로와 범위가 정해진
-인자의 접미 경로는 의미가 있습니다. 이런 논리적 선언과 소유 관계를 유지한 채 위치만 옮기면 그래프
-fingerprint는 바뀌지 않습니다. 실행 옵션은 여전히 일반 상태 기록에 저장됩니다.
+인자의 접미 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 소유 관계를 유지한 채 위치만 옮기면 그래프
+fingerprint는 바뀌지 않습니다. 실행 옵션은 그래프 fingerprint에서 빠질 뿐, 일반 상태 기록에는 그대로 저장됩니다.
 
 그래프 리뷰는 항상 이전 구조와의 차이가 아니라 현재 구조를 봅니다. 그래프 eval의 제목을 바꾸면
 그래프를 다시 리뷰합니다. 다른 eval은 제목을 바꿔도 다시 리뷰하지 않습니다.

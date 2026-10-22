@@ -17,8 +17,8 @@ Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않�
 `--speculate`를 함께 쓸 수도 있습니다. SIGNOFFS_PENDING(종료 코드 5), DEFERRED 승인,
 PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙니다. CI의
 `--reuse-only agent,human` 게이트를 유지하세요. 필요한 승인이 없으면 Human eval은
-실행되지 않고 Run이 INCOMPLETE로 남으며, `--defer-human`을 넘기더라도 통과로 셀 수 없습니다.
-사람이 GREEN을 제출하면 CI는 바뀌지 않은 자동 검사 결과와 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. 그냥 verify가 접수된 것을 CI 성공으로 취급하지 마세요.
+실행되지 않고 Run이 INCOMPLETE로 남으며, `--defer-human`을 넘겨도 통과로 간주되지 않습니다.
+사람이 GREEN을 제출하면 CI는 바뀌지 않은 자동 검사 결과와 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. verify가 접수됐다는 것만으로 CI가 성공했다고 보지 마세요.
 
 ## 팀 저장소의 판정 재사용하기 {#reuse-verdicts-from-the-team-store}
 

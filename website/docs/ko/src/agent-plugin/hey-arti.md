@@ -29,15 +29,15 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
 
 - **개념에 대한 질문**: 그 개념을 다루는 페이지에 근거한 답과,
   사용자 프로젝트의 예, 그리고 다음 단계.
-- **맞는지, 어디서 시작할지**: 지금 리뷰와 CI에서 무엇이 잘못되는지 묻고,
+- **맞는지, 어디서 시작할지**: 지금 리뷰와 CI에서 무엇이 문제인지 묻고,
   가장 도움이 될 곳 두세 곳과 도움이 되지 않을 곳을 짚고,
-  첫 단계로 eval 한두 개를 가진 Artifact 하나를 제안합니다.
+  첫 단계로 eval이 한두 개 있는 Artifact 하나를 제안합니다.
 - **새 프로젝트 구성하기**: 아래 단계입니다.
 - **큰 저장소에 점진적으로 도입하기**: 문제가 가장 큰 영역만 선언하고,
   나머지는 넓은 리뷰 하나로 묶지 않고 선언하지 않은 채 두며, 첫 영역의
   판정을 신뢰할 수 있게 되면 다음 영역을 추가합니다.
 - **기존 설정 점검하기**: `config_check`와 `config_graph`를 실행하고,
-  결과를 [모범 사례](#the-practices-it-recommends)와 대조한 뒤, 문제점과 해결 방안을 먼저 설명한 뒤, 수정해도 되는지 사용자에게 묻습니다.
+  결과를 [모범 사례](#the-practices-it-recommends)와 대조하고, 문제점과 해결 방안을 먼저 설명한 뒤 수정해도 되는지 사용자에게 묻습니다.
 - **프로젝트가 성장하거나 바뀌었을 때**: 새 구성 요소를 별도 Artifact로 둘지, 어떤 eval이 그것을 쓰는지 사용자와 합의하고, 너무 커진 Artifact를
   독립적으로 편집되는 단위로 나누고, 전후의 `status`를 비교합니다.
 - **"왜 이게 다시 실행됐지?" 또는 "verify가 느려요"**: `status`를 읽습니다. 너무 자주
@@ -69,11 +69,11 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
   검증 요건을 구체적으로 정하세요. 저장소 전체에 대한 리뷰 하나는 피하세요.
 - eval은 실제로 쓰는 각 입력을 `{name}`으로 가리킵니다. 같은 저장소에 있다는 것은
   의존성이 아니며, 명령이 읽는 파일이 자동으로 추가되지도 않습니다. 자식 폴더는
-  부모 eval의 입력으로 칩니다.
-- eval 하나에는 확인할 것 하나. 명령으로 확인할 수 있으면 runtime eval을, 판단이
+  부모 eval의 입력으로 간주합니다.
+- eval 하나에는 확인할 것을 하나만 두세요. 명령으로 확인할 수 있으면 Runtime eval을, 판단이
   필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
   [Human eval](../features/human.md)을 쓰세요. 사람에게는
-  Artifact의 runtime eval과 Agent eval이 GREEN이 된 뒤에만 요청합니다.
+  Artifact의 Runtime eval과 Agent eval이 GREEN이 된 뒤에만 요청합니다.
 - Artifact 하나에 대한 기준은 그 eval 안에 두고, 여러 Artifact가 공유하는 규칙은
   그 eval들이 읽는 규칙 문서에 두세요.
 - 결과 스키마는 작게 유지하세요. GREEN에는 요약을, RED에는 구체적인 지적 사항을 담습니다(문법은
@@ -85,7 +85,7 @@ Arti가 추천하는 조합과, 각 검사를 어느 Artifact에 선언하고 �
 
 - **라이브러리와 그 사용처**: 라이브러리에 테스트를 두고, 라이브러리를 쓰는 코드의 리뷰에서는
   `{library}`를 참조합니다.
-- **명세와 앱**: 앱에는 앱의 테스트를 실행하는 runtime eval과 `{spec}`을 기준으로 리뷰하는 Agent eval을 둡니다.
+- **명세와 앱**: 앱에는 앱의 테스트를 실행하는 Runtime eval과 `{spec}`을 기준으로 리뷰하는 Agent eval을 둡니다.
 - **앱과 E2E 테스트**: 테스트 모음 실행은 앱의 eval이며, 그 인자에
   `{e2e-tests}`가 들어갑니다. 테스트 코드의 eval은 그 스타일과 범위를 리뷰합니다.
 - **문서와 에셋**: 문서는 설명하는 코드와 내용이 맞는지 리뷰합니다. 각
@@ -100,15 +100,15 @@ Arti가 추천하는 조합과, 각 검사를 어느 Artifact에 선언하고 �
 Arti는 암묵적인 의존성, 저장소 전체 리뷰, 부정행위 방지용
 eval, 요청하지 않은 실행 옵션, GREEN을 얻으려고 eval의 판단 기준을 완화하는 일을 피하도록 안내합니다.
 
-Arti는 사용자 상황에 맞는 예제로 리뷰 구성 방법을 보여 줍니다.
-[예제](../getting-started/examples.md)(runtime 관계, 승인이 있는 Agent 도구,
-파일 Artifact인 글), 데모 프로젝트 `website/demo/shop`(쓰는 스타일 토큰에 대해
+Arti는 사용자 상황에 맞는 예제로 리뷰 구성 방법을 보여 줍니다. 참고하는 예제로는
+[예제](../getting-started/examples.md)(Runtime 관계, 승인이 있는 Agent 도구,
+파일 Artifact인 글), 데모 프로젝트 `website/demo/shop`(사용하는 스타일 토큰을 기준으로
 검사하는 페이지)과 `website/demo/brand`(페이지에 들어간 승인된
 로고), 그리고 artifactize 자체 저장소(규칙이 적용되는 코드의 eval이 읽는,
 승인이 있는 규칙 문서, 그리고 eval이
-E2E 테스트 모음을 실행하는 앱)입니다. 스킬 안내서 끝에는 프로젝트에 맞게 고쳐 쓸 수 있는 간단한 시작용 선언 예제가 있습니다.
+E2E 테스트 모음을 실행하는 앱)가 있습니다. 스킬 안내서 끝에는 프로젝트에 맞게 고쳐 쓸 수 있는 간단한 시작용 선언 예제가 있습니다.
 
-eval의 지시문, 결과 스키마, runtime 명령을 바꾸면 그
+eval의 지시문, 결과 스키마, Runtime 명령을 바꾸면 그
 판단이 바뀝니다. 태그, 제목, 실행 옵션, 도구 선언은 그렇지 않습니다. 편집한 뒤에는 `status` 출력에 수정한 입력과 그 입력을 쓰는 대상만 다시 리뷰하고, 독립적인 부분의 결과는 계속 재사용한다고 나와야 합니다. [Fingerprint와 재사용](../features/fingerprint.md)을 보세요.
 
 ## MCP를 먼저 쓰기 {#use-mcp-first}
@@ -136,13 +136,13 @@ Arti는 `verify_start`로 시작하고 돌려받은 Run ID를 보관하며,
 호스트가 MCP 진행 상황을 보여 주면 `verify_watch`로, 그렇지 않으면 `verify_wait`로 진행 상황을 확인하고,
 `verify_result`로 지적 사항을 읽습니다. 접수된 Run이 통과한 Run은 아닙니다. Runtime eval의 실패 원인은 `request_logs`로, Agent eval의 지적 사항은 `session_show`로 살펴봅니다.
 Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거나, 에이전트의
-턴을 끝내도 Run은 멈추지 않으며, 취소를 요청하는 것은 `verify_cancel`뿐입니다.
+턴을 끝내도 Run은 멈추지 않으며, Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
 Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **완전한
 승인이 아닙니다**.
 
-Arti가 각 결과를 다루는 방식:
+Arti는 각 결과를 다음과 같이 다룹니다.
 
 - **GREEN**: 이 내용의 검증이 끝났습니다.
 - **RED**: 지적 사항을 사용자에게 익숙한 말로 설명하고, 부정확한 문서나 기준처럼
@@ -169,5 +169,5 @@ Run은 취소되지 않으므로, 연결을 유지하려고 대화를 이어 가
 기존의 [팀 리뷰 저장소](../features/team/index.md)를 쓰고, 자격 증명은
 선언, 스킬 사본, 대화 기록, MCP 등록에 넣지 마세요. CI는
 읽기 전용 토큰과 `artifactize verify --all --wait --reuse-only agent,human`을 쓰므로,
-runtime 검사를 실행하고 Agent와 Human 증거를 재사용합니다.
+Runtime 검사를 실행하고 Agent와 Human 증거를 재사용합니다.
 [CI 가이드](../features/team/ci.md)를 보세요.

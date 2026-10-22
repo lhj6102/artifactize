@@ -38,8 +38,8 @@ sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/ar
 ## 팀원을 안전하게 연결하기 {#connect-teammates-securely}
 
 **TLS 리버스 프록시**는 저장소 앞에서 암호화된
-HTTPS 연결을 받아 로컬로 전달하는 서버입니다. **터널**은 대신 연결을 다른
-암호화된 연결 안에 실어 나릅니다. 다음은 저장소 호스트에 이미 SSH 계정이 있는 팀원을 위한
+HTTPS 연결을 받아 로컬로 전달하는 서버입니다. **터널**은 연결을 다른
+암호화된 연결 안에 담아 전달합니다. 다음은 저장소 호스트에 이미 SSH 계정이 있는 팀원을 위한
 완전한 SSH 터널 설정입니다.
 
 1. 위처럼 그 호스트에서 `artifactize server run`을 계속 실행해 두세요.
@@ -78,7 +78,7 @@ artifactize remote login https://reviews.example/     # paste the token
 artifactize remote status
 ```
 
-그때부터:
+로그인하면 다음과 같이 동작합니다.
 
 - `verify`는 저장소의 결과를 재사용하고 새로 만든 GREEN/RED 결과를 게시합니다.
 - `status`는 원격 재사용을 예측합니다.
@@ -92,10 +92,10 @@ artifactize remote status
 **공유 수준.** 기본값인 `summary`는 다음을 보냅니다.
 
 - 판정
-- 스키마로 검증한 소유자 필드(runtime eval에서는 종료 코드,
+- 스키마로 검증한 소유자 필드(Runtime eval에서는 종료 코드,
   소요 시간, 잘림 표시만)
 - 재사용 키, eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
-  fingerprint와 그 `folder`/`file`/`graph` kind
+  fingerprint와 그 종류(`folder`/`file`/`graph`)
   (기록의 `artifactKinds`)
 - 프로필, 그 실행 옵션(백엔드, 모델, reasoning, 제한, 변형),
   사용량 카운터, Agent 결과의 작업 공간 기준 상대 `executionPaths` 고정 값
@@ -106,7 +106,7 @@ artifactize remote status
 
 `summary`는 캡처한 stdout/stderr, 별도의 호출 감사 기록, 로컬
 저장소 출처, Agent 대화 자체를 빼고 보냅니다. 그래도 명령과 인자를 포함한
-선언된 runtime 프로필 전체는 보냅니다. 그곳에 작성한 경로나
+선언된 Runtime 프로필 전체는 보냅니다. 그곳에 작성한 경로나
 민감한 리터럴은 가려지지 않고 공유됩니다.
 `executionPaths` 고정 값도 작업 공간 기준 상대 경로를 담습니다.
 `full`(`remote login --share full` 또는 `ARTIFACTIZE_REMOTE_SHARE=full`)은 추가로
@@ -116,7 +116,7 @@ artifactize remote status
 
 **신뢰.**
 
-- 서버는 인증된 `publisher`, 즉 토큰 이름을 찍습니다. `producer`와
+- 서버는 기록에 인증된 `publisher`, 즉 토큰 이름을 남깁니다. `producer`와
   Human `reviewer`는 게시하는 머신이 보고한 값입니다.
 - `publish` 토큰이 있으면 어떤 키에든 GREEN이나 RED 판정 기록을 게시할 수 있습니다. 신뢰할 수 없는 CI(포크
   풀 리퀘스트)에는 `read`만 주고, `human`은 승인하는 사람에게만 주세요. 토큰이

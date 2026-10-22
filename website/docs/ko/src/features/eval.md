@@ -17,15 +17,15 @@ Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종�
 [입력과 기준](fingerprint.md#the-reuse-key)이 그대로인 동안은 재사용할 수 있습니다.
 
 리뷰 기준은 `payload.instruction`에 쓰세요. Agent와 Human eval에서는 `pass_schema`와
-`fail_schema`가 소유자의 결과 필드를 정하고, 판정은 artifactize가 더합니다. 닫힌 결과 형식,
+`fail_schema`가 소유자의 결과 필드를 정하고, 판정은 artifactize가 덧붙입니다. 닫힌 결과 형식,
 예약된 이름, 판정만 있는 기본값은 [소유자 결과 스키마](declarations.md#owner-result-schemas)를
 보세요. Runtime eval은 소유자 스키마 대신 명령의 종료 상태를 씁니다. 이름을 붙인
-`profile_variants`를 두면 호출하는 쪽이 다른 실행 프로필을 고를 수 있습니다. Agent 변형은 리뷰를 실행하는 방식만 바꾸지만, 명령이나 인자가 다른 runtime 변형은 별도의 재사용 키와 입력을 쓰는 다른 검사입니다. [선언](declarations.md)을 보세요.
+`profile_variants`를 두면 호출하는 쪽이 다른 실행 프로필을 고를 수 있습니다. Agent 변형은 리뷰를 실행하는 방식만 바꾸지만, 명령이나 인자가 다른 Runtime 변형은 별도의 재사용 키와 입력을 쓰는 다른 검사입니다. [선언](declarations.md)을 보세요.
 
-의존성은 그 결과를 쓰는 eval에 속합니다. 입력 Artifact를 지시문이나 runtime 인자에 `{name}`으로
+의존성은 그 결과를 쓰는 eval에 속합니다. 입력 Artifact를 지시문이나 Runtime 인자에 `{name}`으로
 적으세요. [eval 의존성](artifact.md#eval-dependencies)을 보세요.
 
-실제 입력만 선언하세요. eval은 대상 Artifact, 지시문이나 runtime 인자가 가리키는 Artifact, 그리고
+실제 입력만 선언하세요. eval은 대상 Artifact, 지시문이나 Runtime 인자가 가리키는 Artifact, 그리고
 그 자식 Artifact를 모두 볼 수 있습니다. 예를 들어 지시문이 `Check {app} against {spec}.`인
 `app/review`는 `app`과 `spec`을 읽고 그 도구를 쓸 수 있습니다. `ui`가 `app`의 자식이라면
 `app/ui`도 마찬가지입니다. 하지만 `spec`의 eval이 참조하는 다른 Artifact에는 접근할 수 없습니다. 도구 인자에 Artifact를 적는다고

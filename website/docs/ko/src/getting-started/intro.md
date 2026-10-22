@@ -2,7 +2,7 @@
 
 Build together on an Artifact Graph.
 
-Artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되, 바뀌지 않은 작업은
+artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되, 바뀌지 않은 작업은
 다시 검사하지 않도록 도와줍니다. **Artifact**는 리뷰할 수 있는 작업 단위입니다.
 파일이나 폴더뿐 아니라, 그 부분들 사이의 연결로 이루어진 그래프도 Artifact가 될 수 있습니다.
 **eval**은 Artifact에 대한 검사입니다. 명령, 에이전트의 판단, 또는 사람의 승인이 eval이 됩니다.
@@ -24,7 +24,7 @@ Linux, macOS, Windows에서 실행됩니다. [설치](/docs/ko/getting-started/i
   재사용할지 정하고, 검증을 실행하고 진행 상황을 확인하며, 리뷰어에게 도구를 주고, 팀과 결과를 공유합니다.
   CLI, 데스크톱 앱, 에이전트 플러그인에서 똑같이 동작합니다.
 - **[데스크톱](/docs/ko/desktop/index.html):** 창에서 Run을 살펴보고 Human 리뷰를 처리합니다.
-- **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** Arti에게 여러 코딩 어시스턴트에서 쓸 수 있는 스킬을 주고
+- **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** 여러 코딩 어시스턴트에서 쓸 수 있는 스킬인 Arti를 어시스턴트에 추가하고
   [MCP](/docs/ko/agent-plugin/mcp.html)로 코딩 호스트를 연결합니다.
 - **[CLI](/docs/ko/cli/index.html):** 명령 문법, 출력, 종료 코드.
 - **[TUI](/docs/ko/tui/index.html):** 터미널에서 쓰는 Monitor와 Review.

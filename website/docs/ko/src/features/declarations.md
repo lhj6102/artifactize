@@ -13,7 +13,7 @@ artifactize config check
 ## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
 
 `kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성 eval을 지우고, 필요한 Artifact를
-그 결과를 쓰는 eval의 `payload.instruction`(또는 runtime `args`)에 `{name}` 참조로 넣으세요.
+그 결과를 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에 `{name}` 참조로 넣으세요.
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
 `"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한 eval이 끝난 뒤 실행되고, 관련 없는 형제 eval은 그대로 실행됩니다.
 
@@ -21,7 +21,7 @@ artifactize config check
 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
 
 예전 프로필을 쓰면 설정을 해석하는 단계에서
-`unknown variant `dependency`, expected one of `agent`, `human`, `runtime`` 오류가 납니다.
+`unknown variant `dependency`, expected one of `agent`, `human`, `Runtime`` 오류가 납니다.
 지원하는 프로필에 `depends_on` 필드가 있으면 알 수 없는 필드 오류입니다. 이는 리뷰 판정이
 아니라 설정 오류이므로, verify하기 전에 선언을 옮기세요.
 
@@ -61,9 +61,9 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `views.agent_tools.<name>.session` | 선택. 같은 Artifact에 선언한 도구 세션 이름. 명령 Agent 도구에만 씀 |
 | `evals.<id>.title` | 필수. 비어 있지 않은 제목 |
 | `evals.<id>.gate` | 선택. `"blocking"`이면 `--defer-human`에서도 Human 승인을 엄격하게 유지. 생략하면 요청 모드를 따름. 다른 값은 없음 |
-| `evals.<id>.mutex` | 선택. 고유한 계층형 mutex 태그 최대 64개의 목록. runtime과 Agent eval에만 씀. 기본값 없음 |
+| `evals.<id>.mutex` | 선택. 고유한 계층형 mutex 태그 최대 64개의 목록. Runtime과 Agent eval에만 씀. 기본값 없음 |
 | `evals.<id>.profile` | 필수. `runtime`, `agent`, `human` 프로필 |
-| `evals.<id>.payload.instruction` | runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
+| `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
 | `evals.<id>.pass_schema`, `fail_schema` | 선택. 실행 가능한 eval의 소유자 필드 JSON Schema. Human eval은 [양식으로 입력할 수 있는 형태](#human-result-schemas)만 받음 |
 | `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은, 이름 붙은 완전한 프로필(최대 64개) |
 
@@ -109,7 +109,7 @@ TOML 날짜·시각과 유한하지 않은 숫자(`inf`, `nan`)는 JSON으로 �
 
 `config check`는 fingerprint 스크립트를 실행하거나 파일을 해시하지 않고 검사합니다. 선언을
 고친 뒤에 실행하세요. 예전 선언 파일과 ignore 파일은 읽지 않습니다. ignore되지 않은 예전 선언
-파일이 있으면 선언 찾기가 실패합니다. 예전 선언 파일 이름을 가진 디렉터리는 디렉터리 ignore
+파일이 있으면 선언 찾기가 실패합니다. 이름이 예전 선언 파일 이름과 같은 디렉터리는 디렉터리 ignore
 패턴이 빼지 않는 한 평소처럼 탐색합니다. `.artfignore`로 예전 파일 하나만 ignore하거나 그
 폴더 전체를 건너뛸 수 있습니다. 저장소 루트에 예전 ignore 파일이 있으면 항상 실패합니다. 진단
 메시지는 다음과 같습니다.
@@ -210,7 +210,7 @@ profile = { kind = "human" }
 payload = { instruction = "Use the graph viewer to review the current structure." }
 ```
 
-이름 있는 일반 Artifact이므로 runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
+이름 있는 일반 Artifact이므로 Runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
 `verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이 없고, 자식 Artifact를 갖지 않으며,
 다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
 명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위 항목의
@@ -238,7 +238,7 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 파일 Artifact는 들어 있는 폴더 Artifact와 자식 관계나 의존 관계를 맺지 않습니다. 하위 폴더에 `index.artf`로 선언한 Artifact는 그대로 가장 가까운 상위 폴더 Artifact의 자식이 됩니다. 폴더의
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
-들어 있는 폴더가 runtime 명령, 도구, fingerprint 스크립트의 작업 디렉터리이므로, 상대 경로
+들어 있는 폴더가 Runtime 명령, 도구, fingerprint 스크립트의 작업 디렉터리이므로, 상대 경로
 실행 파일로 옆 파일을 쓸 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
 내장 도구와 범위가 정해진 argv 참조는 대상 파일과 참조한 Artifact만 봅니다. `{name}`은 폴더가
 아니라 대상 파일 경로가 되며, 파일 참조에는 `/path`를 붙일 수 없습니다. `list .`는 파일
@@ -272,7 +272,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
-runtime이나 Agent eval은 `gate`와 `profile` 옆에 `mutex`를 선언할 수 있습니다.
+Runtime이나 Agent eval은 `gate`와 `profile` 옆에 `mutex`를 선언할 수 있습니다.
 
 ```toml
 [evals.suite-passes]
@@ -309,7 +309,7 @@ mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fin
 ## Human 게이트 정책 {#human-gate-policy}
 
 `gate = "blocking"`은 프로필이나 전역 설정이 아니라 eval에 다는 선택 필드입니다.
-`verify --defer-human`에서도 Human eval의 게이트를 대기 상태로 유지합니다. 생략하면 기본 Run에서는 승인 게이트를 엄격하게 적용하고, 요청에서 승인 미루기를 지정한 경우에만 승인을 미룰 수 있습니다. runtime이나 Agent
+`verify --defer-human`에서도 Human eval의 게이트를 대기 상태로 유지합니다. 생략하면 기본 Run에서는 승인 게이트를 엄격하게 적용하고, 요청에서 승인 미루기를 지정한 경우에만 승인을 미룰 수 있습니다. Runtime이나 Agent
 eval에서는 아무 효과도 없습니다. 미룰 수 있는 것은 Human 승인뿐입니다. 게이트 정책은
 스케줄링만 바꾸며, 평가 기준이나 재사용 키는 바꾸지 않습니다.
 
@@ -326,7 +326,7 @@ payload.instruction = "Approve the delivery before dependent work proceeds."
 
 ## eval 의존성 {#eval-dependencies}
 
-Artifact 참조는 `payload.instruction`과 runtime `profile.args`에 `{input}`이나
+Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`이나
 `{input}/path`로 씁니다. 최종 검증 요건, 자식 Artifact, 순환, 스케줄링, Human 선행 조건은
 [eval 의존성](artifact.md#eval-dependencies)에 있습니다.
 
@@ -377,7 +377,7 @@ Artifact는 자식까지 포함해 스크립트의 범위에 들어오지만 그
 초과됐거나, 취소됐거나, 파일이 없거나, 정리에 실패하면 동작 오류로 준비를 멈추며, eval도, 캐시 없는
 리뷰도 시작하지 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
 
-runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
+Runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면
 ERROR를 기록합니다. force를 줘도 준비와 재확인은 건너뛰지 않습니다. `fingerprint = false`인
 Artifact는 준비할 fingerprint가 없으며, 키 없는 eval은 fingerprint 값 재확인을 건너뜁니다. 파일
@@ -387,10 +387,10 @@ artifactsum은 준비와 재확인 때만 해시합니다.
 
 ## 명령 안의 Artifact 참조 {#artifact-references-in-commands}
 
-runtime 인자, fingerprint 스크립트, 도구 인자는 `{name}`, `{name}/path`,
+Runtime 인자, fingerprint 스크립트, 도구 인자는 `{name}`, `{name}/path`,
 `--flag={name}/path`로 다른 Artifact를 가리킵니다. `{owner}/child/path`는 폴더 Artifact에서
 시작하고, 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
-경로로 바뀝니다. 지시문과 runtime 인자에서 참조하면 eval이 그 Artifact에 의존하게 되고,
+경로로 바뀝니다. 지시문과 Runtime 인자에서 참조하면 eval이 그 Artifact에 의존하게 되고,
 fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽을 수 있게 될 뿐입니다. 도구
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
@@ -424,7 +424,7 @@ artifactize 전용 환경 변수는 전달하지 않습니다. 호출한 쪽의 
 환경은 [재사용 키](fingerprint.md#the-reuse-key)에 들어가지 않으므로 도구를 업그레이드해도 캐시
 결과가 무효가 되지 않습니다. 도구 버전이 바뀔 때 fingerprint도 바뀌어야 한다면, fingerprint 계산에 도구 버전을 넣으세요.
 
-runtime의 제한 시간은 기본 30,000ms이며, 1~2,147,483,647ms로 설정할 수 있습니다. 결과에는 stdout과
+Runtime의 제한 시간은 기본 30,000ms이며, 1~2,147,483,647ms로 설정할 수 있습니다. 결과에는 stdout과
 stderr의 앞부분 128 KiB씩, 잘렸는지 표시, 종료 상태, 걸린 시간이 남습니다. 텍스트는 UTF-8로
 읽고(잘못된 바이트는 대체), 터미널 색상 코드와 탭, LF, CR을 뺀 ASCII 제어 문자를 지웁니다(DEL은
 남깁니다). 전체 스트림은 Run 출력에 남으며, `request logs`와 MCP `request_logs`로 로그의 끝부분, 지정한 범위,

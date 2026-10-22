@@ -6,7 +6,7 @@
 연결하는 대신 `artifactize mcp`를 실행하고, 그 프로그램의 표준 입력과 출력으로 메시지를
 주고받습니다. 프로젝트 디렉터리에서 시작해 코딩 호스트에 등록하세요.
 [아래의 등록 방법](#register-the-mcp-server)을 보세요.
-`--state-dir PATH`는 상태를 고릅니다. Run, 요청, 세션을 조회할 때는 호출에서 지정한
+`--state-dir PATH`는 상태 디렉터리를 지정합니다. Run, 요청, 세션을 조회할 때는 호출에서 지정한
 프로젝트의 기록만 읽으며, 캐시 기록은 같은 상태를 쓰는 여러 저장소에서 재사용할 수 있습니다.
 
 ## 어느 프로젝트인가 {#which-project}
@@ -43,7 +43,7 @@ Claude Code와 Codex에서는 [플러그인](plugin.md)이 Hey Arti 스킬과 �
 
 ### Claude Code {#claude-code}
 
-프로젝트 디렉터리에서:
+프로젝트 디렉터리에서 다음을 실행하세요.
 
 ```sh
 claude mcp add --transport stdio --scope project artifactize -- artifactize mcp
@@ -70,7 +70,7 @@ codex mcp get artifactize
 `artifactize --repo PATH mcp`로 프로젝트별 명령을 등록하세요.
 호스트에서 평소 쓰는 권한·인증 절차가 그대로 적용되므로 우회 플래그는 필요 없습니다.
 
-등록은 도구를 제공할 뿐, [Hey Arti 스킬](hey-arti.md)은 제공하지 않습니다.
+이렇게 등록하면 도구만 제공되며, [Hey Arti 스킬](hey-arti.md)은 제공되지 않습니다.
 
 ## 검증 도구 {#verification-tools}
 
@@ -79,7 +79,7 @@ codex mcp get artifactize
 | `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | Run을 제출. Run 상태 요약이며 승인 결과가 아님 |
 | `verify_status` | `run` | 저장된 상태, 개수, 경과 초, `next_check` |
 | `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 도달할 때까지 대기. 기본 30, 정수 0–40. 첫 호출에서 root를 물어야 한다면 그 답을 받은 뒤 대기하며, 한 번의 확인은 45초 안에 끝남 |
-| `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 따라감. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 호출이 끝나면 간단한 상태 요약을 반환함 |
+| `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 지켜봄. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 호출이 끝나면 간단한 상태 요약을 반환함 |
 | `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 지적 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
 | `verify_cancel` | `run` | 명시적 취소 확인. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
 
@@ -89,10 +89,10 @@ codex mcp get artifactize
 {"kind":"all"}
 ```
 
-다른 형식은 `{"kind":"artifact","artifactId":"library"}`,
+다른 형식으로는 `{"kind":"artifact","artifactId":"library"}`,
 `{"kind":"eval","evalId":"library/tests"}`,
 `{"kind":"artifacts","artifactIds":["library","consumer"]}`,
-`{"kind":"evals","evalIds":["library/tests","consumer/review"]}`입니다.
+`{"kind":"evals","evalIds":["library/tests","consumer/review"]}`가 있습니다.
 배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 의존성 처리와 결과 재사용에는 CLI와 같은 기본 규칙이 적용되며,
 전송 방식에 따른 별도의 스케줄링이나 수명 주기 설정은 없습니다. 이 객체는
 CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
@@ -117,12 +117,12 @@ Run에는 `jobs` 필드가 없습니다.
 Human eval은 여전히 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기 상태는 오류가 아니라 정상입니다.
-`verify_wait`는 runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로
+`verify_wait`는 Runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로
 일찍 돌아오지 **않습니다**. `next_check`는 다음에 상태를 확인할 시점을 알려 주는 값일 뿐,
 빠르게 폴링하거나 모델 컨텍스트를 유지하라는 뜻이 아닙니다.
 
-Run은 Artifactize가 관리합니다. 요청을 버리거나, MCP 연결을 닫거나,
-지켜보기를 멈추거나, 에이전트 턴을 끝내도 Run은 취소되지 않습니다. 취소하는 것은 `verify_cancel`뿐입니다.
+Run은 artifactize가 관리합니다. 요청을 버리거나, MCP 연결을 닫거나,
+지켜보기를 멈추거나, 에이전트 턴을 끝내도 Run은 취소되지 않습니다. Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 RED/INCOMPLETE/ERROR/취소됨은 잘못된 도구 호출이 아니라 저장된 Run 결과입니다.
 Human 요청을 맡거나 놓고 판정을 제출하는 일은 사람이 직접 하며, MCP에는 이 기능이 없습니다.
 
@@ -153,9 +153,9 @@ ID를 받으며, CLI와 같은 `producer`(리뷰를 실행한 `user@host`)/상�
 CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. 정적
 `tools_check`는 프로젝트 도구를 호출하거나 세션을 시작하지 않습니다. `status`는
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
-명령은 OS 샌드박스가 아닙니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며
+명령은 OS 샌드박스 안에서 실행되지 않습니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며
 자격 증명을 돌려주는 일도 없습니다. `models`, `doctor`, `remote_status`는 백엔드
-준비 상태를 확인할 수 있습니다. Codex 모델 목록을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있으며, 갱신이 최종 거부되면 저장된 로그인 정보를 지울 수 있습니다.
+준비 상태를 확인할 수 있습니다. Codex 모델 목록을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있으며, 갱신이 영구히 거부되면 저장된 로그인 정보를 지울 수 있습니다.
 
 ### 세부 페이지 {#detail-pages}
 
@@ -185,7 +185,7 @@ cursor는 저장된 증거가 그대로인 동안 같은 도구와 같은 인자
 
 자격 증명 로그인/로그아웃, Human 담당 지정/제출/담당 해제, prune, 캐시 제거,
 원격 푸시, 대화형 monitor/review, 저장소 서버, 프로젝트 도구 실행,
-Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전히 CLI와 일반 Human 리뷰 인터페이스입니다.
+Agent 세션 후속 질문은 없습니다. 이런 동작은 CLI와 일반 Human 리뷰 인터페이스에서 하세요.
 
 
 ## 스트리밍과 집중 진단 {#streaming-and-focused-diagnosis}
@@ -199,7 +199,7 @@ Agent 세션 후속 질문은 없습니다. 이런 동작의 진입점은 여전
 - `{"kind":"eval_result","data":...}`: 저장된 요청/eval 상태 하나와 간결한
   요약. 재사용된 결과와 잠정 결과를 포함하며, **Run 판정이 아닙니다**.
 - `{"kind":"outcome","data":...}`: `verify_result`의 스키마를 쓰는 최종 Run 검증.
-  남은 지적 사항은 그 `next_cursor`를 따라 `verify_result`로 읽으세요.
+  남은 지적 사항은 그 `next_cursor`를 `verify_result`에 넘겨 읽으세요.
 
 연결할 때마다 기준 상태와 이미 완료된 eval을 다시 보내므로, 필요하면
 요청 ID와 상태를 기준으로 이전 연결에서 받은 항목과 겹치는 것을 걸러 내세요. 호출이 제한 시간에 도달해 반환될 때
@@ -213,7 +213,7 @@ Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았�
 각 알림은 전체 이벤트 이력이 아니라 저장된 상태를 반영합니다.
 
 진행 알림은 **클라이언트나 에이전트 호스트**가 화면에 보여 주거나 작업
-대기열 또는 대화로 전달해야 합니다. MCP 알림만으로는 모델 턴이 생기거나 추론 캐시가 유지되지 않으며, 호출이나 연결이 끝난 뒤에는 알림도 전달되지 않습니다. Artifactize는
+대기열 또는 대화로 전달해야 합니다. MCP 알림만으로는 모델 턴이 생기거나 추론 캐시가 유지되지 않으며, 호출이나 연결이 끝난 뒤에는 알림도 전달되지 않습니다. artifactize는
 임의의 호스트에 메시지를 끼워 넣을 수 없습니다. 셸을 쓸 수 있는 호스트에서는
 `artifactize verify --all --watch`나 `artifactize run watch RUN`이 종료될 때까지
 같은 JSON 줄 이벤트를 스트리밍하며, 호스트는 그 프로세스의 실행을 관리하고 출력을
@@ -236,7 +236,7 @@ Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았�
 재사용된 요청의 로그는 결과를 만든 원래 로컬 실행에서 찾으며, 원격 기록만으로는
 로그가 로컬에 보존되어 있다고 보장할 수 없습니다. 원본 캡처를 얼마나 오래 보관하는지와
 `artifactize prune`이 무엇을 남기는지는
-[runtime 실행 레퍼런스](../features/declarations.md#runtime-execution)에 있습니다.
+[Runtime 실행 레퍼런스](../features/declarations.md#runtime-execution)에 있습니다.
 
 `config_graph`는 훅을 호출하지 않고 정적 정의, eval, 순환 상대, 입력 → 사용처
 관계를 찾습니다. Artifact나 eval을 고르면 그 대상의 의존성 범위가 나오며,

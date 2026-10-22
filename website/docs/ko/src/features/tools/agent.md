@@ -2,8 +2,8 @@
 
 도구 Artifact의 `[views.agent_tools.NAME]` 아래에 명령 도구를 선언하고, eval에서 그 Artifact를
 참조하세요. 그러면 그 eval의 Agent는 이 도구를 `NAME_ARTIFACT`로 봅니다. 리뷰하기 전에
-[`tools check`](../../cli/index.md#tool-diagnostics)로 확인하세요. 예제는
-[도구](index.md#build-your-own-tool-artifact)에서 차례로 보여 줍니다.
+[`tools check`](../../cli/index.md#tool-diagnostics)로 확인하세요. 단계별 예제는
+[도구](index.md#build-your-own-tool-artifact)에 있습니다.
 
 명령 필드 `description`, `protocol`, `command`, `args`는 필수입니다. `input_schema`의 기본값은
 `{"type":"object","additionalProperties":false}`(빈 인자만 허용)입니다. 직접 주는 스키마는
@@ -31,7 +31,7 @@
 | `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`. 기본은 대소문자 구분, maxResults 기본값이자 최대 200 | 검색한 `path`, `matches: [{path, line, text}]`(일치하는 줄마다 하나, 경로 다음 줄 번호 순), `truncated` |
 
 `read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 자식 폴더를
-거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app이 `spec`으로 선언된 자식 폴더 `rules`를 가지고
+거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 안에 `spec`으로 선언된 자식 폴더 `rules`가
 있을 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 소유
 정보 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`를
 돌려줍니다. `path`는 실제 머신 경로가 아니라 요청한 논리적 경로 그대로입니다. list의 최상위
@@ -47,7 +47,7 @@
 가상 루트로 해석하고, 그 밖의 점 구성 요소는 거부합니다. 도구는 그 eval 범위의 Artifact에만
 접근할 수 있으며, 다른 eval의 범위에는 접근할 수 없습니다. 파일은 읽기 전용으로 열고, 심볼릭 링크는 따라가지
 않으며, 특수 파일은 읽을 수 없습니다. `list`는 `symlink`/`other` 항목을 보여 줄 수 있지만,
-검색에서는 건너뜁니다. Windows에서는 junction과 그 밖의 reparse point도 링크로 쳐서 대상으로 쓸 수
+검색에서는 건너뜁니다. Windows에서는 junction과 그 밖의 reparse point도 링크로 간주해 대상으로 쓸 수
 없으며, `list`는 junction을 `symlink`로, 그 밖의 reparse point를 `other`로 보여 줍니다. 파일 Artifact는 대상 파일만 보여 주고, 작업 디렉터리에 있는 상관없는 옆
 파일은 보여 주지 않습니다. 경로 없이 또는 `path: "."`로 `list`를 호출하면 그 가상 루트의 대상
 파일을 보여 줍니다. 대상은 파일 이름으로 읽으며, 파일 경로는 들어 있는 폴더 기준입니다.
@@ -116,7 +116,7 @@ Artifact에서도 작업 공간 기준이며, 작업 디렉터리나 대상 기�
 Agent 리뷰가 시작되면 artifactize는 eval 도구의 각 실행 경로에 대한 SHA-256(디렉터리라면 그
 안의 파일과 심볼릭 링크)을 `coverage_spec` 같은 공개 도구 이름별로
 `executionPaths: {"TOOL": {"PATH": "sha256"}}` 형태로 결과에 기록합니다. 이 기록은 원격 결과에도
-함께 가고 재사용한 결과에도 남으므로, 재사용한 판정을 어느 바이너리가 만들었는지 알 수 있습니다.
+함께 저장되고 재사용한 결과에도 남으므로, 재사용한 판정을 어느 바이너리가 만들었는지 알 수 있습니다.
 경로가 없거나, 특수 파일이거나, 1 GiB나 파일 10,000개를 넘으면 Agent를 부르기 전에
 `PREPARATION_FAILED`로 리뷰가 실패합니다. 이 해시는 기록일 뿐
 [재사용 키](../fingerprint.md#the-reuse-key)에 들어가지 않습니다. 바이너리가 바뀔 때 다시
@@ -150,7 +150,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 두 번째 형태의 파일은 요청의 `context.outputDir` 아래에 쓰세요. 상대 경로는 거기서 시작하고,
 절대 경로는 여전히 그 디렉터리 아래일 때만 받습니다. 상위 경로로 올라가는 경로, 어느
 구성 요소에서든 심볼릭 링크를 거치는 경로, 특수 파일, 그 출력 디렉터리 밖의 파일은 거부합니다. artifactize는
-호출의 출력을 지우기 전에 바이트를 읽어 넣으므로, 돌려받는 결과는 로컬 파일 경로가 아니라 이미지
+호출의 출력을 지우기 전에 이미지 바이트를 읽어 결과에 담으므로, 돌려받는 결과는 로컬 파일 경로가 아니라 이미지
 데이터가 모두 담긴 base64 문자열입니다.
 
 이미지는 비어 있지 않은 PNG, JPEG, WebP 파일이며 최대 **4 MiB**입니다. 형식 검사를 통과한 파일도
@@ -176,7 +176,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 범위가 정해진 기존 Artifact 참조를 쓸 수 있지만, eval이 허용한 범위 밖의 Artifact를 더할 수는
 없습니다. plain argv는 스키마 속성 자리 표시자만 씁니다. 명령 자체는 치환하지 않습니다. 명령은
 그 Artifact 폴더(파일 Artifact라면 그 파일이 있는 폴더)에서 작성자의 환경
-([runtime 환경](../declarations.md#runtime-execution): 실제 홈, 호출한 쪽의 `ARTIFACTIZE_*` 변수는
+([Runtime 환경](../declarations.md#runtime-execution): 실제 홈, 호출한 쪽의 `ARTIFACTIZE_*` 변수는
 없음)으로 실행됩니다. 호출마다 별도의 임시·출력 폴더를 주고, 호출이 끝나면 그 폴더를 지웁니다. 기본 제한 시간은 120000ms(1–2147483647)이며, 호출이 정상으로 끝나든, 취소되거나 시간이 초과되든 명령과 그 명령이 시작한 것을 멈춥니다.
 계속 실행되어야 하는 보조 프로그램에는 [도구 세션](#tool-sessions)을 쓰세요.
 명령은 샌드박스가 아니라 신뢰하는 읽기 전용 프로그램입니다.

@@ -1,7 +1,7 @@
 # Claude Code와 Codex용 플러그인 {#plugin-for-claude-code-and-codex}
 
 **플러그인**은 코딩 어시스턴트가 한 번에 설치하는 패키지입니다. `artifactize`
-플러그인은 Claude Code와 Codex에 두 가지를 함께 줍니다.
+플러그인은 Claude Code와 Codex에 두 가지를 함께 제공합니다.
 
 - [Hey Arti](hey-arti.md) 스킬: 어시스턴트가 artifactize로 프로젝트를 구성하고
   검증하게 해 주는 안내
@@ -15,8 +15,8 @@
 ## 시작하기 전에 {#before-you-start}
 
 플러그인은 `artifactize` 프로그램을 실행하므로 먼저 [artifactize를 설치](../getting-started/install.md)하세요.
-같은 페이지에서 [데스크톱 앱](../desktop/index.md)을 받는 방법도 보여 줍니다. 프로그램이
-없으면 Hey Arti가 그렇다고 알려 주고 그 페이지에 나온 시스템의 기본 설치 방법을 제안합니다.
+같은 페이지에서 [데스크톱 앱](../desktop/index.md)을 받는 방법도 확인할 수 있습니다. 프로그램이
+없으면 Hey Arti가 그렇다고 알려 주고 그 페이지에 나온, 사용 중인 시스템의 기본 설치 방법을 안내합니다.
 
 ## 어시스턴트에 플러그인 추가하기 {#add-the-plugin-to-your-assistant}
 
@@ -32,7 +32,7 @@ Claude Code 세션에서 마켓플레이스를 추가한 다음, 그곳에서 �
 셸에서는 `claude plugin marketplace add lhj6102/artifactize`와
 `claude plugin install artifactize@artifactize`가 같은 일을 합니다.
 
-Codex에서는 셸에서:
+Codex에서는 셸에서 다음을 실행하세요.
 
 ```sh
 codex plugin marketplace add lhj6102/artifactize
@@ -64,4 +64,4 @@ Claude Code에서는 `/plugin marketplace update artifactize`로 업데이트하
 다른 호스트나 직접 관리하는 설정에서는 서버를 직접 등록하고
 ([MCP 설정](mcp.md#register-the-mcp-server)), [Hey Arti](hey-arti.md)에 설명된 대로 어시스턴트에
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)를
-주세요. 한 호스트에서는 플러그인 설치와 같은 서버의 수동 등록 중 한 가지만 쓰세요.
+제공하세요. 한 호스트에서는 플러그인 설치와 같은 서버의 수동 등록 중 한 가지만 쓰세요.

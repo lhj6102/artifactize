@@ -16,7 +16,7 @@ cd artifactize
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
 
-Artifactize의 **상태(state)** 는 Run과 결과를 저장하는 곳입니다.
+artifactize의 **상태(state)** 는 Run과 결과를 저장하는 곳입니다.
 이 둘러보기의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 폴더를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
@@ -143,7 +143,7 @@ review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 �
 Enter(또는 클릭)는 도구 하나를 바로 실행합니다. `g`/`r`은 GREEN/RED 입력 칸을 열고, Ctrl-S는
 제출합니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 Run은 artifactize가 관리하며 Human 결과도 다른 결과와 똑같이 받아 처리하므로, Human 결과가 제출되면
-의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 그냥 `verify`는 제출하고 바로 돌아옵니다. `verify --wait`는 포그라운드에서 Run이 끝날 때까지 대기하며, 앞선 자동 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
+의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run이 끝날 때까지 대기하며, 앞선 자동 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
 
 실제 Agent 리뷰를 하려면 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣은 다음
 `artifactize verify --eval spec/review --wait`를 실행하세요. 다른 백엔드를 쓰려면 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
@@ -157,8 +157,8 @@ artifactize monitor        # Initially select ALL repositories in this state
 ```
 
 Run이 실행되는 동안 두 번째 터미널에서 시작하세요. Enter나 →로
-Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 한 단계 돌아갑니다. `j`/`k`는
-선택하고, `?`는 도움말을 보여 주며, `q`는 종료합니다. Detail은 Agent 대화, Runtime
+Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 한 단계 돌아갑니다. `j`/`k`로
+항목을 고르고, `?`는 도움말을 보여 주며, `q`는 종료합니다. Detail은 Agent 대화, Runtime
 로그, 또는 eval을 실행하기 전에 충족해야 할 조건을 보여 줍니다. 화면을 살펴보기만 해서는 프로젝트에 선언된 명령이 실행되지 않습니다.
 
 Human 요청 담당 지정, 도구, 판정 양식은

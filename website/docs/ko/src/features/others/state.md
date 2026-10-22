@@ -14,8 +14,8 @@
 둡니다. 저장된 Run은 저장소를 지운 뒤에도 계속 읽을 수 있습니다.
 
 상태는 리뷰하는 저장소나 다른 artifactize 작업 공간(`.artf` 선언, 예전 `artifactize.json`이나
-`.artifactizeignore`가 있는 폴더, 또는 그 상위 폴더) 안에 둘 수 없습니다. 명령은 무언가를
-쓰기 전에 이를 거부합니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
+`.artifactizeignore`가 있는 폴더, 또는 그 상위 폴더) 안에 둘 수 없습니다. 명령은 아무것도
+쓰기 전에 이런 위치를 거부합니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
 그 안의 선언을 모두 확인할 수 없으므로, 상태는 프로젝트 바깥에 두세요.
 
 **Microsoft Store 패키지**는 zip이나 Cargo로 설치한 것과 따로 Run, 로그인 정보, 캐시를
@@ -45,7 +45,7 @@ wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 
 **토큰은 저장소 밖에 둡니다.** Codex 로그인 정보와 리뷰 저장소 토큰을 담는 `$STATE/auth`가
 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면, gitignore된 폴더라도 거부합니다.
-그러면 `login codex`와 `remote login`은 로그인하기 전에 두 폴더를 모두 밝히며 실패합니다.
+그러면 `login codex`와 `remote login`은 로그인하기 전에 두 폴더 경로를 모두 알려 주며 실패합니다.
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
@@ -64,7 +64,7 @@ Codex sign-in storage /work/project/.state/auth is inside the git work tree /wor
 취소되거나 끝나지 못하면, 대기 중이던 Run이 직접 실행하고 나머지는 그 실행에 합류합니다. Human
 승인은 다시 시작하지 않습니다. 승인을 요청한 Run이 취소되거나 멈추면, 그 승인과 그 결과를 대기하던
 요청이 모두 ERROR로 끝나고 새 `verify`가 다시 요청합니다. 대기 중이던 Run을 취소해도 첫 번째
-Run은 취소되지 않습니다. `--force`는 항상 실행을 따로 합니다. 진행 중인 리뷰는 원격
+Run은 취소되지 않습니다. `--force`를 쓰면 항상 따로 실행합니다. 진행 중인 리뷰는 원격
 저장소를 통해 공유하지 않으며, 이를 지원하는 설정도 없습니다.
 
 ## 읽을 수 없는 기록 {#unreadable-records}
@@ -82,8 +82,8 @@ Run은 취소되지 않습니다. `--force`는 항상 실행을 따로 합니다
 재사용할 새 결과를 저장할 때, 저장된 결과가 **기록 10,000개**와 **1 GiB**를 넘지 않도록
 가장 오랫동안 재사용하지 않은 기록부터 지웁니다. 기록 하나는 최대 **16 MiB**입니다. 이보다 큰
 결과도 그 결과를 만든 Run과 그 결과가 나오기를 대기 중인 Run에는 전달되지만, 나중에 재사용하도록 보관하지는
-않습니다. 재사용은 사용으로 치지만 살펴보기만 한 것은 치지 않습니다. 실행 중인 리뷰나 다른
-Run이 아직 필요로 하는 기록은 남기므로 잠시 한도를 넘을 수 있습니다. 정리에 실패하면 stderr에
+않습니다. 재사용하면 사용한 것으로 기록하지만, 살펴보기만 한 것은 사용으로 기록하지 않습니다. 실행 중인 리뷰나 다른
+Run이 아직 필요로 하는 기록은 남기므로 잠시 한도를 넘을 수 있습니다. 정리에 실패하면 그 사실을 stderr에
 출력하며, 판정은 절대 바뀌지 않습니다.
 
 이 한도는 재사용에만 적용됩니다. 저장된 Run과 그 출력 파일은 남고, 시간이 지났다고 지워지는
@@ -111,7 +111,7 @@ Run만 제한합니다. 한 머신에서 여러 Run(워크트리, CI 작업, 팀
 그 리뷰는 ERROR(`OWNER_DIED`)로 끝납니다. 자리가 모두 차 있으면 요청은 `Waiting for a free codex
 slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 QUEUED로
 표시되고, 자리가 비면 Run의 [스케줄링 순서](../run.md#verify-and-runs)대로 대기 중인 요청을
-실행합니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 runtime eval,
+실행합니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 Runtime eval,
 Human 요청, 다른 백엔드는 계속 실행됩니다. [eval mutex 태그](../declarations.md#eval-mutex-tags)는
 자리를 차지하지 않고 충돌하는 eval을 따로 늦춥니다. `run cancel RUN_ID`는 그 Run에서 대기 중이던
 요청을 ERROR(`CANCELLED`)로 끝내고 그 자리를 비웁니다. `verify --wait`를 중단해도 지켜보기만 멈추며 Run은 계속 실행됩니다.
@@ -123,7 +123,7 @@ Human 요청, 다른 백엔드는 계속 실행됩니다. [eval mutex 태그](..
 
 Agent 리뷰마다 대화가 상태 아래에 저장되어
 [`session show`와 `session send`](../agent.md#saved-conversations)에 쓰입니다.
-`limits.json`으로 대화를 저장할지와 저장소 크기를 정합니다.
+`limits.json`으로 대화 저장 여부와 저장 공간의 크기를 정합니다.
 
 ```json
 {"agentSessions": {"enabled": true, "maxBytes": 1073741824, "targetBytes": 805306368}}
@@ -138,7 +138,7 @@ Agent 리뷰마다 대화가 상태 아래에 저장되어
 정리는 `verify` Run이 eval을 마쳤을 때와 `prune`을 실행할 때 합니다. 대화가 `maxBytes`보다
 많은 공간을 쓰면, 가장 오래된 세션부터 지워 `targetBytes` 이하로 줄입니다. 실행 중인 리뷰의
 세션이나 `session send`가 쓰고 있는 세션은 지우지 않으므로, 다음 정리 때까지 목표 크기를 넘을
-수 있습니다. `verify` 중에 정리가 실패하면 stderr에 알리고 Run은 그대로 둡니다.
+수 있습니다. `verify` 중에 정리가 실패하면 그 사실을 stderr에 출력하고 Run은 그대로 둡니다.
 `agentSessions` 값이 잘못되면 `verify`와 `prune`이 실패하고(종료 코드 2) `doctor`가 이를
 알립니다.
 
@@ -168,7 +168,7 @@ follow-up입니다. 모델은 일반 텍스트로 답하고, 도구를 쓸 수 �
 않습니다. `session show`는 질문을 쓴 그대로 보여 줍니다.
 
 질문, 답변, 도구 호출은 같은 대화에 이어서 쌓이며, 질문은 한 번에 하나씩 처리하고 질문마다
-프로필 예산을 새로 받습니다. 아직 실행 중인 리뷰에는 질문할 수 없습니다.
+프로필 예산이 새로 적용됩니다. 아직 실행 중인 리뷰에는 질문할 수 없습니다.
 
 ## 로컬 진단과 유지보수 {#local-diagnostics-and-maintenance}
 

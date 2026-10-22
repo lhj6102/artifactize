@@ -364,7 +364,7 @@ artifactize 프로젝트 안에는 둘 수 없습니다. `$HOME`에 있는 dotfi
 Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. 모델
 카탈로그도 없고, 다른 백엔드나 모델로 대체되지도 않습니다.
 
-**백엔드**는 Artifactize가 Agent 리뷰를 모델 서비스로 보낼 때 쓰는
+**백엔드**는 artifactize가 Agent 리뷰를 모델 서비스로 보낼 때 쓰는
 연결입니다. **API 키**는 그 서비스에서 계정을 인증할 때 쓰는 비공개 인증 정보입니다.
 API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys)이나
 [Anthropic Console](https://console.anthropic.com/settings/keys)에서 키를 만든 다음, 해당 명령의

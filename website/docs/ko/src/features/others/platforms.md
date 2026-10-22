@@ -3,7 +3,7 @@
 명령과 경로는 모든 OS에 같은 방식으로 한 번만 선언하세요. artifactize는 그 선언을
 Linux(x86_64와 aarch64), macOS(Apple 실리콘과 Intel), Windows(x64)에서 실행하며, WSL 2에서는
 Linux 빌드가 실행됩니다. 리뷰하기 전에는 `artifactize tools check`가 프로그램을 찾을 수 없는
-도구를 알려 주고, 리뷰 중에 Runtime eval의 프로그램을 시작하지 못하면 그 eval은 RED가 아니라 ERROR가 되고, 도구의 프로그램을 시작하지 못하면 도구 오류를 돌려주며 리뷰는 계속됩니다. 각
+도구를 알려 줍니다. 리뷰 중에 Runtime eval의 프로그램을 시작하지 못하면 그 eval은 RED가 아니라 ERROR가 되고, 도구의 프로그램을 시작하지 못하면 도구 오류를 돌려주며 리뷰는 계속됩니다. 각
 OS의 설치 채널은 [설치](../../getting-started/install.md)에 있습니다. 이 페이지는 OS마다 다른
 점을 정리합니다.
 
@@ -13,8 +13,8 @@ Runtime eval, fingerprint 스크립트, 명령 Agent 도구, 명령 Human 도구
 `command`와 `args`를 인자 목록 하나로 실행합니다. 셸도 없고, OS마다 다른 선언도 없습니다.
 리뷰어의 실행 환경에서 쓸 수 있는 명령을 프로젝트에 선언하세요. `python3`나 `grep`을 실행하는 eval이라면 모든
 리뷰어의 `PATH`에 그 명령이 있어야 합니다. 파일을 읽고 검색하는 데는
-[내장 도구](../tools/builtin.md)가 외부 프로그램 없이 어디서나 동작합니다. `open`은 시스템의
-여는 프로그램을 씁니다. macOS에서는 `open`, Windows에서는 기본 애플리케이션, Linux와 WSL에서는
+[내장 도구](../tools/builtin.md)가 외부 프로그램 없이 어디서나 동작합니다. `open`은 OS가 제공하는
+열기 프로그램을 씁니다. macOS에서는 `open`, Windows에서는 기본 애플리케이션, Linux와 WSL에서는
 `xdg-open`이며, `xdg-open`은 설치되어 있어야 합니다.
 
 명령은 [Runtime 실행](../declarations.md#runtime-execution)에서 설명한 대로 내 환경에서
@@ -26,7 +26,7 @@ AppImage가 더한 설정을 뺀 환경을 넘깁니다. 직접 설정해 둔 �
 
 ## 프로그램 찾기 {#program-lookup}
 
-선언된 프로그램은 `tools check`, runtime eval,
+선언된 프로그램은 `tools check`, Runtime eval,
 fingerprint 스크립트, 명령 도구에서 같은 방식으로 찾습니다.
 
 - `python3` 같은 경로 없는 이름은 `PATH`에서 찾습니다. 상대 경로와 빈 `PATH`
@@ -55,7 +55,7 @@ Windows 배치 파일(`.cmd`, `.bat`)도 명령으로 쓸 수 있지만, 모든 
 ## 경로 {#paths}
 
 논리적 경로는 선언, 도구 인자, 결과, 기록에서 모든 OS에 걸쳐 `/`를 씁니다.
-Artifactize는 모든 OS에서 경로를 비교할 때 대소문자를 구분합니다. Artifact
+artifactize는 모든 OS에서 경로를 비교할 때 대소문자를 구분합니다. Artifact
 참조, 도구 경로, `.artfignore`, artifactsum `files` 패턴은
 정확한 표기와 일치해야 합니다.
 
@@ -63,8 +63,8 @@ Artifactize는 모든 OS에서 경로를 비교할 때 대소문자를 구분합
 
 | OS | 디스크의 표기 |
 |---|---|
-| macOS, Windows | Artifactize가 강제합니다. 대소문자를 구분하지 않는 볼륨(둘 다 기본값)에서는 경로가 디스크 항목의 정확한 표기를 써야 하며, 자식 Artifact와 대소문자만 다른 이름의 파일이나 폴더는 읽지 않고 거부합니다. |
-| Linux | Artifactize는 파일 시스템에 맡깁니다. 대소문자를 구분하는 파일 시스템(보통의 경우)에서는 디스크에 기록된 이름과 정확히 일치하는 경로로만 열 수 있고, 대소문자를 구분하지 않는 파일 시스템(casefold 폴더나 WSL에 마운트한 Windows 드라이브 등)에서는 대소문자만 다른 경로로도 같은 항목을 열 수 있습니다. |
+| macOS, Windows | artifactize가 강제합니다. 대소문자를 구분하지 않는 볼륨(둘 다 기본값)에서는 경로가 디스크 항목의 정확한 표기를 써야 하며, 자식 Artifact와 대소문자만 다른 이름의 파일이나 폴더는 읽지 않고 거부합니다. |
+| Linux | artifactize는 파일 시스템에 맡깁니다. 대소문자를 구분하는 파일 시스템(보통의 경우)에서는 디스크에 기록된 이름과 정확히 일치하는 경로로만 열 수 있고, 대소문자를 구분하지 않는 파일 시스템(casefold 폴더나 WSL에 마운트한 Windows 드라이브 등)에서는 대소문자만 다른 경로로도 같은 항목을 열 수 있습니다. |
 
 ## 파일과 브라우저 열기 {#opening-files-and-the-browser}
 
@@ -93,7 +93,7 @@ macOS는 평소처럼 인자 없이 도움말을 보여 주고 바로 종료합�
 
 Microsoft Store 패키지에는 보이는 항목이 두 개 있습니다. 데스크톱
 앱용 **Artifactize**와 이 도움말 실행용 **Artifactize CLI**이며, 명령 별칭은
-`artifactize` 하나입니다. 그 도구는 `artifactize tools`로 쓸 수 있습니다. Store가 아닌 채널은
+`artifactize` 하나입니다. 도구 명령은 `artifactize tools`로 쓸 수 있습니다. Store가 아닌 채널은
 독립 실행형 `artifactize-tools` 명령도 함께 제공합니다.
 
 ## 상태 {#state}

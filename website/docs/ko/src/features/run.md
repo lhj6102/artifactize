@@ -35,7 +35,7 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 1)을 쓰세요. `--jobs`나 백엔드 한도 때문에 일부만 실행할 수 있으면 나머지는 이유와 함께 QUEUED로
 표시되고, 앞선 작업이 끝나는 대로 시작합니다. `--max-executions`는 다릅니다. Run이 시작하는 리뷰의
 총수를 제한하며, 다 쓰고 나면 남은 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 INCOMPLETE로
-끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 runtime이나 Agent 요청은 직접 지정한
+끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 Runtime이나 Agent 요청은 직접 지정한
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기, 백엔드 자리
 대기, 합류한 실행 대기, 직접 정한 Run의 작업 상한 대기를 뜻할 수 있습니다. 백엔드 자리를
@@ -45,13 +45,13 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 
 Run은 요청한 쪽과 상관없이 artifactize가 관리합니다. 옵션 없는 `verify`는 Run을 제출하고 Run ID
 (`--json`이면 `{"run","state"}`)를 출력한 뒤, 승인 여부와 관계없이 Run이 **접수**되면 0으로 종료합니다.
-`verify --wait`는 stderr에 ID를 알리고, 결과가 확정될 때까지 지켜본 다음 저장된 결과를
-보여 줍니다. 터미널을 닫거나 지켜보는 명령을 중단해도 지켜보기만 멈출 뿐 Run은 계속 실행됩니다. 취소를 요청하는
-것은 `run cancel RUN_ID`뿐입니다. 요청이 기록되면 바로 0으로 종료하고, 그 뒤 Run은 새 작업을
+`verify --wait`는 stderr에 Run ID를 출력하고, 결과가 확정될 때까지 지켜본 다음 저장된 결과를
+보여 줍니다. 터미널을 닫거나 지켜보는 명령을 중단해도 지켜보기만 멈출 뿐 Run은 계속 실행됩니다. Run을 취소하는
+방법은 `run cancel RUN_ID`뿐입니다. 요청이 기록되면 바로 0으로 종료하고, 그 뒤 Run은 새 작업을
 시작하지 않고, 실행 중인 작업을 멈추고, 이미 저장된 결과는 남긴 채 ERROR/CANCELLED로 끝납니다.
 작업이 정말 멈췄는지 확인하려면 `run watch RUN_ID`나 `run show RUN_ID`로 이어서 보세요. 이 Run이 다른 Run의 실행에 합류했다면 그 원래 실행은 멈추지 않습니다. 미룬 승인을 포함해 아직 대기 중이던 승인도
 ERROR로 끝나고, 다른 Run이 거기에 합류한 요청도 마찬가지이며, 다음 `verify`가 다시 요청합니다.
-이는 Run이 실행 중일 때만 해당합니다. 이미 SIGNOFFS_PENDING으로 끝난 Run은 끝난 것이므로
+이는 Run이 실행 중일 때만 해당합니다. 이미 SIGNOFFS_PENDING으로 끝난 Run은
 취소해도 바뀌는 것이 없고, 미룬 승인은 계속 남아 있습니다. 프로세스가 죽은 작업은
 ERROR/OWNER_DIED로 끝나고 자동으로 다시 실행되지 않으니 다시 verify하세요.
 
@@ -69,7 +69,7 @@ Run이 끝나면 지켜보는 명령도 그 Run의 결과에 맞는 종료 코�
 있습니다.
 
 최종 검증에는 필요한 범위 전체에서 실제 GREEN 증거나 직접 선언한 `basis = true`가 필요합니다.
-basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 기다립니다. 선택한 리뷰가 GREEN이어도 충족되지 않은 최종 검증 요건이 있으면 INCOMPLETE이며, 남은 요건을 텍스트와
+basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 하위 작업이 대기합니다. 선택한 리뷰가 GREEN이어도 충족되지 않은 최종 검증 요건이 있으면 INCOMPLETE이며, 남은 요건을 텍스트와
 JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)에 있습니다.
 `--reuse-only KINDS`(CI에서는 예를 들어 `agent,human`)는 그 종류의 결과를 재사용만 합니다.
@@ -85,7 +85,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [요청별 verify 모드](../cli/index.md#verify-modes)인 `--speculate`와 `--defer-human`은
 기본으로 꺼져 있고 Run의 `modes`에 저장됩니다. 같은 요청 키로 다시 제출하면 처음 선택한 모드를 그대로 씁니다.
 
-추측 실행은 요청한 runtime, Agent, Human eval을 게이트가 정해지기 전에 `--jobs`, 백엔드 수용량,
+추측 실행은 요청한 Runtime, Agent, Human eval을 게이트가 정해지기 전에 `--jobs`, 백엔드 수용량,
 `--max-executions` 한도 안에서 시작합니다. Human eval은 같은 Artifact의 Human이 아닌 다른 eval이
 모두 GREEN이 되기 전에는 절대 요청하지 않습니다. 준비된 작업이 먼저 실행됩니다. 준비된 작업에 추측 실행 리뷰가 쓰고 있는 자리가 필요하면 그 리뷰를 중단했다가 나중에 다시 시작하며, 시작할 때마다 `--max-executions`를 씁니다. 상위 eval이 RED나 ERROR가
 되면 그 결과로 무효가 된 작업, 즉 그 eval에 의존하는 eval 중 그 eval과 같은 Artifact에 속하지 않고 같은 순환에도 들지 않는 eval만
@@ -93,7 +93,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 파일로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
 [팀 리뷰 저장소](../cli/review-store.md)에 공유합니다.
 
-승인 미루기는 대기 중인 Human 게이트를 지나서 실행을 계속하게 합니다. 미룰 수 있는 승인 요청은
+승인을 미루면 Human 게이트가 대기 중이어도 그 뒤의 작업을 계속 실행합니다. 미룰 수 있는 승인 요청은
 그 승인의 선행 조건, 즉 같은 Artifact의 다른 자동 검사 eval이 GREEN이 되고 이를 막는 게이트가 없다는
 조건을 충족하는 즉시 보냅니다. 그때 다른 자동 검사 작업이 아직 실행 중일 수 있으니, 최종 상태를
 리뷰하려면 그 작업이 끝날 때까지 기다리세요. 요청은 DEFERRED, 그에 의존하는 결과는 PROVISIONAL로 표시됩니다. 둘 다 실제 승인이
@@ -102,13 +102,13 @@ Run은 SIGNOFFS_PENDING(종료 코드 5)으로 끝나며, 이는 **승인만 남
 제출되지 않아도 Run은 끝납니다. 나중에 제출하면 요청이 바뀔 뿐, 지난 Run의 판정은 바뀌지
 않습니다. 새 verify는 바뀌지 않은 잠정 자동 검사 결과를 재사용합니다. 승인이 GREEN이면
 SATISFIED가 될 수 있고, RED면 그에 의존하는 eval을 막습니다. `--reuse-only agent,human`은 대기
-중인 승인을 GREEN으로 치지 않으므로 CI에 그대로 쓸 수 있습니다.
+중인 승인을 GREEN으로 간주하지 않으므로 CI에 그대로 쓸 수 있습니다.
 
 같은 워크트리에서 더 새로운 Run이 같은 eval에 Human 요청을 보내면, 재사용 키가 다른 이전
 DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED로 끝납니다. 누군가 맡은 승인도
 마찬가지입니다. 이런 승인은 Review에서 사라지고 다시 맡을 수 없습니다. 같은 키라면 기존
 리뷰에 그대로 합류합니다. 다른 워크트리의 원래 승인과 아직 WAITING_HUMAN인 원래 승인은 건드리지
-않습니다. 이렇게 끝나기 전까지는 미룬 승인을 그 Run이 끝난 뒤에도 제출할 수 있으며, 제출할 때
+않습니다. 이렇게 끝나기 전까지는 미룬 승인을 그 Run이 끝난 뒤에도 제출할 수 있습니다. 제출할 때
 fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`)로 끝나니 새
 승인을 받으려면 다시 verify하세요.
 
@@ -192,7 +192,7 @@ status도 verify와 같은 격리와 검사 규칙을 적용하며, `--fingerpri
 선택한 범위의 실행 가능한 eval에 필요한 fingerprint를 계산합니다. fingerprint가 실패하면 2로 종료하며, 예전에 저장한
 fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하지 않고, Run을 만들지 않고, 작업을
 점유하지 않고, 없는 데이터베이스를 만들지 않고, 로컬 캐시의 사용 시각도 바꾸지 않습니다. 다만
-팀 리뷰 저장소에서 찾은 결과는 그곳에서 사용으로 치므로 더 오래 남습니다. fingerprint
+팀 리뷰 저장소에서 찾은 결과는 그 저장소에서 사용한 것으로 기록되므로 더 오래 보관됩니다. fingerprint
 스크립트는 상태 디렉터리 아래의 버려도 되는 출력 폴더를 쓰며, 데이터베이스가 없어도 이 폴더는
 생길 수 있습니다. `config graph`와 `config check`는 완전히 정적이며 프로젝트 코드를 실행하지
 않습니다.
@@ -209,12 +209,12 @@ eval마다 나오는 동작은 `verify`가 그 eval을 실행할지, 결과를 �
 status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스트 출력은 예를 들어
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝나므로, 병합한
 체크아웃에서 status를 실행하면 verify를 돌리지 않고도 무엇을 다시 리뷰할지 알 수 있습니다.
-force는 여전히 직접 선택한 실행 가능한 eval에만 적용됩니다. Human 실행 동작은 대기 요청을
-기록합니다. 같은 키의 Human 실행이 진행 중이면 원래 verify가 종료한 뒤에도 WAITING_HUMAN과
+`--force`도 verify와 마찬가지로 직접 선택한 실행 가능한 eval에만 적용됩니다. Human eval의 `execute` 동작은 대기 요청을
+기록한다는 뜻입니다. 같은 키의 Human 실행이 진행 중이면 원래 verify가 종료한 뒤에도 WAITING_HUMAN과
 `wait` 동작으로 보입니다. 저장된 실행 기록 중에서는 정규화한 현재 저장소 경로에 해당하는 기록만 읽습니다. eval마다 있을 수
 있는 `last: {runId, verdict, fingerprint?}`는 지난 기록이지 현재 증거가 아닙니다. 누가 만든
 결과인지 전부 보려면 `run show RUN_ID`를 쓰세요. 재사용 키가 없는 GREEN이나 RED는 그 결과를 만든 Run의
-요건만 충족하므로, 나중의 status에서는 재사용이 아니라 STALE로 나옵니다. basis만 있는 범위도 충족될 수
+요건만 충족하므로, 이후 status에서는 재사용이 아니라 STALE로 나옵니다. basis만 있는 범위도 충족될 수
 있지만, 의존성이 채워지지 않은 basis는 INCOMPLETE입니다.
 
 재사용 키가 있는 eval에 현재 캐시 결과가 없으면, `status`는 같은 기준으로 낸 마지막 GREEN이나

@@ -29,7 +29,7 @@ summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
 point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 URL을 기본 애플리케이션으로 여는 OS
 명령(Linux에서는 `xdg-open`)을 쓰는 `open`과, 요청한 프로그램을 실행하는 `help`를 빼면 따로
 설치할 것이 없으며, [`artifactize-tools`](#artifactize-tools-cli) 명령도 필요 없습니다. 그 명령과
-`artifactize tools`는 스크립트와 runtime eval에 파일 시스템과 프로그램 도구를 제공합니다. 현재
+`artifactize tools`는 스크립트와 Runtime eval에 파일 시스템과 프로그램 도구를 제공합니다. 현재
 프로젝트의 구조를 보여 주는 `graph` 도구는 artifactize의 리뷰 도구로 선언해야 쓸 수 있으며, 독립
 실행형 도구 CLI에는 없습니다.
 
@@ -66,7 +66,7 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
   limit을 받지 않아 다음 페이지를 가져올 수 없습니다. 항목이 더 많은 폴더라면 모델 입력을 받는
   `list`나 직접 만든 명령을 선언하세요.
 - **`section`**은 Markdown 파일의 섹션 하나를 출력합니다. 수준과 상관없이 텍스트가 `heading`과
-  정확히 같은 첫 제목을 찾습니다(`#` 제목이나 밑줄 제목. 코드 블록 안의 제목은 치지 않음).
+  정확히 같은 첫 제목을 찾습니다(`#` 제목이나 밑줄 제목. 코드 블록 안의 제목은 제외).
   섹션은 그 제목부터 같거나 더 높은 수준의 다음 제목까지이므로 하위 섹션도 포함합니다. 일치하는
   제목이 없으면 오류에 그 파일의 제목 목록이 나옵니다. 모델이 넘기는 제목은 1–4096자여야 하고,
   선언한 제목은 비어 있으면 안 됩니다. 파일은 최대 8 MiB, 출력하는 섹션은 최대 64 KiB입니다.
@@ -87,7 +87,7 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
   `mailto:` 같은 다른 URL 스킴은 거부합니다. 결과에는 애플리케이션을 시작했다는 사실만 기록되며,
   실행한 애플리케이션은 자동으로 종료되지 않으므로 리뷰어가 직접 관리합니다. Linux, WSL, macOS에서는 여는 프로그램 자체가
   3초 안에 성공으로 끝나야 하며, 여는 프로그램이 없거나, 시간이 초과되거나, 0이 아닌 코드로
-  끝나면 도구 오류입니다. WSL에서는 `xdg-open`의 종료 상태 4도 성공으로 칩니다. `explorer.exe`를
+  끝나면 도구 오류입니다. WSL에서는 `xdg-open`의 종료 상태 4도 성공으로 간주합니다. `explorer.exe`를
   통해 파일을 여는데, `explorer.exe`는 파일을 연 뒤에도 실패를 보고하기 때문입니다. 이 확인 시간
   제한은 연 애플리케이션이 실행되는 시간을 제한하지 않습니다.
 
@@ -161,7 +161,7 @@ Microsoft Store를 포함해 어떤 방법으로 설치하든 `artifactize tools
 `artifactize tools check`는 현재 디렉터리 도구를 실행하는 것이 아니라 선언한 리뷰 도구를
 확인합니다.
 
-runtime eval, fingerprint 스크립트, 직접 만든 스크립트에서 다음처럼 씁니다.
+Runtime eval, fingerprint 스크립트, 직접 만든 스크립트에서 다음처럼 씁니다.
 
 ```sh
 artifactize tools read DEV-CODING.md             # also: artifactize-tools read DEV-CODING.md
@@ -190,7 +190,7 @@ list/glob/grep의 기본값입니다. 절대 경로 대상, `..`, 심볼릭 링�
 {"artifactId":"cwd","path":"","entries":[{"kind":"file","name":"notes.md","path":"notes.md"}],"totalEntries":1,"truncated":false,"nextOffset":null}
 ```
 
- 명령줄에서 `help`는 터미널 환경에서 `ARTIFACTIZE_*` 변수를 모두 뺀 환경으로, 별도의
+명령줄에서 `help`는 터미널 환경에서 `ARTIFACTIZE_*` 변수를 모두 뺀 환경으로, 별도의
 임시·출력 디렉터리 없이 프로그램을 실행합니다. 도구 오류는 stderr로 가고 종료 코드는 1이며,
 잘못된 사용은 종료 코드 2입니다. `artifactize tools --help`(또는 `artifactize-tools --help`)는
 도구 목록을, `artifactize tools SUBCOMMAND --help`는 도구 하나의 설명을 보여 줍니다.

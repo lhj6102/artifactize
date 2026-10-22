@@ -14,7 +14,7 @@ eval의 기준을 대신하거나 판정을 지어내지 않습니다.
 이미지나 섹션을 보여 주는 Agent 내장 도구는 머신 전체가 아니라 eval의 범위에 들어간 Artifact만 봅니다.
 `graph`는 eval 범위와 상관없이 프로젝트의 현재 선언을 모두 읽습니다.
 `help`는 일반적인 실행 파일 검색으로 찾은 실제 프로그램을 실행하며,
-선언된 명령 도구도 신뢰하는 프로그램입니다. 어느 쪽도 **OS
+선언된 명령 도구도 신뢰한다고 보고 실행하는 프로그램입니다. 어느 쪽도 **OS
 샌드박스가 아닙니다**.
 
 ```toml
@@ -32,7 +32,7 @@ eval은 실제로 참조하는 Artifact의 도구를 봅니다. 도구 이름은
 ## 직접 도구 Artifact 만들기 {#build-your-own-tool-artifact}
 
 재사용할 도구는 구현 파일이 있는 폴더에 Artifact 선언을 추가하세요.
-예를 들어 `tools/checker/index.artf`는 Python 프로그램 `inspect.py`와 그 옆의 `tests/` 폴더를 가진
+예를 들어 `tools/checker/index.artf`는 Python 프로그램 `inspect.py`와 그 옆의 `tests/` 폴더가 들어 있는
 `checker` Artifact를 선언할 수 있습니다.
 
 ```toml
@@ -70,9 +70,9 @@ profile = { kind = "human" }
 payload.instruction = "Review {app} and the implementation of {checker}; run its source tool before deciding."
 ```
 
-Agent는 `inspect_checker`를, 사람은 `source_checker`를 받습니다. 두 eval 모두
-참조된 도구 Artifact가 eval 범위에 들어가므로, 그 fingerprint가 재사용에
-관여합니다. 필요하면 도구 자체도 테스트하거나 리뷰하세요. 끝나지 않은 작업을 우회하려고
+Agent는 `inspect_checker`를, 사람은 `source_checker`를 쓸 수 있습니다. 두 eval 모두
+참조된 도구 Artifact가 eval 범위에 들어가므로, 그 fingerprint가 재사용 여부에
+영향을 줍니다. 필요하면 도구 자체도 테스트하거나 리뷰하세요. 끝나지 않은 작업을 우회하려고
 도구를 `basis`로 선언하지 마세요. `execution_paths`로 어떤 빌드된 바이너리가 실행되었는지 기록할 수 있지만, 이 기록은 재사용 키에 들어가지 않습니다.
 
 `json` 명령은 stdin에서 `context`와 `args`가 든 JSON 요청 하나를 읽고,
@@ -88,7 +88,7 @@ JSON 콘텐츠 객체 하나를 출력합니다.
 **하네스**는 리뷰하는 동안 애플리케이션을 실행하거나 조종하는 보조 프로그램입니다.
 도구 세션을 쓰면 Agent 리뷰에서 도구를 여러 번 호출하는 동안 하네스 하나를 계속 실행해 둘 수 있습니다.
 예를 들어 게임 도구 Artifact는 보이는 창 없이 게임을 **헤드리스**로 실행하고,
-읽기 전용 보드 확인 작업을 노출할 수 있습니다.
+읽기 전용 보드 확인 작업을 제공할 수 있습니다.
 
 ```toml
 [views.agent_sessions.game]
@@ -103,7 +103,7 @@ command = "game-harness"
 args = ["board"]
 ```
 
-start는 평소와 같은 JSON 객체를 읽고, 공유 상태를 전용
+start 명령은 평소와 같은 JSON 객체를 읽고, 공유 상태를 전용
 `ARTIFACTIZE_SESSION_DIR`에 쓰고, 준비 완료 줄 하나를 출력한 뒤 계속 실행됩니다. 세션에 묶인
 도구 호출과 stop 명령은 같은 디렉터리를 쓰고, 세션은 리뷰마다 따로 만들어집니다.
 Agent는 인스턴스를 시작하거나, 멈추거나, 이름을 정하지 않습니다. 오류와 취소를 포함해

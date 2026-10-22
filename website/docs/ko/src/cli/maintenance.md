@@ -70,12 +70,12 @@ Run도 건너뜁니다. `--older-than`은 Run이 끝난 시각과 비교하며, 
   `stateId`가 나옵니다.
 - API 키: 있는지 없는지만 알려 주고, 확인하거나 출력하지는 않습니다. 사용하는 백엔드의
   키만 있으면 되므로, 키가 없으면 오류가 아니라 경고로 처리합니다. [테스트 엔드포인트](../features/agent.md#test-against-a-fake-provider)를
-  쓰면 `testEndpoint`로 이름을 밝히는 경고가 나오고, 잘못된 엔드포인트는 심각한 오류입니다.
+  쓰면 어떤 엔드포인트인지 `testEndpoint`로 알려 주는 경고가 나오고, 잘못된 엔드포인트는 심각한 오류입니다.
 - `codex`: 로그인 정보를 갱신하거나 온라인에 접속하지 않고 읽습니다. 로그인하지 않았으면
   경고입니다. 저장된 로그인은 액세스 토큰이 만료됐어도 통과합니다(다음에 쓸 때 갱신합니다).
   `ARTIFACTIZE_CODEX_AUTH_FILE`의 토큰이 만료됐으면 경고입니다. `$STATE/auth`가
   [저장소 안에](../features/others/state.md#state) 있으면 거부 메시지를 `refused`에 담은
-  경고가 나오고, 그곳에 로그인 정보가 저장되면 심각한 오류가 됩니다. 세부 정보에는 `source`
+  경고가 나오고, 그곳에 로그인 정보가 저장되어 있으면 심각한 오류가 됩니다. 세부 정보에는 `source`
   (`stored`, `file`, `none`), `expiresAt`, `expired`, 테스트 엔드포인트가 나옵니다.
 - 원격 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.
   토큰이 없으면 경고이고, 설정이 잘못됐거나(루프백이 아닌 호스트에 일반 HTTP를 쓰는 경우 포함)
@@ -89,7 +89,7 @@ Run도 건너뜁니다. `--older-than`은 Run이 끝난 시각과 비교하며, 
 탭으로 구분한 slug와 이름 쌍이고, JSON은 provider가 준 순서대로
 `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}` 형태입니다.
 
-`prune`은 `state/runs/<run-id>` 안의 출력 폴더만 지웁니다. runtime의 `output`(이전
+`prune`은 `state/runs/<run-id>` 안의 출력 폴더만 지웁니다. Runtime의 `output`(이전
 버전이 남긴 `tmp`, `home`, `cache`도 포함)과 남은 도구 출력이 대상입니다. Run 기록, 결과,
 재사용 기록, 알 수 없는 파일은 남으므로 `run show`와 `request show`는 계속 동작합니다.
 `--dry-run`일 때도 심볼릭 링크와 프로젝트처럼 보이는 폴더(`.git`이나 Artifact 선언이 있는

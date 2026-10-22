@@ -197,7 +197,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. 준비된 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작
-한 번으로 칩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
+한 번으로 셉니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
 재확인, 캐시 적중, 합류해서 대기 중인 요청도 마찬가지입니다. 실행기 준비 초기에 실패한 경우는 시작
 횟수에 넣지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
 실패해도 그 시작은 시작 횟수에 포함되며, 모델을 부르지 않고 ERROR/PREPARATION_FAILED를 기록합니다.
@@ -222,7 +222,7 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 `--recursive`를 주면 이미 선택된 의존성에도 변형이 적용됩니다. 예를 들어 `app/review
 --profile fast`가 실행하는 runtime 변형의 인자에 `{fixtures}`가 있으면, `fixtures`의 eval은
 `fast`가 아니라 기본 프로필로 Run에 들어옵니다. 고른 변형은 실행 옵션일 뿐 재사용 키에 들어가지
-않습니다. 그래서 runtime 변형이 명령이나 인자를 바꾸지 않는 한, 변형(그리고 선언된
+않습니다. 그래서 Runtime 변형이 명령이나 인자를 바꾸지 않는 한, 변형(그리고 선언된
 프로필)이 달라도 결과를 서로 재사용할 수 있습니다. 저장된 요청의 `profile`과 `options`는 결과를 만든 실행을
 나타내고, 캐시가 다른 프로필의 결과를 돌려주면 `requestedProfile`에 요청한 프로필이 남습니다.
 텍스트 출력은 결과를 만든 프로필의 설정이 다를 때만 재사용 표시에 `profile NAME`을 붙입니다.
@@ -284,7 +284,7 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact가 충족되지 않음 |
 | `BASIS` | — | 의존성이 충족된 basis Artifact |
 
-Artifact는 eval이 가진 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+Artifact는 그 eval들의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
 `STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
 `status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
 
@@ -307,7 +307,7 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 규칙과 제한은 [`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli)에
 있습니다.
 
-## Agent 스트리밍과 runtime 로그 {#agent-streaming-and-runtime-logs}
+## Agent 스트리밍과 Runtime 로그 {#agent-streaming-and-runtime-logs}
 
 `verify SELECTOR --watch`는 Run을 제출한 직후부터 진행 상황을 보여 주고, `run watch RUN_ID`로는 나중에 진행 상황 보기를 시작할 수 있습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`는 실시간
 상태와 개수, `kind: eval_result`는 저장된 요청의 간단한 결과, `kind: outcome`은 Run의 최종
@@ -316,7 +316,7 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 그대로 재생하지는 않습니다. 자세한 내용이 필요하면 결과의 `next_cursor`를 MCP
 `verify_result`에 넘겨 다음 내용을 읽거나 저장된 Run을 살펴보세요.
 
-runtime 결과가 실패했을 때:
+Runtime 결과가 실패했을 때:
 
 ```sh
 artifactize request logs REQUEST_ID --stream stderr --tail 30
@@ -329,9 +329,9 @@ artifactize config graph INPUT_ARTIFACT --impact --json
 스트림마다 최대 200줄과 제한된 바이트만 돌려주고, 이어서 볼 위치를 `next_start`로 알려
 줍니다. tail과 범위 조회는 함께 쓸 수 없습니다. `search`는 1–2048바이트의 문자열을 대소문자를
 구분해 그대로 찾습니다. 원래 2048바이트가 넘는 줄은 `clipped`로 표시하고 앞뒤 일부만
-보여 줍니다. 저장된 128 KiB 감사 기록 뒤쪽까지 포함한 runtime 원본 스트림 전체는 Run 출력에
+보여 줍니다. 저장된 128 KiB 감사 기록 뒤쪽까지 포함한 Runtime 원본 스트림 전체는 Run 출력에
 남습니다. `prune`은 이 원본 로그를 지우지 않으며, 정해진 주기로 지우는 기능도 없습니다. 원본 로그가 없거나 이전 버전 또는 원격 실행의 감사 기록만 남아 있으면 그 상태를 분명히 표시합니다. 공통
-[runtime 보존 레퍼런스](../features/declarations.md#runtime-execution)를 보세요. 공통 증거와
+[Runtime 보존 레퍼런스](../features/declarations.md#runtime-execution)를 보세요. 공통 증거와
 이벤트 스키마, 클라이언트 전달 제한은 [MCP 집중 진단](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)에
 있습니다.
 

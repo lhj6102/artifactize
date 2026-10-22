@@ -6,7 +6,7 @@ Agent eval은 명시한 백엔드 하나를 통해 정확히 지정한 모델 �
 
 ## Agent 리뷰 {#agent-reviews}
 
-모델 목록이나 별칭을 따로 제공하지 않고, 자격 증명을 찾아다니거나 다른 모델로 대신하지도
+artifactize는 모델 목록이나 별칭을 따로 제공하지 않고, 자격 증명을 찾아다니거나 다른 모델로 대신하지도
 않습니다.
 
 
@@ -33,7 +33,7 @@ artifactize models codex
 실패하며, artifactize가 다른 모델로 바꾸거나 강도를 낮추지 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
+Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필이 만든
 결과도 재사용하며, 그 기록에 어느 쪽이 만들었는지 나옵니다.
@@ -166,11 +166,11 @@ artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그�
 **저장되는 내용.** 리뷰 세션마다 내 계정만 읽을 수 있는 파일 하나에 저장합니다
 ([구성](others/state.md#agent-sessions)). 지시문, 모든 메시지, 도구 호출과 그 결과, 수정 요청 턴,
 토큰 수, 리뷰에 쓴 설정이 들어 있습니다. 리뷰의 도구 호출은 세션에만 기록되며, 요청에는 판정,
-결과, 사용량만 남습니다. 저장에 실패해도 리뷰는 실패하지 않습니다. 쓰기 오류는 stderr에 알리고 리뷰는 저장
+결과, 사용량만 남습니다. 저장에 실패해도 리뷰는 실패하지 않습니다. 쓰기 오류는 stderr에 출력하고 리뷰는 저장
 없이 계속됩니다.
 
 **참조.** 대화가 저장된 요청은 `verify --wait --json`, `run show`, `request show`에
-`session`을 담습니다.
+`session` 필드가 들어 있습니다.
 
 ```json
 "session": {
@@ -208,7 +208,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   [로그인 설정](../getting-started/install.md#backends)에 있습니다. 토큰과 ChatGPT 계정 ID는
   나만 읽을 수 있는 `$STATE/auth/codex.json`에 저장합니다. `login`, `models`, `verify`에는 같은
   `--state-dir`을 쓰세요. 토큰은 절대 저장소 안에 저장하지 않습니다. `$STATE/auth`가 git 작업
-  트리, artifactize 작업 공간, `--repo` 안에 있으면 `login codex`는 그 폴더를 밝히며 거부하고
+  트리, artifactize 작업 공간, `--repo` 안에 있으면 `login codex`는 그 폴더 경로를 알려 주며 로그인을 거부하고
   `doctor`는 경고합니다([상태](others/state.md#state)). 저장소 바깥의 상태 디렉터리나
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 전에
   갱신합니다. 서버가 갱신 토큰을 영구히 거부하면 토큰을 지우고, 리뷰는 다시
@@ -232,8 +232,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 ## 가짜 provider로 테스트하기 {#test-against-a-fake-provider}
 
-모델 없이 도구, 스키마, 결과 해석을 시험하려면 백엔드가 이 머신의 가짜 provider를 바라보게
-하세요. 아래 변수가 provider의 API 루트를 대신합니다.
+모델 없이 도구, 스키마, 결과 해석을 시험하려면 백엔드를 이 머신의 가짜 provider에
+연결하세요. 아래 변수가 provider의 API 루트를 대신합니다.
 
 | 백엔드 | 변수 | 예 | 가짜가 응답할 요청 |
 |---|---|---|---|
@@ -244,7 +244,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 - 루트는 `localhost`, `127.0.0.0/8`, `[::1]`의 `http://`나 `https://`여야 하며, 자격 증명,
   쿼리, 프래그먼트가 없어야 합니다. 그 밖의 값이면 연결하기 전에 리뷰, `models`, `doctor`가 그
-  변수를 밝히며 실패합니다. 빈 값은 설정하지 않은 것으로 칩니다. `anthropic`은 끝에 `/v1`이
+  변수 이름을 알려 주며 실패합니다. 빈 값은 설정하지 않은 것으로 간주합니다. `anthropic`은 끝에 `/v1`이
   붙어도 됩니다.
 - API 키 변수는 여전히 필요하고 가짜에 그대로 전달되므로 아무 값이나 넣어 두세요. `codex`는
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 `{"tokens":{"access_token":"dummy","account_id":"test"}}`
@@ -258,7 +258,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 - 테스트 엔드포인트가 설정되어 있는 동안 `doctor`는 경고하고 이를 `testEndpoint`로 알립니다.
 
 가짜는 요청한 모델에 대해 provider의 전송 형식대로 `text/event-stream`으로 답을 스트리밍합니다.
-`openai`라면 `response.completed` 이벤트 하나면 됩니다. 이 가짜 provider는 `{"verdict":"GREEN"}`만으로 GREEN 스키마를 충족하는 리뷰를 통과시킵니다. `pass_schema`에 다른 필드가 필요하면
+`openai`라면 `response.completed` 이벤트 하나면 됩니다. GREEN 스키마가 `{"verdict":"GREEN"}`만으로 충족되는 리뷰는 이 가짜 provider로 통과시킬 수 있습니다. `pass_schema`에 다른 필드가 필요하면
 가짜의 `text` 응답에 그 필드의 유효한 값을 넣으세요. 그러지 않으면 응답이 스키마에 맞지
 않아 artifactize가 한 번 수정을 요청하고, 수정한 응답도 맞지 않으면 `INVALID_RESULT`가 됩니다.
 
