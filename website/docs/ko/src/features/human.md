@@ -81,7 +81,7 @@ CI가 원하는 대로 [실행되지 않습니다](../cli/index.md#reuse-only).
 기본으로 꺼져 있습니다. `--speculate`는 이와 별개로 기계 작업의 속도를 높일 수 있으며,
 미루기와 함께 써도 미룰 수 있는 승인은 여전히 마지막에 요청합니다.
 
-리뷰어에게 미룬 승인은 DEFERRED 표시가 붙은 평범한 승인입니다.
+리뷰어에게 미룬 승인은 DEFERRED 표시가 붙은 일반 승인입니다.
 `review`, monitor, 데스크톱, 요청 목록에서
 WAITING_HUMAN 요청과 함께 나열되며, 맡기, 도구, 놓기, 제출은 같은 방식으로
 Human 권한을 확인합니다. 막힌 승인은 결코 사람에게 제시되지 않습니다. Run이 어떻게 끝나는지
@@ -89,7 +89,7 @@ Human 권한을 확인합니다. 막힌 승인은 결코 사람에게 제시되�
 [추측 실행과 미룬 승인](run.md#speculation-and-deferred-sign-offs)에 있습니다.
 그 재사용에는 fingerprint가 필요하므로 `fingerprint = false`면 재사용되지 않습니다.
 
-같은 작업 트리에서 같은 eval에 대한 더 새 요청이 오면, 재사용 키가 다른 이전
+같은 워크트리에서 같은 eval에 대한 더 새 요청이 오면, 재사용 키가 다른 이전
 DEFERRED 승인은 만료되어 Review에서 사라집니다. 만료, 합류,
 Run이 끝난 뒤의 승인 제출은 [Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
 

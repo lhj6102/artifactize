@@ -16,7 +16,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 
 <p align="center">
   <img src="../others/graph-example.en.png" width="800"
-       alt="Artifact Graph 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각자의 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
+       alt="Artifact 그래프 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각자의 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
 </p>
 
 <p align="center">

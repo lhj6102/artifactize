@@ -92,7 +92,7 @@ Run은 **ERROR/INPUT_CHANGED**로 끝납니다. 선언 편집을 마친 뒤
 추측 실행은 요청된 runtime, Agent, Human eval을 해결되지 않은
 관문보다 먼저 `--jobs`, 백엔드 용량, `--max-executions` 한도 안에서 시작합니다. Human eval은
 그 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이 되기 전에는 결코 요청되지 않습니다. 준비된 작업이
-우선하며, 추측 작업은 남는 용량을 쓰고 먼저 양보합니다. 다시 배정하면
+우선하며, 추측 작업은 남는 용량을 쓰고 가장 먼저 자리를 내줍니다. 다시 배정하면
 실행기 시작을 한 번 더 씁니다. 상위의 RED나 ERROR는
 그 때문에 무효가 되는 작업, 즉 자기
 Artifact와 순환 밖에서 그것에 의존하는 eval만 즉시 취소하고, 재사용할 수 있는 취소 결과 없이 BLOCKED로 표시합니다.
@@ -110,11 +110,11 @@ GREEN이 되고 어떤 관문도 막지 않을 때 발행됩니다. 요청은 DE
 RED 승인이면 의존하는 eval이 막힙니다. `--reuse-only agent,human`은 대기 중인
 승인을 결코 GREEN으로 취급하지 않으므로 CI에 계속 적합합니다.
 
-더 새 Run이 같은 작업 트리에서 같은 eval에 대해 Human 요청을 발행하면,
+더 새 Run이 같은 워크트리에서 같은 eval에 대해 Human 요청을 발행하면,
 재사용 키가 다른 이전 DEFERRED 승인은 그에 합류한 요청을 포함해 ERROR/SUPERSEDED로 끝납니다.
 맡은 승인도 만료됩니다. 만료된 승인은
 Review에서 사라지고 다시 맡을 수 없습니다. 같은 키라면 여전히 기존 리뷰에 합류합니다.
-다른 작업 트리의 원래 승인과 살아 있는 WAITING_HUMAN 원본은
+다른 워크트리의 원래 승인과 살아 있는 WAITING_HUMAN 원본은
 건드리지 않습니다. 만료되기 전까지는 Run이 끝난 뒤에도 미룬 승인을 제출할 수 있습니다.
 제출할 때 fingerprint를 다시 확인하며 파일이 바뀌었으면 거부합니다.
 
@@ -295,6 +295,6 @@ Artifact 묶음이 들어 있습니다. Artifact 항목에는 `kind`(`file`, `fo
 Agent는 추출된 현재 그래프를 트리로 보고, Human은
 저장된 Run 없이도 브랜치의 [Current](../desktop/index.md#current)에서 데스크톱 앱을 엽니다.
 선택적인 루트 [`.artf` graph Artifact](declarations.md#graph-artifact)는
-평범한 eval을 가지며, 다른 Artifact처럼 Run과 status에 나타납니다.
+일반 eval을 가지며, 다른 Artifact처럼 Run과 status에 나타납니다.
 다른 것은 fingerprint 알고리즘뿐이며, 그래프 전용 검증
 흐름이나 루트 폴더 Artifact와의 자동 관계는 없습니다.

@@ -266,7 +266,7 @@ macOS와 x86_64 Linux의 `install.sh`, macOS의 Homebrew cask도 앱을 설치�
   터미널을 열고 `artifactize --version`을 실행하세요. 두 명령 모두
   설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 옮겼다면
   다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 확인 창을
-  취소하면 그 번들 위치에 대해 앱 상태에 기억되므로, 실행할 때마다
+  취소하면 그 번들 위치에서 취소했다는 사실이 앱 상태에 저장되므로, 실행할 때마다
   묻지 않습니다.
 - **Linux AppImage:** 명령은
   `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin`에 복사되고 `~/.local/bin`에서 링크됩니다.
@@ -383,7 +383,7 @@ Run, 저장된 Agent 대화, 로그인을 포함한 모든 상태는 한
 
 `--state-dir PATH`는 명령 하나에 대해 상태 전체를 옮깁니다. `login`, `verify`, `request`, `run`,
 `monitor`에 같은 값을 쓰세요. 상태는 리뷰 대상 저장소 밖에 있어야 합니다.
-`auth/` 아래의 토큰도 모든 git 작업 트리나
+`auth/` 아래의 토큰도 모든 git 워크트리나
 artifactize 프로젝트 안에서는 거부됩니다. `$HOME`에 있는 dotfiles 저장소나 체크아웃 안의 gitignore된 폴더가 그런 예입니다.
 `ARTIFACTIZE_CODEX_AUTH_FILE`은 저장소가 필요 없습니다
 ([상태](../features/others/state.md#state)).

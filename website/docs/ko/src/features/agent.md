@@ -332,7 +332,7 @@ session GC`를, 저장된 적이 없는 세션은 `was not saved`를 보고합�
 **개인정보.** 대화에는 리뷰어가 도구로 읽은 모든 것이
 파일 내용까지 포함해 들어 있고, 리뷰어가 쓴 모든 것도 들어 있습니다. 대화는 이 머신의
 소유자 전용 파일에 남으며, 팀 리뷰 저장소를 포함해 어디에도 업로드되지 않습니다.
-후속 질문은 각 리뷰 턴과 마찬가지로 대화를 리뷰 자신의 백엔드로 보냅니다.
+후속 질문도 각 리뷰 턴과 마찬가지로 그 리뷰에 쓴 백엔드로 대화를 보냅니다.
 `"agentSessions": {"enabled": false}`로 저장을 끄고,
 저장된 것을 지우려면 `$STATE/agent-sessions`를 삭제하세요.
 
@@ -361,7 +361,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   (0700 디렉터리, 링크가 하나뿐인 0600 파일, 심볼릭 링크를 따라가지 않음, 원자적으로
   교체). `login`, `models`, `verify`에는 같은 `--state-dir`을 쓰세요.
   토큰은 결코 저장소 안에 저장되지 않습니다. `$STATE/auth`가 git
-  작업 트리, artifactize 워크스페이스, 또는 `--repo` 안에 있으면 `login codex`는 거부하고 그
+  워크트리, artifactize 워크스페이스, 또는 `--repo` 안에 있으면 `login codex`는 거부하고 그
   폴더를 알려 주며, `doctor`는 경고합니다
   ([상태](others/state.md#state)). 그 밖의 상태 디렉터리를 쓰거나
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 5분 전에 잠금을 잡고
@@ -387,7 +387,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   닿을 수 없거나 실패하면 `TRANSIENT`입니다.
 - **재사용.** 다른 백엔드처럼 `codex`도 각 결과에 백엔드, 모델, reasoning,
   제한을 재사용 키 밖에 기록합니다. 같은 eval과 fingerprint에 대한 `codex` 결과와 `openai` 또는
-  `anthropic` 결과는 서로를 재사용합니다.
+  `anthropic` 결과는 서로 재사용할 수 있습니다.
 - **모델.** `models codex`는 `GET <root>/models?client_version=0.160.0`을 요청합니다. 이는
   artifactize가 프로토콜을 따르는 Codex 릴리스가 받는 카탈로그입니다. Codex 모델 선택기처럼
   `visibility`가 `list`인 모델을 서버 순서대로 나열합니다.

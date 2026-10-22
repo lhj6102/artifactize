@@ -7,7 +7,7 @@ Artifact는 리뷰하는 모든 것입니다. 코드, 문서, 디자인, 이미�
 ## Artifact 그래프 {#artifact-graph}
 
 **Artifact 그래프**는 입력을 그 입력을 쓰는 eval에 연결합니다. `{spec}` 같은
-참조는 그 Artifact를 eval에 받아들입니다. 그 Artifact의 fingerprint가 바뀌면
+참조를 쓰면 그 Artifact가 eval의 입력에 들어갑니다. 그 Artifact의 fingerprint가 바뀌면
 그것을 키에 포함한 리뷰만 무효가 됩니다. 자식 폴더는 입력을 정리해 주지만,
 같은 저장소에 있다는 것만으로 모든 Artifact가 모든 검사의 의존성이 되지는 않습니다.
 

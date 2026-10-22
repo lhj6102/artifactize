@@ -157,7 +157,7 @@ GREEN은 따로 선택합니다.
   필드 밖에 있습니다.
 - 한 판정의 스키마를 생략하면 그 판정에는 **소유자 필드가 하나도 허용되지 않습니다**.
   Agent는 `{"verdict":"GREEN"}` 또는 `{"verdict":"RED"}`만 돌려주고,
-  Human 양식 필드는 `{}`입니다. 빈 객체 스키마도 같은 닫힌 봉투를 가집니다.
+  Human 양식 필드는 `{}`입니다. 빈 객체 스키마를 써도 마찬가지로 선언하지 않은 최상위 필드는 허용되지 않습니다.
 
 ### Human 결과 스키마 {#human-result-schemas}
 
@@ -220,7 +220,7 @@ profile = { kind = "human" }
 payload = { instruction = "Use the graph viewer to review the current structure." }
 ```
 
-graph Artifact는 이름이 있는 평범한 Artifact입니다. 어떤 runtime, Agent, Human
+graph Artifact는 이름이 있는 일반 Artifact입니다. 어떤 runtime, Agent, Human
 eval과 도구든 선언할 수 있고, `verify`, `status`, CI, `--reuse-only`에서 이름으로 선택할 수 있습니다.
 기본 eval도, 자식 소유도, 다른 Artifact와의 관계도 없습니다. 명시적인
 지시문/argv 참조는 보통대로 동작합니다. 명령은
@@ -228,11 +228,11 @@ eval과 도구든 선언할 수 있고, `verify`, `status`, CI, `--reuse-only`�
 그 범위는 `kind = "graph"`를 쓰고 선언 경로는 `.artf`입니다.
 
 `false`나 빈 테이블이라도 `fingerprint`를 선언하지 마세요. 그 fingerprint는
-언제나 현재 추출된 그래프입니다. 그 밖에는 평범한 Artifact 규칙이 적용됩니다.
+언제나 현재 추출된 그래프입니다. 그 밖에는 일반 Artifact 규칙이 적용됩니다.
 `basis = true`는 자기 리뷰 의무가 없음을 명시적으로 선언하며 eval을 가질 수 없고,
 충족되지 않은 의존성을 충족시키지도 않습니다. `basis = true`가 없는 eval 없는 그래프는
 다른 eval 없는 Artifact와 마찬가지로 UNREVIEWED로 남습니다. 소스 파일은
-만들어지지도 필요하지도 않습니다. 평범한 Artifact 순환은 허용됩니다. 추출은 평면적이며
+만들어지지도 필요하지도 않습니다. 일반 Artifact 사이의 순환은 허용됩니다. 추출은 평면적이며
 graph Artifact 자신의 선언도 재귀적인 fingerprint 계산 없이 포함합니다.
 
 [그래프 fingerprint](fingerprint.md#graph-fingerprint)는
@@ -374,7 +374,7 @@ Artifact, 순환, 스케줄링, Human 선행 조건은
 자식 Artifact 폴더와 모든 `*.artf` 파일을 제외합니다. `fingerprint.files`에
 `.artf` 파일을 명시적으로 나열하면 그 파일이 없더라도 `config check`가 실패합니다.
 탐색은 디렉터리를 포함해 일반 파일이 아닌 `.artf` 항목도 거부합니다.
-`bundle.artf`라는 디렉터리는 해시할 수 있는 평범한 입력이 아닙니다. 파일 Artifact는
+`bundle.artf`라는 디렉터리는 해시할 수 있는 일반 입력이 아닙니다. 파일 Artifact는
 기본적으로 대상만 해시합니다. 태그는 해시되지 않으며 Eval 정의 해시나
 재사용 키를 바꾸지 않습니다.
 
@@ -489,7 +489,7 @@ runtime 명령을 준비하기 전에 받아들여진 범위로 `scope::resolve_
 실제 홈과 캐시 위치(`HOME`, `XDG_*`, 그리고 Windows에서는
 `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`와 시스템 변수)도 포함됩니다. 그래서 버전 관리자 뒤의
 `cargo`나 `pnpm`처럼 이 위치로 찾아가는 툴체인이 터미널에서처럼
-동작합니다. artifactize 자신의 것은 빠집니다. 호출자의 모든 `ARTIFACTIZE_*` 변수
+동작합니다. artifactize 자체의 변수는 빠집니다. 호출자의 모든 `ARTIFACTIZE_*` 변수
 (`ARTIFACTIZE_REMOTE_TOKEN` 같은 자격 증명과 설정)는
 제거되고, 명령은 artifactize가 설정해 준 변수만 받습니다. 준비된
 각 runtime 명령은 호출자의 외부 `run_dir` 아래에 소유자만 쓸 수 있는 새 디렉터리를 받고,
@@ -499,8 +499,8 @@ runtime 명령을 준비하기 전에 받아들여진 범위로 `scope::resolve_
 전용 임시 디렉터리를 가리키는 `TMPDIR`/`TMP`/`TEMP`를 받으며, 이 임시 디렉터리는
 명령이 끝나면 제거됩니다. 기존 출력 상위 경로는 만들기 전에 정규화됩니다.
 정규화된 워크스페이스 안의 출력은 심볼릭 링크를 거친 경우를 포함해 거부됩니다.
-실행 디렉터리는 호출자의 것입니다. 준비된 출력은 실행 후에도 남아
-영수증과 명시적인 정리에 쓰입니다. 준비에 실패하면 새로 소유한
+실행 디렉터리는 호출자가 관리합니다. 준비된 출력은 실행 후에도 남아
+실행 기록과 명시적인 정리에 쓰입니다. 준비에 실패하면 새로 소유한
 호출 디렉터리만 제거하고, 호출자의 루트는 제거하지 않습니다.
 
 명령이 작성자의 환경을 보기 때문에, 결과는 다른
@@ -533,6 +533,6 @@ Object를 종료합니다. 리더 프로세스가 평범하게 종료해도 그�
 Job을 정리합니다. 파이프가 열려 있으면 캡처는 정리 후 최대 1초까지만 기다립니다.
 호출자를 버리면 감독자가 취소되며, 감독자는 그래도 정리를 마치고 리더 프로세스를
 회수합니다. 설정된 프로그램은 신뢰하는 로컬 코드이며 **OS 샌드박스가 아닙니다**.
-평범한 OS 접근을 쓸 수 있고, 리뷰된 입력을 바꾸지 않아야 하며, 소유한 프로세스 그룹이나 Job을
+일반적인 OS 접근을 쓸 수 있고, 리뷰된 입력을 바꾸지 않아야 하며, 소유한 프로세스 그룹이나 Job을
 일부러 떠나는 자손 프로세스는 정리를 피할 수 있습니다. 이
 통제 수단은 격리나 모든 악의적인 일시적 쓰기의 탐지를 약속하지 않습니다.
