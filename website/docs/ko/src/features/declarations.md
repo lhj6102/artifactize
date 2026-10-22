@@ -1,7 +1,7 @@
 # 선언 (.artf) {#declarations-artf}
 
 TOML 선언, 폴더와 파일 Artifact, fingerprint,
-Eval 의존성, 범위가 정해진 참조, runtime 실행 환경에 대한 정확한 규칙입니다.
+eval 의존성, 범위가 정해진 참조, runtime 실행 환경에 대한 정확한 규칙입니다.
 개념 소개는 [Artifact와 eval](artifact.md)에 있습니다.
 
 ## 제거된 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
@@ -357,7 +357,7 @@ payload.instruction = "Approve the delivery before dependent work proceeds."
 Artifact 참조는 `payload.instruction`과 runtime `profile.args`에
 `{input}` 또는 `{input}/path`로 쓰세요. 그 의무, 자식
 Artifact, 순환, 스케줄링, Human 선행 조건은
-[Eval 의존성](artifact.md#eval-dependencies)을 보세요.
+[eval 의존성](artifact.md#eval-dependencies)을 보세요.
 
 ## Artifactsum {#artifactsum}
 
@@ -375,7 +375,7 @@ Artifact, 순환, 스케줄링, Human 선행 조건은
 `.artf` 파일을 명시적으로 나열하면 그 파일이 없더라도 `config check`가 실패합니다.
 탐색은 디렉터리를 포함해 일반 파일이 아닌 `.artf` 항목도 거부합니다.
 `bundle.artf`라는 디렉터리는 해시할 수 있는 일반 입력이 아닙니다. 파일 Artifact는
-기본적으로 대상만 해시합니다. 태그는 해시되지 않으며 Eval 정의 해시나
+기본적으로 대상만 해시합니다. 태그는 해시되지 않으며 eval 정의 해시나
 재사용 키를 바꾸지 않습니다.
 
 탐색은 범위가 정해진 경로 규칙을 따릅니다. 심볼릭 링크와 특수 파일은
@@ -409,7 +409,7 @@ Artifact의 모든 실행형 eval은 같은 리터럴 값을 받으며, 그 값�
 요청과 Run의 Artifact 검증에 저장됩니다. artifactize는 스크립트 출력에 저장소,
 eval, 프로필, 도구 뷰, 의존성, 내용에 따른 솔트를 추가하지 않습니다. eval의
 [재사용 키](fingerprint.md#the-reuse-key)는 이 값을
-Artifact 이름과 kind(`folder`/`file`/`graph`), 의존성 fingerprint, Eval
+Artifact 이름과 kind(`folder`/`file`/`graph`), 의존성 fingerprint, eval
 정의 해시와 결합합니다. 물리적 경로는 재사용 키에 절대 들어가지 않습니다. Artifactsum
 실패도 같은 방식으로 준비를 중단합니다.
 

@@ -266,7 +266,7 @@ runtime 변형이 명령이나 args를 바꾸지 않는 한 서로 다른 변형
 ## 재사용만 하기 {#reuse-only}
 
 `verify --reuse-only KINDS`는 `runtime`, `agent`,
-`human`을 쉼표로 구분한 목록을 받습니다. 나열된 kind의 Eval은 결과를 재사용하기만 할 수 있습니다. 로컬 캐시에 있는,
+`human`을 쉼표로 구분한 목록을 받습니다. 나열된 kind의 eval은 결과를 재사용하기만 할 수 있습니다. 로컬 캐시에 있는,
 또는 [리뷰 저장소](../features/team/reference.md)가 설정되어 있다면 그곳에 있는
 재사용 키의 완료된 기록입니다. 그런 기록이 없으면 그 eval은 실행되지 않습니다. 실행기 시작도,
 제공자 호출도, Human 요청도 없으며, 그 키의 살아 있는 실행조차 기다리지 않습니다.
@@ -289,16 +289,16 @@ RED나 ERROR여도, 예산이 바닥난 경우처럼 이유와 함께 INCOMPLETE
 
 ## 의존성 선택과 출력 {#dependency-selection-and-output}
 
-`artifactize verify app/e2e`는 `--eval app/e2e`와 똑같이 정규화된 Eval을 고릅니다.
-필요한 의존성 범위의 Eval을 실행하려면 `--recursive`를 추가하세요. 없으면
+`artifactize verify app/e2e`는 `--eval app/e2e`와 똑같이 정규화된 eval을 고릅니다.
+필요한 의존성 범위의 eval을 실행하려면 `--recursive`를 추가하세요. 없으면
 입력 증거가 이미 있어야 합니다. 파일 Artifact는 선언된 이름으로
 선택하며, 사이드카는 주변 폴더와의 자동 관계를 만들지 않습니다.
 
 의존성 순환을 포함해 어떤 eval이 기다리거나 막히는지는
-[Eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
+[eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
 
 status는 `execute`, `reuse`, `wait`, `blocked` 동작을 씁니다. 요청, 검증,
-status에는 정규화된 Eval ID인 `blockedBy`가 붙습니다. monitor는 관문 Eval을
+status에는 정규화된 eval ID인 `blockedBy`가 붙습니다. monitor는 관문 eval을
 Artifact별로 `Waits for` 아래에 묶습니다. 태그, 파일 kind, 경로는 graph,
 status, monitor 출력에 계속 보입니다.
 

@@ -304,12 +304,12 @@ Run의 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)도
 과거의 Run 종료 시 판정이 아니라 현재 요청을 바꾸며, 엄격한 Human 관문은
 여전히 엄격합니다.
 
-eval이 무엇을 기다리는지는 [Eval 의존성](../features/artifact.md#eval-dependencies)을 따릅니다.
+eval이 무엇을 기다리는지는 [eval 의존성](../features/artifact.md#eval-dependencies)을 따릅니다.
 행은 그 관문을 충족되지 않은 Artifact 최대 둘로 묶고, 그다음 `+N`을 붙이며, 각
 Artifact의 완료 상태를 함께 보여 줍니다. 대상이 모두 자기도 기다리고 있으면 원인을
 한 단계 더 붙입니다. 예를 들어 `waits for cli … waiting (cli waits for code-style)`입니다.
 순환 안의 Artifact는 `↻ peer` 표시를 공유합니다.
-그래프가 허용하는 한 상위가 먼저 오며, Artifact 순환 상대와 Eval은
+그래프가 허용하는 한 상위가 먼저 오며, Artifact 순환 상대와 eval은
 이름순으로 정렬됩니다.
 
 모두 done인 Artifact는 자동으로 접힙니다. 다른 Artifact는 직접 접지 않는 한

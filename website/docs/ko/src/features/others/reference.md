@@ -14,7 +14,7 @@ artifactize의 자세한 레퍼런스입니다. 모든 명령과 플래그, 정�
 - [완료된 결과 재사용](../fingerprint.md#completed-result-reuse)
 - [캐시 제한](state.md#cache-limits)
 - [파일 Artifact](../declarations.md#file-artifacts)
-- [Eval 의존성](../declarations.md#eval-dependencies)
+- [eval 의존성](../declarations.md#eval-dependencies)
 - [범위가 정해진 입력 라이브러리](../declarations.md#scoped-input-library)
 - [Runtime 실행 라이브러리](../declarations.md#runtime-execution-library)
 - [Agent 백엔드](../agent.md#agent-backends)

@@ -95,7 +95,7 @@ artifactize remote status
 - 판정
 - 스키마로 검증한 소유자 필드(runtime eval에서는 종료 코드,
   소요 시간, 잘림 표시만)
-- 재사용 키, Eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
+- 재사용 키, eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
   fingerprint와 그 `folder`/`file`/`graph` kind
   (기록의 `artifactKinds`)
 - 프로필, 그 실행 옵션(백엔드, 모델, reasoning, 제한, 변형),

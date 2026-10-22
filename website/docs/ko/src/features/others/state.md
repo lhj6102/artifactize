@@ -172,7 +172,7 @@ artifactize cache rm KEY
 `verify`가 재사용합니다. `list`는 각
 키의 가장 최근 기록을 보여 줍니다. 키, eval, 판정, 완료 시각, 만든 사람, 저장소(또는 그 기록이 온 원격 저장소),
 키가 가진 기록 수, 보존된 JSON 바이트, 마지막 사용 시각입니다(텍스트
-표, 또는 Eval 정의 해시, 대상의
+표, 또는 eval 정의 해시, 대상의
 fingerprint, 프로필 변형도 담은 JSON 배열). `--history`는 모든 기록을 나열하며, 각 키 안에서
 최신순입니다. `show`는 키의 가장 최근 저장된 실행을 JSON으로 출력합니다.
 결과, 실제 `profile`, `options`(백엔드, 모델, reasoning, 제한,

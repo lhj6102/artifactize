@@ -244,7 +244,7 @@ WAITING_HUMAN과 `wait` 동작이 나타납니다. 저장된 시도는
 basis만 있는 범위는 충족될 수 있습니다. 충족되지 않은 의존성이 있는 basis는 INCOMPLETE입니다.
 
 재사용 키가 있는 eval에 현재 캐시된 결과가 없으면 `status`가 그 이유를 설명합니다.
-현재 키를 같은 eval과 Eval 정의 해시에 대한(이 상태의 어느 저장소에서든)
+현재 키를 같은 eval과 eval 정의 해시에 대한(이 상태의 어느 저장소에서든)
 가장 새 캐시된 GREEN/RED 기록과 비교해,
 `changes: {sinceRunId, files?, dependencies?, summary}`를 보고합니다. 텍스트에서는 `Fingerprint changed since Run RUN_ID: ...` 줄로 나오며, 예를 들어 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`입니다. `files`는
 대상 자신의 파일을 `path`(바뀜), `+path`(추가됨), `-path`(제거됨)로
@@ -258,10 +258,10 @@ READY Human eval은 키가 없어도 대신 "Record a request awaiting
 a Human claim and submission"이라고 말하며, 막히거나 기다리는 eval은
 대신 그 관문이나 대기 상태를 설명합니다.
 
-기다리는 Eval에서 `blockedBy`는
-충족되지 않은 정규화된 Eval ID를 가리키고, BLOCKED Eval에서는 그 이유와 마찬가지로
-막힘의 근원인 RED Eval을 가리킵니다. Detail은 이 관문을 입력 Artifact별로 묶어
-`Waits for` 아래에 보여 주며, `w`는 대기 중인 Eval을 보여 줍니다.
+기다리는 eval에서 `blockedBy`는
+충족되지 않은 정규화된 eval ID를 가리키고, BLOCKED eval에서는 그 이유와 마찬가지로
+막힘의 근원인 RED eval을 가리킵니다. Detail은 이 관문을 입력 Artifact별로 묶어
+`Waits for` 아래에 보여 주며, `w`는 대기 중인 eval을 보여 줍니다.
 
 나중의 Human 제출이 기다리던 Run을 확정할 수 있습니다. `run show`는 저장된
 검증과 요청을 유지합니다.

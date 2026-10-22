@@ -24,7 +24,7 @@ eval은 소유자 스키마 대신 명령의 종료 상태를 씁니다. 이름 
 다른 실행 프로필을 고를 수 있습니다. [선언](declarations.md)을 보세요.
 
 의존성은 그것을 쓰는 eval에 속합니다. 지시문이나 runtime 인자에서
-입력 Artifact를 `{name}`으로 가리키세요. [Eval 의존성](artifact.md#eval-dependencies)을 보세요.
+입력 Artifact를 `{name}`으로 가리키세요. [eval 의존성](artifact.md#eval-dependencies)을 보세요.
 
 실제 입력만 선언하세요. eval의 관찰 범위는 자기 대상과
 명시적인 지시문/Runtime 피연산자 참조에서 시작해, 그런 Artifact마다 그 자식을

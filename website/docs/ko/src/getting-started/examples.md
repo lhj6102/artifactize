@@ -15,7 +15,7 @@
   Artifact 세 개, 글마다 하나씩 둔 사이드카 선언, 참조된 basis Artifact 안의 공용 스타일 검사기,
   글별 단어 수 제한, 서로 독립적인 artifactsum 재사용을 보여 줍니다.
   글 하나를 바꾸면 eval 하나만 리뷰되고, 공용 검사기나 규칙을 바꾸면 세 개 모두 리뷰됩니다.
-- [Eval 의존성](../features/artifact.md#eval-dependencies):
-  Eval별 입력과 의존성을 먼저 실행하는 스케줄링.
+- [eval 의존성](../features/artifact.md#eval-dependencies):
+  eval별 입력과 의존성을 먼저 실행하는 스케줄링.
 - [팀 워크스루](../features/team/walkthrough.md): 두 머신과 CI가 하나의
   `artifactize server`를 통해 서로의 판정을 재사용합니다.

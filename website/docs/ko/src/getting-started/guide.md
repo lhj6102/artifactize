@@ -80,7 +80,7 @@ Artifact로 선언합니다. 사이드카에는 `name`이 필요하고, 폴더�
 그 파일만 해시합니다. 내장 도구는 그 파일과, 그 eval에 명시적으로 제공된 입력만 보며
 관련 없는 형제 파일은 보지 않습니다. 공용 검사기처럼 다른 Artifact를 쓰는 eval은
 그 Artifact를 `{house-style}`처럼 이름으로 가리킵니다.
-[Eval 의존성](../features/artifact.md#eval-dependencies)을 보세요. [posts 예제](https://github.com/lhj6102/artifactize/tree/main/examples/posts)는
+[eval 의존성](../features/artifact.md#eval-dependencies)을 보세요. [posts 예제](https://github.com/lhj6102/artifactize/tree/main/examples/posts)는
 Markdown 사이드카 세 개와 공용 스타일 검사기 하나를 씁니다. 이전
 예제의 디렉터리에서 다음을 실행하세요.
 
@@ -99,12 +99,12 @@ cd ../runtime-relations    # continue the tour below
 검사의 기준과 리뷰된 입력을 식별하도록 기록된 값으로, 이전 결과가 여전히 적용되는지를 결정합니다.
 이 예제의 README는 글 하나를 RED로 만들고 나머지 두 개는 재사용하는 방법을 보여 줍니다.
 
-Runtime Eval은 지시문이나 인자에서 입력을 직접 참조합니다. 예를 들어
+Runtime eval은 지시문이나 인자에서 입력을 직접 참조합니다. 예를 들어
 애플리케이션은 `{e2e-tests}`를 써서 실제로 동작하는 애플리케이션을 검사하는
 종단 간(E2E) 테스트 모음을 실행하고, 테스트 코드
-Artifact는 자기 스타일과 테스트가 기능을 얼마나 다루는지를 스스로 리뷰할 수 있습니다. 그 애플리케이션 Eval만
-테스트 코드 리뷰를 기다리고, 관련 없는 애플리케이션 Eval은 계속 실행할 수 있습니다.
-[Eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
+Artifact는 자기 스타일과 테스트가 기능을 얼마나 다루는지를 스스로 리뷰할 수 있습니다. 그 애플리케이션 eval만
+테스트 코드 리뷰를 기다리고, 관련 없는 애플리케이션 eval은 계속 실행할 수 있습니다.
+[eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
 
 ## 선택: Agent 도구와 Human 흐름 {#optional-agent-tools-and-the-human-flow}
 

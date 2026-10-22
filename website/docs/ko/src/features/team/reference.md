@@ -59,7 +59,7 @@ kind를 고려하는 키를 충족할 수 없습니다. 조회는 돌려주는 �
 
 **업그레이드.** 스키마 1 또는 2인 `review-store.sqlite`(artifactize 0.3 또는 0.4)는
 서버가 열 때 그 자리에서 스키마 3으로 업그레이드됩니다. 토큰은 유지됩니다. 저장된
-기록은 버려집니다. 0.4가 계산한 fingerprint와 Eval 정의 해시를 키로 했는데,
+기록은 버려집니다. 0.4가 계산한 fingerprint와 eval 정의 해시를 키로 했는데,
 어떤 0.5 키도 이와 일치하지 않으므로 클라이언트는 한 번 다시 리뷰하고 새로
 게시합니다. 0.5 서버는 0.4와 0.3 클라이언트(그 조회 키와
 `PUT /v1/entries/{evalDefHash}/{fingerprint}` 경로)에 410과 업그레이드하라는 메시지로
@@ -132,7 +132,7 @@ ERROR(`SUPERSEDED`)가 됩니다. 텍스트 출력은 출처를 알려 줍니다
 데이터베이스 트랜잭션 밖에서 요약 기록을, 공유 수준이 `full`이면 전체 기록을 보냅니다.
 `--speculate` Run은 Human 리뷰가 아직 대기 중이더라도 스케줄링이
 끝날 때까지 이 자동 게시를 미룹니다. 그 뒤 막힌 작업을 재사용에서 거둔 다음,
-살아남은 결과만 게시합니다. 기록에는 키, Eval 정의 해시, 키가 포함하는 각 Artifact의
+살아남은 결과만 게시합니다. 기록에는 키, eval 정의 해시, 키가 포함하는 각 Artifact의
 fingerprint, 그 `artifactKinds` 맵(`folder`/`file`/`graph`), 실행
 `options`(백엔드, 모델,
 reasoning, 제한, 프로필 변형), Agent 결과의 `executionPaths` 고정 값이 들어 있습니다. `request submit`은 Human 승인을 게시합니다.

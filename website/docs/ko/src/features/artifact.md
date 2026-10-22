@@ -13,7 +13,7 @@ Artifact는 리뷰하는 모든 것입니다. 코드, 문서, 디자인, 이미�
 
 실행 관문은 각 eval 자신의 참조에 속합니다. 자식 폴더는
 부모 내용의 일부이므로 부모의 모든 eval이 참조하는 것으로 칩니다.
-[Eval 의존성](#eval-dependencies)을 보세요.
+[eval 의존성](#eval-dependencies)을 보세요.
 
 그래프 자체도 리뷰할 수 있습니다. 이름 없는 루트 `.artf`가 Graph
 Artifact를 선언합니다. 그 fingerprint는 소스 바이트나 실행 조정값이 아니라 추출된 기준과 라벨이 붙은 관계를 포함합니다.
@@ -80,9 +80,9 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 ## Eval 의존성 {#eval-dependencies}
 
-의존성은 Artifact의 모든 Eval이 아니라 그 입력을 쓰는 Eval에 속합니다.
+의존성은 Artifact의 모든 eval이 아니라 그 입력을 쓰는 eval에 속합니다.
 `payload.instruction`이나 runtime `args` 피연산자 안의 `{name}` 참조가
-입력 Artifact를 가리키며, 그 Eval은 입력을 판정하는 Eval들에 의존합니다.
+입력 Artifact를 가리키며, 그 eval은 입력을 판정하는 eval들에 의존합니다.
 어떤 Artifact가 다른 Artifact를 쓴다면, 그 사용을 검사하는 eval이 그것을 `{name}`으로 가리킵니다.
 그 밖의 어떤 것도 의존성을 추가하지 않습니다.
 
@@ -103,51 +103,51 @@ payload.instruction = "Run {e2e-tests} against {app}."
 
 `e2e-tests` Artifact는 테스트 코드 자체, 즉 그 스타일과
 기능 문서에 대한 충실도를 평가합니다. 자기 테스트 코드에 대한 리뷰로 애플리케이션 테스트 모음을
-실행하지는 않습니다. 독립적인 `app` 스타일 Eval은 자기 지시문이 테스트 코드 리뷰를
+실행하지는 않습니다. 독립적인 `app` 스타일 eval은 자기 지시문이 테스트 코드 리뷰를
 참조하지 않는 한 그 리뷰를 기다리지 않습니다.
 
-모든 Eval은 입력의 판정과 상관없이 자기 대상을 독립적으로 판정할 수 있습니다.
+모든 eval은 입력의 판정과 상관없이 자기 대상을 독립적으로 판정할 수 있습니다.
 그냥 `verify`는 효율을 위해 의존성을 먼저 실행하는 스케줄링을 고릅니다. 대기 중인 입력
-리뷰는 그것을 쓰는 Eval을 늦추고, RED인 입력 리뷰는 그 Eval을 막습니다. `--speculate`를 쓰면
+리뷰는 그것을 쓰는 eval을 늦추고, RED인 입력 리뷰는 그 eval을 막습니다. `--speculate`를 쓰면
 해결되지 않은 입력 관문보다 먼저 작업을 시작할 수 있지만, 빠진 요구 사항을 승인하지는 않습니다.
 최종 GREEN에는 여전히 상위 리뷰를 포함해 필요한 모든 증거가 있어야 합니다.
 
-막히는 것은 언제나 Eval이지 Artifact가 아닙니다. Eval의 실행 관문은
-그 Eval이 참조하는 Artifact들의 실제 Eval과, 그 Eval이 속한 Artifact의 표시된 가장 가까운 자식들의 실제 Eval입니다. RED
-또는 BLOCKED인 관문은 차례로 그 Eval을 막으므로, 막힘은 이 Eval 관문을 따라 전파됩니다.
-자식의 RED Eval은 부모의 모든 Eval을 막습니다. Eval이 없는 중간 Artifact는
+막히는 것은 언제나 eval이지 Artifact가 아닙니다. eval의 실행 관문은
+그 eval이 참조하는 Artifact들의 실제 eval과, 그 eval이 속한 Artifact의 표시된 가장 가까운 자식들의 실제 eval입니다. RED
+또는 BLOCKED인 관문은 차례로 그 eval을 막으므로, 막힘은 이 eval 관문을 따라 전파됩니다.
+자식의 RED eval은 부모의 모든 eval을 막습니다. eval이 없는 중간 Artifact는
 실행 관문을 제공하지 않습니다. 그 Artifact를 참조해도 그 Artifact의 입력이나 자식에 실행이
 묶이지 않습니다. 그것들은 여전히 최종 승인 의무에 속하므로,
-그것을 쓰는 Eval은 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
+그것을 쓰는 eval은 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
 
-Eval 자신의 Artifact와 의존성 순환에 함께 있는 Eval들은
+eval 자신의 Artifact와 의존성 순환에 함께 있는 eval들은
 [Human 형제 선행 조건](#human-sign-offs)을 빼면 이 관문에서 제외됩니다. 순환은
-Eval 참조와 자식을 따라갑니다. 부모를 직접 또는 참조 사슬을 거쳐 참조하는 자식은
+eval 참조와 자식을 따라갑니다. 부모를 직접 또는 참조 사슬을 거쳐 참조하는 자식은
 부모와 같은 순환에 있습니다. 같은 순환의 상대를 참조하면 그 순환의 외부 관문이 따라오고,
-다른 순환을 참조하면 그 순환의 모든 Eval이 따라옵니다.
+다른 순환을 참조하면 그 순환의 모든 eval이 따라옵니다.
 이 관문들은 대기와 추측 실행의 취소도 결정합니다.
 
 예를 들어 `docs`의 eval이 `cli`를 참조하고 `cli`의 eval이 `docs`를 참조하면
 둘은 순환을 이룹니다. RED인 `cli/tests`는 `docs/matches-cli`를 막거나
-그 판정을 대신하지 않습니다. 둘 다 독립적으로 실행되며, 순환 밖에서 이를 쓰는 Eval이
+그 판정을 대신하지 않습니다. 둘 다 독립적으로 실행되며, 순환 밖에서 이를 쓰는 eval이
 진행하려면 둘 다 통과해야 합니다.
 
-BLOCKED Eval의 이유에는 막힘의 근원인 RED Eval의 이름이 나옵니다. 예를 들어
-`Dependency verdict RED: core/tests`처럼 나오며, 아직 실행 중이었을 뿐인 Eval은 나오지 않습니다.
+BLOCKED eval의 이유에는 막힘의 근원인 RED eval의 이름이 나옵니다. 예를 들어
+`Dependency verdict RED: core/tests`처럼 나오며, 아직 실행 중이었을 뿐인 eval은 나오지 않습니다.
 추측 실행 Run에서는 상위의 ERROR도 막힘을 일으키며 `Dependency ERROR: …`로
-이름이 나옵니다. `blockedBy`는 같은 Eval들을 나열하며, 끝난 Run에는
-그 Eval이 모두 나옵니다.
+이름이 나옵니다. `blockedBy`는 같은 eval들을 나열하며, 끝난 Run에는
+그 eval이 모두 나옵니다.
 
 ### Human 승인 {#human-sign-offs}
 
-Human Eval은 의존성 관문에 더해, 같은 Artifact의 Human이 아닌 다른 Eval이 모두
-GREEN일 때만 시작합니다. 사람은 기계 Eval이 이미 통과한 것만 승인합니다.
-그때까지 Human Eval은 기다립니다. 그 기계 Eval 중 하나가 RED나
-ERROR이면 Human Eval은 시작하지 않고 BLOCKED가 되며, 그 이유에 해당 Eval의 이름이 나옵니다. 예를 들어
-`Sibling machine eval RED: spec/review`처럼 나옵니다. 같은 Artifact의 다른 Human Eval은
+Human eval은 의존성 관문에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두
+GREEN일 때만 시작합니다. 사람은 기계 eval이 이미 통과한 것만 승인합니다.
+그때까지 Human eval은 기다립니다. 그 기계 eval 중 하나가 RED나
+ERROR이면 Human eval은 시작하지 않고 BLOCKED가 되며, 그 이유에 해당 eval의 이름이 나옵니다. 예를 들어
+`Sibling machine eval RED: spec/review`처럼 나옵니다. 같은 Artifact의 다른 Human eval은
 이 조건에 들어가지 않으므로, 두 승인이 서로를 기다리는 일은 없습니다.
 이 규칙은 그냥 `verify`에서도, `--speculate`나 `--defer-human`을 써도 같습니다.
-추측 실행 Run에서도 그 기계 Eval이 GREEN이 되기 전에는 사람에게 묻지 않습니다.
+추측 실행 Run에서도 그 기계 eval이 GREEN이 되기 전에는 사람에게 묻지 않습니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}
 
@@ -160,7 +160,7 @@ ERROR이면 Human Eval은 시작하지 않고 BLOCKED가 되며, 그 이유에 �
 
 `tags = ["type:code", "scope:player"]`는 표시용 메타데이터만 추가합니다. 태그는 ASCII 제어 문자가 없는,
 비어 있지 않은 고유 문자열 64개까지입니다. `status`, `config graph`, `monitor`와 그 JSON
-Artifact 출력에 태그가 나옵니다. 태그는 fingerprint, Eval 정의 해시, 재사용
+Artifact 출력에 태그가 나옵니다. 태그는 fingerprint, eval 정의 해시, 재사용
 키, 관계, `verify`와 `status`의 선택을 전혀 바꾸지 않습니다. 이들에 대한 태그 필터도,
 관계 규칙도 없습니다. 태그로 거르는 것은 `artifactize review` 검색의 `tag:` 검색어뿐입니다.
 
