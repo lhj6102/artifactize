@@ -97,7 +97,7 @@ URL은 시스템 신뢰 저장소와 함께 HTTPS를 써야 하며, 일반 `http
 `ARTIFACTIZE_REMOTE_SHARE`(`summary` 또는 `full`)는 `remote.json`과
 저장된 토큰을 덮어씁니다. `remote status`는 URL, 공유 수준, 토큰 출처
 (`env`, `file`, `none`), 도달 가능 여부, 주체, 범위를 출력하며,
-저장소가 토큰을 받아들이면 0으로 종료합니다. 요청은 연결 2초, 전체 5초 시간 제한을 쓰며 결코
+토큰 인증에 성공하면 0으로 종료합니다. 요청은 연결 2초, 전체 5초 시간 제한을 쓰며 결코
 리디렉션을 따라가지 않습니다. `remote logout`은 저장된 토큰과 `remote.json`을 삭제하며,
 서버는 `server token revoke` 전까지 그 토큰을 유효하게 유지합니다. 토큰은 결코 출력되거나
 기록되지 않습니다.

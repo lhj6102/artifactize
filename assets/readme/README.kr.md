@@ -124,17 +124,17 @@ Review 화면이 있습니다.
 
 <img src="../demos/graph-growth.gif" width="1200" alt="이 저장소의 현재 Artifact Graph가 0.7.0부터 현재 main까지 릴리스마다 성장하는 모습을 보여 주는 Artifactize 데스크톱 앱의 실제 녹화.">
 
-**브랜치와 Run:** 왼쪽 패널에는 Run 칩과 승인 대기 항목이 있는 예제 브랜치가, 오른쪽에는
-그 Run이 보입니다. core는 통과했고, cli의 테스트가 실패해 docs는 막혔으며,
-release는 사람이 승인해야 진행됩니다.
+**브랜치와 Run:** 왼쪽 패널에 Run 칩과 승인할 요청이 있는 예제 브랜치가 보이고, 그 Run에서는
+core가 통과했고, cli의 테스트가 실패해 docs는 막혔으며, release는 사람이 승인해야
+진행됩니다.
 
-<img src="../screenshots/monitor.png" width="1200" alt="실제 Artifactize 데스크톱 앱: 왼쪽 패널의 예제 브랜치와 대기 중인 승인, 그리고 core는 통과, cli는 실패, docs는 막힘, release는 승인 대기인 Run의 Artifact Graph.">
+<img src="../screenshots/monitor.png" width="1200" alt="실제 Artifactize 데스크톱 앱: 왼쪽 패널의 예제 브랜치와 승인할 요청, 그리고 core는 통과, cli는 실패, docs는 막힘, release는 승인 대기인 Run의 Artifact Graph.">
 
 **Detail:** cli와 cli의 검사 목록을 보여 주고, 양옆에 cli가 사용하는 core와 cli를 사용하는 docs를 함께 보여 줍니다.
 
 <img src="../screenshots/detail.png" width="1200" alt="실제 Artifactize 데스크톱 앱의 cli Artifact Detail: 이웃인 core와 docs, 그리고 lint와 tests 검사.">
 
-**Review:** 대기 중인 release 승인 요청을 Review 화면에서 연 모습입니다. 예시 리뷰어가 맡아
-notes 도구를 실행한 뒤 GREEN 양식을 열어 둔 상태입니다.
+**Review:** 승인할 리뷰 목록에서 release 승인 요청을 열어 예시 리뷰어가 맡고, notes 도구를
+실행한 뒤 GREEN 양식을 열어 둔 모습입니다.
 
-<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 그 지시, notes 도구, 도구 로그, GREEN 양식.">
+<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 검토 지침, notes 도구, 도구 로그, GREEN 양식.">

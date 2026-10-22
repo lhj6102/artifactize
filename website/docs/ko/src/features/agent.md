@@ -57,7 +57,7 @@ Agent 프로필은 `max_tokens`와 `max_tool_calls`로 리뷰를 제한할 수 �
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", max_tokens = 100000, max_tool_calls = 100 }
 ```
 
-각 선택 예산은 1부터 9007199254740991까지의 정수를 받습니다.
+각 예산은 선택 사항이며, 지정할 때는 1부터 9007199254740991까지의 정수를 쓰세요.
 생략하면 그 예산은 무제한입니다. 이는 제공자 생성 매개변수가 아니라
 클라이언트 쪽 리뷰 예산입니다. `max_tokens`는 성공한 각 응답이
 보고한 `total_tokens`를, 보고된 캐시 읽기/쓰기를 포함해 모든
@@ -65,8 +65,7 @@ profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", ma
 응답 뒤에 이루어지며 합계가 제한을 넘을 때만 실패합니다. 그래서
 제한을 넘어설 수 있으며, 생성이나 지출을 딱 끊는 상한이 아닙니다.
 
-`max_tool_calls`는 성공한 도구뿐 아니라 알 수 없거나
-잘못되었거나 실패한 호출을 포함해, 호출하기 전에 시도된 호출을 셉니다. 어느 예산이든 넘으면
+`max_tool_calls`는 도구를 실행하기 전에 호출 시도를 세며, 성공한 호출뿐 아니라 알 수 없거나 잘못되었거나 실패한 호출도 포함합니다. 어느 예산이든 넘으면
 `PROVIDER_BUDGET_EXCEEDED`로 이후 작업을 멈춥니다. 복구는 원래의
 리뷰 마감 시간과 예산 안에서 이루어지며 새 허용량을 더하지 않습니다.
 
@@ -167,8 +166,7 @@ Anthropic의 `inputTokens`는 자체적인 캐시되지 않은 입력이며, 캐
 [저장된 대화](#saved-conversations)에만 있으며,
 [`session show --summary`](#session-summary)가 이를 셉니다.
 
-제공자에 의지하기 전의 소유자 검증: 백엔드마다(OpenAI 키, Anthropic 키, Codex 로그인)
-접근 가능한 정확한 모델 ID와 선언한 도구로 실제 리뷰를 하나씩 실행하세요.
+제공자를 본격적으로 쓰기 전에 백엔드마다(OpenAI 키, Anthropic 키, Codex 로그인) 접근 가능한 정확한 모델 ID와 선언한 도구로 실제 리뷰를 하나씩 실행해 확인하세요.
 이 실제 리뷰는 아직 소유자가 해야 할 일로 남아 있습니다. 자동화 테스트는 가짜 HTTP
 전송이나 [가짜 제공자](#test-against-a-fake-provider)를 쓰며 실제
 추론 요청을 하지 않습니다.

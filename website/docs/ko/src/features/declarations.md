@@ -252,8 +252,7 @@ graph Artifact의 선언도 재귀적인 fingerprint 계산 없이 포함합니�
 `.artf` 파일은 선언이며 결코 대상이 되지 않습니다.
 
 파일 Artifact는 자신이 들어 있는 폴더 Artifact와 자식 관계나 의존성 관계를
-만들지 않습니다. 하위 폴더의 `index.artf` 선언에는 여전히 가장 가까운 폴더가 소유한다는 규칙이
-적용됩니다. 폴더의 artifactsum에는 옆에 있는 파일
+만들지 않습니다. 하위 폴더의 `index.artf` 선언에는 여전히 가장 가까운 상위 폴더 Artifact의 자식이 된다는 규칙이 적용됩니다. 폴더의 artifactsum에는 옆에 있는 파일
 Artifact 대상이 포함되고 모든 `*.artf` 선언은 제외됩니다.
 
 들어 있는 폴더가 runtime 명령, 도구,
@@ -396,8 +395,7 @@ eval이 선택되지 않은 의존성도 포함됩니다.
 fingerprint는 한 번에 최대 `--fingerprint-jobs N`개까지
 계산하며(기본값: 프로세스가 쓸 수 있는 CPU 수), `status`에서도
 `verify`와 같습니다. 한 Run에서는 준비 단계와 Runtime/Agent 리뷰 종료 시 재확인이 이 한도를 함께 씁니다. **Human 도구 동작과 제출은
-별개의 작업입니다**. 각각 Run의 `--fingerprint-jobs` 설정과 무관하게
-CPU 수만큼의 fingerprint 병렬성을 따로 가집니다.
+별개의 작업입니다**. 각각 Run의 `--fingerprint-jobs` 설정과 상관없이 CPU 수만큼 fingerprint를 동시에 계산할 수 있습니다.
 값은 완료 순서가 아니라 Artifact를 키로 저장됩니다. 실패하면 이름 순서로 처음
 실패한 Artifact를 보고하고 그 뒤의 fingerprint를 취소합니다. 스크립트는
 각각 별도의 전용 출력 디렉터리에서 실행됩니다. `--fingerprint-jobs 1`은 그 Run의
@@ -479,8 +477,7 @@ runtime 명령을 준비하기 전에 eval 범위로 `scope::resolve_argv`를 �
 `runtime::execute`를 위한 호출 하나를 준비합니다. 인자는 리터럴이며 실행기는 결코
 셸을 추가하지 않습니다. 기본 cwd는 정규화된 워크스페이스이고, 범위가 정해진 호출자는
 `command.cwd`를 Artifact의 작업 디렉터리(파일 Artifact라면 들어 있는 폴더)로
-설정할 수 있습니다. `process::run`은 완전한 명시적 환경을 가진 해석된 명령을 위한
-하위 수준 API입니다. `verify`는 소유자 작업 디렉터리를 cwd로 씁니다.
+설정할 수 있습니다. `process::run`은 실행 파일을 이미 찾았고 환경 변수 전체를 명시적으로 정한 명령을 실행하는 하위 수준 API입니다. `verify`는 소유자 작업 디렉터리를 cwd로 씁니다.
 
 명령은 작성자의 터미널 환경에서 실행되므로, 프로젝트는 명령을
 터미널에 입력하듯 선언합니다. `artifactize` 프로세스의 환경 전체가 전달되며,
